@@ -1,5 +1,5 @@
 syntax = "proto3";
-package nautilus;
+package invariance_proto;
 option csharp_namespace = "Nautilus.Protobuf";
 
 /*
@@ -16,19 +16,70 @@ from directory containing proto file;
 protoc -I=. --python_out=. ./messages.proto
  */
 
+enum Resolution {
+    TICK = 0;
+    SECOND = 1;
+    MINUTE = 2;
+    HOUR = 3;
+    DAY = 4;
+}
+
+enum QuoteType {
+    BID = 0;
+    ASK = 1;
+    LAST = 2;
+    MID = 4;
+}
+
 message Tick {
     string symbol = 1;
-    double bid = 2;
-    double ask = 3;
-    string timestamp = 4;
+    string venue = 2;
+    double bid = 3;
+    double ask = 4;
+    string timestamp = 5;
 }
 
 message Bar {
+    double open = 1;
+    double high = 2;
+    double low = 3;
+    double close = 4;
+    int32 volume = 5;
+    string timestamp = 6;
+}
+
+message BarSpecification {
+    QuoteType quoteType = 1;
+    Resolution resolution = 2;
+    int32 period = 3;
+}
+
+message BarClosed {
     string symbol = 1;
-    double open = 2;
-    double high = 3;
-    double low = 4;
-    double close = 5;
-    int32 volume = 6;
-    string timestamp = 7;
+    string venue = 2;
+    BarSpecification barSpec = 3;
+    Bar bar = 4;
+    bool isHistorical = 5;
+}
+
+message SubscribeTickData {
+    string symbol = 1;
+    string venue = 2;
+}
+
+message UnsubscribeTickData {
+    string symbol = 1;
+    string venue = 2;
+}
+
+message SubscribeBarData {
+    string symbol = 1;
+    string venue = 2;
+    BarSpecification barSpec = 3;
+}
+
+message UnsubscribeBarData {
+    string symbol = 1;
+    string venue = 2;
+    BarSpecification barSpec = 3;
 }

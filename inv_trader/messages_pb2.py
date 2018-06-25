@@ -3,6 +3,7 @@
 
 import sys
 _b=sys.version_info[0]<3 and (lambda x:x) or (lambda x:x.encode('latin1'))
+from google.protobuf.internal import enum_type_wrapper
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import message as _message
 from google.protobuf import reflection as _reflection
@@ -16,119 +17,128 @@ _sym_db = _symbol_database.Default()
 
 DESCRIPTOR = _descriptor.FileDescriptor(
   name='messages.proto',
-  package='nautilus',
+  package='invariance_proto',
   syntax='proto3',
   serialized_options=_b('\252\002\021Nautilus.Protobuf'),
-  serialized_pb=_b('\n\x0emessages.proto\x12\x08nautilus\"C\n\x04Tick\x12\x0e\n\x06symbol\x18\x01 \x01(\t\x12\x0b\n\x03\x62id\x18\x02 \x01(\x01\x12\x0b\n\x03\x61sk\x18\x03 \x01(\x01\x12\x11\n\ttimestamp\x18\x04 \x01(\t\"p\n\x03\x42\x61r\x12\x0e\n\x06symbol\x18\x01 \x01(\t\x12\x0c\n\x04open\x18\x02 \x01(\x01\x12\x0c\n\x04high\x18\x03 \x01(\x01\x12\x0b\n\x03low\x18\x04 \x01(\x01\x12\r\n\x05\x63lose\x18\x05 \x01(\x01\x12\x0e\n\x06volume\x18\x06 \x01(\x05\x12\x11\n\ttimestamp\x18\x07 \x01(\tB\x14\xaa\x02\x11Nautilus.Protobufb\x06proto3')
+  serialized_pb=_b('\n\x0emessages.proto\x12\x10invariance_proto\"R\n\x04Tick\x12\x0e\n\x06symbol\x18\x01 \x01(\t\x12\r\n\x05venue\x18\x02 \x01(\t\x12\x0b\n\x03\x62id\x18\x03 \x01(\x01\x12\x0b\n\x03\x61sk\x18\x04 \x01(\x01\x12\x11\n\ttimestamp\x18\x05 \x01(\t\"`\n\x03\x42\x61r\x12\x0c\n\x04open\x18\x01 \x01(\x01\x12\x0c\n\x04high\x18\x02 \x01(\x01\x12\x0b\n\x03low\x18\x03 \x01(\x01\x12\r\n\x05\x63lose\x18\x04 \x01(\x01\x12\x0e\n\x06volume\x18\x05 \x01(\x05\x12\x11\n\ttimestamp\x18\x06 \x01(\t\"\x84\x01\n\x10\x42\x61rSpecification\x12.\n\tquoteType\x18\x01 \x01(\x0e\x32\x1b.invariance_proto.QuoteType\x12\x30\n\nresolution\x18\x02 \x01(\x0e\x32\x1c.invariance_proto.Resolution\x12\x0e\n\x06period\x18\x03 \x01(\x05\"\x99\x01\n\tBarClosed\x12\x0e\n\x06symbol\x18\x01 \x01(\t\x12\r\n\x05venue\x18\x02 \x01(\t\x12\x33\n\x07\x62\x61rSpec\x18\x03 \x01(\x0b\x32\".invariance_proto.BarSpecification\x12\"\n\x03\x62\x61r\x18\x04 \x01(\x0b\x32\x15.invariance_proto.Bar\x12\x14\n\x0cisHistorical\x18\x05 \x01(\x08\"2\n\x11SubscribeTickData\x12\x0e\n\x06symbol\x18\x01 \x01(\t\x12\r\n\x05venue\x18\x02 \x01(\t\"4\n\x13UnsubscribeTickData\x12\x0e\n\x06symbol\x18\x01 \x01(\t\x12\r\n\x05venue\x18\x02 \x01(\t\"f\n\x10SubscribeBarData\x12\x0e\n\x06symbol\x18\x01 \x01(\t\x12\r\n\x05venue\x18\x02 \x01(\t\x12\x33\n\x07\x62\x61rSpec\x18\x03 \x01(\x0b\x32\".invariance_proto.BarSpecification\"h\n\x12UnsubscribeBarData\x12\x0e\n\x06symbol\x18\x01 \x01(\t\x12\r\n\x05venue\x18\x02 \x01(\t\x12\x33\n\x07\x62\x61rSpec\x18\x03 \x01(\x0b\x32\".invariance_proto.BarSpecification*A\n\nResolution\x12\x08\n\x04TICK\x10\x00\x12\n\n\x06SECOND\x10\x01\x12\n\n\x06MINUTE\x10\x02\x12\x08\n\x04HOUR\x10\x03\x12\x07\n\x03\x44\x41Y\x10\x04*0\n\tQuoteType\x12\x07\n\x03\x42ID\x10\x00\x12\x07\n\x03\x41SK\x10\x01\x12\x08\n\x04LAST\x10\x02\x12\x07\n\x03MID\x10\x04\x42\x14\xaa\x02\x11Nautilus.Protobufb\x06proto3')
 )
 
+_RESOLUTION = _descriptor.EnumDescriptor(
+  name='Resolution',
+  full_name='invariance_proto.Resolution',
+  filename=None,
+  file=DESCRIPTOR,
+  values=[
+    _descriptor.EnumValueDescriptor(
+      name='TICK', index=0, number=0,
+      serialized_options=None,
+      type=None),
+    _descriptor.EnumValueDescriptor(
+      name='SECOND', index=1, number=1,
+      serialized_options=None,
+      type=None),
+    _descriptor.EnumValueDescriptor(
+      name='MINUTE', index=2, number=2,
+      serialized_options=None,
+      type=None),
+    _descriptor.EnumValueDescriptor(
+      name='HOUR', index=3, number=3,
+      serialized_options=None,
+      type=None),
+    _descriptor.EnumValueDescriptor(
+      name='DAY', index=4, number=4,
+      serialized_options=None,
+      type=None),
+  ],
+  containing_type=None,
+  serialized_options=None,
+  serialized_start=825,
+  serialized_end=890,
+)
+_sym_db.RegisterEnumDescriptor(_RESOLUTION)
+
+Resolution = enum_type_wrapper.EnumTypeWrapper(_RESOLUTION)
+_QUOTETYPE = _descriptor.EnumDescriptor(
+  name='QuoteType',
+  full_name='invariance_proto.QuoteType',
+  filename=None,
+  file=DESCRIPTOR,
+  values=[
+    _descriptor.EnumValueDescriptor(
+      name='BID', index=0, number=0,
+      serialized_options=None,
+      type=None),
+    _descriptor.EnumValueDescriptor(
+      name='ASK', index=1, number=1,
+      serialized_options=None,
+      type=None),
+    _descriptor.EnumValueDescriptor(
+      name='LAST', index=2, number=2,
+      serialized_options=None,
+      type=None),
+    _descriptor.EnumValueDescriptor(
+      name='MID', index=3, number=4,
+      serialized_options=None,
+      type=None),
+  ],
+  containing_type=None,
+  serialized_options=None,
+  serialized_start=892,
+  serialized_end=940,
+)
+_sym_db.RegisterEnumDescriptor(_QUOTETYPE)
+
+QuoteType = enum_type_wrapper.EnumTypeWrapper(_QUOTETYPE)
+TICK = 0
+SECOND = 1
+MINUTE = 2
+HOUR = 3
+DAY = 4
+BID = 0
+ASK = 1
+LAST = 2
+MID = 4
 
 
 
 _TICK = _descriptor.Descriptor(
   name='Tick',
-  full_name='nautilus.Tick',
+  full_name='invariance_proto.Tick',
   filename=None,
   file=DESCRIPTOR,
   containing_type=None,
   fields=[
     _descriptor.FieldDescriptor(
-      name='symbol', full_name='nautilus.Tick.symbol', index=0,
+      name='symbol', full_name='invariance_proto.Tick.symbol', index=0,
       number=1, type=9, cpp_type=9, label=1,
       has_default_value=False, default_value=_b("").decode('utf-8'),
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR),
     _descriptor.FieldDescriptor(
-      name='bid', full_name='nautilus.Tick.bid', index=1,
-      number=2, type=1, cpp_type=5, label=1,
-      has_default_value=False, default_value=float(0),
+      name='venue', full_name='invariance_proto.Tick.venue', index=1,
+      number=2, type=9, cpp_type=9, label=1,
+      has_default_value=False, default_value=_b("").decode('utf-8'),
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR),
     _descriptor.FieldDescriptor(
-      name='ask', full_name='nautilus.Tick.ask', index=2,
+      name='bid', full_name='invariance_proto.Tick.bid', index=2,
       number=3, type=1, cpp_type=5, label=1,
       has_default_value=False, default_value=float(0),
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR),
     _descriptor.FieldDescriptor(
-      name='timestamp', full_name='nautilus.Tick.timestamp', index=3,
-      number=4, type=9, cpp_type=9, label=1,
-      has_default_value=False, default_value=_b("").decode('utf-8'),
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR),
-  ],
-  extensions=[
-  ],
-  nested_types=[],
-  enum_types=[
-  ],
-  serialized_options=None,
-  is_extendable=False,
-  syntax='proto3',
-  extension_ranges=[],
-  oneofs=[
-  ],
-  serialized_start=28,
-  serialized_end=95,
-)
-
-
-_BAR = _descriptor.Descriptor(
-  name='Bar',
-  full_name='nautilus.Bar',
-  filename=None,
-  file=DESCRIPTOR,
-  containing_type=None,
-  fields=[
-    _descriptor.FieldDescriptor(
-      name='symbol', full_name='nautilus.Bar.symbol', index=0,
-      number=1, type=9, cpp_type=9, label=1,
-      has_default_value=False, default_value=_b("").decode('utf-8'),
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR),
-    _descriptor.FieldDescriptor(
-      name='open', full_name='nautilus.Bar.open', index=1,
-      number=2, type=1, cpp_type=5, label=1,
-      has_default_value=False, default_value=float(0),
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR),
-    _descriptor.FieldDescriptor(
-      name='high', full_name='nautilus.Bar.high', index=2,
-      number=3, type=1, cpp_type=5, label=1,
-      has_default_value=False, default_value=float(0),
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR),
-    _descriptor.FieldDescriptor(
-      name='low', full_name='nautilus.Bar.low', index=3,
+      name='ask', full_name='invariance_proto.Tick.ask', index=3,
       number=4, type=1, cpp_type=5, label=1,
       has_default_value=False, default_value=float(0),
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR),
     _descriptor.FieldDescriptor(
-      name='close', full_name='nautilus.Bar.close', index=4,
-      number=5, type=1, cpp_type=5, label=1,
-      has_default_value=False, default_value=float(0),
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR),
-    _descriptor.FieldDescriptor(
-      name='volume', full_name='nautilus.Bar.volume', index=5,
-      number=6, type=5, cpp_type=1, label=1,
-      has_default_value=False, default_value=0,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR),
-    _descriptor.FieldDescriptor(
-      name='timestamp', full_name='nautilus.Bar.timestamp', index=6,
-      number=7, type=9, cpp_type=9, label=1,
+      name='timestamp', full_name='invariance_proto.Tick.timestamp', index=4,
+      number=5, type=9, cpp_type=9, label=1,
       has_default_value=False, default_value=_b("").decode('utf-8'),
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
@@ -145,27 +155,419 @@ _BAR = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=97,
-  serialized_end=209,
+  serialized_start=36,
+  serialized_end=118,
 )
 
+
+_BAR = _descriptor.Descriptor(
+  name='Bar',
+  full_name='invariance_proto.Bar',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  fields=[
+    _descriptor.FieldDescriptor(
+      name='open', full_name='invariance_proto.Bar.open', index=0,
+      number=1, type=1, cpp_type=5, label=1,
+      has_default_value=False, default_value=float(0),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR),
+    _descriptor.FieldDescriptor(
+      name='high', full_name='invariance_proto.Bar.high', index=1,
+      number=2, type=1, cpp_type=5, label=1,
+      has_default_value=False, default_value=float(0),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR),
+    _descriptor.FieldDescriptor(
+      name='low', full_name='invariance_proto.Bar.low', index=2,
+      number=3, type=1, cpp_type=5, label=1,
+      has_default_value=False, default_value=float(0),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR),
+    _descriptor.FieldDescriptor(
+      name='close', full_name='invariance_proto.Bar.close', index=3,
+      number=4, type=1, cpp_type=5, label=1,
+      has_default_value=False, default_value=float(0),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR),
+    _descriptor.FieldDescriptor(
+      name='volume', full_name='invariance_proto.Bar.volume', index=4,
+      number=5, type=5, cpp_type=1, label=1,
+      has_default_value=False, default_value=0,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR),
+    _descriptor.FieldDescriptor(
+      name='timestamp', full_name='invariance_proto.Bar.timestamp', index=5,
+      number=6, type=9, cpp_type=9, label=1,
+      has_default_value=False, default_value=_b("").decode('utf-8'),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR),
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+  ],
+  serialized_options=None,
+  is_extendable=False,
+  syntax='proto3',
+  extension_ranges=[],
+  oneofs=[
+  ],
+  serialized_start=120,
+  serialized_end=216,
+)
+
+
+_BARSPECIFICATION = _descriptor.Descriptor(
+  name='BarSpecification',
+  full_name='invariance_proto.BarSpecification',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  fields=[
+    _descriptor.FieldDescriptor(
+      name='quoteType', full_name='invariance_proto.BarSpecification.quoteType', index=0,
+      number=1, type=14, cpp_type=8, label=1,
+      has_default_value=False, default_value=0,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR),
+    _descriptor.FieldDescriptor(
+      name='resolution', full_name='invariance_proto.BarSpecification.resolution', index=1,
+      number=2, type=14, cpp_type=8, label=1,
+      has_default_value=False, default_value=0,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR),
+    _descriptor.FieldDescriptor(
+      name='period', full_name='invariance_proto.BarSpecification.period', index=2,
+      number=3, type=5, cpp_type=1, label=1,
+      has_default_value=False, default_value=0,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR),
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+  ],
+  serialized_options=None,
+  is_extendable=False,
+  syntax='proto3',
+  extension_ranges=[],
+  oneofs=[
+  ],
+  serialized_start=219,
+  serialized_end=351,
+)
+
+
+_BARCLOSED = _descriptor.Descriptor(
+  name='BarClosed',
+  full_name='invariance_proto.BarClosed',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  fields=[
+    _descriptor.FieldDescriptor(
+      name='symbol', full_name='invariance_proto.BarClosed.symbol', index=0,
+      number=1, type=9, cpp_type=9, label=1,
+      has_default_value=False, default_value=_b("").decode('utf-8'),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR),
+    _descriptor.FieldDescriptor(
+      name='venue', full_name='invariance_proto.BarClosed.venue', index=1,
+      number=2, type=9, cpp_type=9, label=1,
+      has_default_value=False, default_value=_b("").decode('utf-8'),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR),
+    _descriptor.FieldDescriptor(
+      name='barSpec', full_name='invariance_proto.BarClosed.barSpec', index=2,
+      number=3, type=11, cpp_type=10, label=1,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR),
+    _descriptor.FieldDescriptor(
+      name='bar', full_name='invariance_proto.BarClosed.bar', index=3,
+      number=4, type=11, cpp_type=10, label=1,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR),
+    _descriptor.FieldDescriptor(
+      name='isHistorical', full_name='invariance_proto.BarClosed.isHistorical', index=4,
+      number=5, type=8, cpp_type=7, label=1,
+      has_default_value=False, default_value=False,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR),
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+  ],
+  serialized_options=None,
+  is_extendable=False,
+  syntax='proto3',
+  extension_ranges=[],
+  oneofs=[
+  ],
+  serialized_start=354,
+  serialized_end=507,
+)
+
+
+_SUBSCRIBETICKDATA = _descriptor.Descriptor(
+  name='SubscribeTickData',
+  full_name='invariance_proto.SubscribeTickData',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  fields=[
+    _descriptor.FieldDescriptor(
+      name='symbol', full_name='invariance_proto.SubscribeTickData.symbol', index=0,
+      number=1, type=9, cpp_type=9, label=1,
+      has_default_value=False, default_value=_b("").decode('utf-8'),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR),
+    _descriptor.FieldDescriptor(
+      name='venue', full_name='invariance_proto.SubscribeTickData.venue', index=1,
+      number=2, type=9, cpp_type=9, label=1,
+      has_default_value=False, default_value=_b("").decode('utf-8'),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR),
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+  ],
+  serialized_options=None,
+  is_extendable=False,
+  syntax='proto3',
+  extension_ranges=[],
+  oneofs=[
+  ],
+  serialized_start=509,
+  serialized_end=559,
+)
+
+
+_UNSUBSCRIBETICKDATA = _descriptor.Descriptor(
+  name='UnsubscribeTickData',
+  full_name='invariance_proto.UnsubscribeTickData',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  fields=[
+    _descriptor.FieldDescriptor(
+      name='symbol', full_name='invariance_proto.UnsubscribeTickData.symbol', index=0,
+      number=1, type=9, cpp_type=9, label=1,
+      has_default_value=False, default_value=_b("").decode('utf-8'),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR),
+    _descriptor.FieldDescriptor(
+      name='venue', full_name='invariance_proto.UnsubscribeTickData.venue', index=1,
+      number=2, type=9, cpp_type=9, label=1,
+      has_default_value=False, default_value=_b("").decode('utf-8'),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR),
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+  ],
+  serialized_options=None,
+  is_extendable=False,
+  syntax='proto3',
+  extension_ranges=[],
+  oneofs=[
+  ],
+  serialized_start=561,
+  serialized_end=613,
+)
+
+
+_SUBSCRIBEBARDATA = _descriptor.Descriptor(
+  name='SubscribeBarData',
+  full_name='invariance_proto.SubscribeBarData',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  fields=[
+    _descriptor.FieldDescriptor(
+      name='symbol', full_name='invariance_proto.SubscribeBarData.symbol', index=0,
+      number=1, type=9, cpp_type=9, label=1,
+      has_default_value=False, default_value=_b("").decode('utf-8'),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR),
+    _descriptor.FieldDescriptor(
+      name='venue', full_name='invariance_proto.SubscribeBarData.venue', index=1,
+      number=2, type=9, cpp_type=9, label=1,
+      has_default_value=False, default_value=_b("").decode('utf-8'),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR),
+    _descriptor.FieldDescriptor(
+      name='barSpec', full_name='invariance_proto.SubscribeBarData.barSpec', index=2,
+      number=3, type=11, cpp_type=10, label=1,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR),
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+  ],
+  serialized_options=None,
+  is_extendable=False,
+  syntax='proto3',
+  extension_ranges=[],
+  oneofs=[
+  ],
+  serialized_start=615,
+  serialized_end=717,
+)
+
+
+_UNSUBSCRIBEBARDATA = _descriptor.Descriptor(
+  name='UnsubscribeBarData',
+  full_name='invariance_proto.UnsubscribeBarData',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  fields=[
+    _descriptor.FieldDescriptor(
+      name='symbol', full_name='invariance_proto.UnsubscribeBarData.symbol', index=0,
+      number=1, type=9, cpp_type=9, label=1,
+      has_default_value=False, default_value=_b("").decode('utf-8'),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR),
+    _descriptor.FieldDescriptor(
+      name='venue', full_name='invariance_proto.UnsubscribeBarData.venue', index=1,
+      number=2, type=9, cpp_type=9, label=1,
+      has_default_value=False, default_value=_b("").decode('utf-8'),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR),
+    _descriptor.FieldDescriptor(
+      name='barSpec', full_name='invariance_proto.UnsubscribeBarData.barSpec', index=2,
+      number=3, type=11, cpp_type=10, label=1,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR),
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+  ],
+  serialized_options=None,
+  is_extendable=False,
+  syntax='proto3',
+  extension_ranges=[],
+  oneofs=[
+  ],
+  serialized_start=719,
+  serialized_end=823,
+)
+
+_BARSPECIFICATION.fields_by_name['quoteType'].enum_type = _QUOTETYPE
+_BARSPECIFICATION.fields_by_name['resolution'].enum_type = _RESOLUTION
+_BARCLOSED.fields_by_name['barSpec'].message_type = _BARSPECIFICATION
+_BARCLOSED.fields_by_name['bar'].message_type = _BAR
+_SUBSCRIBEBARDATA.fields_by_name['barSpec'].message_type = _BARSPECIFICATION
+_UNSUBSCRIBEBARDATA.fields_by_name['barSpec'].message_type = _BARSPECIFICATION
 DESCRIPTOR.message_types_by_name['Tick'] = _TICK
 DESCRIPTOR.message_types_by_name['Bar'] = _BAR
+DESCRIPTOR.message_types_by_name['BarSpecification'] = _BARSPECIFICATION
+DESCRIPTOR.message_types_by_name['BarClosed'] = _BARCLOSED
+DESCRIPTOR.message_types_by_name['SubscribeTickData'] = _SUBSCRIBETICKDATA
+DESCRIPTOR.message_types_by_name['UnsubscribeTickData'] = _UNSUBSCRIBETICKDATA
+DESCRIPTOR.message_types_by_name['SubscribeBarData'] = _SUBSCRIBEBARDATA
+DESCRIPTOR.message_types_by_name['UnsubscribeBarData'] = _UNSUBSCRIBEBARDATA
+DESCRIPTOR.enum_types_by_name['Resolution'] = _RESOLUTION
+DESCRIPTOR.enum_types_by_name['QuoteType'] = _QUOTETYPE
 _sym_db.RegisterFileDescriptor(DESCRIPTOR)
 
 Tick = _reflection.GeneratedProtocolMessageType('Tick', (_message.Message,), dict(
   DESCRIPTOR = _TICK,
   __module__ = 'messages_pb2'
-  # @@protoc_insertion_point(class_scope:nautilus.Tick)
+  # @@protoc_insertion_point(class_scope:invariance_proto.Tick)
   ))
 _sym_db.RegisterMessage(Tick)
 
 Bar = _reflection.GeneratedProtocolMessageType('Bar', (_message.Message,), dict(
   DESCRIPTOR = _BAR,
   __module__ = 'messages_pb2'
-  # @@protoc_insertion_point(class_scope:nautilus.Bar)
+  # @@protoc_insertion_point(class_scope:invariance_proto.Bar)
   ))
 _sym_db.RegisterMessage(Bar)
+
+BarSpecification = _reflection.GeneratedProtocolMessageType('BarSpecification', (_message.Message,), dict(
+  DESCRIPTOR = _BARSPECIFICATION,
+  __module__ = 'messages_pb2'
+  # @@protoc_insertion_point(class_scope:invariance_proto.BarSpecification)
+  ))
+_sym_db.RegisterMessage(BarSpecification)
+
+BarClosed = _reflection.GeneratedProtocolMessageType('BarClosed', (_message.Message,), dict(
+  DESCRIPTOR = _BARCLOSED,
+  __module__ = 'messages_pb2'
+  # @@protoc_insertion_point(class_scope:invariance_proto.BarClosed)
+  ))
+_sym_db.RegisterMessage(BarClosed)
+
+SubscribeTickData = _reflection.GeneratedProtocolMessageType('SubscribeTickData', (_message.Message,), dict(
+  DESCRIPTOR = _SUBSCRIBETICKDATA,
+  __module__ = 'messages_pb2'
+  # @@protoc_insertion_point(class_scope:invariance_proto.SubscribeTickData)
+  ))
+_sym_db.RegisterMessage(SubscribeTickData)
+
+UnsubscribeTickData = _reflection.GeneratedProtocolMessageType('UnsubscribeTickData', (_message.Message,), dict(
+  DESCRIPTOR = _UNSUBSCRIBETICKDATA,
+  __module__ = 'messages_pb2'
+  # @@protoc_insertion_point(class_scope:invariance_proto.UnsubscribeTickData)
+  ))
+_sym_db.RegisterMessage(UnsubscribeTickData)
+
+SubscribeBarData = _reflection.GeneratedProtocolMessageType('SubscribeBarData', (_message.Message,), dict(
+  DESCRIPTOR = _SUBSCRIBEBARDATA,
+  __module__ = 'messages_pb2'
+  # @@protoc_insertion_point(class_scope:invariance_proto.SubscribeBarData)
+  ))
+_sym_db.RegisterMessage(SubscribeBarData)
+
+UnsubscribeBarData = _reflection.GeneratedProtocolMessageType('UnsubscribeBarData', (_message.Message,), dict(
+  DESCRIPTOR = _UNSUBSCRIBEBARDATA,
+  __module__ = 'messages_pb2'
+  # @@protoc_insertion_point(class_scope:invariance_proto.UnsubscribeBarData)
+  ))
+_sym_db.RegisterMessage(UnsubscribeBarData)
 
 
 DESCRIPTOR._options = None
