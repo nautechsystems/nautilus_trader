@@ -1,6 +1,16 @@
+//--------------------------------------------------------------------------------------------------
+// <copyright file="messages.proto" company="Nautech Systems Pty Ltd">
+//  Copyright (C) 2015-2018 Nautech Systems Pty Ltd. All rights reserved.
+//  The use of this source code is governed by the license as found in the LICENSE.txt file.
+//  http://www.nautechsystems.net
+// </copyright>
+//--------------------------------------------------------------------------------------------------
+
 syntax = "proto3";
+
+option csharp_namespace = "Nautilus.Common";
+
 package invariance_proto;
-option csharp_namespace = "Nautilus.Protobuf";
 
 /*
 Commands to compile protobuf messages per language
@@ -31,6 +41,15 @@ enum QuoteType {
     MID = 4;
 }
 
+message Empty {
+
+}
+
+message HeartBeat {
+    string from = 1;
+    string timestamp = 2;
+}
+
 message Tick {
     string symbol = 1;
     string venue = 2;
@@ -54,7 +73,7 @@ message BarSpecification {
     int32 period = 3;
 }
 
-message BarClosed {
+message BarData {
     string symbol = 1;
     string venue = 2;
     BarSpecification barSpec = 3;
@@ -67,9 +86,17 @@ message SubscribeTickData {
     string venue = 2;
 }
 
+message SubscribeTickDataResponse {
+    bool success = 1;
+}
+
 message UnsubscribeTickData {
     string symbol = 1;
     string venue = 2;
+}
+
+message UnubscribeTickDataResponse {
+    bool success = 1;
 }
 
 message SubscribeBarData {
@@ -78,8 +105,27 @@ message SubscribeBarData {
     BarSpecification barSpec = 3;
 }
 
+message SubscribeBarDataResponse {
+    bool success = 1;
+}
+
 message UnsubscribeBarData {
     string symbol = 1;
     string venue = 2;
     BarSpecification barSpec = 3;
+}
+
+message UnsubscribeBarDataResponse {
+    bool success = 1;
+}
+
+service BarDataServer {
+    rpc Subscribe(SubscribeBarData) returns (SubscribeBarDataResponse) {}
+    rpc Unsubscribe(UnsubscribeBarData) returns (UnsubscribeBarDataResponse) {}
+}
+
+service BarDataClient {
+    rpc OnHeartBeatRequest(HeartBeat) returns (HeartBeat) {}
+    rpc OnTickData(Tick) returns (Empty) {}
+    rpc OnBarData(BarData) returns (Empty) {}
 }
