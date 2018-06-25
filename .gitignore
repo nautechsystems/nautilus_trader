@@ -1,0 +1,13 @@
+*.c
+*.o
+*.so
+*.pyd
+*.exp
+*.obj
+*.lib
+*.html
+.cache
+.git
+.idea
+.pytest_cache
+__pycache__

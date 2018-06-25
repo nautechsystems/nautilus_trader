@@ -1,0 +1,34 @@
+syntax = "proto3";
+package nautilus;
+option csharp_namespace = "Nautilus.Protobuf";
+
+/*
+Commands to compile protobuf messages per language
+
+CSharp
+______
+from directory containing proto file;
+protoc -I=. --csharp_out=. ./messages.proto
+
+Python
+______
+from directory containing proto file;
+protoc -I=. --python_out=. ./messages.proto
+ */
+
+message Tick {
+    string symbol = 1;
+    double bid = 2;
+    double ask = 3;
+    string timestamp = 4;
+}
+
+message Bar {
+    string symbol = 1;
+    double open = 2;
+    double high = 3;
+    double low = 4;
+    double close = 5;
+    int32 volume = 6;
+    string timestamp = 7;
+}
