@@ -8,7 +8,7 @@
 
 syntax = "proto3";
 
-option csharp_namespace = "Nautilus.Common";
+option csharp_namespace = "Nautilus.Common.Messages";
 
 package invariance_proto;
 
@@ -17,13 +17,17 @@ Commands to compile protobuf messages per language
 
 CSharp
 ______
-from directory containing proto file;
-protoc -I=. --csharp_out=. ./messages.proto
+From directory containing proto file;
+protoc -I=. --csharp_out=. --grpc_out=. ./messages.proto --plugin=protoc-gen-grpc=grpc_csharp_plugin
 
 Python
 ______
-from directory containing proto file;
+First install grpcio tools;
+python -m pip install grpcio-tools googleapis-common-protos
+
+Then from directory containing proto file;
 protoc -I=. --python_out=. ./messages.proto
+python -m grpc_tools.protoc -I../../protos --python_out=. --grpc_python_out=. ../../protos/helloworld.proto
  */
 
 enum Resolution {
@@ -95,7 +99,7 @@ message UnsubscribeTickData {
     string venue = 2;
 }
 
-message UnubscribeTickDataResponse {
+message UnsubscribeTickDataResponse {
     bool success = 1;
 }
 
@@ -119,12 +123,14 @@ message UnsubscribeBarDataResponse {
     bool success = 1;
 }
 
-service BarDataServer {
-    rpc Subscribe(SubscribeBarData) returns (SubscribeBarDataResponse) {}
-    rpc Unsubscribe(UnsubscribeBarData) returns (UnsubscribeBarDataResponse) {}
+service DataServer {
+    rpc OnSubscribeTickData(SubscribeTickData) returns (SubscribeTickDataResponse) {}
+    rpc OnSubscribeBarData(SubscribeBarData) returns (SubscribeBarDataResponse) {}
+    rpc OnUnsubscribeTickData(UnsubscribeTickData) returns (UnsubscribeTickDataResponse) {}
+    rpc OnUnsubscribeBarData(UnsubscribeBarData) returns (UnsubscribeBarDataResponse) {}
 }
 
-service BarDataClient {
+service DataClient {
     rpc OnHeartBeatRequest(HeartBeat) returns (HeartBeat) {}
     rpc OnTickData(Tick) returns (Empty) {}
     rpc OnBarData(BarData) returns (Empty) {}
