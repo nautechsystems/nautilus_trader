@@ -51,10 +51,7 @@ setup(
     description='The python trading client for Invariance.',
     packages=setuptools.find_packages(),
     license='Invariance Software License',
-    requires=['cython',
-              'numpy',
-              'pandas',
-              'scipy'],
+    requires=['cython'],
     ext_modules=cythonize(extensions),
     cmdclass={'build_ext': Cython.Build.build_ext},
     options={'build_ext': {'inplace': False, 'force': False}})
