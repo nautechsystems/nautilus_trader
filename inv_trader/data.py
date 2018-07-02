@@ -9,7 +9,7 @@
 
 import redis
 
-from redis import StrictRedis
+from redis import Redis
 from redis import ConnectionError
 from typing import List
 
@@ -32,12 +32,11 @@ class LiveDataClient:
         self._port = port
         self._client = None
         self._pubsub = None
-        self._subscriptions_tick = List[str]
-        self._subscriptions_bars = List[str]
+        self._subscriptions_tick = []
+        self._subscriptions_bars = []
 
-    # Temporary property to expose client.
-    @property
-    def client(self) -> StrictRedis:
+    # Temporary property for development
+    def client(self) -> Redis:
         return self._client
 
     @property
@@ -51,31 +50,48 @@ class LiveDataClient:
             return False
 
         try:
-            result = self.client.ping
+            self._client.ping()
         except ConnectionError:
-            print("Connection error to the live database...")
             return False
 
-        print(f"Connected to the live database ({result}ms).")
         return True
 
     def connect(self) -> str:
         """
-        Connect to the live database and provide a client.
+        Connect to the live database and create a local pub/sub server.
         """
-        self._client = redis.StrictRedis(host=self._host, port=self._port, db=0)
+        self._client = redis.Redis(host=self._host, port=self._port, db=0)
         self._pubsub = self._client.pubsub()
 
-        return f"Connected to Redis {self._host}:{self._port}."
+        return f"Connected to live database at {self._host}:{self._port}."
 
-    def disconnect(self) -> str:
+    def disconnect(self) -> List[str]:
         """
         Disconnects from the local publish subscribe server and the database.
         """
-        self._pubsub.disconnect()
-        self._client.disconnect()
+        if self._client is None:
+            raise ConnectionError("The client was never connected.")
 
-        return f"Disconnected from Redis {self._host}:{self._port}."
+        unsubscribed_tick = []
+        unsubscribed_bars = []
+
+        for symbol in self._subscriptions_tick[:]:
+            self._pubsub.unsubscribe(symbol)
+            self._subscriptions_tick.remove(symbol)
+            unsubscribed_tick.append(symbol)
+
+        for symbol_bartype in self._subscriptions_bars[:]:
+            self._pubsub.unsubscribe(symbol_bartype)
+            self._subscriptions_bars.remove(symbol_bartype)
+            unsubscribed_bars.append(symbol_bartype)
+
+        disconnect_message = [f"Unsubscribed from tick_data {unsubscribed_tick}.",
+                              f"Unsubscribed from bars_data {unsubscribed_bars}."]
+
+        self._client.connection_pool.disconnect()
+
+        disconnect_message.append(f"Disconnected from live database at {self._host}:{self._port}.")
+        return disconnect_message
 
     def subscribe_tick_data(
             self,
@@ -97,7 +113,7 @@ class LiveDataClient:
 
         self._pubsub.subscribe(security_symbol)
 
-        if not self._subscriptions_tick.contains(security_symbol):
+        if not any(security_symbol for s in self._subscriptions_tick):
             self._subscriptions_tick.append(security_symbol).sort()
 
     def unsubscribe_tick_data(
@@ -120,7 +136,7 @@ class LiveDataClient:
 
         self._pubsub.unsubscribe(security_symbol)
 
-        if self._subscriptions_tick.contains(security_symbol):
+        if any(security_symbol for s in self._subscriptions_tick):
             self._subscriptions_tick.remove(security_symbol).sort()
 
 
