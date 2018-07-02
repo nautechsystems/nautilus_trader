@@ -138,7 +138,3 @@ class LiveDataClient:
 
         if any(security_symbol for s in self._subscriptions_tick):
             self._subscriptions_tick.remove(security_symbol).sort()
-
-
-
-
