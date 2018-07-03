@@ -105,3 +105,24 @@ class LiveDataClientTests(unittest.TestCase):
         # Assert
         self.assertEqual('Already subscribed to audusd.fxcm.', result)
 
+    def test_can_unsubscribe_from_tick_data_returns_correct_message(self):
+        # Arrange
+        self.data_client.connect()
+        self.data_client.subscribe_tick_data('audusd', 'fxcm')
+
+        # Act
+        result = self.data_client.unsubscribe_tick_data('audusd', 'fxcm')
+
+        # Assert
+        self.assertEqual('Unsubscribed from audusd.fxcm.', result)
+
+    def test_unsubscribing_from_tick_data_when_never_subscribed_returns_correct_message(self):
+        # Arrange
+        self.data_client.connect()
+
+        # Act
+        result = self.data_client.unsubscribe_tick_data('audusd', 'fxcm')
+
+        # Assert
+        self.assertEqual('Already unsubscribed from audusd.fxcm.', result)
+
