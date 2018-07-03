@@ -32,6 +32,13 @@ class ObjectStorer:
         self._store = []
 
     @property
+    def count(self) -> int:
+        """
+        :return: The count of objects stored.
+        """
+        return len(self._store)
+
+    @property
     def get_store(self) -> List[object]:
         """"
         return: The internal object store.
@@ -76,7 +83,7 @@ class LiveDataClientTests(unittest.TestCase):
         # Assert
         self.assertEqual('Unsubscribed from tick_data [].', result[0])
         self.assertEqual('Unsubscribed from bars_data [].', result[1])
-        self.assertEqual('Disconnected from live database at localhost:6379.', result[3])
+        self.assertEqual('Disconnected from live database at localhost:6379.', result[2])
 
     def test_is_connected_when_not_connected_returns_false(self):
         # Arrange
@@ -325,7 +332,7 @@ class LiveDataClientTests(unittest.TestCase):
         # Assert
         # Should print to console.
 
-    def test_can_receive_ticks(self):
+    def test_can_receive_one_tick(self):
         # Arrange
         storer = ObjectStorer()
         self.data_client.connect()
@@ -347,11 +354,28 @@ class LiveDataClientTests(unittest.TestCase):
         print(storer.get_store)
         self.assertEqual(str(tick), str(storer.get_store[0]))
 
+    def test_can_receive_many_ticks(self):
+        # Arrange
+        storer = ObjectStorer()
+        self.data_client.connect()
+        self.data_client.subscribe_tick_data('audusd', Venue.FXCM, storer.store)
+
+        # Act
+        self.redis_tester.publish('audusd.fxcm', '1.00000,1.00001,2018-01-01T19:59:01.000Z')
+        self.redis_tester.publish('audusd.fxcm', '1.00000,1.00002,2018-01-01T20:00:02.000Z')
+        self.redis_tester.publish('audusd.fxcm', '1.00000,1.00003,2018-01-01T20:00:03.000Z')
+        self.redis_tester.publish('audusd.fxcm', '1.00000,1.00004,2018-01-01T20:00:04.000Z')
+        self.redis_tester.publish('audusd.fxcm', '1.00000,1.00005,2018-01-01T20:00:05.000Z')
+
+        # Assert
+        time.sleep(0.1)  # Allow threads to work.
+        self.assertEqual(5, storer.count)
+
     def test_can_receive_bar(self):
         # Arrange
         storer = ObjectStorer()
         self.data_client.connect()
-        log = self.data_client.subscribe_bar_data('audusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.BID, storer.store)
+        self.data_client.subscribe_bar_data('audusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.BID, storer.store)
 
         bar = Bar(
             Decimal('1.00001'),
@@ -365,7 +389,5 @@ class LiveDataClientTests(unittest.TestCase):
         self.redis_tester.publish('audusd.fxcm-1-second[bid]', '1.00001,1.00004,1.00003,1.00002,100000,2018-01-01 19:59:01+00:00')
 
         # Assert
-        time.sleep(0.3)
-        print(log)
-        print(storer.get_store)
+        time.sleep(0.1)  # Allow threads to work.
         self.assertEqual(str(bar), str(storer.get_store[0]))

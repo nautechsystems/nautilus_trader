@@ -121,9 +121,8 @@ class LiveDataClient:
 
         if self._pubsub_thread is not None:
             self._pubsub_thread.stop()
-
-        time.sleep(0.1)  # Allow thread to stop.
-        disconnect_message.append(f"Stopped PubSub thread{self._pubsub_thread}.")
+            disconnect_message.append(f"Stopped PubSub thread {self._pubsub_thread}.")
+            time.sleep(0.1)  # Allow thread to stop.
 
         self._client.connection_pool.disconnect()
         self._client = None
@@ -377,7 +376,6 @@ class LiveDataClient:
 
         for subscriber in self._tick_subscribers:
             subscriber(tick)
-            print(f"sending tick to {subscriber}")
 
     def _bar_handler(self, message):
         """"
