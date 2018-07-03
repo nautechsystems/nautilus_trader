@@ -124,7 +124,7 @@ class LiveDataClient:
         tick_channel = self._get_tick_channel(symbol, venue)
 
         self._pubsub.subscribe(**{tick_channel: self.hacked_tick_message_printer})
-        thread1 = self._pubsub.run_in_thread(sleep_time=0.001)
+        #thread1 = self._pubsub.run_in_thread(sleep_time=0.001)
 
         if not any(tick_channel for s in self._subscriptions_tick):
             self._subscriptions_tick.append(tick_channel)
@@ -198,7 +198,7 @@ class LiveDataClient:
             quote_type)
 
         self._pubsub.subscribe(**{bar_channel: self.hacked_bar_message_printer})
-        thread2 = self._pubsub.run_in_thread(sleep_time=0.001)
+        #thread2 = self._pubsub.run_in_thread(sleep_time=0.001)
 
         if not any(bar_channel for s in self._subscriptions_bars):
             self._subscriptions_bars.append(bar_channel)
