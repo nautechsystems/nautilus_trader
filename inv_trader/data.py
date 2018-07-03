@@ -44,6 +44,9 @@ class LiveDataClient:
         self._subscriptions_ticks = []
         self._subscriptions_bars = []
 
+        self._tick_subscribers = []
+        self._bar_subscribers = []
+
     # Temporary properties for development
     def client(self) -> StrictRedis:
         return self._client
@@ -120,6 +123,7 @@ class LiveDataClient:
         self._client.connection_pool.disconnect()
         self._client = None
         self._pubsub = None
+        self._pubsub_thread = None
         self._subscriptions_ticks = []
         self._subscriptions_bars = []
 
@@ -155,15 +159,17 @@ class LiveDataClient:
         """
         if symbol is None:
             raise ValueError("The symbol cannot be null.")
-        if handler is None:
-            handler = self.tick_handler
         if self._client is None:
             return "No connection has been established to the live database (please connect first)."
         if not self.is_connected:
             return "No connection is established with the live database."
 
+        # If a handler is passed in, and doesn't already exist, then add to tick subscribers.
+        if handler is not None and not any(handler for h in self._tick_subscribers):
+            self._tick_subscribers.append(handler)
+
         ticks_channel = self._get_tick_channel_name(symbol, venue)
-        self._pubsub.subscribe(**{ticks_channel: handler})
+        self._pubsub.subscribe(**{ticks_channel: self._tick_handler})
 
         if not any(ticks_channel for s in self._subscriptions_ticks):
             self._subscriptions_ticks.append(ticks_channel)
@@ -222,12 +228,14 @@ class LiveDataClient:
             raise ValueError("The venue cannot be null.")
         if period <= 0:
             raise ValueError("The period must be > 0.")
-        if handler is None:
-            handler = self.bar_handler
         if self._client is None:
             return "No connection has been established to the live database (please connect first)."
         if not self.is_connected:
             return "No connection is established with the live database."
+
+        # If a handler is passed in, and doesn't already exist, then add to bar subscribers.
+        if handler is not None and not any(handler for h in self._bar_subscribers):
+            self._bar_subscribers.append(handler)
 
         bars_channel = self._get_bar_channel_name(
             symbol,
@@ -235,7 +243,7 @@ class LiveDataClient:
             period,
             resolution,
             quote_type)
-        self._pubsub.subscribe(**{bars_channel: handler})
+        self._pubsub.subscribe(**{bars_channel: self._bar_handler})
 
         if not any(bars_channel for s in self._subscriptions_bars):
             self._subscriptions_bars.append(bars_channel)
@@ -344,20 +352,30 @@ class LiveDataClient:
         return (f'{symbol}.{venue.name.lower()}-{period}-'
                 f'{resolution.name.lower()}[{quote_type.name.lower()}]')
 
-    def tick_handler(self, message) -> Tick:
+    def _tick_handler(self, message):
         """"
         Create a new tick handler object which is called whenever the client receives
         a tick on the subscribed channel.
         """
-        # Temporary print for testing purposes.
-        print(f"Received message from channel: {message['channel'].decode(UTF8)}")
-        return self._parse_tick(message['channel'].decode(UTF8), message['data'].decode(UTF8))
+        if len(self._tick_subscribers) == 0:
+            print(f"Received message from channel: {message['channel'].decode(UTF8)}")
 
-    def bar_handler(self, message) -> Bar:
+        tick = self._parse_tick(
+            message['channel'].decode(UTF8),
+            message['data'].decode(UTF8))
+
+        for subscriber in self._tick_subscribers:
+            subscriber(tick)
+
+    def _bar_handler(self, message):
         """"
         Create a new bar handler object which is called whenever the client receives
         a bar on the subscribed channel.
         """
-        # Temporary print for testing purposes.
-        print(f"Received message from channel: {message['channel'].decode(UTF8)}")
-        return self._parse_bar(message['data'].decode(UTF8))
+        if len(self._bar_subscribers) == 0:
+            print(f"Received message from channel: {message['channel'].decode(UTF8)}")
+
+        bar = self._parse_bar(message['data'].decode(UTF8))
+
+        for subscriber in self._bar_subscribers:
+            subscriber(bar)
