@@ -8,6 +8,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import unittest
+import redis
 import datetime
 import pytz
 
@@ -24,6 +25,7 @@ class LiveDataClientTests(unittest.TestCase):
     def setUp(self):
         # Arrange
         self.data_client = LiveDataClient()
+        self.redis_tester = redis.StrictRedis(host='localhost', port=6379, db=0)
 
     # Fixture Tear Down
     def tearDown(self):
@@ -260,4 +262,23 @@ class LiveDataClientTests(unittest.TestCase):
         self.assertEqual(bar.timestamp, result.timestamp)
         self.assertEqual(
             'Bar: 1.00001,1.00004,1.00003,1.00002,100000,2018-01-01 19:59:01+00:00', str(result))
+
+    def test_can_receive_ticks(self):
+        # Arrange
+        self.data_client.connect()
+        self.data_client.subscribe_tick_data('audusd', Venue.FXCM)
+
+        self.redis_tester.publish('audusd.fxcm', '1.00000,1.00001,2018-01-01T19:59:01.000Z')
+
+        tick = Tick(
+            'AUDUSD',
+            Venue.FXCM,
+            Decimal('1.00000'),
+            Decimal('1.00001'),
+            datetime.datetime(2018, 1, 1, 19, 59, 1, 0, pytz.UTC))
+
+        # Act
+
+        # Assert
+
 

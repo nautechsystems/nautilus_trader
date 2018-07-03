@@ -18,6 +18,7 @@ from inv_trader.enums import Resolution, QuoteType, Venue
 from inv_trader.objects import Tick, Bar
 
 # Private IP 10.135.55.111
+UTF8 = 'utf-8'
 
 
 class LiveDataClient:
@@ -34,14 +35,13 @@ class LiveDataClient:
         :param host: The redis host IP address (default=127.0.0.1).
         :param port: The redis host port (default=6379).
         """
+        self._thread_pool = []
         self._host = host
         self._port = port
         self._client = None
         self._pubsub = None
         self._subscriptions_ticks = []
         self._subscriptions_bars = []
-
-        self._regex_tick_delimiters = '. '
 
     # Temporary properties for development
     def client(self) -> StrictRedis:
@@ -127,15 +127,19 @@ class LiveDataClient:
     def subscribe_tick_data(
             self,
             symbol: str,
-            venue: Venue) -> str:
+            venue: Venue,
+            handler: callable=None) -> str:
         """
         Subscribe to live tick data for the given symbol and venue.
 
+        :param handler: The callable handler for subscription.
         :param symbol: The symbol for subscription.
         :param venue: The venue for subscription.
         """
         if symbol is None:
             raise ValueError("The symbol cannot be null.")
+        if handler is None:
+            handler = self.tick_handler
         if self._client is None:
             return "No connection has been established to the live database (please connect first)."
         if not self.is_connected:
@@ -143,8 +147,8 @@ class LiveDataClient:
 
         tick_channel = self._get_tick_channel(symbol, venue)
 
-        self._pubsub.subscribe(**{tick_channel: self.tick_handler})
-        #thread1 = self._pubsub.run_in_thread(sleep_time=0.001)
+        self._pubsub.subscribe(**{tick_channel: handler})
+        self._thread_pool.append(self._pubsub.run_in_thread(sleep_time=0.001))
 
         if not any(tick_channel for s in self._subscriptions_ticks):
             self._subscriptions_ticks.append(tick_channel)
@@ -185,7 +189,8 @@ class LiveDataClient:
             venue: Venue,
             period: int,
             resolution: Resolution,
-            quote_type: QuoteType) -> str:
+            quote_type: QuoteType,
+            handler: callable=None,) -> str:
         """
         Subscribe to live bar data for the given symbol and venue.
 
@@ -194,6 +199,7 @@ class LiveDataClient:
         :param period: The bar period for subscription (> 0).
         :param resolution: The bar resolution for subscription.
         :param quote_type: The bar quote type for subscription.
+        :param handler: The callable handler for subscription.
         """
         if symbol is None:
             raise ValueError("The symbol cannot be null.")
@@ -201,6 +207,8 @@ class LiveDataClient:
             raise ValueError("The venue cannot be null.")
         if period <= 0:
             raise ValueError("The period must be > 0.")
+        if handler is None:
+            handler = self.bar_handler
         if self._client is None:
             return "No connection has been established to the live database (please connect first)."
         if not self.is_connected:
@@ -213,8 +221,8 @@ class LiveDataClient:
             resolution,
             quote_type)
 
-        self._pubsub.subscribe(**{bar_channel: self.bar_handler})
-        #thread2 = self._pubsub.run_in_thread(sleep_time=0.001)
+        self._pubsub.subscribe(**{bar_channel: handler})
+        self._thread_pool.append(self._pubsub.run_in_thread(sleep_time=0.001))
 
         if not any(bar_channel for s in self._subscriptions_bars):
             self._subscriptions_bars.append(bar_channel)
@@ -328,11 +336,12 @@ class LiveDataClient:
         Create a new tick handler object which is called whenever the client receives
         a tick on the subscribed channel.
         """
-        return self._parse_tick(message['channel'], message['data'])
+
+        return self._parse_tick(message['channel'].decode(UTF8), message['data'].decode(UTF8))
 
     def bar_handler(self, message) -> Bar:
         """"
         Create a new bar handler object which is called whenever the client receives
         a bar on the subscribed channel.
         """
-        return self._parse_bar(message['data'])
+        return self._parse_bar(message['data'].decode(UTF8))
