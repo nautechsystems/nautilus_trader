@@ -10,6 +10,7 @@
 import unittest
 
 from inv_trader.data import LiveDataClient
+from inv_trader.enums import Resolution, QuoteType
 
 
 class LiveDataClientTests(unittest.TestCase):
@@ -51,7 +52,7 @@ class LiveDataClientTests(unittest.TestCase):
         result = self.data_client.is_connected
 
         # Assert
-        # self.assertFalse(result)
+        self.assertFalse(result)
 
     def test_is_connected_when_connected_returns_true(self):
         # Arrange
@@ -62,3 +63,45 @@ class LiveDataClientTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(result)
+
+    def test_can_create_correct_tick_channel(self):
+        # Arrange
+        # Act
+        result1 = self.data_client._get_tick_channel('audusd', 'fxcm')
+        result2 = self.data_client._get_tick_channel('gbpusd', 'dukascopy')
+
+        # Assert
+        self.assertTrue(result1, 'audusd.fxcm')
+        self.assertTrue(result2, 'gbpusd.fxcm')
+
+    def test_can_create_correct_bars_channel(self):
+        # Arrange
+        # Act
+        result1 = self.data_client._get_bar_channel('audusd', 'fxcm', 1, Resolution.SECOND, QuoteType.BID)
+        result2 = self.data_client._get_bar_channel('gbpusd', 'dukascopy', 5, Resolution.MINUTE, QuoteType.MID)
+
+        # Assert
+        self.assertTrue(result1, 'audusd.fxcm-1-second[bid]')
+        self.assertTrue(result2, 'gbpusd.fxcm-5-minute[mid]')
+
+    def test_can_subscribe_to_tick_data_returns_correct_message(self):
+        # Arrange
+        self.data_client.connect()
+
+        # Act
+        result = self.data_client.subscribe_tick_data('audusd', 'fxcm')
+
+        # Assert
+        self.assertEqual('Subscribed to audusd.fxcm.', result)
+
+    def test_subscribing_to_tick_data_when_already_subscribed_returns_correct_message(self):
+        # Arrange
+        self.data_client.connect()
+
+        # Act
+        self.data_client.subscribe_tick_data('audusd', 'fxcm')
+        result = self.data_client.subscribe_tick_data('audusd', 'fxcm')
+
+        # Assert
+        self.assertEqual('Already subscribed to audusd.fxcm.', result)
+
