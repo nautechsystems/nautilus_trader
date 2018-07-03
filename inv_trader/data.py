@@ -8,7 +8,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import redis
-import re
 import dateutil.parser
 
 from decimal import Decimal
@@ -272,20 +271,45 @@ class LiveDataClient:
         """
         Parse a Tick object from the given UTF-8 string.
 
+        :param tick_string: The channel the tick was received on.
         :param tick_string: The tick string.
         :return: The parsed tick object.
         """
         split_channel = tick_channel.split('.')
         split_tick = tick_string.split(',')
 
-        print(split_channel)
-        print(split_tick)
-
         return Tick(split_channel[0],
                     Venue[str(split_channel[1].upper())],
                     Decimal(split_tick[0]),
                     Decimal(split_tick[1]),
                     dateutil.parser.parse(split_tick[2]))
+
+    @staticmethod
+    def _parse_bar(
+            bar_channel: str,
+            bar_string: str) -> Bar:
+        """
+        Parse a Bar object from the given UTF-8 string.
+
+        :param bar_channel: The channel the bar was received on.
+        :param bar_string: The bar string.
+        :return: The parsed bar object.
+        """
+        split_channel = bar_channel.split('.')
+        split_channel2 = split_channel[1].split('-')
+        split_bar = bar_string.split(',')
+
+        print(split_channel)
+        print(split_bar)
+
+        return Bar(split_channel[0],
+                   Venue[str(split_channel2[0].upper())],
+                   Decimal(split_bar[0]),
+                   Decimal(split_bar[1]),
+                   Decimal(split_bar[2]),
+                   Decimal(split_bar[3]),
+                   long(split_bar[4]),
+                   dateutil.parser.parse(split_bar[2]))
 
     @staticmethod
     def _get_tick_channel(

@@ -92,7 +92,7 @@ class Bar:
                  high_price: Decimal,
                  low_price: Decimal,
                  close_price: Decimal,
-                 volume: int,
+                 volume: long,
                  timestamp: datetime.datetime):
         """
         Initializes a new instance of the Bar class.
@@ -133,7 +133,7 @@ class Bar:
         return self._close
 
     @property
-    def volume(self) -> int:
+    def volume(self) -> long:
         """
         :return: The bars volume.
         """
