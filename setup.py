@@ -52,6 +52,7 @@ setup(
     packages=setuptools.find_packages(),
     license='Invariance Software License',
     requires=['cython',
+              'iso8601',
               'pytz',
               'redis',
               'msgpack',

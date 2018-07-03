@@ -286,8 +286,36 @@ class LiveDataClientTests(unittest.TestCase):
 
     def test_tick_handler_produces_ticks(self):
         # Arrange
-        self.data_client.connect()
+        tick = Tick(
+            'AUDUSD',
+            Venue.FXCM,
+            Decimal('1.00000'),
+            Decimal('1.00001'),
+            datetime.datetime(2018, 1, 1, 19, 59, 1, 0, pytz.UTC))
 
         # Act
+        parsed_tick = self.data_client.tick_handler(
+            {'channel': b'audusd.fxcm', 'data': b'1.00000,1.00001,2018-01-01T19:59:01.000Z'})
 
         # Assert
+        self.assertEqual(str(tick), str(parsed_tick))
+
+    def test_bar_handler_produces_bars(self):
+        # Arrange
+        bar = Bar(
+            Decimal('1.00001'),
+            Decimal('1.00004'),
+            Decimal('1.00003'),
+            Decimal('1.00002'),
+            100000,
+            datetime.datetime(2018, 1, 1, 19, 59, 1, 0, pytz.UTC))
+
+        # Act
+        parsed_bar = self.data_client.bar_handler(
+            {'channel': b'audusd.fxcm-1-second[bid]',
+             'data': b'1.00001,1.00004,1.00003,1.00002,100000,2018-01-01 19:59:01+00:00'})
+
+        # Assert
+        self.assertEqual(str(bar), str(parsed_bar))
+
+

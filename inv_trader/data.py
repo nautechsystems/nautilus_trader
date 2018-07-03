@@ -8,7 +8,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import redis
-import datetime
 import iso8601
 
 from decimal import Decimal
@@ -165,16 +164,16 @@ class LiveDataClient:
         if not self.is_connected:
             return "No connection is established with the live database."
 
-        tick_channel = self._get_tick_channel_name(symbol, venue)
-        ticks_thread = Thread(target=self._pubsub.subscribe(**{tick_channel: handler}))
-        ticks_thread.start()
+        ticks_channel = self._get_tick_channel_name(symbol, venue)
+        ticks_thread = Thread(target=self._pubsub.subscribe(**{ticks_channel: handler}))
+        ticks_thread.run()
         self._thread_pool.append(ticks_thread)
-
-        if not any(tick_channel for s in self._subscriptions_ticks):
-            self._subscriptions_ticks.append(tick_channel)
+        print(ticks_thread)
+        if not any(ticks_channel for s in self._subscriptions_ticks):
+            self._subscriptions_ticks.append(ticks_channel)
             self._subscriptions_ticks.sort()
-            return f"Subscribed to {tick_channel}."
-        return f"Already subscribed to {tick_channel}."
+            return f"Subscribed to {ticks_channel}."
+        return f"Already subscribed to {ticks_channel}."
 
     def unsubscribe_tick_data(
             self,
@@ -234,21 +233,21 @@ class LiveDataClient:
         if not self.is_connected:
             return "No connection is established with the live database."
 
-        bar_channel = self._get_bar_channel_name(
+        bars_channel = self._get_bar_channel_name(
             symbol,
             venue,
             period,
             resolution,
             quote_type)
-        bars_thread = Thread(target=self._pubsub.subscribe(**{bar_channel: handler}))
+        bars_thread = Thread(target=self._pubsub.subscribe(**{bars_channel: handler}))
         bars_thread.start()
         self._thread_pool.append(bars_thread)
 
-        if not any(bar_channel for s in self._subscriptions_bars):
-            self._subscriptions_bars.append(bar_channel)
+        if not any(bars_channel for s in self._subscriptions_bars):
+            self._subscriptions_bars.append(bars_channel)
             self._subscriptions_bars.sort()
-            return f"Subscribed to {bar_channel}."
-        return f"Already subscribed to {bar_channel}."
+            return f"Subscribed to {bars_channel}."
+        return f"Already subscribed to {bars_channel}."
 
     def unsubscribe_bar_data(
             self,
