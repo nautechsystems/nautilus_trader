@@ -30,6 +30,7 @@ class LiveDataClientTests(unittest.TestCase):
     # Fixture Tear Down
     def tearDown(self):
         self.data_client.disconnect()
+        print(self.data_client.dispose())
 
     def test_can_connect_to_live_db(self):
         # Act

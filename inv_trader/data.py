@@ -9,6 +9,7 @@
 
 import redis
 import dateutil.parser
+import multiprocessing
 
 from decimal import Decimal
 from redis import ConnectionError, StrictRedis
@@ -124,6 +125,24 @@ class LiveDataClient:
         disconnect_message.append(f"Disconnected from live database at {self._host}:{self._port}.")
         return disconnect_message
 
+    def dispose(self) -> List[str]:
+        """
+        Cleanly disposes of the live data client. The disconnect method should
+        be called prior to disposing the client, however if the client is still
+        connected to the live database then it will first disconnect then stop
+        all threads in the thread pool.
+        """
+        dispose_message = []
+        if self.is_connected:
+            dispose_message.append(self.disconnect())
+
+        for thread in self._thread_pool:
+            dispose_message.append(f"Stopping thread {thread}.")
+            thread.terminate()
+
+        dispose_message.append(f"Disposed of live data client.")
+        return dispose_message
+
     def subscribe_tick_data(
             self,
             symbol: str,
@@ -146,9 +165,11 @@ class LiveDataClient:
             return "No connection is established with the live database."
 
         tick_channel = self._get_tick_channel(symbol, venue)
+        ticks_thread = multiprocessing.Process(
+            target=self._pubsub.subscribe(**{tick_channel: handler}))
 
-        self._pubsub.subscribe(**{tick_channel: handler})
-        self._thread_pool.append(self._pubsub.run_in_thread(sleep_time=0.001))
+        self._thread_pool.append(ticks_thread)
+        ticks_thread.start()
 
         if not any(tick_channel for s in self._subscriptions_ticks):
             self._subscriptions_ticks.append(tick_channel)
@@ -221,8 +242,11 @@ class LiveDataClient:
             resolution,
             quote_type)
 
-        self._pubsub.subscribe(**{bar_channel: handler})
-        self._thread_pool.append(self._pubsub.run_in_thread(sleep_time=0.001))
+        bars_thread = multiprocessing.Process(
+            target=self._pubsub.subscribe(**{bar_channel: handler}))
+
+        self._thread_pool.append(bars_thread)
+        bars_thread.start()
 
         if not any(bar_channel for s in self._subscriptions_bars):
             self._subscriptions_bars.append(bar_channel)
