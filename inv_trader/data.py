@@ -9,12 +9,10 @@
 
 import redis
 
-from redis import Redis, StrictRedis
-from redis import ConnectionError
+from redis import ConnectionError, StrictRedis
 from typing import List
 
-from inv_trader.enums import Resolution
-from inv_trader.enums import QuoteType
+from inv_trader.enums import Resolution, QuoteType, Venue
 
 # Private IP 10.135.55.111
 
@@ -41,7 +39,7 @@ class LiveDataClient:
         self._subscriptions_bars = []
 
     # Temporary properties for development
-    def client(self) -> Redis:
+    def client(self) -> StrictRedis:
         return self._client
 
     @property
@@ -84,7 +82,7 @@ class LiveDataClient:
         """
         Connect to the live database and create a local pub/sub server.
         """
-        self._client = redis.Redis(host=self._host, port=self._port, db=0)
+        self._client = redis.StrictRedis(host=self._host, port=self._port, db=0)
         self._pubsub = self._client.pubsub()
 
         return f"Connected to live database at {self._host}:{self._port}."
@@ -124,7 +122,7 @@ class LiveDataClient:
     def subscribe_tick_data(
             self,
             symbol: str,
-            venue: str) -> str:
+            venue: Venue) -> str:
         """
         Subscribe to live tick data for the given symbol and venue.
 
@@ -133,8 +131,6 @@ class LiveDataClient:
         """
         if symbol is None:
             raise ValueError("The symbol cannot be null.")
-        if venue is None:
-            raise ValueError("The venue cannot be null.")
         if self._client is None:
             return "No connection has been established to the live database (please connect first)."
         if not self.is_connected:
@@ -154,7 +150,7 @@ class LiveDataClient:
     def unsubscribe_tick_data(
             self,
             symbol: str,
-            venue: str) -> str:
+            venue: Venue) -> str:
         """
         Unsubscribes from live tick data for the given symbol and venue.
 
@@ -163,8 +159,6 @@ class LiveDataClient:
         """
         if symbol is None:
             raise ValueError("The symbol cannot be null.")
-        if venue is None:
-            raise ValueError("The venue cannot be null.")
         if self._client is None:
             return "No connection has been established to the live database (please connect first)."
         if not self.is_connected:
@@ -183,7 +177,7 @@ class LiveDataClient:
     def subscribe_bar_data(
             self,
             symbol: str,
-            venue: str,
+            venue: Venue,
             period: int,
             resolution: Resolution,
             quote_type: QuoteType) -> str:
@@ -226,7 +220,7 @@ class LiveDataClient:
     def unsubscribe_bar_data(
             self,
             symbol: str,
-            venue: str,
+            venue: Venue,
             period: int,
             resolution: Resolution,
             quote_type: QuoteType) -> str:
@@ -268,23 +262,23 @@ class LiveDataClient:
     @staticmethod
     def _get_tick_channel(
             symbol: str,
-            venue: str):
+            venue: Venue) -> str:
         """
         Returns the tick channel name from the given parameters.
         """
-        return f'{symbol}.{venue}'
+        return f'{symbol}.{venue.name.lower()}'
 
     @staticmethod
     def _get_bar_channel(
             symbol: str,
-            venue: str,
+            venue: Venue,
             period: int,
             resolution: Resolution,
             quote_type: QuoteType) -> str:
         """
         Returns the bar channel name from the given parameters.
         """
-        return f'{symbol}.{venue}-{period}-{str(resolution).lower()}[{str(quote_type).lower()}]'
+        return f'{symbol}.{venue.name.lower()}-{period}-{resolution.name.lower()}[{quote_type.name.lower()}]'
 
     def hacked_tick_message_printer(self, message):
         print(f"{message['channel']}: {message['data']}", end='\r')

@@ -10,6 +10,11 @@
 from enum import Enum
 
 
+class Venue(Enum):
+    DUKASCOPY = 0,
+    FXCM = 1
+
+
 class Resolution(Enum):
     TICK = 0,
     SECOND = 1,
