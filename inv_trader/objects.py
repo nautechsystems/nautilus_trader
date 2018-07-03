@@ -74,7 +74,8 @@ class Tick:
         """
         :return: The str() string representation of the tick.
         """
-        return f"Tick: {self._symbol}.{self._venue.name},{self._bid},{self._ask},{self._timestamp}"
+        return (f"Tick: {self._symbol}.{self._venue.name},"
+                f"{self._bid},{self._ask},{self._timestamp.isoformat()}")
 
     def __repr__(self) -> str:
         """
@@ -151,8 +152,8 @@ class Bar:
         """
         :return: The str() string representation of the bar.
         """
-        return f"Bar: {self._open},{self._high},{self._low},{self._close}," \
-               f"{self._volume},{self._timestamp}"
+        return (f"Bar: {self._open},{self._high},{self._low},{self._close},"
+                f"{self._volume},{self._timestamp.isoformat()}")
 
     def __repr__(self) -> str:
         """
