@@ -17,6 +17,7 @@ from decimal import Decimal
 from inv_trader.data import LiveDataClient
 from inv_trader.objects import Tick, Bar
 from inv_trader.enums import Venue, Resolution, QuoteType
+from tests.object_storer import ObjectStorer
 
 
 class LiveDataClientTests(unittest.TestCase):
@@ -266,10 +267,9 @@ class LiveDataClientTests(unittest.TestCase):
 
     def test_can_receive_ticks(self):
         # Arrange
+        object_store = ObjectStorer()
         self.data_client.connect()
-        self.data_client.subscribe_tick_data('audusd', Venue.FXCM)
-
-        self.redis_tester.publish('audusd.fxcm', '1.00000,1.00001,2018-01-01T19:59:01.000Z')
+        self.data_client.subscribe_tick_data('audusd', Venue.FXCM, object_store.store)
 
         tick = Tick(
             'AUDUSD',
@@ -279,7 +279,9 @@ class LiveDataClientTests(unittest.TestCase):
             datetime.datetime(2018, 1, 1, 19, 59, 1, 0, pytz.UTC))
 
         # Act
+        self.redis_tester.publish('audusd.fxcm', '1.00000,1.00001,2018-01-01T19:59:01.000Z')
 
         # Assert
+        self.assertEqual(tick, object_store.get_store[0])
 
 

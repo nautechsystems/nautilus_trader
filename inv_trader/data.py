@@ -360,7 +360,6 @@ class LiveDataClient:
         Create a new tick handler object which is called whenever the client receives
         a tick on the subscribed channel.
         """
-
         return self._parse_tick(message['channel'].decode(UTF8), message['data'].decode(UTF8))
 
     def bar_handler(self, message) -> Bar:
@@ -369,3 +368,5 @@ class LiveDataClient:
         a bar on the subscribed channel.
         """
         return self._parse_bar(message['data'].decode(UTF8))
+
+
