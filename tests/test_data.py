@@ -168,7 +168,8 @@ class LiveDataClientTests(unittest.TestCase):
         # Assert
         self.assertEqual('Unsubscribed from audusd.fxcm.', result)
         self.assertEqual("[]", str(tick_channels))
-        # self.assertFalse(any('audusd.fxcm' for channels in all_channels))
+        print(all_channels)
+        #self.assertFalse(any('audusd.fxcm' for channels in all_channels))
 
     def test_unsubscribing_from_tick_data_when_never_subscribed_returns_correct_message(self):
         # Arrange
@@ -207,7 +208,7 @@ class LiveDataClientTests(unittest.TestCase):
         # Assert
         self.assertEqual('Already subscribed to audusd.fxcm-1-second[bid].', result)
         self.assertEqual("['audusd.fxcm-1-second[bid]']", str(bar_channels))
-        self.assertTrue(any('audusd.fxcm' for channels in all_channels))
+        self.assertTrue(any('audusd.fxcm-1-second[bid]' for channels in all_channels))
 
     def test_can_unsubscribe_from_bar_data_returns_correct_message(self):
         # Arrange
@@ -236,7 +237,7 @@ class LiveDataClientTests(unittest.TestCase):
         # Assert
         self.assertEqual('Already unsubscribed from audusd.fxcm-1-second[bid].', result)
         self.assertEqual("[]", str(bar_channels))
-        # self.assertFalse(any('audusd.fxcm' for channels in all_channels))
+        #self.assertFalse(any('audusd.fxcm' in channel for channel in all_channels))
 
     def test_disconnecting_when_subscribed_to_multiple_channels_then_unsubscribes(self):
         # Arrange
@@ -250,7 +251,7 @@ class LiveDataClientTests(unittest.TestCase):
         result = self.data_client.disconnect()
 
         # Assert
-        self.assertEqual("Unsubscribed from tick_data ['audusd.fxcm'].", result[0])
+        self.assertEqual("Unsubscribed from tick_data ['audusd.fxcm', 'eurjpy.fxcm', 'gbpusd.fxcm', 'usdcad.fxcm'].", result[0])
 
     def test_can_parse_ticks(self):
         # Arrange
@@ -298,7 +299,7 @@ class LiveDataClientTests(unittest.TestCase):
         self.assertEqual(
             'Bar: 1.00001,1.00004,1.00003,1.00002,100000,2018-01-01 19:59:01+00:00', str(result))
 
-    def test_tick_handler_produces_ticks(self):
+    def test_tick_handler_with_no_subscribers_prints(self):
         # Arrange
         tick = Tick(
             'AUDUSD',
@@ -314,7 +315,7 @@ class LiveDataClientTests(unittest.TestCase):
         # Assert
         # Should print to console.
 
-    def test_bar_handler_produces_bars(self):
+    def test_bar_handler_with_no_subscribers_prints(self):
         # Arrange
         bar = Bar(
             Decimal('1.00001'),
@@ -346,12 +347,12 @@ class LiveDataClientTests(unittest.TestCase):
             datetime.datetime(2018, 1, 1, 19, 59, 1, 0, pytz.UTC))
 
         # Act
-        self.redis_tester.publish('audusd.fxcm', '1.00000,1.00001,2018-01-01T19:59:01.000Z')
+        self.redis_tester.publish(
+            'audusd.fxcm',
+            '1.00000,1.00001,2018-01-01T19:59:01.000Z')
 
         # Assert
-        time.sleep(0.3)
-        print(log)
-        print(storer.get_store)
+        time.sleep(0.1)  # Allow threads to work.
         self.assertEqual(str(tick), str(storer.get_store[0]))
 
     def test_can_receive_many_ticks(self):
@@ -370,6 +371,38 @@ class LiveDataClientTests(unittest.TestCase):
         # Assert
         time.sleep(0.1)  # Allow threads to work.
         self.assertEqual(5, storer.count)
+        self.assertEqual('Tick: AUDUSD.FXCM,1.00000,1.00005,2018-01-01 20:00:05+00:00', str(storer.get_store[4]))
+
+    def test_can_receive_ticks_from_multiple_subscribers(self):
+        # Arrange
+        storer = ObjectStorer()
+        self.data_client.connect()
+        self.data_client.subscribe_tick_data('audusd', Venue.FXCM, storer.store)
+        self.data_client.subscribe_tick_data('audusd', Venue.FXCM, storer.store)
+        self.data_client.subscribe_tick_data('gbpusd', Venue.FXCM, storer.store)
+        self.data_client.subscribe_tick_data('eurusd', Venue.FXCM, storer.store)
+
+        # Act
+        self.redis_tester.publish('audusd.fxcm', '1.00000,1.00001,2018-01-01T19:59:01.000Z')
+        self.redis_tester.publish('audusd.fxcm', '1.00000,1.00002,2018-01-01T20:00:02.000Z')
+        self.redis_tester.publish('audusd.fxcm', '1.00000,1.00003,2018-01-01T20:00:03.000Z')
+        self.redis_tester.publish('audusd.fxcm', '1.00000,1.00004,2018-01-01T20:00:04.000Z')
+        self.redis_tester.publish('audusd.fxcm', '1.00000,1.00005,2018-01-01T20:00:05.000Z')
+        self.redis_tester.publish('gbpusd.fxcm', '1.00000,1.00001,2018-01-01T19:59:01.000Z')
+        self.redis_tester.publish('gbpusd.fxcm', '1.00000,1.00002,2018-01-01T20:00:02.000Z')
+        self.redis_tester.publish('gbpusd.fxcm', '1.00000,1.00003,2018-01-01T20:00:03.000Z')
+        self.redis_tester.publish('gbpusd.fxcm', '1.00000,1.00004,2018-01-01T20:00:04.000Z')
+        self.redis_tester.publish('gbpusd.fxcm', '1.00000,1.00005,2018-01-01T20:00:05.000Z')
+        self.redis_tester.publish('eurusd.fxcm', '1.00000,1.00001,2018-01-01T19:59:01.000Z')
+        self.redis_tester.publish('eurusd.fxcm', '1.00000,1.00002,2018-01-01T20:00:02.000Z')
+        self.redis_tester.publish('eurusd.fxcm', '1.00000,1.00003,2018-01-01T20:00:03.000Z')
+        self.redis_tester.publish('eurusd.fxcm', '1.00000,1.00004,2018-01-01T20:00:04.000Z')
+        self.redis_tester.publish('eurusd.fxcm', '1.00000,1.00005,2018-01-01T20:00:05.000Z')
+
+        # Assert
+        time.sleep(0.1)  # Allow threads to work.
+        self.assertEqual(15, storer.count)
+        self.assertEqual('Tick: EURUSD.FXCM,1.00000,1.00005,2018-01-01 20:00:05+00:00', str(storer.get_store[14]))
 
     def test_can_receive_bar(self):
         # Arrange
@@ -386,7 +419,9 @@ class LiveDataClientTests(unittest.TestCase):
             datetime.datetime(2018, 1, 1, 19, 59, 1, 0, pytz.UTC))
 
         # Act
-        self.redis_tester.publish('audusd.fxcm-1-second[bid]', '1.00001,1.00004,1.00003,1.00002,100000,2018-01-01 19:59:01+00:00')
+        self.redis_tester.publish(
+            'audusd.fxcm-1-second[bid]',
+            '1.00001,1.00004,1.00003,1.00002,100000,2018-01-01 19:59:01+00:00')
 
         # Assert
         time.sleep(0.1)  # Allow threads to work.
