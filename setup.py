@@ -46,13 +46,14 @@ extensions = [make_extension(name) for name in scan_dir(INV_TRADER)]
 
 setup(
     name=INV_TRADER,
-    version='0.1',
+    version='0.2',
     author='Invariance',
     description='The python trading client for Invariance.',
     packages=setuptools.find_packages(),
     license='Invariance Software License',
     requires=['cython',
               'dateutil',
+              'pytz',
               'redis',
               'msgpack',
               'PyPubSub'],

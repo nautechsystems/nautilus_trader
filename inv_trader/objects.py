@@ -92,7 +92,7 @@ class Bar:
                  high_price: Decimal,
                  low_price: Decimal,
                  close_price: Decimal,
-                 volume: long,
+                 volume: int,
                  timestamp: datetime.datetime):
         """
         Initializes a new instance of the Bar class.
@@ -133,7 +133,7 @@ class Bar:
         return self._close
 
     @property
-    def volume(self) -> long:
+    def volume(self) -> int:
         """
         :return: The bars volume.
         """
@@ -150,7 +150,7 @@ class Bar:
         """
         :return: The str() string representation of the bar.
         """
-        return f"Bar:{self._open},{self._high},{self._low},{self._close}," \
+        return f"Bar: {self._open},{self._high},{self._low},{self._close}," \
                f"{self._volume},{self._timestamp}"
 
     def __repr__(self) -> str:
