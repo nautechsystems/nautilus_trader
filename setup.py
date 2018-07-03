@@ -52,6 +52,7 @@ setup(
     packages=setuptools.find_packages(),
     license='Invariance Software License',
     requires=['cython',
+              'dateutil',
               'redis',
               'msgpack',
               'PyPubSub'],
