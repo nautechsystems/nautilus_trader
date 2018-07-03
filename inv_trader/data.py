@@ -8,7 +8,8 @@
 # -------------------------------------------------------------------------------------------------
 
 import redis
-import dateutil.parser
+import datetime
+import iso8601
 
 from decimal import Decimal
 from threading import Thread
@@ -164,7 +165,7 @@ class LiveDataClient:
         if not self.is_connected:
             return "No connection is established with the live database."
 
-        tick_channel = self._get_tick_channel(symbol, venue)
+        tick_channel = self._get_tick_channel_name(symbol, venue)
         ticks_thread = Thread(target=self._pubsub.subscribe(**{tick_channel: handler}))
         ticks_thread.start()
         self._thread_pool.append(ticks_thread)
@@ -192,7 +193,7 @@ class LiveDataClient:
         if not self.is_connected:
             return "No connection is established with the live database."
 
-        tick_channel = self._get_tick_channel(symbol, venue)
+        tick_channel = self._get_tick_channel_name(symbol, venue)
 
         self._pubsub.unsubscribe(tick_channel)
 
@@ -233,7 +234,7 @@ class LiveDataClient:
         if not self.is_connected:
             return "No connection is established with the live database."
 
-        bar_channel = self._get_bar_channel(
+        bar_channel = self._get_bar_channel_name(
             symbol,
             venue,
             period,
@@ -276,7 +277,7 @@ class LiveDataClient:
         if not self.is_connected:
             return "No connection is established with the live database."
 
-        bar_channel = self._get_bar_channel(
+        bar_channel = self._get_bar_channel_name(
             symbol,
             venue,
             period,
@@ -309,7 +310,7 @@ class LiveDataClient:
                     Venue[str(split_channel[1].upper())],
                     Decimal(split_tick[0]),
                     Decimal(split_tick[1]),
-                    dateutil.parser.parse(split_tick[2]))
+                    iso8601.parse_date(split_tick[2]))
 
     @staticmethod
     def _parse_bar(bar_string: str) -> Bar:
@@ -326,10 +327,10 @@ class LiveDataClient:
                    Decimal(split_bar[2]),
                    Decimal(split_bar[3]),
                    int(split_bar[4]),
-                   dateutil.parser.parse(split_bar[5]))
+                   iso8601.parse_date(split_bar[5]))
 
     @staticmethod
-    def _get_tick_channel(
+    def _get_tick_channel_name(
             symbol: str,
             venue: Venue) -> str:
         """
@@ -338,7 +339,7 @@ class LiveDataClient:
         return f'{symbol}.{venue.name.lower()}'
 
     @staticmethod
-    def _get_bar_channel(
+    def _get_bar_channel_name(
             symbol: str,
             venue: Venue,
             period: int,

@@ -11,7 +11,6 @@ import unittest
 import redis
 import datetime
 import pytz
-import time
 
 from decimal import Decimal
 
@@ -77,8 +76,8 @@ class LiveDataClientTests(unittest.TestCase):
     def test_can_create_correct_tick_channel(self):
         # Arrange
         # Act
-        result1 = self.data_client._get_tick_channel('audusd', Venue.FXCM)
-        result2 = self.data_client._get_tick_channel('gbpusd', Venue.DUKASCOPY)
+        result1 = self.data_client._get_tick_channel_name('audusd', Venue.FXCM)
+        result2 = self.data_client._get_tick_channel_name('gbpusd', Venue.DUKASCOPY)
 
         # Assert
         self.assertTrue(result1, 'audusd.fxcm')
@@ -87,8 +86,8 @@ class LiveDataClientTests(unittest.TestCase):
     def test_can_create_correct_bars_channel(self):
         # Arrange
         # Act
-        result1 = self.data_client._get_bar_channel('audusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.BID)
-        result2 = self.data_client._get_bar_channel('gbpusd', Venue.DUKASCOPY, 5, Resolution.MINUTE, QuoteType.MID)
+        result1 = self.data_client._get_bar_channel_name('audusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.BID)
+        result2 = self.data_client._get_bar_channel_name('gbpusd', Venue.DUKASCOPY, 5, Resolution.MINUTE, QuoteType.MID)
 
         # Assert
         self.assertTrue(result1, 'audusd.fxcm-1-second[bid]')
@@ -280,7 +279,6 @@ class LiveDataClientTests(unittest.TestCase):
             datetime.datetime(2018, 1, 1, 19, 59, 1, 0, pytz.UTC))
 
         # Act
-        time.sleep(1)
         self.redis_tester.publish('audusd.fxcm', '1.00000,1.00001,2018-01-01T19:59:01.000Z')
 
         # Assert
