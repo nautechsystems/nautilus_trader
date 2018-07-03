@@ -17,7 +17,6 @@ from decimal import Decimal
 from inv_trader.data import LiveDataClient
 from inv_trader.objects import Tick, Bar
 from inv_trader.enums import Venue, Resolution, QuoteType
-from tests.object_storer import ObjectStorer
 
 
 class LiveDataClientTests(unittest.TestCase):
@@ -30,8 +29,8 @@ class LiveDataClientTests(unittest.TestCase):
 
     # Fixture Tear Down
     def tearDown(self):
-        #self.data_client.disconnect()
-        print(self.data_client.dispose())
+        self.data_client.disconnect()
+        self.data_client.dispose()
 
     def test_can_connect_to_live_db(self):
         # Act
@@ -265,25 +264,6 @@ class LiveDataClientTests(unittest.TestCase):
         self.assertEqual(
             'Bar: 1.00001,1.00004,1.00003,1.00002,100000,2018-01-01 19:59:01+00:00', str(result))
 
-    def test_can_receive_ticks(self):
-        # Arrange
-        object_store = ObjectStorer()
-        self.data_client.connect()
-        self.data_client.subscribe_tick_data('audusd', Venue.FXCM)
-
-        tick = Tick(
-            'AUDUSD',
-            Venue.FXCM,
-            Decimal('1.00000'),
-            Decimal('1.00001'),
-            datetime.datetime(2018, 1, 1, 19, 59, 1, 0, pytz.UTC))
-
-        # Act
-        self.redis_tester.publish('audusd.fxcm', '1.00000,1.00001,2018-01-01T19:59:01.000Z')
-
-        # Assert
-        # self.assertEqual(tick, object_store.get_store[0])
-
     def test_tick_handler_produces_ticks(self):
         # Arrange
         tick = Tick(
@@ -318,4 +298,20 @@ class LiveDataClientTests(unittest.TestCase):
         # Assert
         self.assertEqual(str(bar), str(parsed_bar))
 
+    def test_can_receive_ticks(self):
+        # Arrange
+        self.data_client.connect()
+        self.data_client.subscribe_tick_data('audusd', Venue.FXCM)
 
+        tick = Tick(
+            'AUDUSD',
+            Venue.FXCM,
+            Decimal('1.00000'),
+            Decimal('1.00001'),
+            datetime.datetime(2018, 1, 1, 19, 59, 1, 0, pytz.UTC))
+
+        # Act
+        self.redis_tester.publish('audusd.fxcm', '1.00000,1.00001,2018-01-01T19:59:01.000Z')
+
+        # Assert
+        # self.assertEqual(tick, object_store.get_store[0])

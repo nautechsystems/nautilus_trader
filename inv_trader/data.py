@@ -11,7 +11,6 @@ import redis
 import iso8601
 
 from decimal import Decimal
-from threading import Thread
 from redis import ConnectionError, StrictRedis
 from typing import List
 
@@ -41,6 +40,7 @@ class LiveDataClient:
         self._port = port
         self._client = None
         self._pubsub = None
+        self._pubsub_thread = None
         self._subscriptions_ticks = []
         self._subscriptions_bars = []
 
@@ -90,6 +90,7 @@ class LiveDataClient:
         """
         self._client = redis.StrictRedis(host=self._host, port=self._port, db=0)
         self._pubsub = self._client.pubsub()
+        self._pubsub_thread = self._pubsub.run_in_thread(0.001)
 
         return f"Connected to live database at {self._host}:{self._port}."
 
@@ -136,10 +137,7 @@ class LiveDataClient:
         if self.is_connected:
             dispose_message += self.disconnect()
 
-        for thread in self._thread_pool:
-            dispose_message.append(f"Stopping thread {thread}.")
-           #thread.terminate()
-
+        dispose_message.append(f"Stopped PubSub thread{self._pubsub_thread}.")
         dispose_message.append(f"Disposed of live data client.")
         return dispose_message
 
@@ -165,10 +163,8 @@ class LiveDataClient:
             return "No connection is established with the live database."
 
         ticks_channel = self._get_tick_channel_name(symbol, venue)
-        ticks_thread = Thread(target=self._pubsub.subscribe(**{ticks_channel: handler}))
-        ticks_thread.run()
-        self._thread_pool.append(ticks_thread)
-        print(ticks_thread)
+        self._pubsub.subscribe(**{ticks_channel: handler})
+
         if not any(ticks_channel for s in self._subscriptions_ticks):
             self._subscriptions_ticks.append(ticks_channel)
             self._subscriptions_ticks.sort()
@@ -239,9 +235,7 @@ class LiveDataClient:
             period,
             resolution,
             quote_type)
-        bars_thread = Thread(target=self._pubsub.subscribe(**{bars_channel: handler}))
-        bars_thread.start()
-        self._thread_pool.append(bars_thread)
+        self._pubsub.subscribe(**{bars_channel: handler})
 
         if not any(bars_channel for s in self._subscriptions_bars):
             self._subscriptions_bars.append(bars_channel)
