@@ -209,3 +209,14 @@ class LiveDataClientTests(unittest.TestCase):
 
         # Assert
         self.assertEqual("Unsubscribed from tick_data ['audusd.fxcm'].", result[0])
+
+    def test_can_parse_ticks(self):
+        # Arrange
+        # Act
+        result1 = self.data_client._parse_tick('audusd.fxcm', '1.00000,1.00001,2018-01-01T19:59:01.000Z')
+        result2 = self.data_client._parse_tick('gbpusd.fxcm', '1.50000,1.55555,2007-01-01T01:00:01.000Z')
+
+        # Assert
+        self.assertEqual('Tick: AUDUSD.FXCM,1.00000,1.00001,2018-01-01 19:59:01+00:00', str(result1))
+        self.assertEqual('Tick: GBPUSD.FXCM,1.50000,1.55555,2007-01-01 01:00:01+00:00', str(result2))
+

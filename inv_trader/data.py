@@ -8,11 +8,15 @@
 # -------------------------------------------------------------------------------------------------
 
 import redis
+import re
+import dateutil.parser
 
+from decimal import Decimal
 from redis import ConnectionError, StrictRedis
 from typing import List
 
 from inv_trader.enums import Resolution, QuoteType, Venue
+from inv_trader.objects import Tick, Bar
 
 # Private IP 10.135.55.111
 
@@ -37,6 +41,8 @@ class LiveDataClient:
         self._pubsub = None
         self._subscriptions_ticks = []
         self._subscriptions_bars = []
+
+        self._regex_tick_delimiters = '. '
 
     # Temporary properties for development
     def client(self) -> StrictRedis:
@@ -258,6 +264,28 @@ class LiveDataClient:
             self._subscriptions_bars.sort()
             return f"Unsubscribed from {bar_channel}."
         return f"Already unsubscribed from {bar_channel}."
+
+    @staticmethod
+    def _parse_tick(
+            tick_channel: str,
+            tick_string: str) -> Tick:
+        """
+        Parse a Tick object from the given UTF-8 string.
+
+        :param tick_string: The tick string.
+        :return: The parsed tick object.
+        """
+        split_channel = tick_channel.split('.')
+        split_tick = tick_string.split(',')
+
+        print(split_channel)
+        print(split_tick)
+
+        return Tick(split_channel[0],
+                    Venue[str(split_channel[1].upper())],
+                    Decimal(split_tick[0]),
+                    Decimal(split_tick[1]),
+                    dateutil.parser.parse(split_tick[2]))
 
     @staticmethod
     def _get_tick_channel(

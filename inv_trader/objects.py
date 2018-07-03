@@ -8,7 +8,10 @@
 # -------------------------------------------------------------------------------------------------
 
 import datetime
+
 from decimal import Decimal
+
+from inv_trader.enums import Venue
 
 
 class Tick:
@@ -18,14 +21,14 @@ class Tick:
 
     def __init__(self,
                  symbol: str,
-                 venue: str,
+                 venue: Venue,
                  bid: Decimal,
                  ask: Decimal,
                  timestamp: datetime.datetime):
         """
         Initializes a new instance of the Tick class.
         """
-        self._symbol = symbol
+        self._symbol = symbol.upper()
         self._venue = venue
         self._bid = bid
         self._ask = ask
@@ -39,7 +42,7 @@ class Tick:
         return self._symbol
 
     @property
-    def venue(self) -> str:
+    def venue(self) -> Venue:
         """
         :return: The ticks venue.
         """
@@ -70,7 +73,7 @@ class Tick:
         """
         :return: The str() string representation of the tick.
         """
-        return f"Tick:{self._symbol}.{self._venue},{self._bid},{self._ask},{self._timestamp}"
+        return f"Tick: {self._symbol}.{self._venue.name},{self._bid},{self._ask},{self._timestamp}"
 
     def __repr__(self) -> str:
         """
