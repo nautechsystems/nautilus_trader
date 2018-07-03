@@ -28,8 +28,8 @@ class LiveDataClient:
     """
 
     def __init__(self,
-                 host: str = 'localhost',
-                 port: int = 6379):
+                 host: str='localhost',
+                 port: int=6379):
         """
         Initializes a new instance of the LiveDataClient class.
 
@@ -67,11 +67,15 @@ class LiveDataClient:
         return True
 
     @property
-    def subscriptions_all(self) -> dict:
+    def subscriptions_all(self) -> List[str]:
         """
-        :return: All subscribed channels as a dictionary direct from the Redis pub/sub.
+        :return: All subscribed channels from the Redis PubSub object.
         """
-        return self._client.pubsub_channels()
+        subscriptions = []
+        for channel in self._client.pubsub_channels():
+            subscriptions.append(channel.decode(UTF8))
+
+        return subscriptions
 
     @property
     def subscriptions_ticks(self) -> List[str]:
@@ -122,7 +126,7 @@ class LiveDataClient:
         if self._pubsub_thread is not None:
             self._pubsub_thread.stop()
             disconnect_message.append(f"Stopped PubSub thread {self._pubsub_thread}.")
-            time.sleep(0.1)  # Allow thread to stop.
+            time.sleep(0.100)  # Allow thread to stop.
 
         self._client.connection_pool.disconnect()
         self._client = None
@@ -177,9 +181,10 @@ class LiveDataClient:
         if self._pubsub_thread is None:
             self._pubsub_thread = self._pubsub.run_in_thread(0.001)
 
-        if not any(ticks_channel for s in self._subscriptions_ticks):
+        if not any(ticks_channel in s for s in self._subscriptions_ticks):
             self._subscriptions_ticks.append(ticks_channel)
             self._subscriptions_ticks.sort()
+            print(f"Subscribed to {ticks_channel}.")
             return f"Subscribed to {ticks_channel}."
         return f"Already subscribed to {ticks_channel}."
 
@@ -204,7 +209,7 @@ class LiveDataClient:
 
         self._pubsub.unsubscribe(tick_channel)
 
-        if any(tick_channel for s in self._subscriptions_ticks):
+        if any(tick_channel in s for s in self._subscriptions_ticks):
             self._subscriptions_ticks.remove(tick_channel)
             self._subscriptions_ticks.sort()
             return f"Unsubscribed from {tick_channel}."
@@ -254,7 +259,7 @@ class LiveDataClient:
         if self._pubsub_thread is None:
             self._pubsub_thread = self._pubsub.run_in_thread(0.001)
 
-        if not any(bars_channel for s in self._subscriptions_bars):
+        if not any(bars_channel in s for s in self._subscriptions_bars):
             self._subscriptions_bars.append(bars_channel)
             self._subscriptions_bars.sort()
             return f"Subscribed to {bars_channel}."
@@ -296,7 +301,7 @@ class LiveDataClient:
 
         self._pubsub.unsubscribe(bar_channel)
 
-        if any(bar_channel for s in self._subscriptions_bars):
+        if any(bar_channel in s for s in self._subscriptions_bars):
             self._subscriptions_bars.remove(bar_channel)
             self._subscriptions_bars.sort()
             return f"Unsubscribed from {bar_channel}."
