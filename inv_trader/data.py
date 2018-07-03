@@ -9,6 +9,7 @@
 
 import redis
 import iso8601
+import time
 
 from decimal import Decimal
 from redis import ConnectionError, StrictRedis
@@ -43,7 +44,6 @@ class LiveDataClient:
         self._pubsub_thread = None
         self._subscriptions_ticks = []
         self._subscriptions_bars = []
-
         self._tick_subscribers = []
         self._bar_subscribers = []
 
@@ -93,7 +93,6 @@ class LiveDataClient:
         """
         self._client = redis.StrictRedis(host=self._host, port=self._port, db=0)
         self._pubsub = self._client.pubsub()
-        self._pubsub_thread = self._pubsub.run_in_thread(0.001)
 
         return f"Connected to live database at {self._host}:{self._port}."
 
@@ -120,6 +119,12 @@ class LiveDataClient:
         disconnect_message = [f"Unsubscribed from tick_data {unsubscribed_tick}.",
                               f"Unsubscribed from bars_data {unsubscribed_bars}."]
 
+        if self._pubsub_thread is not None:
+            self._pubsub_thread.stop()
+
+        time.sleep(0.1)  # Allow thread to stop.
+        disconnect_message.append(f"Stopped PubSub thread{self._pubsub_thread}.")
+
         self._client.connection_pool.disconnect()
         self._client = None
         self._pubsub = None
@@ -141,7 +146,6 @@ class LiveDataClient:
         if self.is_connected:
             dispose_message += self.disconnect()
 
-        dispose_message.append(f"Stopped PubSub thread{self._pubsub_thread}.")
         dispose_message.append(f"Disposed of live data client.")
         return dispose_message
 
@@ -170,6 +174,9 @@ class LiveDataClient:
 
         ticks_channel = self._get_tick_channel_name(symbol, venue)
         self._pubsub.subscribe(**{ticks_channel: self._tick_handler})
+
+        if self._pubsub_thread is None:
+            self._pubsub_thread = self._pubsub.run_in_thread(0.001)
 
         if not any(ticks_channel for s in self._subscriptions_ticks):
             self._subscriptions_ticks.append(ticks_channel)
@@ -244,6 +251,9 @@ class LiveDataClient:
             resolution,
             quote_type)
         self._pubsub.subscribe(**{bars_channel: self._bar_handler})
+
+        if self._pubsub_thread is None:
+            self._pubsub_thread = self._pubsub.run_in_thread(0.001)
 
         if not any(bars_channel for s in self._subscriptions_bars):
             self._subscriptions_bars.append(bars_channel)
@@ -358,7 +368,8 @@ class LiveDataClient:
         a tick on the subscribed channel.
         """
         if len(self._tick_subscribers) == 0:
-            print(f"Received message from channel: {message['channel'].decode(UTF8)}")
+            print(f"Received message [{message['channel'].decode(UTF8)}] "
+                  f"{message['data'].decode(UTF8)}")
 
         tick = self._parse_tick(
             message['channel'].decode(UTF8),
@@ -366,6 +377,7 @@ class LiveDataClient:
 
         for subscriber in self._tick_subscribers:
             subscriber(tick)
+            print(f"sending tick to {subscriber}")
 
     def _bar_handler(self, message):
         """"
@@ -373,7 +385,8 @@ class LiveDataClient:
         a bar on the subscribed channel.
         """
         if len(self._bar_subscribers) == 0:
-            print(f"Received message from channel: {message['channel'].decode(UTF8)}")
+            print(f"Received message [{message['channel'].decode(UTF8)}] "
+                  f"{message['data'].decode(UTF8)}")
 
         bar = self._parse_bar(message['data'].decode(UTF8))
 

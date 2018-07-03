@@ -11,6 +11,7 @@ import unittest
 import redis
 import datetime
 import pytz
+import time
 
 from decimal import Decimal
 from typing import List
@@ -55,8 +56,8 @@ class LiveDataClientTests(unittest.TestCase):
 
     # Fixture Tear Down
     def tearDown(self):
-        self.data_client.disconnect()
-        self.data_client.dispose()
+        #self.data_client.disconnect()
+        print(self.data_client.dispose())
 
     def test_can_connect_to_live_db(self):
         # Act
@@ -75,7 +76,7 @@ class LiveDataClientTests(unittest.TestCase):
         # Assert
         self.assertEqual('Unsubscribed from tick_data [].', result[0])
         self.assertEqual('Unsubscribed from bars_data [].', result[1])
-        self.assertEqual('Disconnected from live database at localhost:6379.', result[2])
+        self.assertEqual('Disconnected from live database at localhost:6379.', result[3])
 
     def test_is_connected_when_not_connected_returns_false(self):
         # Arrange
@@ -326,8 +327,9 @@ class LiveDataClientTests(unittest.TestCase):
 
     def test_can_receive_ticks(self):
         # Arrange
+        storer = ObjectStorer()
         self.data_client.connect()
-        self.data_client.subscribe_tick_data('audusd', Venue.FXCM)
+        log = self.data_client.subscribe_tick_data('audusd', Venue.FXCM, storer.store)
 
         tick = Tick(
             'AUDUSD',
@@ -340,4 +342,30 @@ class LiveDataClientTests(unittest.TestCase):
         self.redis_tester.publish('audusd.fxcm', '1.00000,1.00001,2018-01-01T19:59:01.000Z')
 
         # Assert
-        # self.assertEqual(tick, object_store.get_store[0])
+        time.sleep(0.3)
+        print(log)
+        print(storer.get_store)
+        self.assertEqual(str(tick), str(storer.get_store[0]))
+
+    def test_can_receive_bar(self):
+        # Arrange
+        storer = ObjectStorer()
+        self.data_client.connect()
+        log = self.data_client.subscribe_bar_data('audusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.BID, storer.store)
+
+        bar = Bar(
+            Decimal('1.00001'),
+            Decimal('1.00004'),
+            Decimal('1.00003'),
+            Decimal('1.00002'),
+            100000,
+            datetime.datetime(2018, 1, 1, 19, 59, 1, 0, pytz.UTC))
+
+        # Act
+        self.redis_tester.publish('audusd.fxcm-1-second[bid]', '1.00001,1.00004,1.00003,1.00002,100000,2018-01-01 19:59:01+00:00')
+
+        # Assert
+        time.sleep(0.3)
+        print(log)
+        print(storer.get_store)
+        self.assertEqual(str(bar), str(storer.get_store[0]))
