@@ -107,21 +107,10 @@ class LiveDataClient:
         if self._client is None:
             return ["Disconnected (the client was never connected.)"]
 
-        unsubscribed_tick = []
-        unsubscribed_bars = []
+        self._pubsub.unsubscribe()
 
-        for tick_channel in self._subscriptions_ticks[:]:
-            self._pubsub.unsubscribe(tick_channel)
-            self._subscriptions_ticks.remove(tick_channel)
-            unsubscribed_tick.append(tick_channel)
-
-        for bar_channel in self._subscriptions_bars[:]:
-            self._pubsub.unsubscribe(bar_channel)
-            self._subscriptions_bars.remove(bar_channel)
-            unsubscribed_bars.append(bar_channel)
-
-        disconnect_message = [f"Unsubscribed from tick_data {unsubscribed_tick}.",
-                              f"Unsubscribed from bars_data {unsubscribed_bars}."]
+        disconnect_message = [f"Unsubscribed from tick_data {self._subscriptions_ticks}.",
+                              f"Unsubscribed from bars_data {self._subscriptions_bars}."]
 
         if self._pubsub_thread is not None:
             self._pubsub_thread.stop()
