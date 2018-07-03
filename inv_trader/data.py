@@ -9,9 +9,9 @@
 
 import redis
 import dateutil.parser
-import multiprocessing
 
 from decimal import Decimal
+from threading import Thread
 from redis import ConnectionError, StrictRedis
 from typing import List
 
@@ -134,11 +134,11 @@ class LiveDataClient:
         """
         dispose_message = []
         if self.is_connected:
-            dispose_message.append(self.disconnect())
+            dispose_message += self.disconnect()
 
         for thread in self._thread_pool:
             dispose_message.append(f"Stopping thread {thread}.")
-            thread.terminate()
+           #thread.terminate()
 
         dispose_message.append(f"Disposed of live data client.")
         return dispose_message
@@ -165,11 +165,9 @@ class LiveDataClient:
             return "No connection is established with the live database."
 
         tick_channel = self._get_tick_channel(symbol, venue)
-        ticks_thread = multiprocessing.Process(
-            target=self._pubsub.subscribe(**{tick_channel: handler}))
-
-        self._thread_pool.append(ticks_thread)
+        ticks_thread = Thread(target=self._pubsub.subscribe(**{tick_channel: handler}))
         ticks_thread.start()
+        self._thread_pool.append(ticks_thread)
 
         if not any(tick_channel for s in self._subscriptions_ticks):
             self._subscriptions_ticks.append(tick_channel)
@@ -241,12 +239,9 @@ class LiveDataClient:
             period,
             resolution,
             quote_type)
-
-        bars_thread = multiprocessing.Process(
-            target=self._pubsub.subscribe(**{bar_channel: handler}))
-
-        self._thread_pool.append(bars_thread)
+        bars_thread = Thread(target=self._pubsub.subscribe(**{bar_channel: handler}))
         bars_thread.start()
+        self._thread_pool.append(bars_thread)
 
         if not any(bar_channel for s in self._subscriptions_bars):
             self._subscriptions_bars.append(bar_channel)
