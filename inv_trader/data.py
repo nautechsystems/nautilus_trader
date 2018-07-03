@@ -9,7 +9,7 @@
 
 import redis
 
-from redis import Redis
+from redis import Redis, StrictRedis
 from redis import ConnectionError
 from typing import List
 
@@ -37,18 +37,16 @@ class LiveDataClient:
         self._port = port
         self._client = None
         self._pubsub = None
-        self._subscriptions_tick = []
+        self._subscriptions_ticks = []
         self._subscriptions_bars = []
 
-    # Temporary property for development
+    # Temporary properties for development
     def client(self) -> Redis:
         return self._client
 
     @property
     def is_connected(self) -> bool:
         """
-        Returns a value indicating whether the client is connected to the live database.
-
         :return: True if the client is connected, otherwise false.
         """
         if self._client is None:
@@ -60,6 +58,27 @@ class LiveDataClient:
             return False
 
         return True
+
+    @property
+    def subscriptions_all(self) -> dict:
+        """
+        :return: All subscribed channels as a dictionary direct from the Redis pub/sub.
+        """
+        return self._client.pubsub_channels()
+
+    @property
+    def subscriptions_ticks(self) -> List[str]:
+        """
+        :return: The list of tick channels subscribed to.
+        """
+        return self._subscriptions_ticks
+
+    @property
+    def subscriptions_bars(self) -> List[str]:
+        """
+        :return: The list of bar channels subscribed to.
+        """
+        return self._subscriptions_bars
 
     def connect(self) -> str:
         """
@@ -80,9 +99,9 @@ class LiveDataClient:
         unsubscribed_tick = []
         unsubscribed_bars = []
 
-        for tick_channel in self._subscriptions_tick[:]:
+        for tick_channel in self._subscriptions_ticks[:]:
             self._pubsub.unsubscribe(tick_channel)
-            self._subscriptions_tick.remove(tick_channel)
+            self._subscriptions_ticks.remove(tick_channel)
             unsubscribed_tick.append(tick_channel)
 
         for bar_channel in self._subscriptions_bars[:]:
@@ -96,7 +115,7 @@ class LiveDataClient:
         self._client.connection_pool.disconnect()
         self._client = None
         self._pubsub = None
-        self._subscriptions_tick = []
+        self._subscriptions_ticks = []
         self._subscriptions_bars = []
 
         disconnect_message.append(f"Disconnected from live database at {self._host}:{self._port}.")
@@ -126,11 +145,10 @@ class LiveDataClient:
         self._pubsub.subscribe(**{tick_channel: self.hacked_tick_message_printer})
         #thread1 = self._pubsub.run_in_thread(sleep_time=0.001)
 
-        if not any(tick_channel for s in self._subscriptions_tick):
-            self._subscriptions_tick.append(tick_channel)
-            self._subscriptions_tick.sort()
+        if not any(tick_channel for s in self._subscriptions_ticks):
+            self._subscriptions_ticks.append(tick_channel)
+            self._subscriptions_ticks.sort()
             return f"Subscribed to {tick_channel}."
-
         return f"Already subscribed to {tick_channel}."
 
     def unsubscribe_tick_data(
@@ -156,11 +174,10 @@ class LiveDataClient:
 
         self._pubsub.unsubscribe(tick_channel)
 
-        if any(tick_channel for s in self._subscriptions_tick):
-            self._subscriptions_tick.remove(tick_channel)
-            self._subscriptions_tick.sort()
+        if any(tick_channel for s in self._subscriptions_ticks):
+            self._subscriptions_ticks.remove(tick_channel)
+            self._subscriptions_ticks.sort()
             return f"Unsubscribed from {tick_channel}."
-
         return f"Already unsubscribed from {tick_channel}."
 
     def subscribe_bar_data(
@@ -204,7 +221,6 @@ class LiveDataClient:
             self._subscriptions_bars.append(bar_channel)
             self._subscriptions_bars.sort()
             return f"Subscribed to {bar_channel}."
-
         return f"Already subscribed to {bar_channel}."
 
     def unsubscribe_bar_data(
@@ -247,7 +263,6 @@ class LiveDataClient:
             self._subscriptions_bars.remove(bar_channel)
             self._subscriptions_bars.sort()
             return f"Unsubscribed from {bar_channel}."
-
         return f"Already unsubscribed from {bar_channel}."
 
     @staticmethod

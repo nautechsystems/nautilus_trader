@@ -90,9 +90,13 @@ class LiveDataClientTests(unittest.TestCase):
 
         # Act
         result = self.data_client.subscribe_tick_data('audusd', 'fxcm')
+        tick_channels = self.data_client.subscriptions_ticks
+        all_channels = self.data_client.subscriptions_all
 
         # Assert
         self.assertEqual('Subscribed to audusd.fxcm.', result)
+        self.assertEqual("['audusd.fxcm']", str(tick_channels))
+        self.assertTrue(any('audusd.fxcm' for channels in all_channels))
 
     def test_subscribing_to_tick_data_when_already_subscribed_returns_correct_message(self):
         # Arrange
@@ -101,9 +105,13 @@ class LiveDataClientTests(unittest.TestCase):
         # Act
         self.data_client.subscribe_tick_data('audusd', 'fxcm')
         result = self.data_client.subscribe_tick_data('audusd', 'fxcm')
+        tick_channels = self.data_client.subscriptions_ticks
+        all_channels = self.data_client.subscriptions_all
 
         # Assert
         self.assertEqual('Already subscribed to audusd.fxcm.', result)
+        self.assertEqual("['audusd.fxcm']", str(tick_channels))
+        self.assertTrue(any('audusd.fxcm' for channels in all_channels))
 
     def test_can_unsubscribe_from_tick_data_returns_correct_message(self):
         # Arrange
@@ -112,9 +120,13 @@ class LiveDataClientTests(unittest.TestCase):
 
         # Act
         result = self.data_client.unsubscribe_tick_data('audusd', 'fxcm')
+        tick_channels = self.data_client.subscriptions_ticks
+        all_channels = self.data_client.subscriptions_all
 
         # Assert
         self.assertEqual('Unsubscribed from audusd.fxcm.', result)
+        self.assertEqual("[]", str(tick_channels))
+        #self.assertFalse(any('audusd.fxcm' for channels in all_channels))
 
     def test_unsubscribing_from_tick_data_when_never_subscribed_returns_correct_message(self):
         # Arrange
@@ -125,4 +137,18 @@ class LiveDataClientTests(unittest.TestCase):
 
         # Assert
         self.assertEqual('Already unsubscribed from audusd.fxcm.', result)
+
+    def test_disconnecting_when_subscribed_to_multiple_channels_then_unsubscribes(self):
+        # Arrange
+        self.data_client.connect()
+        self.data_client.subscribe_tick_data('audusd', 'fxcm')
+        self.data_client.subscribe_tick_data('gbpusd', 'fxcm')
+        self.data_client.subscribe_tick_data('eurjpy', 'fxcm')
+        self.data_client.subscribe_tick_data('usdcad', 'fxcm')
+
+        # Act
+        result = self.data_client.disconnect()
+
+        # Assert
+        self.assertEqual("Unsubscribed from tick_data ['audusd.fxcm'].", result[0])
 
