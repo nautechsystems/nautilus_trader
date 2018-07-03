@@ -143,7 +143,7 @@ class LiveDataClient:
 
         tick_channel = self._get_tick_channel(symbol, venue)
 
-        self._pubsub.subscribe(**{tick_channel: self.hacked_tick_message_printer})
+        self._pubsub.subscribe(**{tick_channel: self.tick_handler})
         #thread1 = self._pubsub.run_in_thread(sleep_time=0.001)
 
         if not any(tick_channel for s in self._subscriptions_ticks):
@@ -213,7 +213,7 @@ class LiveDataClient:
             resolution,
             quote_type)
 
-        self._pubsub.subscribe(**{bar_channel: self.hacked_bar_message_printer})
+        self._pubsub.subscribe(**{bar_channel: self.bar_handler})
         #thread2 = self._pubsub.run_in_thread(sleep_time=0.001)
 
         if not any(bar_channel for s in self._subscriptions_bars):
@@ -293,7 +293,7 @@ class LiveDataClient:
         :return: The parsed bar object.
         """
         split_bar = bar_string.split(',')
-        print(split_bar)
+
         return Bar(Decimal(split_bar[0]),
                    Decimal(split_bar[1]),
                    Decimal(split_bar[2]),
@@ -320,10 +320,19 @@ class LiveDataClient:
         """
         Returns the bar channel name from the given parameters.
         """
-        return f'{symbol}.{venue.name.lower()}-{period}-{resolution.name.lower()}[{quote_type.name.lower()}]'
+        return (f'{symbol}.{venue.name.lower()}-{period}-'
+                f'{resolution.name.lower()}[{quote_type.name.lower()}]')
 
-    def hacked_tick_message_printer(self, message):
-        print(f"{message['channel']}: {message['data']}", end='\r')
+    def tick_handler(self, message) -> Tick:
+        """"
+        Create a new tick handler object which is called whenever the client receives
+        a tick on the subscribed channel.
+        """
+        return self._parse_tick(message['channel'], message['data'])
 
-    def hacked_bar_message_printer(self, message):
-        print(f"{message['channel']}: {message['data']}", end='\r')
+    def bar_handler(self, message) -> Bar:
+        """"
+        Create a new bar handler object which is called whenever the client receives
+        a bar on the subscribed channel.
+        """
+        return self._parse_bar(message['data'])
