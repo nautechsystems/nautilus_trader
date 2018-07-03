@@ -8,8 +8,13 @@
 # -------------------------------------------------------------------------------------------------
 
 import unittest
+import datetime
+import pytz
+
+from decimal import Decimal
 
 from inv_trader.data import LiveDataClient
+from inv_trader.objects import Tick, Bar
 from inv_trader.enums import Venue, Resolution, QuoteType
 
 
@@ -126,7 +131,7 @@ class LiveDataClientTests(unittest.TestCase):
         # Assert
         self.assertEqual('Unsubscribed from audusd.fxcm.', result)
         self.assertEqual("[]", str(tick_channels))
-        #self.assertFalse(any('audusd.fxcm' for channels in all_channels))
+        # self.assertFalse(any('audusd.fxcm' for channels in all_channels))
 
     def test_unsubscribing_from_tick_data_when_never_subscribed_returns_correct_message(self):
         # Arrange
@@ -194,7 +199,7 @@ class LiveDataClientTests(unittest.TestCase):
         # Assert
         self.assertEqual('Already unsubscribed from audusd.fxcm-1-second[bid].', result)
         self.assertEqual("[]", str(bar_channels))
-        #self.assertFalse(any('audusd.fxcm' for channels in all_channels))
+        # self.assertFalse(any('audusd.fxcm' for channels in all_channels))
 
     def test_disconnecting_when_subscribed_to_multiple_channels_then_unsubscribes(self):
         # Arrange
@@ -212,11 +217,47 @@ class LiveDataClientTests(unittest.TestCase):
 
     def test_can_parse_ticks(self):
         # Arrange
+        tick = Tick(
+            'AUDUSD',
+            Venue.FXCM,
+            Decimal('1.00000'),
+            Decimal('1.00001'),
+            datetime.datetime(2018, 1, 1, 19, 59, 1, 0, pytz.UTC))
+
         # Act
-        result1 = self.data_client._parse_tick('audusd.fxcm', '1.00000,1.00001,2018-01-01T19:59:01.000Z')
-        result2 = self.data_client._parse_tick('gbpusd.fxcm', '1.50000,1.55555,2007-01-01T01:00:01.000Z')
+        result = self.data_client._parse_tick(
+            'audusd.fxcm',
+            '1.00000,1.00001,2018-01-01T19:59:01.000Z')
 
         # Assert
-        self.assertEqual('Tick: AUDUSD.FXCM,1.00000,1.00001,2018-01-01 19:59:01+00:00', str(result1))
-        self.assertEqual('Tick: GBPUSD.FXCM,1.50000,1.55555,2007-01-01 01:00:01+00:00', str(result2))
+        self.assertEqual(tick.symbol, result.symbol)
+        self.assertEqual(tick.venue, result.venue)
+        self.assertEqual(tick.bid, result.bid)
+        self.assertEqual(tick.ask, result.ask)
+        self.assertEqual(tick.timestamp, result.timestamp)
+        self.assertEqual('Tick: AUDUSD.FXCM,1.00000,1.00001,2018-01-01 19:59:01+00:00', str(result))
+
+    def test_can_parse_bars(self):
+        # Arrange
+        bar = Bar(
+            Decimal('1.00001'),
+            Decimal('1.00004'),
+            Decimal('1.00003'),
+            Decimal('1.00002'),
+            100000,
+            datetime.datetime(2018, 1, 1, 19, 59, 1, 0, pytz.UTC))
+
+        # Act
+        result = self.data_client._parse_bar(
+            '1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T19:59:01.000Z')
+
+        # Assert
+        self.assertEqual(bar.open, result.open)
+        self.assertEqual(bar.high, result.high)
+        self.assertEqual(bar.low, result.low)
+        self.assertEqual(bar.close, result.close)
+        self.assertEqual(bar.volume, result.volume)
+        self.assertEqual(bar.timestamp, result.timestamp)
+        self.assertEqual(
+            'Bar: 1.00001,1.00004,1.00003,1.00002,100000,2018-01-01 19:59:01+00:00', str(result))
 
