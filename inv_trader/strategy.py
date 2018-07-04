@@ -9,6 +9,7 @@
 
 import abc
 import datetime
+import inspect
 
 from typing import List
 from typing import Dict
@@ -32,7 +33,8 @@ class TradeStrategy(object):
         self._name = self.__class__.__name__
         self._bars = Dict[BarType, List[Bar]]
         self._ticks = Dict[str, Tick]
-        self._indicators = Dict[BarType, List[object]]  # Will change object to Indicator
+        self._indicators = Dict[BarType, List[object]]
+        self._ind_updaters = Dict[str, IndicatorUpdater]
 
     def __str__(self) -> str:
         """
@@ -146,6 +148,22 @@ class TradeStrategy(object):
 
         self._indicators[bar_type].append(indicator)
 
+        # If an indicator update handler hasn't already been created.
+        # If the indicator object passed in isn't from inv_indicators
+        # then this could blow up.
+        if indicator.name not in self._ind_updaters:
+            self._set_indicator_updater(indicator)
+
+    def _set_indicator_updater(self, indicator: object):
+        """
+        Create and store the update handler for the indicator.
+
+        :param indicator: The indicator for the updater.
+        """
+        assert indicator is not None
+
+
+
     def set_timer(
             self,
             label: str,
@@ -254,10 +272,11 @@ class TradeStrategy(object):
             self._log(f"{self.name} Warning: _update_tick() was given an invalid Tick.")
             return
 
+        # Update the internal ticks.
         key = f'{tick.symbol}.{tick.venue.name.lower()}'
         self._ticks[key] = tick
 
-        # If the strategy is running then calls the inheriting class method.
+        # Calls on_tick() if the strategy is running.
         if self._is_running:
             self.on_tick(tick)
 
@@ -295,7 +314,7 @@ class TradeStrategy(object):
         if bar_type in self._indicators:
             self._update_indicators(bar_type, bar)
 
-        # If the strategy is running then calls the inheriting class method.
+        # Calls on_bar() if the strategy is running.
         if self._is_running:
             self.on_bar(bar_type, bar)
 
@@ -309,7 +328,28 @@ class TradeStrategy(object):
         :param bar_type: The bar type to update.
         :param bar: The bar for update.
         """
-        # TODO
+        # Guard clauses (design time checking).
+        assert bar_type is not None
+        assert bar_type is isinstance(bar_type, BarType)
+        assert bar is not None
+        assert bar is isinstance(bar, Bar)
+
+        if bar_type not in self._indicators:
+            # No indicators to update with this bar.
+            # Remove this for production.
+            return
+
+        indicators_to_update = self._indicators[bar_type]
+
+        # Use the update handler to update indicators. If no handler exists
+        # then log warning and return.
+        # TODO: Refactor this.
+        for indicator in indicators_to_update:
+            if indicator.name not in self._ind_updaters:
+                self._log(f"{self.name} Warning: No updater for indicator {indicator}")
+                return
+
+            self._ind_updaters[indicator.name].update(bar)
 
     # Avoid making a static method for now.
     def _log(self, message: str):
@@ -319,3 +359,50 @@ class TradeStrategy(object):
         :param message: The message to log.
         """
         print(message)
+
+
+class IndicatorUpdater(object):
+    """
+    Provides an adapter for updating an indicator with a bar.
+    """
+
+    def __init__(self,
+                 name: str,
+                 update_method: callable):
+        """
+        Initializes a new instance of the IndicatorUpdater class.
+
+        :param name: The indicator name.
+        :param update_method: The callable reference to the indicators update method.
+        """
+        self._name = name
+        self._update_method = update_method
+        self._params = inspect.signature(update_method)
+
+    def update(self, bar: Bar):
+        """
+        Passes the correct parameters from the given bar to the indicator update method.
+
+        :param bar: The bar to update with.
+        """
+        update_params = []
+
+        for param in self._params:
+            if param is 'point':
+                update_params.append(bar.close)
+            elif param is 'price':
+                update_params.append(bar.close)
+            elif param is 'mid':
+                update_params.append(bar.close)
+            elif param is 'open':
+                update_params.append(bar.open)
+            elif param is 'high':
+                update_params.append(bar.high)
+            elif param is 'low':
+                update_params.append(bar.low)
+            elif param is 'close':
+                update_params.append(bar.close)
+            elif param is 'timestamp':
+                update_params.append(bar.timestamp)
+
+        self._update_method(update_params)

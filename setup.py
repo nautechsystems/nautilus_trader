@@ -54,9 +54,7 @@ setup(
     requires=['cython',
               'iso8601',
               'pytz',
-              'redis',
-              'msgpack',
-              'PyPubSub'],
+              'redis'],
     ext_modules=cythonize(extensions),
     cmdclass={'build_ext': Cython.Build.build_ext},
     options={'build_ext': {'inplace': False, 'force': False}})
