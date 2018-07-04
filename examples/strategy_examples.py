@@ -22,4 +22,3 @@ class ExampleStrategy(TradeStrategy):
 
     def on_message(self):
         pass
-
