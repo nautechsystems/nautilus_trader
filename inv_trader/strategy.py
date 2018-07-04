@@ -10,7 +10,9 @@
 import abc
 
 from typing import List
+from typing import Dict
 
+from inv_trader.enums import Venue
 from inv_trader.objects import Tick, Bar
 
 
@@ -29,8 +31,8 @@ class TradeStrategy(object):
         """
         self._name = self.__class__.__name__
         self._params = str(params)[1:-1].replace("'", "").strip('()')
-        self._bars = []
-        self._last_tick = None
+        self._bars = {}
+        self._last_ticks = {}
 
     def __str__(self) -> str:
         """
@@ -52,18 +54,25 @@ class TradeStrategy(object):
         return self._name
 
     @property
-    def bars(self) -> List[Bar]:
+    def bars(self) -> Dict[str, List[Bar]]:
         """
         :return: The internally held bars for the strategy.
         """
         return self._bars
 
-    @property
-    def last_tick(self) -> Tick:
+    def last_tick(
+            self,
+            symbol: str,
+            venue: Venue) -> Tick:
         """
-        :return: The last tick the strategy.
+        :param symbol: The last tick symbol.
+        :return: venue: The last tick venue.
         """
-        return self._last_tick
+        key = f'{symbol}.{venue.name.lower()}'
+        if key in self._last_ticks:
+            return self._last_ticks[key]
+
+        return None
 
     @abc.abstractmethod
     def reset(self):
@@ -71,23 +80,34 @@ class TradeStrategy(object):
         Reset the trade strategy by clearing all stateful internal values and
         returning it to a fresh tate.
         """
-        # do nothing yet
+        self._last_ticks = {}
+        self._bars = {}
 
     def update_tick(self, tick: Tick):
         """"
         Updates the last held tick with the given tick then calls the on_tick
         method for the super class.
         """
-        self._last_tick = tick
-        super(TradeStrategy, self).on_tick()
+        key = f'{tick.symbol}.{tick.venue.name.lower()}'
+        self._last_ticks[key] = tick
+        self.on_tick()
 
-    def update_bars(self, bar: Bar):
+    def update_bars(
+            self,
+            bar_type: str,
+            bar: Bar):
         """"
-        Updates the internal list of bars with the given bar, then calls the
+        Updates the internal dictionary of bars with the given bar, then calls the
         on_bar method for the super class.
+
+        :param bar_type: The received bar type.
+        :param bar: The received bar.
         """
-        self._bars.append(bar)
-        super(TradeStrategy, self).on_bar()
+        if bar_type not in self._bars:
+            self._bars[bar_type] = []
+
+        self._bars[bar_type].append(bar)
+        self.on_bar()
 
     @abc.abstractmethod
     def on_tick(self):

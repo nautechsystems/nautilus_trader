@@ -15,10 +15,10 @@ class ExampleStrategy(TradeStrategy):
         pass
 
     def on_tick(self):
-        pass
+        print("got a tick")
 
     def on_bar(self):
-        pass
+        print("got a bar")
 
     def on_message(self):
         pass
