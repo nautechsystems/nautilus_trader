@@ -9,10 +9,21 @@
 
 from inv_trader.data import LiveDataClient
 from inv_trader.enums import Venue, Resolution, QuoteType
+from examples.strategy_examples import ExampleStrategy
 
+# Tests the live data client can receive ticks and bars.
 if __name__ == "__main__":
     client = LiveDataClient()
     print(client.connect())
     print(client.subscribe_tick_data('audusd', Venue.FXCM))
     print(client.subscribe_bar_data('audusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.MID))
 
+
+#
+if __name__ == "__main__":
+    strategy = ExampleStrategy()
+    client = LiveDataClient()
+    print(client.connect())
+    print(client.register_strategy(strategy))
+    print(client.subscribe_tick_data('audusd', Venue.FXCM))
+    print(client.subscribe_bar_data('audusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.MID))

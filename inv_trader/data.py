@@ -17,6 +17,7 @@ from typing import List
 
 from inv_trader.enums import Resolution, QuoteType, Venue
 from inv_trader.objects import Tick, Bar
+from inv_trader.strategy import TradeStrategy
 
 # Private IP 10.135.55.111
 UTF8 = 'utf-8'
@@ -295,6 +296,22 @@ class LiveDataClient:
             return f"Unsubscribed from {bar_channel}."
         return f"Already unsubscribed from {bar_channel}."
 
+    def register_strategy(self, strategy: TradeStrategy) -> str:
+        """
+        Registers the trade strategy to receive all ticks and bars from the
+        live data client.
+
+        :param strategy: The strategy inheriting from TradeStrategy.
+        :return: The result of the operation.
+        """
+        if strategy is None:
+            raise ValueError("The strategy cannot be null.")
+
+        self._tick_subscribers.append(strategy.update_tick)
+        self._bar_subscribers.append(strategy.update_bars)
+
+        return f"Registered the {strategy} with the live data client."
+
     @staticmethod
     def _parse_tick(
             tick_channel: str,
@@ -379,7 +396,8 @@ class LiveDataClient:
             print(f"Received message [{message['channel'].decode(UTF8)}] "
                   f"{message['data'].decode(UTF8)}")
 
+        bar_type = message['channel'].decode(UTF8)
         bar = self._parse_bar(message['data'].decode(UTF8))
 
         for subscriber in self._bar_subscribers:
-            subscriber(bar)
+            subscriber(bar_type, bar)
