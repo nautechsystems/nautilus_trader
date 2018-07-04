@@ -8,11 +8,11 @@
 # -------------------------------------------------------------------------------------------------
 
 from inv_trader.data import LiveDataClient
-from inv_trader.enums import Venue
+from inv_trader.enums import Venue, Resolution, QuoteType
 
 if __name__ == "__main__":
     client = LiveDataClient()
     print(client.connect())
     print(client.subscribe_tick_data('audusd', Venue.FXCM))
+    print(client.subscribe_bar_data('audusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.MID))
 
-    input("Press Enter to continue...")
