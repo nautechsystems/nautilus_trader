@@ -43,7 +43,6 @@ class LiveDataClient:
         if port is None:
             raise ValueError("The port cannot be None.")
 
-        self._thread_pool = []
         self._host = host
         self._port = port
         self._client = None
