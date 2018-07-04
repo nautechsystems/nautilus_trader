@@ -21,45 +21,6 @@ from inv_trader.objects import Tick, BarType, Bar
 from inv_trader.enums import Venue, Resolution, QuoteType
 
 
-class ObjectStorer:
-    """"
-    A test class which stores the given objects.
-    """
-    def __init__(self):
-        """
-        Initializes a new instance of the ObjectStorer class.
-        """
-        self._store = []
-
-    @property
-    def count(self) -> int:
-        """
-        :return: The count of objects stored.
-        """
-        return len(self._store)
-
-    @property
-    def get_store(self) -> List[object]:
-        """"
-        return: The internal object store.
-        """
-        return self._store
-
-    def store(self, obj: object):
-        """"
-        Store the given object.
-        """
-        print(f"Storing {obj}")
-        self._store.append(obj)
-
-    def store_both(self, obj1: object, obj2: object):
-        """"
-        Store the given object.
-        """
-        print(f"Storing {obj2}")
-        self._store.append(obj2)
-
-
 class LiveDataClientTests(unittest.TestCase):
 
     # Fixture Setup
@@ -464,3 +425,42 @@ class LiveDataClientTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(bar_dictionary[bar_type], bar)
+
+
+class ObjectStorer:
+    """"
+    A test class which stores the given objects.
+    """
+    def __init__(self):
+        """
+        Initializes a new instance of the ObjectStorer class.
+        """
+        self._store = []
+
+    @property
+    def count(self) -> int:
+        """
+        :return: The count of objects stored.
+        """
+        return len(self._store)
+
+    @property
+    def get_store(self) -> List[object]:
+        """"
+        return: The internal object store.
+        """
+        return self._store
+
+    def store(self, obj: object):
+        """"
+        Store the given object.
+        """
+        print(f"Storing {obj}")
+        self._store.append(obj)
+
+    def store_both(self, obj1: object, obj2: object):
+        """"
+        Store the given objects.
+        """
+        print(f"Storing {obj2}")
+        self._store.append(obj2)

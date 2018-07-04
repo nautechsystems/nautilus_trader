@@ -27,6 +27,12 @@ class Tick:
                  timestamp: datetime.datetime):
         """
         Initializes a new instance of the Tick class.
+
+        :param: symbol: The tick symbol.
+        :param: venue: The tick venue.
+        :param: bid: The tick bid price.
+        :param: ask: The tick ask price.
+        :param: timestamp: The tick timestamp.
         """
         self._symbol = symbol.upper()
         self._venue = venue
@@ -65,7 +71,7 @@ class Tick:
     @property
     def timestamp(self) -> datetime.datetime:
         """
-        :return: The ticks timestamp.
+        :return: The ticks timestamp (ISO8601).
         """
         return self._timestamp
 
@@ -155,7 +161,7 @@ class BarType:
     @property
     def quote_type(self) -> QuoteType:
         """
-        :return: The bar types quote type..
+        :return: The bar types quote type.
         """
         return self._quote_type
 

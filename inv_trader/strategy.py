@@ -47,7 +47,7 @@ class TradeStrategy(object):
     @property
     def is_running(self) -> bool:
         """
-        :return: The name of the trade strategy.
+        :return: A value indicating whether the strategy is running.
         """
         return self._is_running
 
@@ -73,7 +73,7 @@ class TradeStrategy(object):
         Get the last tick held for the given parameters.
 
         :param symbol: The last tick symbol.
-        :param: venue: The last tick venue.
+        :param venue: The last tick venue.
         :return: The tick object.
         """
         key = f'{symbol.lower()}.{venue.name.lower()}'
@@ -152,7 +152,9 @@ class TradeStrategy(object):
 
         key = f'{tick.symbol}.{tick.venue.name.lower()}'
         self._last_ticks[key] = tick
-        self.on_tick(tick)
+
+        if self._is_running:
+            self.on_tick(tick)
 
     def _update_bars(
             self,
@@ -166,16 +168,18 @@ class TradeStrategy(object):
         :param bar: The received bar.
         """
         if bar_type is None:
-            self._log(f"{self.name} Warning: update_bar() was given bar_type of None.")
+            self._log(f"{self.name} Warning: update_bar() was given None.")
             return
         if bar is None:
-            self._log("{self.name} Warning: update_bar() was given bar of None.")
+            self._log("{self.name} Warning: update_bar() was given None.")
             return
         if bar_type not in self._bars:
             self._bars[bar_type] = []
 
         self._bars[bar_type].append(bar)
-        self.on_bar(bar_type, bar)
+
+        if self._is_running:
+            self.on_bar(bar_type, bar)
 
     # Avoid making a static method for now.
     def _log(self, message: str):

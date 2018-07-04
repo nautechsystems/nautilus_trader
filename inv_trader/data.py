@@ -100,7 +100,7 @@ class LiveDataClient:
 
     def disconnect(self):
         """
-        Disconnects from the local publish subscribe server and the database.
+        Disconnects from the local pub/sub server and the database.
         """
         if self._pubsub is not None:
             self._pubsub.unsubscribe()
@@ -292,9 +292,13 @@ class LiveDataClient:
 
         :param strategy: The strategy inheriting from TradeStrategy.
         :return: The result of the operation.
+        :raises: ValueError: If the strategy is None.
+        :raises: TypeError: If the strategy is not a type of TradeStrategy.
         """
         if strategy is None:
             raise ValueError("The strategy cannot be None.")
+        if strategy is not isinstance(strategy, TradeStrategy):
+            raise TypeError("The strategy must be a type of TradeStrategy.")
 
         self._tick_subscribers.append(strategy._update_tick)
         self._bar_subscribers.append(strategy._update_bars)
