@@ -71,11 +71,10 @@ class LiveDataClientTests(unittest.TestCase):
     # Fixture Tear Down
     def tearDown(self):
         self.data_client.disconnect()
-        self.data_client.dispose()
 
     def test_can_connect_to_live_db(self):
         # Act
-        result = self.data_client.connect()
+        self.data_client.connect()
 
         # Assert
         # Does not throw exception.
@@ -111,7 +110,7 @@ class LiveDataClientTests(unittest.TestCase):
         # Assert
         self.assertTrue(result)
 
-    def test_can_create_correct_tick_channel(self):
+    def test_can_create_correct_tick_channel_name(self):
         # Arrange
         # Act
         result1 = self.data_client._get_tick_channel_name('audusd', Venue.FXCM)
@@ -121,7 +120,7 @@ class LiveDataClientTests(unittest.TestCase):
         self.assertTrue(result1, 'audusd.fxcm')
         self.assertTrue(result2, 'gbpusd.fxcm')
 
-    def test_can_create_correct_bars_channel(self):
+    def test_can_create_correct_bar_channel_name(self):
         # Arrange
         # Act
         result1 = self.data_client._get_bar_channel_name('audusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.BID)
@@ -131,115 +130,55 @@ class LiveDataClientTests(unittest.TestCase):
         self.assertTrue(result1, 'audusd.fxcm-1-second[bid]')
         self.assertTrue(result2, 'gbpusd.fxcm-5-minute[mid]')
 
-    def test_can_subscribe_to_tick_data_returns_correct_message(self):
-        # Arrange
-        self.data_client.connect()
-
-        # Act
-        result = self.data_client.subscribe_tick_data('audusd', Venue.FXCM)
-        tick_channels = self.data_client.subscriptions_ticks
-        all_channels = self.data_client.subscriptions_all
-
-        # Assert
-        self.assertEqual('Subscribed to audusd.fxcm.', result)
-        self.assertEqual("['audusd.fxcm']", str(tick_channels))
-        self.assertTrue(any('audusd.fxcm' for channels in all_channels))
-
-    def test_subscribing_to_tick_data_when_already_subscribed_returns_correct_message(self):
+    def test_can_subscribe_to_tick_data(self):
         # Arrange
         self.data_client.connect()
 
         # Act
         self.data_client.subscribe_tick_data('audusd', Venue.FXCM)
-        result = self.data_client.subscribe_tick_data('audusd', Venue.FXCM)
         tick_channels = self.data_client.subscriptions_ticks
         all_channels = self.data_client.subscriptions_all
 
         # Assert
-        self.assertEqual('Already subscribed to audusd.fxcm.', result)
         self.assertEqual("['audusd.fxcm']", str(tick_channels))
         self.assertTrue(any('audusd.fxcm' for channels in all_channels))
 
-    def test_can_unsubscribe_from_tick_data_returns_correct_message(self):
+    def test_can_unsubscribe_from_tick_data(self):
         # Arrange
         self.data_client.connect()
         self.data_client.subscribe_tick_data('audusd', Venue.FXCM)
 
         # Act
-        result = self.data_client.unsubscribe_tick_data('audusd', Venue.FXCM)
+        self.data_client.unsubscribe_tick_data('audusd', Venue.FXCM)
         tick_channels = self.data_client.subscriptions_ticks
-        all_channels = self.data_client.subscriptions_all
 
         # Assert
-        self.assertEqual('Unsubscribed from audusd.fxcm.', result)
         self.assertEqual("[]", str(tick_channels))
-        #self.assertFalse(any('audusd.fxcm' in channel for channel in all_channels))
 
-    def test_unsubscribing_from_tick_data_when_never_subscribed_returns_correct_message(self):
-        # Arrange
-        self.data_client.connect()
-
-        # Act
-        result = self.data_client.unsubscribe_tick_data('audusd', Venue.FXCM)
-
-        # Assert
-        self.assertEqual('Already unsubscribed from audusd.fxcm.', result)
-
-    def test_can_subscribe_to_bar_data_returns_correct_message(self):
-        # Arrange
-        self.data_client.connect()
-
-        # Act
-        result = self.data_client.subscribe_bar_data('audusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.BID)
-        bar_channels = self.data_client.subscriptions_bars
-        all_channels = self.data_client.subscriptions_all
-
-        # Assert
-        self.assertEqual('Subscribed to audusd.fxcm-1-second[bid].', result)
-        self.assertEqual("['audusd.fxcm-1-second[bid]']", str(bar_channels))
-        self.assertTrue(any('audusd.fxcm-1-second[bid]' in channel for channel in all_channels))
-
-    def test_subscribing_to_bar_data_when_already_subscribed_returns_correct_message(self):
+    def test_can_subscribe_to_bar_data(self):
         # Arrange
         self.data_client.connect()
 
         # Act
         self.data_client.subscribe_bar_data('audusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.BID)
-        result = self.data_client.subscribe_bar_data('audusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.BID)
         bar_channels = self.data_client.subscriptions_bars
         all_channels = self.data_client.subscriptions_all
 
         # Assert
-        self.assertEqual('Already subscribed to audusd.fxcm-1-second[bid].', result)
         self.assertEqual("['audusd.fxcm-1-second[bid]']", str(bar_channels))
         self.assertTrue(any('audusd.fxcm-1-second[bid]' in channel for channel in all_channels))
 
-    def test_can_unsubscribe_from_bar_data_returns_correct_message(self):
+    def test_can_unsubscribe_from_bar_data(self):
         # Arrange
         self.data_client.connect()
         self.data_client.subscribe_bar_data('audusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.BID)
 
         # Act
-        result = self.data_client.unsubscribe_bar_data('audusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.BID)
+        self.data_client.unsubscribe_bar_data('audusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.BID)
         bar_channels = self.data_client.subscriptions_bars
         all_channels = self.data_client.subscriptions_all
 
         # Assert
-        self.assertEqual('Unsubscribed from audusd.fxcm-1-second[bid].', result)
-        self.assertEqual("[]", str(bar_channels))
-        self.assertFalse(any('audusd.fxcm-1-second[bid]' in channel for channel in all_channels))
-
-    def test_unsubscribing_from_bar_data_when_never_subscribed_returns_correct_message(self):
-        # Arrange
-        self.data_client.connect()
-
-        # Act
-        result = self.data_client.unsubscribe_bar_data('audusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.BID)
-        bar_channels = self.data_client.subscriptions_bars
-        all_channels = self.data_client.subscriptions_all
-
-        # Assert
-        self.assertEqual('Already unsubscribed from audusd.fxcm-1-second[bid].', result)
         self.assertEqual("[]", str(bar_channels))
         self.assertFalse(any('audusd.fxcm-1-second[bid]' in channel for channel in all_channels))
 
@@ -252,10 +191,11 @@ class LiveDataClientTests(unittest.TestCase):
         self.data_client.subscribe_tick_data('usdcad', Venue.FXCM)
 
         # Act
-        result = self.data_client.disconnect()
+        self.data_client.disconnect()
+        result = self.data_client.subscriptions_ticks
 
         # Assert
-        self.assertEqual("Unsubscribed from tick_data ['audusd.fxcm', 'eurjpy.fxcm', 'gbpusd.fxcm', 'usdcad.fxcm'].", result[0])
+        self.assertEqual(0, len(result))
 
     def test_can_parse_ticks(self):
         # Arrange
@@ -272,11 +212,7 @@ class LiveDataClientTests(unittest.TestCase):
             '1.00000,1.00001,2018-01-01T19:59:01.000Z')
 
         # Assert
-        self.assertEqual(tick.symbol, result.symbol)
-        self.assertEqual(tick.venue, result.venue)
-        self.assertEqual(tick.bid, result.bid)
-        self.assertEqual(tick.ask, result.ask)
-        self.assertEqual(tick.timestamp, result.timestamp)
+        self.assertEqual(tick, result)
         self.assertEqual('Tick: AUDUSD.FXCM,1.00000,1.00001,2018-01-01T19:59:01+00:00', str(result))
 
     def test_can_parse_bars(self):
@@ -294,12 +230,7 @@ class LiveDataClientTests(unittest.TestCase):
             '1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T19:59:01.000Z')
 
         # Assert
-        self.assertEqual(bar.open, result.open)
-        self.assertEqual(bar.high, result.high)
-        self.assertEqual(bar.low, result.low)
-        self.assertEqual(bar.close, result.close)
-        self.assertEqual(bar.volume, result.volume)
-        self.assertEqual(bar.timestamp, result.timestamp)
+        self.assertEqual(bar, result)
         self.assertEqual(
             'Bar: 1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T19:59:01+00:00', str(result))
 
@@ -341,7 +272,7 @@ class LiveDataClientTests(unittest.TestCase):
         # Arrange
         storer = ObjectStorer()
         self.data_client.connect()
-        log = self.data_client.subscribe_tick_data('audusd', Venue.FXCM, storer.store)
+        self.data_client.subscribe_tick_data('audusd', Venue.FXCM, storer.store)
 
         tick = Tick(
             'AUDUSD',
@@ -357,7 +288,7 @@ class LiveDataClientTests(unittest.TestCase):
 
         # Assert
         time.sleep(0.1)  # Allow threads to work.
-        self.assertEqual(str(tick), str(storer.get_store[0]))
+        self.assertEqual(tick, storer.get_store[0])
 
     def test_can_receive_many_ticks(self):
         # Arrange
