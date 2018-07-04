@@ -424,7 +424,7 @@ class LiveDataClient:
         #     print(f"Received message [{message['channel'].decode(UTF8)}] "
         #           f"{message['data'].decode(UTF8)}")
 
-        bar_type = message['channel'].decode(UTF8)
+        bar_type = self._parse_bar_type(message['channel'].decode(UTF8))
         bar = self._parse_bar(message['data'].decode(UTF8))
 
         for subscriber in self._bar_subscribers:
