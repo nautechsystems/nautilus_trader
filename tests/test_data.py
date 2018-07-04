@@ -117,8 +117,8 @@ class LiveDataClientTests(unittest.TestCase):
         result2 = self.data_client._get_tick_channel_name('gbpusd', Venue.DUKASCOPY)
 
         # Assert
-        self.assertTrue(result1, 'audusd.fxcm')
-        self.assertTrue(result2, 'gbpusd.fxcm')
+        self.assertEqual(result1, 'audusd.fxcm')
+        self.assertEqual(result2, 'gbpusd.dukascopy')
 
     def test_can_create_correct_bar_channel_name(self):
         # Arrange
@@ -127,8 +127,8 @@ class LiveDataClientTests(unittest.TestCase):
         result2 = self.data_client._get_bar_channel_name('gbpusd', Venue.DUKASCOPY, 5, Resolution.MINUTE, QuoteType.MID)
 
         # Assert
-        self.assertTrue(result1, 'audusd.fxcm-1-second[bid]')
-        self.assertTrue(result2, 'gbpusd.fxcm-5-minute[mid]')
+        self.assertEqual(result1, 'audusd.fxcm-1-second[bid]')
+        self.assertEqual(result2, 'gbpusd.dukascopy-5-minute[mid]')
 
     def test_can_subscribe_to_tick_data(self):
         # Arrange

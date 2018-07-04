@@ -184,14 +184,14 @@ class BarType:
         """
         :return: The str() string representation of the bar type.
         """
-        return (f"{self._symbol}.{self._venue.name.lower()}"
+        return (f"{self._symbol.lower()}.{self._venue.name.lower()}"
                 f"-{self._period}-{self._resolution.name.lower()}[{self._quote_type.name.lower()}]")
 
     def __repr__(self) -> str:
         """
         :return: The repr() string representation of the bar type.
         """
-        return (f"<{self._symbol}.{self._venue.name.lower()}"
+        return (f"<{self._symbol.lower()}.{self._venue.name.lower()}"
                 f"-{self._period}-{self._resolution.name.lower()}[{self._quote_type.name.lower()}] "
                 f"object at {id(self)}>")
 
