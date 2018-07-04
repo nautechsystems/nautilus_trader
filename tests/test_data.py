@@ -442,3 +442,25 @@ class LiveDataClientTests(unittest.TestCase):
         time.sleep(0.1)  # Allow threads to work.
         self.assertEqual(15, storer.count)
         self.assertEqual('Bar: 1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T12:00:04+00:00', str(storer.get_store[14]))
+
+    def test_can_add_bartype_to_dict(self):
+        # Arrange
+        bar_type = BarType('audusd',
+                           Venue.FXCM,
+                           1,
+                           Resolution.SECOND,
+                           QuoteType.MID)
+
+        bar = Bar(
+            Decimal('1.00001'),
+            Decimal('1.00004'),
+            Decimal('1.00003'),
+            Decimal('1.00002'),
+            100000,
+            datetime.datetime(2018, 1, 1, 19, 59, 1, 0, pytz.UTC))
+
+        # Act
+        bar_dictionary = {bar_type: bar}
+
+        # Assert
+        self.assertEqual(bar_dictionary[bar_type], bar)

@@ -174,6 +174,12 @@ class BarType:
         """
         return not self.__eq__(other)
 
+    def __hash__(self):
+        """"
+        Override the default hash implementation.
+        """
+        return hash((self.symbol, self.venue, self.period, self.resolution, self.quote_type))
+
     def __str__(self) -> str:
         """
         :return: The str() string representation of the bar type.
