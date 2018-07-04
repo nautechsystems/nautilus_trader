@@ -12,7 +12,7 @@ import iso8601
 import time
 
 from decimal import Decimal
-from redis import ConnectionError, StrictRedis
+from redis import ConnectionError
 from typing import List
 
 from inv_trader.enums import Resolution, QuoteType, Venue
@@ -29,8 +29,8 @@ class LiveDataClient:
     """
 
     def __init__(self,
-                 host: str = 'localhost',
-                 port: int = 6379):
+                 host: str='localhost',
+                 port: int=6379):
         """
         Initializes a new instance of the LiveDataClient class.
 
@@ -53,10 +53,6 @@ class LiveDataClient:
         self._tick_subscribers = []
         self._bar_subscribers = []
 
-    # Temporary properties for development
-    def client(self) -> StrictRedis:
-        return self._client
-
     @property
     def is_connected(self) -> bool:
         """
@@ -75,7 +71,7 @@ class LiveDataClient:
     @property
     def subscriptions_all(self) -> List[str]:
         """
-        :return: All subscribed channels from the Redis PubSub object.
+        :return: All subscribed channels from the pub/sub server.
         """
         return [channel.decode(UTF8) for channel in self._client.pubsub_channels()]
 
@@ -93,33 +89,30 @@ class LiveDataClient:
         """
         return self._subscriptions_bars
 
-    def connect(self) -> str:
+    def connect(self):
         """
-        Connect to the live database and create a local pub/sub server.
-        :return: The result of the operation.
+        Connect to the live database and create a pub/sub server.
         """
         self._client = redis.StrictRedis(host=self._host, port=self._port, db=0)
         self._pubsub = self._client.pubsub()
 
-        return f"Connected to live database at {self._host}:{self._port}."
+        self._log(f"Connected to live database at {self._host}:{self._port}.")
 
-    def disconnect(self) -> List[str]:
+    def disconnect(self):
         """
         Disconnects from the local publish subscribe server and the database.
-        :return: The results of the operation.
         """
         if self._client is None:
-            return ["Disconnected (the client was never connected.)"]
+            self._log("Disconnected (the client was never connected.)")
 
         self._pubsub.unsubscribe()
-
-        disconnect_message = [f"Unsubscribed from tick_data {self._subscriptions_ticks}.",
-                              f"Unsubscribed from bars_data {self._subscriptions_bars}."]
+        self._log(f"Unsubscribed from tick_data {self._subscriptions_ticks}.")
+        self._log(f"Unsubscribed from bars_data {self._subscriptions_bars}.")
 
         if self._pubsub_thread is not None:
             self._pubsub_thread.stop()
-            disconnect_message.append(f"Stopped PubSub thread {self._pubsub_thread}.")
-            time.sleep(0.100)  # Allow thread to stop.
+            self._log("Stopped PubSub thread {self._pubsub_thread}.")
+            time.sleep(0.100)  # Allows thread to stop.
 
         self._client.connection_pool.disconnect()
         self._client = None
@@ -128,44 +121,38 @@ class LiveDataClient:
         self._subscriptions_ticks = []
         self._subscriptions_bars = []
 
-        disconnect_message.append(f"Disconnected from live database at {self._host}:{self._port}.")
-        return disconnect_message
+        self._log(f"Disconnected from live database at {self._host}:{self._port}.")
 
-    def dispose(self) -> List[str]:
+    def dispose(self):
         """
         Cleanly disposes of the live data client. The disconnect method should
         be called prior to disposing the client, however if the client is still
         connected to the live database then it will first disconnect then stop
         all threads in the thread pool.
-        :return: The results of the operation.
         """
+        self.disconnect() if self.is_connected else []
 
-        dispose_message = self.disconnect() if self.is_connected else []
-        dispose_message.append(f"Disposed of live data client.")
-        return dispose_message
-
-    def _value_client_connect(self, symbol: str):
-        if symbol is None:
-            raise ValueError("The symbol cannot be null.")
-        if self._client is None:
-            raise ConnectionError("No connection has been established to the live database (please connect first).")
-        if not self.is_connected:
-            raise ConnectionError("No connection is established with the live database.")
+        self._log(f"Disposed of live data client.")
 
     def subscribe_tick_data(
             self,
             symbol: str,
             venue: Venue,
-            handler: callable = None) -> str:
+            handler: callable=None):
         """
         Subscribe to live tick data for the given symbol and venue.
 
         :param symbol: The symbol for subscription.
         :param venue: The venue for subscription.
         :param handler: The callable handler for subscription (if None will just call print).
-        :return: The result of the operation.
         """
-        self._value_client_connect(symbol)
+        if symbol is None:
+            raise ValueError("The symbol cannot be None.")
+        self._check_connection()
+        if venue is None:
+            raise ValueError("The venue cannot be None.")
+
+        self._check_connection()
 
         # If a handler is passed in, and doesn't already exist, then add to tick subscribers.
         if handler is not None and not any(handler for h in self._tick_subscribers):
@@ -180,21 +167,26 @@ class LiveDataClient:
         if not any(ticks_channel in s for s in self._subscriptions_ticks):
             self._subscriptions_ticks.append(ticks_channel)
             self._subscriptions_ticks.sort()
-            return f"Subscribed to {ticks_channel}."
-        return f"Already subscribed to {ticks_channel}."
+
+        self._log(f"Subscribed to {ticks_channel}.")
 
     def unsubscribe_tick_data(
             self,
             symbol: str,
-            venue: Venue) -> str:
+            venue: Venue):
         """
         Unsubscribes from live tick data for the given symbol and venue.
 
         :param symbol: The symbol to unsubscribe from.
         :param venue: The venue to unsubscribe from.
-        :return: The result of the operation.
         """
-        self._value_client_connect(symbol)
+        if symbol is None:
+            raise ValueError("The symbol cannot be None.")
+        self._check_connection()
+        if venue is None:
+            raise ValueError("The venue cannot be None.")
+
+        self._check_connection()
 
         tick_channel = self._get_tick_channel_name(symbol, venue)
 
@@ -203,8 +195,8 @@ class LiveDataClient:
         if any(tick_channel in s for s in self._subscriptions_ticks):
             self._subscriptions_ticks.remove(tick_channel)
             self._subscriptions_ticks.sort()
-            return f"Unsubscribed from {tick_channel}."
-        return f"Already unsubscribed from {tick_channel}."
+
+        self._log(f"Unsubscribed from {tick_channel}.")
 
     def subscribe_bar_data(
             self,
@@ -213,9 +205,9 @@ class LiveDataClient:
             period: int,
             resolution: Resolution,
             quote_type: QuoteType,
-            handler: callable = None, ) -> str:
+            handler: callable = None):
         """
-        Subscribe to live bar data for the given symbol and venue.
+        Subscribe to live bar data for the given bar parameters.
 
         :param symbol: The symbol for subscription.
         :param venue: The venue for subscription.
@@ -223,15 +215,19 @@ class LiveDataClient:
         :param resolution: The bar resolution for subscription.
         :param quote_type: The bar quote type for subscription.
         :param handler: The callable handler for subscription (if None will just call print).
-        :return: The result of the operation.
         """
-
-        self._value_client_connect(symbol)
-
+        if symbol is None:
+            raise ValueError("The symbol cannot be None.")
         if venue is None:
-            raise ValueError("The venue cannot be null.")
+            raise ValueError("The venue cannot be None.")
         if period <= 0:
             raise ValueError("The period must be > 0.")
+        if resolution is None:
+            raise ValueError("The resolution cannot be None.")
+        if quote_type is None:
+            raise ValueError("The quote_type cannot be None.")
+
+        self._check_connection()
 
         # If a handler is passed in, and doesn't already exist, then add to bar subscribers.
         if handler is not None and not any(handler for h in self._bar_subscribers):
@@ -251,8 +247,8 @@ class LiveDataClient:
         if not any(bars_channel in s for s in self._subscriptions_bars):
             self._subscriptions_bars.append(bars_channel)
             self._subscriptions_bars.sort()
-            return f"Subscribed to {bars_channel}."
-        return f"Already subscribed to {bars_channel}."
+
+        self._log(f"Subscribed to {bars_channel}.")
 
     def unsubscribe_bar_data(
             self,
@@ -260,7 +256,7 @@ class LiveDataClient:
             venue: Venue,
             period: int,
             resolution: Resolution,
-            quote_type: QuoteType) -> str:
+            quote_type: QuoteType):
         """
         Unsubscribes from live bar data for the given symbol and venue.
 
@@ -269,15 +265,19 @@ class LiveDataClient:
         :param period: The bar period to unsubscribe from (> 0).
         :param resolution: The bar resolution to unsubscribe from.
         :param quote_type: The bar quote type to unsubscribe from.
-        :return: The result of the operation.
         """
-
-        self._value_client_connect(symbol)
-
+        if symbol is None:
+            raise ValueError("The symbol cannot be None.")
         if venue is None:
-            raise ValueError("The venue cannot be null.")
+            raise ValueError("The venue cannot be None.")
         if period <= 0:
             raise ValueError("The period must be > 0.")
+        if resolution is None:
+            raise ValueError("The resolution cannot be None.")
+        if quote_type is None:
+            raise ValueError("The quote_type cannot be None.")
+
+        self._check_connection()
 
         bar_channel = self._get_bar_channel_name(
             symbol,
@@ -291,10 +291,10 @@ class LiveDataClient:
         if any(bar_channel in s for s in self._subscriptions_bars):
             self._subscriptions_bars.remove(bar_channel)
             self._subscriptions_bars.sort()
-            return f"Unsubscribed from {bar_channel}."
-        return f"Already unsubscribed from {bar_channel}."
 
-    def register_strategy(self, strategy: TradeStrategy) -> str:
+        self._log(f"Unsubscribed from {bar_channel}.")
+
+    def register_strategy(self, strategy: TradeStrategy):
         """
         Registers the trade strategy to receive all ticks and bars from the
         live data client.
@@ -308,7 +308,16 @@ class LiveDataClient:
         self._tick_subscribers.append(strategy._update_tick)
         self._bar_subscribers.append(strategy._update_bars)
 
-        return f"Registered the {strategy} with the live data client."
+        self._log(f"Registered {strategy} with the live data client.")
+
+    @staticmethod
+    def _log(message: str):
+        """
+        Log the given message (if no logger then prints).
+
+        :param message: The message to log.
+        """
+        print(message)
 
     @staticmethod
     def _parse_tick(
@@ -368,6 +377,17 @@ class LiveDataClient:
         """
         return (f'{symbol}.{venue.name.lower()}-{period}-'
                 f'{resolution.name.lower()}[{quote_type.name.lower()}]')
+
+    def _check_connection(self):
+        """
+        Check the connection with the live database.
+        :raises: ConnectionError if the client is not connected.
+        """
+        if self._client is None:
+            raise ConnectionError(("No connection has been established to the live database "
+                                   "(please connect first)."))
+        if not self.is_connected:
+            raise ConnectionError("No connection is established with the live database.")
 
     def _tick_handler(self, message):
         """"
