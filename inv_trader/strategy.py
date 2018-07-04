@@ -25,12 +25,12 @@ class TradeStrategy(object):
 
     def __init__(self):
         """
-        Initializes a new instance of the abstract TradeStrategy class.
+        Initializes a new instance of the TradeStrategy abstract class.
         """
         self._is_running = False
         self._name = self.__class__.__name__
-        self._bars = {}
-        self._last_ticks = {}
+        self._bars = Dict[BarType, List[Bar]]
+        self._ticks = Dict[str, List[Tick]]
 
     def __str__(self) -> str:
         """
@@ -59,11 +59,18 @@ class TradeStrategy(object):
         return self._name
 
     @property
-    def bars(self) -> Dict[BarType, List[Bar]]:
+    def all_bars(self) -> Dict[BarType, List[Bar]]:
         """
-        :return: The internally held bars for the strategy.
+        :return: The internally held bars dictionary for the strategy.
         """
         return self._bars
+
+    @property
+    def all_ticks(self) -> Dict[str, List[Tick]]:
+        """
+        :return: The internally held ticks dictionary for the strategy
+        """
+        return self._ticks
 
     def last_tick(
             self,
@@ -75,12 +82,46 @@ class TradeStrategy(object):
         :param symbol: The last tick symbol.
         :param venue: The last tick venue.
         :return: The tick object.
+        :raises: KeyError: If the ticks dictionary does not contain the symbol and venue.
         """
         key = f'{symbol.lower()}.{venue.name.lower()}'
-        if key not in self._last_ticks:
-            raise KeyError(f"The last ticks does not contain {key}.")
+        if key not in self._ticks:
+            raise KeyError(f"The ticks dictionary does not contain {key}.")
 
-        return self._last_ticks[key]
+        return self._ticks[key]
+
+    def bars(self, bar_type: BarType) -> List[Bar]:
+        """
+        Get the bars for the given bar type.
+
+        :param bar_type: The bar type to get.
+        :return: The list of bars.
+        :raises: KeyError: If the bars dictionary does not contain the bar type.
+        """
+        if bar_type not in self._bars:
+            raise KeyError(f"The bars dictionary does not contain {bar_type}.")
+
+        return self._bars[bar_type]
+
+    def bar(
+            self,
+            bar_type: BarType,
+            index: int) -> Bar:
+        """
+        Get the bar for the given bar type at index (reverse indexed, 0 is last bar).
+
+        :param bar_type: The bar type to get.
+        :param index: The index to get.
+        :return: The found bar.
+        :raises: KeyError: If the bars dictionary does not contain the bar type.
+        :raises: ValueError: If the index is negative.
+        """
+        if bar_type not in self._bars:
+            raise KeyError(f"The bars dictionary does not contain {bar_type}.")
+        if index < 0:
+            raise ValueError("The index cannot be negative.")
+
+        return self._bars[bar_type][index]
 
     @abc.abstractmethod
     def on_start(self):
@@ -137,7 +178,7 @@ class TradeStrategy(object):
             self._log(f"{self.name} Warning: Cannot reset a running strategy...")
             return
 
-        self._last_ticks = {}
+        self._ticks = {}
         self._bars = {}
         self._log(f"Reset {self.name}.")
 
@@ -151,7 +192,7 @@ class TradeStrategy(object):
             return
 
         key = f'{tick.symbol}.{tick.venue.name.lower()}'
-        self._last_ticks[key] = tick
+        self._ticks[key] = tick
 
         if self._is_running:
             self.on_tick(tick)
@@ -174,9 +215,9 @@ class TradeStrategy(object):
             self._log("{self.name} Warning: update_bar() was given None.")
             return
         if bar_type not in self._bars:
-            self._bars[bar_type] = []
+            self._bars[bar_type] = List[Bar]
 
-        self._bars[bar_type].append(bar)
+        self._bars[bar_type].insert(0, bar)
 
         if self._is_running:
             self.on_bar(bar_type, bar)
