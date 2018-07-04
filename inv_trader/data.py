@@ -107,8 +107,8 @@ class LiveDataClient:
 
         if self._pubsub_thread is not None:
             self._pubsub_thread.stop()
-            self._log("Stopped PubSub thread {self._pubsub_thread}.")
             time.sleep(0.100)  # Allows thread to stop.
+            self._log(f"Stopped PubSub thread {self._pubsub_thread}.")
 
         self._log(f"Unsubscribed from tick_data {self._subscriptions_ticks}.")
         self._log(f"Unsubscribed from bars_data {self._subscriptions_bars}.")
@@ -124,18 +124,6 @@ class LiveDataClient:
         self._pubsub_thread = None
         self._subscriptions_ticks = []
         self._subscriptions_bars = []
-
-    def dispose(self):
-        """
-        Cleanly disposes of the live data client. The disconnect method should
-        be called prior to disposing the client, however if the client is still
-        connected to the live database then it will first disconnect then stop
-        all threads in the thread pool.
-        """
-        if self.is_connected:
-            self.disconnect()
-
-        self._log(f"Disposed of live data client.")
 
     def subscribe_tick_data(
             self,
