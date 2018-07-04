@@ -7,18 +7,28 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+from inv_trader.objects import Tick, BarType, Bar
 from inv_trader.strategy import TradeStrategy
 
 
 class ExampleStrategy(TradeStrategy):
-    def reset(self):
+    def on_start(self):
         pass
 
-    def on_tick(self):
+    def on_tick(self, tick: Tick):
         print("got a tick")
 
-    def on_bar(self):
+    def on_bar(
+            self,
+            bar_type: BarType,
+            bar: Bar):
         print("got a bar")
 
+    def on_account(self, message):
+        pass
+
     def on_message(self):
+        pass
+
+    def on_stop(self):
         pass

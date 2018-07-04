@@ -69,6 +69,21 @@ class Tick:
         """
         return self._timestamp
 
+    def __eq__(self, other) -> bool:
+        """
+        Override the default equality comparison.
+        """
+        if isinstance(other, self.__class__):
+            return self.__dict__ == other.__dict__
+        else:
+            return False
+
+    def __ne__(self, other):
+        """
+        Override the default not-equals comparison.
+        """
+        return not self.__eq__(other)
+
     def __str__(self) -> str:
         """
         :return: The str() string representation of the tick.
@@ -143,6 +158,21 @@ class BarType:
         :return: The bar types quote type..
         """
         return self._quote_type
+
+    def __eq__(self, other) -> bool:
+        """
+        Override the default equality comparison.
+        """
+        if isinstance(other, self.__class__):
+            return self.__dict__ == other.__dict__
+        else:
+            return False
+
+    def __ne__(self, other):
+        """
+        Override the default not-equals comparison.
+        """
+        return not self.__eq__(other)
 
     def __str__(self) -> str:
         """
@@ -229,6 +259,21 @@ class Bar:
         :return: The bars timestamp (ISO8601).
         """
         return self._timestamp
+
+    def __eq__(self, other) -> bool:
+        """
+        Override the default equality comparison.
+        """
+        if isinstance(other, self.__class__):
+            return self.__dict__ == other.__dict__
+        else:
+            return False
+
+    def __ne__(self, other):
+        """
+        Override the default not-equals comparison.
+        """
+        return not self.__eq__(other)
 
     def __str__(self) -> str:
         """
