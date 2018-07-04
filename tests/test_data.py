@@ -448,3 +448,48 @@ class LiveDataClientTests(unittest.TestCase):
         time.sleep(0.1)  # Allow threads to work.
         self.assertEqual(5, storer.count)
         self.assertEqual('Bar: 1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T12:00:04+00:00', str(storer.get_store[4]))
+
+    def test_can_receive_bars_from_multiple_subscribers(self):
+        # Arrange
+        storer = ObjectStorer()
+        self.data_client.connect()
+        self.data_client.subscribe_bar_data('audusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.BID, storer.store)
+        self.data_client.subscribe_bar_data('gbpusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.BID, storer.store)
+        self.data_client.subscribe_bar_data('eurusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.BID, storer.store)
+
+        # Act
+        self.redis_tester.publish('audusd.fxcm-1-second[bid]',
+                                  '1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T12:00:00+00:00')
+        self.redis_tester.publish('audusd.fxcm-1-second[bid]',
+                                  '1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T12:00:01+00:00')
+        self.redis_tester.publish('audusd.fxcm-1-second[bid]',
+                                  '1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T12:00:02+00:00')
+        self.redis_tester.publish('audusd.fxcm-1-second[bid]',
+                                  '1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T12:00:03+00:00')
+        self.redis_tester.publish('audusd.fxcm-1-second[bid]',
+                                  '1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T12:00:04+00:00')
+        self.redis_tester.publish('eurusd.fxcm-1-second[bid]',
+                                  '1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T12:00:00+00:00')
+        self.redis_tester.publish('eurusd.fxcm-1-second[bid]',
+                                  '1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T12:00:01+00:00')
+        self.redis_tester.publish('eurusd.fxcm-1-second[bid]',
+                                  '1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T12:00:02+00:00')
+        self.redis_tester.publish('eurusd.fxcm-1-second[bid]',
+                                  '1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T12:00:03+00:00')
+        self.redis_tester.publish('eurusd.fxcm-1-second[bid]',
+                                  '1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T12:00:04+00:00')
+        self.redis_tester.publish('gbpusd.fxcm-1-second[bid]',
+                                  '1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T12:00:00+00:00')
+        self.redis_tester.publish('gbpusd.fxcm-1-second[bid]',
+                                  '1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T12:00:01+00:00')
+        self.redis_tester.publish('gbpusd.fxcm-1-second[bid]',
+                                  '1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T12:00:02+00:00')
+        self.redis_tester.publish('gbpusd.fxcm-1-second[bid]',
+                                  '1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T12:00:03+00:00')
+        self.redis_tester.publish('gbpusd.fxcm-1-second[bid]',
+                                  '1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T12:00:04+00:00')
+
+        # Assert
+        time.sleep(0.1)  # Allow threads to work.
+        self.assertEqual(15, storer.count)
+        self.assertEqual('Bar: 1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T12:00:04+00:00', str(storer.get_store[14]))

@@ -173,7 +173,6 @@ class LiveDataClient:
         if not any(ticks_channel in s for s in self._subscriptions_ticks):
             self._subscriptions_ticks.append(ticks_channel)
             self._subscriptions_ticks.sort()
-            print(f"Subscribed to {ticks_channel}.")
             return f"Subscribed to {ticks_channel}."
         return f"Already subscribed to {ticks_channel}."
 
