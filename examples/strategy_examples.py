@@ -27,7 +27,7 @@ class ExampleStrategy(TradeStrategy):
     def on_account(self, message):
         pass
 
-    def on_message(self):
+    def on_message(self, message):
         pass
 
     def on_stop(self):
