@@ -37,6 +37,11 @@ class LiveDataClient:
         :param host: The redis host IP address (default=127.0.0.1).
         :param port: The redis host port (default=6379).
         """
+        if host is None:
+            raise ValueError("The host cannot be None.")
+        if port is None:
+            raise ValueError("The port cannot be None.")
+
         self._thread_pool = []
         self._host = host
         self._port = port
@@ -95,6 +100,7 @@ class LiveDataClient:
     def connect(self) -> str:
         """
         Connect to the live database and create a local pub/sub server.
+        :return: The result of the operation.
         """
         self._client = redis.StrictRedis(host=self._host, port=self._port, db=0)
         self._pubsub = self._client.pubsub()
@@ -104,6 +110,7 @@ class LiveDataClient:
     def disconnect(self) -> List[str]:
         """
         Disconnects from the local publish subscribe server and the database.
+        :return: The results of the operation.
         """
         if self._client is None:
             return ["Disconnected (the client was never connected.)"]
@@ -134,6 +141,7 @@ class LiveDataClient:
         be called prior to disposing the client, however if the client is still
         connected to the live database then it will first disconnect then stop
         all threads in the thread pool.
+        :return: The results of the operation.
         """
         dispose_message = []
         if self.is_connected:
@@ -150,9 +158,10 @@ class LiveDataClient:
         """
         Subscribe to live tick data for the given symbol and venue.
 
-        :param handler: The callable handler for subscription.
         :param symbol: The symbol for subscription.
         :param venue: The venue for subscription.
+        :param handler: The callable handler for subscription (if None will just call print).
+        :return: The result of the operation.
         """
         if symbol is None:
             raise ValueError("The symbol cannot be null.")
@@ -186,6 +195,7 @@ class LiveDataClient:
 
         :param symbol: The symbol to unsubscribe from.
         :param venue: The venue to unsubscribe from.
+        :return: The result of the operation.
         """
         if symbol is None:
             raise ValueError("The symbol cannot be null.")
@@ -220,7 +230,8 @@ class LiveDataClient:
         :param period: The bar period for subscription (> 0).
         :param resolution: The bar resolution for subscription.
         :param quote_type: The bar quote type for subscription.
-        :param handler: The callable handler for subscription.
+        :param handler: The callable handler for subscription (if None will just call print).
+        :return: The result of the operation.
         """
         if symbol is None:
             raise ValueError("The symbol cannot be null.")
@@ -269,6 +280,7 @@ class LiveDataClient:
         :param period: The bar period to unsubscribe from (> 0).
         :param resolution: The bar resolution to unsubscribe from.
         :param quote_type: The bar quote type to unsubscribe from.
+        :return: The result of the operation.
         """
         if symbol is None:
             raise ValueError("The symbol cannot be null.")
@@ -305,10 +317,10 @@ class LiveDataClient:
         :return: The result of the operation.
         """
         if strategy is None:
-            raise ValueError("The strategy cannot be null.")
+            raise ValueError("The strategy cannot be None.")
 
-        self._tick_subscribers.append(strategy.update_tick)
-        self._bar_subscribers.append(strategy.update_bars)
+        self._tick_subscribers.append(strategy._update_tick)
+        self._bar_subscribers.append(strategy._update_bars)
 
         return f"Registered the {strategy} with the live data client."
 
@@ -354,7 +366,7 @@ class LiveDataClient:
             symbol: str,
             venue: Venue) -> str:
         """
-        Returns the tick channel name from the given parameters.
+        Return the tick channel name from the given parameters.
         """
         return f'{symbol}.{venue.name.lower()}'
 
@@ -366,19 +378,18 @@ class LiveDataClient:
             resolution: Resolution,
             quote_type: QuoteType) -> str:
         """
-        Returns the bar channel name from the given parameters.
+        Return the bar channel name from the given parameters.
         """
         return (f'{symbol}.{venue.name.lower()}-{period}-'
                 f'{resolution.name.lower()}[{quote_type.name.lower()}]')
 
     def _tick_handler(self, message):
         """"
-        Create a new tick handler object which is called whenever the client receives
-        a tick on the subscribed channel.
+        Handle the tick message by parsing to Tick and sending to all relevant subscribers.
         """
-        if len(self._tick_subscribers) == 0:
-            print(f"Received message [{message['channel'].decode(UTF8)}] "
-                  f"{message['data'].decode(UTF8)}")
+        # if len(self._tick_subscribers) == 0:
+        #     print(f"Received message [{message['channel'].decode(UTF8)}] "
+        #           f"{message['data'].decode(UTF8)}")
 
         tick = self._parse_tick(
             message['channel'].decode(UTF8),
@@ -389,12 +400,11 @@ class LiveDataClient:
 
     def _bar_handler(self, message):
         """"
-        Create a new bar handler object which is called whenever the client receives
-        a bar on the subscribed channel.
+        Handle the bar message by parsing to Bar and sending to all relevant subscribers.
         """
-        if len(self._bar_subscribers) == 0:
-            print(f"Received message [{message['channel'].decode(UTF8)}] "
-                  f"{message['data'].decode(UTF8)}")
+        # if len(self._bar_subscribers) == 0:
+        #     print(f"Received message [{message['channel'].decode(UTF8)}] "
+        #           f"{message['data'].decode(UTF8)}")
 
         bar_type = message['channel'].decode(UTF8)
         bar = self._parse_bar(message['data'].decode(UTF8))

@@ -69,45 +69,10 @@ class TradeStrategy(object):
         :return: venue: The last tick venue.
         """
         key = f'{symbol}.{venue.name.lower()}'
-        if key in self._last_ticks:
-            return self._last_ticks[key]
+        if key not in self._last_ticks:
+            raise KeyError(f"The last ticks do not contain {key}.")
 
-        return None
-
-    @abc.abstractmethod
-    def reset(self):
-        """
-        Reset the trade strategy by clearing all stateful internal values and
-        returning it to a fresh tate.
-        """
-        self._last_ticks = {}
-        self._bars = {}
-
-    def update_tick(self, tick: Tick):
-        """"
-        Updates the last held tick with the given tick then calls the on_tick
-        method for the super class.
-        """
-        key = f'{tick.symbol}.{tick.venue.name.lower()}'
-        self._last_ticks[key] = tick
-        self.on_tick()
-
-    def update_bars(
-            self,
-            bar_type: str,
-            bar: Bar):
-        """"
-        Updates the internal dictionary of bars with the given bar, then calls the
-        on_bar method for the super class.
-
-        :param bar_type: The received bar type.
-        :param bar: The received bar.
-        """
-        if bar_type not in self._bars:
-            self._bars[bar_type] = []
-
-        self._bars[bar_type].append(bar)
-        self.on_bar()
+        return self._last_ticks[key]
 
     @abc.abstractmethod
     def on_tick(self):
@@ -123,3 +88,47 @@ class TradeStrategy(object):
     def on_message(self):
         # Raise exception if not overridden in implementation.
         raise NotImplementedError
+
+    def reset(self):
+        """
+        Reset the trade strategy by clearing all stateful internal values and
+        returning it to a fresh tate.
+        """
+        self._last_ticks = {}
+        self._bars = {}
+
+    def _update_tick(self, tick: Tick):
+        """"
+        Updates the last held tick with the given tick then calls the on_tick
+        method for the super class.
+        """
+        if tick is None:
+            print("update_tick() was given None.")
+            return
+
+        key = f'{tick.symbol}.{tick.venue.name.lower()}'
+        self._last_ticks[key] = tick
+        self.on_tick()
+
+    def _update_bars(
+            self,
+            bar_type: str,
+            bar: Bar):
+        """"
+        Updates the internal dictionary of bars with the given bar, then calls the
+        on_bar method for the super class.
+
+        :param bar_type: The received bar type.
+        :param bar: The received bar.
+        """
+        if bar_type is None:
+            print("update_bar() was given bar_type of None.")
+            return
+        if bar is None:
+            print("update_bar() was given bar of None.")
+            return
+        if bar_type not in self._bars:
+            self._bars[bar_type] = []
+
+        self._bars[bar_type].append(bar)
+        self.on_bar()

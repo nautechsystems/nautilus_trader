@@ -52,6 +52,13 @@ class ObjectStorer:
         print(f"Storing {obj}")
         self._store.append(obj)
 
+    def store_both(self, obj1: object, obj2: object):
+        """"
+        Store the given object.
+        """
+        print(f"Storing {obj2}")
+        self._store.append(obj2)
+
 
 class LiveDataClientTests(unittest.TestCase):
 
@@ -407,7 +414,7 @@ class LiveDataClientTests(unittest.TestCase):
         # Arrange
         storer = ObjectStorer()
         self.data_client.connect()
-        self.data_client.subscribe_bar_data('audusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.BID, storer.store)
+        self.data_client.subscribe_bar_data('audusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.BID, storer.store_both)
 
         bar = Bar(
             Decimal('1.00001'),
@@ -430,7 +437,7 @@ class LiveDataClientTests(unittest.TestCase):
         # Arrange
         storer = ObjectStorer()
         self.data_client.connect()
-        self.data_client.subscribe_bar_data('audusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.BID, storer.store)
+        self.data_client.subscribe_bar_data('audusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.BID, storer.store_both)
 
         # Act
         self.redis_tester.publish('audusd.fxcm-1-second[bid]',
@@ -453,9 +460,9 @@ class LiveDataClientTests(unittest.TestCase):
         # Arrange
         storer = ObjectStorer()
         self.data_client.connect()
-        self.data_client.subscribe_bar_data('audusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.BID, storer.store)
-        self.data_client.subscribe_bar_data('gbpusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.BID, storer.store)
-        self.data_client.subscribe_bar_data('eurusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.BID, storer.store)
+        self.data_client.subscribe_bar_data('audusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.BID, storer.store_both)
+        self.data_client.subscribe_bar_data('gbpusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.BID, storer.store_both)
+        self.data_client.subscribe_bar_data('eurusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.BID, storer.store_both)
 
         # Act
         self.redis_tester.publish('audusd.fxcm-1-second[bid]',
