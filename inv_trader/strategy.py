@@ -93,7 +93,7 @@ class TradeStrategy(object):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def on_bar(self, bar: Bar):
+    def on_bar(self, bar_type: BarType, bar: Bar):
         # Raise exception if not overridden in implementation.
         raise NotImplementedError
 
@@ -152,15 +152,15 @@ class TradeStrategy(object):
 
         key = f'{tick.symbol}.{tick.venue.name.lower()}'
         self._last_ticks[key] = tick
-        self.on_tick()
+        self.on_tick(tick)
 
     def _update_bars(
             self,
-            bar_type: str,
+            bar_type: BarType,
             bar: Bar):
         """"
         Updates the internal dictionary of bars with the given bar, then calls the
-        on_bar method for the super class.
+        on_bar method for the inheriting class.
 
         :param bar_type: The received bar type.
         :param bar: The received bar.
@@ -175,7 +175,7 @@ class TradeStrategy(object):
             self._bars[bar_type] = []
 
         self._bars[bar_type].append(bar)
-        self.on_bar()
+        self.on_bar(bar_type, bar)
 
     # Avoid making a static method for now.
     def _log(self, message: str):
