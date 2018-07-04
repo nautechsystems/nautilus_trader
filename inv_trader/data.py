@@ -197,7 +197,7 @@ class LiveDataClient:
             period: int,
             resolution: Resolution,
             quote_type: QuoteType,
-            handler: callable = None):
+            handler: callable=None):
         """
         Subscribe to live bar data for the given bar parameters.
 
