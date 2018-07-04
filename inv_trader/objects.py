@@ -8,11 +8,10 @@
 # -------------------------------------------------------------------------------------------------
 
 import datetime
-import iso8601
 
 from decimal import Decimal
 
-from inv_trader.enums import Venue
+from inv_trader.enums import Venue, Resolution, QuoteType
 
 
 class Tick:
@@ -84,6 +83,82 @@ class Tick:
         return f"<{str(self)} object at {id(self)}>"
 
 
+class BarType:
+    """
+    Represents a symbol and bar specification.
+    """
+
+    def __init__(self,
+                 symbol: str,
+                 venue: Venue,
+                 period: int,
+                 resolution: Resolution,
+                 quote_type: QuoteType):
+        """
+        Initializes a new instance of the BarType class.
+
+        :param symbol: The bar symbol.
+        :param venue: The bar venue.
+        :param period: The bar period.
+        :param resolution: The bar resolution.
+        :param quote_type: The bar quote type.
+        """
+        self._symbol = symbol
+        self._venue = venue
+        self._period = period
+        self._resolution = resolution
+        self._quote_type = quote_type
+
+    @property
+    def symbol(self) -> str:
+        """
+        :return: The bar types symbol.
+        """
+        return self._symbol
+
+    @property
+    def venue(self) -> Venue:
+        """
+        :return: The bar types venue.
+        """
+        return self._venue
+
+    @property
+    def period(self) -> int:
+        """
+        :return: The bar types period.
+        """
+        return self._period
+
+    @property
+    def resolution(self) -> Resolution:
+        """
+        :return: The bar types resolution.
+        """
+        return self._resolution
+
+    @property
+    def quote_type(self) -> QuoteType:
+        """
+        :return: The bar types quote type..
+        """
+        return self._quote_type
+
+    def __str__(self) -> str:
+        """
+        :return: The str() string representation of the bar type.
+        """
+        return (f"{self._symbol}.{self._venue.name.lower()}"
+                f"-{self._period}-{self._resolution}[{self._quote_type}]")
+
+    def __repr__(self) -> str:
+        """
+        :return: The repr() string representation of the bar type.
+        """
+        return (f"<{self._symbol}.{self._venue.name.lower()}"
+                f"-{self._period}-{self._resolution}[{self._quote_type}] object at {id(self)}>")
+
+
 class Bar:
     """
     Represents a financial market trade bar.
@@ -98,6 +173,13 @@ class Bar:
                  timestamp: datetime.datetime):
         """
         Initializes a new instance of the Bar class.
+
+        :param open_price: The bars open price.
+        :param high_price: The bars high price.
+        :param low_price: The bars low price.
+        :param close_price: The bars close price.
+        :param volume: The bars volume.
+        :param timestamp: The bars timestamp.
         """
         self._open = open_price
         self._high = high_price
@@ -137,14 +219,14 @@ class Bar:
     @property
     def volume(self) -> int:
         """
-        :return: The bars volume.
+        :return: The bars volume (tick volume).
         """
         return self._volume
 
     @property
     def timestamp(self) -> datetime.datetime:
         """
-        :return: The bars timestamp.
+        :return: The bars timestamp (ISO8601).
         """
         return self._timestamp
 
