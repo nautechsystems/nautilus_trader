@@ -132,7 +132,8 @@ class LiveDataClient:
         connected to the live database then it will first disconnect then stop
         all threads in the thread pool.
         """
-        self.disconnect() if self.is_connected else []
+        if self.is_connected:
+            self.disconnect()
 
         self._log(f"Disposed of live data client.")
 
