@@ -102,26 +102,28 @@ class LiveDataClient:
         """
         Disconnects from the local publish subscribe server and the database.
         """
-        if self._client is None:
-            self._log("Disconnected (the client was never connected.)")
-
-        self._pubsub.unsubscribe()
-        self._log(f"Unsubscribed from tick_data {self._subscriptions_ticks}.")
-        self._log(f"Unsubscribed from bars_data {self._subscriptions_bars}.")
+        if self._pubsub is not None:
+            self._pubsub.unsubscribe()
 
         if self._pubsub_thread is not None:
             self._pubsub_thread.stop()
             self._log("Stopped PubSub thread {self._pubsub_thread}.")
             time.sleep(0.100)  # Allows thread to stop.
 
-        self._client.connection_pool.disconnect()
+        self._log(f"Unsubscribed from tick_data {self._subscriptions_ticks}.")
+        self._log(f"Unsubscribed from bars_data {self._subscriptions_bars}.")
+
+        if self._client is not None:
+            self._client.connection_pool.disconnect()
+            self._log(f"Disconnected from live database at {self._host}:{self._port}.")
+        else:
+            self._log("Disconnected (the client was already disconnected).")
+
         self._client = None
         self._pubsub = None
         self._pubsub_thread = None
         self._subscriptions_ticks = []
         self._subscriptions_bars = []
-
-        self._log(f"Disconnected from live database at {self._host}:{self._port}.")
 
     def dispose(self):
         """
@@ -381,6 +383,7 @@ class LiveDataClient:
     def _check_connection(self):
         """
         Check the connection with the live database.
+
         :raises: ConnectionError if the client is not connected.
         """
         if self._client is None:

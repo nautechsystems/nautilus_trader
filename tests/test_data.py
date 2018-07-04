@@ -70,27 +70,25 @@ class LiveDataClientTests(unittest.TestCase):
 
     # Fixture Tear Down
     def tearDown(self):
-        #self.data_client.disconnect()
-        print(self.data_client.dispose())
+        self.data_client.disconnect()
+        self.data_client.dispose()
 
     def test_can_connect_to_live_db(self):
         # Act
         result = self.data_client.connect()
 
         # Assert
-        self.assertEqual('Connected to live database at localhost:6379.', result)
+        # Does not throw exception.
 
     def test_can_disconnect_from_live_db(self):
         # Arrange
         self.data_client.connect()
 
         # Act
-        result = self.data_client.disconnect()
+        self.data_client.disconnect()
 
         # Assert
-        self.assertEqual('Unsubscribed from tick_data [].', result[0])
-        self.assertEqual('Unsubscribed from bars_data [].', result[1])
-        self.assertEqual('Disconnected from live database at localhost:6379.', result[2])
+        # Does not throw exception.
 
     def test_is_connected_when_not_connected_returns_false(self):
         # Arrange
