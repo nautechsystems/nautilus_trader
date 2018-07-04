@@ -7,6 +7,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+import re
 import redis
 import iso8601
 import time
@@ -16,7 +17,7 @@ from redis import ConnectionError
 from typing import List
 
 from inv_trader.enums import Resolution, QuoteType, Venue
-from inv_trader.objects import Tick, Bar
+from inv_trader.objects import Tick, BarType, Bar
 from inv_trader.strategy import TradeStrategy
 
 # Private IP 10.135.55.111
@@ -331,11 +332,30 @@ class LiveDataClient:
                     iso8601.parse_date(split_tick[2]))
 
     @staticmethod
+    def _parse_bar_type(bar_type_string: str) -> BarType:
+        """
+        Parse a BarType object from the given UTF-8 string.
+
+        :param bar_type_string: The bar type string to parse.
+        :return: The parsed bar type object.
+        """
+        # TODO: Improve this regex.
+        split_string = re.split(r'[.-]+', bar_type_string)
+        resolution = split_string[3].split('[')[0]
+        quote_type = split_string[3].split('[')[1].strip(']')
+
+        return BarType(split_string[0],
+                       Venue[split_string[1].upper()],
+                       int(split_string[2]),
+                       Resolution[resolution.upper()],
+                       QuoteType[quote_type.upper()])
+
+    @staticmethod
     def _parse_bar(bar_string: str) -> Bar:
         """
         Parse a Bar object from the given UTF-8 string.
 
-        :param bar_string: The bar string.
+        :param bar_string: The bar string to parse.
         :return: The parsed bar object.
         """
         split_bar = bar_string.split(',')

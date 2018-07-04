@@ -17,7 +17,7 @@ from decimal import Decimal
 from typing import List
 
 from inv_trader.data import LiveDataClient
-from inv_trader.objects import Tick, Bar
+from inv_trader.objects import Tick, BarType, Bar
 from inv_trader.enums import Venue, Resolution, QuoteType
 
 
@@ -233,6 +233,19 @@ class LiveDataClientTests(unittest.TestCase):
         self.assertEqual(bar, result)
         self.assertEqual(
             'Bar: 1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T19:59:01+00:00', str(result))
+
+    def test_can_parse_bar_type(self):
+        # Arrange
+        bar_type = BarType('audusd',
+                           Venue.FXCM,
+                           1,
+                           Resolution.SECOND,
+                           QuoteType.MID)
+        # Act
+        result = self.data_client._parse_bar_type(str(bar_type))
+
+        # Assert
+        self.assertEqual(bar_type, result)
 
     def test_tick_handler_with_no_subscribers_prints(self):
         # Arrange
