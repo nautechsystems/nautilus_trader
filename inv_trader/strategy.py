@@ -13,7 +13,7 @@ from typing import List
 from typing import Dict
 
 from inv_trader.enums import Venue
-from inv_trader.objects import Tick, Bar
+from inv_trader.objects import Tick, BarType, Bar
 
 
 class TradeStrategy(object):
@@ -23,14 +23,12 @@ class TradeStrategy(object):
 
     __metaclass__ = abc.ABCMeta
 
-    def __init__(self, params: []=None):
+    def __init__(self):
         """
         Initializes a new instance of the abstract TradeStrategy class.
-
-        :param params: The initialization parameters for the trade strategy.
         """
+        self._is_running = False
         self._name = self.__class__.__name__
-        self._params = str(params)[1:-1].replace("'", "").strip('()')
         self._bars = {}
         self._last_ticks = {}
 
@@ -47,6 +45,13 @@ class TradeStrategy(object):
         return f"<{str(self)} object at {id(self)}>"
 
     @property
+    def is_running(self) -> bool:
+        """
+        :return: The name of the trade strategy.
+        """
+        return self._is_running
+
+    @property
     def name(self) -> str:
         """
         :return: The name of the trade strategy.
@@ -54,7 +59,7 @@ class TradeStrategy(object):
         return self._name
 
     @property
-    def bars(self) -> Dict[str, List[Bar]]:
+    def bars(self) -> Dict[BarType, List[Bar]]:
         """
         :return: The internally held bars for the strategy.
         """
@@ -65,37 +70,76 @@ class TradeStrategy(object):
             symbol: str,
             venue: Venue) -> Tick:
         """
+        Get the last tick held for the given parameters.
+
         :param symbol: The last tick symbol.
-        :return: venue: The last tick venue.
+        :param: venue: The last tick venue.
+        :return: The tick object.
         """
-        key = f'{symbol}.{venue.name.lower()}'
+        key = f'{symbol.lower()}.{venue.name.lower()}'
         if key not in self._last_ticks:
-            raise KeyError(f"The last ticks do not contain {key}.")
+            raise KeyError(f"The last ticks does not contain {key}.")
 
         return self._last_ticks[key]
 
     @abc.abstractmethod
-    def on_tick(self):
+    def on_start(self):
         # Raise exception if not overridden in implementation.
         raise NotImplementedError
 
     @abc.abstractmethod
-    def on_bar(self):
+    def on_tick(self, tick: Tick):
         # Raise exception if not overridden in implementation.
         raise NotImplementedError
 
     @abc.abstractmethod
-    def on_message(self):
+    def on_bar(self, bar: Bar):
         # Raise exception if not overridden in implementation.
         raise NotImplementedError
+
+    @abc.abstractmethod
+    def on_account(self, message):
+        # Raise exception if not overridden in implementation.
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def on_message(self, message):
+        # Raise exception if not overridden in implementation.
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def on_stop(self):
+        # Raise exception if not overridden in implementation.
+        raise NotImplementedError
+
+    def start(self):
+        """
+        Starts the trade strategy.
+        """
+        self._log(f"Starting {self.name}...")
+        self._is_running = True
+        self.on_start()
+
+    def stop(self):
+        """
+        Stops the trade strategy.
+        """
+        self._log(f"Stopping {self.name}...")
+        self._is_running = False
+        self.on_stop()
 
     def reset(self):
         """
         Reset the trade strategy by clearing all stateful internal values and
-        returning it to a fresh tate.
+        returning it to a fresh state (strategy must not be running).
         """
+        if self._is_running:
+            self._log(f"{self.name} Warning: Cannot reset a running strategy...")
+            return
+
         self._last_ticks = {}
         self._bars = {}
+        self._log(f"Reset {self.name}.")
 
     def _update_tick(self, tick: Tick):
         """"
@@ -103,7 +147,7 @@ class TradeStrategy(object):
         method for the super class.
         """
         if tick is None:
-            print("update_tick() was given None.")
+            self._log(f"{self.name} Warning: update_tick() was given None.")
             return
 
         key = f'{tick.symbol}.{tick.venue.name.lower()}'
@@ -122,13 +166,22 @@ class TradeStrategy(object):
         :param bar: The received bar.
         """
         if bar_type is None:
-            print("update_bar() was given bar_type of None.")
+            self._log(f"{self.name} Warning: update_bar() was given bar_type of None.")
             return
         if bar is None:
-            print("update_bar() was given bar of None.")
+            self._log("{self.name} Warning: update_bar() was given bar of None.")
             return
         if bar_type not in self._bars:
             self._bars[bar_type] = []
 
         self._bars[bar_type].append(bar)
         self.on_bar()
+
+    # Avoid making a static method for now.
+    def _log(self, message: str):
+        """
+        Logs the given message.
+
+        :param message: The message to log.
+        """
+        print(message)
