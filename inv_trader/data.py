@@ -29,8 +29,8 @@ class LiveDataClient:
     """
 
     def __init__(self,
-                 host: str='localhost',
-                 port: int=6379):
+                 host: str = 'localhost',
+                 port: int = 6379):
         """
         Initializes a new instance of the LiveDataClient class.
 
@@ -77,11 +77,7 @@ class LiveDataClient:
         """
         :return: All subscribed channels from the Redis PubSub object.
         """
-        subscriptions = []
-        for channel in self._client.pubsub_channels():
-            subscriptions.append(channel.decode(UTF8))
-
-        return subscriptions
+        return [channel.decode(UTF8) for channel in self._client.pubsub_channels()]
 
     @property
     def subscriptions_ticks(self) -> List[str]:
@@ -143,18 +139,24 @@ class LiveDataClient:
         all threads in the thread pool.
         :return: The results of the operation.
         """
-        dispose_message = []
-        if self.is_connected:
-            dispose_message += self.disconnect()
 
+        dispose_message = self.disconnect() if self.is_connected else []
         dispose_message.append(f"Disposed of live data client.")
         return dispose_message
+
+    def _value_client_connect(self, symbol: str):
+        if symbol is None:
+            raise ValueError("The symbol cannot be null.")
+        if self._client is None:
+            raise ConnectionError("No connection has been established to the live database (please connect first).")
+        if not self.is_connected:
+            raise ConnectionError("No connection is established with the live database.")
 
     def subscribe_tick_data(
             self,
             symbol: str,
             venue: Venue,
-            handler: callable=None) -> str:
+            handler: callable = None) -> str:
         """
         Subscribe to live tick data for the given symbol and venue.
 
@@ -163,12 +165,7 @@ class LiveDataClient:
         :param handler: The callable handler for subscription (if None will just call print).
         :return: The result of the operation.
         """
-        if symbol is None:
-            raise ValueError("The symbol cannot be null.")
-        if self._client is None:
-            return "No connection has been established to the live database (please connect first)."
-        if not self.is_connected:
-            return "No connection is established with the live database."
+        self._value_client_connect(symbol)
 
         # If a handler is passed in, and doesn't already exist, then add to tick subscribers.
         if handler is not None and not any(handler for h in self._tick_subscribers):
@@ -197,12 +194,7 @@ class LiveDataClient:
         :param venue: The venue to unsubscribe from.
         :return: The result of the operation.
         """
-        if symbol is None:
-            raise ValueError("The symbol cannot be null.")
-        if self._client is None:
-            return "No connection has been established to the live database (please connect first)."
-        if not self.is_connected:
-            return "No connection is established with the live database."
+        self._value_client_connect(symbol)
 
         tick_channel = self._get_tick_channel_name(symbol, venue)
 
@@ -221,7 +213,7 @@ class LiveDataClient:
             period: int,
             resolution: Resolution,
             quote_type: QuoteType,
-            handler: callable=None,) -> str:
+            handler: callable = None, ) -> str:
         """
         Subscribe to live bar data for the given symbol and venue.
 
@@ -233,16 +225,13 @@ class LiveDataClient:
         :param handler: The callable handler for subscription (if None will just call print).
         :return: The result of the operation.
         """
-        if symbol is None:
-            raise ValueError("The symbol cannot be null.")
+
+        self._value_client_connect(symbol)
+
         if venue is None:
             raise ValueError("The venue cannot be null.")
         if period <= 0:
             raise ValueError("The period must be > 0.")
-        if self._client is None:
-            return "No connection has been established to the live database (please connect first)."
-        if not self.is_connected:
-            return "No connection is established with the live database."
 
         # If a handler is passed in, and doesn't already exist, then add to bar subscribers.
         if handler is not None and not any(handler for h in self._bar_subscribers):
@@ -282,16 +271,13 @@ class LiveDataClient:
         :param quote_type: The bar quote type to unsubscribe from.
         :return: The result of the operation.
         """
-        if symbol is None:
-            raise ValueError("The symbol cannot be null.")
+
+        self._value_client_connect(symbol)
+
         if venue is None:
             raise ValueError("The venue cannot be null.")
         if period <= 0:
             raise ValueError("The period must be > 0.")
-        if self._client is None:
-            return "No connection has been established to the live database (please connect first)."
-        if not self.is_connected:
-            return "No connection is established with the live database."
 
         bar_channel = self._get_bar_channel_name(
             symbol,
