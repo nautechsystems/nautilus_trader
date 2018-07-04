@@ -8,6 +8,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import abc
+import datetime
 
 from typing import List
 from typing import Dict
@@ -30,7 +31,8 @@ class TradeStrategy(object):
         self._is_running = False
         self._name = self.__class__.__name__
         self._bars = Dict[BarType, List[Bar]]
-        self._ticks = Dict[str, List[Tick]]
+        self._ticks = Dict[str, Tick]
+        self._indicators = Dict[BarType, List[object]]  # Will change object to Indicator
 
     def __str__(self) -> str:
         """
@@ -66,7 +68,7 @@ class TradeStrategy(object):
         return self._bars
 
     @property
-    def all_ticks(self) -> Dict[str, List[Tick]]:
+    def all_ticks(self) -> Dict[str, Tick]:
         """
         :return: The internally held ticks dictionary for the strategy
         """
@@ -82,7 +84,7 @@ class TradeStrategy(object):
         :param symbol: The last tick symbol.
         :param venue: The last tick venue.
         :return: The tick object.
-        :raises: KeyError: If the ticks dictionary does not contain the symbol and venue.
+        :raises: KeyError: If the ticks dictionary does not contain the symbol and venue string.
         """
         key = f'{symbol.lower()}.{venue.name.lower()}'
         if key not in self._ticks:
@@ -122,6 +124,60 @@ class TradeStrategy(object):
             raise ValueError("The index cannot be negative.")
 
         return self._bars[bar_type][index]
+
+    def set_indicator(
+            self,
+            bar_type: BarType,
+            indicator: object):
+        """
+        Set the given indicator to receive bars of the given bar type.
+
+        :param bar_type: The indicators bar type.
+        :param indicator: The indicator to set.
+        :raises: ValueError: If the bar_type or indicator are None.
+        """
+        if bar_type is None:
+            raise ValueError("The bar type cannot be None.")
+        if indicator is None:
+            raise ValueError("The indicator cannot be None.")
+
+        if bar_type not in self._indicators:
+            self._indicators[bar_type] = List[object]
+
+        self._indicators[bar_type].append(indicator)
+
+    def set_timer(
+            self,
+            label: str,
+            step: datetime.timedelta,
+            handler: callable,
+            repeat: bool=True):
+        """
+        Set a timer with the given step (time delta). The handler is called
+        with a string containing the timers unique label and current time.
+
+        :param label: The unique label for the timer.
+        :param step: The time delta step for the timer.
+        :param handler: The handler to be called.
+        :param repeat: The option for the timer to repeat until the strategy is stopped.
+        """
+        # TODO
+
+    def set_alarm(
+            self,
+            label: str,
+            time: datetime.datetime,
+            handler: callable):
+        """
+        Set an alarm for the given time. When the time is reached, the handler
+        is called with a string containing the alarms unique label and the
+        current time.
+
+        :param label: The unique label for the alarm.
+        :param time: The time for the alarm.
+        :param handler: The handler to be called.
+        """
+        # TODO
 
     @abc.abstractmethod
     def on_start(self):
@@ -185,15 +241,23 @@ class TradeStrategy(object):
     def _update_tick(self, tick: Tick):
         """"
         Updates the last held tick with the given tick then calls the on_tick
-        method for the super class.
+        method for the inheriting class.
+
+        :param tick: The received tick.
         """
+        # Guard clauses to catch design errors and make code robust in production.
+        # Warnings are logged.
         if tick is None:
             self._log(f"{self.name} Warning: update_tick() was given None.")
+            return
+        if tick is not isinstance(tick, Tick):
+            self._log(f"{self.name} Warning: _update_tick() was given an invalid Tick.")
             return
 
         key = f'{tick.symbol}.{tick.venue.name.lower()}'
         self._ticks[key] = tick
 
+        # If the strategy is running then calls the inheriting class method.
         if self._is_running:
             self.on_tick(tick)
 
@@ -208,19 +272,44 @@ class TradeStrategy(object):
         :param bar_type: The received bar type.
         :param bar: The received bar.
         """
+        # Guard clauses to catch design errors and make code robust in production.
+        # Warnings are logged.
         if bar_type is None:
-            self._log(f"{self.name} Warning: update_bar() was given None.")
+            self._log(f"{self.name} Warning: _update_bar() was given None.")
+            return
+        if bar_type is not isinstance(bar_type, BarType):
+            self._log(f"{self.name} Warning: _update_bar() was given an invalid BarType.")
             return
         if bar is None:
-            self._log("{self.name} Warning: update_bar() was given None.")
+            self._log("{self.name} Warning: _update_bar() was given None.")
             return
+        if bar is not isinstance(bar_type, Bar):
+            self._log(f"{self.name} Warning: _update_bar() was given an invalid Bar.")
+
+        # Update the internal bars.
         if bar_type not in self._bars:
             self._bars[bar_type] = List[Bar]
-
         self._bars[bar_type].insert(0, bar)
 
+        # Update the internal indicators.
+        if bar_type in self._indicators:
+            self._update_indicators(bar_type, bar)
+
+        # If the strategy is running then calls the inheriting class method.
         if self._is_running:
             self.on_bar(bar_type, bar)
+
+    def _update_indicators(
+            self,
+            bar_type: BarType,
+            bar: Bar):
+        """
+        Updates the internal indicators of the given bar type with the given bar.
+
+        :param bar_type: The bar type to update.
+        :param bar: The bar for update.
+        """
+        # TODO
 
     # Avoid making a static method for now.
     def _log(self, message: str):
