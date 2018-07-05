@@ -426,7 +426,7 @@ class IndicatorUpdater:
         self._update_method = update_method
         self._params = []
 
-
+        # TODO: Inspect built-in Cython method.
 
     def update(self, bar: Bar):
         """
