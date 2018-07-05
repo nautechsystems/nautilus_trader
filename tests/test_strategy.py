@@ -12,14 +12,15 @@ import redis
 import datetime
 import pytz
 import time
+import inv_indicators
 
 from decimal import Decimal
 from typing import List
 
-
-from inv_trader.strategy import TradeStrategy
 from inv_trader.objects import Tick, BarType, Bar
 from inv_trader.enums import Venue, Resolution, QuoteType
+from inv_trader.strategy import TradeStrategy
+from inv_trader.strategy import IndicatorUpdater
 
 
 class TradeStrategyTests(unittest.TestCase):
@@ -63,3 +64,23 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertTrue(result2.startswith('<TradeStrategy:GBPUSD-MM object at'))
         self.assertTrue(result2.endswith('>'))
 
+
+class IndicatorUpdaterTests(unittest.TestCase):
+
+    def test_can_update_indicator(self):
+        # Arrange
+        ema = inv_indicators.ema.ExponentialMovingAverage(20)
+        updater = IndicatorUpdater(ema, ema.update)
+        bar = Bar(
+            Decimal('1.00001'),
+            Decimal('1.00004'),
+            Decimal('1.00003'),
+            Decimal('1.00002'),
+            1000,
+            datetime.datetime(2018, 1, 1, 19, 59, 1, 0, pytz.UTC))
+
+        # Act
+        updater.update(bar)
+        result = ema.value
+
+        # Assert

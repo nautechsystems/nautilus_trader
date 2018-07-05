@@ -10,6 +10,7 @@
 import abc
 import datetime
 import inspect
+import cython
 
 from typing import List
 from typing import Dict
@@ -320,7 +321,7 @@ class TradeStrategy:
         if tick is None:
             self._log(f"{self.name} Warning: update_tick() was given None.")
             return
-        if tick is not isinstance(tick, Tick):
+        if not isinstance(tick, Tick):
             self._log(f"{self.name} Warning: _update_tick() was given an invalid Tick.")
             return
 
@@ -348,13 +349,13 @@ class TradeStrategy:
         if bar_type is None:
             self._log(f"{self.name} Warning: _update_bar() was given None.")
             return
-        if bar_type is not isinstance(bar_type, BarType):
+        if not isinstance(bar_type, BarType):
             self._log(f"{self.name} Warning: _update_bar() was given an invalid BarType.")
             return
         if bar is None:
             self._log("{self.name} Warning: _update_bar() was given None.")
             return
-        if bar is not isinstance(bar_type, Bar):
+        if not isinstance(bar_type, Bar):
             self._log(f"{self.name} Warning: _update_bar() was given an invalid Bar.")
 
         # Update the internal bars.
@@ -382,9 +383,9 @@ class TradeStrategy:
         """
         # Guard clauses (design time checking).
         assert bar_type is not None
-        assert bar_type is isinstance(bar_type, BarType)
+        assert isinstance(bar_type, BarType)
         assert bar is not None
-        assert bar is isinstance(bar, Bar)
+        assert isinstance(bar, Bar)
 
         if bar_type not in self._indicators:
             # No indicators to update with this bar.
@@ -423,7 +424,11 @@ class IndicatorUpdater:
         """
         self._name = indicator.name
         self._update_method = update_method
-        self._params = inspect.signature(update_method)
+
+        scope = cython.inline("""cdef f(a,*args,b=False): pass """)
+        self._params = inspect.getfullargspec(scope['f'])
+
+        print(self._params)
 
     def update(self, bar: Bar):
         """
@@ -432,7 +437,7 @@ class IndicatorUpdater:
         :param bar: The bar to update with.
         """
         # Guard clause (design time).
-        assert bar is isinstance(bar, Bar)
+        assert isinstance(bar, Bar)
 
         update_params = []
 
