@@ -37,12 +37,33 @@ class TradeStrategy:
         self._name = self.__class__.__name__
         self._label = label
         self._is_running = False
-        self._bars = {}  # Dict[BarType, List[Bar]]
-        self._ticks = {}  # Dict[str, Tick]
-        self._indicators = {}  # Dict[BarType, List[object]]
-        self._indicator_labels = {}  # Dict[str, object]
+        self._bars = {}                # Dict[BarType, List[Bar]]
+        self._ticks = {}               # Dict[str, Tick]
+        self._indicators = {}          # Dict[BarType, List[object]]
+        self._indicator_labels = {}    # Dict[str, object]
         self._ind_updater_labels = {}  # Dict[BarType, List[str]]
-        self._ind_updaters = {}  # Dict[str, IndicatorUpdater]
+        self._ind_updaters = {}        # Dict[str, IndicatorUpdater]
+
+    def __eq__(self, other) -> bool:
+        """
+        Override the default equality comparison.
+        """
+        if isinstance(other, self.__class__):
+            return self.__dict__ == other.__dict__
+        else:
+            return False
+
+    def __ne__(self, other):
+        """
+        Override the default not-equals comparison.
+        """
+        return not self.__eq__(other)
+
+    def __hash__(self):
+        """"
+        Override the default hash implementation.
+        """
+        return hash((self.name, self.label))
 
     def __str__(self) -> str:
         """
