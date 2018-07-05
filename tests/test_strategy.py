@@ -24,6 +24,7 @@ from inv_trader.enums import Venue, Resolution, QuoteType
 from inv_trader.strategy import TradeStrategy
 from inv_trader.strategy import IndicatorUpdater
 from inv_indicators.average.ema import ExponentialMovingAverage
+from inv_indicators.intrinsic_network import IntrinsicNetwork
 
 
 class TradeStrategyTests(unittest.TestCase):
@@ -53,6 +54,39 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertEqual('', result1)
         self.assertEqual('', result2)
         self.assertEqual('EURUSD-Scalper', result3)
+
+    def test_strategy_equality(self):
+        # Arrange
+        strategy1 = TradeStrategy()
+        strategy2 = TradeStrategy('AUDUSD-001')
+        strategy3 = TradeStrategy('AUDUSD-002')
+
+        # Act
+        result1 = strategy1 == strategy1
+        result2 = strategy1 == strategy2
+        result3 = strategy2 == strategy3
+        result4 = strategy1 != strategy1
+        result5 = strategy1 != strategy2
+        result6 = strategy2 != strategy3
+
+        # Assert
+        self.assertTrue(result1)
+        self.assertFalse(result2)
+        self.assertFalse(result3)
+        self.assertFalse(result4)
+        self.assertTrue(result5)
+        self.assertTrue(result6)
+
+    def test_strategy_is_hashable(self):
+        # Arrange
+        strategy = TradeStrategy('Test')
+
+        # Act
+        result = strategy.__hash__()
+
+        # Assert
+        # If this passes then result must be an int.
+        self.assertTrue(result != 0)
 
     def test_strategy_str_and_repr(self):
         # Arrange
@@ -98,3 +132,23 @@ class IndicatorUpdaterTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(1.00002, result)
+
+    def test_can_update_intrinsic_networks_indicator(self):
+        # Arrange
+        intrinsic = IntrinsicNetwork(0.2, 0.2)
+        updater = IndicatorUpdater(intrinsic, intrinsic.update_mid)
+        bar = Bar(
+            Decimal('1.00001'),
+            Decimal('1.00004'),
+            Decimal('1.00003'),
+            Decimal('1.00002'),
+            1000,
+            datetime.datetime(1970, 1, 1, 0, 0, 0, 0, pytz.UTC))
+
+        # Act
+        updater.update(bar)
+        result = intrinsic.state
+
+        # Assert
+        self.assertTrue(intrinsic.initialized)
+        self.assertEqual(0, result)
