@@ -10,7 +10,6 @@
 import abc
 import datetime
 import inspect
-import cython
 
 from typing import List
 from typing import Dict
@@ -38,12 +37,12 @@ class TradeStrategy:
         self._name = self.__class__.__name__
         self._label = label
         self._is_running = False
-        self._bars = Dict[BarType, List[Bar]]
-        self._ticks = Dict[str, Tick]
-        self._indicators = Dict[BarType, List[object]]
-        self._indicator_labels = Dict[str, object]
-        self._ind_updater_labels = Dict[BarType, List[str]]
-        self._ind_updaters = Dict[str, IndicatorUpdater]
+        self._bars = {}  # Dict[BarType, List[Bar]]
+        self._ticks = {}  # Dict[str, Tick]
+        self._indicators = {}  # Dict[BarType, List[object]]
+        self._indicator_labels = {}  # Dict[str, object]
+        self._ind_updater_labels = {}  # Dict[BarType, List[str]]
+        self._ind_updaters = {}  # Dict[str, IndicatorUpdater]
 
     def __str__(self) -> str:
         """
@@ -56,6 +55,36 @@ class TradeStrategy:
         :return: The repr() string representation of the strategy.
         """
         return f"<{str(self)} object at {id(self)}>"
+
+    @abc.abstractmethod
+    def on_start(self):
+        # Raise exception if not overridden in implementation.
+        raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
+
+    @abc.abstractmethod
+    def on_tick(self, tick: Tick):
+        # Raise exception if not overridden in implementation.
+        raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
+
+    @abc.abstractmethod
+    def on_bar(self, bar_type: BarType, bar: Bar):
+        # Raise exception if not overridden in implementation.
+        raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
+
+    @abc.abstractmethod
+    def on_account(self, message):
+        # Raise exception if not overridden in implementation.
+        raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
+
+    @abc.abstractmethod
+    def on_message(self, message):
+        # Raise exception if not overridden in implementation.
+        raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
+
+    @abc.abstractmethod
+    def on_stop(self):
+        # Raise exception if not overridden in implementation.
+        raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
 
     @property
     def name(self) -> str:
@@ -176,15 +205,15 @@ class TradeStrategy:
 
         return self._ticks[key]
 
-    def set_indicator(
+    def add_indicator(
             self,
             bar_type: BarType,
             indicator: object,
             update_method: callable,
             label: str):
         """
-        Set the given indicator to receive bars of the given bar type.
-        The indicator must be from the inv_indicators package.
+        Add the given indicator to the strategy.It will receive bars of the
+        given bar type. The indicator must be from the inv_indicators package.
 
         :param bar_type: The indicators bar type.
         :param indicator: The indicator to set.
@@ -193,10 +222,13 @@ class TradeStrategy:
         :raises: ValueError: If any argument is None.
         :raises: KeyError: If the label is not unique.
         """
+        # Preconditions
         if bar_type is None:
             raise ValueError("The bar type cannot be None.")
         if indicator is None:
             raise ValueError("The indicator cannot be None.")
+        # if not isinstance(indicator, Indicator):
+        #     raise TypeError("The indicator must inherit from the Indicator base class.")
         if update_method is None:
             raise ValueError("The update_method cannot be None.")
         if label is None:
@@ -205,7 +237,7 @@ class TradeStrategy:
             raise KeyError("The label is not unique (already contained in the indicator labels).")
 
         if bar_type not in self._indicators:
-            self._indicators[bar_type] = List[object]
+            self._indicators[bar_type] = []
 
         self._indicators[bar_type].append(indicator)
         self._ind_updaters[label] = IndicatorUpdater(indicator, update_method)
@@ -214,7 +246,7 @@ class TradeStrategy:
         self._indicator_labels[label] = indicator
 
         if bar_type not in self._ind_updater_labels:
-            self._ind_updater_labels[bar_type] = List[IndicatorUpdater]
+            self._ind_updater_labels[bar_type] = []
         self._ind_updater_labels[bar_type].append(label)
 
     def set_timer(
@@ -249,36 +281,6 @@ class TradeStrategy:
         :param handler: The handler to be called.
         """
         # TODO
-
-    @abc.abstractmethod
-    def on_start(self):
-        # Raise exception if not overridden in implementation.
-        raise NotImplementedError
-
-    @abc.abstractmethod
-    def on_tick(self, tick: Tick):
-        # Raise exception if not overridden in implementation.
-        raise NotImplementedError
-
-    @abc.abstractmethod
-    def on_bar(self, bar_type: BarType, bar: Bar):
-        # Raise exception if not overridden in implementation.
-        raise NotImplementedError
-
-    @abc.abstractmethod
-    def on_account(self, message):
-        # Raise exception if not overridden in implementation.
-        raise NotImplementedError
-
-    @abc.abstractmethod
-    def on_message(self, message):
-        # Raise exception if not overridden in implementation.
-        raise NotImplementedError
-
-    @abc.abstractmethod
-    def on_stop(self):
-        # Raise exception if not overridden in implementation.
-        raise NotImplementedError
 
     def start(self):
         """
@@ -388,8 +390,7 @@ class TradeStrategy:
         assert isinstance(bar, Bar)
 
         if bar_type not in self._indicators:
-            # No indicators to update with this bar.
-            # Remove this for production.
+            # No indicators to update with this bar (remove this for production.)
             return
 
         # For each updater matching the given bar type -> update with the bar.
@@ -408,7 +409,7 @@ class TradeStrategy:
 class IndicatorUpdater:
     """
     Provides an adapter for updating an indicator with a bar. When instantiated
-    with a live indicator object and update method the updater will inspect
+    with a live indicator object and update method, the updater will inspect
     the update method and construct the required parameter list for updates.
     """
 
@@ -424,7 +425,7 @@ class IndicatorUpdater:
         """
         self._name = indicator.name
         self._update_method = update_method
-        self._params = self._get_params(update_method)
+        self._params = list(inspect.signature(callable).parameters.keys())
 
     def update(self, bar: Bar):
         """
@@ -438,6 +439,7 @@ class IndicatorUpdater:
 
         update_args = []
 
+        # TODO: Refactor this.
         for param in self._params:
             if param is 'point':
                 update_args.append(float(bar.close))
@@ -457,18 +459,3 @@ class IndicatorUpdater:
                 update_args.append(bar.timestamp)
 
         self._update_method(*update_args)
-
-    @staticmethod
-    def _get_params(signature: callable) -> List[str]:
-        """
-        Parses the parameter names from the given signature.
-
-        :param signature: The signature to parse.
-        :return: The list of argument names.
-        """
-        params = inspect.getfullargspec(signature)[0]
-
-        if 'self' in params:
-            params.remove('self')
-
-        return params

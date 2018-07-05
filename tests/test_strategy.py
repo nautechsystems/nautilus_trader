@@ -17,6 +17,8 @@ import inv_indicators
 from decimal import Decimal
 from typing import List
 
+from test_kit.objects import ObjectStorer
+from test_kit.strategies import TestStrategy1
 from inv_trader.objects import Tick, BarType, Bar
 from inv_trader.enums import Venue, Resolution, QuoteType
 from inv_trader.strategy import TradeStrategy
@@ -65,6 +67,16 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertTrue(result2.startswith('<TradeStrategy:GBPUSD-MM object at'))
         self.assertTrue(result2.endswith('>'))
 
+    def test_can_add_indicator_to_strategy(self):
+        # Arrange
+        storer = ObjectStorer()
+        strategy = TestStrategy1(storer)
+
+        # Act
+        # Assert
+        print(strategy.all_indicators[strategy.gbpusd_1sec_mid])
+        self.assertEqual(strategy.ema1, strategy.all_indicators[strategy.gbpusd_1sec_mid][0])
+
 
 class IndicatorUpdaterTests(unittest.TestCase):
 
@@ -86,4 +98,3 @@ class IndicatorUpdaterTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(1.00002, result)
-
