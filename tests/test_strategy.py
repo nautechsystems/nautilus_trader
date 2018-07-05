@@ -74,8 +74,8 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Act
         # Assert
-        print(strategy.all_indicators[strategy.gbpusd_1sec_mid])
         self.assertEqual(strategy.ema1, strategy.all_indicators[strategy.gbpusd_1sec_mid][0])
+        self.assertEqual(strategy.ema2, strategy.all_indicators[strategy.gbpusd_1sec_mid][1])
 
 
 class IndicatorUpdaterTests(unittest.TestCase):

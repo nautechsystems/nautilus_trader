@@ -425,7 +425,7 @@ class IndicatorUpdater:
         """
         self._name = indicator.name
         self._update_method = update_method
-        self._params = list(inspect.signature(callable).parameters.keys())
+        self._params = list(inspect.signature(update_method).parameters.keys())
 
     def update(self, bar: Bar):
         """
