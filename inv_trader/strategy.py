@@ -18,7 +18,7 @@ from inv_trader.enums import Venue
 from inv_trader.objects import Tick, BarType, Bar
 
 
-class TradeStrategy(object):
+class TradeStrategy:
     """
     The base class for all trade strategies.
     """
@@ -34,6 +34,8 @@ class TradeStrategy(object):
         self._bars = Dict[BarType, List[Bar]]
         self._ticks = Dict[str, Tick]
         self._indicators = Dict[BarType, List[object]]
+        self._indicator_labels = Dict[str, object]
+        self._ind_updater_labels = Dict[BarType, List[str]]
         self._ind_updaters = Dict[str, IndicatorUpdater]
 
     def __str__(self) -> str:
@@ -63,6 +65,13 @@ class TradeStrategy(object):
         return self._name
 
     @property
+    def all_indicators(self) -> Dict[BarType, List[object]]:
+        """
+        :return: The internally held indicators dictionary for the strategy.
+        """
+        return self._indicators
+
+    @property
     def all_bars(self) -> Dict[BarType, List[Bar]]:
         """
         :return: The internally held bars dictionary for the strategy.
@@ -76,23 +85,31 @@ class TradeStrategy(object):
         """
         return self._ticks
 
-    def last_tick(
-            self,
-            symbol: str,
-            venue: Venue) -> Tick:
+    def indicators(self, bar_type: BarType) -> List[object]:
         """
-        Get the last tick held for the given parameters.
+        Get the indicators list for the given bar type.
 
-        :param symbol: The last tick symbol.
-        :param venue: The last tick venue.
-        :return: The tick object.
-        :raises: KeyError: If the ticks dictionary does not contain the symbol and venue string.
+        :param: The bar type for the indicators list.
+        :return: The internally held indicators for the given bar type.
+        :raises: KeyError: If the indicators dictionary does not contain the bar type.
         """
-        key = f'{symbol.lower()}.{venue.name.lower()}'
-        if key not in self._ticks:
-            raise KeyError(f"The ticks dictionary does not contain {key}.")
+        if bar_type not in self._indicators:
+            raise KeyError(f"The indicators dictionary does not contain {bar_type}.")
 
-        return self._ticks[key]
+        return self._indicators[bar_type]
+
+    def indicator(self, label: str) -> object:
+        """
+        Get the indicator for the given unique label.
+
+        :param: label: The unique label for the indicator.
+        :return: The internally held indicator for the given unique label.
+        :raises: KeyError: If the indicator labels dictionary does not contain the bar type.
+        """
+        if label not in self._indicator_labels:
+            raise KeyError(f"The indicator dictionary does not contain the label {label}.")
+
+        return self._indicator_labels[label]
 
     def bars(self, bar_type: BarType) -> List[Bar]:
         """
@@ -127,42 +144,64 @@ class TradeStrategy(object):
 
         return self._bars[bar_type][index]
 
+    def last_tick(
+            self,
+            symbol: str,
+            venue: Venue) -> Tick:
+        """
+        Get the last tick held for the given parameters.
+
+        :param symbol: The last tick symbol.
+        :param venue: The last tick venue.
+        :return: The tick object.
+        :raises: KeyError: If the ticks dictionary does not contain the symbol and venue string.
+        """
+        key = f'{symbol.lower()}.{venue.name.lower()}'
+        if key not in self._ticks:
+            raise KeyError(f"The ticks dictionary does not contain {key}.")
+
+        return self._ticks[key]
+
     def set_indicator(
             self,
             bar_type: BarType,
-            indicator: object):
+            indicator: object,
+            update_method: callable,
+            label: str):
         """
         Set the given indicator to receive bars of the given bar type.
+        The indicator must be from the inv_indicators package.
 
         :param bar_type: The indicators bar type.
         :param indicator: The indicator to set.
-        :raises: ValueError: If the bar_type or indicator are None.
+        :param update_method: The update method for the indicator.
+        :param label: The unique label for this indicator.
+        :raises: ValueError: If any argument is None.
+        :raises: KeyError: If the label is not unique.
         """
         if bar_type is None:
             raise ValueError("The bar type cannot be None.")
         if indicator is None:
             raise ValueError("The indicator cannot be None.")
+        if update_method is None:
+            raise ValueError("The update_method cannot be None.")
+        if label is None:
+            raise ValueError("The label cannot be None.")
+        if label in self._indicator_labels:
+            raise KeyError("The label is not unique (already contained in the indicator labels).")
 
         if bar_type not in self._indicators:
             self._indicators[bar_type] = List[object]
 
         self._indicators[bar_type].append(indicator)
+        self._ind_updaters[label] = IndicatorUpdater(indicator, update_method)
 
-        # If an indicator update handler hasn't already been created.
-        # If the indicator object passed in isn't from inv_indicators
-        # then this could blow up.
-        if indicator.name not in self._ind_updaters:
-            self._set_indicator_updater(indicator)
+        # TODO: Refactor these separate labels lists.
+        self._indicator_labels[label] = indicator
 
-    def _set_indicator_updater(self, indicator: object):
-        """
-        Create and store the update handler for the indicator.
-
-        :param indicator: The indicator for the updater.
-        """
-        assert indicator is not None
-
-
+        if bar_type not in self._ind_updater_labels:
+            self._ind_updater_labels[bar_type] = List[IndicatorUpdater]
+        self._ind_updater_labels[bar_type].append(label)
 
     def set_timer(
             self,
@@ -339,17 +378,8 @@ class TradeStrategy(object):
             # Remove this for production.
             return
 
-        indicators_to_update = self._indicators[bar_type]
-
-        # Use the update handler to update indicators. If no handler exists
-        # then log warning and return.
-        # TODO: Refactor this.
-        for indicator in indicators_to_update:
-            if indicator.name not in self._ind_updaters:
-                self._log(f"{self.name} Warning: No updater for indicator {indicator}")
-                return
-
-            self._ind_updaters[indicator.name].update(bar)
+        # For each updater matching the given bar type -> update with the bar.
+        [updater.update(bar) for updater in self._ind_updater_labels[bar_type]]
 
     # Avoid making a static method for now.
     def _log(self, message: str):
@@ -361,21 +391,24 @@ class TradeStrategy(object):
         print(message)
 
 
-class IndicatorUpdater(object):
+class IndicatorUpdater:
     """
-    Provides an adapter for updating an indicator with a bar.
+    Provides an adapter for updating an indicator with a bar. When instantiated
+    with a live indicator object and update method the updater will inspect
+    the update method and construct the required parameter list for updates.
     """
 
-    def __init__(self,
-                 name: str,
-                 update_method: callable):
+    def __init__(
+            self,
+            indicator: object,
+            update_method: callable):
         """
         Initializes a new instance of the IndicatorUpdater class.
 
-        :param name: The indicator name.
-        :param update_method: The callable reference to the indicators update method.
+        :param indicator: The indicator for the updater.
+        :param update_method: The indicators update method.
         """
-        self._name = name
+        self._name = indicator.name
         self._update_method = update_method
         self._params = inspect.signature(update_method)
 
@@ -385,6 +418,9 @@ class IndicatorUpdater(object):
 
         :param bar: The bar to update with.
         """
+        # Guard clause (design time).
+        assert bar is isinstance(bar, Bar)
+
         update_params = []
 
         for param in self._params:
@@ -405,4 +441,4 @@ class IndicatorUpdater(object):
             elif param is 'timestamp':
                 update_params.append(bar.timestamp)
 
-        self._update_method(update_params)
+        self._update_method(*update_params)
