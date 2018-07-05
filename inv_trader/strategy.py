@@ -46,13 +46,13 @@ class TradeStrategy:
 
     def __str__(self) -> str:
         """
-        :return: The str() string representation of the trade strategy.
+        :return: The str() string representation of the strategy.
         """
         return f"{self._name}:{self._label}"
 
     def __repr__(self) -> str:
         """
-        :return: The repr() string representation of the trade strategy.
+        :return: The repr() string representation of the strategy.
         """
         return f"<{str(self)} object at {id(self)}>"
 
