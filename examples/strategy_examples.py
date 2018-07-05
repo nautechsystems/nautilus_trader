@@ -12,6 +12,10 @@ from inv_trader.strategy import TradeStrategy
 
 
 class ExampleStrategy(TradeStrategy):
+
+    def initialize(self):
+        self.a
+
     def on_start(self):
         pass
 
