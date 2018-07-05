@@ -85,5 +85,5 @@ class IndicatorUpdaterTests(unittest.TestCase):
         result = ema.value
 
         # Assert
-        # self.assertEqual(1.00002, result)
+        self.assertEqual(1.00002, result)
 

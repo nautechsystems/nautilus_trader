@@ -424,37 +424,51 @@ class IndicatorUpdater:
         """
         self._name = indicator.name
         self._update_method = update_method
-        self._params = []
-
-        # TODO: Inspect built-in Cython method.
+        self._params = self._get_params(update_method)
 
     def update(self, bar: Bar):
         """
-        Passes the correct parameters from the given bar to the indicator update method.
+        Passes the needed values from the given bar to the indicator update
+        method as a list of arguments.
 
-        :param bar: The bar to update with.
+        :param bar: The update bar.
         """
         # Guard clause (design time).
         assert isinstance(bar, Bar)
 
-        update_params = []
+        update_args = []
 
         for param in self._params:
             if param is 'point':
-                update_params.append(float(bar.close))
+                update_args.append(float(bar.close))
             elif param is 'price':
-                update_params.append(float(bar.close))
+                update_args.append(float(bar.close))
             elif param is 'mid':
-                update_params.append(float(bar.close))
+                update_args.append(float(bar.close))
             elif param is 'open':
-                update_params.append(float(bar.open))
+                update_args.append(float(bar.open))
             elif param is 'high':
-                update_params.append(float(bar.high))
+                update_args.append(float(bar.high))
             elif param is 'low':
-                update_params.append(float(bar.low))
+                update_args.append(float(bar.low))
             elif param is 'close':
-                update_params.append(float(bar.close))
+                update_args.append(float(bar.close))
             elif param is 'timestamp':
-                update_params.append(bar.timestamp)
+                update_args.append(bar.timestamp)
 
-        self._update_method(*update_params)
+        self._update_method(*update_args)
+
+    @staticmethod
+    def _get_params(signature: callable) -> List[str]:
+        """
+        Parses the parameter names from the given signature.
+
+        :param signature: The signature to parse.
+        :return: The list of argument names.
+        """
+        params = inspect.getfullargspec(signature)[0]
+
+        if 'self' in params:
+            params.remove('self')
+
+        return params

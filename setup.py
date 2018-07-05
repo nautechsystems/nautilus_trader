@@ -56,5 +56,6 @@ setup(
               'pytz',
               'redis'],
     ext_modules=cythonize(extensions),
+    include_dirs=["."],
     cmdclass={'build_ext': Cython.Build.build_ext},
     options={'build_ext': {'inplace': False, 'force': False}})
