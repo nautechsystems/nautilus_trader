@@ -415,7 +415,7 @@ class IndicatorUpdater:
     def __init__(
             self,
             indicator: object,
-            update_method: callable):
+            update_method: classmethod):
         """
         Initializes a new instance of the IndicatorUpdater class.
 
@@ -424,11 +424,9 @@ class IndicatorUpdater:
         """
         self._name = indicator.name
         self._update_method = update_method
+        self._params = []
 
-        scope = cython.inline("""cdef f(a,*args,b=False): pass """)
-        self._params = inspect.getfullargspec(scope['f'])
 
-        print(self._params)
 
     def update(self, bar: Bar):
         """
@@ -443,19 +441,19 @@ class IndicatorUpdater:
 
         for param in self._params:
             if param is 'point':
-                update_params.append(bar.close)
+                update_params.append(float(bar.close))
             elif param is 'price':
-                update_params.append(bar.close)
+                update_params.append(float(bar.close))
             elif param is 'mid':
-                update_params.append(bar.close)
+                update_params.append(float(bar.close))
             elif param is 'open':
-                update_params.append(bar.open)
+                update_params.append(float(bar.open))
             elif param is 'high':
-                update_params.append(bar.high)
+                update_params.append(float(bar.high))
             elif param is 'low':
-                update_params.append(bar.low)
+                update_params.append(float(bar.low))
             elif param is 'close':
-                update_params.append(bar.close)
+                update_params.append(float(bar.close))
             elif param is 'timestamp':
                 update_params.append(bar.timestamp)
 

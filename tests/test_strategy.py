@@ -21,6 +21,7 @@ from inv_trader.objects import Tick, BarType, Bar
 from inv_trader.enums import Venue, Resolution, QuoteType
 from inv_trader.strategy import TradeStrategy
 from inv_trader.strategy import IndicatorUpdater
+from inv_indicators.average.ema import ExponentialMovingAverage
 
 
 class TradeStrategyTests(unittest.TestCase):
@@ -67,9 +68,9 @@ class TradeStrategyTests(unittest.TestCase):
 
 class IndicatorUpdaterTests(unittest.TestCase):
 
-    def test_can_update_indicator(self):
+    def test_can_update_ema_indicator(self):
         # Arrange
-        ema = inv_indicators.ema.ExponentialMovingAverage(20)
+        ema = ExponentialMovingAverage(20)
         updater = IndicatorUpdater(ema, ema.update)
         bar = Bar(
             Decimal('1.00001'),
@@ -77,10 +78,12 @@ class IndicatorUpdaterTests(unittest.TestCase):
             Decimal('1.00003'),
             Decimal('1.00002'),
             1000,
-            datetime.datetime(2018, 1, 1, 19, 59, 1, 0, pytz.UTC))
+            datetime.datetime(1970, 1, 1, 0, 0, 0, 0, pytz.UTC))
 
         # Act
         updater.update(bar)
         result = ema.value
 
         # Assert
+        # self.assertEqual(1.00002, result)
+
