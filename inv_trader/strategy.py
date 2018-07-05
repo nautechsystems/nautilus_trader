@@ -25,12 +25,18 @@ class TradeStrategy:
 
     __metaclass__ = abc.ABCMeta
 
-    def __init__(self):
+    def __init__(self, label: str=''):
         """
         Initializes a new instance of the TradeStrategy abstract class.
+
+        :param: label: The unique label for the strategy (can be empty).
         """
-        self._is_running = False
+        if label is None:
+            label = ''
+
         self._name = self.__class__.__name__
+        self._label = label
+        self._is_running = False
         self._bars = Dict[BarType, List[Bar]]
         self._ticks = Dict[str, Tick]
         self._indicators = Dict[BarType, List[object]]
@@ -42,7 +48,7 @@ class TradeStrategy:
         """
         :return: The str() string representation of the trade strategy.
         """
-        return f"{self._name}"
+        return f"{self._name}:{self._label}"
 
     def __repr__(self) -> str:
         """
@@ -51,18 +57,25 @@ class TradeStrategy:
         return f"<{str(self)} object at {id(self)}>"
 
     @property
+    def name(self) -> str:
+        """
+        :return: The name of the strategy.
+        """
+        return self._name
+
+    @property
+    def label(self) -> str:
+        """
+        :return: The unique label of the strategy.
+        """
+        return self._label
+
+    @property
     def is_running(self) -> bool:
         """
         :return: A value indicating whether the strategy is running.
         """
         return self._is_running
-
-    @property
-    def name(self) -> str:
-        """
-        :return: The name of the trade strategy.
-        """
-        return self._name
 
     @property
     def all_indicators(self) -> Dict[BarType, List[object]]:
