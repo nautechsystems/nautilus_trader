@@ -117,7 +117,7 @@ class IndicatorUpdaterTests(unittest.TestCase):
     def test_can_update_ema_indicator(self):
         # Arrange
         ema = ExponentialMovingAverage(20)
-        updater = IndicatorUpdater(ema, ema.update)
+        updater = IndicatorUpdater(ema.update)
         bar = Bar(
             Decimal('1.00001'),
             Decimal('1.00004'),
@@ -136,7 +136,7 @@ class IndicatorUpdaterTests(unittest.TestCase):
     def test_can_update_intrinsic_networks_indicator(self):
         # Arrange
         intrinsic = IntrinsicNetwork(0.2, 0.2)
-        updater = IndicatorUpdater(intrinsic, intrinsic.update_mid)
+        updater = IndicatorUpdater(intrinsic.update_mid)
         bar = Bar(
             Decimal('1.00001'),
             Decimal('1.00004'),

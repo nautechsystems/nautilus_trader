@@ -261,7 +261,7 @@ class TradeStrategy:
             self._indicators[bar_type] = []
 
         self._indicators[bar_type].append(indicator)
-        self._ind_updaters[label] = IndicatorUpdater(indicator, update_method)
+        self._ind_updaters[label] = IndicatorUpdater(update_method)
 
         # TODO: Refactor these separate labels lists.
         self._indicator_labels[label] = indicator
@@ -434,19 +434,28 @@ class IndicatorUpdater:
     the update method and construct the required parameter list for updates.
     """
 
-    def __init__(
-            self,
-            indicator: object,
-            update_method: classmethod):
+    def __init__(self, update_method: classmethod):
         """
         Initializes a new instance of the IndicatorUpdater class.
 
-        :param indicator: The indicator for the updater.
         :param update_method: The indicators update method.
         """
-        self._name = indicator.name
         self._update_method = update_method
-        self._params = list(inspect.signature(update_method).parameters.keys())
+        self._update_params = []
+
+        param_map = {
+            'point': 'close',
+            'price': 'close',
+            'mid': 'close',
+            'open': 'open',
+            'high': 'high',
+            'low': 'low',
+            'close': 'close',
+            'timestamp': 'timestamp'
+        }
+
+        for param in list(inspect.signature(update_method).parameters.keys()):
+            self._update_params.append(param_map[param])
 
     def update(self, bar: Bar):
         """
@@ -458,25 +467,5 @@ class IndicatorUpdater:
         # Guard clause (design time).
         assert isinstance(bar, Bar)
 
-        update_args = []
-
-        # TODO: Refactor this.
-        for param in self._params:
-            if param is 'point':
-                update_args.append(float(bar.close))
-            elif param is 'price':
-                update_args.append(float(bar.close))
-            elif param is 'mid':
-                update_args.append(float(bar.close))
-            elif param is 'open':
-                update_args.append(float(bar.open))
-            elif param is 'high':
-                update_args.append(float(bar.high))
-            elif param is 'low':
-                update_args.append(float(bar.low))
-            elif param is 'close':
-                update_args.append(float(bar.close))
-            elif param is 'timestamp':
-                update_args.append(bar.timestamp)
-
-        self._update_method(*update_args)
+        args = [bar.__getattribute__(param) for param in self._update_params]
+        self._update_method(*args)
