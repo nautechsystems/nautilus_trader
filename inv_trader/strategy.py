@@ -44,7 +44,7 @@ class TradeStrategy:
         self._ind_updater_labels = {}  # Dict[BarType, List[str]]
         self._ind_updaters = {}        # Dict[str, IndicatorUpdater]
 
-        self._log(f"Initializing {self}")
+        self._log(f"Initialized {self}.")
 
     def __eq__(self, other) -> bool:
         """
@@ -159,6 +159,7 @@ class TradeStrategy:
         :return: The internally held indicators for the given bar type.
         :raises: KeyError: If the indicators dictionary does not contain the bar type.
         """
+        # Preconditions
         if bar_type not in self._indicators:
             raise KeyError(f"The indicators dictionary does not contain {bar_type}.")
 
@@ -172,6 +173,7 @@ class TradeStrategy:
         :return: The internally held indicator for the given unique label.
         :raises: KeyError: If the indicator labels dictionary does not contain the bar type.
         """
+        # Preconditions
         if label not in self._indicator_labels:
             raise KeyError(f"The indicator dictionary does not contain the label {label}.")
 
@@ -185,6 +187,7 @@ class TradeStrategy:
         :return: The list of bars.
         :raises: KeyError: If the bars dictionary does not contain the bar type.
         """
+        # Preconditions
         if bar_type not in self._bars:
             raise KeyError(f"The bars dictionary does not contain {bar_type}.")
 
@@ -195,7 +198,7 @@ class TradeStrategy:
             bar_type: BarType,
             index: int) -> Bar:
         """
-        Get the bar for the given bar type at index (reverse indexed, 0 is last bar).
+        Get the bar for the given bar type at the given index (reverse indexed, 0 is last bar).
 
         :param bar_type: The bar type to get.
         :param index: The index to get.
@@ -203,6 +206,7 @@ class TradeStrategy:
         :raises: KeyError: If the bars dictionary does not contain the bar type.
         :raises: ValueError: If the index is negative.
         """
+        # Preconditions
         if bar_type not in self._bars:
             raise KeyError(f"The bars dictionary does not contain {bar_type}.")
         if index < 0:
@@ -222,6 +226,7 @@ class TradeStrategy:
         :return: The tick object.
         :raises: KeyError: If the ticks dictionary does not contain the symbol and venue string.
         """
+        # Preconditions
         key = f'{symbol.lower()}.{venue.name.lower()}'
         if key not in self._ticks:
             raise KeyError(f"The ticks dictionary does not contain {key}.")
@@ -250,8 +255,8 @@ class TradeStrategy:
             raise ValueError("The bar type cannot be None.")
         if indicator is None:
             raise ValueError("The indicator cannot be None.")
-        # if not isinstance(indicator, Indicator):
-        #     raise TypeError("The indicator must inherit from the Indicator base class.")
+        if indicator.__class__.__mro__[-2].__name__ != 'Indicator':
+            raise TypeError("The indicator must inherit from the Indicator base class.")
         if update_method is None:
             raise ValueError("The update_method cannot be None.")
         if label is None:
@@ -309,7 +314,7 @@ class TradeStrategy:
         """
         Starts the trade strategy.
         """
-        self._log(f"Starting {self.name}...")
+        self._log(f"{self.name} starting...")
         self._is_running = True
         self.on_start()
 
@@ -317,9 +322,10 @@ class TradeStrategy:
         """
         Stops the trade strategy.
         """
-        self._log(f"Stopping {self.name}...")
+        self._log(f"{self.name} stopping...")
         self._is_running = False
         self.on_stop()
+        self._log(f"{self.name} stopped.")
 
     def reset(self):
         """
@@ -332,6 +338,7 @@ class TradeStrategy:
 
         self._ticks = {}
         self._bars = {}
+        [indicator.reset() for indicator in self._indicators]
         self._log(f"Reset {self.name}.")
 
     def _update_tick(self, tick: Tick):

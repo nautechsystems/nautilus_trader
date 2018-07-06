@@ -50,8 +50,8 @@ class LiveDataClient:
         self._pubsub_thread = None
         self._subscriptions_ticks = []
         self._subscriptions_bars = []
-        self._tick_subscribers = []
-        self._bar_subscribers = []
+        self._tick_handlers = []
+        self._bar_handlers = []
 
     @property
     def is_connected(self) -> bool:
@@ -124,6 +124,8 @@ class LiveDataClient:
         self._pubsub_thread = None
         self._subscriptions_ticks = []
         self._subscriptions_bars = []
+        self._tick_handlers = []
+        self._bar_handlers = []
 
     def subscribe_tick_data(
             self,
@@ -146,8 +148,8 @@ class LiveDataClient:
         self._check_connection()
 
         # If a handler is passed in, and doesn't already exist, then add to tick subscribers.
-        if handler is not None and not any(handler for h in self._tick_subscribers):
-            self._tick_subscribers.append(handler)
+        if handler is not None and not any(handler is handler for h in self._tick_handlers):
+            self._tick_handlers.append(handler)
 
         ticks_channel = self._get_tick_channel_name(symbol, venue)
         self._pubsub.subscribe(**{ticks_channel: self._tick_handler})
@@ -221,8 +223,8 @@ class LiveDataClient:
         self._check_connection()
 
         # If a handler is passed in, and doesn't already exist, then add to bar subscribers.
-        if handler is not None and not any(handler for h in self._bar_subscribers):
-            self._bar_subscribers.append(handler)
+        if handler is not None and not any(handler is handler for h in self._bar_handlers):
+            self._bar_handlers.append(handler)
 
         bars_channel = self._get_bar_channel_name(
             symbol,
@@ -300,8 +302,8 @@ class LiveDataClient:
         if not isinstance(strategy, TradeStrategy):
             raise TypeError("The strategy must be a type of TradeStrategy.")
 
-        self._tick_subscribers.append(strategy._update_tick)
-        self._bar_subscribers.append(strategy._update_bars)
+        self._tick_handlers.append(strategy._update_tick)
+        self._bar_handlers.append(strategy._update_bars)
 
         self._log(f"Registered {strategy} with the live data client.")
 
@@ -416,7 +418,7 @@ class LiveDataClient:
             message['channel'].decode(UTF8),
             message['data'].decode(UTF8))
 
-        for subscriber in self._tick_subscribers:
+        for subscriber in self._tick_handlers:
             subscriber(tick)
 
     def _bar_handler(self, message):
@@ -430,5 +432,5 @@ class LiveDataClient:
         bar_type = self._parse_bar_type(message['channel'].decode(UTF8))
         bar = self._parse_bar(message['data'].decode(UTF8))
 
-        for subscriber in self._bar_subscribers:
+        for subscriber in self._bar_handlers:
             subscriber(bar_type, bar)

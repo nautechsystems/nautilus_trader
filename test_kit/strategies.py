@@ -40,18 +40,19 @@ class TestStrategy1(TradeStrategy):
         pass
 
     def on_tick(self, tick: Tick):
-        print("tick")
+        self.object_storer.store(tick)
 
     def on_bar(
             self,
             bar_type: BarType,
             bar: Bar):
 
+        self.object_storer.store((bar_type, Bar))
         if bar_type == self.gbpusd_1sec_mid:
             if self.ema1.value > self.ema2.value:
-                print('BUY')
+                self.object_storer.store('BUY')
             elif self.ema1.value < self.ema2.value:
-                print('SELL')
+                self.object_storer.store('SELL')
 
     def on_account(self, message):
         pass
