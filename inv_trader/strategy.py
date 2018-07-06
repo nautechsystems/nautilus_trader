@@ -44,7 +44,7 @@ class TradeStrategy:
         self._ind_updater_labels = {}  # Dict[BarType, List[str]]
         self._ind_updaters = {}        # Dict[str, IndicatorUpdater]
 
-        self._log(f"Initialized {self}.")
+        self._log(f"Initialization of {self} complete.")
 
     def __eq__(self, other) -> bool:
         """
@@ -342,7 +342,7 @@ class TradeStrategy:
         for indicator_list in self._indicators.values():
             [indicator.reset() for indicator in indicator_list]
 
-        self._log(f"Reset {self.name}.")
+        self._log(f"Reset {self.name} complete.")
 
     def _update_tick(self, tick: Tick):
         """"

@@ -100,12 +100,36 @@ class TradeStrategyTests(unittest.TestCase):
     def test_can_add_indicator_to_strategy(self):
         # Arrange
         storer = ObjectStorer()
-        strategy = TestStrategy1(storer)
 
         # Act
+        strategy = TestStrategy1(storer)
+
         # Assert
         self.assertEqual(strategy.ema1, strategy.all_indicators[strategy.gbpusd_1sec_mid][0])
         self.assertEqual(strategy.ema2, strategy.all_indicators[strategy.gbpusd_1sec_mid][1])
+
+    def test_can_start_strategy(self):
+        # Arrange
+        storer = ObjectStorer()
+        strategy = TestStrategy1(storer)
+
+        # Act
+        strategy.start()
+
+        # Assert
+        self.assertTrue(strategy.is_running)
+
+    def test_can_stop_strategy(self):
+        # Arrange
+        storer = ObjectStorer()
+        strategy = TestStrategy1(storer)
+        strategy.start()
+
+        # Act
+        strategy.stop()
+
+        # Assert
+        self.assertFalse(strategy.is_running)
 
     def test_can_reset_strategy(self):
         # Arrange
@@ -116,6 +140,7 @@ class TradeStrategyTests(unittest.TestCase):
         strategy.reset()
 
         # Assert
+        self.assertFalse(strategy.is_running)
         self.assertEqual(strategy.ema1, strategy.all_indicators[strategy.gbpusd_1sec_mid][0])
         self.assertEqual(strategy.ema2, strategy.all_indicators[strategy.gbpusd_1sec_mid][1])
 
