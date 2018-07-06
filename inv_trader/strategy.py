@@ -338,7 +338,10 @@ class TradeStrategy:
 
         self._ticks = {}
         self._bars = {}
-        [indicator.reset() for indicator in self._indicators]
+
+        for indicator_list in self._indicators.values():
+            [indicator.reset() for indicator in indicator_list]
+
         self._log(f"Reset {self.name}.")
 
     def _update_tick(self, tick: Tick):
