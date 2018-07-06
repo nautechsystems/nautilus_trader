@@ -259,6 +259,8 @@ class TradeStrategy:
             raise TypeError("The indicator must inherit from the Indicator base class.")
         if update_method is None:
             raise ValueError("The update_method cannot be None.")
+        if update_method is not None and not callable(update_method):
+            raise TypeError("The update_method must be a callable object.")
         if label is None:
             raise ValueError("The label cannot be None.")
         if label in self._indicator_labels:
@@ -342,7 +344,7 @@ class TradeStrategy:
         for indicator_list in self._indicators.values():
             [indicator.reset() for indicator in indicator_list]
 
-        self._log(f"Reset {self.name} complete.")
+        self._log(f"{self.name} reset.")
 
     def _update_tick(self, tick: Tick):
         """"
@@ -453,6 +455,12 @@ class IndicatorUpdater:
 
         :param update_method: The indicators update method.
         """
+        # Preconditions
+        if update_method is None:
+            raise ValueError("The update_method cannot be None.")
+        if update_method is not None and not callable(update_method):
+            raise TypeError("The update_method must be a callable object.")
+
         self._update_method = update_method
         self._update_params = []
 
@@ -478,6 +486,7 @@ class IndicatorUpdater:
         :param bar: The update bar.
         """
         # Guard clause (design time).
+        assert bar is not None
         assert isinstance(bar, Bar)
 
         args = [bar.__getattribute__(param) for param in self._update_params]
