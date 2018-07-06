@@ -71,7 +71,7 @@ class TradeStrategy:
         """
         :return: The str() string representation of the strategy.
         """
-        return f"{self._name}:{self._label}"
+        return f"{self._name}-{self._label}"
 
     def __repr__(self) -> str:
         """
