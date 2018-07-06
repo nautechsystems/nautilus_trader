@@ -44,6 +44,8 @@ class TradeStrategy:
         self._ind_updater_labels = {}  # Dict[BarType, List[str]]
         self._ind_updaters = {}        # Dict[str, IndicatorUpdater]
 
+        self._log(f"Initializing {self}")
+
     def __eq__(self, other) -> bool:
         """
         Override the default equality comparison.
@@ -349,7 +351,7 @@ class TradeStrategy:
             return
 
         # Update the internal ticks.
-        key = f'{tick.symbol}.{tick.venue.name.lower()}'
+        key = f'{tick.symbol.lower()}.{tick.venue.name.lower()}'
         self._ticks[key] = tick
 
         # Calls on_tick() if the strategy is running.
