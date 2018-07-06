@@ -304,6 +304,7 @@ class LiveDataClient:
         :raises: ValueError: If the strategy is None.
         :raises: TypeError: If the strategy is not a type of TradeStrategy.
         """
+        # Preconditions
         if strategy is None:
             raise ValueError("The strategy cannot be None.")
         if not isinstance(strategy, TradeStrategy):
