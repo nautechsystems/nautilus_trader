@@ -93,8 +93,8 @@ class TradeStrategyTests(unittest.TestCase):
         result2 = repr(strategy)
 
         # Assert
-        self.assertEqual('TradeStrategy:GBPUSD-MM', result1)
-        self.assertTrue(result2.startswith('<TradeStrategy:GBPUSD-MM object at'))
+        self.assertEqual('TradeStrategy-GBPUSD-MM', result1)
+        self.assertTrue(result2.startswith('<TradeStrategy-GBPUSD-MM object at'))
         self.assertTrue(result2.endswith('>'))
 
     def test_can_add_indicator_to_strategy(self):
