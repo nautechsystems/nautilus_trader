@@ -415,9 +415,9 @@ class LiveDataClient:
         """"
         Handle the tick message by parsing to Tick and sending to all relevant subscribers.
         """
-        # if len(self._tick_subscribers) == 0:
-        #     print(f"Received message [{message['channel'].decode(UTF8)}] "
-        #           f"{message['data'].decode(UTF8)}")
+        if len(self._tick_handlers) == 0:
+            print(f"Received message {message['channel'].decode(UTF8)} "
+                  f"{message['data'].decode(UTF8)}")
 
         tick = self._parse_tick(
             message['channel'].decode(UTF8),
@@ -430,9 +430,9 @@ class LiveDataClient:
         """"
         Handle the bar message by parsing to Bar and sending to all relevant subscribers.
         """
-        # if len(self._bar_subscribers) == 0:
-        #     print(f"Received message [{message['channel'].decode(UTF8)}] "
-        #           f"{message['data'].decode(UTF8)}")
+        if len(self._bar_handlers) == 0:
+            print(f"Received message {message['channel'].decode(UTF8)} "
+                  f"{message['data'].decode(UTF8)}")
 
         bar_type = self._parse_bar_type(message['channel'].decode(UTF8))
         bar = self._parse_bar(message['data'].decode(UTF8))
