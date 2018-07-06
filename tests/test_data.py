@@ -287,7 +287,6 @@ class LiveDataClientTests(unittest.TestCase):
         storer = ObjectStorer()
         self.data_client.connect()
         self.data_client.subscribe_tick_data('audusd', Venue.FXCM, storer.store)
-        self.data_client.subscribe_tick_data('audusd', Venue.FXCM, storer.store)
         self.data_client.subscribe_tick_data('gbpusd', Venue.FXCM, storer.store)
         self.data_client.subscribe_tick_data('eurusd', Venue.FXCM, storer.store)
 
