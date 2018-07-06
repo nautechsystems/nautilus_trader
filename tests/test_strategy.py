@@ -8,14 +8,10 @@
 # -------------------------------------------------------------------------------------------------
 
 import unittest
-import redis
 import datetime
 import pytz
-import time
-import inv_indicators
 
 from decimal import Decimal
-from typing import List
 
 from test_kit.objects import ObjectStorer
 from test_kit.strategies import TestStrategy1
