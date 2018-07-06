@@ -157,7 +157,7 @@ class LiveDataClient:
         if self._pubsub_thread is None:
             self._pubsub_thread = self._pubsub.run_in_thread(0.001)
 
-        if not any(ticks_channel in s for s in self._subscriptions_ticks):
+        if ticks_channel not in self._subscriptions_ticks:
             self._subscriptions_ticks.append(ticks_channel)
             self._subscriptions_ticks.sort()
 
@@ -185,7 +185,7 @@ class LiveDataClient:
 
         self._pubsub.unsubscribe(tick_channel)
 
-        if any(tick_channel in s for s in self._subscriptions_ticks):
+        if tick_channel in self._subscriptions_ticks:
             self._subscriptions_ticks.remove(tick_channel)
             self._subscriptions_ticks.sort()
 
@@ -237,7 +237,7 @@ class LiveDataClient:
         if self._pubsub_thread is None:
             self._pubsub_thread = self._pubsub.run_in_thread(0.001)
 
-        if not any(bars_channel in s for s in self._subscriptions_bars):
+        if bars_channel not in self._subscriptions_bars:
             self._subscriptions_bars.append(bars_channel)
             self._subscriptions_bars.sort()
 
@@ -281,7 +281,7 @@ class LiveDataClient:
 
         self._pubsub.unsubscribe(bar_channel)
 
-        if any(bar_channel in s for s in self._subscriptions_bars):
+        if bar_channel in self._subscriptions_bars:
             self._subscriptions_bars.remove(bar_channel)
             self._subscriptions_bars.sort()
 
@@ -293,7 +293,6 @@ class LiveDataClient:
         live data client.
 
         :param strategy: The strategy inheriting from TradeStrategy.
-        :return: The result of the operation.
         :raises: ValueError: If the strategy is None.
         :raises: TypeError: If the strategy is not a type of TradeStrategy.
         """
@@ -423,8 +422,7 @@ class LiveDataClient:
             message['channel'].decode(UTF8),
             message['data'].decode(UTF8))
 
-        for subscriber in self._tick_handlers:
-            subscriber(tick)
+        [handler(tick) for handler in self._tick_handlers]
 
     def _bar_handler(self, message):
         """"
@@ -437,5 +435,4 @@ class LiveDataClient:
         bar_type = self._parse_bar_type(message['channel'].decode(UTF8))
         bar = self._parse_bar(message['data'].decode(UTF8))
 
-        for subscriber in self._bar_handlers:
-            subscriber(bar_type, bar)
+        [handler(bar_type, bar) for handler in self._bar_handlers]
