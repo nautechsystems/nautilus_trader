@@ -347,7 +347,7 @@ class TradeStrategy:
             self._log(f"{self.name} Warning: update_tick() was given None.")
             return
         if not isinstance(tick, Tick):
-            self._log(f"{self.name} Warning: _update_tick() was given an invalid Tick.")
+            self._log(f"{self.name} Warning: _update_tick() was given an invalid Tick {tick}.")
             return
 
         # Update the internal ticks.
@@ -375,13 +375,13 @@ class TradeStrategy:
             self._log(f"{self.name} Warning: _update_bar() was given None.")
             return
         if not isinstance(bar_type, BarType):
-            self._log(f"{self.name} Warning: _update_bar() was given an invalid BarType.")
+            self._log(f"{self.name} Warning: _update_bar() was given an invalid BarType {bar_type}.")
             return
         if bar is None:
             self._log("{self.name} Warning: _update_bar() was given None.")
             return
         if not isinstance(bar, Bar):
-            self._log(f"{self.name} Warning: _update_bar() was given an invalid Bar.")
+            self._log(f"{self.name} Warning: _update_bar() was given an invalid Bar {bar}.")
 
         # Update the internal bars.
         if bar_type not in self._bars:
