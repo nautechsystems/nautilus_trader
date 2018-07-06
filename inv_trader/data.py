@@ -20,7 +20,6 @@ from inv_trader.enums import Resolution, QuoteType, Venue
 from inv_trader.objects import Tick, BarType, Bar
 from inv_trader.strategy import TradeStrategy
 
-# Private IP 10.135.55.111
 UTF8 = 'utf-8'
 
 
@@ -38,6 +37,7 @@ class LiveDataClient:
         :param host: The redis host IP address (default=127.0.0.1).
         :param port: The redis host port (default=6379).
         """
+        # Preconditions
         if host is None:
             raise ValueError("The host cannot be None.")
         if port is None:
@@ -139,11 +139,14 @@ class LiveDataClient:
         :param venue: The venue for subscription.
         :param handler: The callable handler for subscription (if None will just call print).
         """
+        # Preconditions
         if symbol is None:
             raise ValueError("The symbol cannot be None.")
         self._check_connection()
         if venue is None:
             raise ValueError("The venue cannot be None.")
+        if handler is not None and not callable(handler):
+            raise TypeError("The handler must be a callable object.")
 
         self._check_connection()
 
@@ -173,6 +176,7 @@ class LiveDataClient:
         :param symbol: The symbol to unsubscribe from.
         :param venue: The venue to unsubscribe from.
         """
+        # Preconditions
         if symbol is None:
             raise ValueError("The symbol cannot be None.")
         self._check_connection()
@@ -209,6 +213,7 @@ class LiveDataClient:
         :param quote_type: The bar quote type for subscription.
         :param handler: The callable handler for subscription (if None will just call print).
         """
+        # Preconditions
         if symbol is None:
             raise ValueError("The symbol cannot be None.")
         if venue is None:
@@ -219,6 +224,8 @@ class LiveDataClient:
             raise ValueError("The resolution cannot be None.")
         if quote_type is None:
             raise ValueError("The quote_type cannot be None.")
+        if handler is not None and not callable(handler):
+            raise TypeError("The handler must be a callable object.")
 
         self._check_connection()
 
@@ -259,6 +266,7 @@ class LiveDataClient:
         :param resolution: The bar resolution to unsubscribe from.
         :param quote_type: The bar quote type to unsubscribe from.
         """
+        # Preconditions
         if symbol is None:
             raise ValueError("The symbol cannot be None.")
         if venue is None:
@@ -383,7 +391,7 @@ class LiveDataClient:
         """
         Return the tick channel name from the given parameters.
         """
-        return f'{symbol}.{venue.name.lower()}'
+        return f'{symbol.lower()}.{venue.name.lower()}'
 
     @staticmethod
     def _get_bar_channel_name(
@@ -395,7 +403,7 @@ class LiveDataClient:
         """
         Return the bar channel name from the given parameters.
         """
-        return (f'{symbol}.{venue.name.lower()}-{period}-'
+        return (f'{symbol.lower()}.{venue.name.lower()}-{period}-'
                 f'{resolution.name.lower()}[{quote_type.name.lower()}]')
 
     def _check_connection(self):
@@ -414,6 +422,7 @@ class LiveDataClient:
         """"
         Handle the tick message by parsing to Tick and sending to all relevant subscribers.
         """
+        # If no tick handlers then print message to console.
         if len(self._tick_handlers) == 0:
             print(f"Received message {message['channel'].decode(UTF8)} "
                   f"{message['data'].decode(UTF8)}")
@@ -428,6 +437,7 @@ class LiveDataClient:
         """"
         Handle the bar message by parsing to Bar and sending to all relevant subscribers.
         """
+        # If no bar handlers then print message to console.
         if len(self._bar_handlers) == 0:
             print(f"Received message {message['channel'].decode(UTF8)} "
                   f"{message['data'].decode(UTF8)}")
