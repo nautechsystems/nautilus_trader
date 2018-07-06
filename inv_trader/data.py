@@ -297,7 +297,7 @@ class LiveDataClient:
         """
         if strategy is None:
             raise ValueError("The strategy cannot be None.")
-        if strategy is not isinstance(strategy, TradeStrategy):
+        if not isinstance(strategy, TradeStrategy):
             raise TypeError("The strategy must be a type of TradeStrategy.")
 
         self._tick_subscribers.append(strategy._update_tick)
