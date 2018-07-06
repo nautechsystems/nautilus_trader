@@ -378,12 +378,12 @@ class TradeStrategy:
         if bar is None:
             self._log("{self.name} Warning: _update_bar() was given None.")
             return
-        if not isinstance(bar_type, Bar):
+        if not isinstance(bar, Bar):
             self._log(f"{self.name} Warning: _update_bar() was given an invalid Bar.")
 
         # Update the internal bars.
         if bar_type not in self._bars:
-            self._bars[bar_type] = List[Bar]
+            self._bars[bar_type] = []
         self._bars[bar_type].insert(0, bar)
 
         # Update the internal indicators.
@@ -415,7 +415,8 @@ class TradeStrategy:
             return
 
         # For each updater matching the given bar type -> update with the bar.
-        [updater.update(bar) for updater in self._ind_updater_labels[bar_type]]
+        for label in self._ind_updater_labels[bar_type]:
+            self._ind_updaters[label].update(bar)
 
     # Avoid making a static method for now.
     def _log(self, message: str):
@@ -430,8 +431,8 @@ class TradeStrategy:
 class IndicatorUpdater:
     """
     Provides an adapter for updating an indicator with a bar. When instantiated
-    with a live indicator object and update method, the updater will inspect
-    the update method and construct the required parameter list for updates.
+    with a live indicator update method, the updater will inspect the method and
+    construct the required parameter list for updates.
     """
 
     def __init__(self, update_method: classmethod):
