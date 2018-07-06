@@ -12,11 +12,11 @@ from inv_trader.enums import Venue, Resolution, QuoteType
 from examples.strategy_examples import EMACross
 
 # Tests the live data client can receive ticks and bars.
-if __name__ == "__main__":
-    client = LiveDataClient()
-    client.connect()
-    client.subscribe_tick_data('audusd', Venue.FXCM)
-    client.subscribe_bar_data('audusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.MID)
+# if __name__ == "__main__":
+#     client = LiveDataClient()
+#     client.connect()
+#     client.subscribe_tick_data('audusd', Venue.FXCM)
+#     client.subscribe_bar_data('audusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.MID)
 
 
 if __name__ == "__main__":
