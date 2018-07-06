@@ -235,7 +235,7 @@ class TradeStrategy:
             update_method: callable,
             label: str):
         """
-        Add the given indicator to the strategy.It will receive bars of the
+        Add the given indicator to the strategy. It will receive bars of the
         given bar type. The indicator must be from the inv_indicators package.
 
         :param bar_type: The indicators bar type.
