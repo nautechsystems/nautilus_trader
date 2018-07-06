@@ -17,11 +17,14 @@ class EMACross(TradeStrategy):
     """"
     A simple moving average crossing example strategy.
     """
-    def __init__(self, fast, slow):
+    def __init__(self,
+                 label,
+                 fast,
+                 slow):
         """
         Initializes a new instance of the EMACross class.
         """
-        super().__init__()
+        super().__init__(label)
 
         self.bar_type = BarType(
             'audusd',
@@ -40,18 +43,18 @@ class EMACross(TradeStrategy):
         pass
 
     def on_tick(self, tick: Tick):
-        print(str(tick))
+        pass
 
     def on_bar(
             self,
             bar_type: BarType,
             bar: Bar):
 
-        if bar_type == self.bar_type:
+        if bar_type == self.bar_type and 'audusd.fxcm' in self.all_ticks:
             if self.ema1.value > self.ema2.value:
-                print('BUY')
+                print(f"BUY at {self.last_tick('audusd', Venue.FXCM).ask}")
             elif self.ema1.value < self.ema2.value:
-                print('SELL')
+                print(f"SELL at {self.last_tick('audusd', Venue.FXCM).bid}")
 
     def on_account(self, message):
         pass
