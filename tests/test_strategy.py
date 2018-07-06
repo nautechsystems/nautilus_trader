@@ -35,7 +35,7 @@ class TradeStrategyTests(unittest.TestCase):
         # Assert
         self.assertEqual('TradeStrategy', result)
 
-    def test_label_for_strategy(self):
+    def test_can_get_strategy_label(self):
         # Arrange
         strategy1 = TradeStrategy()
         strategy2 = TradeStrategy(None)  # Simulating user ignoring type hint.
@@ -113,6 +113,8 @@ class TradeStrategyTests(unittest.TestCase):
         strategy = TestStrategy1(storer)
 
         # Act
+        strategy.reset()
+
         # Assert
         self.assertEqual(strategy.ema1, strategy.all_indicators[strategy.gbpusd_1sec_mid][0])
         self.assertEqual(strategy.ema2, strategy.all_indicators[strategy.gbpusd_1sec_mid][1])
