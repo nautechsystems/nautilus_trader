@@ -148,7 +148,7 @@ class LiveDataClient:
         self._check_connection()
 
         # If a handler is passed in, and doesn't already exist, then add to tick subscribers.
-        if handler is not None and not any(handler is handler for h in self._tick_handlers):
+        if handler is not None and handler not in self._tick_handlers:
             self._tick_handlers.append(handler)
 
         ticks_channel = self._get_tick_channel_name(symbol, venue)
@@ -223,7 +223,7 @@ class LiveDataClient:
         self._check_connection()
 
         # If a handler is passed in, and doesn't already exist, then add to bar subscribers.
-        if handler is not None and not any(handler is handler for h in self._bar_handlers):
+        if handler is not None and handler not in self._bar_handlers:
             self._bar_handlers.append(handler)
 
         bars_channel = self._get_bar_channel_name(
@@ -302,8 +302,13 @@ class LiveDataClient:
         if not isinstance(strategy, TradeStrategy):
             raise TypeError("The strategy must be a type of TradeStrategy.")
 
-        self._tick_handlers.append(strategy._update_tick)
-        self._bar_handlers.append(strategy._update_bars)
+        strategy_tick_handler = strategy._update_tick
+        if strategy_tick_handler not in self._tick_handlers:
+            self._tick_handlers.append(strategy_tick_handler)
+
+        strategy_bar_handler = strategy._update_bars
+        if strategy_bar_handler not in self._bar_handlers:
+            self._bar_handlers.append(strategy_bar_handler)
 
         self._log(f"Registered {strategy} with the live data client.")
 
