@@ -7,8 +7,9 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from inv_trader.objects import Tick, BarType, Bar
 from inv_trader.enums import Venue, Resolution, QuoteType
+from inv_trader.objects import Tick, BarType, Bar
+from inv_trader.events import AccountEvent, OrderEvent, ExecutionEvent, TimeEvent
 from inv_trader.strategy import TradeStrategy
 from inv_indicators.average.ema import ExponentialMovingAverage
 
@@ -17,6 +18,7 @@ class TestStrategy1(TradeStrategy):
     """"
     A simple strategy for unit testing.
     """
+
     def __init__(self, object_storer):
         """
         Initializes a new instance of the TestStrategy1 class.
@@ -54,10 +56,16 @@ class TestStrategy1(TradeStrategy):
             elif self.ema1.value < self.ema2.value:
                 self.object_storer.store('SELL')
 
-    def on_account(self, message):
+    def on_account_event(self, message):
         pass
 
-    def on_message(self, message):
+    def on_order_event(self, event: OrderEvent):
+        pass
+
+    def on_execution_event(self, message):
+        pass
+
+    def on_time_event(self, event: TimeEvent):
         pass
 
     def on_stop(self):

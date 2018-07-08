@@ -23,7 +23,7 @@ class Event:
                  identifier: uuid,
                  timestamp: datetime.datetime):
         """
-        Initializes a new instance of the TradeStrategy abstract class.
+        Initializes a new instance of the Event abstract class.
 
         :param: identifier: The events identifier.
         :param: uuid: The events timestamp.
@@ -73,6 +73,57 @@ class Event:
         return f"<{str(self)} object at {id(self)}>"
 
 
+class AccountEvent(Event):
+    """
+    Represents an account event where there have been changes to the account.
+    """
+
+    def __init__(self,
+                 identifier: uuid,
+                 timestamp: datetime.datetime):
+        """
+        Initializes a new instance of the AccountEvent class.
+
+        :param: identifier: The time events identifier.
+        :param: uuid: The time events timestamp.
+        """
+        super().__init__(identifier, timestamp)
+
+
+class OrderEvent(Event):
+    """
+    Represents an order event where there has been a change to an orders status.
+    """
+
+    def __init__(self,
+                 identifier: uuid,
+                 timestamp: datetime.datetime):
+        """
+        Initializes a new instance of the OrderEvent class.
+
+        :param: identifier: The time events identifier.
+        :param: uuid: The time events timestamp.
+        """
+        super().__init__(identifier, timestamp)
+
+
+class ExecutionEvent(Event):
+    """
+    Represents an execution event where an order has been partially or fully executed.
+    """
+
+    def __init__(self,
+                 identifier: uuid,
+                 timestamp: datetime.datetime):
+        """
+        Initializes a new instance of the ExecutionEvent class.
+
+        :param: identifier: The time events identifier.
+        :param: uuid: The time events timestamp.
+        """
+        super().__init__(identifier, timestamp)
+
+
 class TimeEvent(Event):
     """
     Represents a time event occurring at the event timestamp.
@@ -83,7 +134,7 @@ class TimeEvent(Event):
                  identifier: uuid,
                  timestamp: datetime.datetime):
         """
-        Initializes a new instance of the TradeStrategy abstract class.
+        Initializes a new instance of the TimeEvent class.
 
         :param: identifier: The time events identifier.
         :param: uuid: The time events timestamp.
