@@ -17,7 +17,7 @@ from typing import KeysView
 
 from inv_trader.enums import Venue
 from inv_trader.objects import Tick, BarType, Bar
-from inv_trader.events import TimeEvent
+from inv_trader.events import AccountEvent, OrderEvent, ExecutionEvent, TimeEvent
 
 Label = str
 Symbol = str
@@ -86,36 +86,78 @@ class TradeStrategy:
 
     @abc.abstractmethod
     def on_start(self):
+        """
+        Called when the strategy is started.
+        """
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
 
     @abc.abstractmethod
     def on_tick(self, tick: Tick):
+        """
+        Called when a tick is received by the strategy.
+
+        :param tick: The tick received.
+        """
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
 
     @abc.abstractmethod
     def on_bar(self, bar_type: BarType, bar: Bar):
+        """
+        Called when a bar is received by the strategy.
+
+        :param bar_type: The bar type received.
+        :param bar: The bar received.
+        """
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
 
     @abc.abstractmethod
-    def on_account(self, message):
+    def on_account_event(self, event: AccountEvent):
+        """
+        Called when an account event is received by the strategy.
+
+        :param event: The account event received.
+        """
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
 
     @abc.abstractmethod
-    def on_message(self, message):
+    def on_order_event(self, event: OrderEvent):
+        """
+        Called when an order event is received by the strategy.
+
+        :param event: The order event received.
+        """
+        # Raise exception if not overridden in implementation.
+        raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
+
+    @abc.abstractmethod
+    def on_execution_event(self, event: ExecutionEvent):
+        """
+        Called when an execution event is received by the strategy.
+
+        :param event: The execution event received.
+        """
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
 
     @abc.abstractmethod
     def on_time_event(self, event: TimeEvent):
+        """
+        Called when a time event is received by the strategy.
+
+        :param event: The time event received.
+        """
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
 
     @abc.abstractmethod
     def on_stop(self):
+        """
+        Called when the strategy is stopped.
+        """
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
 
