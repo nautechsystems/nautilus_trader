@@ -107,23 +107,6 @@ class OrderEvent(Event):
         super().__init__(identifier, timestamp)
 
 
-class ExecutionEvent(Event):
-    """
-    Represents an execution event where an order has been partially or fully executed.
-    """
-
-    def __init__(self,
-                 identifier: uuid,
-                 timestamp: datetime.datetime):
-        """
-        Initializes a new instance of the ExecutionEvent class.
-
-        :param: identifier: The time events identifier.
-        :param: uuid: The time events timestamp.
-        """
-        super().__init__(identifier, timestamp)
-
-
 class TimeEvent(Event):
     """
     Represents a time event occurring at the event timestamp.

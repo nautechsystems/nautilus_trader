@@ -17,7 +17,7 @@ from test_kit.objects import ObjectStorer
 from test_kit.strategies import TestStrategy1
 from inv_trader.enums import Venue, Resolution, QuoteType
 from inv_trader.objects import Tick, BarType, Bar
-from inv_trader.events import AccountEvent, OrderEvent, ExecutionEvent, TimeEvent
+from inv_trader.events import AccountEvent, OrderEvent, TimeEvent
 from inv_trader.strategy import TradeStrategy
 from inv_trader.strategy import IndicatorUpdater
 from inv_indicators.average.ema import ExponentialMovingAverage
