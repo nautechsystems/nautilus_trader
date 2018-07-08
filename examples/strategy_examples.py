@@ -9,7 +9,7 @@
 
 from inv_trader.enums import Venue, Resolution, QuoteType
 from inv_trader.objects import Tick, BarType, Bar
-from inv_trader.events import AccountEvent, OrderEvent, ExecutionEvent, TimeEvent
+from inv_trader.events import Event
 from inv_trader.strategy import TradeStrategy
 from inv_indicators.average.ema import ExponentialMovingAverage
 
@@ -57,17 +57,11 @@ class EMACross(TradeStrategy):
             elif self.ema1.value < self.ema2.value:
                 print(f"SELL at {self.last_tick('audusd', Venue.FXCM).bid}")
 
-    def on_account_event(self, event: AccountEvent):
-        pass
-
-    def on_order_event(self, event: OrderEvent):
-        pass
-
-    def on_execution_event(self, event: ExecutionEvent):
-        pass
-
-    def on_time_event(self, event: TimeEvent):
+    def on_event(self, event: Event):
         pass
 
     def on_stop(self):
+        pass
+
+    def on_reset(self):
         pass

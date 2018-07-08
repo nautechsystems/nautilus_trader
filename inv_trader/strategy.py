@@ -17,7 +17,7 @@ from typing import KeysView
 
 from inv_trader.enums import Venue
 from inv_trader.objects import Tick, BarType, Bar
-from inv_trader.events import AccountEvent, OrderEvent, ExecutionEvent, TimeEvent
+from inv_trader.events import Event
 
 Label = str
 Symbol = str
@@ -114,41 +114,11 @@ class TradeStrategy:
         raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
 
     @abc.abstractmethod
-    def on_account_event(self, event: AccountEvent):
+    def on_event(self, event: Event):
         """
-        Called when an account event is received by the strategy.
+        Called when an event is received by the strategy.
 
-        :param event: The account event received.
-        """
-        # Raise exception if not overridden in implementation.
-        raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
-
-    @abc.abstractmethod
-    def on_order_event(self, event: OrderEvent):
-        """
-        Called when an order event is received by the strategy.
-
-        :param event: The order event received.
-        """
-        # Raise exception if not overridden in implementation.
-        raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
-
-    @abc.abstractmethod
-    def on_execution_event(self, event: ExecutionEvent):
-        """
-        Called when an execution event is received by the strategy.
-
-        :param event: The execution event received.
-        """
-        # Raise exception if not overridden in implementation.
-        raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
-
-    @abc.abstractmethod
-    def on_time_event(self, event: TimeEvent):
-        """
-        Called when a time event is received by the strategy.
-
-        :param event: The time event received.
+        :param event: The event received.
         """
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
@@ -157,6 +127,14 @@ class TradeStrategy:
     def on_stop(self):
         """
         Called when the strategy is stopped.
+        """
+        # Raise exception if not overridden in implementation.
+        raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
+
+    @abc.abstractmethod
+    def on_reset(self):
+        """
+        Called when the strategy is reset.
         """
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
@@ -398,6 +376,7 @@ class TradeStrategy:
         for indicator_list in self._indicators.values():
             [indicator.reset() for indicator in indicator_list]
 
+        self.on_reset()
         self._log(f"{self.name} reset.")
 
     def _update_ticks(self, tick: Tick):
