@@ -96,7 +96,7 @@ class LiveDataClientTests(unittest.TestCase):
         self.data_client.connect()
 
         # Act
-        self.data_client.subscribe_tick_data('audusd', Venue.FXCM)
+        self.data_client.subscribe_ticks('audusd', Venue.FXCM)
         tick_channels = self.data_client.subscriptions_ticks
         all_channels = self.data_client.subscriptions_all
 
@@ -107,10 +107,10 @@ class LiveDataClientTests(unittest.TestCase):
     def test_can_unsubscribe_from_tick_data(self):
         # Arrange
         self.data_client.connect()
-        self.data_client.subscribe_tick_data('audusd', Venue.FXCM)
+        self.data_client.subscribe_ticks('audusd', Venue.FXCM)
 
         # Act
-        self.data_client.unsubscribe_tick_data('audusd', Venue.FXCM)
+        self.data_client.unsubscribe_ticks('audusd', Venue.FXCM)
         tick_channels = self.data_client.subscriptions_ticks
 
         # Assert
@@ -121,7 +121,7 @@ class LiveDataClientTests(unittest.TestCase):
         self.data_client.connect()
 
         # Act
-        self.data_client.subscribe_bar_data('audusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.BID)
+        self.data_client.subscribe_bars('audusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.BID)
         bar_channels = self.data_client.subscriptions_bars
         all_channels = self.data_client.subscriptions_all
 
@@ -132,10 +132,10 @@ class LiveDataClientTests(unittest.TestCase):
     def test_can_unsubscribe_from_bar_data(self):
         # Arrange
         self.data_client.connect()
-        self.data_client.subscribe_bar_data('audusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.BID)
+        self.data_client.subscribe_bars('audusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.BID)
 
         # Act
-        self.data_client.unsubscribe_bar_data('audusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.BID)
+        self.data_client.unsubscribe_bars('audusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.BID)
         bar_channels = self.data_client.subscriptions_bars
         all_channels = self.data_client.subscriptions_all
 
@@ -146,10 +146,10 @@ class LiveDataClientTests(unittest.TestCase):
     def test_disconnecting_when_subscribed_to_multiple_channels_then_unsubscribes(self):
         # Arrange
         self.data_client.connect()
-        self.data_client.subscribe_tick_data('audusd', Venue.FXCM)
-        self.data_client.subscribe_tick_data('gbpusd', Venue.FXCM)
-        self.data_client.subscribe_tick_data('eurjpy', Venue.FXCM)
-        self.data_client.subscribe_tick_data('usdcad', Venue.FXCM)
+        self.data_client.subscribe_ticks('audusd', Venue.FXCM)
+        self.data_client.subscribe_ticks('gbpusd', Venue.FXCM)
+        self.data_client.subscribe_ticks('eurjpy', Venue.FXCM)
+        self.data_client.subscribe_ticks('usdcad', Venue.FXCM)
 
         # Act
         self.data_client.disconnect()
@@ -246,7 +246,7 @@ class LiveDataClientTests(unittest.TestCase):
         # Arrange
         storer = ObjectStorer()
         self.data_client.connect()
-        self.data_client.subscribe_tick_data('audusd', Venue.FXCM, storer.store)
+        self.data_client.subscribe_ticks('audusd', Venue.FXCM, storer.store)
 
         tick = Tick(
             'AUDUSD',
@@ -268,7 +268,7 @@ class LiveDataClientTests(unittest.TestCase):
         # Arrange
         storer = ObjectStorer()
         self.data_client.connect()
-        self.data_client.subscribe_tick_data('audusd', Venue.FXCM, storer.store)
+        self.data_client.subscribe_ticks('audusd', Venue.FXCM, storer.store)
 
         # Act
         self.redis_tester.publish('audusd.fxcm', '1.00000,1.00001,2018-01-01T19:59:01.000Z')
@@ -286,9 +286,9 @@ class LiveDataClientTests(unittest.TestCase):
         # Arrange
         storer = ObjectStorer()
         self.data_client.connect()
-        self.data_client.subscribe_tick_data('audusd', Venue.FXCM, storer.store)
-        self.data_client.subscribe_tick_data('gbpusd', Venue.FXCM, storer.store)
-        self.data_client.subscribe_tick_data('eurusd', Venue.FXCM, storer.store)
+        self.data_client.subscribe_ticks('audusd', Venue.FXCM, storer.store)
+        self.data_client.subscribe_ticks('gbpusd', Venue.FXCM, storer.store)
+        self.data_client.subscribe_ticks('eurusd', Venue.FXCM, storer.store)
 
         # Act
         self.redis_tester.publish('audusd.fxcm', '1.00000,1.00001,2018-01-01T19:59:01.000Z')
@@ -316,7 +316,7 @@ class LiveDataClientTests(unittest.TestCase):
         # Arrange
         storer = ObjectStorer()
         self.data_client.connect()
-        self.data_client.subscribe_bar_data('audusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.BID, storer.store_both)
+        self.data_client.subscribe_bars('audusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.BID, storer.store_both)
 
         bar = Bar(
             Decimal('1.00001'),
@@ -339,7 +339,7 @@ class LiveDataClientTests(unittest.TestCase):
         # Arrange
         storer = ObjectStorer()
         self.data_client.connect()
-        self.data_client.subscribe_bar_data('audusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.BID, storer.store_both)
+        self.data_client.subscribe_bars('audusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.BID, storer.store_both)
 
         # Act
         self.redis_tester.publish('audusd.fxcm-1-second[bid]',
@@ -362,9 +362,9 @@ class LiveDataClientTests(unittest.TestCase):
         # Arrange
         storer = ObjectStorer()
         self.data_client.connect()
-        self.data_client.subscribe_bar_data('audusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.BID, storer.store_both)
-        self.data_client.subscribe_bar_data('gbpusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.BID, storer.store_both)
-        self.data_client.subscribe_bar_data('eurusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.BID, storer.store_both)
+        self.data_client.subscribe_bars('audusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.BID, storer.store_both)
+        self.data_client.subscribe_bars('gbpusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.BID, storer.store_both)
+        self.data_client.subscribe_bars('eurusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.BID, storer.store_both)
 
         # Act
         self.redis_tester.publish('audusd.fxcm-1-second[bid]',
