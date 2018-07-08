@@ -37,14 +37,14 @@ class TradeStrategy:
         self._name = self.__class__.__name__
         self._label = label
         self._is_running = False
-        self._bars = {}                # Dict[BarType, List[Bar]]
+        self._bars = {}  # type: Dict[BarType, List[Bar]]
         self._ticks = {}               # Dict[str, Tick]
         self._indicators = {}          # Dict[BarType, List[object]]
         self._indicator_labels = {}    # Dict[str, object]
         self._ind_updater_labels = {}  # Dict[BarType, List[str]]
         self._ind_updaters = {}        # Dict[str, IndicatorUpdater]
 
-        self._log(f"Initialization of {self} complete.")
+        self._log(f"{self} initialized.")
 
     def __eq__(self, other) -> bool:
         """

@@ -110,8 +110,8 @@ class LiveDataClient:
             time.sleep(0.100)  # Allows thread to stop.
             self._log(f"Stopped PubSub thread {self._pubsub_thread}.")
 
-        self._log(f"Unsubscribed from tick_data {self._subscriptions_ticks}.")
-        self._log(f"Unsubscribed from bars_data {self._subscriptions_bars}.")
+        self._log(f"Unsubscribed from tick data {self._subscriptions_ticks}.")
+        self._log(f"Unsubscribed from bar data {self._subscriptions_bars}.")
 
         if self._client is not None:
             self._client.connection_pool.disconnect()
@@ -163,7 +163,7 @@ class LiveDataClient:
             self._subscriptions_ticks.append(ticks_channel)
             self._subscriptions_ticks.sort()
 
-        self._log(f"Subscribed to {ticks_channel}.")
+        self._log(f"Subscribed to tick data for {ticks_channel}.")
 
     def unsubscribe_ticks(
             self,
@@ -191,7 +191,7 @@ class LiveDataClient:
             self._subscriptions_ticks.remove(tick_channel)
             self._subscriptions_ticks.sort()
 
-        self._log(f"Unsubscribed from {tick_channel}.")
+        self._log(f"Unsubscribed from tick data for {tick_channel}.")
 
     def subscribe_bars(
             self,
@@ -246,7 +246,7 @@ class LiveDataClient:
             self._subscriptions_bars.append(bars_channel)
             self._subscriptions_bars.sort()
 
-        self._log(f"Subscribed to {bars_channel}.")
+        self._log(f"Subscribed to bar data for {bars_channel}.")
 
     def unsubscribe_bars(
             self,
@@ -291,7 +291,7 @@ class LiveDataClient:
             self._subscriptions_bars.remove(bar_channel)
             self._subscriptions_bars.sort()
 
-        self._log(f"Unsubscribed from {bar_channel}.")
+        self._log(f"Unsubscribed from bar data for {bar_channel}.")
 
     def register_strategy(self, strategy: TradeStrategy):
         """
@@ -316,7 +316,7 @@ class LiveDataClient:
         if strategy_bar_handler not in self._bar_handlers:
             self._bar_handlers.append(strategy_bar_handler)
 
-        self._log(f"Registered {strategy} with the live data client.")
+        self._log(f"Registered strategy {strategy} with the live data client.")
 
     @staticmethod
     def _log(message: str):
@@ -419,7 +419,7 @@ class LiveDataClient:
 
     def _tick_handler(self, message):
         """"
-        Handle the tick message by parsing to Tick and sending to all relevant subscribers.
+        Handle the tick message by parsing to a Tick and sending to all relevant subscribers.
         """
         # If no tick handlers then print message to console.
         if len(self._tick_handlers) == 0:
@@ -434,7 +434,7 @@ class LiveDataClient:
 
     def _bar_handler(self, message):
         """"
-        Handle the bar message by parsing to Bar and sending to all relevant subscribers.
+        Handle the bar message by parsing to a Bar and sending to all relevant subscribers.
         """
         # If no bar handlers then print message to console.
         if len(self._bar_handlers) == 0:
