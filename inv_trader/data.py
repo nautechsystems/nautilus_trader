@@ -127,7 +127,7 @@ class LiveDataClient:
         self._tick_handlers = []
         self._bar_handlers = []
 
-    def subscribe_tick_data(
+    def subscribe_ticks(
             self,
             symbol: str,
             venue: Venue,
@@ -142,7 +142,6 @@ class LiveDataClient:
         # Preconditions
         if symbol is None:
             raise ValueError("The symbol cannot be None.")
-        self._check_connection()
         if venue is None:
             raise ValueError("The venue cannot be None.")
         if handler is not None and not callable(handler):
@@ -166,7 +165,7 @@ class LiveDataClient:
 
         self._log(f"Subscribed to {ticks_channel}.")
 
-    def unsubscribe_tick_data(
+    def unsubscribe_ticks(
             self,
             symbol: str,
             venue: Venue):
@@ -179,7 +178,6 @@ class LiveDataClient:
         # Preconditions
         if symbol is None:
             raise ValueError("The symbol cannot be None.")
-        self._check_connection()
         if venue is None:
             raise ValueError("The venue cannot be None.")
 
@@ -195,7 +193,7 @@ class LiveDataClient:
 
         self._log(f"Unsubscribed from {tick_channel}.")
 
-    def subscribe_bar_data(
+    def subscribe_bars(
             self,
             symbol: str,
             venue: Venue,
@@ -250,7 +248,7 @@ class LiveDataClient:
 
         self._log(f"Subscribed to {bars_channel}.")
 
-    def unsubscribe_bar_data(
+    def unsubscribe_bars(
             self,
             symbol: str,
             venue: Venue,

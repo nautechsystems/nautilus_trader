@@ -24,6 +24,6 @@ if __name__ == "__main__":
     client = LiveDataClient()
     client.connect()
     client.register_strategy(strategy)
-    client.subscribe_tick_data('audusd', Venue.FXCM)
-    client.subscribe_bar_data('audusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.MID)
+    client.subscribe_ticks('audusd', Venue.FXCM)
+    client.subscribe_bars('audusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.MID)
     strategy.start()
