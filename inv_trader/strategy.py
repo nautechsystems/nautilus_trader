@@ -194,7 +194,7 @@ class TradeStrategy:
 
         :param: The bar type for the indicators list.
         :return: The internally held indicators for the given bar type.
-        :raises: KeyError: If the indicators dictionary does not contain the bar type.
+        :raises: KeyError: If the strategy does not contain indicators for the bar type.
         """
         # Preconditions
         if bar_type not in self._indicators:
@@ -208,7 +208,7 @@ class TradeStrategy:
 
         :param: label: The unique label for the indicator.
         :return: The internally held indicator for the given unique label.
-        :raises: KeyError: If the indicator labels dictionary does not contain the bar type.
+        :raises: KeyError: If the strategy does not contain the indicator label.
         """
         # Preconditions
         if label not in self._indicator_index:
@@ -222,7 +222,7 @@ class TradeStrategy:
 
         :param bar_type: The bar type to get.
         :return: The list of bars.
-        :raises: KeyError: If the bars dictionary does not contain the bar type.
+        :raises: KeyError: If the strategy does not contain the bar type..
         """
         # Preconditions
         if bar_type not in self._bars:
@@ -240,7 +240,7 @@ class TradeStrategy:
         :param bar_type: The bar type to get.
         :param index: The index to get.
         :return: The found bar.
-        :raises: KeyError: If the bars dictionary does not contain the bar type.
+        :raises: KeyError: If the strategy does not contain the bar type.
         :raises: ValueError: If the index is negative.
         """
         # Preconditions
@@ -261,7 +261,7 @@ class TradeStrategy:
         :param symbol: The last tick symbol.
         :param venue: The last tick venue.
         :return: The tick object.
-        :raises: KeyError: If the ticks dictionary does not contain the symbol and venue string.
+        :raises: KeyError: If the strategy does not contain a tick for the symbol and venue string.
         """
         # Preconditions
         key = f'{symbol.lower()}.{venue.name.lower()}'
@@ -285,6 +285,8 @@ class TradeStrategy:
         :param update_method: The update method for the indicator.
         :param label: The unique label for this indicator.
         :raises: ValueError: If any argument is None.
+        :raises: TypeError: If the indicator is not a type of Indicator.
+        :raises: TypeError: If the update method is not callable.
         :raises: KeyError: If the label is not unique.
         """
         # Preconditions
@@ -374,6 +376,7 @@ class TradeStrategy:
         self._ticks = {}  # type: Dict[Symbol, Tick]
         self._bars = {}   # type: Dict[BarType, List[Bar]]
 
+        # Reset all indicators.
         for indicator_list in self._indicators.values():
             [indicator.reset() for indicator in indicator_list]
 
@@ -385,7 +388,7 @@ class TradeStrategy:
         Updates the last held tick with the given tick then calls the on_tick
         method for the inheriting class.
 
-        :param tick: The received tick.
+        :param tick: The tick received.
         """
         # Guard clauses to catch design errors and make code robust in production.
         # Warnings are logged.
@@ -412,8 +415,8 @@ class TradeStrategy:
         Updates the internal dictionary of bars with the given bar, then calls the
         on_bar method for the inheriting class.
 
-        :param bar_type: The received bar type.
-        :param bar: The received bar.
+        :param bar_type: The bar type received.
+        :param bar: The bar received.
         """
         # Guard clauses to catch design errors and make code robust in production.
         # Warnings are logged.
