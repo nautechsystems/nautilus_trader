@@ -56,13 +56,13 @@ class TestStrategy1(TradeStrategy):
             elif self.ema1.value < self.ema2.value:
                 self.object_storer.store('SELL')
 
-    def on_account_event(self, message):
+    def on_account_event(self, event: AccountEvent):
         pass
 
     def on_order_event(self, event: OrderEvent):
         pass
 
-    def on_execution_event(self, message):
+    def on_execution_event(self, event: ExecutionEvent):
         pass
 
     def on_time_event(self, event: TimeEvent):

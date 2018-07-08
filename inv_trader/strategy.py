@@ -400,7 +400,7 @@ class TradeStrategy:
 
         self._log(f"{self.name} reset.")
 
-    def _update_tick(self, tick: Tick):
+    def _update_ticks(self, tick: Tick):
         """"
         Updates the last held tick with the given tick then calls the on_tick
         method for the inheriting class.

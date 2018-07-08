@@ -13,6 +13,8 @@ from inv_trader.events import AccountEvent, OrderEvent, ExecutionEvent, TimeEven
 from inv_trader.strategy import TradeStrategy
 from inv_indicators.average.ema import ExponentialMovingAverage
 
+AUDUSD_FXCM = 'audusd.fxcm'
+
 
 class EMACross(TradeStrategy):
     """"
@@ -28,7 +30,7 @@ class EMACross(TradeStrategy):
         """
         super().__init__(label)
 
-        self.bar_type = BarType(
+        self.audusd_fxcm_1_second_mid = BarType(
             'audusd',
             Venue.FXCM,
             1,
@@ -38,8 +40,8 @@ class EMACross(TradeStrategy):
         self.ema1 = ExponentialMovingAverage(fast)
         self.ema2 = ExponentialMovingAverage(slow)
 
-        self.add_indicator(self.bar_type, self.ema1, self.ema1.update, 'ema1')
-        self.add_indicator(self.bar_type, self.ema2, self.ema2.update, 'ema2')
+        self.add_indicator(self.audusd_fxcm_1_second_mid, self.ema1, self.ema1.update, 'ema1')
+        self.add_indicator(self.audusd_fxcm_1_second_mid, self.ema2, self.ema2.update, 'ema2')
 
     def on_start(self):
         pass
@@ -49,7 +51,7 @@ class EMACross(TradeStrategy):
 
     def on_bar(self, bar_type: BarType, bar: Bar):
 
-        if bar_type == self.bar_type and 'audusd.fxcm' in self.ticks:
+        if bar_type == self.audusd_fxcm_1_second_mid and AUDUSD_FXCM in self.ticks:
             if self.ema1.value > self.ema2.value:
                 print(f"BUY at {self.last_tick('audusd', Venue.FXCM).ask}")
             elif self.ema1.value < self.ema2.value:

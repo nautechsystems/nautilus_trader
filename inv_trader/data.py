@@ -308,7 +308,7 @@ class LiveDataClient:
         if not isinstance(strategy, TradeStrategy):
             raise TypeError("The strategy must be a type of TradeStrategy.")
 
-        strategy_tick_handler = strategy._update_tick
+        strategy_tick_handler = strategy._update_ticks
         if strategy_tick_handler not in self._tick_handlers:
             self._tick_handlers.append(strategy_tick_handler)
 

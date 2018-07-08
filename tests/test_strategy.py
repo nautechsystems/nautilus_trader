@@ -15,8 +15,9 @@ from decimal import Decimal
 
 from test_kit.objects import ObjectStorer
 from test_kit.strategies import TestStrategy1
-from inv_trader.objects import Tick, BarType, Bar
 from inv_trader.enums import Venue, Resolution, QuoteType
+from inv_trader.objects import Tick, BarType, Bar
+from inv_trader.events import AccountEvent, OrderEvent, ExecutionEvent, TimeEvent
 from inv_trader.strategy import TradeStrategy
 from inv_trader.strategy import IndicatorUpdater
 from inv_indicators.average.ema import ExponentialMovingAverage
@@ -143,18 +144,62 @@ class TradeStrategyTests(unittest.TestCase):
         # Assert
         self.assertFalse(strategy.is_running)
 
+    def test_can_update_strategy_bars(self):
+        # Arrange
+        storer = ObjectStorer()
+        strategy = TestStrategy1(storer)
+
+        bar_type = BarType('gbpusd',
+                           Venue.FXCM,
+                           1,
+                           Resolution.SECOND,
+                           QuoteType.MID)
+
+        bar = Bar(
+            Decimal('1.00001'),
+            Decimal('1.00004'),
+            Decimal('1.00003'),
+            Decimal('1.00002'),
+            100000,
+            datetime.datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC))
+
+        # Act
+        strategy._update_bars(bar_type, bar)
+
+        # Assert
+        self.assertFalse(strategy.is_running)
+        self.assertEqual(1, len(strategy.all_bars[bar_type]))
+        self.assertEqual(1, len(strategy.bars(bar_type)))
+        self.assertEqual(1, strategy.ema1.count)
+        self.assertEqual(1, strategy.ema2.count)
+
     def test_can_reset_strategy(self):
         # Arrange
         storer = ObjectStorer()
         strategy = TestStrategy1(storer)
 
+        bar_type = BarType('gbpusd',
+                           Venue.FXCM,
+                           1,
+                           Resolution.SECOND,
+                           QuoteType.MID)
+
+        bar = Bar(
+            Decimal('1.00001'),
+            Decimal('1.00004'),
+            Decimal('1.00003'),
+            Decimal('1.00002'),
+            100000,
+            datetime.datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC))
+
+        strategy._update_bars(bar_type, bar)
         # Act
         strategy.reset()
 
         # Assert
         self.assertFalse(strategy.is_running)
-        self.assertEqual(strategy.ema1, strategy.all_indicators[strategy.gbpusd_1sec_mid][0])
-        self.assertEqual(strategy.ema2, strategy.all_indicators[strategy.gbpusd_1sec_mid][1])
+        self.assertEqual(0, strategy.ema1.count)
+        self.assertEqual(0, strategy.ema2.count)
 
 
 class IndicatorUpdaterTests(unittest.TestCase):
