@@ -17,6 +17,7 @@ from typing import KeysView
 
 from inv_trader.enums import Venue
 from inv_trader.objects import Tick, BarType, Bar
+from inv_trader.events import TimeEvent
 
 Label = str
 Symbol = str
@@ -109,7 +110,7 @@ class TradeStrategy:
         raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
 
     @abc.abstractmethod
-    def on_time_event(self, message):
+    def on_time_event(self, event: TimeEvent):
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
 
@@ -309,12 +310,12 @@ class TradeStrategy:
         """
         # TODO
 
-    def set_alert(
+    def set_time_alert(
             self,
             label: Label,
             time: datetime.datetime):
         """
-        Set an alert for the given time. When the time is reached and the
+        Set a time alert for the given time. When the time is reached and the
         strategy is running, the on_time_event() is passed the TimeEvent
         containing the alerts label.
 
