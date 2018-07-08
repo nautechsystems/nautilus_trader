@@ -45,5 +45,7 @@ class ObjectStorer:
         """"
         Store the given objects.
         """
+        print(f"Storing {obj1}")
         print(f"Storing {obj2}")
+        self._store.append(obj1)
         self._store.append(obj2)

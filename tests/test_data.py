@@ -333,7 +333,7 @@ class LiveDataClientTests(unittest.TestCase):
 
         # Assert
         time.sleep(0.1)  # Allow threads to work.
-        self.assertEqual(str(bar), str(storer.get_store[0]))
+        self.assertEqual(str(bar), str(storer.get_store[1]))
 
     def test_can_receive_many_bars(self):
         # Arrange
@@ -355,8 +355,8 @@ class LiveDataClientTests(unittest.TestCase):
 
         # Assert
         time.sleep(0.1)  # Allow threads to work.
-        self.assertEqual(5, storer.count)
-        self.assertEqual('Bar: 1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T12:00:04+00:00', str(storer.get_store[4]))
+        self.assertEqual(10, storer.count)  # All bar types and bars.
+        self.assertEqual('Bar: 1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T12:00:04+00:00', str(storer.get_store[9]))
 
     def test_can_receive_bars_from_multiple_subscribers(self):
         # Arrange
@@ -400,8 +400,8 @@ class LiveDataClientTests(unittest.TestCase):
 
         # Assert
         time.sleep(0.1)  # Allow threads to work.
-        self.assertEqual(15, storer.count)
-        self.assertEqual('Bar: 1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T12:00:04+00:00', str(storer.get_store[14]))
+        self.assertEqual(30, storer.count)  # All bar types and bars.
+        self.assertEqual('Bar: 1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T12:00:04+00:00', str(storer.get_store[29]))
 
     def test_can_add_bartype_to_dict(self):
         # Arrange

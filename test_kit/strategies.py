@@ -39,7 +39,7 @@ class TestStrategy1(TradeStrategy):
         self.add_indicator(self.gbpusd_1sec_mid, self.ema2, self.ema2.update, 'ema2')
 
     def on_start(self):
-        pass
+        self.object_storer.store('custom start logic')
 
     def on_tick(self, tick: Tick):
         self.object_storer.store(tick)
@@ -57,10 +57,10 @@ class TestStrategy1(TradeStrategy):
                 self.object_storer.store('SELL')
 
     def on_event(self, event: Event):
-        pass
+        self.object_storer(event)
 
     def on_stop(self):
-        pass
+        self.object_storer.store('custom stop logic')
 
     def on_reset(self):
-        pass
+        self.object_storer.store('custom reset logic')
