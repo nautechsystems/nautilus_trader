@@ -17,6 +17,10 @@ from typing import Dict
 from inv_trader.enums import Venue
 from inv_trader.objects import Tick, BarType, Bar
 
+Label = str
+Symbol = str
+Indicator = object
+
 
 class TradeStrategy:
     """
@@ -37,12 +41,11 @@ class TradeStrategy:
         self._name = self.__class__.__name__
         self._label = label
         self._is_running = False
-        self._bars = {}  # type: Dict[BarType, List[Bar]]
-        self._ticks = {}               # Dict[str, Tick]
-        self._indicators = {}          # Dict[BarType, List[object]]
-        self._indicator_labels = {}    # Dict[str, object]
-        self._ind_updater_labels = {}  # Dict[BarType, List[str]]
-        self._ind_updaters = {}        # Dict[str, IndicatorUpdater]
+        self._ticks = {}               # type: Dict[Symbol, Tick]
+        self._bars = {}                # type: Dict[BarType, List[Bar]]
+        self._indicators = {}          # type: Dict[BarType, List[Indicator]]
+        self._indicator_labels = {}    # type: Dict[Label, Indicator]
+        self._indicator_updaters = {}  # type: Dict[BarType, List[IndicatorUpdater]]
 
         self._log(f"{self} initialized.")
 
@@ -131,7 +134,7 @@ class TradeStrategy:
         return self._is_running
 
     @property
-    def all_indicators(self) -> Dict[BarType, List[object]]:
+    def all_indicators(self) -> Dict[BarType, List[Indicator]]:
         """
         :return: The internally held indicators dictionary for the strategy.
         """
@@ -145,13 +148,13 @@ class TradeStrategy:
         return self._bars
 
     @property
-    def all_ticks(self) -> Dict[str, Tick]:
+    def all_ticks(self) -> Dict[Symbol, Tick]:
         """
         :return: The internally held ticks dictionary for the strategy
         """
         return self._ticks
 
-    def indicators(self, bar_type: BarType) -> List[object]:
+    def indicators(self, bar_type: BarType) -> List[Indicator]:
         """
         Get the indicators list for the given bar type.
 
@@ -165,7 +168,7 @@ class TradeStrategy:
 
         return self._indicators[bar_type]
 
-    def indicator(self, label: str) -> object:
+    def indicator(self, label: str) -> Indicator:
         """
         Get the indicator for the given unique label.
 
@@ -216,7 +219,7 @@ class TradeStrategy:
 
     def last_tick(
             self,
-            symbol: str,
+            symbol: Symbol,
             venue: Venue) -> Tick:
         """
         Get the last tick held for the given parameters.
@@ -236,9 +239,9 @@ class TradeStrategy:
     def add_indicator(
             self,
             bar_type: BarType,
-            indicator: object,
+            indicator: Indicator,
             update_method: callable,
-            label: str):
+            label: Label):
         """
         Add the given indicator to the strategy. It will receive bars of the
         given bar type. The indicator must be from the inv_indicators package.
@@ -264,24 +267,22 @@ class TradeStrategy:
         if label is None:
             raise ValueError("The label cannot be None.")
         if label in self._indicator_labels:
-            raise KeyError("The label is not unique (already contained in the indicator labels).")
+            raise KeyError("The indicator label must be unique for this strategy.")
 
         if bar_type not in self._indicators:
-            self._indicators[bar_type] = []
-
+            self._indicators[bar_type] = []  # type: List[Indicator]
         self._indicators[bar_type].append(indicator)
-        self._ind_updaters[label] = IndicatorUpdater(update_method)
 
-        # TODO: Refactor these separate labels lists.
+        if bar_type not in self._indicator_updaters:
+            self._indicator_updaters[bar_type] = []  # type: List[IndicatorUpdater]
+        self._indicator_updaters[bar_type].append(IndicatorUpdater(update_method))
+
+        # TODO: Refactor this separate label list.
         self._indicator_labels[label] = indicator
-
-        if bar_type not in self._ind_updater_labels:
-            self._ind_updater_labels[bar_type] = []
-        self._ind_updater_labels[bar_type].append(label)
 
     def set_timer(
             self,
-            label: str,
+            label: Label,
             step: datetime.timedelta,
             handler: callable,
             repeat: bool=True):
@@ -296,13 +297,13 @@ class TradeStrategy:
         """
         # TODO
 
-    def set_alarm(
+    def set_alert(
             self,
-            label: str,
+            label: Label,
             time: datetime.datetime,
             handler: callable):
         """
-        Set an alarm for the given time. When the time is reached, the handler
+        Set an alert for the given time. When the time is reached, the handler
         is called with a string containing the alarms unique label and the
         current time.
 
@@ -338,8 +339,8 @@ class TradeStrategy:
             self._log(f"{self.name} Warning: Cannot reset a running strategy...")
             return
 
-        self._ticks = {}
-        self._bars = {}
+        self._ticks = {}  # type: Dict[Symbol, Tick]
+        self._bars = {}   # type: Dict[BarType, List[Bar]]
 
         for indicator_list in self._indicators.values():
             [indicator.reset() for indicator in indicator_list]
@@ -397,7 +398,7 @@ class TradeStrategy:
 
         # Update the internal bars.
         if bar_type not in self._bars:
-            self._bars[bar_type] = []
+            self._bars[bar_type] = []  # type: List[Bar]
         self._bars[bar_type].insert(0, bar)
 
         # Update the internal indicators.
@@ -429,10 +430,8 @@ class TradeStrategy:
             return
 
         # For each updater matching the given bar type -> update with the bar.
-        for label in self._ind_updater_labels[bar_type]:
-            self._ind_updaters[label].update(bar)
+        [updater.update(bar) for updater in self._indicator_updaters[bar_type]]
 
-    # Avoid making a static method for now.
     def _log(self, message: str):
         """
         Logs the given message.
@@ -449,7 +448,7 @@ class IndicatorUpdater:
     construct the required parameter list for updates.
     """
 
-    def __init__(self, update_method: classmethod):
+    def __init__(self, update_method: callable):
         """
         Initializes a new instance of the IndicatorUpdater class.
 
