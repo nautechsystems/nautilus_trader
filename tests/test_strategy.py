@@ -108,6 +108,18 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertEqual(strategy.ema1, strategy.all_indicators[strategy.gbpusd_1sec_mid][0])
         self.assertEqual(strategy.ema2, strategy.all_indicators[strategy.gbpusd_1sec_mid][1])
 
+    def test_indicator_labels_returns_expected_list(self):
+        # Arrange
+        storer = ObjectStorer()
+        strategy = TestStrategy1(storer)
+
+        # Act
+        result = strategy.indicator_labels
+
+        # Assert
+        self.assertTrue('ema1' in result)
+        self.assertTrue('ema2' in result)
+
     def test_can_start_strategy(self):
         # Arrange
         storer = ObjectStorer()

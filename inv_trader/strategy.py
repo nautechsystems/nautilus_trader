@@ -13,6 +13,7 @@ import inspect
 
 from typing import List
 from typing import Dict
+from typing import KeysView
 
 from inv_trader.enums import Venue
 from inv_trader.objects import Tick, BarType, Bar
@@ -44,8 +45,8 @@ class TradeStrategy:
         self._ticks = {}               # type: Dict[Symbol, Tick]
         self._bars = {}                # type: Dict[BarType, List[Bar]]
         self._indicators = {}          # type: Dict[BarType, List[Indicator]]
-        self._indicator_labels = {}    # type: Dict[Label, Indicator]
         self._indicator_updaters = {}  # type: Dict[BarType, List[IndicatorUpdater]]
+        self._indicator_index = {}     # type: Dict[Label, Indicator]
 
         self._log(f"{self} initialized.")
 
@@ -108,6 +109,11 @@ class TradeStrategy:
         raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
 
     @abc.abstractmethod
+    def on_time_event(self, message):
+        # Raise exception if not overridden in implementation.
+        raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
+
+    @abc.abstractmethod
     def on_stop(self):
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
@@ -134,21 +140,28 @@ class TradeStrategy:
         return self._is_running
 
     @property
+    def indicator_labels(self) -> KeysView[Label]:
+        """
+        :return: The indicator label list for the strategy (should be distinct).
+        """
+        return self._indicator_index.keys()
+
+    @property
     def all_indicators(self) -> Dict[BarType, List[Indicator]]:
         """
-        :return: The internally held indicators dictionary for the strategy.
+        :return: The indicators dictionary for the strategy.
         """
         return self._indicators
 
     @property
     def all_bars(self) -> Dict[BarType, List[Bar]]:
         """
-        :return: The internally held bars dictionary for the strategy.
+        :return: The bars dictionary for the strategy.
         """
         return self._bars
 
     @property
-    def all_ticks(self) -> Dict[Symbol, Tick]:
+    def ticks(self) -> Dict[Symbol, Tick]:
         """
         :return: The internally held ticks dictionary for the strategy
         """
@@ -177,10 +190,10 @@ class TradeStrategy:
         :raises: KeyError: If the indicator labels dictionary does not contain the bar type.
         """
         # Preconditions
-        if label not in self._indicator_labels:
+        if label not in self._indicator_index:
             raise KeyError(f"The indicator dictionary does not contain the label {label}.")
 
-        return self._indicator_labels[label]
+        return self._indicator_index[label]
 
     def bars(self, bar_type: BarType) -> List[Bar]:
         """
@@ -266,7 +279,7 @@ class TradeStrategy:
             raise TypeError("The update_method must be a callable object.")
         if label is None:
             raise ValueError("The label cannot be None.")
-        if label in self._indicator_labels:
+        if label in self._indicator_index.keys():
             raise KeyError("The indicator label must be unique for this strategy.")
 
         if bar_type not in self._indicators:
@@ -277,22 +290,21 @@ class TradeStrategy:
             self._indicator_updaters[bar_type] = []  # type: List[IndicatorUpdater]
         self._indicator_updaters[bar_type].append(IndicatorUpdater(update_method))
 
-        # TODO: Refactor this separate label list.
-        self._indicator_labels[label] = indicator
+        self._indicator_index[label] = indicator
 
     def set_timer(
             self,
             label: Label,
             step: datetime.timedelta,
-            handler: callable,
             repeat: bool=True):
         """
-        Set a timer with the given step (time delta). The handler is called
-        with a string containing the timers unique label and current time.
+        Set a timer with the given step (time delta). The timer will run once
+        the strategy is started. When the time delta is reached the
+        on_time_event() is passed the TimeEvent containing the timers label.
+        Optionally this can be repeated whilst the strategy is running.
 
-        :param label: The unique label for the timer.
+        :param label: The label for the timer.
         :param step: The time delta step for the timer.
-        :param handler: The handler to be called.
         :param repeat: The option for the timer to repeat until the strategy is stopped.
         """
         # TODO
@@ -300,16 +312,14 @@ class TradeStrategy:
     def set_alert(
             self,
             label: Label,
-            time: datetime.datetime,
-            handler: callable):
+            time: datetime.datetime):
         """
-        Set an alert for the given time. When the time is reached, the handler
-        is called with a string containing the alarms unique label and the
-        current time.
+        Set an alert for the given time. When the time is reached and the
+        strategy is running, the on_time_event() is passed the TimeEvent
+        containing the alerts label.
 
         :param label: The unique label for the alarm.
         :param time: The time for the alarm.
-        :param handler: The handler to be called.
         """
         # TODO
 
