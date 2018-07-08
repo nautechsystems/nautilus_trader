@@ -131,6 +131,7 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(strategy.is_running)
+        self.assertTrue('custom start logic' in storer.get_store)
 
     def test_can_stop_strategy(self):
         # Arrange
@@ -143,6 +144,7 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Assert
         self.assertFalse(strategy.is_running)
+        self.assertTrue('custom stop logic' in storer.get_store)
 
     def test_can_update_strategy_bars(self):
         # Arrange
@@ -172,6 +174,7 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertEqual(1, len(strategy.bars(bar_type)))
         self.assertEqual(1, strategy.ema1.count)
         self.assertEqual(1, strategy.ema2.count)
+        self.assertEqual(0, len(storer.get_store))
 
     def test_can_reset_strategy(self):
         # Arrange
@@ -193,6 +196,7 @@ class TradeStrategyTests(unittest.TestCase):
             datetime.datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC))
 
         strategy._update_bars(bar_type, bar)
+
         # Act
         strategy.reset()
 
@@ -200,6 +204,7 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertFalse(strategy.is_running)
         self.assertEqual(0, strategy.ema1.count)
         self.assertEqual(0, strategy.ema2.count)
+        self.assertTrue('custom reset logic' in storer.get_store)
 
 
 class IndicatorUpdaterTests(unittest.TestCase):
