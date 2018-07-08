@@ -320,11 +320,11 @@ class TradeStrategy:
             repeat: bool=True):
         """
         Set a timer with the given step (time delta). The timer will run once
-        the strategy is started. When the time delta is reached the
-        on_time_event() is passed the TimeEvent containing the timers label.
-        Optionally this can be repeated whilst the strategy is running.
+        the strategy is started. When the time delta is reached on_event() is
+        passed the TimeEvent containing the timers unique label.
+        Optionally the timer can be run repeatedly whilst the strategy is running.
 
-        :param label: The label for the timer.
+        :param label: The unique label for the timer.
         :param step: The time delta step for the timer.
         :param repeat: The option for the timer to repeat until the strategy is stopped.
         """
@@ -333,14 +333,14 @@ class TradeStrategy:
     def set_time_alert(
             self,
             label: Label,
-            time: datetime.datetime):
+            alert_time: datetime.datetime):
         """
         Set a time alert for the given time. When the time is reached and the
-        strategy is running, the on_time_event() is passed the TimeEvent
-        containing the alerts label.
+        strategy is running, on_event() is passed the TimeEvent containing the
+        alerts unique label.
 
-        :param label: The unique label for the alarm.
-        :param time: The time for the alarm.
+        :param label: The unique label for the alert.
+        :param alert_time: The time for the alert.
         """
         # TODO
 
@@ -351,6 +351,7 @@ class TradeStrategy:
         self._log(f"{self.name} starting...")
         self._is_running = True
         self.on_start()
+        self._log(f"{self.name} running...")
 
     def stop(self):
         """
@@ -451,12 +452,6 @@ class TradeStrategy:
         :param bar_type: The bar type to update.
         :param bar: The bar for update.
         """
-        # Guard clauses (design time checking).
-        assert bar_type is not None
-        assert isinstance(bar_type, BarType)
-        assert bar is not None
-        assert isinstance(bar, Bar)
-
         if bar_type not in self._indicators:
             # No indicators to update with this bar (remove this for production.)
             return
@@ -516,9 +511,5 @@ class IndicatorUpdater:
 
         :param bar: The update bar.
         """
-        # Guard clause (design time).
-        assert bar is not None
-        assert isinstance(bar, Bar)
-
         args = [bar.__getattribute__(param) for param in self._update_params]
         self._update_method(*args)
