@@ -14,9 +14,10 @@ from typing import List
 
 from inv_trader.model.enums import OrderSide, OrderType, TimeInForce, OrderStatus
 from inv_trader.model.objects import Symbol
-from inv_trader.model.events import OrderEvent, OrderSubmitted
-from inv_trader.model.events import OrderAccepted, OrderRejected, OrderWorking, OrderExpired
-from inv_trader.model.events import OrderCancelled, OrderCancelReject, OrderPartiallyFilled, OrderFilled
+from inv_trader.model.events import OrderEvent
+from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
+from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
+from inv_trader.model.events import OrderPartiallyFilled, OrderFilled
 
 orders_requiring_prices = [OrderType.LIMIT, OrderType.STOP_MARKET, OrderType.STOP_LIMIT, OrderType.MIT]
 
@@ -121,6 +122,13 @@ class Order:
         return self._id
 
     @property
+    def broker_id(self) -> str:
+        """
+        :return: The orders broker-side order id.
+        """
+        return self._order_broker_ids[-1]
+
+    @property
     def label(self) -> str:
         """
         :return: The orders label.
@@ -214,6 +222,20 @@ class Order:
                 or self._order_status is OrderStatus.FILLED
                 or self._order_status is OrderStatus.REJECTED)
 
+    @property
+    def event_count(self) -> int:
+        """
+        :return: The count of events since the order was initialized.
+        """
+        return len(self._order_events)
+
+    @property
+    def events(self) -> List[OrderEvent]:
+        """
+        :return: The orders internal events list.
+        """
+        return self._order_events
+
     def __eq__(self, other) -> bool:
         """
         Override the default equality comparison.
@@ -277,6 +299,10 @@ class Order:
 
         elif isinstance(order_event, OrderExpired):
             self._order_status = OrderStatus.EXPIRED
+
+        elif isinstance(order_event, OrderModified):
+            self._order_broker_ids.append(order_event.broker_order_id)
+            self._price = order_event.modified_price
 
         elif isinstance(order_event, OrderFilled):
             self._order_status = OrderStatus.FILLED

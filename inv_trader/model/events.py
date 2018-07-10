@@ -179,6 +179,48 @@ class OrderAccepted(OrderEvent):
         return self._accepted_time
 
 
+class OrderRejected(OrderEvent):
+    """
+    Represents an event where an order has been rejected by the broker.
+    """
+    def __init__(self,
+                 symbol: Symbol,
+                 order_id: str,
+                 rejected_time: datetime.datetime,
+                 rejected_reason: str,
+                 event_id: uuid,
+                 event_timestamp: datetime.datetime):
+        """
+        Initializes a new instance of the OrderRejected class.
+
+        :param: symbol: The events order symbol.
+        :param: order_id: The events order identifier.
+        :param: rejected_time: The events order rejected time.
+        :param: rejected_reason: The events order rejected reason.
+        :param: event_id: The events identifier.
+        :param: event_timestamp: The events timestamp.
+        """
+        super().__init__(symbol, order_id, event_id, event_timestamp)
+        self._rejected_time = rejected_time
+        self._rejected_reason = rejected_reason
+        self._event_id = event_id
+        self._event_timestamp = event_timestamp
+
+    @property
+    def rejected_time(self) -> datetime.datetime:
+        """
+        :return: The events order rejected time.
+        """
+        return self._rejected_time
+
+    @property
+    def rejected_reason(self) -> str:
+        """
+        :return: The events order rejected reason.
+        """
+        return self._rejected_reason
+
+
 class OrderWorking(OrderEvent):
     """
     Represents an event where an order is working with the broker.
@@ -307,6 +349,58 @@ class OrderExpired(OrderEvent):
         :return: The events order expired time.
         """
         return self._expired_time
+
+
+class OrderModified(OrderEvent):
+    """
+    Represents an event where an order has been modified with the broker.
+    """
+    def __init__(self,
+                 symbol: Symbol,
+                 order_id: str,
+                 broker_order_id: str,
+                 modified_price: Decimal,
+                 modified_time: datetime.datetime,
+                 event_id: uuid,
+                 event_timestamp: datetime.datetime):
+        """
+        Initializes a new instance of the OrderPartiallyFilled class.
+
+        :param: symbol: The events order symbol.
+        :param: order_id: The events order identifier.
+        :param: broker_order_id: The events order broker identifier.
+        :param: modified_price: The events modified price.
+        :param: modified_time: The events modified time.
+        :param: event_id: The events identifier.
+        :param: event_timestamp: The events timestamp.
+        """
+        super().__init__(symbol, order_id, event_id, event_timestamp)
+        self._broker_order_id = broker_order_id
+        self._modified_price = modified_price
+        self._modified_time = modified_time
+        self._event_id = event_id
+        self._event_timestamp = event_timestamp
+
+    @property
+    def broker_order_id(self) -> str:
+        """
+        :return: The events broker order identifier.
+        """
+        return self._broker_order_id
+
+    @property
+    def modified_price(self) -> Decimal:
+        """
+        :return: The events modified order price.
+        """
+        return self._modified_price
+
+    @property
+    def modified_time(self) -> datetime.datetime:
+        """
+        :return: The events order modified time.
+        """
+        return self._modified_time
 
 
 class OrderFilled(OrderEvent):
@@ -481,100 +575,6 @@ class OrderPartiallyFilled(OrderEvent):
         :return: The events execution time.
         """
         return self._execution_time
-
-
-class OrderModified(OrderEvent):
-    """
-    Represents an event where an order has been modified with the broker.
-    """
-    def __init__(self,
-                 symbol: Symbol,
-                 order_id: str,
-                 broker_order_id: str,
-                 modified_price: Decimal,
-                 modified_time: datetime.datetime,
-                 event_id: uuid,
-                 event_timestamp: datetime.datetime):
-        """
-        Initializes a new instance of the OrderPartiallyFilled class.
-
-        :param: symbol: The events order symbol.
-        :param: order_id: The events order identifier.
-        :param: broker_order_id: The events order broker identifier.
-        :param: modified_price: The events modified price.
-        :param: modified_time: The events modified time.
-        :param: event_id: The events identifier.
-        :param: event_timestamp: The events timestamp.
-        """
-        super().__init__(symbol, order_id, event_id, event_timestamp)
-        self._broker_order_id = broker_order_id
-        self._modified_price = modified_price
-        self._modified_time = modified_time
-        self._event_id = event_id
-        self._event_timestamp = event_timestamp
-
-    @property
-    def broker_order_id(self) -> str:
-        """
-        :return: The events broker order identifier.
-        """
-        return self._broker_order_id
-
-    @property
-    def modified_price(self) -> Decimal:
-        """
-        :return: The events modified order price.
-        """
-        return self._modified_price
-
-    @property
-    def modified_time(self) -> datetime.datetime:
-        """
-        :return: The events order modified time.
-        """
-        return self._modified_time
-
-
-class OrderRejected(OrderEvent):
-    """
-    Represents an event where an order has been rejected by the broker.
-    """
-    def __init__(self,
-                 symbol: Symbol,
-                 order_id: str,
-                 rejected_time: datetime.datetime,
-                 rejected_reason: str,
-                 event_id: uuid,
-                 event_timestamp: datetime.datetime):
-        """
-        Initializes a new instance of the OrderRejected class.
-
-        :param: symbol: The events order symbol.
-        :param: order_id: The events order identifier.
-        :param: rejected_time: The events order rejected time.
-        :param: rejected_reason: The events order rejected reason.
-        :param: event_id: The events identifier.
-        :param: event_timestamp: The events timestamp.
-        """
-        super().__init__(symbol, order_id, event_id, event_timestamp)
-        self._rejected_time = rejected_time
-        self._rejected_reason = rejected_reason
-        self._event_id = event_id
-        self._event_timestamp = event_timestamp
-
-    @property
-    def rejected_time(self) -> datetime.datetime:
-        """
-        :return: The events order rejected time.
-        """
-        return self._rejected_time
-
-    @property
-    def rejected_reason(self) -> str:
-        """
-        :return: The events order rejected reason.
-        """
-        return self._rejected_reason
 
 
 class AccountEvent(Event):
