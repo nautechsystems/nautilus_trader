@@ -529,3 +529,29 @@ class Order:
                 or OrderStatus.FILLED
                 or OrderStatus.REJECTED)
 
+    def __eq__(self, other) -> bool:
+        """
+        Override the default equality comparison.
+        """
+        if isinstance(other, self.__class__):
+            return self.__dict__ == other.__dict__
+        else:
+            return False
+
+    def __ne__(self, other):
+        """
+        Override the default not-equals comparison.
+        """
+        return not self.__eq__(other)
+
+    def __str__(self) -> str:
+        """
+        :return: The str() string representation of the bar.
+        """
+        return f"Order: {self._id}"
+
+    def __repr__(self) -> str:
+        """
+        :return: The repr() string representation of the bar.
+        """
+        return f"<{str(self)} object at {id(self)}>"
