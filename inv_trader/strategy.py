@@ -18,7 +18,7 @@ from typing import KeysView
 from inv_trader.model.enums import Venue
 from inv_trader.model.objects import Tick, BarType, Bar
 from inv_trader.model.order import Order
-from inv_trader.model.events import Event
+from inv_trader.model.events import Event, OrderEvent
 
 Label = str
 Symbol = str
@@ -59,7 +59,7 @@ class TradeStrategy:
         Override the default equality comparison.
         """
         if isinstance(other, self.__class__):
-            return self.__dict__ == other.__dict__
+            return str(self) == str(other)
         else:
             return False
 
@@ -374,19 +374,19 @@ class TradeStrategy:
         """
         Starts the trade strategy.
         """
-        self._log(f"{self.name} starting...")
+        self._log(f"{str(self)} starting...")
         self._is_running = True
         self.on_start()
-        self._log(f"{self.name} running...")
+        self._log(f"{str(self)} running...")
 
     def stop(self):
         """
         Stops the trade strategy.
         """
-        self._log(f"{self.name} stopping...")
+        self._log(f"{str(self)} stopping...")
         self._is_running = False
         self.on_stop()
-        self._log(f"{self.name} stopped.")
+        self._log(f"{str(self)} stopped.")
 
     def reset(self):
         """
@@ -394,7 +394,7 @@ class TradeStrategy:
         returning it to a fresh state (strategy must not be running).
         """
         if self._is_running:
-            self._log(f"{self.name} Warning: Cannot reset a running strategy...")
+            self._log(f"{str(self)} Warning: Cannot reset a running strategy...")
             return
 
         self._ticks = {}  # type: Dict[Symbol, Tick]
@@ -405,7 +405,7 @@ class TradeStrategy:
             [indicator.reset() for indicator in indicator_list]
 
         self.on_reset()
-        self._log(f"{self.name} reset.")
+        self._log(f"{str(self)} reset.")
 
     def _update_ticks(self, tick: Tick):
         """"
@@ -417,10 +417,10 @@ class TradeStrategy:
         # Guard clauses to catch design errors and make code robust in production.
         # Warnings are logged.
         if tick is None:
-            self._log(f"{self.name} Warning: update_tick() was given None.")
+            self._log(f"{str(self)} Warning: update_tick() was given None.")
             return
         if not isinstance(tick, Tick):
-            self._log(f"{self.name} Warning: _update_tick() was given an invalid Tick {tick}.")
+            self._log(f"{str(self)} Warning: _update_tick() was given an invalid Tick {tick}.")
             return
 
         # Update the internal ticks.
@@ -445,16 +445,16 @@ class TradeStrategy:
         # Guard clauses to catch design errors and make code robust in production.
         # Warnings are logged.
         if bar_type is None:
-            self._log(f"{self.name} Warning: _update_bar() was given None.")
+            self._log(f"{str(self)} Warning: _update_bar() was given None.")
             return
         if not isinstance(bar_type, BarType):
-            self._log(f"{self.name} Warning: _update_bar() was given an invalid BarType {bar_type}.")
+            self._log(f"{str(self)} Warning: _update_bar() was given an invalid BarType {bar_type}.")
             return
         if bar is None:
             self._log("{self.name} Warning: _update_bar() was given None.")
             return
         if not isinstance(bar, Bar):
-            self._log(f"{self.name} Warning: _update_bar() was given an invalid Bar {bar}.")
+            self._log(f"{str(self)} Warning: _update_bar() was given an invalid Bar {bar}.")
 
         # Update the internal bars.
         if bar_type not in self._bars:
@@ -485,6 +485,38 @@ class TradeStrategy:
 
         # For each updater matching the given bar type -> update with the bar.
         [updater.update(bar) for updater in self._indicator_updaters[bar_type]]
+
+    def _update_events(self, event: Event):
+        """
+        Updates the strategy with the given event.
+
+        :param event: The event received.
+        """
+        # Preconditions
+        if not isinstance(event, Event):
+            raise TypeError("The given event is invalid.")
+
+        # Apply order event if order id contained in the order book.
+        if isinstance(event, OrderEvent):
+            order_id = event.order_id
+            if order_id not in self._order_book.keys():
+                raise ValueError("The given order event id was not in the order book.")
+            self._order_book[order_id].apply(event)
+
+        # Calls on_event() if the strategy is running.
+        if self._is_running:
+            self.on_event(event)
+
+    def _add_order(self, order: Order):
+        """
+        Adds the given order to the order book (the order id must be unique).
+
+        :param order: The order to add.
+        """
+        if order.id in self._order_book.keys():
+            raise ValueError("The order id is already contained in the order book for the strategy.")
+
+        self._order_book[order.id] = order
 
     def _log(self, message: str):
         """

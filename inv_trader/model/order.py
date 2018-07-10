@@ -19,7 +19,12 @@ from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected
 from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
 from inv_trader.model.events import OrderPartiallyFilled, OrderFilled
 
-orders_requiring_prices = [OrderType.LIMIT, OrderType.STOP_MARKET, OrderType.STOP_LIMIT, OrderType.MIT]
+# Order types which require prices to be valid.
+orders_requiring_prices = [
+    OrderType.LIMIT,
+    OrderType.STOP_MARKET,
+    OrderType.STOP_LIMIT,
+    OrderType.MIT]
 
 
 class Order:
