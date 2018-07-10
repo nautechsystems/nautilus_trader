@@ -249,7 +249,7 @@ class Order:
         """
         # Preconditions
         if not isinstance(order_event, OrderEvent):
-            raise TypeError(f"Event must be of type OrderEvent (was {type(order_event)).}")
+            raise TypeError(f"Event must be of type OrderEvent (was {type(order_event)}")
         if order_event.order_id is not self.id:
             raise ValueError(f"Incorrect order id for this event (was {order_event.order_id}).")
 
