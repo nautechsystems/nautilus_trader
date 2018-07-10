@@ -28,3 +28,23 @@ class QuoteType(Enum):
     ASK = 1,
     LAST = 2,
     MID = 3,
+
+
+class OrderSide(Enum):
+    BUY = 0,
+    SELL = 1
+
+
+class OrderType(Enum):
+    MARKET = 0,
+    LIMIT = 1,
+    STOP = 2
+
+
+class TimeInForce(Enum):
+    DAY = 0,
+    GTC = 1,
+    IOC = 3,
+    FOC = 4,
+    GTD = 5
+
