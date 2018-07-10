@@ -299,6 +299,7 @@ class OrderCancelReject(OrderEvent):
                  order_symbol: Symbol,
                  order_id: str,
                  cancel_reject_time: datetime.datetime,
+                 cancel_reject_reason: str,
                  event_id: uuid,
                  event_timestamp: datetime.datetime):
         """
@@ -312,6 +313,7 @@ class OrderCancelReject(OrderEvent):
         """
         super().__init__(order_symbol, order_id, event_id, event_timestamp)
         self._cancel_reject_time = cancel_reject_time
+        self._cancel_reject_reason = cancel_reject_reason
 
     @property
     def cancel_reject_time(self) -> datetime.datetime:
@@ -319,6 +321,13 @@ class OrderCancelReject(OrderEvent):
         :return: The events order cancel reject time.
         """
         return self._cancel_reject_time
+
+    @property
+    def cancel_reject_reason(self) -> str:
+        """
+        :return: The events order cancel reject reason.
+        """
+        return self._cancel_reject_reason
 
 
 class OrderExpired(OrderEvent):

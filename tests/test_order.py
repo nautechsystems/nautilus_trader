@@ -12,7 +12,7 @@ import uuid
 
 from decimal import Decimal
 
-from inv_trader.model.enums import Venue, OrderSide, OrderType, OrderStatus
+from inv_trader.model.enums import Venue, OrderSide, OrderType, OrderStatus, TimeInForce
 from inv_trader.model.objects import Symbol
 from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
 from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
@@ -56,6 +56,27 @@ class OrderTests(unittest.TestCase):
         # Assert
         self.assertEqual(OrderType.LIMIT, order.type)
         self.assertEqual(OrderStatus.INITIALIZED, order.status)
+        self.assertEqual(TimeInForce.DAY, order.time_in_force)
+        self.assertFalse(order.is_complete)
+
+    def test_can_initialize_limit_order_with_expire_time(self):
+        # Arrange
+        # Act
+        order = OrderFactory.limit(
+            AUDUSD_FXCM,
+            'AUDUSD|123456|1',
+            'SCALPER-01',
+            OrderSide.BUY,
+            100000,
+            Decimal('1.00000'),
+            TimeInForce.GTD,
+            UNIX_EPOCH)
+
+        # Assert
+        self.assertEqual(OrderType.LIMIT, order.type)
+        self.assertEqual(OrderStatus.INITIALIZED, order.status)
+        self.assertEqual(TimeInForce.GTD, order.time_in_force)
+        self.assertEqual(UNIX_EPOCH, order.expire_time)
         self.assertFalse(order.is_complete)
 
     def test_can_initialize_stop_market_order(self):
@@ -256,6 +277,52 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(OrderStatus.EXPIRED, order.status)
         self.assertTrue(order.is_complete)
 
+    def test_can_apply_order_cancelled_event_to_order(self):
+        # Arrange
+        order = OrderFactory.market(
+            AUDUSD_FXCM,
+            'AUDUSD|123456|1',
+            'SCALPER-01',
+            OrderSide.BUY,
+            100000)
+
+        event = OrderCancelled(
+            order.symbol,
+            order.id,
+            UNIX_EPOCH,
+            uuid.uuid4(),
+            UNIX_EPOCH)
+
+        # Act
+        order.apply(event)
+
+        # Assert
+        self.assertEqual(OrderStatus.CANCELLED, order.status)
+        self.assertTrue(order.is_complete)
+
+    def test_can_apply_order_cancel_reject_event_to_order(self):
+        # Arrange
+        order = OrderFactory.market(
+            AUDUSD_FXCM,
+            'AUDUSD|123456|1',
+            'SCALPER-01',
+            OrderSide.BUY,
+            100000)
+
+        event = OrderCancelReject(
+            order.symbol,
+            order.id,
+            UNIX_EPOCH,
+            'ORDER DOES NOT EXIST',
+            uuid.uuid4(),
+            UNIX_EPOCH)
+
+        # Act
+        order.apply(event)
+
+        # Assert
+        self.assertEqual(OrderStatus.INITIALIZED, order.status)
+
     def test_can_apply_order_modified_event_to_order(self):
         # Arrange
         order = OrderFactory.market(
@@ -293,3 +360,99 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(Decimal('1.00001'), order.price)
         self.assertFalse(order.is_complete)
 
+    def test_can_apply_order_filled_event_to_market_order(self):
+        # Arrange
+        order = OrderFactory.market(
+            AUDUSD_FXCM,
+            'AUDUSD|123456|1',
+            'SCALPER-01',
+            OrderSide.BUY,
+            100000)
+
+        event = OrderFilled(
+            order.symbol,
+            order.id,
+            'SOME_EXEC_ID_1',
+            'SOME_EXEC_TICKET_1',
+            order.side,
+            order.quantity,
+            Decimal('1.00001'),
+            UNIX_EPOCH,
+            uuid.uuid4(),
+            UNIX_EPOCH)
+
+        # Act
+        order.apply(event)
+
+        # Assert
+        self.assertEqual(OrderStatus.FILLED, order.status)
+        self.assertEqual(100000, order.filled_quantity)
+        self.assertEqual(Decimal('1.00001'), order.average_price)
+        self.assertTrue(order.is_complete)
+
+    def test_can_apply_order_filled_event_to_buy_limit_order(self):
+        # Arrange
+        order = OrderFactory.limit(
+            AUDUSD_FXCM,
+            'AUDUSD|123456|1',
+            'SCALPER-01',
+            OrderSide.BUY,
+            100000,
+            Decimal('1.00000'))
+
+        event = OrderFilled(
+            order.symbol,
+            order.id,
+            'SOME_EXEC_ID_1',
+            'SOME_EXEC_TICKET_1',
+            order.side,
+            order.quantity,
+            Decimal('1.00001'),
+            UNIX_EPOCH,
+            uuid.uuid4(),
+            UNIX_EPOCH)
+
+        # Act
+        order.apply(event)
+
+        # Assert
+        self.assertEqual(OrderStatus.FILLED, order.status)
+        self.assertEqual(100000, order.filled_quantity)
+        self.assertEqual(Decimal('1.00000'), order.price)
+        self.assertEqual(Decimal('1.00001'), order.average_price)
+        self.assertEqual(Decimal('0.00001'), order.slippage)
+        self.assertTrue(order.is_complete)
+
+    def test_can_apply_order_partially_filled_event_to_buy_limit_order(self):
+        # Arrange
+        order = OrderFactory.limit(
+            AUDUSD_FXCM,
+            'AUDUSD|123456|1',
+            'SCALPER-01',
+            OrderSide.BUY,
+            100000,
+            Decimal('1.00000'))
+
+        event = OrderPartiallyFilled(
+            order.symbol,
+            order.id,
+            'SOME_EXEC_ID_1',
+            'SOME_EXEC_TICKET_1',
+            order.side,
+            50000,
+            50000,
+            Decimal('0.99999'),
+            UNIX_EPOCH,
+            uuid.uuid4(),
+            UNIX_EPOCH)
+
+        # Act
+        order.apply(event)
+
+        # Assert
+        self.assertEqual(OrderStatus.PARTIALLY_FILLED, order.status)
+        self.assertEqual(50000, order.filled_quantity)
+        self.assertEqual(Decimal('1.00000'), order.price)
+        self.assertEqual(Decimal('0.99999'), order.average_price)
+        self.assertEqual(Decimal('-0.00001'), order.slippage)
+        self.assertFalse(order.is_complete)
