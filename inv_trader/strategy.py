@@ -15,9 +15,10 @@ from typing import List
 from typing import Dict
 from typing import KeysView
 
-from inv_trader.enums import Venue
-from inv_trader.objects import Tick, BarType, Bar, Order
-from inv_trader.events import Event
+from inv_trader.model.enums import Venue
+from inv_trader.model.objects import Tick, BarType, Bar
+from inv_trader.model.order import Order
+from inv_trader.model.events import Event
 
 Label = str
 Symbol = str
