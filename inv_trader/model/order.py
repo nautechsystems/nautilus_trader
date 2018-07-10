@@ -10,6 +10,7 @@
 import datetime
 
 from decimal import Decimal
+from typing import List
 
 from inv_trader.model.enums import OrderSide, OrderType, TimeInForce, OrderStatus
 from inv_trader.model.objects import Symbol
@@ -92,12 +93,18 @@ class Order:
         self._order_type = order_type
         self._quantity = quantity
         self._timestamp = timestamp
-        self._time_in_force = time_in_force  # Can be None.
-        self._expire_time = expire_time  # Can be None.
-        self._price = price  # Can be None.
+        self._time_in_force = time_in_force  # Can be None
+        self._expire_time = expire_time      # Can be None
+        self._price = price                  # Can be None
         self._filled_quantity = 0
         self._average_price = Decimal('0')
+        self._slippage = Decimal('0')
         self._order_status = OrderStatus.INITIALIZED
+        self._order_events = []         # type: List[OrderEvent]
+        self._order_ids = []            # type: List[str]
+        self._order_broker_ids = []     # type: List[str]
+        self._order_execution_ids = []  # type: List[str]
+        self._execution_tickets = []    # type: List[str]
 
     @property
     def symbol(self) -> Symbol:
@@ -142,6 +149,13 @@ class Order:
         return self._quantity
 
     @property
+    def filled_quantity(self) -> int:
+        """
+        :return: The orders filled quantity.
+        """
+        return self._filled_quantity
+
+    @property
     def timestamp(self) -> datetime.datetime:
         """
         :return: The orders initialization timestamp.
@@ -168,6 +182,20 @@ class Order:
         :return: The orders price (optional could be None).
         """
         return self._price
+
+    @property
+    def average_price(self) -> Decimal:
+        """
+        :return: The orders average filled price (optional could be None).
+        """
+        return self._average_price
+
+    @property
+    def slippage(self) -> Decimal:
+        """
+        :return: The orders filled slippage (zero if not filled).
+        """
+        return self._average_price
 
     @property
     def status(self) -> OrderStatus:
@@ -219,21 +247,61 @@ class Order:
 
         :param order_event: The order event to apply.
         """
+        # Preconditions
+        if not isinstance(order_event, OrderEvent):
+            raise TypeError(f"Event must be of type OrderEvent (was {type(order_event)).}")
+        if order_event.order_id is not self.id:
+            raise ValueError(f"Incorrect order id for this event (was {order_event.order_id}).")
+
+        self._order_events.append(order_event)
+
+        # Handle event
         if isinstance(order_event, OrderSubmitted):
             self._order_status = OrderStatus.SUBMITTED
+
         elif isinstance(order_event, OrderAccepted):
             self._order_status = OrderStatus.ACCEPTED
+
         elif isinstance(order_event, OrderRejected):
             self._order_status = OrderStatus.REJECTED
+
         elif isinstance(order_event, OrderWorking):
             self._order_status = OrderStatus.WORKING
+            self._order_broker_ids.append(order_event.broker_order_id)
+
         elif isinstance(order_event, OrderCancelled):
             self._order_status = OrderStatus.CANCELLED
+
         elif isinstance(order_event, OrderCancelReject):
             pass
+
         elif isinstance(order_event, OrderExpired):
             self._order_status = OrderStatus.EXPIRED
+
         elif isinstance(order_event, OrderFilled):
             self._order_status = OrderStatus.FILLED
+            self._order_execution_ids.append(order_event.execution_id)
+            self._execution_tickets.append(order_event.execution_ticket)
+            self._filled_quantity = order_event.filled_quantity
+            self._average_price = order_event.average_price
+            self._set_slippage()
+            self._check_overfill()
+
         elif isinstance(order_event, OrderPartiallyFilled):
             self._order_status = OrderStatus.PARTIALLY_FILLED
+            self._order_execution_ids.append(order_event.execution_id)
+            self._execution_tickets.append(order_event.execution_ticket)
+            self._filled_quantity = order_event.filled_quantity
+            self._average_price = order_event.average_price
+            self._set_slippage()
+            self._check_overfill()
+
+    def _set_slippage(self):
+        if self.side is OrderSide.BUY:
+            self._slippage = self._average_price - self._price
+        else:  # side is OrderSide.SELL:
+            self._slippage = self._price - self._average_price
+
+    def _check_overfill(self):
+        if self._filled_quantity > self._quantity:
+            self._order_status = OrderStatus.OVER_FILLED
