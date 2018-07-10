@@ -456,3 +456,33 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(Decimal('0.99999'), order.average_price)
         self.assertEqual(Decimal('-0.00001'), order.slippage)
         self.assertFalse(order.is_complete)
+
+    def test_can_apply_order_overfilled_event_to_buy_limit_order(self):
+        # Arrange
+        order = OrderFactory.limit(
+            AUDUSD_FXCM,
+            'AUDUSD|123456|1',
+            'SCALPER-01',
+            OrderSide.BUY,
+            100000,
+            Decimal('1.00000'))
+
+        event = OrderFilled(
+            order.symbol,
+            order.id,
+            'SOME_EXEC_ID_1',
+            'SOME_EXEC_TICKET_1',
+            order.side,
+            150000,
+            Decimal('0.99999'),
+            UNIX_EPOCH,
+            uuid.uuid4(),
+            UNIX_EPOCH)
+
+        # Act
+        order.apply(event)
+
+        # Assert
+        self.assertEqual(OrderStatus.OVER_FILLED, order.status)
+        self.assertEqual(150000, order.filled_quantity)
+        self.assertFalse(order.is_complete)

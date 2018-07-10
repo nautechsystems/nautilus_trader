@@ -8,6 +8,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import unittest
+import uuid
 import datetime
 import pytz
 
@@ -15,12 +16,20 @@ from decimal import Decimal
 
 from test_kit.objects import ObjectStorer
 from test_kit.strategies import TestStrategy1
-from inv_trader.model.enums import Venue, Resolution, QuoteType
-from inv_trader.model.objects import BarType, Bar
+from inv_trader.model.enums import Venue, Resolution, QuoteType, OrderSide, OrderType, OrderStatus
+from inv_trader.model.objects import Symbol, BarType, Bar
+from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
+from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
+from inv_trader.factories import OrderFactory
 from inv_trader.strategy import TradeStrategy
 from inv_trader.strategy import IndicatorUpdater
 from inv_indicators.average.ema import ExponentialMovingAverage
 from inv_indicators.intrinsic_network import IntrinsicNetwork
+from test_kit.constants import TestConstants
+
+UNIX_EPOCH = TestConstants.unix_epoch()
+AUDUSD_FXCM = Symbol('audusd', Venue.FXCM)
+GBPUSD_FXCM = Symbol('gbpusd', Venue.FXCM)
 
 
 class TradeStrategyTests(unittest.TestCase):
@@ -204,6 +213,49 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertEqual(0, strategy.ema1.count)
         self.assertEqual(0, strategy.ema2.count)
         self.assertTrue('custom reset logic' in storer.get_store)
+
+    def test_can_add_order_to_strategy(self):
+        # Arrange
+        storer = ObjectStorer()
+        strategy = TestStrategy1(storer)
+        order = OrderFactory.market(
+            AUDUSD_FXCM,
+            'AUDUSD|123456|1',
+            'SCALPER-01',
+            OrderSide.BUY,
+            100000)
+
+        # Act
+        strategy._add_order(order)
+
+        # Assert
+        self.assertEqual(order, strategy.orders[order.id])
+
+    def test_can_update_order_events(self):
+        # Arrange
+        storer = ObjectStorer()
+        strategy = TestStrategy1(storer)
+        order = OrderFactory.market(
+            AUDUSD_FXCM,
+            'AUDUSD|123456|1',
+            'SCALPER-01',
+            OrderSide.BUY,
+            100000)
+
+        event = OrderSubmitted(
+            order.symbol,
+            order.id,
+            UNIX_EPOCH,
+            uuid.uuid4(),
+            UNIX_EPOCH)
+
+        strategy._add_order(order)
+
+        # Act
+        strategy._update_events(event)
+
+        # Assert
+        self.assertEqual(OrderStatus.SUBMITTED, strategy.orders[order.id].status)
 
 
 class IndicatorUpdaterTests(unittest.TestCase):
