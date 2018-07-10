@@ -16,12 +16,13 @@ from typing import Dict
 from typing import KeysView
 
 from inv_trader.enums import Venue
-from inv_trader.objects import Tick, BarType, Bar
+from inv_trader.objects import Tick, BarType, Bar, Order
 from inv_trader.events import Event
 
 Label = str
 Symbol = str
 Indicator = object
+OrderId = str
 
 
 class TradeStrategy:
@@ -48,6 +49,7 @@ class TradeStrategy:
         self._indicators = {}          # type: Dict[BarType, List[Indicator]]
         self._indicator_updaters = {}  # type: Dict[BarType, List[IndicatorUpdater]]
         self._indicator_index = {}     # type: Dict[Label, Indicator]
+        self._order_book = {}          # type: Dict[OrderId, Order]
 
         self._log(f"{self} initialized.")
 
@@ -188,6 +190,13 @@ class TradeStrategy:
         """
         return self._ticks
 
+    @property
+    def orders(self) -> Dict[OrderId, Order]:
+        """
+        :return: The entire order book for the strategy
+        """
+        return self._order_book
+
     def indicators(self, bar_type: BarType) -> List[Indicator]:
         """
         Get the indicators list for the given bar type.
@@ -269,6 +278,20 @@ class TradeStrategy:
             raise KeyError(f"The ticks dictionary does not contain {key}.")
 
         return self._ticks[key]
+
+    def order(self, order_id: OrderId) -> Order:
+        """
+        Get the order from the order book with the given order_id.
+
+        :param order_id: The order identifier.
+        :return: The order (if found).
+        :raises: KeyError: If the strategy does not contain the order with the requested id.
+        """
+        # Preconditions
+        if order_id not in self._order_book:
+            raise KeyError(f"The order book does not contain the order with id {order_id}.")
+
+        return self._order_book[order_id]
 
     def add_indicator(
             self,
