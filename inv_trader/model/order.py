@@ -35,7 +35,7 @@ class Order:
                  order_type: OrderType,
                  quantity: int,
                  timestamp: datetime.datetime,
-                 price: Decimal = None,
+                 price: Decimal=None,
                  time_in_force: TimeInForce=None,
                  expire_time: datetime.datetime=None):
         """
@@ -53,6 +53,8 @@ class Order:
         :param: expire_time: The orders expire time (optional can be None).
         """
         # Preconditions
+        if time_in_force is None:
+            time_in_force = TimeInForce.DAY
         if symbol is None:
             raise ValueError("The symbol cannot be None.")
         if not isinstance(symbol, Symbol):
@@ -73,19 +75,14 @@ class Order:
             raise ValueError("The timestamp cannot be None.")
         if not isinstance(timestamp, datetime.datetime):
             raise TypeError(f"The timestamp must be of type datetime (was {type(timestamp)}).")
-        if time_in_force is not None and not isinstance(time_in_force, datetime.datetime):
-            raise TypeError(
-                f"The time_in_force must be of type datetime (was {type(time_in_force)}).")
-        if time_in_force is TimeInForce.GTD and time_in_force is None:
-            raise ValueError(f"The time_in_force cannot be None for GTD orders.")
         if time_in_force is TimeInForce.GTD and expire_time is None:
             raise ValueError(f"The expire_time cannot be None for GTD orders.")
-        if order_type not in orders_requiring_prices and price is not None:
-            raise ValueError(f"{order_type.name} orders cannot have a price.")
         if order_type in orders_requiring_prices and price is None:
             raise ValueError("The price cannot be None.")
         if order_type in orders_requiring_prices and not isinstance(price, Decimal):
             raise TypeError(f"The price must be of type decimal (was {type(price)}).")
+        if order_type not in orders_requiring_prices and price is not None:
+            raise ValueError(f"{order_type.name} orders cannot have a price.")
 
         self._symbol = symbol
         self._id = identifier
@@ -203,7 +200,7 @@ class Order:
         """
         :return: The orders filled slippage (zero if not filled).
         """
-        return self._average_price
+        return self._slippage
 
     @property
     def status(self) -> OrderStatus:
@@ -323,10 +320,14 @@ class Order:
             self._check_overfill()
 
     def _set_slippage(self):
+        if self._order_type not in orders_requiring_prices:
+            # Slippage not applicable to orders with entry prices.
+            return
+
         if self.side is OrderSide.BUY:
             self._slippage = self._average_price - self._price
         else:  # side is OrderSide.SELL:
-            self._slippage = self._price - self._average_price
+            self._slippage = (self._price - self._average_price)
 
     def _check_overfill(self):
         if self._filled_quantity > self._quantity:
