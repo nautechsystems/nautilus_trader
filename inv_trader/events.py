@@ -73,6 +73,28 @@ class Event:
         return f"<{str(self)} object at {id(self)}>"
 
 
+class OrderEvent(Event):
+    """
+    The base class for all order events.
+    """
+
+    __metaclass__ = abc.ABCMeta
+
+    def __init__(self,
+                 order_id: str,
+                 identifier: uuid,
+                 timestamp: datetime.datetime):
+        """
+        Initializes a new instance of the OrderEvent abstract class.
+
+        :param: order_id: The order events order identifier.
+        :param: identifier: The order events identifier.
+        :param: uuid: The order events timestamp.
+        """
+        super().__init__(identifier, timestamp)
+        self._order_id = order_id
+
+
 class AccountEvent(Event):
     """
     Represents an account event where there have been changes to the account.
@@ -84,25 +106,8 @@ class AccountEvent(Event):
         """
         Initializes a new instance of the AccountEvent class.
 
-        :param: identifier: The time events identifier.
-        :param: uuid: The time events timestamp.
-        """
-        super().__init__(identifier, timestamp)
-
-
-class OrderEvent(Event):
-    """
-    Represents an order event where there has been a change to an orders status.
-    """
-
-    def __init__(self,
-                 identifier: uuid,
-                 timestamp: datetime.datetime):
-        """
-        Initializes a new instance of the OrderEvent class.
-
-        :param: identifier: The time events identifier.
-        :param: uuid: The time events timestamp.
+        :param: identifier: The account events identifier.
+        :param: uuid: The account events timestamp.
         """
         super().__init__(identifier, timestamp)
 
