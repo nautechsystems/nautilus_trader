@@ -146,5 +146,8 @@ class OrderTests(unittest.TestCase):
         event = OrderSubmitted(order.symbol, order.id, UNIX_EPOCH, uuid.uuid4(), UNIX_EPOCH)
 
         # Act
+        order.apply(event)
 
+        # Assert
+        self.assertEqual(OrderStatus.SUBMITTED, order.status)
 
