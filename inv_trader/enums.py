@@ -38,7 +38,11 @@ class OrderSide(Enum):
 class OrderType(Enum):
     MARKET = 0,
     LIMIT = 1,
-    STOP = 2
+    STOP_MARKET = 2,
+    STOP_LIMIT = 3
+    MIT = 4,
+    FOC = 5,
+    IOC = 6
 
 
 class TimeInForce(Enum):

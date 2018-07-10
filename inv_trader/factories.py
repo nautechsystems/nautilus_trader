@@ -18,10 +18,11 @@ from inv_trader.objects import Symbol, Order
 class OrderFactory:
     """
     A static factory class which provides different order types.
+    If the time in force is GTD then a valid expire time must be given.
     """
 
     @staticmethod
-    def market_order(
+    def market(
             symbol: Symbol,
             identifier: str,
             label: str,
@@ -30,11 +31,11 @@ class OrderFactory:
         """
         Creates and returns a new market order with the given parameters.
 
-        :param symbol: The market orders symbol.
-        :param identifier: The market orders identifier.
-        :param label: The market orders label.
-        :param order_side: The market orders side.
-        :param quantity: The market orders quantity (> 0).
+        :param symbol: The orders symbol.
+        :param identifier: The orders identifier (must be unique).
+        :param label: The orders label.
+        :param order_side: The orders side.
+        :param quantity: The orders quantity (> 0).
         :return: The market order.
         """
         return Order(symbol,
@@ -46,7 +47,7 @@ class OrderFactory:
                      datetime.datetime.utcnow())
 
     @staticmethod
-    def limit_order(
+    def limit(
             symbol: Symbol,
             identifier: str,
             label: str,
@@ -58,14 +59,14 @@ class OrderFactory:
         """
         Creates and returns a new limit order with the given parameters.
 
-        :param symbol: The limit orders symbol.
-        :param identifier: The limit orders identifier.
-        :param label: The limit orders label.
-        :param order_side: The limit orders side.
-        :param quantity: The limit orders quantity (> 0).
-        :param price: The limit orders price (> 0).
-        :param time_in_force: The limit orders time in force (optional can be None).
-        :param expire_time: The limit orders expire time (optional can be None unless GTD).
+        :param symbol: The orders symbol.
+        :param identifier: The orders identifier (must be unique).
+        :param label: The orders label.
+        :param order_side: The orders side.
+        :param quantity: The orders quantity (> 0).
+        :param price: The orders price (> 0).
+        :param time_in_force: The orders time in force (optional can be None).
+        :param expire_time: The orders expire time (optional can be None unless GTD).
         :return: The limit order.
         """
         return Order(symbol,
@@ -80,7 +81,7 @@ class OrderFactory:
                      expire_time)
 
     @staticmethod
-    def stop_order(
+    def stop_market(
             symbol: Symbol,
             identifier: str,
             label: str,
@@ -90,25 +91,143 @@ class OrderFactory:
             time_in_force: TimeInForce=None,
             expire_time: datetime.datetime=None) -> Order:
         """
-        Creates and returns a new stop order with the given parameters.
+        Creates and returns a new stop-market order with the given parameters.
 
-        :param symbol: The stop orders symbol.
-        :param identifier: The stop orders identifier.
-        :param label: The stop orders label.
-        :param order_side: The stop orders side.
-        :param quantity: The stop orders quantity (> 0).
-        :param price: The stop orders price (> 0).
-        :param time_in_force: The stop orders time in force (optional can be None).
-        :param expire_time: The stop orders expire time (optional can be None unless GTD).
-        :return: The stop order.
+        :param symbol: The orders symbol.
+        :param identifier: The orders identifier (must be unique).
+        :param label: The orders label.
+        :param order_side: The orders side.
+        :param quantity: The orders quantity (> 0).
+        :param price: The orders price (> 0).
+        :param time_in_force: The orders time in force (optional can be None).
+        :param expire_time: The orders expire time (optional can be None unless GTD).
+        :return: The stop-market order.
         """
         return Order(symbol,
                      identifier,
                      label,
                      order_side,
-                     OrderType.STOP,
+                     OrderType.STOP_MARKET,
                      quantity,
                      datetime.datetime.utcnow(),
                      price,
                      time_in_force,
                      expire_time)
+
+    @staticmethod
+    def stop_limit(
+            symbol: Symbol,
+            identifier: str,
+            label: str,
+            order_side: OrderSide,
+            quantity: int,
+            price: Decimal,
+            time_in_force: TimeInForce=None,
+            expire_time: datetime.datetime=None) -> Order:
+        """
+        Creates and returns a new stop-limit order with the given parameters.
+
+        :param symbol: The orders symbol.
+        :param identifier: The orders identifier (must be unique).
+        :param label: The orders label.
+        :param order_side: The orders side.
+        :param quantity: The orders quantity (> 0).
+        :param price: The orders price (> 0).
+        :param time_in_force: The orders time in force (optional can be None).
+        :param expire_time: The orders expire time (optional can be None unless GTD).
+        :return: The stop-limit order.
+        """
+        return Order(symbol,
+                     identifier,
+                     label,
+                     order_side,
+                     OrderType.STOP_LIMIT,
+                     quantity,
+                     datetime.datetime.utcnow(),
+                     price,
+                     time_in_force,
+                     expire_time)
+
+    @staticmethod
+    def market_if_touched(
+            symbol: Symbol,
+            identifier: str,
+            label: str,
+            order_side: OrderSide,
+            quantity: int,
+            price: Decimal,
+            time_in_force: TimeInForce=None,
+            expire_time: datetime.datetime=None) -> Order:
+        """
+        Creates and returns a new market-if-touched order with the given parameters.
+
+        :param symbol: The orders symbol.
+        :param identifier: The orders identifier (must be unique).
+        :param label: The orders label.
+        :param order_side: The orders side.
+        :param quantity: The orders quantity (> 0).
+        :param price: The orders price (> 0).
+        :param time_in_force: The orders time in force (optional can be None).
+        :param expire_time: The orders expire time (optional can be None unless GTD).
+        :return: The market-if-touched order.
+        """
+        return Order(symbol,
+                     identifier,
+                     label,
+                     order_side,
+                     OrderType.MIT,
+                     quantity,
+                     datetime.datetime.utcnow(),
+                     price,
+                     time_in_force,
+                     expire_time)
+
+    @staticmethod
+    def fill_or_kill(
+            symbol: Symbol,
+            identifier: str,
+            label: str,
+            order_side: OrderSide,
+            quantity: int) -> Order:
+        """
+        Creates and returns a new fill-or-kill order with the given parameters.
+
+        :param symbol: The orders symbol.
+        :param identifier: The orders identifier (must be unique).
+        :param label: The orders label.
+        :param order_side: The orders side.
+        :param quantity: The orders quantity (> 0).
+        :return: The market order.
+        """
+        return Order(symbol,
+                     identifier,
+                     label,
+                     order_side,
+                     OrderType.FOC,
+                     quantity,
+                     datetime.datetime.utcnow())
+
+    @staticmethod
+    def immediate_or_cancel(
+            symbol: Symbol,
+            identifier: str,
+            label: str,
+            order_side: OrderSide,
+            quantity: int) -> Order:
+        """
+        Creates and returns a new immediate-or-cancel order with the given parameters.
+
+        :param symbol: The orders symbol.
+        :param identifier: The orders identifier (must be unique).
+        :param label: The orders label.
+        :param order_side: The orders side.
+        :param quantity: The orders quantity (> 0).
+        :return: The market order.
+        """
+        return Order(symbol,
+                     identifier,
+                     label,
+                     order_side,
+                     OrderType.IOC,
+                     quantity,
+                     datetime.datetime.utcnow())

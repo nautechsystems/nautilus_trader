@@ -523,11 +523,10 @@ class Order:
         """
         :return: A value indicating whether the order is complete.
         """
-        return (self._order_status
-                is OrderStatus.CANCELLED
-                or OrderStatus.EXPIRED
-                or OrderStatus.FILLED
-                or OrderStatus.REJECTED)
+        return (self._order_status is OrderStatus.CANCELLED
+                or self._order_status is OrderStatus.EXPIRED
+                or self._order_status is OrderStatus.FILLED
+                or self._order_status is OrderStatus.REJECTED)
 
     def __eq__(self, other) -> bool:
         """
