@@ -11,7 +11,66 @@ import datetime
 
 from decimal import Decimal
 
-from inv_trader.enums import Venue, Resolution, QuoteType
+from inv_trader.enums import Venue, Resolution, QuoteType, OrderSide, OrderType, TimeInForce
+
+
+class Symbol:
+    """
+    Represents the symbol for a financial market tradeable instrument.
+    """
+
+    def __init__(self,
+                 code: str,
+                 venue: Venue):
+        """
+        Initializes a new instance of the Symbol class.
+
+        :param code: The symbols code.
+        :param venue: The symbols venue.
+        """
+        self._code = code
+        self._venue = venue
+
+    @property
+    def code(self) -> str:
+        """
+        :return: The symbols code.
+        """
+        return self._code
+
+    @property
+    def venue(self) -> Venue:
+        """
+        :return: The symbols venue.
+        """
+        return self._venue
+
+    def __eq__(self, other) -> bool:
+        """
+        Override the default equality comparison.
+        """
+        if isinstance(other, self.__class__):
+            return self.__dict__ == other.__dict__
+        else:
+            return False
+
+    def __ne__(self, other):
+        """
+        Override the default not-equals comparison.
+        """
+        return not self.__eq__(other)
+
+    def __str__(self) -> str:
+        """
+        :return: The str() string representation of the symbol.
+        """
+        return f"{self._code}.{self._venue.name}"
+
+    def __repr__(self) -> str:
+        """
+        :return: The repr() string representation of the tick.
+        """
+        return f"<{str(self)} object at {id(self)}>"
 
 
 class Tick:
@@ -300,3 +359,149 @@ class Bar:
         :return: The repr() string representation of the bar.
         """
         return f"<{str(self)} object at {id(self)}>"
+
+
+class Order:
+    """
+    Represents an order in a financial market.
+    """
+
+    def __init__(self,
+                 symbol: Symbol,
+                 identifier: str,
+                 label: str,
+                 order_side: OrderSide,
+                 order_type: OrderType,
+                 quantity: int,
+                 timestamp: datetime.datetime,
+                 time_in_force: TimeInForce=None,
+                 expire_time: datetime.datetime=None,
+                 price: Decimal=None):
+        """
+        Initializes a new instance of the Order class.
+
+        :param: symbol: The orders symbol.
+        :param: identifier: The orders identifier (id).
+        :param: label: The orders label.
+        :param: order_side: The orders side.
+        :param: order_type: The orders type.
+        :param: quantity: The orders quantity.
+        :param: timestamp: The orders initialization timestamp.
+        :param: price: The orders price (can be None for market orders).
+        """
+        # Preconditions
+        if symbol is None:
+            raise ValueError("The symbol cannot be None.")
+        if not isinstance(symbol, Symbol):
+            raise TypeError(f"The symbol must be of type Symbol (was {type(symbol)}).")
+        if identifier is None:
+            raise ValueError("The identifier cannot be None.")
+        if not isinstance(identifier, str):
+            raise TypeError(f"The identifier must be of type str (was {type(identifier)}).")
+        if label is None:
+            raise ValueError("The label cannot be None.")
+        if not isinstance(label, str):
+            raise TypeError(f"The label must be of type str (was {type(label)}).")
+        if quantity <= 0:
+            raise ValueError(f"The quantity must be positive (was {quantity}).")
+        if not isinstance(quantity, int):
+            raise TypeError(f"The quantity must be of type int (was {type(quantity)}).")
+        if timestamp is None:
+            raise ValueError("The timestamp cannot be None.")
+        if not isinstance(timestamp, datetime.datetime):
+            raise TypeError(f"The timestamp must be of type datetime (was {type(timestamp)}).")
+        if time_in_force is not None and not isinstance(time_in_force, datetime.datetime):
+            raise TypeError(
+                f"The time_in_force must be of type datetime (was {type(time_in_force)}).")
+        if time_in_force is TimeInForce.GTD and time_in_force is None:
+            raise ValueError(f"The time_in_force cannot be None for GTD orders.")
+        if time_in_force is TimeInForce.GTD and expire_time is None:
+            raise ValueError(f"The expire_time cannot be None for GTD orders.")
+        if order_type is OrderType.MARKET and price is not None:
+            raise ValueError("Market orders cannot have a price.")
+        if order_type is not OrderType.MARKET and price is None:
+            raise ValueError("The price cannot be None.")
+        if order_type is not OrderType.MARKET and not isinstance(price, Decimal):
+            raise TypeError(f"The price must be of type decimal (was {type(price)}).")
+
+        self._symbol = symbol
+        self._id = identifier
+        self._label = label
+        self._order_side = order_side
+        self._order_type = order_type
+        self._quantity = quantity
+        self._timestamp = timestamp
+        self._time_in_force = time_in_force
+        self._expire_time = expire_time
+        self._price = price
+
+    @property
+    def symbol(self) -> Symbol:
+        """
+        :return: The orders symbol.
+        """
+        return self._symbol
+
+    @property
+    def id(self) -> str:
+        """
+        :return: The orders id.
+        """
+        return self._id
+
+    @property
+    def label(self) -> str:
+        """
+        :return: The orders label.
+        """
+        return self._label
+
+    @property
+    def side(self) -> OrderSide:
+        """
+        :return: The orders side.
+        """
+        return self._order_side
+
+    @property
+    def type(self) -> OrderType:
+        """
+        :return: The orders type.
+        """
+        return self._order_type
+
+    @property
+    def quantity(self) -> int:
+        """
+        :return: The orders quantity.
+        """
+        return self._quantity
+
+    @property
+    def timestamp(self) -> datetime.datetime:
+        """
+        :return: The orders initialization timestamp.
+        """
+        return self._timestamp
+
+    @property
+    def time_in_force(self) -> TimeInForce:
+        """
+        :return: The orders time in force (optional could be None).
+        """
+        return self._time_in_force
+
+    @property
+    def expire_time(self) -> datetime.datetime:
+        """
+        :return: The orders expire time (optional could be None).
+        """
+        return self._expire_time
+
+    @property
+    def price(self) -> Decimal:
+        """
+        :return: The orders price (optional could be None).
+        """
+        return self._price
+
