@@ -519,7 +519,13 @@ class Order:
         return self._order_status
 
     @property
-    def timestamp(self) -> datetime.datetime:
+    def is_complete(self) -> bool:
         """
-        :return: The orders timestamp at initialization.
+        :return: A value indicating whether the order is complete.
         """
+        return (self._order_status
+                is OrderStatus.CANCELLED
+                or OrderStatus.EXPIRED
+                or OrderStatus.FILLED
+                or OrderStatus.REJECTED)
+
