@@ -8,7 +8,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from inv_trader.data import LiveDataClient
-from inv_trader.enums import Venue, Resolution, QuoteType
+from inv_trader.model.enums import Venue, Resolution, QuoteType
 from examples.strategy_examples import EMACross
 
 # Tests the live data client can receive ticks and bars.

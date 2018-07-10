@@ -7,9 +7,9 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from inv_trader.enums import Venue, Resolution, QuoteType
-from inv_trader.objects import Tick, BarType, Bar
-from inv_trader.events import Event
+from inv_trader.model.enums import Venue, Resolution, QuoteType
+from inv_trader.model.objects import Tick, BarType, Bar
+from inv_trader.model.events import Event
 from inv_trader.strategy import TradeStrategy
 from inv_indicators.average.ema import ExponentialMovingAverage
 

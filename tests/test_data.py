@@ -16,8 +16,8 @@ import time
 from decimal import Decimal
 
 from inv_trader.data import LiveDataClient
-from inv_trader.objects import Tick, BarType, Bar
-from inv_trader.enums import Venue, Resolution, QuoteType
+from inv_trader.model.objects import Tick, BarType, Bar
+from inv_trader.model.enums import Venue, Resolution, QuoteType
 from test_kit.objects import ObjectStorer
 
 

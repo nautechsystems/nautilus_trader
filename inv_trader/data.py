@@ -16,8 +16,8 @@ from decimal import Decimal
 from redis import ConnectionError
 from typing import List
 
-from inv_trader.enums import Resolution, QuoteType, Venue
-from inv_trader.objects import Tick, BarType, Bar
+from inv_trader.model.enums import Resolution, QuoteType, Venue
+from inv_trader.model.objects import Tick, BarType, Bar
 from inv_trader.strategy import TradeStrategy
 
 UTF8 = 'utf-8'

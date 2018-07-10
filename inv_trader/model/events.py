@@ -13,8 +13,8 @@ import uuid
 
 from decimal import Decimal
 
-from inv_trader.enums import OrderSide
-from inv_trader.objects import Symbol
+from inv_trader.model.enums import OrderSide
+from inv_trader.model.objects import Symbol
 
 
 class Event:

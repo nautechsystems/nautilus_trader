@@ -11,8 +11,9 @@ import datetime
 
 from decimal import Decimal
 
-from inv_trader.enums import OrderSide, OrderType, TimeInForce
-from inv_trader.objects import Symbol, Order
+from inv_trader.model.enums import OrderSide, OrderType, TimeInForce
+from inv_trader.model.objects import Symbol
+from inv_trader.model.order import Order
 
 
 class OrderFactory:
