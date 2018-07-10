@@ -546,12 +546,12 @@ class Order:
 
     def __str__(self) -> str:
         """
-        :return: The str() string representation of the bar.
+        :return: The str() string representation of the order.
         """
         return f"Order: {self._id}"
 
     def __repr__(self) -> str:
         """
-        :return: The repr() string representation of the bar.
+        :return: The repr() string representation of the order.
         """
         return f"<{str(self)} object at {id(self)}>"
