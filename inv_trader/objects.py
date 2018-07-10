@@ -11,7 +11,8 @@ import datetime
 
 from decimal import Decimal
 
-from inv_trader.enums import Venue, Resolution, QuoteType, OrderSide, OrderType, TimeInForce
+from inv_trader.enums import Venue, Resolution, QuoteType
+from inv_trader.enums import OrderSide, OrderType, TimeInForce, OrderStatus
 
 
 class Symbol:
@@ -374,9 +375,9 @@ class Order:
                  order_type: OrderType,
                  quantity: int,
                  timestamp: datetime.datetime,
+                 price: Decimal = None,
                  time_in_force: TimeInForce=None,
-                 expire_time: datetime.datetime=None,
-                 price: Decimal=None):
+                 expire_time: datetime.datetime=None):
         """
         Initializes a new instance of the Order class.
 
@@ -385,9 +386,11 @@ class Order:
         :param: label: The orders label.
         :param: order_side: The orders side.
         :param: order_type: The orders type.
-        :param: quantity: The orders quantity.
+        :param: quantity: The orders quantity (> 0).
         :param: timestamp: The orders initialization timestamp.
-        :param: price: The orders price (can be None for market orders).
+        :param: price: The orders price (can be None for market orders > 0).
+        :param: time_in_force: The orders time in force (optional can be None).
+        :param: expire_time: The orders expire time (optional can be None).
         """
         # Preconditions
         if symbol is None:
@@ -431,9 +434,12 @@ class Order:
         self._order_type = order_type
         self._quantity = quantity
         self._timestamp = timestamp
-        self._time_in_force = time_in_force
-        self._expire_time = expire_time
-        self._price = price
+        self._time_in_force = time_in_force  # Can be None.
+        self._expire_time = expire_time  # Can be None.
+        self._price = price  # Can be None.
+        self._filled_quantity = 0
+        self._average_price = Decimal('0')
+        self._order_status = OrderStatus.INITIALIZED
 
     @property
     def symbol(self) -> Symbol:
@@ -505,3 +511,15 @@ class Order:
         """
         return self._price
 
+    @property
+    def status(self) -> OrderStatus:
+        """
+        :return: The orders status.
+        """
+        return self._order_status
+
+    @property
+    def timestamp(self) -> datetime.datetime:
+        """
+        :return: The orders timestamp at initialization.
+        """

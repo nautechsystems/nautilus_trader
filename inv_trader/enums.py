@@ -48,3 +48,15 @@ class TimeInForce(Enum):
     FOC = 4,
     GTD = 5
 
+
+class OrderStatus(Enum):
+    INITIALIZED = 0,
+    SUBMITTED = 1,
+    ACCEPTED = 2,
+    REJECTED = 3,
+    WORKING = 4,
+    CANCELLED = 5,
+    OVER_FILLED = 6,
+    PARTIALLY_FILLED = 7,
+    FILLED = 8,
+    EXPIRED = 9
