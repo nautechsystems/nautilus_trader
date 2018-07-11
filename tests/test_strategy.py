@@ -23,6 +23,7 @@ from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled,
 from inv_trader.factories import OrderFactory
 from inv_trader.strategy import TradeStrategy
 from inv_trader.strategy import IndicatorUpdater
+from inv_trader.execution import MockExecClient
 from inv_indicators.average.ema import ExponentialMovingAverage
 from inv_indicators.intrinsic_network import IntrinsicNetwork
 from test_kit.constants import TestConstants
@@ -256,6 +257,78 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(OrderStatus.SUBMITTED, strategy.orders[order.id].status)
+
+    def test_strategy_can_submit_order(self):
+        # Arrange
+        exec_client = MockExecClient()
+        storer = ObjectStorer()
+        strategy = TestStrategy1(storer)
+
+        exec_client.register_strategy(strategy)
+
+        order = OrderFactory.market(
+            AUDUSD_FXCM,
+            'AUDUSD|123456|1',
+            'SCALPER-01',
+            OrderSide.BUY,
+            100000)
+
+        # Act
+        strategy.submit_order(order)
+
+        # Assert
+        self.assertEqual(order, strategy.orders[order.id])
+        self.assertEqual(OrderStatus.WORKING, strategy.orders[order.id].status)
+
+    def test_strategy_can_cancel_order(self):
+        # Arrange
+        exec_client = MockExecClient()
+        storer = ObjectStorer()
+        strategy = TestStrategy1(storer)
+
+        exec_client.register_strategy(strategy)
+
+        order = OrderFactory.market(
+            AUDUSD_FXCM,
+            'AUDUSD|123456|1',
+            'SCALPER-01',
+            OrderSide.BUY,
+            100000)
+
+        strategy.submit_order(order)
+
+        # Act
+        strategy.cancel_order(order)
+
+        # Assert
+        self.assertEqual(order, strategy.orders[order.id])
+        self.assertEqual(OrderStatus.CANCELLED, strategy.orders[order.id].status)
+
+    def test_strategy_can_modify_order(self):
+        # Arrange
+        exec_client = MockExecClient()
+        storer = ObjectStorer()
+        strategy = TestStrategy1(storer)
+
+        exec_client.register_strategy(strategy)
+
+        order = OrderFactory.limit(
+            AUDUSD_FXCM,
+            'AUDUSD|123456|1',
+            'SCALPER-01',
+            OrderSide.BUY,
+            100000,
+            Decimal('1.00000'))
+
+        strategy.submit_order(order)
+
+        # Act
+        strategy.modify_order(order, Decimal('1.00001'))
+
+        # Assert
+        self.assertEqual(order, strategy.orders[order.id])
+        self.assertEqual(OrderStatus.WORKING, strategy.orders[order.id].status)
+        self.assertEqual(Decimal('1.00001'), strategy.orders[order.id].price)
 
 
 class IndicatorUpdaterTests(unittest.TestCase):
