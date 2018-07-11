@@ -19,13 +19,12 @@ from inv_trader.model.order import Order
 class OrderFactory:
     """
     A static factory class which provides different order types.
-    If the time in force is GTD then a valid expire time must be given.
     """
 
     @staticmethod
     def market(
             symbol: Symbol,
-            identifier: str,
+            order_id: str,
             label: str,
             order_side: OrderSide,
             quantity: int) -> Order:
@@ -33,14 +32,14 @@ class OrderFactory:
         Creates and returns a new market order with the given parameters.
 
         :param symbol: The orders symbol.
-        :param identifier: The orders identifier (must be unique).
+        :param order_id: The orders identifier (must be unique).
         :param label: The orders label.
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
         :return: The market order.
         """
         return Order(symbol,
-                     identifier,
+                     order_id,
                      label,
                      order_side,
                      OrderType.MARKET,
@@ -50,7 +49,7 @@ class OrderFactory:
     @staticmethod
     def limit(
             symbol: Symbol,
-            identifier: str,
+            order_id: str,
             label: str,
             order_side: OrderSide,
             quantity: int,
@@ -59,9 +58,10 @@ class OrderFactory:
             expire_time: datetime.datetime=None) -> Order:
         """
         Creates and returns a new limit order with the given parameters.
-
+        If the time in force is GTD then a valid expire time must be given.
+        
         :param symbol: The orders symbol.
-        :param identifier: The orders identifier (must be unique).
+        :param order_id: The orders identifier (must be unique).
         :param label: The orders label.
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
@@ -71,7 +71,7 @@ class OrderFactory:
         :return: The limit order.
         """
         return Order(symbol,
-                     identifier,
+                     order_id,
                      label,
                      order_side,
                      OrderType.LIMIT,
@@ -84,7 +84,7 @@ class OrderFactory:
     @staticmethod
     def stop_market(
             symbol: Symbol,
-            identifier: str,
+            order_id: str,
             label: str,
             order_side: OrderSide,
             quantity: int,
@@ -93,9 +93,10 @@ class OrderFactory:
             expire_time: datetime.datetime=None) -> Order:
         """
         Creates and returns a new stop-market order with the given parameters.
-
+        If the time in force is GTD then a valid expire time must be given.
+        
         :param symbol: The orders symbol.
-        :param identifier: The orders identifier (must be unique).
+        :param order_id: The orders identifier (must be unique).
         :param label: The orders label.
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
@@ -105,7 +106,7 @@ class OrderFactory:
         :return: The stop-market order.
         """
         return Order(symbol,
-                     identifier,
+                     order_id,
                      label,
                      order_side,
                      OrderType.STOP_MARKET,
@@ -118,7 +119,7 @@ class OrderFactory:
     @staticmethod
     def stop_limit(
             symbol: Symbol,
-            identifier: str,
+            order_id: str,
             label: str,
             order_side: OrderSide,
             quantity: int,
@@ -127,9 +128,10 @@ class OrderFactory:
             expire_time: datetime.datetime=None) -> Order:
         """
         Creates and returns a new stop-limit order with the given parameters.
-
+        If the time in force is GTD then a valid expire time must be given.
+        
         :param symbol: The orders symbol.
-        :param identifier: The orders identifier (must be unique).
+        :param order_id: The orders identifier (must be unique).
         :param label: The orders label.
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
@@ -139,7 +141,7 @@ class OrderFactory:
         :return: The stop-limit order.
         """
         return Order(symbol,
-                     identifier,
+                     order_id,
                      label,
                      order_side,
                      OrderType.STOP_LIMIT,
@@ -152,7 +154,7 @@ class OrderFactory:
     @staticmethod
     def market_if_touched(
             symbol: Symbol,
-            identifier: str,
+            order_id: str,
             label: str,
             order_side: OrderSide,
             quantity: int,
@@ -161,9 +163,10 @@ class OrderFactory:
             expire_time: datetime.datetime=None) -> Order:
         """
         Creates and returns a new market-if-touched order with the given parameters.
-
+        If the time in force is GTD then a valid expire time must be given.
+        
         :param symbol: The orders symbol.
-        :param identifier: The orders identifier (must be unique).
+        :param order_id: The orders identifier (must be unique).
         :param label: The orders label.
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
@@ -173,7 +176,7 @@ class OrderFactory:
         :return: The market-if-touched order.
         """
         return Order(symbol,
-                     identifier,
+                     order_id,
                      label,
                      order_side,
                      OrderType.MIT,
@@ -186,7 +189,7 @@ class OrderFactory:
     @staticmethod
     def fill_or_kill(
             symbol: Symbol,
-            identifier: str,
+            order_id: str,
             label: str,
             order_side: OrderSide,
             quantity: int) -> Order:
@@ -194,14 +197,14 @@ class OrderFactory:
         Creates and returns a new fill-or-kill order with the given parameters.
 
         :param symbol: The orders symbol.
-        :param identifier: The orders identifier (must be unique).
+        :param order_id: The orders identifier (must be unique).
         :param label: The orders label.
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
         :return: The market order.
         """
         return Order(symbol,
-                     identifier,
+                     order_id,
                      label,
                      order_side,
                      OrderType.FOC,
@@ -211,7 +214,7 @@ class OrderFactory:
     @staticmethod
     def immediate_or_cancel(
             symbol: Symbol,
-            identifier: str,
+            order_id: str,
             label: str,
             order_side: OrderSide,
             quantity: int) -> Order:
@@ -219,14 +222,14 @@ class OrderFactory:
         Creates and returns a new immediate-or-cancel order with the given parameters.
 
         :param symbol: The orders symbol.
-        :param identifier: The orders identifier (must be unique).
+        :param order_id: The orders identifier (must be unique).
         :param label: The orders label.
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
         :return: The market order.
         """
         return Order(symbol,
-                     identifier,
+                     order_id,
                      label,
                      order_side,
                      OrderType.IOC,
