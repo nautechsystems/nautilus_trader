@@ -8,6 +8,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from inv_trader.data import LiveDataClient
+from inv_trader.execution import ExecutionClient
 from inv_trader.model.enums import Venue, Resolution, QuoteType
 from examples.strategy_examples import EMACross
 
@@ -21,9 +22,12 @@ from examples.strategy_examples import EMACross
 
 if __name__ == "__main__":
     strategy = EMACross('01', 10, 20)
-    client = LiveDataClient()
-    client.connect()
-    client.register_strategy(strategy)
-    client.subscribe_ticks('audusd', Venue.FXCM)
-    client.subscribe_bars('audusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.MID)
+    data_client = LiveDataClient()
+    exec_client = ExecutionClient()
+    data_client.register_strategy(strategy)
+    exec_client.register_strategy(strategy)
+
+    data_client.connect()
+    data_client.subscribe_ticks('audusd', Venue.FXCM)
+    data_client.subscribe_bars('audusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.MID)
     strategy.start()
