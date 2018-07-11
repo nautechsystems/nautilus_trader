@@ -28,16 +28,16 @@ OrderId = str
 
 class TradeStrategy:
     """
-    The base class for all trade strategies.
+    The abstract base class for all trade strategies.
     """
 
     __metaclass__ = abc.ABCMeta
 
-    def __init__(self, label: str=''):
+    def __init__(self, label: str=None):
         """
         Initializes a new instance of the TradeStrategy abstract class.
 
-        :param: label: The unique label for the strategy (can be empty).
+        :param: label: The unique label for the strategy (can be None).
         """
         if label is None:
             label = ''
@@ -515,13 +515,13 @@ class TradeStrategy:
         """
         # Preconditions
         if not isinstance(event, Event):
-            raise TypeError("The given event is invalid.")
+            raise TypeError(f"The event must be of type Event (was {type(event)}).")
 
         # Apply order event if order id contained in the order book.
         if isinstance(event, OrderEvent):
             order_id = event.order_id
             if order_id not in self._order_book.keys():
-                raise ValueError("The given order event id was not in the order book.")
+                raise ValueError("The given event order id was not in the order book.")
             self._order_book[order_id].apply(event)
 
         # Calls on_event() if the strategy is running.

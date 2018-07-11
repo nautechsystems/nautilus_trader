@@ -68,7 +68,7 @@ class Symbol:
 
     def __repr__(self) -> str:
         """
-        :return: The repr() string representation of the tick.
+        :return: The repr() string representation of the symbol.
         """
         return f"<{str(self)} object at {id(self)}>"
 
@@ -359,6 +359,3 @@ class Bar:
         :return: The repr() string representation of the bar.
         """
         return f"<{str(self)} object at {id(self)}>"
-
-
-

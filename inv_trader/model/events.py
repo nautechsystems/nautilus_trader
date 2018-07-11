@@ -19,7 +19,7 @@ from inv_trader.model.objects import Symbol
 
 class Event:
     """
-    The base class for all events.
+    The abstract base class for all events.
     """
 
     __metaclass__ = abc.ABCMeta
@@ -67,7 +67,7 @@ class Event:
 
     def __str__(self) -> str:
         """
-        :return: The str() string representation of the tick.
+        :return: The str() string representation of the event.
         """
         return (f"{self.__class__.__name__}: "
                 f"event_id={self.event_id},"
@@ -75,14 +75,14 @@ class Event:
 
     def __repr__(self) -> str:
         """
-        :return: The repr() string representation of the tick.
+        :return: The repr() string representation of the event.
         """
         return f"<{str(self)} object at {id(self)}>"
 
 
 class OrderEvent(Event):
     """
-    The base class for all order events.
+    The abstract base class for all order events.
     """
 
     __metaclass__ = abc.ABCMeta
@@ -95,9 +95,9 @@ class OrderEvent(Event):
         """
         Initializes a new instance of the OrderEvent abstract class.
 
-        :param: order_symbol: The order events symbol.
-        :param: order_id: The order events order identifier.
-        :param: event_id: The order events identifier.
+        :param: order_symbol: The events order symbol.
+        :param: order_id: The events order identifier.
+        :param: event_id: The events identifier.
         :param: event_timestamp: The order events timestamp.
         """
         super().__init__(event_id, event_timestamp)
@@ -123,6 +123,7 @@ class OrderSubmitted(OrderEvent):
     """
     Represents an event where an order has been submitted to the execution system.
     """
+
     def __init__(self,
                  symbol: Symbol,
                  order_id: str,
@@ -155,6 +156,7 @@ class OrderAccepted(OrderEvent):
     """
     Represents an event where an order has been accepted by the broker.
     """
+
     def __init__(self,
                  symbol: Symbol,
                  order_id: str,
@@ -227,6 +229,7 @@ class OrderWorking(OrderEvent):
     """
     Represents an event where an order is working with the broker.
     """
+
     def __init__(self,
                  symbol: Symbol,
                  order_id: str,
@@ -267,6 +270,7 @@ class OrderCancelled(OrderEvent):
     """
     Represents an event where an order has been cancelled with the broker.
     """
+
     def __init__(self,
                  symbol: Symbol,
                  order_id: str,
@@ -297,6 +301,7 @@ class OrderCancelReject(OrderEvent):
     """
     Represents an event where an order cancel request has been rejected by the broker.
     """
+
     def __init__(self,
                  order_symbol: Symbol,
                  order_id: str,
@@ -336,6 +341,7 @@ class OrderExpired(OrderEvent):
     """
     Represents an event where an order has expired with the broker.
     """
+
     def __init__(self,
                  symbol: Symbol,
                  order_id: str,
@@ -366,6 +372,7 @@ class OrderModified(OrderEvent):
     """
     Represents an event where an order has been modified with the broker.
     """
+
     def __init__(self,
                  symbol: Symbol,
                  order_id: str,
@@ -418,6 +425,7 @@ class OrderFilled(OrderEvent):
     """
     Represents an event where an order has been completely filled with the broker.
     """
+
     def __init__(self,
                  symbol: Symbol,
                  order_id: str,
@@ -500,6 +508,7 @@ class OrderPartiallyFilled(OrderEvent):
     """
     Represents an event where an order has been partially filled with the broker.
     """
+
     def __init__(self,
                  symbol: Symbol,
                  order_id: str,

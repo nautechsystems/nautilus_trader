@@ -145,7 +145,7 @@ class LiveDataClient:
         if venue is None:
             raise ValueError("The venue cannot be None.")
         if handler is not None and not callable(handler):
-            raise TypeError("The handler must be a callable object.")
+            raise TypeError(f"The handler must be of type callable (was type{handler}).")
 
         self._check_connection()
 
@@ -223,7 +223,7 @@ class LiveDataClient:
         if quote_type is None:
             raise ValueError("The quote_type cannot be None.")
         if handler is not None and not callable(handler):
-            raise TypeError("The handler must be a callable object.")
+            raise TypeError(f"The handler must be of type callable (was {type(handler)}).")
 
         self._check_connection()
 
@@ -306,7 +306,7 @@ class LiveDataClient:
         if strategy is None:
             raise ValueError("The strategy cannot be None.")
         if not isinstance(strategy, TradeStrategy):
-            raise TypeError("The strategy must be a type of TradeStrategy.")
+            raise TypeError(f"The strategy must be of type TradeStrategy (was {type(strategy)}).")
 
         strategy_tick_handler = strategy._update_ticks
         if strategy_tick_handler not in self._tick_handlers:

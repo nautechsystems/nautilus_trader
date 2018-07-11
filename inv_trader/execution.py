@@ -47,12 +47,12 @@ class ExecutionClient:
         """
         # Preconditions
         if not isinstance(strategy, TradeStrategy):
-            raise TypeError(f"The strategy is not a type of TradeStrategy (was {type(strategy)}).")
+            raise TypeError(f"The strategy must be of type TradeStrategy (was {type(strategy)}).")
 
         strategy_id = str(strategy)
 
         if strategy_id in self._registered_strategies.keys():
-            raise ValueError("The strategy does not have a unique name and label.")
+            raise ValueError("The strategy must have a unique name and label.")
 
         self._registered_strategies[strategy_id] = strategy._update_events
         strategy._register_execution_client(self)
@@ -112,7 +112,7 @@ class ExecutionClient:
         """
         # Preconditions
         if not isinstance(order, Order):
-            raise TypeError(f"The order is not a type of Order (was {type(order)}).")
+            raise TypeError(f"The order must be of type Order (was {type(order)}).")
 
         if order.id in self._order_index.keys():
             raise ValueError(f"The order does not have a unique id.")

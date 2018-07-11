@@ -34,7 +34,7 @@ class Order:
 
     def __init__(self,
                  symbol: Symbol,
-                 identifier: str,
+                 order_id: str,
                  label: str,
                  order_side: OrderSide,
                  order_type: OrderType,
@@ -47,7 +47,7 @@ class Order:
         Initializes a new instance of the Order class.
 
         :param: symbol: The orders symbol.
-        :param: identifier: The orders identifier (id).
+        :param: order_id: The orders identifier.
         :param: label: The orders label.
         :param: order_side: The orders side.
         :param: order_type: The orders type.
@@ -64,10 +64,10 @@ class Order:
             raise ValueError("The symbol cannot be None.")
         if not isinstance(symbol, Symbol):
             raise TypeError(f"The symbol must be of type Symbol (was {type(symbol)}).")
-        if identifier is None:
-            raise ValueError("The identifier cannot be None.")
-        if not isinstance(identifier, str):
-            raise TypeError(f"The identifier must be of type str (was {type(identifier)}).")
+        if order_id is None:
+            raise ValueError("The order_id cannot be None.")
+        if not isinstance(order_id, str):
+            raise TypeError(f"The order_id must be of type str (was {type(order_id)}).")
         if label is None:
             raise ValueError("The label cannot be None.")
         if not isinstance(label, str):
@@ -90,10 +90,10 @@ class Order:
             raise ValueError(f"{order_type.name} orders cannot have a price.")
 
         self._symbol = symbol
-        self._id = identifier
+        self._id = order_id
         self._label = label
-        self._order_side = order_side
-        self._order_type = order_type
+        self._side = order_side
+        self._type = order_type
         self._quantity = quantity
         self._timestamp = timestamp
         self._time_in_force = time_in_force  # Can be None
@@ -102,7 +102,7 @@ class Order:
         self._filled_quantity = 0
         self._average_price = Decimal('0')
         self._slippage = Decimal('0')
-        self._order_status = OrderStatus.INITIALIZED
+        self._status = OrderStatus.INITIALIZED
         self._order_events = []         # type: List[OrderEvent]
         self._order_ids = []            # type: List[str]
         self._order_broker_ids = []     # type: List[str]
@@ -126,8 +126,10 @@ class Order:
     @property
     def broker_id(self) -> str:
         """
-        :return: The orders broker-side order id.
+        :return: The orders broker-side order id (could be empty).
         """
+        if len(self._order_broker_ids) == 0:
+            return ''
         return self._order_broker_ids[-1]
 
     @property
@@ -142,14 +144,14 @@ class Order:
         """
         :return: The orders side.
         """
-        return self._order_side
+        return self._side
 
     @property
     def type(self) -> OrderType:
         """
         :return: The orders type.
         """
-        return self._order_type
+        return self._type
 
     @property
     def quantity(self) -> int:
@@ -212,17 +214,17 @@ class Order:
         """
         :return: The orders status.
         """
-        return self._order_status
+        return self._status
 
     @property
     def is_complete(self) -> bool:
         """
         :return: A value indicating whether the order is complete.
         """
-        return (self._order_status is OrderStatus.CANCELLED
-                or self._order_status is OrderStatus.EXPIRED
-                or self._order_status is OrderStatus.FILLED
-                or self._order_status is OrderStatus.REJECTED)
+        return (self._status is OrderStatus.CANCELLED
+                or self._status is OrderStatus.EXPIRED
+                or self._status is OrderStatus.FILLED
+                or self._status is OrderStatus.REJECTED)
 
     @property
     def event_count(self) -> int:
@@ -273,41 +275,42 @@ class Order:
         """
         # Preconditions
         if not isinstance(order_event, OrderEvent):
-            raise TypeError(f"Event must be of type OrderEvent (was {type(order_event)}")
+            raise TypeError(f"The order_event must be of type OrderEvent (was {type(order_event)}")
         if order_event.order_id is not self.id:
-            raise ValueError(f"Incorrect order id for this event (was {order_event.order_id}).")
+            raise ValueError(
+                f"The event order id is invalid for this order (was {order_event.order_id}).")
 
         self._order_events.append(order_event)
 
         # Handle event
         if isinstance(order_event, OrderSubmitted):
-            self._order_status = OrderStatus.SUBMITTED
+            self._status = OrderStatus.SUBMITTED
 
         elif isinstance(order_event, OrderAccepted):
-            self._order_status = OrderStatus.ACCEPTED
+            self._status = OrderStatus.ACCEPTED
 
         elif isinstance(order_event, OrderRejected):
-            self._order_status = OrderStatus.REJECTED
+            self._status = OrderStatus.REJECTED
 
         elif isinstance(order_event, OrderWorking):
-            self._order_status = OrderStatus.WORKING
+            self._status = OrderStatus.WORKING
             self._order_broker_ids.append(order_event.broker_order_id)
 
         elif isinstance(order_event, OrderCancelled):
-            self._order_status = OrderStatus.CANCELLED
+            self._status = OrderStatus.CANCELLED
 
         elif isinstance(order_event, OrderCancelReject):
             pass
 
         elif isinstance(order_event, OrderExpired):
-            self._order_status = OrderStatus.EXPIRED
+            self._status = OrderStatus.EXPIRED
 
         elif isinstance(order_event, OrderModified):
             self._order_broker_ids.append(order_event.broker_order_id)
             self._price = order_event.modified_price
 
         elif isinstance(order_event, OrderFilled):
-            self._order_status = OrderStatus.FILLED
+            self._status = OrderStatus.FILLED
             self._order_execution_ids.append(order_event.execution_id)
             self._execution_tickets.append(order_event.execution_ticket)
             self._filled_quantity = order_event.filled_quantity
@@ -316,7 +319,7 @@ class Order:
             self._check_overfill()
 
         elif isinstance(order_event, OrderPartiallyFilled):
-            self._order_status = OrderStatus.PARTIALLY_FILLED
+            self._status = OrderStatus.PARTIALLY_FILLED
             self._order_execution_ids.append(order_event.execution_id)
             self._execution_tickets.append(order_event.execution_ticket)
             self._filled_quantity = order_event.filled_quantity
@@ -325,7 +328,7 @@ class Order:
             self._check_overfill()
 
     def _set_slippage(self):
-        if self._order_type not in orders_requiring_prices:
+        if self._type not in orders_requiring_prices:
             # Slippage not applicable to orders with entry prices.
             return
 
@@ -336,4 +339,4 @@ class Order:
 
     def _check_overfill(self):
         if self._filled_quantity > self._quantity:
-            self._order_status = OrderStatus.OVER_FILLED
+            self._status = OrderStatus.OVER_FILLED
