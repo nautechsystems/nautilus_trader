@@ -280,6 +280,27 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertEqual(order, strategy.orders[order.id])
         self.assertEqual(OrderStatus.WORKING, strategy.orders[order.id].status)
 
+    def test_submitting_order_with_identical_id_raises_ex(self):
+        # Arrange
+        exec_client = MockExecClient()
+        storer = ObjectStorer()
+        strategy = TestStrategy1(storer)
+
+        exec_client.register_strategy(strategy)
+
+        order = OrderFactory.market(
+            AUDUSD_FXCM,
+            'AUDUSD|123456|1',
+            'SCALPER-01',
+            OrderSide.BUY,
+            100000)
+
+        strategy.submit_order(order)
+
+        # Act
+        # Assert
+        self.assertRaises(ValueError, strategy.submit_order, order)
+
     def test_strategy_can_cancel_order(self):
         # Arrange
         exec_client = MockExecClient()
@@ -303,6 +324,22 @@ class TradeStrategyTests(unittest.TestCase):
         # Assert
         self.assertEqual(order, strategy.orders[order.id])
         self.assertEqual(OrderStatus.CANCELLED, strategy.orders[order.id].status)
+
+    def test_cancelling_order_which_does_not_exist_raises_ex(self):
+        # Arrange
+        storer = ObjectStorer()
+        strategy = TestStrategy1(storer)
+
+        order = OrderFactory.market(
+            AUDUSD_FXCM,
+            'AUDUSD|123456|1',
+            'SCALPER-01',
+            OrderSide.BUY,
+            100000)
+
+        # Act
+        # Assert
+        self.assertRaises(ValueError, strategy.cancel_order, order)
 
     def test_strategy_can_modify_order(self):
         # Arrange
@@ -329,6 +366,22 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertEqual(order, strategy.orders[order.id])
         self.assertEqual(OrderStatus.WORKING, strategy.orders[order.id].status)
         self.assertEqual(Decimal('1.00001'), strategy.orders[order.id].price)
+
+    def test_modifying_order_which_does_not_exist_raises_ex(self):
+        # Arrange
+        storer = ObjectStorer()
+        strategy = TestStrategy1(storer)
+
+        order = OrderFactory.market(
+            AUDUSD_FXCM,
+            'AUDUSD|123456|1',
+            'SCALPER-01',
+            OrderSide.BUY,
+            100000)
+
+        # Act
+        # Assert
+        self.assertRaises(ValueError, strategy.modify_order, order, Decimal('1.00001'))
 
 
 class IndicatorUpdaterTests(unittest.TestCase):
