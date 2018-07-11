@@ -7,9 +7,10 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from inv_trader.model.enums import Venue, Resolution, QuoteType
-from inv_trader.model.objects import Tick, BarType, Bar
+from inv_trader.model.enums import Venue, Resolution, QuoteType, OrderSide
+from inv_trader.model.objects import Symbol, Tick, BarType, Bar
 from inv_trader.model.events import Event
+from inv_trader.factories import OrderFactory
 from inv_trader.strategy import TradeStrategy
 from inv_indicators.average.ema import ExponentialMovingAverage
 
@@ -23,7 +24,7 @@ class TestStrategy1(TradeStrategy):
         """
         Initializes a new instance of the TestStrategy1 class.
         """
-        super().__init__()
+        super().__init__('01')
         self.object_storer = object_storer
 
         self.gbpusd_1sec_mid = BarType('gbpusd',
@@ -50,14 +51,30 @@ class TestStrategy1(TradeStrategy):
             bar: Bar):
 
         self.object_storer.store((bar_type, Bar))
+
         if bar_type == self.gbpusd_1sec_mid:
             if self.ema1.value > self.ema2.value:
-                self.object_storer.store('BUY')
+                buy_order = OrderFactory.market(
+                    Symbol('gbpusd', Venue.FXCM),
+                    'O123456',
+                    'TestStrategy1_E',
+                    OrderSide.BUY,
+                    100000)
+
+                self.submit_order(buy_order)
+
             elif self.ema1.value < self.ema2.value:
-                self.object_storer.store('SELL')
+                sell_order = OrderFactory.market(
+                    Symbol('gbpusd', Venue.FXCM),
+                    'O123456',
+                    'TestStrategy1_E',
+                    OrderSide.SELL,
+                    100000)
+
+                self.submit_order(sell_order)
 
     def on_event(self, event: Event):
-        self.object_storer(event)
+        self.object_storer.store(event)
 
     def on_stop(self):
         self.object_storer.store('custom stop logic')

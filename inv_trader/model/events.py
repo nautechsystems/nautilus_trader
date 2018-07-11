@@ -69,7 +69,9 @@ class Event:
         """
         :return: The str() string representation of the tick.
         """
-        return f"({self.event_id}){self.event_timestamp.isoformat()}"
+        return (f"{self.__class__.__name__}: "
+                f"event_id={self.event_id},"
+                f"timestamp={self.event_timestamp.isoformat()}")
 
     def __repr__(self) -> str:
         """

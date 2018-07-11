@@ -38,8 +38,8 @@ class ExecutionClient:
         """
         Initializes a new instance of the ExecutionClient class.
         """
-        self._registered_strategies = {}  # type: Dict[StrategyId, TradeStrategy]
-        self._order_index = {}            # type: Dict[OrderId, TradeStrategy]
+        self._registered_strategies = {}  # type: Dict[StrategyId, callable]
+        self._order_index = {}            # type: Dict[OrderId, StrategyId]
 
     def register_strategy(self, strategy: TradeStrategy):
         """
@@ -54,49 +54,30 @@ class ExecutionClient:
         if strategy_id in self._registered_strategies.keys():
             raise ValueError("The strategy does not have a unique name and label.")
 
-        self._registered_strategies[strategy_id] = strategy
+        self._registered_strategies[strategy_id] = strategy._update_events
         strategy._register_execution_client(self)
-
-    def register_order(
-            self,
-            order: Order,
-            strategy: TradeStrategy):
-        """
-        Register the given order with the execution client.
-
-        :param order: The order to register.
-        :param strategy: The strategy to register the order for.
-        """
-        # Preconditions
-        if not isinstance(order, Order):
-            raise TypeError(f"The order is not a type of Order (was {type(order)}).")
-        if not isinstance(strategy, TradeStrategy):
-            raise TypeError(f"The strategy is not a type of TradeStrategy (was {type(strategy)}).")
-
-        if order.id in self._order_index.keys():
-            raise ValueError(f"The order does not have a unique id.")
-
-        self._order_index[order.id] = strategy
 
     @abc.abstractmethod
     def connect(self):
         """
         Connect to the execution service.
         """
-        self._log("Execution client connected (mock connection).")
+        # Raise exception if not overridden in implementation.
+        raise NotImplementedError("Method must be implemented in the execution client.")
 
     @abc.abstractmethod
     def disconnect(self):
         """
         Disconnect from the execution service.
         """
-        self._log("Execution client connected (mock connection).")
+        # Raise exception if not overridden in implementation.
+        raise NotImplementedError("Method must be implemented in the execution client.")
 
     @abc.abstractmethod
     def submit_order(
             self,
             order: Order,
-            strategy: TradeStrategy):
+            strategy_id: StrategyId):
         """
         Send a submit order request to the execution service.
         """
@@ -119,6 +100,25 @@ class ExecutionClient:
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the execution client.")
 
+    def _register_order(
+            self,
+            order: Order,
+            strategy_id: StrategyId):
+        """
+        Register the given order with the execution client.
+
+        :param order: The order to register.
+        :param strategy_id: The strategy id to register with the order.
+        """
+        # Preconditions
+        if not isinstance(order, Order):
+            raise TypeError(f"The order is not a type of Order (was {type(order)}).")
+
+        if order.id in self._order_index.keys():
+            raise ValueError(f"The order does not have a unique id.")
+
+        self._order_index[order.id] = strategy_id
+
     def _on_event(self, event: Event):
         """
         Handle events received from the execution service.
@@ -126,11 +126,12 @@ class ExecutionClient:
         if not isinstance(event, Event):
             TypeError(f"The event is not of type Event (was {type(event)}).")
 
-        # If order event id contained in strategy index then send to strategy.
+        # If event order id contained in order index then send to strategy.
         if isinstance(event, OrderEvent):
             order_id = event.order_id
-            if order_id in self._order_index:
-                self._order_index[order_id]._update_events(event)
+            if order_id in self._order_index.keys():
+                strategy_id = self._order_index[order_id]
+                self._registered_strategies[strategy_id](event)
                 return
             self._log(f"Execution: Warning given event order id not contained in index {order_id}")
 
@@ -164,11 +165,11 @@ class MockExecClient(ExecutionClient):
     def submit_order(
             self,
             order: Order,
-            strategy: TradeStrategy):
+            strategy_id: StrategyId):
         """
         Send a submit order request to the execution service.
         """
-        super().register_order(order, strategy)
+        super()._register_order(order, strategy_id)
 
         order_submitted = OrderSubmitted(
             order.symbol,
@@ -192,9 +193,9 @@ class MockExecClient(ExecutionClient):
             uuid.uuid4(),
             datetime.datetime.utcnow())
 
-        strategy._update_events(order_submitted)
-        strategy._update_events(order_accepted)
-        strategy._update_events(order_working)
+        super()._on_event(order_submitted)
+        super()._on_event(order_accepted)
+        super()._on_event(order_working)
 
     def cancel_order(self, order: Order):
         """
@@ -234,27 +235,31 @@ class LiveExecClient(ExecutionClient):
         """
         Connect to the execution service.
         """
+        # TODO
         self._log("LiveExecClient connected.")
 
     def disconnect(self):
         """
         Disconnect from the execution service.
         """
+        # TODO
         self._log("Execution client disconnected.")
 
     def submit_order(
             self,
             order: Order,
-            strategy: TradeStrategy):
+            strategy_id: StrategyId):
         """
         Send a submit order request to the execution service.
         """
-        super().register_order(order, strategy)
+        super()._register_order(order, strategy_id)
+        # TODO
 
     def cancel_order(self, order: Order):
         """
         Send a cancel order request to the execution service.
         """
+        # TODO
         pass
 
     def modify_order(
@@ -264,4 +269,5 @@ class LiveExecClient(ExecutionClient):
         """
         Send a modify order request to the execution service.
         """
+        # TODO
         pass

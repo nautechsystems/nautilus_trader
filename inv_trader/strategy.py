@@ -380,6 +380,18 @@ class TradeStrategy:
         self.on_start()
         self._log(f"{str(self)} running...")
 
+    def submit_order(self, order: Order):
+        """
+        Submit the order to the execution client.
+        :return:
+        """
+        # Preconditions
+        if order.id in self._order_book:
+            raise ValueError("The order id is already contained in the order book (must be unique).")
+
+        self._order_book[order.id] = order
+        self._exec_client.submit_order(order, str(self))
+
     def stop(self):
         """
         Stops the trade strategy.
