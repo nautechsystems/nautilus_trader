@@ -51,6 +51,7 @@ class TradeStrategy:
         self._indicator_updaters = {}  # type: Dict[BarType, List[IndicatorUpdater]]
         self._indicator_index = {}     # type: Dict[Label, Indicator]
         self._order_book = {}          # type: Dict[OrderId, Order]
+        self._exec_client = None
 
         self._log(f"{self} initialized.")
 
@@ -406,6 +407,14 @@ class TradeStrategy:
 
         self.on_reset()
         self._log(f"{str(self)} reset.")
+
+    def _register_execution_client(self, client):
+        """
+        Register the execution client with the strategy.
+
+        :param client: The execution client to register.
+        """
+        self._exec_client = client
 
     def _update_ticks(self, tick: Tick):
         """"
