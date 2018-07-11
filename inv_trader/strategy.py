@@ -11,6 +11,7 @@ import abc
 import datetime
 import inspect
 
+from decimal import Decimal
 from typing import List
 from typing import Dict
 from typing import KeysView
@@ -382,15 +383,58 @@ class TradeStrategy:
 
     def submit_order(self, order: Order):
         """
-        Submit the order to the execution client.
-        :return:
+        Send a submit order request with the given order to the execution client.
+
+        :param order: The order to submit.
         """
         # Preconditions
-        if order.id in self._order_book:
+        if order is None:
+            raise ValueError(f"The order cannot be None.")
+        if not isinstance(order, Order):
+            raise TypeError(f"The order must be of type Order (was {type(order)}).")
+        if order.id in self._order_book.keys():
             raise ValueError("The order id is already contained in the order book (must be unique).")
 
         self._order_book[order.id] = order
         self._exec_client.submit_order(order, str(self))
+
+    def cancel_order(self, order: Order):
+        """
+        Send a cancel order request for the given order to the execution client.
+
+        :param order: The order to cancel.
+        """
+        # Preconditions
+        if order is None:
+            raise ValueError(f"The order cannot be None.")
+        if not isinstance(order, Order):
+            raise TypeError(f"The order must be of type Order (was {type(order)}).")
+        if order.id not in self._order_book.keys():
+            raise ValueError("The order id was not found in the order book.")
+
+        self._exec_client.cancel_order(order)
+
+    def modify_order(self, order: Order, new_price: Decimal):
+        """
+        Send a modify order request for the given order with the given new price
+        to the execution client.
+
+        :param order: The order to modify.
+        :param new_price: The new price for the given order.
+        """
+        # Preconditions
+        if order is None:
+            raise ValueError(f"The order cannot be None.")
+        if not isinstance(order, Order):
+            raise TypeError(f"The order must be of type Order (was {type(order)}).")
+        if new_price is None:
+            raise ValueError(f"The new_price cannot be None.")
+        if not isinstance(new_price, Decimal):
+            raise TypeError(f"The new_price must be of type Decimal (was {type(new_price)}).")
+        if order.id not in self._order_book.keys():
+            raise ValueError("The order id was not found in the order book.")
+
+        self._exec_client.modify_order(order, new_price)
 
     def stop(self):
         """
@@ -426,6 +470,12 @@ class TradeStrategy:
 
         :param client: The execution client to register.
         """
+        # Preconditions
+        if client is None:
+            raise ValueError("The client cannot be None.")
+        if client.__class__.__mro__[-2].__name__ != 'ExecutionClient':
+            raise TypeError("The client must inherit from the ExecutionClient base class.")
+
         self._exec_client = client
 
     def _update_ticks(self, tick: Tick):
@@ -500,6 +550,7 @@ class TradeStrategy:
         :param bar_type: The bar type to update.
         :param bar: The bar for update.
         """
+        # Preconditions checked in _update_bars.
         if bar_type not in self._indicators:
             # No indicators to update with this bar (remove this for production.)
             return
