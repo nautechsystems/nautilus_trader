@@ -230,7 +230,7 @@ class LiveExecClient(ExecutionClient):
         Send a submit order request to the execution service.
 
         :param: order: The order to submit.
-        :param: order: The strategy id to register the order with.
+        :param: strategy_id: The strategy id to register the order with.
         """
         self._check_connection()
         super()._register_order(order, strategy_id)
