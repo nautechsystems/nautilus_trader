@@ -18,7 +18,7 @@ from typing import List, Dict
 
 from inv_trader.core.checks import typechecking
 from inv_trader.model.enums import Resolution, QuoteType, Venue
-from inv_trader.model.objects import Tick, BarType, Bar
+from inv_trader.model.objects import Symbol, Tick, BarType, Bar
 from inv_trader.strategy import TradeStrategy
 
 UTF8 = 'utf-8'
@@ -308,8 +308,7 @@ class LiveDataClient:
         split_channel = tick_channel.split('.')
         split_tick = tick_string.split(',')
 
-        return Tick(split_channel[0],
-                    Venue[str(split_channel[1].upper())],
+        return Tick(Symbol(split_channel[0], Venue[str(split_channel[1].upper())]),
                     Decimal(split_tick[0]),
                     Decimal(split_tick[1]),
                     iso8601.parse_date(split_tick[2]))
@@ -328,8 +327,7 @@ class LiveDataClient:
         resolution = split_string[3].split('[')[0]
         quote_type = split_string[3].split('[')[1].strip(']')
 
-        return BarType(split_string[0],
-                       Venue[split_string[1].upper()],
+        return BarType(Symbol(split_string[0], Venue[split_string[1].upper()]),
                        int(split_string[2]),
                        Resolution[resolution.upper()],
                        QuoteType[quote_type.upper()])

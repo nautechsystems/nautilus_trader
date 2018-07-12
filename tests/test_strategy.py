@@ -160,8 +160,7 @@ class TradeStrategyTests(unittest.TestCase):
         storer = ObjectStorer()
         strategy = TestStrategy1(storer)
 
-        bar_type = BarType('gbpusd',
-                           Venue.FXCM,
+        bar_type = BarType(GBPUSD_FXCM,
                            1,
                            Resolution.SECOND,
                            QuoteType.MID)
@@ -190,8 +189,7 @@ class TradeStrategyTests(unittest.TestCase):
         storer = ObjectStorer()
         strategy = TestStrategy1(storer)
 
-        bar_type = BarType('gbpusd',
-                           Venue.FXCM,
+        bar_type = BarType(GBPUSD_FXCM,
                            1,
                            Resolution.SECOND,
                            QuoteType.MID)
