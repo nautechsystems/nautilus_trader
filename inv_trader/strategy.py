@@ -12,10 +12,9 @@ import datetime
 import inspect
 
 from decimal import Decimal
-from typing import List
-from typing import Dict
-from typing import KeysView
+from typing import List, Dict, KeysView, Callable
 
+from inv_trader.core.checks import typechecking
 from inv_trader.model.enums import Venue
 from inv_trader.model.objects import Tick, BarType, Bar
 from inv_trader.model.order import Order
@@ -34,6 +33,7 @@ class TradeStrategy:
 
     __metaclass__ = abc.ABCMeta
 
+    @typechecking
     def __init__(self, label: str=None):
         """
         Initializes a new instance of the TradeStrategy abstract class.
@@ -200,6 +200,7 @@ class TradeStrategy:
         """
         return self._order_book
 
+    @typechecking
     def indicators(self, bar_type: BarType) -> List[Indicator]:
         """
         Get the indicators list for the given bar type.
@@ -214,6 +215,7 @@ class TradeStrategy:
 
         return self._indicators[bar_type]
 
+    @typechecking
     def indicator(self, label: str) -> Indicator:
         """
         Get the indicator for the given unique label.
@@ -228,6 +230,7 @@ class TradeStrategy:
 
         return self._indicator_index[label]
 
+    # Can't type check?
     def bars(self, bar_type: BarType) -> List[Bar]:
         """
         Get the bars for the given bar type.
@@ -242,6 +245,7 @@ class TradeStrategy:
 
         return self._bars[bar_type]
 
+    @typechecking
     def bar(
             self,
             bar_type: BarType,
@@ -296,11 +300,12 @@ class TradeStrategy:
 
         return self._order_book[order_id]
 
+    @typechecking  # @ typechecking: indicator checked in preconditions.
     def add_indicator(
             self,
             bar_type: BarType,
             indicator: Indicator,
-            update_method: callable,
+            update_method: Callable,
             label: Label):
         """
         Add the given indicator to the strategy. It will receive bars of the
@@ -316,18 +321,10 @@ class TradeStrategy:
         :raises: KeyError: If the label is not unique.
         """
         # Preconditions
-        if bar_type is None:
-            raise ValueError("The bar type cannot be None.")
         if indicator is None:
             raise ValueError("The indicator cannot be None.")
         if indicator.__class__.__mro__[-2].__name__ != 'Indicator':
             raise TypeError("The indicator must inherit from the Indicator base class.")
-        if update_method is None:
-            raise ValueError("The update_method cannot be None.")
-        if update_method is not None and not callable(update_method):
-            raise TypeError("The update_method must be a callable object.")
-        if label is None:
-            raise ValueError("The label cannot be None.")
         if label in self._indicator_index.keys():
             raise KeyError("The indicator label must be unique for this strategy.")
 
@@ -341,6 +338,7 @@ class TradeStrategy:
 
         self._indicator_index[label] = indicator
 
+    @typechecking
     def set_timer(
             self,
             label: Label,
@@ -358,6 +356,7 @@ class TradeStrategy:
         """
         # TODO
 
+    @typechecking
     def set_time_alert(
             self,
             label: Label,
@@ -381,6 +380,7 @@ class TradeStrategy:
         self.on_start()
         self._log(f"{str(self)} running...")
 
+    @typechecking
     def submit_order(self, order: Order):
         """
         Send a submit order request with the given order to the execution client.
@@ -388,16 +388,13 @@ class TradeStrategy:
         :param order: The order to submit.
         """
         # Preconditions
-        if order is None:
-            raise ValueError(f"The order cannot be None.")
-        if not isinstance(order, Order):
-            raise TypeError(f"The order must be of type Order (was {type(order)}).")
         if order.id in self._order_book.keys():
             raise ValueError("The order id is already contained in the order book (must be unique).")
 
         self._order_book[order.id] = order
         self._exec_client.submit_order(order, str(self))
 
+    @typechecking
     def cancel_order(self, order: Order):
         """
         Send a cancel order request for the given order to the execution client.
@@ -405,15 +402,12 @@ class TradeStrategy:
         :param order: The order to cancel.
         """
         # Preconditions
-        if order is None:
-            raise ValueError(f"The order cannot be None.")
-        if not isinstance(order, Order):
-            raise TypeError(f"The order must be of type Order (was {type(order)}).")
         if order.id not in self._order_book.keys():
             raise ValueError("The order id was not found in the order book.")
 
         self._exec_client.cancel_order(order)
 
+    @typechecking
     def modify_order(self, order: Order, new_price: Decimal):
         """
         Send a modify order request for the given order with the given new price
@@ -423,14 +417,6 @@ class TradeStrategy:
         :param new_price: The new price for the given order.
         """
         # Preconditions
-        if order is None:
-            raise ValueError(f"The order cannot be None.")
-        if not isinstance(order, Order):
-            raise TypeError(f"The order must be of type Order (was {type(order)}).")
-        if new_price is None:
-            raise ValueError(f"The new_price cannot be None.")
-        if not isinstance(new_price, Decimal):
-            raise TypeError(f"The new_price must be of type Decimal (was {type(new_price)}).")
         if order.id not in self._order_book.keys():
             raise ValueError("The order id was not found in the order book.")
 
@@ -464,6 +450,7 @@ class TradeStrategy:
         self.on_reset()
         self._log(f"{str(self)} reset.")
 
+    # @typechecking: client checked in preconditions.
     def _register_execution_client(self, client):
         """
         Register the execution client with the strategy.
@@ -478,6 +465,7 @@ class TradeStrategy:
 
         self._exec_client = client
 
+    @typechecking
     def _update_ticks(self, tick: Tick):
         """"
         Updates the last held tick with the given tick then calls the on_tick
@@ -485,15 +473,6 @@ class TradeStrategy:
 
         :param tick: The tick received.
         """
-        # Guard clauses to catch design errors and make code robust in production.
-        # Warnings are logged.
-        if tick is None:
-            self._log(f"{str(self)} Warning: update_tick() was given None.")
-            return
-        if not isinstance(tick, Tick):
-            self._log(f"{str(self)} Warning: _update_tick() was given an invalid Tick {tick}.")
-            return
-
         # Update the internal ticks.
         key = f'{tick.symbol.lower()}.{tick.venue.name.lower()}'
         self._ticks[key] = tick
@@ -502,6 +481,7 @@ class TradeStrategy:
         if self._is_running:
             self.on_tick(tick)
 
+    @typechecking
     def _update_bars(
             self,
             bar_type: BarType,
@@ -513,20 +493,6 @@ class TradeStrategy:
         :param bar_type: The bar type received.
         :param bar: The bar received.
         """
-        # Guard clauses to catch design errors and make code robust in production.
-        # Warnings are logged.
-        if bar_type is None:
-            self._log(f"{str(self)} Warning: _update_bar() was given None.")
-            return
-        if not isinstance(bar_type, BarType):
-            self._log(f"{str(self)} Warning: _update_bar() was given an invalid BarType {bar_type}.")
-            return
-        if bar is None:
-            self._log("{self.name} Warning: _update_bar() was given None.")
-            return
-        if not isinstance(bar, Bar):
-            self._log(f"{str(self)} Warning: _update_bar() was given an invalid Bar {bar}.")
-
         # Update the internal bars.
         if bar_type not in self._bars:
             self._bars[bar_type] = []  # type: List[Bar]
@@ -540,6 +506,7 @@ class TradeStrategy:
         if self._is_running:
             self.on_bar(bar_type, bar)
 
+    @typechecking
     def _update_indicators(
             self,
             bar_type: BarType,
@@ -558,16 +525,13 @@ class TradeStrategy:
         # For each updater matching the given bar type -> update with the bar.
         [updater.update(bar) for updater in self._indicator_updaters[bar_type]]
 
+    @typechecking
     def _update_events(self, event: Event):
         """
         Updates the strategy with the given event.
 
         :param event: The event received.
         """
-        # Preconditions
-        if not isinstance(event, Event):
-            raise TypeError(f"The event must be of type Event (was {type(event)}).")
-
         # Apply order event if order id contained in the order book.
         if isinstance(event, OrderEvent):
             order_id = event.order_id
@@ -579,6 +543,7 @@ class TradeStrategy:
         if self._is_running:
             self.on_event(event)
 
+    @typechecking
     def _add_order(self, order: Order):
         """
         Adds the given order to the order book (the order id must be unique).
@@ -590,6 +555,7 @@ class TradeStrategy:
 
         self._order_book[order.id] = order
 
+    @typechecking
     def _log(self, message: str):
         """
         Logs the given message.
@@ -606,18 +572,13 @@ class IndicatorUpdater:
     construct the required parameter list for updates.
     """
 
-    def __init__(self, update_method: callable):
+    @typechecking
+    def __init__(self, update_method: Callable):
         """
         Initializes a new instance of the IndicatorUpdater class.
 
         :param update_method: The indicators update method.
         """
-        # Preconditions
-        if update_method is None:
-            raise ValueError("The update_method cannot be None.")
-        if update_method is not None and not callable(update_method):
-            raise TypeError("The update_method must be a callable object.")
-
         self._update_method = update_method
         self._update_params = []
 
@@ -635,6 +596,7 @@ class IndicatorUpdater:
         for param in list(inspect.signature(update_method).parameters.keys()):
             self._update_params.append(param_map[param])
 
+    @typechecking
     def update(self, bar: Bar):
         """
         Passes the needed values from the given bar to the indicator update

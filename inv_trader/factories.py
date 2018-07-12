@@ -11,7 +11,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Optional
 
-from inv_trader.core.checks import checktypes
+from inv_trader.core.checks import typechecking
 from inv_trader.model.enums import OrderSide, OrderType, TimeInForce
 from inv_trader.model.objects import Symbol
 from inv_trader.model.order import Order
@@ -23,7 +23,7 @@ class OrderFactory:
     """
 
     @staticmethod
-    @checktypes
+    @typechecking
     def market(
             symbol: Symbol,
             order_id: str,
@@ -49,7 +49,7 @@ class OrderFactory:
                      datetime.utcnow())
 
     @staticmethod
-    @checktypes
+    @typechecking
     def limit(
             symbol: Symbol,
             order_id: str,
@@ -85,7 +85,7 @@ class OrderFactory:
                      expire_time)
 
     @staticmethod
-    @checktypes
+    @typechecking
     def stop_market(
             symbol: Symbol,
             order_id: str,
@@ -121,7 +121,7 @@ class OrderFactory:
                      expire_time)
 
     @staticmethod
-    @checktypes
+    @typechecking
     def stop_limit(
             symbol: Symbol,
             order_id: str,
@@ -157,7 +157,7 @@ class OrderFactory:
                      expire_time)
 
     @staticmethod
-    @checktypes
+    @typechecking
     def market_if_touched(
             symbol: Symbol,
             order_id: str,
@@ -193,7 +193,7 @@ class OrderFactory:
                      expire_time)
 
     @staticmethod
-    @checktypes
+    @typechecking
     def fill_or_kill(
             symbol: Symbol,
             order_id: str,
@@ -219,7 +219,7 @@ class OrderFactory:
                      datetime.utcnow())
 
     @staticmethod
-    @checktypes
+    @typechecking
     def immediate_or_cancel(
             symbol: Symbol,
             order_id: str,

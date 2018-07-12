@@ -14,8 +14,9 @@ import time
 
 from decimal import Decimal
 from redis import ConnectionError
-from typing import List
+from typing import List, Dict
 
+from inv_trader.core.checks import typechecking
 from inv_trader.model.enums import Resolution, QuoteType, Venue
 from inv_trader.model.objects import Tick, BarType, Bar
 from inv_trader.strategy import TradeStrategy
@@ -28,6 +29,7 @@ class LiveDataClient:
     Provides a live data client for alpha models and trading strategies.
     """
 
+    @typechecking
     def __init__(self,
                  host: str='localhost',
                  port: int=6379):
@@ -127,6 +129,7 @@ class LiveDataClient:
         self._tick_handlers = []
         self._bar_handlers = []
 
+    @typechecking
     def subscribe_ticks(
             self,
             symbol: str,
@@ -139,14 +142,6 @@ class LiveDataClient:
         :param venue: The venue for subscription.
         :param handler: The callable handler for subscription (if None will just call print).
         """
-        # Preconditions
-        if symbol is None:
-            raise ValueError("The symbol cannot be None.")
-        if venue is None:
-            raise ValueError("The venue cannot be None.")
-        if handler is not None and not callable(handler):
-            raise TypeError(f"The handler must be of type callable (was type{handler}).")
-
         self._check_connection()
 
         # If a handler is passed in, and doesn't already exist, then add to tick subscribers.
@@ -165,6 +160,7 @@ class LiveDataClient:
 
         self._log(f"Subscribed to tick data for {ticks_channel}.")
 
+    @typechecking
     def unsubscribe_ticks(
             self,
             symbol: str,
@@ -175,12 +171,6 @@ class LiveDataClient:
         :param symbol: The symbol to unsubscribe from.
         :param venue: The venue to unsubscribe from.
         """
-        # Preconditions
-        if symbol is None:
-            raise ValueError("The symbol cannot be None.")
-        if venue is None:
-            raise ValueError("The venue cannot be None.")
-
         self._check_connection()
 
         tick_channel = self._get_tick_channel_name(symbol, venue)
@@ -193,6 +183,7 @@ class LiveDataClient:
 
         self._log(f"Unsubscribed from tick data for {tick_channel}.")
 
+    @typechecking
     def subscribe_bars(
             self,
             symbol: str,
@@ -211,20 +202,6 @@ class LiveDataClient:
         :param quote_type: The bar quote type for subscription.
         :param handler: The callable handler for subscription (if None will just call print).
         """
-        # Preconditions
-        if symbol is None:
-            raise ValueError("The symbol cannot be None.")
-        if venue is None:
-            raise ValueError("The venue cannot be None.")
-        if period <= 0:
-            raise ValueError("The period must be > 0.")
-        if resolution is None:
-            raise ValueError("The resolution cannot be None.")
-        if quote_type is None:
-            raise ValueError("The quote_type cannot be None.")
-        if handler is not None and not callable(handler):
-            raise TypeError(f"The handler must be of type callable (was {type(handler)}).")
-
         self._check_connection()
 
         # If a handler is passed in, and doesn't already exist, then add to bar subscribers.
@@ -248,6 +225,7 @@ class LiveDataClient:
 
         self._log(f"Subscribed to bar data for {bars_channel}.")
 
+    @typechecking
     def unsubscribe_bars(
             self,
             symbol: str,
@@ -265,16 +243,8 @@ class LiveDataClient:
         :param quote_type: The bar quote type to unsubscribe from.
         """
         # Preconditions
-        if symbol is None:
-            raise ValueError("The symbol cannot be None.")
-        if venue is None:
-            raise ValueError("The venue cannot be None.")
         if period <= 0:
             raise ValueError("The period must be > 0.")
-        if resolution is None:
-            raise ValueError("The resolution cannot be None.")
-        if quote_type is None:
-            raise ValueError("The quote_type cannot be None.")
 
         self._check_connection()
 
@@ -293,6 +263,7 @@ class LiveDataClient:
 
         self._log(f"Unsubscribed from bar data for {bar_channel}.")
 
+    @typechecking
     def register_strategy(self, strategy: TradeStrategy):
         """
         Registers the trade strategy to receive all ticks and bars from the
@@ -302,12 +273,6 @@ class LiveDataClient:
         :raises: ValueError: If the strategy is None.
         :raises: TypeError: If the strategy is not a type of TradeStrategy.
         """
-        # Preconditions
-        if strategy is None:
-            raise ValueError("The strategy cannot be None.")
-        if not isinstance(strategy, TradeStrategy):
-            raise TypeError(f"The strategy must be of type TradeStrategy (was {type(strategy)}).")
-
         strategy_tick_handler = strategy._update_ticks
         if strategy_tick_handler not in self._tick_handlers:
             self._tick_handlers.append(strategy_tick_handler)
@@ -319,6 +284,7 @@ class LiveDataClient:
         self._log(f"Registered strategy {strategy} with the live data client.")
 
     @staticmethod
+    @typechecking
     def _log(message: str):
         """
         Log the given message (if no logger then prints).
@@ -328,6 +294,7 @@ class LiveDataClient:
         print(message)
 
     @staticmethod
+    @typechecking
     def _parse_tick(
             tick_channel: str,
             tick_string: str) -> Tick:
@@ -348,6 +315,7 @@ class LiveDataClient:
                     iso8601.parse_date(split_tick[2]))
 
     @staticmethod
+    @typechecking
     def _parse_bar_type(bar_type_string: str) -> BarType:
         """
         Parse a BarType object from the given UTF-8 string.
@@ -367,6 +335,7 @@ class LiveDataClient:
                        QuoteType[quote_type.upper()])
 
     @staticmethod
+    @typechecking
     def _parse_bar(bar_string: str) -> Bar:
         """
         Parse a Bar object from the given UTF-8 string.
@@ -384,6 +353,7 @@ class LiveDataClient:
                    iso8601.parse_date(split_bar[5]))
 
     @staticmethod
+    @typechecking
     def _get_tick_channel_name(
             symbol: str,
             venue: Venue) -> str:
@@ -393,6 +363,7 @@ class LiveDataClient:
         return f'{symbol.lower()}.{venue.name.lower()}'
 
     @staticmethod
+    @typechecking
     def _get_bar_channel_name(
             symbol: str,
             venue: Venue,
@@ -417,7 +388,8 @@ class LiveDataClient:
         if not self.is_connected:
             raise ConnectionError("No connection is established with the live database.")
 
-    def _tick_handler(self, message):
+    @typechecking
+    def _tick_handler(self, message: Dict):
         """"
         Handle the tick message by parsing to a Tick and sending to all relevant subscribers.
         """
@@ -432,7 +404,8 @@ class LiveDataClient:
 
         [handler(tick) for handler in self._tick_handlers]
 
-    def _bar_handler(self, message):
+    @typechecking
+    def _bar_handler(self, message: Dict):
         """"
         Handle the bar message by parsing to a Bar and sending to all relevant subscribers.
         """

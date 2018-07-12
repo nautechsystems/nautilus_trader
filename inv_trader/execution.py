@@ -12,9 +12,9 @@ import datetime
 import uuid
 
 from decimal import Decimal
-from typing import List
 from typing import Dict
 
+from inv_trader.core.checks import typechecking
 from inv_trader.model.enums import Venue, Resolution, QuoteType, OrderSide, OrderType, OrderStatus
 from inv_trader.model.objects import Symbol, BarType, Bar
 from inv_trader.model.order import Order
@@ -34,6 +34,7 @@ class ExecutionClient:
 
     __metaclass__ = abc.ABCMeta
 
+    @typechecking
     def __init__(self):
         """
         Initializes a new instance of the ExecutionClient class.
@@ -41,14 +42,11 @@ class ExecutionClient:
         self._registered_strategies = {}  # type: Dict[StrategyId, callable]
         self._order_index = {}            # type: Dict[OrderId, StrategyId]
 
+    @typechecking
     def register_strategy(self, strategy: TradeStrategy):
         """
         Register the given strategy with the execution client.
         """
-        # Preconditions
-        if not isinstance(strategy, TradeStrategy):
-            raise TypeError(f"The strategy must be of type TradeStrategy (was {type(strategy)}).")
-
         strategy_id = str(strategy)
 
         if strategy_id in self._registered_strategies.keys():
@@ -100,6 +98,7 @@ class ExecutionClient:
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the execution client.")
 
+    @typechecking
     def _register_order(
             self,
             order: Order,
@@ -110,22 +109,16 @@ class ExecutionClient:
         :param order: The order to register.
         :param strategy_id: The strategy id to register with the order.
         """
-        # Preconditions
-        if not isinstance(order, Order):
-            raise TypeError(f"The order must be of type Order (was {type(order)}).")
-
         if order.id in self._order_index.keys():
             raise ValueError(f"The order does not have a unique id.")
 
         self._order_index[order.id] = strategy_id
 
+    @typechecking
     def _on_event(self, event: Event):
         """
         Handle events received from the execution service.
         """
-        if not isinstance(event, Event):
-            TypeError(f"The event is not of type Event (was {type(event)}).")
-
         # If event order id contained in order index then send to strategy.
         if isinstance(event, OrderEvent):
             order_id = event.order_id
@@ -136,6 +129,7 @@ class ExecutionClient:
             self._log(f"Execution: Warning given event order id not contained in index {order_id}")
 
     @staticmethod
+    @typechecking
     def _log(message: str):
         """
         Log the given message (if no logger then prints).
@@ -162,6 +156,7 @@ class MockExecClient(ExecutionClient):
         """
         self._log("MockExecClient disconnected.")
 
+    @typechecking
     def submit_order(
             self,
             order: Order,
@@ -197,6 +192,7 @@ class MockExecClient(ExecutionClient):
         super()._on_event(order_accepted)
         super()._on_event(order_working)
 
+    @typechecking
     def cancel_order(self, order: Order):
         """
         Send a cancel order request to the execution service.
@@ -210,6 +206,7 @@ class MockExecClient(ExecutionClient):
 
         super()._on_event(order_cancelled)
 
+    @typechecking
     def modify_order(self, order: Order, new_price: Decimal):
         """
         Send a modify order request to the execution service.
@@ -245,6 +242,7 @@ class LiveExecClient(ExecutionClient):
         # TODO
         self._log("Execution client disconnected.")
 
+    @typechecking
     def submit_order(
             self,
             order: Order,
@@ -255,6 +253,7 @@ class LiveExecClient(ExecutionClient):
         super()._register_order(order, strategy_id)
         # TODO
 
+    @typechecking
     def cancel_order(self, order: Order):
         """
         Send a cancel order request to the execution service.
@@ -262,6 +261,7 @@ class LiveExecClient(ExecutionClient):
         # TODO
         pass
 
+    @typechecking
     def modify_order(
             self,
             order: Order,

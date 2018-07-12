@@ -14,6 +14,7 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
+from inv_trader.core.checks import typechecking
 from inv_trader.model.enums import OrderSide
 from inv_trader.model.objects import Symbol
 
@@ -71,8 +72,8 @@ class Event:
         :return: The str() string representation of the event.
         """
         return (f"{self.__class__.__name__}: "
-                f"event_id={self.event_id},"
-                f"timestamp={self.event_timestamp.isoformat()}")
+                f"event_id={self._id},"
+                f"timestamp={self._timestamp.isoformat()}")
 
     def __repr__(self) -> str:
         """
@@ -88,6 +89,7 @@ class OrderEvent(Event):
 
     __metaclass__ = abc.ABCMeta
 
+    @typechecking
     def __init__(self,
                  order_symbol: Symbol,
                  order_id: str,
@@ -125,6 +127,7 @@ class OrderSubmitted(OrderEvent):
     Represents an event where an order has been submitted to the execution system.
     """
 
+    @typechecking
     def __init__(self,
                  symbol: Symbol,
                  order_id: str,
@@ -158,6 +161,7 @@ class OrderAccepted(OrderEvent):
     Represents an event where an order has been accepted by the broker.
     """
 
+    @typechecking
     def __init__(self,
                  symbol: Symbol,
                  order_id: str,
@@ -189,6 +193,7 @@ class OrderRejected(OrderEvent):
     Represents an event where an order has been rejected by the broker.
     """
 
+    @typechecking
     def __init__(self,
                  symbol: Symbol,
                  order_id: str,
@@ -232,6 +237,7 @@ class OrderWorking(OrderEvent):
     Represents an event where an order is working with the broker.
     """
 
+    @typechecking
     def __init__(self,
                  symbol: Symbol,
                  order_id: str,
@@ -273,6 +279,7 @@ class OrderCancelled(OrderEvent):
     Represents an event where an order has been cancelled with the broker.
     """
 
+    @typechecking
     def __init__(self,
                  symbol: Symbol,
                  order_id: str,
@@ -304,6 +311,7 @@ class OrderCancelReject(OrderEvent):
     Represents an event where an order cancel request has been rejected by the broker.
     """
 
+    @typechecking
     def __init__(self,
                  order_symbol: Symbol,
                  order_id: str,
@@ -344,6 +352,7 @@ class OrderExpired(OrderEvent):
     Represents an event where an order has expired with the broker.
     """
 
+    @typechecking
     def __init__(self,
                  symbol: Symbol,
                  order_id: str,
@@ -375,6 +384,7 @@ class OrderModified(OrderEvent):
     Represents an event where an order has been modified with the broker.
     """
 
+    @typechecking
     def __init__(self,
                  symbol: Symbol,
                  order_id: str,
@@ -428,6 +438,7 @@ class OrderFilled(OrderEvent):
     Represents an event where an order has been completely filled with the broker.
     """
 
+    @typechecking
     def __init__(self,
                  symbol: Symbol,
                  order_id: str,
@@ -511,6 +522,7 @@ class OrderPartiallyFilled(OrderEvent):
     Represents an event where an order has been partially filled with the broker.
     """
 
+    @typechecking
     def __init__(self,
                  symbol: Symbol,
                  order_id: str,
@@ -604,6 +616,7 @@ class AccountEvent(Event):
     Represents an account event where there have been changes to the account.
     """
 
+    @typechecking
     def __init__(self,
                  event_id: UUID,
                  event_timestamp: datetime):
@@ -621,6 +634,7 @@ class TimeEvent(Event):
     Represents a time event occurring at the event timestamp.
     """
 
+    @typechecking
     def __init__(self,
                  label: str,
                  event_id: UUID,
