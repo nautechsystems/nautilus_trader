@@ -20,8 +20,9 @@ from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected
 from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
 from inv_trader.model.events import OrderPartiallyFilled, OrderFilled
 from inv_trader.factories import OrderFactory
-from inv_trader.execution import MockExecClient
+from inv_trader.execution import ExecutionClient
 from test_kit.stubs import TestStubs
+from test_kit.mocks import MockExecClient
 from test_kit.objects import ObjectStorer
 from test_kit.strategies import TestStrategy1
 
@@ -36,7 +37,7 @@ class ExecutionClientTests(unittest.TestCase):
         # Arrange
         storer = ObjectStorer()
         strategy = TestStrategy1(storer)
-        exec_client = MockExecClient()
+        exec_client = ExecutionClient()
         exec_client.register_strategy(strategy)
 
         # Act

@@ -39,12 +39,6 @@ class LiveDataClient:
         :param host: The redis host IP address (default=127.0.0.1).
         :param port: The redis host port (default=6379).
         """
-        # Preconditions
-        if host is None:
-            raise ValueError("The host cannot be None.")
-        if port is None:
-            raise ValueError("The port cannot be None.")
-
         self._host = host
         self._port = port
         self._client = None
@@ -102,7 +96,7 @@ class LiveDataClient:
 
     def disconnect(self):
         """
-        Disconnects from the local pub/sub server and the database.
+        Disconnect from the local pub/sub server and the database.
         """
         if self._pubsub is not None:
             self._pubsub.unsubscribe()
@@ -291,7 +285,7 @@ class LiveDataClient:
 
         :param message: The message to log.
         """
-        print(message)
+        print(f"DataClient: {message}")
 
     @staticmethod
     @typechecking
