@@ -267,6 +267,7 @@ class TradeStrategy:
 
         return self._bars[bar_type][index]
 
+    @typechecking
     def last_tick(
             self,
             symbol: Symbol,
@@ -286,6 +287,7 @@ class TradeStrategy:
 
         return self._ticks[key]
 
+    @typechecking
     def order(self, order_id: OrderId) -> Order:
         """
         Get the order from the order book with the given order_id.
