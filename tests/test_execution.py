@@ -82,7 +82,7 @@ class ExecutionClientTests(unittest.TestCase):
         result = storer.get_store[-1]
 
         # Assert
-        self.assertTrue(str(result).startswith('OrderWorking'))
+        self.assertTrue(isinstance(result, OrderWorking))
 
 
 class LiveExecClientTests(unittest.TestCase):

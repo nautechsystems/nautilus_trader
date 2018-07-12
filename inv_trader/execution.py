@@ -30,6 +30,7 @@ from inv_trader.strategy import TradeStrategy
 StrategyId = str
 OrderId = str
 
+UTF8 = 'utf-8'
 ORDER_EVENT_BUS = 'order_events'
 
 
@@ -193,7 +194,7 @@ class LiveExecClient(ExecutionClient):
         """
         self._client = redis.StrictRedis(host=self._host, port=self._port, db=0)
         self._pubsub = self._client.pubsub()
-        self._pubsub.subscribe(ORDER_EVENT_BUS)
+        self._pubsub.subscribe(**{ORDER_EVENT_BUS: self._order_event_handler})
 
         self._log(f"Connected to execution service at {self._host}:{self._port}.")
 
@@ -358,3 +359,26 @@ class LiveExecClient(ExecutionClient):
                 datetime.utcnow())
         else:
             raise ValueError("The order event is invalid and cannot be parsed.")
+
+    @typechecking
+    def _order_event_handler(self, message: Dict):
+        """"
+        Handle the order event message by parsing to an OrderEvent and sending
+        to the registered strategy.
+        """
+        # If no registered strategies then print message to console.
+        if len(self._registered_strategies) == 0:
+            print(f"Received message {message['channel'].decode(UTF8)} "
+                  f"{message['data'].decode(UTF8)}")
+
+        order_event = self._parse_order_event(
+            message['channel'].decode(UTF8),
+            message['data'].decode(UTF8))
+
+        order_id = order_event.order_id
+        if order_id not in self._order_index.keys():
+            raise ValueError("The event order id was not in the order index.")
+
+        # Find the registered strategy for the order id and send it the event.
+        strategy_id = self._order_index[order_id]
+        self._registered_strategies[strategy_id](order_event)
