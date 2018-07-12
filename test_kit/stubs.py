@@ -7,23 +7,24 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import datetime
 import pytz
 import sys
+
+from datetime import datetime, timedelta
 
 # Epsilon is a positive infinitesimal quantity approaching zero.
 EPSILON = sys.float_info.epsilon
 
 # Unix epoch is the UTC time at 00:00:00 on 1/1/1970.
-UNIX_EPOCH = datetime.datetime(1970, 1, 1, 0, 0, 0, 0, pytz.UTC)
+UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, pytz.UTC)
 
 
-class TestConstants(object):
+class TestStubs(object):
 
     @staticmethod
-    def unix_epoch(offset_mins: int=0) -> datetime.datetime:
+    def unix_epoch(offset_mins: int=0) -> datetime:
         """
-        Generate a datetime based on the given offset from Unix epoch time.
+        Generate a stub datetime based on the given offset from Unix epoch time.
 
         Unix time (also known as POSIX time or epoch time) is a system for
         describing instants in time, defined as the number of seconds that have
@@ -31,6 +32,6 @@ class TestConstants(object):
         1 January 1970, minus the number of leap seconds which have taken place
         since then.
 
-        :return: The unix epoch datetime.
+        :return: The unix epoch datetime plus any offset.
         """
-        return UNIX_EPOCH + datetime.timedelta(minutes=offset_mins)
+        return UNIX_EPOCH + timedelta(minutes=offset_mins)

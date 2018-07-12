@@ -26,9 +26,9 @@ from inv_trader.strategy import IndicatorUpdater
 from inv_trader.execution import MockExecClient
 from inv_indicators.average.ema import ExponentialMovingAverage
 from inv_indicators.intrinsic_network import IntrinsicNetwork
-from test_kit.constants import TestConstants
+from test_kit.stubs import TestStubs
 
-UNIX_EPOCH = TestConstants.unix_epoch()
+UNIX_EPOCH = TestStubs.unix_epoch()
 AUDUSD_FXCM = Symbol('audusd', Venue.FXCM)
 GBPUSD_FXCM = Symbol('gbpusd', Venue.FXCM)
 

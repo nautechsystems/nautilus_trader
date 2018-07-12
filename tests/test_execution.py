@@ -21,11 +21,11 @@ from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled,
 from inv_trader.model.events import OrderPartiallyFilled, OrderFilled
 from inv_trader.factories import OrderFactory
 from inv_trader.execution import MockExecClient
-from test_kit.constants import TestConstants
+from test_kit.stubs import TestStubs
 from test_kit.objects import ObjectStorer
 from test_kit.strategies import TestStrategy1
 
-UNIX_EPOCH = TestConstants.unix_epoch()
+UNIX_EPOCH = TestStubs.unix_epoch()
 AUDUSD_FXCM = Symbol('audusd', Venue.FXCM)
 GBPUSD_FXCM = Symbol('gbpusd', Venue.FXCM)
 
