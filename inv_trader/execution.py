@@ -228,16 +228,23 @@ class LiveExecClient(ExecutionClient):
             strategy_id: StrategyId):
         """
         Send a submit order request to the execution service.
+
+        :param: order: The order to submit.
+        :param: order: The strategy id to register the order with.
         """
         self._check_connection()
         super()._register_order(order, strategy_id)
+        # TODO
 
     @typechecking
     def cancel_order(self, order: Order):
         """
         Send a cancel order request to the execution service.
+
+        :param: order: The order to cancel.
         """
         self._check_connection()
+        # TODO
 
     @typechecking
     def modify_order(
@@ -246,8 +253,12 @@ class LiveExecClient(ExecutionClient):
             new_price: Decimal):
         """
         Send a modify order request to the execution service.
+
+        :param: order: The order to modify.
+        :param: order: The new price for the order.
         """
         self._check_connection()
+        # TODO
 
     def _check_connection(self):
         """
