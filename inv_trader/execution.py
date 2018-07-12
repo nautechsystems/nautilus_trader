@@ -255,7 +255,7 @@ class LiveExecClient(ExecutionClient):
         Send a modify order request to the execution service.
 
         :param: order: The order to modify.
-        :param: order: The new price for the order.
+        :param: new_price: The new modified price for the order.
         """
         self._check_connection()
         # TODO
