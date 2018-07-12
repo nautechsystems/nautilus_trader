@@ -230,7 +230,7 @@ class TradeStrategy:
 
         return self._indicator_index[label]
 
-    # Can't type check?
+    # @typechecking: cannot type check generics?
     def bars(self, bar_type: BarType) -> List[Bar]:
         """
         Get the bars for the given bar type.

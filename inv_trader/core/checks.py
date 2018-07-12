@@ -11,7 +11,6 @@ if True:
     import inspect
     from functools import wraps
     from inspect import Parameter, Signature
-    from typing import Union
 
     def typechecking(func: callable) -> callable:
         '''
