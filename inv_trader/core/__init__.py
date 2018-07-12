@@ -6,3 +6,5 @@
 #  http://www.invariance.com
 # </copyright>
 # -------------------------------------------------------------------------------------------------
+
+from inv_trader.core.checks import typechecking

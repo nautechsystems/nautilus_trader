@@ -11,3 +11,5 @@ from inv_trader.model.enums import Venue, Resolution, QuoteType, OrderSide, Orde
 from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
 from inv_trader.model.events import OrderCancelled, OrderCancelReject, OrderModified
 from inv_trader.model.events import OrderFilled, OrderPartiallyFilled
+from inv_trader.model.objects import Symbol, Tick, BarType, Bar
+from inv_trader.model.order import Order
