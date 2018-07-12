@@ -11,7 +11,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import List, Optional
 
-from inv_trader.core.checks import checktypes
+from inv_trader.core.checks import typechecking
 from inv_trader.model.enums import OrderSide, OrderType, TimeInForce, OrderStatus
 from inv_trader.model.objects import Symbol
 from inv_trader.model.events import OrderEvent
@@ -32,7 +32,7 @@ class Order:
     Represents an order in a financial market.
     """
 
-    @checktypes
+    @typechecking
     def __init__(self,
                  symbol: Symbol,
                  order_id: str,
@@ -61,26 +61,8 @@ class Order:
         # Preconditions
         if time_in_force is None:
             time_in_force = TimeInForce.DAY
-        if symbol is None:
-            raise ValueError("The symbol cannot be None.")
-        if not isinstance(symbol, Symbol):
-            raise TypeError(f"The symbol must be of type Symbol (was {type(symbol)}).")
-        if order_id is None:
-            raise ValueError("The order_id cannot be None.")
-        if not isinstance(order_id, str):
-            raise TypeError(f"The order_id must be of type str (was {type(order_id)}).")
-        if label is None:
-            raise ValueError("The label cannot be None.")
-        if not isinstance(label, str):
-            raise TypeError(f"The label must be of type str (was {type(label)}).")
         if quantity <= 0:
             raise ValueError(f"The quantity must be positive (was {quantity}).")
-        if not isinstance(quantity, int):
-            raise TypeError(f"The quantity must be of type int (was {type(quantity)}).")
-        if timestamp is None:
-            raise ValueError("The timestamp cannot be None.")
-        if not isinstance(timestamp, datetime):
-            raise TypeError(f"The timestamp must be of type datetime (was {type(timestamp)}).")
         if time_in_force is TimeInForce.GTD and expire_time is None:
             raise ValueError(f"The expire_time cannot be None for GTD orders.")
         if order_type in PRICED_ORDER_TYPES and price is None:
@@ -268,6 +250,7 @@ class Order:
         """
         return f"<{str(self)} object at {id(self)}>"
 
+    @typechecking
     def apply(self, order_event: OrderEvent):
         """
         Applies the given order event to the order.

@@ -9,7 +9,7 @@
 
 import pytest
 
-from inv_trader.core.checks import checktypes
+from inv_trader.core.checks import typechecking
 
 # ....................{ TESTS                              }....................
 def test_beartype_noop() -> None:
@@ -19,7 +19,7 @@ def test_beartype_noop() -> None:
     '''
 
     # Unannotated function to be type checked.
-    @checktypes
+    @typechecking
     def khorne(gork, mork):
         return gork + mork
 
@@ -35,7 +35,7 @@ def test_beartype_pass_param_keyword_and_positional() -> None:
 
 
     # Function to be type checked.
-    @checktypes
+    @typechecking
     def slaanesh(daemonette: str, keeper_of_secrets: str) -> str:
         return daemonette + keeper_of_secrets
 
@@ -54,7 +54,7 @@ def test_beartype_pass_param_keyword_only() -> None:
 
 
     # Function to be type checked.
-    @checktypes
+    @typechecking
     def changer_of_ways(sky_shark: str, *, chaos_spawn: str) -> str:
         return sky_shark + chaos_spawn
 
@@ -73,7 +73,7 @@ def test_beartype_pass_param_tuple() -> None:
 
 
     # Function to be type checked.
-    @checktypes
+    @typechecking
     def genestealer(tyranid: str, hive_fleet: (str, int)) -> str:
         return tyranid + str(hive_fleet)
 
@@ -95,7 +95,7 @@ def test_type_check_pass_param_custom() -> None:
         pass
 
     # Function to be type checked.
-    @checktypes
+    @typechecking
     def hrud(gugann: str, delphic_plague: CustomTestStr) -> str:
         return gugann + delphic_plague
 
@@ -112,7 +112,7 @@ def test_type_check_pass_return_none() -> None:
     '''
 
     # Function to be type checked.
-    @checktypes
+    @typechecking
     def xenos(interex: str, diasporex: str) -> None:
         interex + diasporex
 
@@ -128,7 +128,7 @@ def test_beartype_fail_keyword_unknown() -> None:
     '''
 
     # Annotated function to be type checked.
-    @checktypes
+    @typechecking
     def tau(kroot: str, vespid: str) -> str:
         return kroot + vespid
 
@@ -155,9 +155,9 @@ def test_beartype_fail_param_name() -> None:
     # Define a function accepting a reserved parameter name and assert the
     # expected exception.
     with pytest.raises(NameError):
-        @checktypes
-        def jokaero(weaponsmith: str, __checktypes_func: str) -> str:
-            return weaponsmith + __checktypes_func
+        @typechecking
+        def jokaero(weaponsmith: str, __typechecking_func: str) -> str:
+            return weaponsmith + __typechecking_func
 
 # ....................{ TESTS ~ fail : type                }....................
 def test_beartype_fail_param_type() -> None:
@@ -167,7 +167,7 @@ def test_beartype_fail_param_type() -> None:
     '''
 
     # Annotated function to be type checked.
-    @checktypes
+    @typechecking
     def eldar(isha: str, asuryan: (str, int)) -> str:
         return isha + asuryan
 
@@ -183,7 +183,7 @@ def test_beartype_fail_return_type() -> None:
     '''
 
     # Annotated function to be type checked.
-    @checktypes
+    @typechecking
     def necron(star_god: str, old_one: str) -> str:
         return 60e6
 
