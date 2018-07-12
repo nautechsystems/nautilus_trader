@@ -131,7 +131,7 @@ class ExecutionClient:
             order_id = event.order_id
             if order_id not in self._order_index.keys():
                 self._log(
-                    f"Execution: Warning given event order id not contained in index {order_id}")
+                    f"[Warning] The given event order id not contained in order index {order_id}")
                 return
 
             strategy_id = self._order_index[order_id]
@@ -229,16 +229,15 @@ class LiveExecClient(ExecutionClient):
         """
         Send a submit order request to the execution service.
         """
+        self._check_connection()
         super()._register_order(order, strategy_id)
-        # TODO
 
     @typechecking
     def cancel_order(self, order: Order):
         """
         Send a cancel order request to the execution service.
         """
-        # TODO
-        pass
+        self._check_connection()
 
     @typechecking
     def modify_order(
@@ -248,8 +247,19 @@ class LiveExecClient(ExecutionClient):
         """
         Send a modify order request to the execution service.
         """
-        # TODO
-        pass
+        self._check_connection()
+
+    def _check_connection(self):
+        """
+        Check the connection with the live database.
+
+        :raises: ConnectionError if the client is not connected.
+        """
+        if self._client is None:
+            raise ConnectionError(("No connection has been established to the execution service "
+                                   "(please connect first)."))
+        if not self.is_connected:
+            raise ConnectionError("No connection is established with the execution service.")
 
     @staticmethod
     @typechecking
@@ -261,6 +271,7 @@ class LiveExecClient(ExecutionClient):
         :return: The parsed order event.
         """
         header_body = event_string.split(':', maxsplit=1)
+
         header = header_body[0]
         split_event = header_body[1].split(',')
 
@@ -268,9 +279,6 @@ class LiveExecClient(ExecutionClient):
         symbol = Symbol(symbol_split[0], Venue[symbol_split[1].upper()])
         order_id = split_event[1]
 
-        print(event_string)
-        print(header)
-        print(split_event)
         if header == 'order_submitted':
             return OrderSubmitted(
                 symbol,
@@ -371,14 +379,6 @@ class LiveExecClient(ExecutionClient):
             print(f"Received message {message['channel'].decode(UTF8)} "
                   f"{message['data'].decode(UTF8)}")
 
-        order_event = self._parse_order_event(
-            message['channel'].decode(UTF8),
-            message['data'].decode(UTF8))
+        order_event = self._parse_order_event(message['data'].decode(UTF8))
 
-        order_id = order_event.order_id
-        if order_id not in self._order_index.keys():
-            raise ValueError("The event order id was not in the order index.")
-
-        # Find the registered strategy for the order id and send it the event.
-        strategy_id = self._order_index[order_id]
-        self._registered_strategies[strategy_id](order_event)
+        self._on_event(order_event)
