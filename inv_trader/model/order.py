@@ -41,9 +41,9 @@ class Order:
                  order_type: OrderType,
                  quantity: int,
                  timestamp: datetime,
-                 price: Decimal=None,
-                 time_in_force: TimeInForce=None,
-                 expire_time: datetime=None):
+                 price: Optional[Decimal]=None,
+                 time_in_force: Optional[TimeInForce]=None,
+                 expire_time: Optional[datetime]=None):
         """
         Initializes a new instance of the Order class.
 

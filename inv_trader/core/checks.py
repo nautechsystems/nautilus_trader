@@ -84,13 +84,17 @@ def func_beartyped(*args, __beartype_func=__beartype_func, **kwargs):
             # value by this wrapper, raise an exception. Permitting this
             # unlikely edge case would permit unsuspecting users to
             # "accidentally" override these defaults.
-            if func_arg.name == '__beartype_func':
+            if func_arg.name == '__checktypes_func':
                 raise NameError(
-                    'Parameter {} reserved for use by @beartype.'.format(
+                    'Parameter {} reserved for use by @checktypes.'.format(
                         func_arg.name))
 
+            # If the default argument is None then don't type check (for now).
+            if func_arg.default is None:
+                continue
             # If this parameter is both annotated and non-ignorable for purposes
             # of type checking, type check this parameter.
+
             if (func_arg.annotation is not Parameter.empty and
                 func_arg.kind not in _PARAMETER_KIND_IGNORED):
                 # Validate this annotation.
