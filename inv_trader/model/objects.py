@@ -246,7 +246,7 @@ class BarType:
         """
         :return: The repr() string representation of the bar type.
         """
-        return (f"<{str(self._symbol).lower()}"
+        return (f"<{str(self._symbol)}"
                 f"-{self._period}-{self._resolution.name}[{self._quote_type.name}] "
                 f"object at {id(self)}>")
 

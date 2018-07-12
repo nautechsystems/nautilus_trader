@@ -67,20 +67,6 @@ class Event:
         """
         return not self.__eq__(other)
 
-    def __str__(self) -> str:
-        """
-        :return: The str() string representation of the event.
-        """
-        return (f"{self.__class__.__name__}: "
-                f"event_id={self._id},"
-                f"timestamp={self._timestamp.isoformat()}")
-
-    def __repr__(self) -> str:
-        """
-        :return: The repr() string representation of the event.
-        """
-        return f"<{str(self)} object at {id(self)}>"
-
 
 class OrderEvent(Event):
     """

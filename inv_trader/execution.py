@@ -10,7 +10,10 @@
 import abc
 import time
 import redis
+import uuid
+import iso8601
 
+from datetime import datetime
 from decimal import Decimal
 from typing import Dict
 
@@ -21,10 +24,13 @@ from inv_trader.model.order import Order
 from inv_trader.model.events import Event, OrderEvent
 from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
 from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
+from inv_trader.model.events import OrderPartiallyFilled, OrderFilled
 from inv_trader.strategy import TradeStrategy
 
 StrategyId = str
 OrderId = str
+
+ORDER_EVENT_BUS = 'order_events'
 
 
 class ExecutionClient:
@@ -187,6 +193,7 @@ class LiveExecClient(ExecutionClient):
         """
         self._client = redis.StrictRedis(host=self._host, port=self._port, db=0)
         self._pubsub = self._client.pubsub()
+        self._pubsub.subscribe(ORDER_EVENT_BUS)
 
         self._log(f"Connected to execution service at {self._host}:{self._port}.")
 
@@ -195,7 +202,7 @@ class LiveExecClient(ExecutionClient):
         Disconnect from the local pub/sub server and the execution service.
         """
         if self._pubsub is not None:
-            self._pubsub.unsubscribe()
+            self._pubsub.unsubscribe(ORDER_EVENT_BUS)
 
         if self._pubsub_thread is not None:
             self._pubsub_thread.stop()
@@ -242,3 +249,112 @@ class LiveExecClient(ExecutionClient):
         """
         # TODO
         pass
+
+    @staticmethod
+    @typechecking
+    def _parse_order_event(event_string: str) -> OrderEvent:
+        """
+        Parse an OrderEvent object from the given UTF-8 string.
+
+        :param event_string: The order event string to parse.
+        :return: The parsed order event.
+        """
+        header_body = event_string.split(':', maxsplit=1)
+        header = header_body[0]
+        split_event = header_body[1].split(',')
+
+        symbol_split = split_event[0].split('.')
+        symbol = Symbol(symbol_split[0], Venue[symbol_split[1].upper()])
+        order_id = split_event[1]
+
+        print(event_string)
+        print(header)
+        print(split_event)
+        if header == 'order_submitted':
+            return OrderSubmitted(
+                symbol,
+                order_id,
+                iso8601.parse_date(split_event[2]),
+                uuid.uuid4(),
+                datetime.utcnow())
+        elif header == 'order_accepted':
+            return OrderAccepted(
+                symbol,
+                order_id,
+                iso8601.parse_date(split_event[2]),
+                uuid.uuid4(),
+                datetime.utcnow())
+        elif header == 'order_rejected':
+            return OrderRejected(
+                symbol,
+                order_id,
+                iso8601.parse_date(split_event[2]),
+                split_event[3],
+                uuid.uuid4(),
+                datetime.utcnow())
+        elif header == 'order_working':
+            return OrderWorking(
+                symbol,
+                order_id,
+                split_event[2],
+                iso8601.parse_date(split_event[3]),
+                uuid.uuid4(),
+                datetime.utcnow())
+        elif header == 'order_cancelled':
+            return OrderCancelled(
+                symbol,
+                order_id,
+                iso8601.parse_date(split_event[2]),
+                uuid.uuid4(),
+                datetime.utcnow())
+        elif header == 'order_cancel_reject':
+            return OrderCancelReject(
+                symbol,
+                order_id,
+                iso8601.parse_date(split_event[2]),
+                split_event[3],
+                uuid.uuid4(),
+                datetime.utcnow())
+        elif header == 'order_modified':
+            return OrderModified(
+                symbol,
+                order_id,
+                split_event[2],
+                Decimal(split_event[3]),
+                iso8601.parse_date(split_event[4]),
+                uuid.uuid4(),
+                datetime.utcnow())
+        elif header == 'order_expired':
+            return OrderExpired(
+                symbol,
+                order_id,
+                iso8601.parse_date(split_event[2]),
+                uuid.uuid4(),
+                datetime.utcnow())
+        elif header == 'order_filled':
+            return OrderFilled(
+                symbol,
+                order_id,
+                split_event[2],
+                split_event[3],
+                OrderSide[split_event[4].upper()],
+                int(split_event[5]),
+                Decimal(split_event[6]),
+                iso8601.parse_date(split_event[7]),
+                uuid.uuid4(),
+                datetime.utcnow())
+        elif header == 'order_partially_filled':
+            return OrderPartiallyFilled(
+                symbol,
+                order_id,
+                split_event[2],
+                split_event[3],
+                OrderSide[split_event[4].upper()],
+                int(split_event[5]),
+                int(split_event[6]),
+                Decimal(split_event[7]),
+                iso8601.parse_date(split_event[8]),
+                uuid.uuid4(),
+                datetime.utcnow())
+        else:
+            raise ValueError("The order event is invalid and cannot be parsed.")
