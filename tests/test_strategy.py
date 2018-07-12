@@ -14,8 +14,7 @@ import pytz
 
 from decimal import Decimal
 
-from test_kit.objects import ObjectStorer
-from test_kit.strategies import TestStrategy1
+
 from inv_trader.model.enums import Venue, Resolution, QuoteType, OrderSide, OrderType, OrderStatus
 from inv_trader.model.objects import Symbol, BarType, Bar
 from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
@@ -23,10 +22,12 @@ from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled,
 from inv_trader.factories import OrderFactory
 from inv_trader.strategy import TradeStrategy
 from inv_trader.strategy import IndicatorUpdater
-from inv_trader.execution import MockExecClient
 from inv_indicators.average.ema import ExponentialMovingAverage
 from inv_indicators.intrinsic_network import IntrinsicNetwork
 from test_kit.stubs import TestStubs
+from test_kit.mocks import MockExecClient
+from test_kit.objects import ObjectStorer
+from test_kit.strategies import TestStrategy1
 
 UNIX_EPOCH = TestStubs.unix_epoch()
 AUDUSD_FXCM = Symbol('audusd', Venue.FXCM)

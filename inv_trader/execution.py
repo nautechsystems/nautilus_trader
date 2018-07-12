@@ -8,8 +8,8 @@
 # -------------------------------------------------------------------------------------------------
 
 import abc
-import datetime
-import uuid
+import time
+import redis
 
 from decimal import Decimal
 from typing import Dict
@@ -122,11 +122,13 @@ class ExecutionClient:
         # If event order id contained in order index then send to strategy.
         if isinstance(event, OrderEvent):
             order_id = event.order_id
-            if order_id in self._order_index.keys():
-                strategy_id = self._order_index[order_id]
-                self._registered_strategies[strategy_id](event)
+            if order_id not in self._order_index.keys():
+                self._log(
+                    f"Execution: Warning given event order id not contained in index {order_id}")
                 return
-            self._log(f"Execution: Warning given event order id not contained in index {order_id}")
+
+            strategy_id = self._order_index[order_id]
+            self._registered_strategies[strategy_id](event)
 
     @staticmethod
     @typechecking
@@ -136,91 +138,7 @@ class ExecutionClient:
 
         :param message: The message to log.
         """
-        print(message)
-
-
-class MockExecClient(ExecutionClient):
-    """
-    Provides a mock execution client for trading strategies.
-    """
-
-    def connect(self):
-        """
-        Connect to the execution service.
-        """
-        self._log("MockExecClient connected.")
-
-    def disconnect(self):
-        """
-        Disconnect from the execution service.
-        """
-        self._log("MockExecClient disconnected.")
-
-    @typechecking
-    def submit_order(
-            self,
-            order: Order,
-            strategy_id: StrategyId):
-        """
-        Send a submit order request to the execution service.
-        """
-        super()._register_order(order, strategy_id)
-
-        order_submitted = OrderSubmitted(
-            order.symbol,
-            order.id,
-            datetime.datetime.utcnow(),
-            uuid.uuid4(),
-            datetime.datetime.utcnow())
-
-        order_accepted = OrderAccepted(
-            order.symbol,
-            order.id,
-            datetime.datetime.utcnow(),
-            uuid.uuid4(),
-            datetime.datetime.utcnow())
-
-        order_working = OrderWorking(
-            order.symbol,
-            order.id,
-            'B' + order.id,
-            datetime.datetime.utcnow(),
-            uuid.uuid4(),
-            datetime.datetime.utcnow())
-
-        super()._on_event(order_submitted)
-        super()._on_event(order_accepted)
-        super()._on_event(order_working)
-
-    @typechecking
-    def cancel_order(self, order: Order):
-        """
-        Send a cancel order request to the execution service.
-        """
-        order_cancelled = OrderCancelled(
-            order.symbol,
-            order.id,
-            datetime.datetime.utcnow(),
-            uuid.uuid4(),
-            datetime.datetime.utcnow())
-
-        super()._on_event(order_cancelled)
-
-    @typechecking
-    def modify_order(self, order: Order, new_price: Decimal):
-        """
-        Send a modify order request to the execution service.
-        """
-        order_modified = OrderModified(
-            order.symbol,
-            order.id,
-            'B' + order.id,
-            new_price,
-            datetime.datetime.utcnow(),
-            uuid.uuid4(),
-            datetime.datetime.utcnow())
-
-        super()._on_event(order_modified)
+        print(f"ExecClient: {message}")
 
 
 class LiveExecClient(ExecutionClient):
@@ -228,19 +146,72 @@ class LiveExecClient(ExecutionClient):
     Provides a live execution client for trading strategies.
     """
 
+    @typechecking
+    def __init__(
+            self,
+            host: str='localhost',
+            port: int=6379):
+        """
+        Initializes a new instance of the LiveExecClient class.
+        The host and port parameters are for the order event subscription
+        channel.
+
+        :param host: The redis host IP address (default=127.0.0.1).
+        :param port: The redis host port (default=6379).
+        """
+        super().__init__()
+        self._host = host
+        self._port = port
+        self._client = None
+        self._pubsub = None
+        self._pubsub_thread = None
+
+    @property
+    def is_connected(self) -> bool:
+        """
+        :return: True if the client is connected, otherwise false.
+        """
+        if self._client is None:
+            return False
+
+        try:
+            self._client.ping()
+        except ConnectionError:
+            return False
+
+        return True
+
     def connect(self):
         """
-        Connect to the execution service.
+        Connect to the execution service and create a pub/sub server.
         """
-        # TODO
-        self._log("LiveExecClient connected.")
+        self._client = redis.StrictRedis(host=self._host, port=self._port, db=0)
+        self._pubsub = self._client.pubsub()
+
+        self._log(f"Connected to execution service at {self._host}:{self._port}.")
 
     def disconnect(self):
         """
-        Disconnect from the execution service.
+        Disconnect from the local pub/sub server and the execution service.
         """
-        # TODO
-        self._log("Execution client disconnected.")
+        if self._pubsub is not None:
+            self._pubsub.unsubscribe()
+
+        if self._pubsub_thread is not None:
+            self._pubsub_thread.stop()
+            time.sleep(0.100)  # Allows thread to stop.
+            self._log(f"Stopped PubSub thread {self._pubsub_thread}.")
+
+        if self._client is not None:
+            self._client.connection_pool.disconnect()
+            self._log((f"Disconnected from execution service "
+                       f"at {self._host}:{self._port}."))
+        else:
+            self._log("Disconnected (the client was already disconnected).")
+
+        self._client = None
+        self._pubsub = None
+        self._pubsub_thread = None
 
     @typechecking
     def submit_order(

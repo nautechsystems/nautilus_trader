@@ -54,7 +54,7 @@ class TradeStrategy:
         self._order_book = {}          # type: Dict[OrderId, Order]
         self._exec_client = None
 
-        self._log(f"{self} initialized.")
+        self._log(f"Initialized.")
 
     def __eq__(self, other) -> bool:
         """
@@ -268,20 +268,16 @@ class TradeStrategy:
         return self._bars[bar_type][index]
 
     @typechecking
-    def last_tick(
-            self,
-            symbol: Symbol,
-            venue: Venue) -> Tick:
+    def last_tick(self, symbol: Symbol) -> Tick:
         """
         Get the last tick held for the given parameters.
 
         :param symbol: The last tick symbol.
-        :param venue: The last tick venue.
         :return: The tick object.
         :raises: KeyError: If the strategy does not contain a tick for the symbol and venue string.
         """
         # Preconditions
-        key = f'{symbol.lower()}.{venue.name.lower()}'
+        key = str(symbol)
         if key not in self._ticks:
             raise KeyError(f"The ticks dictionary does not contain {key}.")
 
@@ -377,10 +373,10 @@ class TradeStrategy:
         """
         Starts the trade strategy.
         """
-        self._log(f"{str(self)} starting...")
+        self._log(f"Starting...")
         self._is_running = True
         self.on_start()
-        self._log(f"{str(self)} running...")
+        self._log(f"Running...")
 
     @typechecking
     def submit_order(self, order: Order):
@@ -428,10 +424,10 @@ class TradeStrategy:
         """
         Stops the trade strategy.
         """
-        self._log(f"{str(self)} stopping...")
+        self._log(f"Stopping...")
         self._is_running = False
         self.on_stop()
-        self._log(f"{str(self)} stopped.")
+        self._log(f"Stopped.")
 
     def reset(self):
         """
@@ -439,7 +435,7 @@ class TradeStrategy:
         returning it to a fresh state (strategy must not be running).
         """
         if self._is_running:
-            self._log(f"{str(self)} Warning: Cannot reset a running strategy...")
+            self._log(f"[Warning] Cannot reset a running strategy...")
             return
 
         self._ticks = {}  # type: Dict[Symbol, Tick]
@@ -450,7 +446,7 @@ class TradeStrategy:
             [indicator.reset() for indicator in indicator_list]
 
         self.on_reset()
-        self._log(f"{str(self)} reset.")
+        self._log(f"Reset.")
 
     # @typechecking: client checked in preconditions.
     def _register_execution_client(self, client):
@@ -476,7 +472,7 @@ class TradeStrategy:
         :param tick: The tick received.
         """
         # Update the internal ticks.
-        key = f'{tick.symbol.lower()}.{tick.venue.name.lower()}'
+        key = str(tick.symbol)
         self._ticks[key] = tick
 
         # Calls on_tick() if the strategy is running.
@@ -564,7 +560,7 @@ class TradeStrategy:
 
         :param message: The message to log.
         """
-        print(message)
+        print(f"{str(self)}: {message}")
 
 
 class IndicatorUpdater:
