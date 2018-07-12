@@ -26,8 +26,8 @@ from test_kit.objects import ObjectStorer
 from test_kit.strategies import TestStrategy1
 
 UNIX_EPOCH = TestStubs.unix_epoch()
-AUDUSD_FXCM = Symbol('audusd', Venue.FXCM)
-GBPUSD_FXCM = Symbol('gbpusd', Venue.FXCM)
+AUDUSD_FXCM = Symbol('AUDUSD', Venue.FXCM)
+GBPUSD_FXCM = Symbol('GBPUSD', Venue.FXCM)
 
 
 class ExecutionClientTests(unittest.TestCase):
@@ -54,8 +54,7 @@ class ExecutionClientTests(unittest.TestCase):
 
         strategy.start()
 
-        bar_type = BarType('gbpusd',
-                           Venue.FXCM,
+        bar_type = BarType(GBPUSD_FXCM,
                            1,
                            Resolution.SECOND,
                            QuoteType.MID)

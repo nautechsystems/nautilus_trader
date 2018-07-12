@@ -14,6 +14,8 @@ from inv_trader.factories import OrderFactory
 from inv_trader.strategy import TradeStrategy
 from inv_indicators.average.ema import ExponentialMovingAverage
 
+GBPUSD_FXCM = Symbol('GBPUSD', Venue.FXCM)
+
 
 class TestStrategy1(TradeStrategy):
     """"
@@ -27,8 +29,7 @@ class TestStrategy1(TradeStrategy):
         super().__init__('01')
         self.object_storer = object_storer
 
-        self.gbpusd_1sec_mid = BarType('gbpusd',
-                                       Venue.FXCM,
+        self.gbpusd_1sec_mid = BarType(GBPUSD_FXCM,
                                        1,
                                        Resolution.SECOND,
                                        QuoteType.MID)
@@ -55,7 +56,7 @@ class TestStrategy1(TradeStrategy):
         if bar_type == self.gbpusd_1sec_mid:
             if self.ema1.value > self.ema2.value:
                 buy_order = OrderFactory.market(
-                    Symbol('gbpusd', Venue.FXCM),
+                    Symbol('GBPUSD', Venue.FXCM),
                     'O123456',
                     'TestStrategy1_E',
                     OrderSide.BUY,
@@ -65,7 +66,7 @@ class TestStrategy1(TradeStrategy):
 
             elif self.ema1.value < self.ema2.value:
                 sell_order = OrderFactory.market(
-                    Symbol('gbpusd', Venue.FXCM),
+                    Symbol('GBPUSD', Venue.FXCM),
                     'O123456',
                     'TestStrategy1_E',
                     OrderSide.SELL,

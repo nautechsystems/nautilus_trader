@@ -30,7 +30,7 @@ class Symbol:
         :param code: The symbols code.
         :param venue: The symbols venue.
         """
-        self._code = code
+        self._code = code.upper()
         self._venue = venue
 
     @property
@@ -62,6 +62,12 @@ class Symbol:
         """
         return not self.__eq__(other)
 
+    def __hash__(self):
+        """"
+        Override the default hash implementation.
+        """
+        return hash((self.code, self.venue))
+
     def __str__(self) -> str:
         """
         :return: The str() string representation of the symbol.
@@ -82,8 +88,7 @@ class Tick:
 
     @typechecking
     def __init__(self,
-                 symbol: str,
-                 venue: Venue,
+                 symbol: Symbol,
                  bid: Decimal,
                  ask: Decimal,
                  timestamp: datetime.datetime):
@@ -91,30 +96,21 @@ class Tick:
         Initializes a new instance of the Tick class.
 
         :param: symbol: The tick symbol.
-        :param: venue: The tick venue.
         :param: bid: The tick bid price.
         :param: ask: The tick ask price.
         :param: timestamp: The tick timestamp.
         """
-        self._symbol = symbol.upper()
-        self._venue = venue
+        self._symbol = symbol
         self._bid = bid
         self._ask = ask
         self._timestamp = timestamp
 
     @property
-    def symbol(self) -> str:
+    def symbol(self) -> Symbol:
         """
         :return: The ticks symbol.
         """
         return self._symbol
-
-    @property
-    def venue(self) -> Venue:
-        """
-        :return: The ticks venue.
-        """
-        return self._venue
 
     @property
     def bid(self) -> Decimal:
@@ -156,8 +152,8 @@ class Tick:
         """
         :return: The str() string representation of the tick.
         """
-        return (f"Tick: {self._symbol}.{self._venue.name},"
-                f"{self._bid},{self._ask},{self._timestamp.isoformat()}")
+        return (f"Tick: {self._symbol},{self._bid},{self._ask},"
+                f"{self._timestamp.isoformat()}")
 
     def __repr__(self) -> str:
         """
@@ -173,8 +169,7 @@ class BarType:
 
     @typechecking
     def __init__(self,
-                 symbol: str,
-                 venue: Venue,
+                 symbol: Symbol,
                  period: int,
                  resolution: Resolution,
                  quote_type: QuoteType):
@@ -182,30 +177,21 @@ class BarType:
         Initializes a new instance of the BarType class.
 
         :param symbol: The bar symbol.
-        :param venue: The bar venue.
         :param period: The bar period.
         :param resolution: The bar resolution.
         :param quote_type: The bar quote type.
         """
         self._symbol = symbol
-        self._venue = venue
         self._period = period
         self._resolution = resolution
         self._quote_type = quote_type
 
     @property
-    def symbol(self) -> str:
+    def symbol(self) -> Symbol:
         """
         :return: The bar types symbol.
         """
         return self._symbol
-
-    @property
-    def venue(self) -> Venue:
-        """
-        :return: The bar types venue.
-        """
-        return self._venue
 
     @property
     def period(self) -> int:
@@ -247,21 +233,21 @@ class BarType:
         """"
         Override the default hash implementation.
         """
-        return hash((self.symbol, self.venue, self.period, self.resolution, self.quote_type))
+        return hash((self.symbol, self.period, self.resolution, self.quote_type))
 
     def __str__(self) -> str:
         """
         :return: The str() string representation of the bar type.
         """
-        return (f"{self._symbol.lower()}.{self._venue.name.lower()}"
-                f"-{self._period}-{self._resolution.name.lower()}[{self._quote_type.name.lower()}]")
+        return (f"{str(self._symbol)}"
+                f"-{self._period}-{self._resolution.name}[{self._quote_type.name}]")
 
     def __repr__(self) -> str:
         """
         :return: The repr() string representation of the bar type.
         """
-        return (f"<{self._symbol.lower()}.{self._venue.name.lower()}"
-                f"-{self._period}-{self._resolution.name.lower()}[{self._quote_type.name.lower()}] "
+        return (f"<{str(self._symbol).lower()}"
+                f"-{self._period}-{self._resolution.name}[{self._quote_type.name}] "
                 f"object at {id(self)}>")
 
 

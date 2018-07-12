@@ -16,7 +16,7 @@ import time
 from decimal import Decimal
 
 from inv_trader.data import LiveDataClient
-from inv_trader.model.objects import Tick, BarType, Bar
+from inv_trader.model.objects import Symbol, Tick, BarType, Bar
 from inv_trader.model.enums import Venue, Resolution, QuoteType
 from test_kit.objects import ObjectStorer
 
@@ -160,12 +160,10 @@ class LiveDataClientTests(unittest.TestCase):
 
     def test_can_parse_ticks(self):
         # Arrange
-        tick = Tick(
-            'AUDUSD',
-            Venue.FXCM,
-            Decimal('1.00000'),
-            Decimal('1.00001'),
-            datetime.datetime(2018, 1, 1, 19, 59, 1, 0, pytz.UTC))
+        tick = Tick(Symbol('AUDUSD', Venue.FXCM),
+                    Decimal('1.00000'),
+                    Decimal('1.00001'),
+                    datetime.datetime(2018, 1, 1, 19, 59, 1, 0, pytz.UTC))
 
         # Act
         result = self.data_client._parse_tick(
@@ -178,13 +176,12 @@ class LiveDataClientTests(unittest.TestCase):
 
     def test_can_parse_bars(self):
         # Arrange
-        bar = Bar(
-            Decimal('1.00001'),
-            Decimal('1.00004'),
-            Decimal('1.00003'),
-            Decimal('1.00002'),
-            100000,
-            datetime.datetime(2018, 1, 1, 19, 59, 1, 0, pytz.UTC))
+        bar = Bar(Decimal('1.00001'),
+                  Decimal('1.00004'),
+                  Decimal('1.00003'),
+                  Decimal('1.00002'),
+                  100000,
+                  datetime.datetime(2018, 1, 1, 19, 59, 1, 0, pytz.UTC))
 
         # Act
         result = self.data_client._parse_bar(
@@ -197,8 +194,7 @@ class LiveDataClientTests(unittest.TestCase):
 
     def test_can_parse_bar_type(self):
         # Arrange
-        bar_type = BarType('audusd',
-                           Venue.FXCM,
+        bar_type = BarType(Symbol('audusd', Venue.FXCM),
                            1,
                            Resolution.SECOND,
                            QuoteType.MID)
@@ -210,12 +206,10 @@ class LiveDataClientTests(unittest.TestCase):
 
     def test_tick_handler_with_no_subscribers_prints(self):
         # Arrange
-        tick = Tick(
-            'AUDUSD',
-            Venue.FXCM,
-            Decimal('1.00000'),
-            Decimal('1.00001'),
-            datetime.datetime(2018, 1, 1, 19, 59, 1, 0, pytz.UTC))
+        tick = Tick(Symbol('AUDUSD', Venue.FXCM),
+                    Decimal('1.00000'),
+                    Decimal('1.00001'),
+                    datetime.datetime(2018, 1, 1, 19, 59, 1, 0, pytz.UTC))
 
         # Act
         self.data_client._tick_handler(
@@ -226,13 +220,12 @@ class LiveDataClientTests(unittest.TestCase):
 
     def test_bar_handler_with_no_subscribers_prints(self):
         # Arrange
-        bar = Bar(
-            Decimal('1.00001'),
-            Decimal('1.00004'),
-            Decimal('1.00003'),
-            Decimal('1.00002'),
-            100000,
-            datetime.datetime(2018, 1, 1, 19, 59, 1, 0, pytz.UTC))
+        bar = Bar(Decimal('1.00001'),
+                  Decimal('1.00004'),
+                  Decimal('1.00003'),
+                  Decimal('1.00002'),
+                  100000,
+                  datetime.datetime(2018, 1, 1, 19, 59, 1, 0, pytz.UTC))
 
         # Act
         self.data_client._bar_handler(
@@ -248,12 +241,10 @@ class LiveDataClientTests(unittest.TestCase):
         self.data_client.connect()
         self.data_client.subscribe_ticks('audusd', Venue.FXCM, storer.store)
 
-        tick = Tick(
-            'AUDUSD',
-            Venue.FXCM,
-            Decimal('1.00000'),
-            Decimal('1.00001'),
-            datetime.datetime(2018, 1, 1, 19, 59, 1, 0, pytz.UTC))
+        tick = Tick(Symbol('AUDUSD', Venue.FXCM),
+                    Decimal('1.00000'),
+                    Decimal('1.00001'),
+                    datetime.datetime(2018, 1, 1, 19, 59, 1, 0, pytz.UTC))
 
         # Act
         self.redis_tester.publish(
@@ -405,8 +396,7 @@ class LiveDataClientTests(unittest.TestCase):
 
     def test_can_add_bartype_to_dict(self):
         # Arrange
-        bar_type = BarType('audusd',
-                           Venue.FXCM,
+        bar_type = BarType(Symbol('audusd', Venue.FXCM),
                            1,
                            Resolution.SECOND,
                            QuoteType.MID)
