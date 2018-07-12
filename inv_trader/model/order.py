@@ -11,6 +11,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import List, Optional
 
+from inv_trader.core.checks import checktypes
 from inv_trader.model.enums import OrderSide, OrderType, TimeInForce, OrderStatus
 from inv_trader.model.objects import Symbol
 from inv_trader.model.events import OrderEvent
@@ -31,6 +32,7 @@ class Order:
     Represents an order in a financial market.
     """
 
+    @checktypes
     def __init__(self,
                  symbol: Symbol,
                  order_id: str,
@@ -39,9 +41,9 @@ class Order:
                  order_type: OrderType,
                  quantity: int,
                  timestamp: datetime,
-                 price: Optional[Decimal]=None,
-                 time_in_force: Optional[TimeInForce]=None,
-                 expire_time: Optional[datetime]=None):
+                 price: Decimal=None,
+                 time_in_force: TimeInForce=None,
+                 expire_time: datetime=None):
         """
         Initializes a new instance of the Order class.
 
