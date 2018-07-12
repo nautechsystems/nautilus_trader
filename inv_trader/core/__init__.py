@@ -7,7 +7,3 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from inv_trader.model.enums import Venue, Resolution, QuoteType, OrderSide, OrderStatus, OrderType
-from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
-from inv_trader.model.events import OrderCancelled, OrderCancelReject, OrderModified
-from inv_trader.model.events import OrderFilled, OrderPartiallyFilled

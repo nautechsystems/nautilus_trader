@@ -7,10 +7,9 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import datetime
-
+from datetime import datetime
 from decimal import Decimal
-from typing import List
+from typing import List, Optional
 
 from inv_trader.model.enums import OrderSide, OrderType, TimeInForce, OrderStatus
 from inv_trader.model.objects import Symbol
@@ -20,7 +19,7 @@ from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled,
 from inv_trader.model.events import OrderPartiallyFilled, OrderFilled
 
 # Order types which require prices to be valid.
-orders_requiring_prices = [
+PRICED_ORDER_TYPES = [
     OrderType.LIMIT,
     OrderType.STOP_MARKET,
     OrderType.STOP_LIMIT,
@@ -39,10 +38,10 @@ class Order:
                  order_side: OrderSide,
                  order_type: OrderType,
                  quantity: int,
-                 timestamp: datetime.datetime,
-                 price: Decimal=None,
-                 time_in_force: TimeInForce=None,
-                 expire_time: datetime.datetime=None):
+                 timestamp: datetime,
+                 price: Optional[Decimal]=None,
+                 time_in_force: Optional[TimeInForce]=None,
+                 expire_time: Optional[datetime]=None):
         """
         Initializes a new instance of the Order class.
 
@@ -78,15 +77,15 @@ class Order:
             raise TypeError(f"The quantity must be of type int (was {type(quantity)}).")
         if timestamp is None:
             raise ValueError("The timestamp cannot be None.")
-        if not isinstance(timestamp, datetime.datetime):
+        if not isinstance(timestamp, datetime):
             raise TypeError(f"The timestamp must be of type datetime (was {type(timestamp)}).")
         if time_in_force is TimeInForce.GTD and expire_time is None:
             raise ValueError(f"The expire_time cannot be None for GTD orders.")
-        if order_type in orders_requiring_prices and price is None:
+        if order_type in PRICED_ORDER_TYPES and price is None:
             raise ValueError("The price cannot be None.")
-        if order_type in orders_requiring_prices and not isinstance(price, Decimal):
+        if order_type in PRICED_ORDER_TYPES and not isinstance(price, Decimal):
             raise TypeError(f"The price must be of type decimal (was {type(price)}).")
-        if order_type not in orders_requiring_prices and price is not None:
+        if order_type not in PRICED_ORDER_TYPES and price is not None:
             raise ValueError(f"{order_type.name} orders cannot have a price.")
 
         self._symbol = symbol
@@ -168,7 +167,7 @@ class Order:
         return self._filled_quantity
 
     @property
-    def timestamp(self) -> datetime.datetime:
+    def timestamp(self) -> datetime:
         """
         :return: The orders initialization timestamp.
         """
@@ -182,7 +181,7 @@ class Order:
         return self._time_in_force
 
     @property
-    def expire_time(self) -> datetime.datetime:
+    def expire_time(self) -> datetime:
         """
         :return: The orders expire time (optional could be None).
         """
@@ -328,7 +327,7 @@ class Order:
             self._check_overfill()
 
     def _set_slippage(self):
-        if self._type not in orders_requiring_prices:
+        if self._type not in PRICED_ORDER_TYPES:
             # Slippage not applicable to orders with entry prices.
             return
 

@@ -18,9 +18,9 @@ from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected
 from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
 from inv_trader.model.events import OrderPartiallyFilled, OrderFilled
 from inv_trader.factories import OrderFactory
-from test_kit.constants import TestConstants
+from test_kit.stubs import TestStubs
 
-UNIX_EPOCH = TestConstants.unix_epoch()
+UNIX_EPOCH = TestStubs.unix_epoch()
 AUDUSD_FXCM = Symbol('audusd', Venue.FXCM)
 GBPUSD_FXCM = Symbol('gbpusd', Venue.FXCM)
 

@@ -7,9 +7,9 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import datetime
-
+from datetime import datetime
 from decimal import Decimal
+from typing import Optional
 
 from inv_trader.model.enums import OrderSide, OrderType, TimeInForce
 from inv_trader.model.objects import Symbol
@@ -44,7 +44,7 @@ class OrderFactory:
                      order_side,
                      OrderType.MARKET,
                      quantity,
-                     datetime.datetime.utcnow())
+                     datetime.utcnow())
 
     @staticmethod
     def limit(
@@ -54,8 +54,8 @@ class OrderFactory:
             order_side: OrderSide,
             quantity: int,
             price: Decimal,
-            time_in_force: TimeInForce=None,
-            expire_time: datetime.datetime=None) -> Order:
+            time_in_force: Optional[TimeInForce]=None,
+            expire_time: Optional[datetime]=None) -> Order:
         """
         Creates and returns a new limit order with the given parameters.
         If the time in force is GTD then a valid expire time must be given.
@@ -76,7 +76,7 @@ class OrderFactory:
                      order_side,
                      OrderType.LIMIT,
                      quantity,
-                     datetime.datetime.utcnow(),
+                     datetime.utcnow(),
                      price,
                      time_in_force,
                      expire_time)
@@ -89,8 +89,8 @@ class OrderFactory:
             order_side: OrderSide,
             quantity: int,
             price: Decimal,
-            time_in_force: TimeInForce=None,
-            expire_time: datetime.datetime=None) -> Order:
+            time_in_force: Optional[TimeInForce]=None,
+            expire_time: Optional[datetime]=None) -> Order:
         """
         Creates and returns a new stop-market order with the given parameters.
         If the time in force is GTD then a valid expire time must be given.
@@ -111,7 +111,7 @@ class OrderFactory:
                      order_side,
                      OrderType.STOP_MARKET,
                      quantity,
-                     datetime.datetime.utcnow(),
+                     datetime.utcnow(),
                      price,
                      time_in_force,
                      expire_time)
@@ -124,8 +124,8 @@ class OrderFactory:
             order_side: OrderSide,
             quantity: int,
             price: Decimal,
-            time_in_force: TimeInForce=None,
-            expire_time: datetime.datetime=None) -> Order:
+            time_in_force: Optional[TimeInForce]=None,
+            expire_time: Optional[datetime]=None) -> Order:
         """
         Creates and returns a new stop-limit order with the given parameters.
         If the time in force is GTD then a valid expire time must be given.
@@ -146,7 +146,7 @@ class OrderFactory:
                      order_side,
                      OrderType.STOP_LIMIT,
                      quantity,
-                     datetime.datetime.utcnow(),
+                     datetime.utcnow(),
                      price,
                      time_in_force,
                      expire_time)
@@ -159,8 +159,8 @@ class OrderFactory:
             order_side: OrderSide,
             quantity: int,
             price: Decimal,
-            time_in_force: TimeInForce=None,
-            expire_time: datetime.datetime=None) -> Order:
+            time_in_force: Optional[TimeInForce]=None,
+            expire_time: Optional[datetime]=None) -> Order:
         """
         Creates and returns a new market-if-touched order with the given parameters.
         If the time in force is GTD then a valid expire time must be given.
@@ -181,7 +181,7 @@ class OrderFactory:
                      order_side,
                      OrderType.MIT,
                      quantity,
-                     datetime.datetime.utcnow(),
+                     datetime.utcnow(),
                      price,
                      time_in_force,
                      expire_time)
@@ -209,7 +209,7 @@ class OrderFactory:
                      order_side,
                      OrderType.FOC,
                      quantity,
-                     datetime.datetime.utcnow())
+                     datetime.utcnow())
 
     @staticmethod
     def immediate_or_cancel(
@@ -234,4 +234,4 @@ class OrderFactory:
                      order_side,
                      OrderType.IOC,
                      quantity,
-                     datetime.datetime.utcnow())
+                     datetime.utcnow())

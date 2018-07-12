@@ -8,10 +8,11 @@
 # -------------------------------------------------------------------------------------------------
 
 import abc
-import datetime
 import uuid
 
+from datetime import datetime
 from decimal import Decimal
+from uuid import UUID
 
 from inv_trader.model.enums import OrderSide
 from inv_trader.model.objects import Symbol
@@ -26,7 +27,7 @@ class Event:
 
     def __init__(self,
                  identifier: uuid,
-                 timestamp: datetime.datetime):
+                 timestamp: datetime):
         """
         Initializes a new instance of the Event abstract class.
 
@@ -44,7 +45,7 @@ class Event:
         return self._id
 
     @property
-    def event_timestamp(self) -> datetime.datetime:
+    def event_timestamp(self) -> datetime:
         """
         :return: The events timestamp (the time the event was created).
         """
@@ -90,8 +91,8 @@ class OrderEvent(Event):
     def __init__(self,
                  order_symbol: Symbol,
                  order_id: str,
-                 event_id: uuid,
-                 event_timestamp: datetime.datetime):
+                 event_id: UUID,
+                 event_timestamp: datetime):
         """
         Initializes a new instance of the OrderEvent abstract class.
 
@@ -127,9 +128,9 @@ class OrderSubmitted(OrderEvent):
     def __init__(self,
                  symbol: Symbol,
                  order_id: str,
-                 submitted_time: datetime.datetime,
-                 event_id: uuid,
-                 event_timestamp: datetime.datetime):
+                 submitted_time: datetime,
+                 event_id: UUID,
+                 event_timestamp: datetime):
         """
         Initializes a new instance of the OrderSubmitted class.
 
@@ -145,7 +146,7 @@ class OrderSubmitted(OrderEvent):
         self._event_timestamp = event_timestamp
 
     @property
-    def submitted_time(self) -> datetime.datetime:
+    def submitted_time(self) -> datetime:
         """
         :return: The events order submitted time.
         """
@@ -160,9 +161,9 @@ class OrderAccepted(OrderEvent):
     def __init__(self,
                  symbol: Symbol,
                  order_id: str,
-                 accepted_time: datetime.datetime,
-                 event_id: uuid,
-                 event_timestamp: datetime.datetime):
+                 accepted_time: datetime,
+                 event_id: UUID,
+                 event_timestamp: datetime):
         """
         Initializes a new instance of the OrderAccepted class.
 
@@ -176,7 +177,7 @@ class OrderAccepted(OrderEvent):
         self._accepted_time = accepted_time
 
     @property
-    def accepted_time(self) -> datetime.datetime:
+    def accepted_time(self) -> datetime:
         """
         :return: The events order accepted time.
         """
@@ -187,13 +188,14 @@ class OrderRejected(OrderEvent):
     """
     Represents an event where an order has been rejected by the broker.
     """
+
     def __init__(self,
                  symbol: Symbol,
                  order_id: str,
-                 rejected_time: datetime.datetime,
+                 rejected_time: datetime,
                  rejected_reason: str,
-                 event_id: uuid,
-                 event_timestamp: datetime.datetime):
+                 event_id: UUID,
+                 event_timestamp: datetime):
         """
         Initializes a new instance of the OrderRejected class.
 
@@ -211,7 +213,7 @@ class OrderRejected(OrderEvent):
         self._event_timestamp = event_timestamp
 
     @property
-    def rejected_time(self) -> datetime.datetime:
+    def rejected_time(self) -> datetime:
         """
         :return: The events order rejected time.
         """
@@ -234,9 +236,9 @@ class OrderWorking(OrderEvent):
                  symbol: Symbol,
                  order_id: str,
                  broker_order_id: str,
-                 working_time: datetime.datetime,
-                 event_id: uuid,
-                 event_timestamp: datetime.datetime):
+                 working_time: datetime,
+                 event_id: UUID,
+                 event_timestamp: datetime):
         """
         Initializes a new instance of the OrderWorking class.
 
@@ -259,7 +261,7 @@ class OrderWorking(OrderEvent):
         return self._broker_order_id
 
     @property
-    def working_time(self) -> datetime.datetime:
+    def working_time(self) -> datetime:
         """
         :return: The events order working time.
         """
@@ -274,9 +276,9 @@ class OrderCancelled(OrderEvent):
     def __init__(self,
                  symbol: Symbol,
                  order_id: str,
-                 cancelled_time: datetime.datetime,
-                 event_id: uuid,
-                 event_timestamp: datetime.datetime):
+                 cancelled_time: datetime,
+                 event_id: UUID,
+                 event_timestamp: datetime):
         """
         Initializes a new instance of the OrderCancelled class.
 
@@ -290,7 +292,7 @@ class OrderCancelled(OrderEvent):
         self._cancelled_time = cancelled_time
 
     @property
-    def cancelled_time(self) -> datetime.datetime:
+    def cancelled_time(self) -> datetime:
         """
         :return: The events order cancelled time.
         """
@@ -305,10 +307,10 @@ class OrderCancelReject(OrderEvent):
     def __init__(self,
                  order_symbol: Symbol,
                  order_id: str,
-                 cancel_reject_time: datetime.datetime,
+                 cancel_reject_time: datetime,
                  cancel_reject_reason: str,
-                 event_id: uuid,
-                 event_timestamp: datetime.datetime):
+                 event_id: UUID,
+                 event_timestamp: datetime):
         """
         Initializes a new instance of the OrderCancelReject class.
 
@@ -323,7 +325,7 @@ class OrderCancelReject(OrderEvent):
         self._cancel_reject_reason = cancel_reject_reason
 
     @property
-    def cancel_reject_time(self) -> datetime.datetime:
+    def cancel_reject_time(self) -> datetime:
         """
         :return: The events order cancel reject time.
         """
@@ -345,9 +347,9 @@ class OrderExpired(OrderEvent):
     def __init__(self,
                  symbol: Symbol,
                  order_id: str,
-                 expired_time: datetime.datetime,
-                 event_id: uuid,
-                 event_timestamp: datetime.datetime):
+                 expired_time: datetime,
+                 event_id: UUID,
+                 event_timestamp: datetime):
         """
         Initializes a new instance of the OrderExpired class.
 
@@ -361,7 +363,7 @@ class OrderExpired(OrderEvent):
         self._expired_time = expired_time
 
     @property
-    def expired_time(self) -> datetime.datetime:
+    def expired_time(self) -> datetime:
         """
         :return: The events order expired time.
         """
@@ -378,9 +380,9 @@ class OrderModified(OrderEvent):
                  order_id: str,
                  broker_order_id: str,
                  modified_price: Decimal,
-                 modified_time: datetime.datetime,
-                 event_id: uuid,
-                 event_timestamp: datetime.datetime):
+                 modified_time: datetime,
+                 event_id: UUID,
+                 event_timestamp: datetime):
         """
         Initializes a new instance of the OrderPartiallyFilled class.
 
@@ -414,7 +416,7 @@ class OrderModified(OrderEvent):
         return self._modified_price
 
     @property
-    def modified_time(self) -> datetime.datetime:
+    def modified_time(self) -> datetime:
         """
         :return: The events order modified time.
         """
@@ -434,9 +436,9 @@ class OrderFilled(OrderEvent):
                  order_side: OrderSide,
                  filled_quantity: int,
                  average_price: Decimal,
-                 execution_time: datetime.datetime,
-                 event_id: uuid,
-                 event_timestamp: datetime.datetime):
+                 execution_time: datetime,
+                 event_id: UUID,
+                 event_timestamp: datetime):
         """
         Initializes a new instance of the OrderFilled class.
 
@@ -497,7 +499,7 @@ class OrderFilled(OrderEvent):
         return self._average_price
 
     @property
-    def execution_time(self) -> datetime.datetime:
+    def execution_time(self) -> datetime:
         """
         :return: The events execution time.
         """
@@ -518,9 +520,9 @@ class OrderPartiallyFilled(OrderEvent):
                  filled_quantity: int,
                  leaves_quantity: int,
                  average_price: Decimal,
-                 execution_time: datetime.datetime,
-                 event_id: uuid,
-                 event_timestamp: datetime.datetime):
+                 execution_time: datetime,
+                 event_id: UUID,
+                 event_timestamp: datetime):
         """
         Initializes a new instance of the OrderPartiallyFilled class.
 
@@ -590,7 +592,7 @@ class OrderPartiallyFilled(OrderEvent):
         return self._average_price
 
     @property
-    def execution_time(self) -> datetime.datetime:
+    def execution_time(self) -> datetime:
         """
         :return: The events execution time.
         """
@@ -603,8 +605,8 @@ class AccountEvent(Event):
     """
 
     def __init__(self,
-                 event_id: uuid,
-                 event_timestamp: datetime.datetime):
+                 event_id: UUID,
+                 event_timestamp: datetime):
         """
         Initializes a new instance of the AccountEvent class.
 
@@ -621,8 +623,8 @@ class TimeEvent(Event):
 
     def __init__(self,
                  label: str,
-                 event_id: uuid,
-                 event_timestamp: datetime.datetime):
+                 event_id: UUID,
+                 event_timestamp: datetime):
         """
         Initializes a new instance of the TimeEvent class.
 
