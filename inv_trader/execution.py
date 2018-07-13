@@ -126,7 +126,7 @@ class ExecutionClient:
         """
         Handle events received from the execution service.
         """
-        # If event order id contained in order index then send to strategy.
+        # Order event
         if isinstance(event, OrderEvent):
             order_id = event.order_id
             if order_id not in self._order_index.keys():
@@ -136,6 +136,9 @@ class ExecutionClient:
 
             strategy_id = self._order_index[order_id]
             self._registered_strategies[strategy_id](event)
+
+        # Account event
+        # TODO
 
     @staticmethod
     @typechecking
