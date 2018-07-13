@@ -432,6 +432,8 @@ class LiveExecClient(ExecutionClient):
         """"
         Handle the order event message by parsing to an OrderEvent and sending
         to the registered strategy.
+
+        :param message: The order event message.
         """
         # If no registered strategies then print message to console.
         if len(self._registered_strategies) == 0:

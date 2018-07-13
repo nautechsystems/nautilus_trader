@@ -386,6 +386,8 @@ class LiveDataClient:
     def _tick_handler(self, message: Dict):
         """"
         Handle the tick message by parsing to a Tick and sending to all subscribers.
+
+        :param message: The tick message.
         """
         # If no tick handlers then print message to console.
         if len(self._tick_handlers) == 0:
@@ -402,6 +404,8 @@ class LiveDataClient:
     def _bar_handler(self, message: Dict):
         """"
         Handle the bar message by parsing to a Bar and sending to all subscribers.
+
+        :param message: The bar message.
         """
         # If no bar handlers then print message to console.
         if len(self._bar_handlers) == 0:
