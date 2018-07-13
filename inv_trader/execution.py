@@ -133,7 +133,7 @@ class ExecutionClient:
             order_id = event.order_id
             if order_id not in self._order_index.keys():
                 self._log(
-                    f"[Warning] The given event order id not contained in order index {order_id}")
+                    f"[Warning]: The given event order id not contained in order index {order_id}")
                 return
 
             strategy_id = self._order_index[order_id]
@@ -335,6 +335,7 @@ class LiveExecClient(ExecutionClient):
                 iso8601.parse_date(split_event[2]),
                 uuid.uuid4(),
                 datetime.utcnow())
+
         elif header == 'order_accepted':
             return OrderAccepted(
                 symbol,
@@ -342,6 +343,7 @@ class LiveExecClient(ExecutionClient):
                 iso8601.parse_date(split_event[2]),
                 uuid.uuid4(),
                 datetime.utcnow())
+
         elif header == 'order_rejected':
             return OrderRejected(
                 symbol,
@@ -350,6 +352,7 @@ class LiveExecClient(ExecutionClient):
                 split_event[3],
                 uuid.uuid4(),
                 datetime.utcnow())
+
         elif header == 'order_working':
             return OrderWorking(
                 symbol,
@@ -358,6 +361,7 @@ class LiveExecClient(ExecutionClient):
                 iso8601.parse_date(split_event[3]),
                 uuid.uuid4(),
                 datetime.utcnow())
+
         elif header == 'order_cancelled':
             return OrderCancelled(
                 symbol,
@@ -365,6 +369,7 @@ class LiveExecClient(ExecutionClient):
                 iso8601.parse_date(split_event[2]),
                 uuid.uuid4(),
                 datetime.utcnow())
+
         elif header == 'order_cancel_reject':
             return OrderCancelReject(
                 symbol,
@@ -373,6 +378,7 @@ class LiveExecClient(ExecutionClient):
                 split_event[3],
                 uuid.uuid4(),
                 datetime.utcnow())
+
         elif header == 'order_modified':
             return OrderModified(
                 symbol,
@@ -382,6 +388,7 @@ class LiveExecClient(ExecutionClient):
                 iso8601.parse_date(split_event[4]),
                 uuid.uuid4(),
                 datetime.utcnow())
+
         elif header == 'order_expired':
             return OrderExpired(
                 symbol,
@@ -389,6 +396,7 @@ class LiveExecClient(ExecutionClient):
                 iso8601.parse_date(split_event[2]),
                 uuid.uuid4(),
                 datetime.utcnow())
+
         elif header == 'order_filled':
             return OrderFilled(
                 symbol,
@@ -401,6 +409,7 @@ class LiveExecClient(ExecutionClient):
                 iso8601.parse_date(split_event[7]),
                 uuid.uuid4(),
                 datetime.utcnow())
+
         elif header == 'order_partially_filled':
             return OrderPartiallyFilled(
                 symbol,
@@ -414,6 +423,7 @@ class LiveExecClient(ExecutionClient):
                 iso8601.parse_date(split_event[8]),
                 uuid.uuid4(),
                 datetime.utcnow())
+
         else:
             raise ValueError("The order event is invalid and cannot be parsed.")
 
