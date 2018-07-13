@@ -33,7 +33,7 @@ OrderId = str
 
 UTF8 = 'utf-8'
 ORDER_EVENT_BUS = 'order_events'
-ORDER_CHANNEL = 'orders'
+ORDER_CHANNEL = 'order_channel'
 
 
 class ExecutionClient:
