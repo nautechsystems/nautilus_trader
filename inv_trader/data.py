@@ -13,7 +13,7 @@ import iso8601
 import time
 
 from decimal import Decimal
-from redis import ConnectionError
+from redis import StrictRedis, ConnectionError
 from typing import List, Dict
 
 from inv_trader.core.checks import typechecking
@@ -89,7 +89,9 @@ class LiveDataClient:
         """
         Connect to the live database and create a pub/sub server.
         """
-        self._client = redis.StrictRedis(host=self._host, port=self._port, db=0)
+        self._client = StrictRedis(host=self._host,
+                                   port=self._port,
+                                   db=0)
         self._pubsub = self._client.pubsub()
 
         self._log(f"Connected to live database at {self._host}:{self._port}.")
