@@ -12,10 +12,12 @@ import time
 import redis
 import uuid
 import iso8601
+import pika
 
 from datetime import datetime
 from decimal import Decimal
 from typing import Dict
+from pika import ConnectionParameters, BlockingConnection
 
 from inv_trader.core.checks import typechecking
 from inv_trader.model.enums import Venue, Resolution, QuoteType, OrderSide, OrderType, OrderStatus
@@ -32,6 +34,7 @@ OrderId = str
 
 UTF8 = 'utf-8'
 ORDER_EVENT_BUS = 'order_events'
+ORDER_CHANNEL = 'orders'
 
 
 class ExecutionClient:
@@ -159,35 +162,45 @@ class LiveExecClient(ExecutionClient):
     @typechecking
     def __init__(
             self,
-            host: str='localhost',
-            port: int=6379):
+            redis_host: str='localhost',
+            redis_port: int=6379,
+            amqp_host: str='localhost',
+            amqp_port: int=5672):
         """
         Initializes a new instance of the LiveExecClient class.
         The host and port parameters are for the order event subscription
         channel.
 
-        :param host: The redis host IP address (default=127.0.0.1).
-        :param port: The redis host port (default=6379).
+        :param redis_host: The redis host IP address (default=127.0.0.1).
+        :param redis_port: The redis host port (default=6379).
+        :param amqp_host: The AMQP host IP address (default=127.0.0.1).
+        :param amqp_port: The AMQP host port (default=5672).
         """
         super().__init__()
-        self._host = host
-        self._port = port
-        self._client = None
+        self._redis_host = redis_host
+        self._redis_port = redis_port
+        self._amqp_host = amqp_host
+        self._amqp_port = amqp_port
+        self._pubsub_client = None
         self._pubsub = None
         self._pubsub_thread = None
+        self._amqp_client = None
+        self._amqp_channel = None
 
     @property
     def is_connected(self) -> bool:
         """
         :return: True if the client is connected, otherwise false.
         """
-        if self._client is None:
+        if self._pubsub_client is None or self._amqp_client is None:
             return False
 
         try:
-            self._client.ping()
+            self._pubsub_client.ping()
         except ConnectionError:
             return False
+
+        # TODO: Check AMQP connection.
 
         return True
 
@@ -195,11 +208,20 @@ class LiveExecClient(ExecutionClient):
         """
         Connect to the execution service and create a pub/sub server.
         """
-        self._client = redis.StrictRedis(host=self._host, port=self._port, db=0)
-        self._pubsub = self._client.pubsub()
+        self._pubsub_client = redis.StrictRedis(host=self._redis_host, port=self._redis_port, db=0)
+        self._pubsub = self._pubsub_client.pubsub()
         self._pubsub.subscribe(**{ORDER_EVENT_BUS: self._order_event_handler})
 
-        self._log(f"Connected to execution service at {self._host}:{self._port}.")
+        self._log((f"Connected to execution service publisher at "
+                   f"{self._redis_host}:{self._redis_port}."))
+
+        connection_params = ConnectionParameters(self._amqp_host)
+        self._amqp_client = pika.BlockingConnection(connection_params)
+        self._amqp_channel = self._amqp_client.channel()
+        self._amqp_channel.queue_declare('orders')
+
+        self._log((f"Connected to execution service orders channel at "
+                   f"{self._amqp_host}:{self._amqp_port}."))
 
     def disconnect(self):
         """
@@ -213,14 +235,14 @@ class LiveExecClient(ExecutionClient):
             time.sleep(0.100)  # Allows thread to stop.
             self._log(f"Stopped PubSub thread {self._pubsub_thread}.")
 
-        if self._client is not None:
-            self._client.connection_pool.disconnect()
+        if self._pubsub_client is not None:
+            self._pubsub_client.connection_pool.disconnect()
             self._log((f"Disconnected from execution service "
-                       f"at {self._host}:{self._port}."))
+                       f"at {self._redis_host}:{self._redis_port}."))
         else:
             self._log("Disconnected (the client was already disconnected).")
 
-        self._client = None
+        self._pubsub_client = None
         self._pubsub = None
         self._pubsub_thread = None
 
@@ -237,7 +259,11 @@ class LiveExecClient(ExecutionClient):
         """
         self._check_connection()
         super()._register_order(order, strategy_id)
+
         # TODO
+        self._amqp_channel.basic_publish(exchange='',
+                                         routing_key=ORDER_CHANNEL,
+                                         body='submit_order:')
 
     @typechecking
     def cancel_order(self, order: Order):
@@ -247,7 +273,11 @@ class LiveExecClient(ExecutionClient):
         :param: order: The order to cancel.
         """
         self._check_connection()
+
         # TODO
+        self._amqp_channel.basic_publish(exchange='',
+                                         routing_key=ORDER_CHANNEL,
+                                         body='cancel_order:')
 
     @typechecking
     def modify_order(
@@ -261,7 +291,11 @@ class LiveExecClient(ExecutionClient):
         :param: new_price: The new modified price for the order.
         """
         self._check_connection()
+
         # TODO
+        self._amqp_channel.basic_publish(exchange='',
+                                         routing_key=ORDER_CHANNEL,
+                                         body='modify_order:')
 
     def _check_connection(self):
         """
@@ -269,7 +303,7 @@ class LiveExecClient(ExecutionClient):
 
         :raises: ConnectionError if the client is not connected.
         """
-        if self._client is None:
+        if self._pubsub_client is None:
             raise ConnectionError(("No connection has been established to the execution service "
                                    "(please connect first)."))
         if not self.is_connected:
