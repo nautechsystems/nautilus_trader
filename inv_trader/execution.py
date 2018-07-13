@@ -216,7 +216,7 @@ class LiveExecClient(ExecutionClient):
                    f"{self._redis_host}:{self._redis_port}."))
 
         connection_params = ConnectionParameters(self._amqp_host)
-        self._amqp_client = pika.BlockingConnection(connection_params)
+        self._amqp_client = BlockingConnection(connection_params)
         self._amqp_channel = self._amqp_client.channel()
         self._amqp_channel.queue_declare('orders')
 
