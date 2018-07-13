@@ -9,11 +9,10 @@
 
 import abc
 import time
-import redis
 import uuid
 import iso8601
-import pika
 
+from redis import StrictRedis, ConnectionError
 from datetime import datetime
 from decimal import Decimal
 from typing import Dict
@@ -208,7 +207,9 @@ class LiveExecClient(ExecutionClient):
         """
         Connect to the execution service and create a pub/sub server.
         """
-        self._pubsub_client = redis.StrictRedis(host=self._redis_host, port=self._redis_port, db=0)
+        self._pubsub_client = StrictRedis(host=self._redis_host,
+                                          port=self._redis_port,
+                                          db=0)
         self._pubsub = self._pubsub_client.pubsub()
         self._pubsub.subscribe(**{ORDER_EVENT_BUS: self._order_event_handler})
 
