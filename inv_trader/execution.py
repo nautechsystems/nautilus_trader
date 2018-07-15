@@ -312,6 +312,18 @@ class LiveExecClient(ExecutionClient):
 
     @staticmethod
     @typechecking
+    def _unpack_order_event(message: bytearray) -> OrderEvent:
+        """
+        Unpack an OrderEvent object from the given msgpack bytes.
+
+        :param message: The msgpack message to parse.
+        :return: The parsed order event.
+        """
+
+
+
+    @staticmethod
+    @typechecking
     def _parse_order_event(event_string: str) -> OrderEvent:
         """
         Parse an OrderEvent object from the given UTF-8 string.

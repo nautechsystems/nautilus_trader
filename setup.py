@@ -54,6 +54,7 @@ setup(
     requires=['cython',
               'iso8601',
               'pytz',
+              'msgpack',
               'redis',
               'pika'],
     ext_modules=cythonize(extensions),
