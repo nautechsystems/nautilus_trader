@@ -131,8 +131,6 @@ class OrderSubmitted(OrderEvent):
         """
         super().__init__(symbol, order_id, event_id, event_timestamp)
         self._submitted_time = submitted_time
-        self._event_id = event_id
-        self._event_timestamp = event_timestamp
 
     @property
     def submitted_time(self) -> datetime:
@@ -200,8 +198,6 @@ class OrderRejected(OrderEvent):
         super().__init__(symbol, order_id, event_id, event_timestamp)
         self._rejected_time = rejected_time
         self._rejected_reason = rejected_reason
-        self._event_id = event_id
-        self._event_timestamp = event_timestamp
 
     @property
     def rejected_time(self) -> datetime:
@@ -394,8 +390,6 @@ class OrderModified(OrderEvent):
         self._broker_order_id = broker_order_id
         self._modified_price = modified_price
         self._modified_time = modified_time
-        self._event_id = event_id
-        self._event_timestamp = event_timestamp
 
     @property
     def broker_order_id(self) -> str:
@@ -457,8 +451,6 @@ class OrderFilled(OrderEvent):
         self._filled_quantity = filled_quantity
         self._average_price = average_price
         self._execution_time = execution_time
-        self._event_id = event_id
-        self._event_timestamp = event_timestamp
 
     @property
     def execution_id(self) -> str:
@@ -544,8 +536,6 @@ class OrderPartiallyFilled(OrderEvent):
         self._leaves_quantity = leaves_quantity
         self._average_price = average_price
         self._execution_time = execution_time
-        self._event_id = event_id
-        self._event_timestamp = event_timestamp
 
     @property
     def execution_id(self) -> str:
