@@ -27,6 +27,7 @@ from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected
 from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
 from inv_trader.model.events import OrderPartiallyFilled, OrderFilled
 from inv_trader.strategy import TradeStrategy
+from inv_trader.messaging import MsgPackEventSerializer
 
 StrategyId = str
 OrderId = str
@@ -310,148 +311,28 @@ class LiveExecClient(ExecutionClient):
         if not self.is_connected:
             raise ConnectionError("No connection is established with the execution service.")
 
-    @staticmethod
     @typechecking
-    def _unpack_order_event(message: bytearray) -> OrderEvent:
+    def _deserialize_order_event(self, body: bytes) -> OrderEvent:
         """
-        Unpack an OrderEvent object from the given msgpack bytes.
+        Deserialize the given message body.
 
-        :param message: The msgpack message to parse.
-        :return: The parsed order event.
+        :param body: The body to deserialize.
+        :return: The deserialized order event.
         """
-
-
-
-    @staticmethod
-    @typechecking
-    def _parse_order_event(event_string: str) -> OrderEvent:
-        """
-        Parse an OrderEvent object from the given UTF-8 string.
-
-        :param event_string: The order event string to parse.
-        :return: The parsed order event.
-        """
-        header_body = event_string.split(':', maxsplit=1)
-
-        header = header_body[0]
-        split_event = header_body[1].split(',')
-
-        symbol_split = split_event[0].split('.')
-        symbol = Symbol(symbol_split[0], Venue[symbol_split[1].upper()])
-        order_id = split_event[1]
-
-        if header == 'order_submitted':
-            return OrderSubmitted(
-                symbol,
-                order_id,
-                iso8601.parse_date(split_event[2]),
-                uuid.uuid4(),
-                datetime.utcnow())
-
-        elif header == 'order_accepted':
-            return OrderAccepted(
-                symbol,
-                order_id,
-                iso8601.parse_date(split_event[2]),
-                uuid.uuid4(),
-                datetime.utcnow())
-
-        elif header == 'order_rejected':
-            return OrderRejected(
-                symbol,
-                order_id,
-                iso8601.parse_date(split_event[2]),
-                split_event[3],
-                uuid.uuid4(),
-                datetime.utcnow())
-
-        elif header == 'order_working':
-            return OrderWorking(
-                symbol,
-                order_id,
-                split_event[2],
-                iso8601.parse_date(split_event[3]),
-                uuid.uuid4(),
-                datetime.utcnow())
-
-        elif header == 'order_cancelled':
-            return OrderCancelled(
-                symbol,
-                order_id,
-                iso8601.parse_date(split_event[2]),
-                uuid.uuid4(),
-                datetime.utcnow())
-
-        elif header == 'order_cancel_reject':
-            return OrderCancelReject(
-                symbol,
-                order_id,
-                iso8601.parse_date(split_event[2]),
-                split_event[3],
-                uuid.uuid4(),
-                datetime.utcnow())
-
-        elif header == 'order_modified':
-            return OrderModified(
-                symbol,
-                order_id,
-                split_event[2],
-                Decimal(split_event[3]),
-                iso8601.parse_date(split_event[4]),
-                uuid.uuid4(),
-                datetime.utcnow())
-
-        elif header == 'order_expired':
-            return OrderExpired(
-                symbol,
-                order_id,
-                iso8601.parse_date(split_event[2]),
-                uuid.uuid4(),
-                datetime.utcnow())
-
-        elif header == 'order_filled':
-            return OrderFilled(
-                symbol,
-                order_id,
-                split_event[2],
-                split_event[3],
-                OrderSide[split_event[4].upper()],
-                int(split_event[5]),
-                Decimal(split_event[6]),
-                iso8601.parse_date(split_event[7]),
-                uuid.uuid4(),
-                datetime.utcnow())
-
-        elif header == 'order_partially_filled':
-            return OrderPartiallyFilled(
-                symbol,
-                order_id,
-                split_event[2],
-                split_event[3],
-                OrderSide[split_event[4].upper()],
-                int(split_event[5]),
-                int(split_event[6]),
-                Decimal(split_event[7]),
-                iso8601.parse_date(split_event[8]),
-                uuid.uuid4(),
-                datetime.utcnow())
-
-        else:
-            raise ValueError("The order event is invalid and cannot be parsed.")
+        return MsgPackEventSerializer.deserialize_order_event(body)
 
     @typechecking
-    def _order_event_handler(self, message: Dict):
+    def _order_event_handler(self, body: bytes):
         """"
         Handle the order event message by parsing to an OrderEvent and sending
         to the registered strategy.
 
-        :param message: The order event message.
+        :param body: The order event message body.
         """
+        order_event = self._deserialize_order_event(body)
+
         # If no registered strategies then print message to console.
         if len(self._registered_strategies) == 0:
-            print(f"Received message {message['channel'].decode(UTF8)} "
-                  f"{message['data'].decode(UTF8)}")
-
-        order_event = self._parse_order_event(message['data'].decode(UTF8))
+            print(f"Received order event from queue: {order_event}")
 
         self._on_event(order_event)

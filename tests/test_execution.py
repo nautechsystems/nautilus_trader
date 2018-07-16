@@ -90,15 +90,25 @@ class LiveExecClientTests(unittest.TestCase):
     def test_can_parse_order_submitted_events(self):
         # Arrange
         client = LiveExecClient()
-        event_string = 'order_submitted:audusd.fxcm,O123456,1970-01-01T00:00:00.000Z'
+
+        # Hex bytes string from C# MsgPack.Cli
+        hex_string = ('86a673796d626f6cab4155445553442e4658434da86f726465725f69'
+                      '64ab537475624f726465724964a86576656e745f6964d92463636338'
+                      '353066662d333062352d343366652d386535362d3465616136333932'
+                      '37653531af6576656e745f74696d657374616d70b8313937302d3031'
+                      '2d30315430303a30303a30302e3030305aaa6576656e745f74797065'
+                      'af6f726465725f7375626d6974746564ae7375626d69747465645f74'
+                      '696d65b8313937302d30312d30315430303a30303a30302e3030305a')
+
+        body = bytes.fromhex(hex_string)
 
         # Act
-        result = client._parse_order_event(event_string)
+        result = client._deserialize_order_event(body)
 
         # Assert
         self.assertTrue(isinstance(result, OrderSubmitted))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
-        self.assertEqual('O123456', result.order_id)
+        self.assertEqual('StubOrderId', result.order_id)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.submitted_time)
 
     def test_can_parse_order_accepted_events(self):
