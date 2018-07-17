@@ -87,7 +87,7 @@ class ExecutionClientTests(unittest.TestCase):
 
 class LiveExecClientTests(unittest.TestCase):
 
-    def test_can_parse_order_submitted_events(self):
+    def test_can_deserialize_order_submitted_events(self):
         # Arrange
         client = LiveExecClient()
 
@@ -100,12 +100,13 @@ class LiveExecClientTests(unittest.TestCase):
                       'af6f726465725f7375626d6974746564ae7375626d69747465645f74'
                       '696d65b8313937302d30312d30315430303a30303a30302e3030305a')
 
+        # Won't have to do this in production - arrives as bytes.
         body = bytes.fromhex(hex_string)
 
         # Act
         result = client._deserialize_order_event(body)
 
-        # Assert
+        # Assert - Warning can be ignored (is because PyCharm doesn't know the type).
         self.assertTrue(isinstance(result, OrderSubmitted))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual('StubOrderId', result.order_id)
