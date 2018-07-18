@@ -312,7 +312,7 @@ class LiveExecClient(ExecutionClient):
             raise ConnectionError("No connection is established with the execution service.")
 
     @typechecking
-    def _deserialize_order_event(self, body: bytes) -> OrderEvent:
+    def _deserialize_order_event(self, body: bytearray) -> OrderEvent:
         """
         Deserialize the given message body.
 
@@ -322,7 +322,7 @@ class LiveExecClient(ExecutionClient):
         return MsgPackEventSerializer.deserialize_order_event(body)
 
     @typechecking
-    def _order_event_handler(self, body: bytes):
+    def _order_event_handler(self, body: bytearray):
         """"
         Handle the order event message by parsing to an OrderEvent and sending
         to the registered strategy.
