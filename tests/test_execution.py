@@ -104,7 +104,7 @@ class LiveExecClientTests(unittest.TestCase):
         # Act
         result = client._deserialize_order_event(body)
 
-        # Assert - Warning can be ignored (is because PyCharm doesn't know the type).
+        # Assert - Warning can be ignored (its because PyCharm doesn't know the type).
         self.assertTrue(isinstance(result, OrderSubmitted))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual('StubOrderId', result.order_id)
@@ -112,7 +112,7 @@ class LiveExecClientTests(unittest.TestCase):
         self.assertTrue(isinstance(result.event_id, UUID))
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.event_timestamp)
 
-    def test_can_parse_order_accepted_events(self):
+    def test_can_deserialize_order_accepted_events(self):
         # Arrange
         client = LiveExecClient()
 
@@ -130,7 +130,7 @@ class LiveExecClientTests(unittest.TestCase):
         # Act
         result = client._deserialize_order_event(body)
 
-        # Assert
+        # Assert - Warnings can be ignored (its because PyCharm doesn't know the type).
         self.assertTrue(isinstance(result, OrderAccepted))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual('StubOrderId', result.order_id)
@@ -138,7 +138,7 @@ class LiveExecClientTests(unittest.TestCase):
         self.assertTrue(isinstance(result.event_id, UUID))
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.event_timestamp)
 
-    def test_can_parse_order_rejected_events(self):
+    def test_can_deserialize_order_rejected_events(self):
         # Arrange
         client = LiveExecClient()
 
@@ -157,7 +157,7 @@ class LiveExecClientTests(unittest.TestCase):
         # Act
         result = client._deserialize_order_event(body)
 
-        # Assert
+        # Assert - Warnings can be ignored (its because PyCharm doesn't know the type).
         self.assertTrue(isinstance(result, OrderRejected))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual('StubOrderId', result.order_id)
@@ -166,7 +166,7 @@ class LiveExecClientTests(unittest.TestCase):
         self.assertTrue(isinstance(result.event_id, UUID))
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.event_timestamp)
 
-    def test_can_parse_order_working_events(self):
+    def test_can_deserialize_order_working_events(self):
         # Arrange
         client = LiveExecClient()
 
@@ -189,7 +189,7 @@ class LiveExecClientTests(unittest.TestCase):
         # Act
         result = client._deserialize_order_event(body)
 
-        # Assert
+        # Assert - Warnings can be ignored (its because PyCharm doesn't know the type).
         self.assertTrue(isinstance(result, OrderWorking))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual('StubOrderId', result.order_id)
@@ -204,7 +204,46 @@ class LiveExecClientTests(unittest.TestCase):
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.event_timestamp)
         self.assertIsNone(result.expire_time)
 
-    def test_can_parse_order_cancelled_events(self):
+    def test_can_deserialize_order_working_events_with_expire_time(self):
+        # Arrange
+        client = LiveExecClient()
+
+        # Hex bytes string from C# MsgPack.Cli
+        hex_string = ('8ea673796d626f6cab4155445553442e4658434da86f726465725f69'
+                      '64ab537475624f726465724964a86576656e745f6964d92430343962'
+                      '636466612d646337642d343665332d616665342d3461323338656638'
+                      '37346632af6576656e745f74696d657374616d70b8313937302d3031'
+                      '2d30315430303a30303a30302e3030305aaa6576656e745f74797065'
+                      'ad6f726465725f776f726b696e67af6f726465725f69645f62726f6b'
+                      '6572a742313233343536a56c6162656ca94f3132333435365f45aa6f'
+                      '726465725f73696465a3425559aa6f726465725f74797065ab53544f'
+                      '505f4d41524b4554a87175616e7469747901a57072696365a3312e30'
+                      'ad74696d655f696e5f666f726365a3475444ab6578706972655f7469'
+                      '6d65b8313937302d30312d30315430303a30313a30302e3030305aac'
+                      '776f726b696e675f74696d65b8313937302d30312d30315430303a30'
+                      '303a30302e3030305a')
+
+        body = bytearray.fromhex(hex_string)
+
+        # Act
+        result = client._deserialize_order_event(body)
+        print(type(result.expire_time))
+        # Assert - Warnings can be ignored (its because PyCharm doesn't know the type).
+        self.assertTrue(isinstance(result, OrderWorking))
+        self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
+        self.assertEqual('StubOrderId', result.order_id)
+        self.assertEqual('B123456', result.broker_order_id)
+        self.assertEqual('O123456_E', result.label)
+        self.assertEqual(OrderType.STOP_MARKET, result.order_type)
+        self.assertEqual(1, result.quantity)
+        self.assertEqual(Decimal('1'), result.price)
+        self.assertEqual(TimeInForce.GTD, result.time_in_force)
+        self.assertEqual(datetime(1970, 1, 1, 0, 0, 0, 0, pytz.UTC), result.working_time)
+        self.assertTrue(isinstance(result.event_id, UUID))
+        self.assertEqual(datetime(1970, 1, 1, 0, 0, 0, 0, pytz.UTC), result.event_timestamp)
+        self.assertEqual(datetime(1970, 1, 1, 0, 1, 0, 0, pytz.UTC), result.expire_time)
+
+    def test_can_deserialize_order_cancelled_events(self):
         # Arrange
         client = LiveExecClient()
 
@@ -222,7 +261,7 @@ class LiveExecClientTests(unittest.TestCase):
         # Act
         result = client._deserialize_order_event(body)
 
-        # Assert
+        # Assert - Warning can be ignored (its because PyCharm doesn't know the type).
         self.assertTrue(isinstance(result, OrderCancelled))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual('StubOrderId', result.order_id)
@@ -230,7 +269,7 @@ class LiveExecClientTests(unittest.TestCase):
         self.assertTrue(isinstance(result.event_id, UUID))
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.event_timestamp)
 
-    def test_can_parse_order_cancel_reject_events(self):
+    def test_can_deserialize_order_cancel_reject_events(self):
         # Arrange
         client = LiveExecClient()
 
@@ -251,7 +290,7 @@ class LiveExecClientTests(unittest.TestCase):
         # Act
         result = client._deserialize_order_event(body)
 
-        # Assert
+        # Assert - Warnings can be ignored (its because PyCharm doesn't know the type).
         self.assertTrue(isinstance(result, OrderCancelReject))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual('StubOrderId', result.order_id)
@@ -261,7 +300,7 @@ class LiveExecClientTests(unittest.TestCase):
         self.assertTrue(isinstance(result.event_id, UUID))
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.event_timestamp)
 
-    def test_can_parse_order_modified_events(self):
+    def test_can_deserialize_order_modified_events(self):
         # Arrange
         client = LiveExecClient()
 
@@ -281,7 +320,7 @@ class LiveExecClientTests(unittest.TestCase):
         # Act
         result = client._deserialize_order_event(body)
 
-        # Assert
+        # Assert - Warnings can be ignored (its because PyCharm doesn't know the type).
         self.assertTrue(isinstance(result, OrderModified))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual('StubOrderId', result.order_id)
@@ -291,7 +330,7 @@ class LiveExecClientTests(unittest.TestCase):
         self.assertTrue(isinstance(result.event_id, UUID))
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.event_timestamp)
 
-    def test_can_parse_order_expired_events(self):
+    def test_can_deserialize_order_expired_events(self):
         # Arrange
         client = LiveExecClient()
 
@@ -309,7 +348,7 @@ class LiveExecClientTests(unittest.TestCase):
         # Act
         result = client._deserialize_order_event(body)
 
-        # Assert
+        # Assert - Warning can be ignored (is because PyCharm doesn't know the type).
         self.assertTrue(isinstance(result, OrderExpired))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual('StubOrderId', result.order_id)
@@ -317,7 +356,7 @@ class LiveExecClientTests(unittest.TestCase):
         self.assertTrue(isinstance(result.event_id, UUID))
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.event_timestamp)
 
-    def test_can_parse_order_partially_filled_events(self):
+    def test_can_deserialize_order_partially_filled_events(self):
         # Arrange
         client = LiveExecClient()
 
@@ -340,7 +379,7 @@ class LiveExecClientTests(unittest.TestCase):
         # Act
         result = client._deserialize_order_event(body)
 
-        # Assert
+        # Assert - Warnings can be ignored (its because PyCharm doesn't know the type).
         self.assertTrue(isinstance(result, OrderPartiallyFilled))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual('StubOrderId', result.order_id)
@@ -354,7 +393,7 @@ class LiveExecClientTests(unittest.TestCase):
         self.assertTrue(isinstance(result.event_id, UUID))
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.event_timestamp)
 
-    def test_can_parse_order_filled_events(self):
+    def test_can_deserialize_order_filled_events(self):
         # Arrange
         client = LiveExecClient()
 
@@ -376,7 +415,7 @@ class LiveExecClientTests(unittest.TestCase):
         # Act
         result = client._deserialize_order_event(body)
 
-        # Assert
+        # Assert - Warnings can be ignored (its because PyCharm doesn't know the type).
         self.assertTrue(isinstance(result, OrderFilled))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual('StubOrderId', result.order_id)

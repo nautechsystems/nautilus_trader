@@ -234,7 +234,7 @@ class OrderWorking(OrderEvent):
                  working_time: datetime,
                  event_id: UUID,
                  event_timestamp: datetime,
-                 expire_time: Optional[datetime]=None):
+                 expire_time: datetime=None):
         """
         Initializes a new instance of the OrderWorking class.
 
@@ -262,6 +262,8 @@ class OrderWorking(OrderEvent):
         self._time_in_force = time_in_force
         self._working_time = working_time
         self._expire_time = expire_time
+        if self._expire_time is not None:
+            self._expire_time = expire_time[0]
 
     @property
     def broker_order_id(self) -> str:
@@ -320,9 +322,9 @@ class OrderWorking(OrderEvent):
         return self._working_time
 
     @property
-    def expire_time(self) -> Optional[datetime]:
+    def expire_time(self) -> datetime:
         """
-        :return: The events order expire time.
+        :return: The events order expire time (optional could be None).
         """
         return self._expire_time
 

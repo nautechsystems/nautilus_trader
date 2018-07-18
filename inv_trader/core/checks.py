@@ -11,6 +11,7 @@ if True:
     import inspect
     from functools import wraps
     from inspect import Parameter, Signature
+    from typing import Union
 
     def typechecking(func: callable) -> callable:
         '''
@@ -85,15 +86,15 @@ def func_beartyped(*args, __beartype_func=__beartype_func, **kwargs):
             # unlikely edge case would permit unsuspecting users to
             # "accidentally" override these defaults.
             if func_arg.name == '__typechecking_func':
-                raise NameError(
-                    'Parameter {} reserved for use by @typechecking.'.format(
-                        func_arg.name))
+                raise NameError(f'Parameter {func_arg.name} reserved for use by @typechecking.')
 
             # If the default argument is None then don't type check (for now).
             if func_arg.default is None:
                 continue
+
             if type(func_arg) is type(func_arg.default):
                 continue
+
             # If this parameter is both annotated and non-ignorable for purposes
             # of type checking, type check this parameter.
             if (func_arg.annotation is not Parameter.empty and
