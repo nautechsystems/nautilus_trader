@@ -8,7 +8,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from inv_trader.model.enums import Venue, Resolution, QuoteType
-from inv_trader.model.objects import Tick, BarType, Bar
+from inv_trader.model.objects import Symbol, Tick, BarType, Bar
 from inv_trader.model.events import Event
 from inv_trader.strategy import TradeStrategy
 from inv_indicators.average.ema import ExponentialMovingAverage
@@ -30,12 +30,10 @@ class EMACross(TradeStrategy):
         """
         super().__init__(label)
 
-        self.audusd_fxcm_1_second_mid = BarType(
-            'audusd',
-            Venue.FXCM,
-            1,
-            Resolution.SECOND,
-            QuoteType.MID)
+        self.audusd_fxcm_1_second_mid = BarType(Symbol('AUDUSD', Venue.FXCM),
+                                                1,
+                                                Resolution.SECOND,
+                                                QuoteType.MID)
 
         self.ema1 = ExponentialMovingAverage(fast)
         self.ema2 = ExponentialMovingAverage(slow)
