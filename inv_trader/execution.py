@@ -228,7 +228,8 @@ class LiveExecClient(ExecutionClient):
 
         :param: connection: The pika connection object.
         """
-        self._log(f'Connection opened {json.dumps(connection.server_properties, sort_keys=True, indent=2)}.')
+        self._log((f'Connection opened '
+                   f'{json.dumps(connection.server_properties, sort_keys=True, indent=2)}.'))
         self._add_on_connection_close_callback()
         self._open_channel()
 
@@ -258,8 +259,8 @@ class LiveExecClient(ExecutionClient):
         if self._closing:
             self._connection.ioloop.stop()
         else:
-            self._log(
-                f'Warning: Connection closed, reopening in 5 seconds: ({reply_code}) {reply_text}')
+            self._log((f'Warning: Connection closed, '
+                       f'reopening in 5 seconds: ({reply_code}) {reply_text}'))
             self._connection.add_timeout(5, self._reconnect)
 
     def _reconnect(self):
@@ -325,7 +326,8 @@ class LiveExecClient(ExecutionClient):
         :param reply_code: The numeric reason the channel was closed.
         :param reply_text: The text reason the channel was closed.
         """
-        self._log(f'Warning: Channel {channel} was closed: ({reply_code}) {reply_text}.')
+        self._log((f'Warning: Channel {channel.channel_number} was closed: '
+                   f'({reply_code}) {reply_text}.'))
         self._connection.close()
 
     @typechecking
@@ -376,10 +378,10 @@ class LiveExecClient(ExecutionClient):
         Method invoked by pika when the Queue.Declare RPC call made in
         setup_queue has completed. In this method we will bind the queue
         and exchange together with the routing key by issuing the Queue.Bind
-        RPC command. When this command is complete, the on_bindok method will
+        RPC command. When this command is complete, the on_bind_ok method will
         be invoked by pika.
 
-        :param response_frame: The Queue.DeclareOk frame.
+        :param response_frame: The Queue.DeclareOk response frame.
         """
         self._log(f'Queue declared on channel {response_frame.channel_number}.')
         self._log('Binding {self.EXCHANGE} to {self.QUEUE} with {self.ROUTING_KEY}.')
