@@ -87,8 +87,8 @@ class Order:
         self._slippage = Decimal('0')
         self._status = OrderStatus.INITIALIZED
         self._order_events = []         # type: List[OrderEvent]
-        self._order_ids = []            # type: List[str]
-        self._order_broker_ids = []     # type: List[str]
+        self._order_ids = [order_id]            # type: List[str]
+        self._order_ids_broker = []     # type: List[str]
         self._order_execution_ids = []  # type: List[str]
         self._execution_tickets = []    # type: List[str]
 
@@ -107,13 +107,38 @@ class Order:
         return self._id
 
     @property
+    def id_current(self) -> str:
+        """
+        :return: The orders current id.
+        """
+        return self._order_ids[-1]
+
+    @property
     def broker_id(self) -> str:
         """
-        :return: The orders broker-side order id (could be empty).
+        :return: The orders broker-side order id (could be an empty string).
         """
-        if len(self._order_broker_ids) == 0:
+        if len(self._order_ids_broker) == 0:
             return ''
-        return self._order_broker_ids[-1]
+        return self._order_ids_broker[-1]
+
+    @property
+    def execution_id(self) -> str:
+        """
+        :return: The orders last execution (could be an empty string).
+        """
+        if len(self._order_execution_ids) == 0:
+            return ''
+        return self._order_execution_ids[-1]
+
+    @property
+    def execution_ticket(self) -> str:
+        """
+        :return: The orders last execution ticket (could be an empty string).
+        """
+        if len(self._execution_tickets) == 0:
+            return ''
+        return self._execution_tickets[-1]
 
     @property
     def label(self) -> str:
@@ -278,7 +303,7 @@ class Order:
 
         elif isinstance(order_event, OrderWorking):
             self._status = OrderStatus.WORKING
-            self._order_broker_ids.append(order_event.broker_order_id)
+            self._order_ids_broker.append(order_event.broker_order_id)
 
         elif isinstance(order_event, OrderCancelled):
             self._status = OrderStatus.CANCELLED
@@ -290,7 +315,7 @@ class Order:
             self._status = OrderStatus.EXPIRED
 
         elif isinstance(order_event, OrderModified):
-            self._order_broker_ids.append(order_event.broker_order_id)
+            self._order_ids_broker.append(order_event.broker_order_id)
             self._price = order_event.modified_price
 
         elif isinstance(order_event, OrderFilled):

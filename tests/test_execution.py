@@ -99,7 +99,7 @@ class LiveExecClientTests(unittest.TestCase):
                       'af6f726465725f7375626d6974746564ae7375626d69747465645f74'
                       '696d65b8313937302d30312d30315430303a30303a30302e3030305a')
 
-        body = bytes.fromhex(hex_string)
+        body = bytearray.fromhex(hex_string)
 
         # Act
         result = client._deserialize_order_event(body)
@@ -125,7 +125,7 @@ class LiveExecClientTests(unittest.TestCase):
                       'ae6f726465725f6163636570746564ad61636365707465645f74696d'
                       '65b8313937302d30312d30315430303a30303a30302e3030305a')
 
-        body = bytes.fromhex(hex_string)
+        body = bytearray.fromhex(hex_string)
 
         # Act
         result = client._deserialize_order_event(body)
@@ -152,7 +152,7 @@ class LiveExecClientTests(unittest.TestCase):
                       '65b8313937302d30312d30315430303a30303a30302e3030305aaf72'
                       '656a65637465645f726561736f6ead494e56414c49445f4f52444552')
 
-        body = bytes.fromhex(hex_string)
+        body = bytearray.fromhex(hex_string)
 
         # Act
         result = client._deserialize_order_event(body)
@@ -184,7 +184,7 @@ class LiveExecClientTests(unittest.TestCase):
                       '6d65a46e6f6e65ac776f726b696e675f74696d65b8313937302d3031'
                       '2d30315430303a30303a30302e3030305a')
 
-        body = bytes.fromhex(hex_string)
+        body = bytearray.fromhex(hex_string)
 
         # Act
         result = client._deserialize_order_event(body)
@@ -217,7 +217,7 @@ class LiveExecClientTests(unittest.TestCase):
                       'af6f726465725f63616e63656c6c6564ae63616e63656c6c65645f74'
                       '696d65b8313937302d30312d30315430303a30303a30302e3030305a')
 
-        body = bytes.fromhex(hex_string)
+        body = bytearray.fromhex(hex_string)
 
         # Act
         result = client._deserialize_order_event(body)
@@ -246,7 +246,7 @@ class LiveExecClientTests(unittest.TestCase):
                       '5f524553504f4e53453faf72656a65637465645f726561736f6eaf4f'
                       '524445525f4e4f545f464f554e44')
 
-        body = bytes.fromhex(hex_string)
+        body = bytearray.fromhex(hex_string)
 
         # Act
         result = client._deserialize_order_event(body)
@@ -276,7 +276,7 @@ class LiveExecClientTests(unittest.TestCase):
                       'ad6d6f6469666965645f74696d65b8313937302d30312d3031543030'
                       '3a30303a30302e3030305a')
 
-        body = bytes.fromhex(hex_string)
+        body = bytearray.fromhex(hex_string)
 
         # Act
         result = client._deserialize_order_event(body)
@@ -304,7 +304,7 @@ class LiveExecClientTests(unittest.TestCase):
                       'ad6f726465725f65787069726564ac657870697265645f74696d65b8'
                       '313937302d30312d30315430303a30303a30302e3030305a')
 
-        body = bytes.fromhex(hex_string)
+        body = bytearray.fromhex(hex_string)
 
         # Act
         result = client._deserialize_order_event(body)
@@ -335,7 +335,7 @@ class LiveExecClientTests(unittest.TestCase):
                       'a3322e30ae657865637574696f6e5f74696d65b8313937302d30312d'
                       '30315430303a30303a30302e3030305a')
 
-        body = bytes.fromhex(hex_string)
+        body = bytearray.fromhex(hex_string)
 
         # Act
         result = client._deserialize_order_event(body)
@@ -371,7 +371,7 @@ class LiveExecClientTests(unittest.TestCase):
                       '30ae657865637574696f6e5f74696d65b8313937302d30312d303154'
                       '30303a30303a30302e3030305a')
 
-        body = bytes.fromhex(hex_string)
+        body = bytearray.fromhex(hex_string)
 
         # Act
         result = client._deserialize_order_event(body)
