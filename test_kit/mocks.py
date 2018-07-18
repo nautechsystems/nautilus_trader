@@ -73,9 +73,16 @@ class MockExecClient(ExecutionClient):
             order.symbol,
             order.id,
             'B' + order.id,
+            order.label,
+            order.side,
+            order.type,
+            order.quantity,
+            Decimal('1'),
+            order.time_in_force,
             datetime.datetime.utcnow(),
             uuid.uuid4(),
-            datetime.datetime.utcnow())
+            datetime.datetime.utcnow(),
+            order.expire_time)
 
         super()._on_event(order_submitted)
         super()._on_event(order_accepted)

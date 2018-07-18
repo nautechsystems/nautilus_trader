@@ -242,9 +242,16 @@ class OrderTests(unittest.TestCase):
             order.symbol,
             order.id,
             'SOME_BROKER_ID',
+            order.label,
+            order.side,
+            order.type,
+            order.quantity,
+            Decimal('1'),
+            order.time_in_force,
             UNIX_EPOCH,
             uuid.uuid4(),
-            UNIX_EPOCH)
+            UNIX_EPOCH,
+            order.expire_time)
 
         # Act
         order.apply(event)
@@ -313,6 +320,7 @@ class OrderTests(unittest.TestCase):
             order.symbol,
             order.id,
             UNIX_EPOCH,
+            'REJECT_RESPONSE',
             'ORDER DOES NOT EXIST',
             uuid.uuid4(),
             UNIX_EPOCH)
@@ -336,9 +344,16 @@ class OrderTests(unittest.TestCase):
             order.symbol,
             order.id,
             'SOME_BROKER_ID_1',
+            order.label,
+            order.side,
+            order.type,
+            order.quantity,
+            Decimal('1.00000'),
+            order.time_in_force,
             UNIX_EPOCH,
             uuid.uuid4(),
-            UNIX_EPOCH)
+            UNIX_EPOCH,
+            order.expire_time)
 
         order_modified = OrderModified(
             order.symbol,

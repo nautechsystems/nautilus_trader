@@ -12,9 +12,7 @@ import msgpack
 import iso8601
 import uuid
 
-from datetime import datetime
 from decimal import Decimal
-from typing import Optional
 
 from inv_trader.model.enums import Venue, OrderSide, OrderType, TimeInForce
 from inv_trader.model.objects import Symbol
@@ -49,9 +47,9 @@ REJECTED_REASON = 'rejected_reason'.encode(UTF8)
 WORKING_TIME = 'working_time'.encode(UTF8)
 CANCELLED_TIME = 'cancelled_time'.encode(UTF8)
 MODIFIED_TIME = 'modified_time'.encode(UTF8)
+MODIFIED_PRICE = 'modified_price'.encode(UTF8)
 EXPIRE_TIME = 'expire_time'.encode(UTF8)
 EXPIRED_TIME = 'expired_time'.encode(UTF8)
-MODIFIED_PRICE = 'modified_price'
 EXECUTION_TIME = 'execution_time'.encode(UTF8)
 EXECUTION_ID = 'execution_id'.encode(UTF8)
 EXECUTION_TICKET = 'execution_ticket'.encode(UTF8)
@@ -177,7 +175,7 @@ class MsgPackEventSerializer(EventSerializer):
                 symbol,
                 order_id,
                 unpacked[ORDER_ID_BROKER].decode(UTF8),
-                Decimal(unpacked[ORDER_ID_BROKER].decode(UTF8)),
+                Decimal(unpacked[MODIFIED_PRICE].decode(UTF8)),
                 iso8601.parse_date(unpacked[MODIFIED_TIME].decode(UTF8)),
                 uuid.UUID(event_id),
                 event_timestamp)
@@ -199,7 +197,7 @@ class MsgPackEventSerializer(EventSerializer):
                 OrderSide[unpacked[ORDER_SIDE].decode(UTF8).upper()],
                 int(unpacked[FILLED_QUANTITY]),
                 int(unpacked[LEAVES_QUANTITY]),
-                Decimal(unpacked[AVERAGE_PRICE]),
+                Decimal(unpacked[AVERAGE_PRICE].decode(UTF8)),
                 iso8601.parse_date(unpacked[EXECUTION_TIME].decode(UTF8)),
                 uuid.UUID(event_id),
                 event_timestamp)
@@ -212,7 +210,7 @@ class MsgPackEventSerializer(EventSerializer):
                 unpacked[EXECUTION_TICKET].decode(UTF8),
                 OrderSide[unpacked[ORDER_SIDE].decode(UTF8).upper()],
                 int(unpacked[FILLED_QUANTITY]),
-                Decimal(unpacked[AVERAGE_PRICE]),
+                Decimal(unpacked[AVERAGE_PRICE].decode(UTF8)),
                 iso8601.parse_date(unpacked[EXECUTION_TIME].decode(UTF8)),
                 uuid.UUID(event_id),
                 event_timestamp)

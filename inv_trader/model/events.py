@@ -369,7 +369,7 @@ class OrderCancelReject(OrderEvent):
                  order_symbol: Symbol,
                  order_id: str,
                  cancel_reject_time: datetime,
-                 cancel_response_to: str,
+                 cancel_response: str,
                  cancel_reject_reason: str,
                  event_id: UUID,
                  event_timestamp: datetime):
@@ -379,14 +379,14 @@ class OrderCancelReject(OrderEvent):
         :param: order_symbol: The events order symbol.
         :param: order_id: The events order identifier.
         :param: cancel_reject_time: The events order cancel reject time.
-        :param cancel_response_to: The events order cancel reject response to.
+        :param cancel_response: The events order cancel reject response.
         :param cancel_reject_reason: The events order cancel reject reason.
         :param: event_id: The events identifier.
         :param: event_timestamp: The events timestamp.
         """
         super().__init__(order_symbol, order_id, event_id, event_timestamp)
         self._cancel_reject_time = cancel_reject_time
-        self._cancel_reject_response_to = cancel_response_to
+        self._cancel_reject_response = cancel_response
         self._cancel_reject_reason = cancel_reject_reason
 
     @property
@@ -397,11 +397,11 @@ class OrderCancelReject(OrderEvent):
         return self._cancel_reject_time
 
     @property
-    def cancel_reject_response_to(self) -> str:
+    def cancel_reject_response(self) -> str:
         """
         :return: The events order cancel reject response to.
         """
-        return self._cancel_reject_response_to
+        return self._cancel_reject_response
 
     @property
     def cancel_reject_reason(self) -> str:
