@@ -8,18 +8,17 @@
 # -------------------------------------------------------------------------------------------------
 
 import unittest
-import uuid
 import pytz
 
 from datetime import datetime
 from decimal import Decimal
+from uuid import UUID
 
 from inv_trader.model.enums import Venue, OrderSide, OrderType, OrderStatus, TimeInForce
 from inv_trader.model.objects import Symbol, Resolution, QuoteType, BarType, Bar
 from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
 from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
 from inv_trader.model.events import OrderPartiallyFilled, OrderFilled
-from inv_trader.factories import OrderFactory
 from inv_trader.execution import ExecutionClient, LiveExecClient
 from test_kit.stubs import TestStubs
 from test_kit.mocks import MockExecClient
@@ -46,7 +45,7 @@ class ExecutionClientTests(unittest.TestCase):
         # Assert
         self.assertEqual(exec_client, result)
 
-    def test_can_receive_events(self):
+    def test_can_receive_bars(self):
         # Arrange
         storer = ObjectStorer()
         strategy = TestStrategy1(storer)
@@ -100,7 +99,6 @@ class LiveExecClientTests(unittest.TestCase):
                       'af6f726465725f7375626d6974746564ae7375626d69747465645f74'
                       '696d65b8313937302d30312d30315430303a30303a30302e3030305a')
 
-        # Won't have to do this in production - arrives as bytes.
         body = bytes.fromhex(hex_string)
 
         # Act
@@ -111,50 +109,100 @@ class LiveExecClientTests(unittest.TestCase):
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual('StubOrderId', result.order_id)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.submitted_time)
+        self.assertTrue(isinstance(result.event_id, UUID))
+        self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.event_timestamp)
 
     def test_can_parse_order_accepted_events(self):
         # Arrange
         client = LiveExecClient()
-        event_string = 'order_accepted:audusd.fxcm,O123456,1970-01-01T00:00:00.000Z'
+
+        # Hex bytes string from C# MsgPack.Cli
+        hex_string = ('86a673796d626f6cab4155445553442e4658434da86f726465725f69'
+                      '64ab537475624f726465724964a86576656e745f6964d92466653334'
+                      '306363622d633835362d343537352d383866622d3634626533303937'
+                      '66623330af6576656e745f74696d657374616d70b8313937302d3031'
+                      '2d30315430303a30303a30302e3030305aaa6576656e745f74797065'
+                      'ae6f726465725f6163636570746564ad61636365707465645f74696d'
+                      '65b8313937302d30312d30315430303a30303a30302e3030305a')
+
+        body = bytes.fromhex(hex_string)
 
         # Act
-        result = client._parse_order_event(event_string)
+        result = client._deserialize_order_event(body)
 
         # Assert
         self.assertTrue(isinstance(result, OrderAccepted))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
-        self.assertEqual('O123456', result.order_id)
+        self.assertEqual('StubOrderId', result.order_id)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.accepted_time)
+        self.assertTrue(isinstance(result.event_id, UUID))
+        self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.event_timestamp)
 
     def test_can_parse_order_rejected_events(self):
         # Arrange
         client = LiveExecClient()
-        event_string = 'order_rejected:audusd.fxcm,O123456,1970-01-01T00:00:00.000Z,INVALID_ORDER_ID'
+
+        # Hex bytes string from C# MsgPack.Cli
+        hex_string = ('87a673796d626f6cab4155445553442e4658434da86f726465725f69'
+                      '64ab537475624f726465724964a86576656e745f6964d92463366638'
+                      '313830392d373566662d343263342d396336632d6530313636313763'
+                      '64393135af6576656e745f74696d657374616d70b8313937302d3031'
+                      '2d30315430303a30303a30302e3030305aaa6576656e745f74797065'
+                      'ae6f726465725f72656a6563746564ad72656a65637465645f74696d'
+                      '65b8313937302d30312d30315430303a30303a30302e3030305aaf72'
+                      '656a65637465645f726561736f6ead494e56414c49445f4f52444552')
+
+        body = bytes.fromhex(hex_string)
 
         # Act
-        result = client._parse_order_event(event_string)
+        result = client._deserialize_order_event(body)
 
         # Assert
         self.assertTrue(isinstance(result, OrderRejected))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
-        self.assertEqual('O123456', result.order_id)
+        self.assertEqual('StubOrderId', result.order_id)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.rejected_time)
-        self.assertEqual('INVALID_ORDER_ID', result.rejected_reason)
+        self.assertEqual('INVALID_ORDER', result.rejected_reason)
+        self.assertTrue(isinstance(result.event_id, UUID))
+        self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.event_timestamp)
 
     def test_can_parse_order_working_events(self):
         # Arrange
         client = LiveExecClient()
-        event_string = 'order_working:audusd.fxcm,O123456,B123456,1970-01-01T00:00:00.000Z'
+
+        # Hex bytes string from C# MsgPack.Cli
+        hex_string = ('8ea673796d626f6cab4155445553442e4658434da86f726465725f69'
+                      '64ab537475624f726465724964a86576656e745f6964d92434353832'
+                      '333066372d613138662d346464622d623566302d6233636436356538'
+                      '31326537af6576656e745f74696d657374616d70b8313937302d3031'
+                      '2d30315430303a30303a30302e3030305aaa6576656e745f74797065'
+                      'ad6f726465725f776f726b696e67af6f726465725f69645f62726f6b'
+                      '6572a742313233343536a56c6162656ca94f3132333435365f45aa6f'
+                      '726465725f73696465a3425559aa6f726465725f74797065ab53544f'
+                      '505f4d41524b4554a87175616e7469747901a57072696365a3312e30'
+                      'ad74696d655f696e5f666f726365a3444159ab6578706972655f7469'
+                      '6d65a46e6f6e65ac776f726b696e675f74696d65b8313937302d3031'
+                      '2d30315430303a30303a30302e3030305a')
+
+        body = bytes.fromhex(hex_string)
 
         # Act
-        result = client._parse_order_event(event_string)
+        result = client._deserialize_order_event(body)
 
         # Assert
         self.assertTrue(isinstance(result, OrderWorking))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
-        self.assertEqual('O123456', result.order_id)
+        self.assertEqual('StubOrderId', result.order_id)
         self.assertEqual('B123456', result.broker_order_id)
+        self.assertEqual('O123456_E', result.label)
+        self.assertEqual(OrderType.STOP_MARKET, result.order_type)
+        self.assertEqual(1, result.quantity)
+        self.assertEqual(Decimal('1'), result.price)
+        self.assertEqual(TimeInForce.DAY, result.time_in_force)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.working_time)
+        self.assertTrue(isinstance(result.event_id, UUID))
+        self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.event_timestamp)
+        self.assertIsNone(result.expire_time)
 
     def test_can_parse_order_cancelled_events(self):
         # Arrange
@@ -162,7 +210,7 @@ class LiveExecClientTests(unittest.TestCase):
         event_string = 'order_cancelled:audusd.fxcm,O123456,1970-01-01T00:00:00.000Z'
 
         # Act
-        result = client._parse_order_event(event_string)
+        result = client._deserialize_order_event(body)
 
         # Assert
         self.assertTrue(isinstance(result, OrderCancelled))
@@ -176,7 +224,7 @@ class LiveExecClientTests(unittest.TestCase):
         event_string = 'order_cancel_reject:audusd.fxcm,O123456,1970-01-01T00:00:00.000Z,ORDER_DOES_NOT_EXIST'
 
         # Act
-        result = client._parse_order_event(event_string)
+        result = client._deserialize_order_event(body)
 
         # Assert
         self.assertTrue(isinstance(result, OrderCancelReject))
@@ -191,7 +239,7 @@ class LiveExecClientTests(unittest.TestCase):
         event_string = 'order_modified:audusd.fxcm,O123456,B123456,1.00001,1970-01-01T00:00:00.000Z'
 
         # Act
-        result = client._parse_order_event(event_string)
+        result = client._deserialize_order_event(body)
 
         # Assert
         self.assertTrue(isinstance(result, OrderModified))
@@ -207,7 +255,7 @@ class LiveExecClientTests(unittest.TestCase):
         event_string = 'order_expired:audusd.fxcm,O123456,1970-01-01T00:00:00.000Z'
 
         # Act
-        result = client._parse_order_event(event_string)
+        result = client._deserialize_order_event(body)
 
         # Assert
         self.assertTrue(isinstance(result, OrderExpired))
@@ -221,7 +269,7 @@ class LiveExecClientTests(unittest.TestCase):
         event_string = 'order_filled:audusd.fxcm,O123456,EX123456,P123456,BUY,100000,1.50001,1970-01-01T00:00:00.000Z'
 
         # Act
-        result = client._parse_order_event(event_string)
+        result = client._deserialize_order_event(body)
 
         # Assert
         self.assertTrue(isinstance(result, OrderFilled))
@@ -240,7 +288,7 @@ class LiveExecClientTests(unittest.TestCase):
         event_string = 'order_partially_filled:audusd.fxcm,O123456,EX123456,P123456,BUY,50000,50000,1.50001,1970-01-01T00:00:00.000Z'
 
         # Act
-        result = client._parse_order_event(event_string)
+        result = client._deserialize_order_event(body)
 
         # Assert
         self.assertTrue(isinstance(result, OrderPartiallyFilled))

@@ -13,9 +13,10 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
+from typing import Optional
 
 from inv_trader.core.checks import typechecking
-from inv_trader.model.enums import OrderSide
+from inv_trader.model.enums import OrderSide, OrderType, TimeInForce
 from inv_trader.model.objects import Symbol
 
 
@@ -224,22 +225,43 @@ class OrderWorking(OrderEvent):
                  symbol: Symbol,
                  order_id: str,
                  broker_order_id: str,
+                 label: str,
+                 order_side: OrderSide,
+                 order_type: OrderType,
+                 quantity: int,
+                 price: Decimal,
+                 time_in_force: TimeInForce,
                  working_time: datetime,
                  event_id: UUID,
-                 event_timestamp: datetime):
+                 event_timestamp: datetime,
+                 expire_time: Optional[datetime]=None):
         """
         Initializes a new instance of the OrderWorking class.
 
         :param: symbol: The events order symbol.
         :param: order_id: The events order identifier.
         :param: broker_order_id: The events broker order identifier.
+        :param: label: The events order label.
+        :param: order_side: The events order side.
+        :param: order_type: The events order type.
+        :param: quantity: The events order quantity.
+        :param: price: The events order price.
+        :param: time_in_force: The events order time in force.
         :param: working_time: The events order working time.
         :param: event_id: The events identifier.
         :param: event_timestamp: The events timestamp.
+        :param: expire_time: The events order expire time (optional can be None).
         """
         super().__init__(symbol, order_id, event_id, event_timestamp)
         self._broker_order_id = broker_order_id
+        self._label = label
+        self._order_side = order_side
+        self._order_type = order_type
+        self._quantity = quantity
+        self._price = price
+        self._time_in_force = time_in_force
         self._working_time = working_time
+        self._expire_time = expire_time
 
     @property
     def broker_order_id(self) -> str:
@@ -249,11 +271,60 @@ class OrderWorking(OrderEvent):
         return self._broker_order_id
 
     @property
+    def label(self) -> str:
+        """
+        :return: The events order label.
+        """
+        return self._label
+
+    @property
+    def order_side(self) -> OrderSide:
+        """
+        :return: The events order side.
+        """
+        return self._order_side
+
+    @property
+    def order_type(self) -> OrderType:
+        """
+        :return: The events order type.
+        """
+        return self._order_type
+
+    @property
+    def quantity(self) -> int:
+        """
+        :return: The events order quantity.
+        """
+        return self._quantity
+
+    @property
+    def price(self) -> Decimal:
+        """
+        :return: The events order price.
+        """
+        return self._price
+
+    @property
+    def time_in_force(self) -> TimeInForce:
+        """
+        :return: The events order time in force.
+        """
+        return self._time_in_force
+
+    @property
     def working_time(self) -> datetime:
         """
         :return: The events order working time.
         """
         return self._working_time
+
+    @property
+    def expire_time(self) -> Optional[datetime]:
+        """
+        :return: The events order expire time.
+        """
+        return self._expire_time
 
 
 class OrderCancelled(OrderEvent):
@@ -298,6 +369,7 @@ class OrderCancelReject(OrderEvent):
                  order_symbol: Symbol,
                  order_id: str,
                  cancel_reject_time: datetime,
+                 cancel_response_to: str,
                  cancel_reject_reason: str,
                  event_id: UUID,
                  event_timestamp: datetime):
@@ -307,11 +379,14 @@ class OrderCancelReject(OrderEvent):
         :param: order_symbol: The events order symbol.
         :param: order_id: The events order identifier.
         :param: cancel_reject_time: The events order cancel reject time.
+        :param cancel_response_to: The events order cancel reject response to.
+        :param cancel_reject_reason: The events order cancel reject reason.
         :param: event_id: The events identifier.
         :param: event_timestamp: The events timestamp.
         """
         super().__init__(order_symbol, order_id, event_id, event_timestamp)
         self._cancel_reject_time = cancel_reject_time
+        self._cancel_reject_response_to = cancel_response_to
         self._cancel_reject_reason = cancel_reject_reason
 
     @property
@@ -320,6 +395,13 @@ class OrderCancelReject(OrderEvent):
         :return: The events order cancel reject time.
         """
         return self._cancel_reject_time
+
+    @property
+    def cancel_reject_response_to(self) -> str:
+        """
+        :return: The events order cancel reject response to.
+        """
+        return self._cancel_reject_response_to
 
     @property
     def cancel_reject_reason(self) -> str:

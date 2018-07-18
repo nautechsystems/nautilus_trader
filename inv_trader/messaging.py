@@ -12,9 +12,11 @@ import msgpack
 import iso8601
 import uuid
 
+from datetime import datetime
 from decimal import Decimal
+from typing import Optional
 
-from inv_trader.model.enums import Venue, OrderSide
+from inv_trader.model.enums import Venue, OrderSide, OrderType, TimeInForce
 from inv_trader.model.objects import Symbol
 from inv_trader.model.events import OrderEvent
 from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
@@ -28,6 +30,7 @@ ORDER_ID = 'order_id'.encode(UTF8)
 ORDER_ID_BROKER = 'order_id_broker'.encode(UTF8)
 EVENT_ID = 'event_id'.encode(UTF8)
 EVENT_TIMESTAMP = 'event_timestamp'.encode(UTF8)
+LABEL = 'label'.encode(UTF8)
 ORDER_SUBMITTED = 'order_submitted'.encode(UTF8)
 ORDER_ACCEPTED = 'order_accepted'.encode(UTF8)
 ORDER_REJECTED = 'order_rejected'.encode(UTF8)
@@ -46,15 +49,20 @@ REJECTED_REASON = 'rejected_reason'.encode(UTF8)
 WORKING_TIME = 'working_time'.encode(UTF8)
 CANCELLED_TIME = 'cancelled_time'.encode(UTF8)
 MODIFIED_TIME = 'modified_time'.encode(UTF8)
+EXPIRE_TIME = 'expire_time'.encode(UTF8)
 EXPIRED_TIME = 'expired_time'.encode(UTF8)
 MODIFIED_PRICE = 'modified_price'
 EXECUTION_TIME = 'execution_time'.encode(UTF8)
 EXECUTION_ID = 'execution_id'.encode(UTF8)
 EXECUTION_TICKET = 'execution_ticket'.encode(UTF8)
 ORDER_SIDE = 'order_side'.encode(UTF8)
+ORDER_TYPE = 'order_type'.encode(UTF8)
 FILLED_QUANTITY = 'filled_quantity'.encode(UTF8)
 LEAVES_QUANTITY = 'leaves_quantity'.encode(UTF8)
+QUANTITY = 'quantity'.encode(UTF8)
 AVERAGE_PRICE = 'average_price'.encode(UTF8)
+PRICE = 'price'.encode(UTF8)
+TIME_IN_FORCE = 'time_in_force'.encode(UTF8)
 
 
 class EventSerializer:
@@ -120,20 +128,31 @@ class MsgPackEventSerializer(EventSerializer):
                 symbol,
                 order_id,
                 iso8601.parse_date(unpacked[REJECTED_TIME].decode(UTF8)),
-                unpacked[REJECTED_TIME].decode(UTF8),
-                unpacked[REJECTED_RESPONSE].decode(UTF8),
                 unpacked[REJECTED_REASON].decode(UTF8),
                 uuid.UUID(event_id),
                 event_timestamp)
 
         elif event_type == ORDER_WORKING:
+            expire_time_string = unpacked[EXPIRE_TIME].decode(UTF8)
+            if expire_time_string == 'none':
+                expire_time = None
+            else:
+                expire_time = iso8601.parse_date(expire_time_string),
+
             return OrderWorking(
                 symbol,
                 order_id,
                 unpacked[ORDER_ID_BROKER].decode(UTF8),
+                unpacked[LABEL].decode(UTF8),
+                OrderSide[unpacked[ORDER_SIDE].decode(UTF8)],
+                OrderType[unpacked[ORDER_TYPE].decode(UTF8)],
+                unpacked[QUANTITY],
+                Decimal(unpacked[PRICE].decode(UTF8)),
+                TimeInForce[unpacked[TIME_IN_FORCE].decode(UTF8)],
                 iso8601.parse_date(unpacked[WORKING_TIME].decode(UTF8)),
                 uuid.UUID(event_id),
-                event_timestamp)
+                event_timestamp,
+                expire_time)
 
         elif event_type == ORDER_CANCELLED:
             return OrderCancelled(
@@ -148,6 +167,7 @@ class MsgPackEventSerializer(EventSerializer):
                 symbol,
                 order_id,
                 iso8601.parse_date(unpacked[REJECTED_TIME].decode(UTF8)),
+                unpacked[REJECTED_RESPONSE].decode(UTF8),
                 unpacked[REJECTED_REASON].decode(UTF8),
                 uuid.UUID(event_id),
                 event_timestamp)
