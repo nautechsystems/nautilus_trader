@@ -9,14 +9,15 @@
 # -------------------------------------------------------------------------------------------------
 
 import abc
+import json
 
 from collections import namedtuple
 from decimal import Decimal
 from typing import Dict
 from pika import PlainCredentials, ConnectionParameters, SelectConnection
 from pika.channel import Channel
-from pika.frame import Frame
-from pika.spec import Basic, BasicProperties
+from pika.frame import Method
+from pika.spec import Basic, BasicProperties, Exchange, Queue
 
 from inv_trader.core.checks import typechecking
 from inv_trader.model.order import Order
@@ -227,7 +228,7 @@ class LiveExecClient(ExecutionClient):
 
         :param: connection: The pika connection object.
         """
-        self._log('Connection opened.')
+        self._log(f'Connection opened {json.dumps(connection.server_properties, sort_keys=True, indent=2)}.')
         self._add_on_connection_close_callback()
         self._open_channel()
 
@@ -285,14 +286,13 @@ class LiveExecClient(ExecutionClient):
         self._log('Creating a new channel...')
         self._connection.channel(on_open_callback=self._on_channel_open)
 
-    def _on_channel_open(self, channel):
+    def _on_channel_open(self, channel: Channel):
         """
         This method is invoked by pika when the channel has been opened.
         The channel object is passed in so we can make use of it.
         Since the channel is now open, we'll declare the exchange to use.
 
-        :param channel: The channel object
-
+        :param channel: The pike channel object
         """
         self._log('Channel opened.')
         self._channel = channel
@@ -345,18 +345,17 @@ class LiveExecClient(ExecutionClient):
                                  QUEUE_NAME,
                                  exchange_info.name,
                                  ROUTING_KEY)
-
         self._log(f'Declared exchange {exchange_info.name} (type={exchange_info.type}).')
 
     @typechecking
-    def _on_exchange_declare_ok(self, response_frame: Frame):
+    def _on_exchange_declare_ok(self, response_frame: Method):
         """
         Invoked by pika when RabbitMQ has finished the Exchange.Declare RPC
         command.
 
         :param response_frame: The Exchange.DeclareOk response frame.
         """
-        self._log(f'Exchange declared.')
+        self._log(f'Exchange declared on channel {response_frame.channel_number}.')
         self._setup_queue(QUEUE_NAME)
 
     @typechecking
@@ -372,7 +371,7 @@ class LiveExecClient(ExecutionClient):
         self._channel.queue_declare(self._on_queue_declare_ok, queue_name)
 
     @typechecking
-    def _on_queue_declare_ok(self, response_frame: Frame):
+    def _on_queue_declare_ok(self, response_frame: Method):
         """
         Method invoked by pika when the Queue.Declare RPC call made in
         setup_queue has completed. In this method we will bind the queue
@@ -382,20 +381,21 @@ class LiveExecClient(ExecutionClient):
 
         :param response_frame: The Queue.DeclareOk frame.
         """
-        self._log(f'Queue {response_frame.name} decalred.')
+        self._log(f'Queue declared on channel {response_frame.channel_number}.')
         self._log('Binding {self.EXCHANGE} to {self.QUEUE} with {self.ROUTING_KEY}.')
 
     @typechecking
-    def _on_bind_ok(self, unused_frame: Frame):
+    def _on_bind_ok(self, response_frame: Method):
         """
         Invoked by pika when the Queue.Bind method has completed. At this
         point we will start consuming messages by calling start_consuming
         which will invoke the needed RPC commands to start the process.
 
-        :param pika.frame.Method unused_frame: The Queue.BindOk response frame
+        :param response_frame: The Queue.BindOk response frame.
         """
-        self._log('Queue bound.')
+        self._log(f'Queue bound on channel {response_frame.channel_number}.')
         self._start_consuming()
+        self._log(f'Consumption ready...')
 
     def _start_consuming(self):
         """
@@ -414,24 +414,24 @@ class LiveExecClient(ExecutionClient):
         self._consumer_tag = self._channel.basic_consume(self._on_message, QUEUE_NAME)
 
     @typechecking
-    def _on_consumer_cancelled(self, method_frame: Frame):
+    def _on_consumer_cancelled(self, response_frame: Method):
         """
         Invoked by pika when RabbitMQ sends a Basic.Cancel for a consumer
         receiving messages.
 
-        :param method_frame: The Basic.Cancel method frame.
+        :param response_frame: The Basic.Cancel response method frame.
         """
-        self._log(f'Consumer was cancelled remotely, shutting down {method_frame}...')
+        self._log(f'Consumer was cancelled remotely, shutting down {response_frame}...')
         if self._channel:
             self._channel.close()
 
     @typechecking
     def _on_message(
             self,
-            unused_channel: Channel,
+            channel: Channel,
             basic_deliver: Basic.Deliver,
             properties: BasicProperties,
-            body: bytearray):
+            body: bytes):
         """
         Invoked by pika when a message is delivered from RabbitMQ. The
         channel is passed for your convenience. The basic_deliver object that
@@ -440,13 +440,15 @@ class LiveExecClient(ExecutionClient):
         instance of BasicProperties with the message properties and the body
         is the message that was sent.
 
-        :param unused_channel: The channel object
+        :param channel: The pike channel object
         :param basic_deliver: The basic deliver method.
         :param properties: The properties.
         :param body: The message body.
         """
-        self._log('Received message # %s from %s: %s',
-                    basic_deliver.delivery_tag, properties.app_id, body)
+        self._log((f'Received message #{basic_deliver.delivery_tag} '
+                   f'on channel {channel.channel_number} '
+                   f'from {properties.app_id}: {body}'))
+
         self._acknowledge_message(basic_deliver.delivery_tag)
 
     @typechecking
@@ -457,7 +459,7 @@ class LiveExecClient(ExecutionClient):
 
         :param delivery_tag: The delivery tag from the Basic.Deliver frame.
         """
-        self._log('Acknowledging message %s', delivery_tag)
+        self._log(f'Acknowledging message {delivery_tag}')
         self._channel.basic_ack(delivery_tag)
 
     def _stop_consuming(self):
@@ -469,24 +471,23 @@ class LiveExecClient(ExecutionClient):
             self._channel.basic_cancel(self._on_cancel_ok, self._consumer_tag)
 
     @typechecking
-    def _on_cancel_ok(self, unused_frame):
+    def _on_cancel_ok(self, response_frame):
         """This method is invoked by pika when RabbitMQ acknowledges the
         cancellation of a consumer. At this point we will close the channel.
         This will invoke the on_channel_closed method once the channel has been
         closed, which will in-turn close the connection.
 
-        :param pika.frame.Method unused_frame: The Basic.CancelOk frame
-
+        :param response_frame: The Basic.CancelOk response frame.
         """
-        self._log('RabbitMQ acknowledged the cancellation of the consumer')
+        self._log(
+            f'Cancellation of the consumer on channel {response_frame} OK.')
         self._close_channel()
 
     def _close_channel(self):
         """Call to close the channel with RabbitMQ cleanly by issuing the
         Channel.Close RPC command.
-
         """
-        self._log('Closing the channel')
+        self._log('Closing the channel...')
         self._channel.close()
 
     def _stop(self):
