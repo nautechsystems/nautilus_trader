@@ -91,6 +91,8 @@ class MQWorker(Thread):
         """
         self._stop()
         self._close_connection()
+        self._log((f"Disconnected from AMQP broker at "
+                   f"{self._connection_params.host}:{self._connection_params.port}."))
 
     def _open_connection(self):
         """
@@ -104,9 +106,6 @@ class MQWorker(Thread):
                                             stop_ioloop_on_close=False)
 
         self._connection.ioloop.start()
-        self._log((f"Connected to AMQP broker at "
-                   f"{self._connection_params.host}:{self._connection_params.port}."))
-
         return self._connection
 
     def _on_connection_open(self, connection: SelectConnection):
@@ -115,8 +114,9 @@ class MQWorker(Thread):
 
         :param: connection: The pika connection object.
         """
-        self._log((f'Connection opened '
-                   f'{json.dumps(connection.server_properties, sort_keys=True, indent=2)}.'))
+        self._log((f"Connected to AMQP broker at "
+                   f"{self._connection_params.host}:{self._connection_params.port}."))
+        self._log(f'{json.dumps(connection.server_properties, sort_keys=True, indent=2)}.')
         self._add_on_connection_close_callback()
         self._open_channel()
 
@@ -213,7 +213,7 @@ class MQWorker(Thread):
         :param reply_text: The text reason the channel was closed.
         """
         self._log((f'Warning: Channel {channel.channel_number} was closed: '
-                   f'({reply_code}) {reply_text}.'))
+                   f'(reply_code={reply_code}, reply_text=\'{reply_text}\').'))
         self._connection.close()
 
     @typechecking
