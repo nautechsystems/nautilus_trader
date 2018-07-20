@@ -78,6 +78,7 @@ class MQWorker(Thread):
     def send(self, message: bytearray):
         """
         Send the given byte array as a message to the AMQP broker.
+
         :param message: The message body to send to the AMQP broker.
         """
         self._channel.basic_publish(exchange=self._exchange_name,
@@ -94,6 +95,7 @@ class MQWorker(Thread):
     def _open_connection(self):
         """
         Open a new connection with the AMQP broker.
+
         :return: The pika connection object.
         """
         self._log("Connecting...")
@@ -165,9 +167,9 @@ class MQWorker(Thread):
 
     def _open_channel(self):
         """
-        Open a new channel with the execution service by issuing the Channel.Open RPC
-        command. When the execution service responds that the channel is open, the
-        on_channel_open callback will be invoked.
+        Open a new channel with the execution service by issuing the
+        Channel.Open RPC command. When the execution service responds that the
+        channel is open, the on_channel_open callback will be invoked.
         """
         self._log('Creating a new channel...')
         self._connection.channel(on_open_callback=self._on_channel_open)
@@ -188,7 +190,7 @@ class MQWorker(Thread):
     def _add_on_channel_close_callback(self):
         """
         This method tells pika to call the on_channel_closed method if
-        RabbitMQ unexpectedly closes the channel.
+        the AMQP broker unexpectedly closes the channel.
         """
         self._channel.add_on_close_callback(self._on_channel_closed)
         self._log('Added channel close callback.')
@@ -217,8 +219,8 @@ class MQWorker(Thread):
     @typechecking
     def _setup_exchange(self):
         """
-        Setup the exchange on RabbitMQ by invoking the Exchange.Declare RPC
-        command. When it is complete, the on_exchange_declare_ok method will
+        Setup the exchange on the AMQP broker by invoking the Exchange.Declare
+        RPC command. When it is complete, the on_exchange_declare_ok method will
         be invoked by pika.
         """
         self._channel.exchange_declare(self._on_exchange_declare_ok,
@@ -230,8 +232,8 @@ class MQWorker(Thread):
     @typechecking
     def _on_exchange_declare_ok(self, response_frame: Method):
         """
-        Invoked by pika when RabbitMQ has finished the Exchange.Declare RPC
-        command.
+        Invoked by pika when the AMQP broker has finished the
+        Exchange.Declare RPC command.
 
         :param response_frame: The Exchange.DeclareOk response frame.
         """
@@ -241,7 +243,7 @@ class MQWorker(Thread):
     @typechecking
     def _setup_queue(self, queue_name: str):
         """
-        Setup the queue on RabbitMQ by invoking the Queue.Declare RPC
+        Setup the queue on the AMQP broker by invoking the Queue.Declare RPC
         command. When it is complete, the on_queue_declare_ok method will
         be invoked by pika.
 
@@ -287,13 +289,12 @@ class MQWorker(Thread):
     def _start_consuming(self):
         """
         This method sets up the consumer by first calling
-        add_on_cancel_callback so that the object is notified if RabbitMQ
+        add_on_cancel_callback so that the object is notified if the AMQP broker
         cancels the consumer. It then issues the Basic.Consume RPC command
         which returns the consumer tag that is used to uniquely identify the
-        consumer with RabbitMQ. We keep the value to use it when we want to
+        consumer with AMQP broker. We keep the value to use it when we want to
         cancel consuming. The on_message method is passed in as a callback pika
         will invoke when a message is fully received.
-
         """
         self._log('Issuing consumer related RPC commands.')
         self._log('Adding consumer cancellation callback.')
@@ -303,7 +304,7 @@ class MQWorker(Thread):
     @typechecking
     def _on_consumer_cancelled(self, response_frame: Method):
         """
-        Invoked by pika when RabbitMQ sends a Basic.Cancel for a consumer
+        Invoked by pika when the AMQP broker sends a Basic.Cancel for a consumer
         receiving messages.
 
         :param response_frame: The Basic.Cancel response method frame.
@@ -320,7 +321,7 @@ class MQWorker(Thread):
             properties: BasicProperties,
             body: bytes):
         """
-        Invoked by pika when a message is delivered from RabbitMQ. The
+        Invoked by pika when a message is delivered from the AMQP broker. The
         channel is passed for your convenience. The basic_deliver object that
         is passed in carries the exchange, routing key, delivery tag and
         a redelivered flag for the message. The properties passed in is an
@@ -341,8 +342,8 @@ class MQWorker(Thread):
     @typechecking
     def _acknowledge_message(self, delivery_tag: int):
         """
-        Acknowledge the message delivery from RabbitMQ by sending a
-        Basic.Ack RPC method for the delivery tag.
+        Acknowledge the message delivery from the AMQP broker by sending a
+        Basic.Ack RPC method for the delivery tag to the AMQP broker.
 
         :param delivery_tag: The delivery tag from the Basic.Deliver frame.
         """
@@ -374,7 +375,7 @@ class MQWorker(Thread):
 
     def _close_channel(self):
         """
-        Call to close the channel with RabbitMQ cleanly by issuing the
+        Call to close the channel with the AMQP broker cleanly by issuing the
         Channel.Close RPC command.
         """
         self._log('Closing the channel...')
@@ -382,14 +383,14 @@ class MQWorker(Thread):
 
     def _stop(self):
         """
-        Cleanly shutdown the connection to RabbitMQ by stopping the consumer
-        with RabbitMQ. When RabbitMQ confirms the cancellation, on_cancel_ok
+        Cleanly shutdown the connection to the AMQP broker by stopping the
+        consumer. When the AMQP broker confirms the cancellation, on_cancel_ok
         will be invoked by pika, which will then close the channel and
         connection. The IOLoop is started again because this method is invoked
         when CTRL-C is pressed raising a KeyboardInterrupt exception. This
         exception stops the IOLoop which needs to be running for pika to
-        communicate with RabbitMQ. All of the commands issued prior to starting
-        the IOLoop will be buffered but not processed.
+        communicate with the AMQP broker. All of the commands issued prior to
+        starting the IOLoop will be buffered but not processed.
         """
         self._log('Stopping...')
         self._closing = True
@@ -399,7 +400,7 @@ class MQWorker(Thread):
 
     def _close_connection(self):
         """
-        Closes the connection to RabbitMQ.
+        Closes the connection to AMQP broker.
         """
         self._log('Closing connection...')
         self._connection.close()
@@ -412,4 +413,3 @@ class MQWorker(Thread):
         :param message: The message to log.
         """
         print(f"{self._worker_name}: {message}")
-
