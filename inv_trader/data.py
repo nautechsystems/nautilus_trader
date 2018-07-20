@@ -104,7 +104,7 @@ class LiveDataClient:
             self._pubsub.unsubscribe()
 
         if self._pubsub_thread is not None:
-            self._pubsub_thread._stop()
+            self._pubsub_thread.stop()
             time.sleep(0.100)  # Allows thread to stop.
             self._log(f"Stopped PubSub thread {self._pubsub_thread}.")
 
