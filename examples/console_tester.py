@@ -32,7 +32,6 @@ if __name__ == "__main__":
     data_client.subscribe_bars('AUDUSD', Venue.FXCM, 1, Resolution.SECOND, QuoteType.MID)
 
     exec_client.connect()
-    print("reached here")
     strategy.start()
 
     input("Press Enter to disconnect...")
