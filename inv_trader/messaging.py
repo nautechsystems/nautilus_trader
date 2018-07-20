@@ -93,6 +93,7 @@ class MQWorker(Thread):
         self._close_connection()
         self._log((f"Disconnected from AMQP broker at "
                    f"{self._connection_params.host}:{self._connection_params.port}."))
+        self._log(f"Stopped worker {super}")
 
     def _open_connection(self):
         """
