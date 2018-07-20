@@ -7,213 +7,395 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import abc
-import msgpack
-import iso8601
-import uuid
+import json
 
-from decimal import Decimal
+from threading import Thread
+from collections import namedtuple
+from pika import ConnectionParameters, SelectConnection
+from pika.channel import Channel
+from pika.frame import Method
+from pika.spec import Basic, BasicProperties
 
-from inv_trader.model.enums import Venue, OrderSide, OrderType, TimeInForce
-from inv_trader.model.objects import Symbol
-from inv_trader.model.events import OrderEvent
-from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
-from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
-from inv_trader.model.events import OrderPartiallyFilled, OrderFilled
-
-UTF8 = 'utf-8'
-EVENT_TYPE = 'event_type'.encode(UTF8)
-SYMBOL = 'symbol'.encode(UTF8)
-ORDER_ID = 'order_id'.encode(UTF8)
-ORDER_ID_BROKER = 'order_id_broker'.encode(UTF8)
-EVENT_ID = 'event_id'.encode(UTF8)
-EVENT_TIMESTAMP = 'event_timestamp'.encode(UTF8)
-LABEL = 'label'.encode(UTF8)
-ORDER_SUBMITTED = 'order_submitted'.encode(UTF8)
-ORDER_ACCEPTED = 'order_accepted'.encode(UTF8)
-ORDER_REJECTED = 'order_rejected'.encode(UTF8)
-ORDER_WORKING = 'order_working'.encode(UTF8)
-ORDER_CANCELLED = 'order_cancelled'.encode(UTF8)
-ORDER_CANCEL_REJECT = 'order_cancel_reject'.encode(UTF8)
-ORDER_MODIFIED = 'order_modified'.encode(UTF8)
-ORDER_EXPIRED = 'order_expired'.encode(UTF8)
-ORDER_PARTIALLY_FILLED = 'order_partially_filled'.encode(UTF8)
-ORDER_FILLED = 'order_filled'.encode(UTF8)
-SUBMITTED_TIME = 'submitted_time'.encode(UTF8)
-ACCEPTED_TIME = 'accepted_time'.encode(UTF8)
-REJECTED_TIME = 'rejected_time'.encode(UTF8)
-REJECTED_RESPONSE = 'rejected_response'.encode(UTF8)
-REJECTED_REASON = 'rejected_reason'.encode(UTF8)
-WORKING_TIME = 'working_time'.encode(UTF8)
-CANCELLED_TIME = 'cancelled_time'.encode(UTF8)
-MODIFIED_TIME = 'modified_time'.encode(UTF8)
-MODIFIED_PRICE = 'modified_price'.encode(UTF8)
-EXPIRE_TIME = 'expire_time'.encode(UTF8)
-EXPIRED_TIME = 'expired_time'.encode(UTF8)
-EXECUTION_TIME = 'execution_time'.encode(UTF8)
-EXECUTION_ID = 'execution_id'.encode(UTF8)
-EXECUTION_TICKET = 'execution_ticket'.encode(UTF8)
-ORDER_SIDE = 'order_side'.encode(UTF8)
-ORDER_TYPE = 'order_type'.encode(UTF8)
-FILLED_QUANTITY = 'filled_quantity'.encode(UTF8)
-LEAVES_QUANTITY = 'leaves_quantity'.encode(UTF8)
-QUANTITY = 'quantity'.encode(UTF8)
-AVERAGE_PRICE = 'average_price'.encode(UTF8)
-PRICE = 'price'.encode(UTF8)
-TIME_IN_FORCE = 'time_in_force'.encode(UTF8)
+from inv_trader.core.checks import typechecking
 
 
-class EventSerializer:
+# Holder for exchange properties.
+ExchangeProps = namedtuple('Exchange', 'name, type')
+
+# Constants
+QUEUE_NAME = 'inv_trader'
+ROUTING_KEY = 'inv_trader'
+
+
+class MQWorker(Thread):
     """
-    The abstract base class for all event serializers.
+    Provides an AMQP worker thread with a separate connection.
     """
 
-    __metaclass__ = abc.ABCMeta
-
-    @staticmethod
-    @abc.abstractmethod
-    def deserialize_order_event(event_bytes: bytearray) -> OrderEvent:
+    @typechecking
+    def __init__(
+            self,
+            connection_params: ConnectionParameters,
+            exchange_props: ExchangeProps,
+            message_handler: callable):
         """
-        Deserialize the given bytes to an order event.
+        Initializes a new instance of the LiveExecClient class.
+        The host and port parameters are for the order event subscription
+        channel.
 
-        :param: event_bytes: The byte array to deserialize.
-        :return: The deserialized order event.
+        :param connection_params: The AMQP broker connection parameters.
+        :param exchange_props: The AMQP broker exchange properties.
+        :param message_handler: The handler to send received messages to.
         """
-        # Raise exception if not overridden in implementation.
-        raise NotImplementedError("Method must be implemented.")
+        super().__init__()
+        self._connection_params = connection_params
+        self._exchange_name = exchange_props.name
+        self._exchange_type = exchange_props.type
+        self._message_handler = message_handler
+        self._connection = None
+        self._channel = None
+        self._closing = False
+        self._consumer_tag = None
 
-
-class MsgPackEventSerializer(EventSerializer):
-    """
-    Provides a serializer for the Message Pack specification
-    """
-
-    @staticmethod
-    def deserialize_order_event(event_bytes: bytearray) -> OrderEvent:
+    def run(self):
         """
-        Deserialize the given Message Pack bytes to an order event.
-
-        :param event_bytes: The byte array to deserialize.
-        :return: The deserialized order event.
+        Beings the message queue process by connecting to the execution service
+        and establish the messaging channels and queues needed.
         """
-        unpacked = msgpack.unpackb(event_bytes)
+        self._open_connection()
 
-        event_type = unpacked[EVENT_TYPE]
-        split_symbol = unpacked[SYMBOL].decode(UTF8).split('.')
-        symbol = Symbol(split_symbol[0], Venue[split_symbol[1].upper()])
-        order_id = unpacked[ORDER_ID].decode(UTF8)
-        event_id = unpacked[EVENT_ID].decode(UTF8)
-        event_timestamp = iso8601.parse_date(unpacked[EVENT_TIMESTAMP].decode(UTF8))
+    def send(self, message: bytearray):
+        """
+        Send the given byte array as a message to the AMQP broker.
+        :param message: The message body to send to the AMQP broker.
+        """
+        self._channel.basic_publish(exchange=self._exchange_name,
+                                    routing_key=ROUTING_KEY,
+                                    body=message)
 
-        if event_type == ORDER_SUBMITTED:
-            return OrderSubmitted(
-                symbol,
-                order_id,
-                iso8601.parse_date(unpacked[SUBMITTED_TIME].decode(UTF8)),
-                uuid.UUID(event_id),
-                event_timestamp)
+    def stop(self):
+        """
+        Stops consuming messages from and closes the connection to the AMQP broker.
+        """
+        self._stop()
+        self._close_connection()
 
-        elif event_type == ORDER_ACCEPTED:
-            return OrderAccepted(
-                symbol,
-                order_id,
-                iso8601.parse_date(unpacked[ACCEPTED_TIME].decode(UTF8)),
-                uuid.UUID(event_id),
-                event_timestamp)
+    def _open_connection(self):
+        """
+        Open a new connection with the AMQP broker.
+        :return: The pika connection object.
+        """
+        self._log("Connecting...")
+        self._connection = SelectConnection(self._connection_params,
+                                            self._on_connection_open,
+                                            stop_ioloop_on_close=False)
 
-        elif event_type == ORDER_REJECTED:
-            return OrderRejected(
-                symbol,
-                order_id,
-                iso8601.parse_date(unpacked[REJECTED_TIME].decode(UTF8)),
-                unpacked[REJECTED_REASON].decode(UTF8),
-                uuid.UUID(event_id),
-                event_timestamp)
+        self._connection.ioloop.start()
+        self._log((f"Connected to AMQP broker at "
+                   f"{self._connection_params.host}:{self._connection_params.port}."))
 
-        elif event_type == ORDER_WORKING:
-            expire_time_string = unpacked[EXPIRE_TIME].decode(UTF8)
-            if expire_time_string == 'none':
-                expire_time = None
-            else:
-                expire_time = iso8601.parse_date(expire_time_string),
+        return self._connection
 
-            return OrderWorking(
-                symbol,
-                order_id,
-                unpacked[ORDER_ID_BROKER].decode(UTF8),
-                unpacked[LABEL].decode(UTF8),
-                OrderSide[unpacked[ORDER_SIDE].decode(UTF8)],
-                OrderType[unpacked[ORDER_TYPE].decode(UTF8)],
-                unpacked[QUANTITY],
-                Decimal(unpacked[PRICE].decode(UTF8)),
-                TimeInForce[unpacked[TIME_IN_FORCE].decode(UTF8)],
-                iso8601.parse_date(unpacked[WORKING_TIME].decode(UTF8)),
-                uuid.UUID(event_id),
-                event_timestamp,
-                expire_time)
+    def _on_connection_open(self, connection: SelectConnection):
+        """
+        Called once the connection to the AMQP broker has been established.
 
-        elif event_type == ORDER_CANCELLED:
-            return OrderCancelled(
-                symbol,
-                order_id,
-                iso8601.parse_date(unpacked[CANCELLED_TIME].decode(UTF8)),
-                uuid.UUID(event_id),
-                event_timestamp)
+        :param: connection: The pika connection object.
+        """
+        self._log((f'Connection opened '
+                   f'{json.dumps(connection.server_properties, sort_keys=True, indent=2)}.'))
+        self._add_on_connection_close_callback()
+        self._open_channel()
 
-        elif event_type == ORDER_CANCEL_REJECT:
-            return OrderCancelReject(
-                symbol,
-                order_id,
-                iso8601.parse_date(unpacked[REJECTED_TIME].decode(UTF8)),
-                unpacked[REJECTED_RESPONSE].decode(UTF8),
-                unpacked[REJECTED_REASON].decode(UTF8),
-                uuid.UUID(event_id),
-                event_timestamp)
+    def _add_on_connection_close_callback(self):
+        """
+        Add an on close callback which will be invoked when the AMQP message
+        broker closes the connection to the execution client unexpectedly.
+        """
+        self._log('Adding connection close callback.')
+        self._connection.add_on_close_callback(self._on_connection_closed)
 
-        elif event_type == ORDER_MODIFIED:
-            return OrderModified(
-                symbol,
-                order_id,
-                unpacked[ORDER_ID_BROKER].decode(UTF8),
-                Decimal(unpacked[MODIFIED_PRICE].decode(UTF8)),
-                iso8601.parse_date(unpacked[MODIFIED_TIME].decode(UTF8)),
-                uuid.UUID(event_id),
-                event_timestamp)
+    @typechecking
+    def _on_connection_closed(
+            self,
+            connection: SelectConnection,
+            reply_code: int,
+            reply_text: str):
+        """
+        Called when the connection to the AMQP message broker is closed
+        unexpectedly. Since it is unexpected, the client will reconnect..
 
-        elif event_type == ORDER_EXPIRED:
-            return OrderExpired(
-                symbol,
-                order_id,
-                iso8601.parse_date(unpacked[EXPIRED_TIME].decode(UTF8)),
-                uuid.UUID(event_id),
-                event_timestamp)
-
-        elif event_type == ORDER_PARTIALLY_FILLED:
-            return OrderPartiallyFilled(
-                symbol,
-                order_id,
-                unpacked[EXECUTION_ID].decode(UTF8),
-                unpacked[EXECUTION_TICKET].decode(UTF8),
-                OrderSide[unpacked[ORDER_SIDE].decode(UTF8).upper()],
-                int(unpacked[FILLED_QUANTITY]),
-                int(unpacked[LEAVES_QUANTITY]),
-                Decimal(unpacked[AVERAGE_PRICE].decode(UTF8)),
-                iso8601.parse_date(unpacked[EXECUTION_TIME].decode(UTF8)),
-                uuid.UUID(event_id),
-                event_timestamp)
-
-        elif event_type == ORDER_FILLED:
-            return OrderFilled(
-                symbol,
-                order_id,
-                unpacked[EXECUTION_ID].decode(UTF8),
-                unpacked[EXECUTION_TICKET].decode(UTF8),
-                OrderSide[unpacked[ORDER_SIDE].decode(UTF8).upper()],
-                int(unpacked[FILLED_QUANTITY]),
-                Decimal(unpacked[AVERAGE_PRICE].decode(UTF8)),
-                iso8601.parse_date(unpacked[EXECUTION_TIME].decode(UTF8)),
-                uuid.UUID(event_id),
-                event_timestamp)
-
+        :param connection: The pika connection object.
+        :param reply_code: The server provided reply code if given.
+        :param reply_text: The server provided reply text if given.
+        """
+        self._channel = None
+        if self._closing:
+            self._connection.ioloop.stop()
         else:
-            raise ValueError("The order event is invalid and cannot be parsed.")
+            self._log((f'Warning: Connection closed, '
+                       f'reopening in 5 seconds: ({reply_code}) {reply_text}'))
+            self._connection.add_timeout(5, self._reconnect)
+
+    def _reconnect(self):
+        """
+        Called by the IOLoop timer if the connection is closed.
+        (See the on_connection_closed method).
+        """
+        # This is the old connection IOLoop instance, stop its ioloop
+        self._connection.ioloop.stop()
+
+        if not self._closing:
+            # Create a new connection
+            self._connection = self._open_connection()
+
+            # There is now a new connection, needs a new ioloop to run
+            self._connection.ioloop.start()
+
+    def _open_channel(self):
+        """
+        Open a new channel with the execution service by issuing the Channel.Open RPC
+        command. When the execution service responds that the channel is open, the
+        on_channel_open callback will be invoked.
+        """
+        self._log('Creating a new channel...')
+        self._connection.channel(on_open_callback=self._on_channel_open)
+
+    def _on_channel_open(self, channel: Channel):
+        """
+        This method is invoked by pika when the channel has been opened.
+        The channel object is passed in so we can make use of it.
+        Since the channel is now open, we'll declare the exchange to use.
+
+        :param channel: The pike channel object
+        """
+        self._log('Channel opened.')
+        self._channel = channel
+        self._add_on_channel_close_callback()
+        self._setup_exchange()
+
+    def _add_on_channel_close_callback(self):
+        """
+        This method tells pika to call the on_channel_closed method if
+        RabbitMQ unexpectedly closes the channel.
+        """
+        self._channel.add_on_close_callback(self._on_channel_closed)
+        self._log('Added channel close callback.')
+
+    @typechecking
+    def _on_channel_closed(
+            self,
+            channel: Channel,
+            reply_code: int,
+            reply_text: str):
+        """
+        Invoked by pika when RabbitMQ unexpectedly closes the channel.
+        Channels are usually closed if you attempt to do something that
+        violates the protocol, such as re-declare an exchange or queue with
+        different parameters. In this case, we'll close the connection
+        to shutdown the object.
+
+        :param channel: The closed channel.
+        :param reply_code: The numeric reason the channel was closed.
+        :param reply_text: The text reason the channel was closed.
+        """
+        self._log((f'Warning: Channel {channel.channel_number} was closed: '
+                   f'({reply_code}) {reply_text}.'))
+        self._connection.close()
+
+    @typechecking
+    def _setup_exchange(self):
+        """
+        Setup the exchange on RabbitMQ by invoking the Exchange.Declare RPC
+        command. When it is complete, the on_exchange_declare_ok method will
+        be invoked by pika.
+        """
+        self._channel.exchange_declare(self._on_exchange_declare_ok,
+                                       self._exchange_name,
+                                       self._exchange_type)
+        self._channel.queue_declare(self._on_queue_declare_ok, QUEUE_NAME)
+        self._channel.queue_bind(self._on_bind_ok,
+                                 QUEUE_NAME,
+                                 self._exchange_name,
+                                 ROUTING_KEY)
+        self._log(f'Declared exchange {self._exchange_name} (type={self._exchange_type}).')
+
+    @typechecking
+    def _on_exchange_declare_ok(self, response_frame: Method):
+        """
+        Invoked by pika when RabbitMQ has finished the Exchange.Declare RPC
+        command.
+
+        :param response_frame: The Exchange.DeclareOk response frame.
+        """
+        self._log(f'Exchange declared on channel {response_frame.channel_number}.')
+        self._setup_queue(QUEUE_NAME)
+
+    @typechecking
+    def _setup_queue(self, queue_name: str):
+        """
+        Setup the queue on RabbitMQ by invoking the Queue.Declare RPC
+        command. When it is complete, the on_queue_declare_ok method will
+        be invoked by pika.
+
+        :param queue_name: The name of the queue to declare.
+        """
+        self._log(f'Declaring queue {queue_name}.')
+        self._channel.queue_declare(self._on_queue_declare_ok, queue_name)
+
+    @typechecking
+    def _on_queue_declare_ok(self, response_frame: Method):
+        """
+        Method invoked by pika when the Queue.Declare RPC call made in
+        setup_queue has completed. In this method we will bind the queue
+        and exchange together with the routing key by issuing the Queue.Bind
+        RPC command. When this command is complete, the on_bind_ok method will
+        be invoked by pika.
+
+        :param response_frame: The Queue.DeclareOk response frame.
+        """
+        self._log(f'Queue declared on channel {response_frame.channel_number}.')
+        self._log('Binding {self.EXCHANGE} to {self.QUEUE} with {self.ROUTING_KEY}.')
+
+    @typechecking
+    def _on_bind_ok(self, response_frame: Method):
+        """
+        Invoked by pika when the Queue.Bind method has completed. At this
+        point we will start consuming messages by calling start_consuming
+        which will invoke the needed RPC commands to start the process.
+
+        :param response_frame: The Queue.BindOk response frame.
+        """
+        self._log(f'Queue bound on channel {response_frame.channel_number}.')
+        self._start_consuming()
+        self._log(f'Consumption ready...')
+
+    def _start_consuming(self):
+        """
+        This method sets up the consumer by first calling
+        add_on_cancel_callback so that the object is notified if RabbitMQ
+        cancels the consumer. It then issues the Basic.Consume RPC command
+        which returns the consumer tag that is used to uniquely identify the
+        consumer with RabbitMQ. We keep the value to use it when we want to
+        cancel consuming. The on_message method is passed in as a callback pika
+        will invoke when a message is fully received.
+
+        """
+        self._log('Issuing consumer related RPC commands.')
+        self._log('Adding consumer cancellation callback')
+        self._channel.add_on_cancel_callback(self._on_consumer_cancelled)
+        self._consumer_tag = self._channel.basic_consume(self._on_message, QUEUE_NAME)
+
+    @typechecking
+    def _on_consumer_cancelled(self, response_frame: Method):
+        """
+        Invoked by pika when RabbitMQ sends a Basic.Cancel for a consumer
+        receiving messages.
+
+        :param response_frame: The Basic.Cancel response method frame.
+        """
+        self._log(f'Consumer was cancelled remotely, shutting down {response_frame}...')
+        if self._channel:
+            self._channel.close()
+
+    @typechecking
+    def _on_message(
+            self,
+            channel: Channel,
+            basic_deliver: Basic.Deliver,
+            properties: BasicProperties,
+            body: bytes):
+        """
+        Invoked by pika when a message is delivered from RabbitMQ. The
+        channel is passed for your convenience. The basic_deliver object that
+        is passed in carries the exchange, routing key, delivery tag and
+        a redelivered flag for the message. The properties passed in is an
+        instance of BasicProperties with the message properties and the body
+        is the message that was sent.
+
+        :param channel: The pike channel object
+        :param basic_deliver: The basic deliver method.
+        :param properties: The properties.
+        :param body: The message body.
+        """
+        self._log((f'Received message #{basic_deliver.delivery_tag} '
+                   f'on channel {channel.channel_number} '
+                   f'from {properties.app_id}: {body}'))
+
+        self._acknowledge_message(basic_deliver.delivery_tag)
+
+    @typechecking
+    def _acknowledge_message(self, delivery_tag: int):
+        """
+        Acknowledge the message delivery from RabbitMQ by sending a
+        Basic.Ack RPC method for the delivery tag.
+
+        :param delivery_tag: The delivery tag from the Basic.Deliver frame.
+        """
+        self._log(f'Acknowledging message {delivery_tag}')
+        self._channel.basic_ack(delivery_tag)
+
+    def _stop_consuming(self):
+        """
+        Tell the AMQP broker that you would like to stop consuming by sending the
+        Basic.Cancel RPC command.
+        """
+        if self._channel:
+            self._log('Sending a Basic.Cancel RPC command to RabbitMQ')
+            self._channel.basic_cancel(self._on_cancel_ok, self._consumer_tag)
+
+    @typechecking
+    def _on_cancel_ok(self, response_frame):
+        """
+        Called when the AMQP broker acknowledges the cancellation of a consumer.
+        At this point the channel is closed. This will then invoke the
+        on_channel_closed method once the channel has been closed, which will
+        in-turn close the connection.
+
+        :param response_frame: The Basic.CancelOk response frame.
+        """
+        self._log(
+            f'Cancellation of the consumer on channel {response_frame} OK.')
+        self._close_channel()
+
+    def _close_channel(self):
+        """
+        Call to close the channel with RabbitMQ cleanly by issuing the
+        Channel.Close RPC command.
+        """
+        self._log('Closing the channel...')
+        self._channel.close()
+
+    def _stop(self):
+        """
+        Cleanly shutdown the connection to RabbitMQ by stopping the consumer
+        with RabbitMQ. When RabbitMQ confirms the cancellation, on_cancel_ok
+        will be invoked by pika, which will then close the channel and
+        connection. The IOLoop is started again because this method is invoked
+        when CTRL-C is pressed raising a KeyboardInterrupt exception. This
+        exception stops the IOLoop which needs to be running for pika to
+        communicate with RabbitMQ. All of the commands issued prior to starting
+        the IOLoop will be buffered but not processed.
+        """
+        self._log('Stopping...')
+        self._closing = True
+        self._stop_consuming()
+        self._connection.ioloop.start()
+        self._log('Stopped.')
+
+    def _close_connection(self):
+        """
+        Closes the connection to RabbitMQ.
+        """
+        self._log('Closing connection...')
+        self._connection.close()
+
+    @staticmethod
+    @typechecking
+    def _log(message: str):
+        """
+        Log the given message (if no logger then prints).
+
+        :param message: The message to log.
+        """
+        print(f"ExecClient: {message}")
