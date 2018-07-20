@@ -9,6 +9,7 @@
 
 import json
 
+from typing import Callable
 from threading import Thread
 from collections import namedtuple
 from pika import ConnectionParameters, SelectConnection
@@ -29,7 +30,7 @@ ROUTING_KEY = 'inv_trader'
 
 class MQWorker(Thread):
     """
-    Provides an AMQP worker thread with a separate connection.
+    Provides an AMQP message queue worker with a separate thread and connection.
     """
 
     @typechecking
@@ -37,7 +38,8 @@ class MQWorker(Thread):
             self,
             connection_params: ConnectionParameters,
             exchange_props: ExchangeProps,
-            message_handler: callable):
+            message_handler: Callable,
+            worker_name: str = 'MQWorker'):
         """
         Initializes a new instance of the LiveExecClient class.
         The host and port parameters are for the order event subscription
@@ -46,8 +48,10 @@ class MQWorker(Thread):
         :param connection_params: The AMQP broker connection parameters.
         :param exchange_props: The AMQP broker exchange properties.
         :param message_handler: The handler to send received messages to.
+        :param worker_name: The name of the message queue worker.
         """
         super().__init__()
+        self._worker_name = worker_name
         self._connection_params = connection_params
         self._exchange_name = exchange_props.name
         self._exchange_type = exchange_props.type
@@ -56,6 +60,13 @@ class MQWorker(Thread):
         self._channel = None
         self._closing = False
         self._consumer_tag = None
+
+    @property
+    def name(self) -> str:
+        """
+        :return: The name of the message queue worker.
+        """
+        return self._worker_name
 
     def run(self):
         """
@@ -213,11 +224,7 @@ class MQWorker(Thread):
         self._channel.exchange_declare(self._on_exchange_declare_ok,
                                        self._exchange_name,
                                        self._exchange_type)
-        self._channel.queue_declare(self._on_queue_declare_ok, QUEUE_NAME)
-        self._channel.queue_bind(self._on_bind_ok,
-                                 QUEUE_NAME,
-                                 self._exchange_name,
-                                 ROUTING_KEY)
+
         self._log(f'Declared exchange {self._exchange_name} (type={self._exchange_type}).')
 
     @typechecking
@@ -254,8 +261,15 @@ class MQWorker(Thread):
 
         :param response_frame: The Queue.DeclareOk response frame.
         """
-        self._log(f'Queue declared on channel {response_frame.channel_number}.')
-        self._log('Binding {self.EXCHANGE} to {self.QUEUE} with {self.ROUTING_KEY}.')
+        self._log(f'Queue {QUEUE_NAME} declared on channel {response_frame.channel_number}.')
+        self._channel.queue_bind(self._on_bind_ok,
+                                 QUEUE_NAME,
+                                 self._exchange_name,
+                                 ROUTING_KEY)
+
+        self._log((f'Binding (exchange={self._exchange_name}, '
+                   f'queue={QUEUE_NAME}, '
+                   f'routing_key={ROUTING_KEY}).'))
 
     @typechecking
     def _on_bind_ok(self, response_frame: Method):
@@ -266,9 +280,9 @@ class MQWorker(Thread):
 
         :param response_frame: The Queue.BindOk response frame.
         """
-        self._log(f'Queue bound on channel {response_frame.channel_number}.')
+        self._log(f'Queue {QUEUE_NAME} bound on channel {response_frame.channel_number}.')
         self._start_consuming()
-        self._log(f'Consumption ready...')
+        self._log(f'Ready...')
 
     def _start_consuming(self):
         """
@@ -282,7 +296,7 @@ class MQWorker(Thread):
 
         """
         self._log('Issuing consumer related RPC commands.')
-        self._log('Adding consumer cancellation callback')
+        self._log('Adding consumer cancellation callback.')
         self._channel.add_on_cancel_callback(self._on_consumer_cancelled)
         self._consumer_tag = self._channel.basic_consume(self._on_message, QUEUE_NAME)
 
@@ -294,7 +308,7 @@ class MQWorker(Thread):
 
         :param response_frame: The Basic.Cancel response method frame.
         """
-        self._log(f'Consumer was cancelled remotely, shutting down {response_frame}...')
+        self._log(f'Consumer was cancelled remotely, shutting down.')
         if self._channel:
             self._channel.close()
 
@@ -332,7 +346,7 @@ class MQWorker(Thread):
 
         :param delivery_tag: The delivery tag from the Basic.Deliver frame.
         """
-        self._log(f'Acknowledging message {delivery_tag}')
+        self._log(f'Acknowledging message {delivery_tag}.')
         self._channel.basic_ack(delivery_tag)
 
     def _stop_consuming(self):
@@ -341,11 +355,11 @@ class MQWorker(Thread):
         Basic.Cancel RPC command.
         """
         if self._channel:
-            self._log('Sending a Basic.Cancel RPC command to RabbitMQ')
+            self._log('Sending basic cancel command to AMQP broker...')
             self._channel.basic_cancel(self._on_cancel_ok, self._consumer_tag)
 
     @typechecking
-    def _on_cancel_ok(self, response_frame):
+    def _on_cancel_ok(self, response_frame: Method):
         """
         Called when the AMQP broker acknowledges the cancellation of a consumer.
         At this point the channel is closed. This will then invoke the
@@ -355,7 +369,7 @@ class MQWorker(Thread):
         :param response_frame: The Basic.CancelOk response frame.
         """
         self._log(
-            f'Cancellation of the consumer on channel {response_frame} OK.')
+            f'Cancellation of the consumer on channel {response_frame.channel_number} OK.')
         self._close_channel()
 
     def _close_channel(self):
@@ -390,12 +404,12 @@ class MQWorker(Thread):
         self._log('Closing connection...')
         self._connection.close()
 
-    @staticmethod
     @typechecking
-    def _log(message: str):
+    def _log(self, message: str):
         """
         Log the given message (if no logger then prints).
 
         :param message: The message to log.
         """
-        print(f"ExecClient: {message}")
+        print(f"{self._worker_name}: {message}")
+

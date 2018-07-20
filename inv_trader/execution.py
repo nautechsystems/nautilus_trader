@@ -179,15 +179,18 @@ class LiveExecClient(ExecutionClient):
             host=host,
             port=port,
             credentials=PlainCredentials(username, password))
+
         self._order_events_worker = MQWorker(
             self._connection_params,
             ORDER_EVENTS_EXCHANGE,
-            self._order_event_handler)
+            self._order_event_handler,
+            'MQWorker[01]')
 
         self._order_commands_worker = MQWorker(
             self._connection_params,
             ORDER_COMMANDS_EXCHANGE,
-            self._order_command_ack_handler)
+            self._order_command_ack_handler,
+            'MQWorker[02]')
 
     def connect(self):
         """
