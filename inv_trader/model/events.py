@@ -13,7 +13,6 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
-from typing import Optional
 
 from inv_trader.core.checks import typechecking
 from inv_trader.model.enums import OrderSide, OrderType, TimeInForce

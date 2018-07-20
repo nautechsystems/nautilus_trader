@@ -81,6 +81,24 @@ class Symbol:
         return f"<{str(self)} object at {id(self)}>"
 
 
+class Price(Decimal):
+    """
+    Represents a price in a financial market.
+    """
+
+    @typechecking
+    def __init__(self, price: float):
+        """
+        Initializes a new instance of the Price class.
+
+        :param: price: The price value.
+        """
+        if price <= 0:
+            raise ValueError("The price must be positive.")
+
+        # TODO
+
+
 class Tick:
     """
     Represents a single tick in a financial market.
