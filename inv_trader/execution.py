@@ -250,7 +250,7 @@ class LiveExecClient(ExecutionClient):
 
         :param body: The order event message body.
         """
-        order_event = self._event_serializer.deserialize_order_event(body)
+        order_event = self._event_serializer.deserialize(body)
 
         # If no registered strategies then print message to console.
         if len(self._registered_strategies) == 0:
