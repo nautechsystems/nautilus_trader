@@ -11,12 +11,15 @@ import abc
 import uuid
 
 from datetime import datetime
+from decimal import Decimal
 from uuid import UUID
 
 from inv_trader.core.checks import typechecking
 from inv_trader.model.enums import OrderSide, OrderType, TimeInForce
 from inv_trader.model.objects import Symbol
 from inv_trader.model.order import Order
+
+OrderId = str
 
 
 class Command:
@@ -119,11 +122,11 @@ class SubmitOrder(OrderCommand):
                  command_id: UUID,
                  command_timestamp: datetime):
         """
-        Initializes a new instance of the OrderCommand abstract class.
+        Initializes a new instance of the SubmitOrder class.
 
         :param: order: The commands order to submit.
         :param: event_id: The commands identifier.
-        :param: event_timestamp: The order commands timestamp.
+        :param: event_timestamp: The commands timestamp.
         """
         super().__init__(
             order.symbol,
@@ -139,3 +142,67 @@ class SubmitOrder(OrderCommand):
         :return: The commands order to submit.
         """
         return self._order
+
+
+class CancelOrder(OrderCommand):
+    """
+    Represents a command to cancel the order corresponding to the given order
+    identifier.
+    """
+
+    @typechecking
+    def __init__(self,
+                 order_symbol: Symbol,
+                 order_id: OrderId,
+                 command_id: UUID,
+                 command_timestamp: datetime):
+        """
+        Initializes a new instance of the CancelOrder class.
+
+        :param: order_symbol: The commands order symbol.
+        :param: order: The commands order identifier to cancel.
+        :param: event_id: The commands identifier.
+        :param: event_timestamp: The commands timestamp.
+        """
+        super().__init__(
+            order_symbol,
+            order_id,
+            command_id,
+            command_timestamp)
+
+
+class ModifyOrder(OrderCommand):
+    """
+    Represents a command to modify the order corresponding to the given order
+    identifier with the given modified price.
+    """
+
+    @typechecking
+    def __init__(self,
+                 order_symbol: Symbol,
+                 order_id: OrderId,
+                 modified_price: Decimal,
+                 command_id: UUID,
+                 command_timestamp: datetime):
+        """
+        Initializes a new instance of the CancelOrder class.
+
+        :param: order_symbol: The commands order symbol.
+        :param: order_id: The commands order identifier to modify.
+        :param: event_id: The commands identifier.
+        :param: event_timestamp: The commands timestamp.
+        """
+        super().__init__(
+            order_symbol,
+            order_id,
+            command_id,
+            command_timestamp)
+
+        self._modified_price = modified_price
+
+    @property
+    def modified_price(self) -> Decimal:
+        """
+        :return: The commands price to modify the order to.
+        """
+        return self._modified_price

@@ -17,7 +17,6 @@ from uuid import UUID
 from inv_trader.model.enums import Venue, OrderSide, OrderType, OrderStatus, TimeInForce
 from inv_trader.model.objects import Symbol, Resolution, QuoteType, BarType, Bar
 from inv_trader.model.order import Order
-from inv_trader.factories import OrderFactory
 from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
 from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
 from inv_trader.model.events import OrderPartiallyFilled, OrderFilled
@@ -29,7 +28,6 @@ from test_kit.stubs import TestStubs
 UNIX_EPOCH = TestStubs.unix_epoch()
 AUDUSD_FXCM = Symbol('AUDUSD', Venue.FXCM)
 GBPUSD_FXCM = Symbol('GBPUSD', Venue.FXCM)
-UTF8 = 'utf8'
 
 
 class MsgPackOrderSerializerTests(unittest.TestCase):

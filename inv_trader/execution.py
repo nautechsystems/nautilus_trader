@@ -9,26 +9,38 @@
 # -------------------------------------------------------------------------------------------------
 
 import abc
+import uuid
 
+from datetime import datetime
 from decimal import Decimal
 from typing import Dict
 from pika import PlainCredentials, ConnectionParameters
 
 from inv_trader.core.checks import typechecking
 from inv_trader.model.order import Order
+from inv_trader.model.commands import SubmitOrder
 from inv_trader.model.events import Event, OrderEvent
-from inv_trader.messaging import ExchangeProps, MQWorker
+from inv_trader.messaging import MQProps, MQWorker
 from inv_trader.strategy import TradeStrategy
-from inv_trader.serialization import MsgPackEventSerializer, MsgPackCommandSerializer
+from inv_trader.serialization import MsgPackCommandSerializer
+from inv_trader.serialization import MsgPackEventSerializer
 
 # Constants
 UTF8 = 'utf-8'
 StrategyId = str
 OrderId = str
 
-# Constants for needed exchanges, queues and routing keys.
-ORDER_EVENTS_EXCHANGE = ExchangeProps(name='order_events', type='fanout')
-ORDER_COMMANDS_EXCHANGE = ExchangeProps(name='order_commands', type='direct')
+ORDER_EVENTS = MQProps(
+    exchange_name='nautilus.execution.events',
+    exchange_type='fanout',
+    queue_name='inv_trader',
+    routing_key='')
+
+ORDER_COMMANDS = MQProps(
+    exchange_name='nautilus.execution.commands',
+    exchange_type='direct',
+    queue_name='inv_trader',
+    routing_key='inv_trader')
 
 
 class ExecutionClient:
@@ -182,14 +194,14 @@ class LiveExecClient(ExecutionClient):
 
         self._order_events_worker = MQWorker(
             self._connection_params,
-            ORDER_EVENTS_EXCHANGE,
-            self._order_event_handler,
+            ORDER_EVENTS,
+            self._event_handler,
             'MQWorker[01]')
 
         self._order_commands_worker = MQWorker(
             self._connection_params,
-            ORDER_COMMANDS_EXCHANGE,
-            self._order_command_ack_handler,
+            ORDER_COMMANDS,
+            self._command_ack_handler,
             'MQWorker[02]')
 
     def connect(self):
@@ -218,50 +230,54 @@ class LiveExecClient(ExecutionClient):
         :param: strategy_id: The strategy id to register the order with.
         """
         super()._register_order(order, strategy_id)
-        self._order_commands_worker.send(bytearray(b'submit_order'))
+
+        command = SubmitOrder(order, uuid.uuid4(), datetime.utcnow())
+        message = MsgPackCommandSerializer.serialize(command)
+
+        self._order_commands_worker.send(message)
 
     @typechecking
-    def cancel_order(self, order: Order):
+    def cancel_order(self, order_id: OrderId):
         """
         Send a cancel order request to the execution service.
 
-        :param: order: The order to cancel.
+        :param: order: The order identifier to cancel.
         """
         self._order_commands_worker.send(bytearray(b'cancel_order'))
 
     @typechecking
     def modify_order(
             self,
-            order: Order,
+            order_id: OrderId,
             new_price: Decimal):
         """
         Send a modify order request to the execution service.
 
-        :param: order: The order to modify.
+        :param: order: The order identifier to modify.
         :param: new_price: The new modified price for the order.
         """
         self._order_commands_worker.send(bytearray(b'modify_order'))
 
     @typechecking
-    def _order_event_handler(self, body: bytearray):
+    def _event_handler(self, body: bytearray):
         """"
-        Handle the order event message by parsing to an OrderEvent and sending
+        Handle the event message by parsing to an Event and sending
         to the registered strategy.
 
         :param body: The order event message body.
         """
-        order_event = self._event_serializer.deserialize(body)
+        event = self._event_serializer.deserialize(body)
 
         # If no registered strategies then print message to console.
         if len(self._registered_strategies) == 0:
-            print(f"Received order event from queue: {order_event}")
+            print(f"Received event from queue: {event}")
 
-        self._on_event(order_event)
+        self._on_event(event)
 
     @typechecking
-    def _order_command_ack_handler(self, body: bytearray):
+    def _command_ack_handler(self, body: bytearray):
         """"
-        Handle the order command acknowledgement message.
+        Handle the command acknowledgement message.
 
         :param body: The order command acknowledgement message body.
         """

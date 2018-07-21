@@ -35,5 +35,6 @@ if __name__ == "__main__":
     strategy.start()
 
     input("Press Enter to disconnect...")
+    print("")
 
     exec_client.disconnect()

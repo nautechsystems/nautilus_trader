@@ -20,12 +20,8 @@ from pika.spec import Basic, BasicProperties
 from inv_trader.core.checks import typechecking
 
 
-# Holder for exchange properties.
-ExchangeProps = namedtuple('Exchange', 'name, type')
-
-# Constants
-QUEUE_NAME = 'inv_trader'
-ROUTING_KEY = 'inv_trader'
+# Holder for AMQP exchange properties.
+MQProps = namedtuple('MQProps', 'exchange_name, exchange_type, queue_name, routing_key')
 
 
 class MQWorker(Thread):
@@ -37,24 +33,24 @@ class MQWorker(Thread):
     def __init__(
             self,
             connection_params: ConnectionParameters,
-            exchange_props: ExchangeProps,
+            mq_props: MQProps,
             message_handler: Callable,
-            worker_name: str = 'MQWorker'):
+            worker_name: str='MQWorker'):
         """
-        Initializes a new instance of the LiveExecClient class.
-        The host and port parameters are for the order event subscription
-        channel.
+        Initializes a new instance of the MQWorker class.
 
         :param connection_params: The AMQP broker connection parameters.
-        :param exchange_props: The AMQP broker exchange properties.
+        :param mq_props: The AMQP broker properties.
         :param message_handler: The handler to send received messages to.
         :param worker_name: The name of the message queue worker.
         """
         super().__init__()
         self._worker_name = worker_name
         self._connection_params = connection_params
-        self._exchange_name = exchange_props.name
-        self._exchange_type = exchange_props.type
+        self._exchange_name = mq_props.exchange_name
+        self._exchange_type = mq_props.exchange_type
+        self._queue_name = mq_props.queue_name
+        self._routing_key = mq_props.routing_key
         self._message_handler = message_handler
         self._connection = None
         self._channel = None
@@ -82,7 +78,7 @@ class MQWorker(Thread):
         :param message: The message body to send to the AMQP broker.
         """
         self._channel.basic_publish(exchange=self._exchange_name,
-                                    routing_key=ROUTING_KEY,
+                                    routing_key=self._routing_key,
                                     body=message)
 
     def stop(self):
@@ -225,7 +221,9 @@ class MQWorker(Thread):
         """
         self._channel.exchange_declare(self._on_exchange_declare_ok,
                                        self._exchange_name,
-                                       self._exchange_type)
+                                       self._exchange_type,
+                                       durable=True,
+                                       auto_delete=False)
 
         self._log(f'Declared exchange {self._exchange_name} (type={self._exchange_type}).')
 
@@ -238,19 +236,20 @@ class MQWorker(Thread):
         :param response_frame: The Exchange.DeclareOk response frame.
         """
         self._log(f'Exchange declared on channel {response_frame.channel_number}.')
-        self._setup_queue(QUEUE_NAME)
+        self._setup_queue()
 
     @typechecking
-    def _setup_queue(self, queue_name: str):
+    def _setup_queue(self):
         """
         Setup the queue on the AMQP broker by invoking the Queue.Declare RPC
         command. When it is complete, the on_queue_declare_ok method will
         be invoked by pika.
-
-        :param queue_name: The name of the queue to declare.
         """
-        self._log(f'Declaring queue {queue_name}.')
-        self._channel.queue_declare(self._on_queue_declare_ok, queue_name)
+        self._log(f'Declaring queue {self._queue_name}.')
+        self._channel.queue_declare(self._on_queue_declare_ok,
+                                    self._queue_name,
+                                    durable=True,
+                                    auto_delete=False)
 
     @typechecking
     def _on_queue_declare_ok(self, response_frame: Method):
@@ -263,15 +262,15 @@ class MQWorker(Thread):
 
         :param response_frame: The Queue.DeclareOk response frame.
         """
-        self._log(f'Queue {QUEUE_NAME} declared on channel {response_frame.channel_number}.')
+        self._log(f'Queue {self._queue_name} declared on channel {response_frame.channel_number}.')
         self._channel.queue_bind(self._on_bind_ok,
-                                 QUEUE_NAME,
+                                 self._queue_name,
                                  self._exchange_name,
-                                 ROUTING_KEY)
+                                 self._routing_key)
 
         self._log((f'Binding (exchange={self._exchange_name}, '
-                   f'queue={QUEUE_NAME}, '
-                   f'routing_key={ROUTING_KEY}).'))
+                   f'queue={self._queue_name}, '
+                   f'routing_key={self._routing_key}).'))
 
     @typechecking
     def _on_bind_ok(self, response_frame: Method):
@@ -282,7 +281,7 @@ class MQWorker(Thread):
 
         :param response_frame: The Queue.BindOk response frame.
         """
-        self._log(f'Queue {QUEUE_NAME} bound on channel {response_frame.channel_number}.')
+        self._log(f'Queue {self._queue_name} bound on channel {response_frame.channel_number}.')
         self._start_consuming()
         self._log(f'Ready...')
 
@@ -299,7 +298,7 @@ class MQWorker(Thread):
         self._log('Issuing consumer related RPC commands.')
         self._log('Adding consumer cancellation callback.')
         self._channel.add_on_cancel_callback(self._on_consumer_cancelled)
-        self._consumer_tag = self._channel.basic_consume(self._on_message, QUEUE_NAME)
+        self._consumer_tag = self._channel.basic_consume(self._on_message, self._queue_name)
 
     @typechecking
     def _on_consumer_cancelled(self, response_frame: Method):
