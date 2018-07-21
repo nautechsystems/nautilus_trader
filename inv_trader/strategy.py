@@ -15,15 +15,25 @@ from decimal import Decimal
 from typing import List, Dict, KeysView, Callable
 
 from inv_trader.core.checks import typechecking
-from inv_trader.model.enums import Venue
 from inv_trader.model.objects import Tick, BarType, Bar
 from inv_trader.model.order import Order
 from inv_trader.model.events import Event, OrderEvent
 
+# Constants
 Label = str
 Symbol = str
 Indicator = object
 OrderId = str
+
+POINT = 'point'
+PRICE = 'price'
+MID = 'mid'
+OPEN = 'open'
+HIGH = 'high'
+LOW = 'low'
+CLOSE = 'close'
+VOLUME = 'volume'
+TIMESTAMP = 'timestamp'
 
 
 class TradeStrategy:
@@ -313,10 +323,6 @@ class TradeStrategy:
         :param indicator: The indicator to set.
         :param update_method: The update method for the indicator.
         :param label: The unique label for this indicator.
-        :raises: ValueError: If any argument is None.
-        :raises: TypeError: If the indicator is not a type of Indicator.
-        :raises: TypeError: If the update method is not callable.
-        :raises: KeyError: If the label is not unique.
         """
         # Preconditions
         if indicator is None:
@@ -581,14 +587,14 @@ class IndicatorUpdater:
         self._update_params = []
 
         param_map = {
-            'point': 'close',
-            'price': 'close',
-            'mid': 'close',
-            'open': 'open',
-            'high': 'high',
-            'low': 'low',
-            'close': 'close',
-            'timestamp': 'timestamp'
+            POINT: CLOSE,
+            PRICE: CLOSE,
+            MID: CLOSE,
+            OPEN: OPEN,
+            HIGH: HIGH,
+            LOW: LOW,
+            CLOSE: CLOSE,
+            TIMESTAMP: TIMESTAMP
         }
 
         for param in list(inspect.signature(update_method).parameters.keys()):
