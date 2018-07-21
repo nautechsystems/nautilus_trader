@@ -78,6 +78,29 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
         # Assert
         self.assertEqual(order, deserialized)
 
+    def test_can_serialize_and_deserialize_limit_orders_with_expire_time(self):
+        # Arrange
+        serializer = MsgPackOrderSerializer()
+
+        order = Order(
+            AUDUSD_FXCM,
+            'O123456',
+            'SCALPER01_SL',
+            OrderSide.BUY,
+            OrderType.STOP_LIMIT,
+            100000,
+            UNIX_EPOCH,
+            Decimal('1.00000'),
+            TimeInForce.GTD,
+            UNIX_EPOCH)
+
+        # Act
+        serialized = serializer.serialize(order)
+        deserialized = serializer.deserialize(serialized)
+
+        # Assert
+        self.assertEqual(order, deserialized)
+
 
 class MsgPackEventSerializerTests(unittest.TestCase):
 
