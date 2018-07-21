@@ -16,6 +16,7 @@ from uuid import UUID
 from inv_trader.core.checks import typechecking
 from inv_trader.model.enums import OrderSide, OrderType, TimeInForce
 from inv_trader.model.objects import Symbol
+from inv_trader.model.order import Order
 
 
 class Command:
@@ -105,3 +106,36 @@ class OrderCommand(Command):
         :return: The commands order identifier.
         """
         return self._order_id
+
+
+class SubmitOrder(OrderCommand):
+    """
+    Represents a command to submit the contained order.
+    """
+
+    @typechecking
+    def __init__(self,
+                 order: Order,
+                 command_id: UUID,
+                 command_timestamp: datetime):
+        """
+        Initializes a new instance of the OrderCommand abstract class.
+
+        :param: order: The commands order to submit.
+        :param: event_id: The commands identifier.
+        :param: event_timestamp: The order commands timestamp.
+        """
+        super().__init__(
+            order.symbol,
+            order.id,
+            command_id,
+            command_timestamp)
+
+        self._order = order
+
+    @property
+    def order(self) -> Order:
+        """
+        :return: The commands order to submit.
+        """
+        return self._order

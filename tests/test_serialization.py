@@ -16,10 +16,14 @@ from uuid import UUID
 
 from inv_trader.model.enums import Venue, OrderSide, OrderType, OrderStatus, TimeInForce
 from inv_trader.model.objects import Symbol, Resolution, QuoteType, BarType, Bar
+from inv_trader.model.order import Order
+from inv_trader.factories import OrderFactory
 from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
 from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
 from inv_trader.model.events import OrderPartiallyFilled, OrderFilled
-from inv_trader.serialization import MsgPackEventSerializer, MsgPackCommandSerializer
+from inv_trader.serialization import MsgPackEventSerializer
+from inv_trader.serialization import MsgPackOrderSerializer
+from inv_trader.serialization import MsgPackCommandSerializer
 from test_kit.stubs import TestStubs
 
 UNIX_EPOCH = TestStubs.unix_epoch()
@@ -28,7 +32,56 @@ GBPUSD_FXCM = Symbol('GBPUSD', Venue.FXCM)
 UTF8 = 'utf8'
 
 
-class MsgPackSerializationTests(unittest.TestCase):
+class MsgPackOrderSerializerTests(unittest.TestCase):
+
+    def test_can_serialize_and_deserialize_market_orders(self):
+        # Arrange
+        serializer = MsgPackOrderSerializer()
+
+        order = Order(
+            AUDUSD_FXCM,
+            'O123456',
+            'SCALPER01_SL',
+            OrderSide.BUY,
+            OrderType.MARKET,
+            100000,
+            UNIX_EPOCH,
+            price=None,
+            time_in_force=TimeInForce.DAY,
+            expire_time=None)
+
+        # Act
+        serialized = serializer.serialize(order)
+        deserialized = serializer.deserialize(serialized)
+
+        # Assert
+        self.assertEqual(order, deserialized)
+
+    def test_can_serialize_and_deserialize_limit_orders(self):
+        # Arrange
+        serializer = MsgPackOrderSerializer()
+
+        order = Order(
+            AUDUSD_FXCM,
+            'O123456',
+            'SCALPER01_SL',
+            OrderSide.BUY,
+            OrderType.STOP_LIMIT,
+            100000,
+            UNIX_EPOCH,
+            Decimal('1.00000'),
+            TimeInForce.DAY,
+            expire_time=None)
+
+        # Act
+        serialized = serializer.serialize(order)
+        deserialized = serializer.deserialize(serialized)
+
+        # Assert
+        self.assertEqual(order, deserialized)
+
+
+class MsgPackEventSerializerTests(unittest.TestCase):
 
     def test_can_deserialize_order_submitted_events(self):
         # Arrange
@@ -46,7 +99,7 @@ class MsgPackSerializationTests(unittest.TestCase):
         body = bytearray.fromhex(hex_string)
 
         # Act
-        result = serializer.deserialize_order_event(body)
+        result = serializer.deserialize(body)
 
         # Assert - Warning can be ignored (its because PyCharm doesn't know the type).
         self.assertTrue(isinstance(result, OrderSubmitted))
@@ -72,7 +125,7 @@ class MsgPackSerializationTests(unittest.TestCase):
         body = bytearray.fromhex(hex_string)
 
         # Act
-        result = serializer.deserialize_order_event(body)
+        result = serializer.deserialize(body)
 
         # Assert - Warnings can be ignored (its because PyCharm doesn't know the type).
         self.assertTrue(isinstance(result, OrderAccepted))
@@ -99,7 +152,7 @@ class MsgPackSerializationTests(unittest.TestCase):
         body = bytearray.fromhex(hex_string)
 
         # Act
-        result = serializer.deserialize_order_event(body)
+        result = serializer.deserialize(body)
 
         # Assert - Warnings can be ignored (its because PyCharm doesn't know the type).
         self.assertTrue(isinstance(result, OrderRejected))
@@ -131,7 +184,7 @@ class MsgPackSerializationTests(unittest.TestCase):
         body = bytearray.fromhex(hex_string)
 
         # Act
-        result = serializer.deserialize_order_event(body)
+        result = serializer.deserialize(body)
 
         # Assert - Warnings can be ignored (its because PyCharm doesn't know the type).
         self.assertTrue(isinstance(result, OrderWorking))
@@ -170,7 +223,7 @@ class MsgPackSerializationTests(unittest.TestCase):
         body = bytearray.fromhex(hex_string)
 
         # Act
-        result = serializer.deserialize_order_event(body)
+        result = serializer.deserialize(body)
         print(type(result.expire_time))
         # Assert - Warnings can be ignored (its because PyCharm doesn't know the type).
         self.assertTrue(isinstance(result, OrderWorking))
@@ -203,7 +256,7 @@ class MsgPackSerializationTests(unittest.TestCase):
         body = bytearray.fromhex(hex_string)
 
         # Act
-        result = serializer.deserialize_order_event(body)
+        result = serializer.deserialize(body)
 
         # Assert - Warning can be ignored (its because PyCharm doesn't know the type).
         self.assertTrue(isinstance(result, OrderCancelled))
@@ -232,7 +285,7 @@ class MsgPackSerializationTests(unittest.TestCase):
         body = bytearray.fromhex(hex_string)
 
         # Act
-        result = serializer.deserialize_order_event(body)
+        result = serializer.deserialize(body)
 
         # Assert - Warnings can be ignored (its because PyCharm doesn't know the type).
         self.assertTrue(isinstance(result, OrderCancelReject))
@@ -262,7 +315,7 @@ class MsgPackSerializationTests(unittest.TestCase):
         body = bytearray.fromhex(hex_string)
 
         # Act
-        result = serializer.deserialize_order_event(body)
+        result = serializer.deserialize(body)
 
         # Assert - Warnings can be ignored (its because PyCharm doesn't know the type).
         self.assertTrue(isinstance(result, OrderModified))
@@ -290,7 +343,7 @@ class MsgPackSerializationTests(unittest.TestCase):
         body = bytearray.fromhex(hex_string)
 
         # Act
-        result = serializer.deserialize_order_event(body)
+        result = serializer.deserialize(body)
 
         # Assert - Warning can be ignored (is because PyCharm doesn't know the type).
         self.assertTrue(isinstance(result, OrderExpired))
@@ -321,7 +374,7 @@ class MsgPackSerializationTests(unittest.TestCase):
         body = bytearray.fromhex(hex_string)
 
         # Act
-        result = serializer.deserialize_order_event(body)
+        result = serializer.deserialize(body)
 
         # Assert - Warnings can be ignored (its because PyCharm doesn't know the type).
         self.assertTrue(isinstance(result, OrderPartiallyFilled))
@@ -357,7 +410,7 @@ class MsgPackSerializationTests(unittest.TestCase):
         body = bytearray.fromhex(hex_string)
 
         # Act
-        result = serializer.deserialize_order_event(body)
+        result = serializer.deserialize(body)
 
         # Assert - Warnings can be ignored (its because PyCharm doesn't know the type).
         self.assertTrue(isinstance(result, OrderFilled))
