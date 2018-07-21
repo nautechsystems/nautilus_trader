@@ -49,6 +49,8 @@ class LiveDataClient:
         self._tick_handlers = []
         self._bar_handlers = []
 
+        self._log("Initialized.")
+
     @property
     def is_connected(self) -> bool:
         """
@@ -94,7 +96,7 @@ class LiveDataClient:
                                    db=0)
         self._pubsub = self._client.pubsub()
 
-        self._log(f"Connected to live database at {self._host}:{self._port}.")
+        self._log(f"Connected to the data service at {self._host}:{self._port}.")
 
     def disconnect(self):
         """

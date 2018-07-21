@@ -96,7 +96,7 @@ class MQWorker(Thread):
 
         :return: The pika connection object.
         """
-        self._log("Connecting...")
+        self._log(f"Connecting to message exchange {self._exchange_name}...")
         self._connection = SelectConnection(self._connection_params,
                                             self._on_connection_open,
                                             stop_ioloop_on_close=False)

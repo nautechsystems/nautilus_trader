@@ -60,6 +60,8 @@ class ExecutionClient:
         self._registered_strategies = {}  # type: Dict[StrategyId, callable]
         self._order_index = {}            # type: Dict[OrderId, StrategyId]
 
+        self._log("Initialized.")
+
     @typechecking
     def register_strategy(self, strategy: TradeStrategy):
         """
