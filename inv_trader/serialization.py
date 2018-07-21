@@ -117,10 +117,10 @@ class MsgPackEventSerializer(EventSerializer):
         :return: The deserialized order event.
         """
         unpacked = msgpack.unpackb(event_bytes, encoding=UTF8)
-        print("unpacked=" + str(type(unpacked)))
-        event_id = unpacked[EVENT_ID]
-        event_timestamp = iso8601.parse_date(unpacked[EVENT_TIMESTAMP])
+
         event_type = unpacked[EVENT_TYPE]
+        event_id = UUID(unpacked[EVENT_ID])
+        event_timestamp = iso8601.parse_date(unpacked[EVENT_TIMESTAMP])
 
         if event_type == ORDER_EVENT:
             return MsgPackEventSerializer._deserialize_order_event(
