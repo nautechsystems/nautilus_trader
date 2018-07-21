@@ -10,28 +10,37 @@
 import abc
 import msgpack
 import iso8601
-import uuid
 
+from uuid import UUID
+from datetime import datetime
 from decimal import Decimal
+from typing import Dict
 
+from inv_trader.core.checks import typechecking
 from inv_trader.model.enums import Venue, OrderSide, OrderType, TimeInForce
 from inv_trader.model.objects import Symbol
 from inv_trader.model.order import Order
-from inv_trader.model.events import OrderEvent
+from inv_trader.model.events import Event, OrderEvent
 from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
 from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
 from inv_trader.model.events import OrderPartiallyFilled, OrderFilled
-from inv_trader.model.commands import OrderCommand, SubmitOrder
+from inv_trader.model.commands import Command, OrderCommand, SubmitOrder, CancelOrder, ModifyOrder
 
 # Constants
 UTF8 = 'utf-8'
+NONE = 'NONE'
 COMMAND_TYPE = 'command_type'
+COMMAND_ID = 'command_id'
+COMMAND_TIMESTAMP = 'command_timestamp'
+ORDER_COMMAND = 'order_command'
 SUBMIT_ORDER = 'submit_order'
 CANCEL_ORDER = 'cancel_order'
 MODIFY_ORDER = 'modify_order'
 ORDER = 'order'
 TIMESTAMP = 'timestamp'
 EVENT_TYPE = 'event_type'
+ORDER_EVENT = 'order_event'
+ACCOUNT_EVENT = 'account_event'
 SYMBOL = 'symbol'
 ORDER_ID = 'order_id'
 ORDER_ID_BROKER = 'order_id_broker'
@@ -80,6 +89,7 @@ class EventSerializer:
     __metaclass__ = abc.ABCMeta
 
     @staticmethod
+    @typechecking
     @abc.abstractmethod
     def deserialize(event_bytes: bytearray) -> OrderEvent:
         """
@@ -98,7 +108,8 @@ class MsgPackEventSerializer(EventSerializer):
     """
 
     @staticmethod
-    def deserialize(event_bytes: bytearray) -> OrderEvent:
+    @typechecking
+    def deserialize(event_bytes: bytearray) -> Event:
         """
         Deserialize the given Message Pack bytes to an order event.
 
@@ -106,42 +117,67 @@ class MsgPackEventSerializer(EventSerializer):
         :return: The deserialized order event.
         """
         unpacked = msgpack.unpackb(event_bytes, encoding=UTF8)
-
+        print("unpacked=" + str(type(unpacked)))
+        event_id = unpacked[EVENT_ID]
+        event_timestamp = iso8601.parse_date(unpacked[EVENT_TIMESTAMP])
         event_type = unpacked[EVENT_TYPE]
+
+        if event_type == ORDER_EVENT:
+            return MsgPackEventSerializer._deserialize_order_event(
+                event_id,
+                event_timestamp,
+                unpacked)
+
+        else:
+            raise ValueError("The event is invalid and cannot be deserialized.")
+
+    @staticmethod
+    @typechecking
+    def _deserialize_order_event(
+            event_id: UUID,
+            event_timestamp: datetime,
+            unpacked: Dict) -> OrderEvent:
+        """
+        Deserialize the given order event.
+
+        :param event_id: The events order id.
+        :param event_timestamp: The events timestamp.
+        :param unpacked: The events unpacked dictionary.
+        :return: The deserialized order event.
+        """
         split_symbol = unpacked[SYMBOL].split('.')
         symbol = Symbol(split_symbol[0], Venue[split_symbol[1].upper()])
         order_id = unpacked[ORDER_ID]
-        event_id = unpacked[EVENT_ID]
-        event_timestamp = iso8601.parse_date(unpacked[EVENT_TIMESTAMP])
+        order_event = unpacked[ORDER_EVENT]
 
-        if event_type == ORDER_SUBMITTED:
+        if order_event == ORDER_SUBMITTED:
             return OrderSubmitted(
                 symbol,
                 order_id,
                 iso8601.parse_date(unpacked[SUBMITTED_TIME]),
-                uuid.UUID(event_id),
+                event_id,
                 event_timestamp)
 
-        elif event_type == ORDER_ACCEPTED:
+        elif order_event == ORDER_ACCEPTED:
             return OrderAccepted(
                 symbol,
                 order_id,
                 iso8601.parse_date(unpacked[ACCEPTED_TIME]),
-                uuid.UUID(event_id),
+                event_id,
                 event_timestamp)
 
-        elif event_type == ORDER_REJECTED:
+        elif order_event == ORDER_REJECTED:
             return OrderRejected(
                 symbol,
                 order_id,
                 iso8601.parse_date(unpacked[REJECTED_TIME]),
                 unpacked[REJECTED_REASON],
-                uuid.UUID(event_id),
+                event_id,
                 event_timestamp)
 
-        elif event_type == ORDER_WORKING:
+        elif order_event == ORDER_WORKING:
             expire_time_string = unpacked[EXPIRE_TIME]
-            if expire_time_string == 'none':
+            if expire_time_string == NONE:
                 expire_time = None
             else:
                 expire_time = iso8601.parse_date(expire_time_string),
@@ -157,47 +193,47 @@ class MsgPackEventSerializer(EventSerializer):
                 Decimal(unpacked[PRICE]),
                 TimeInForce[unpacked[TIME_IN_FORCE]],
                 iso8601.parse_date(unpacked[WORKING_TIME]),
-                uuid.UUID(event_id),
+                event_id,
                 event_timestamp,
                 expire_time)
 
-        elif event_type == ORDER_CANCELLED:
+        elif order_event == ORDER_CANCELLED:
             return OrderCancelled(
                 symbol,
                 order_id,
                 iso8601.parse_date(unpacked[CANCELLED_TIME]),
-                uuid.UUID(event_id),
+                event_id,
                 event_timestamp)
 
-        elif event_type == ORDER_CANCEL_REJECT:
+        elif order_event == ORDER_CANCEL_REJECT:
             return OrderCancelReject(
                 symbol,
                 order_id,
                 iso8601.parse_date(unpacked[REJECTED_TIME]),
                 unpacked[REJECTED_RESPONSE],
                 unpacked[REJECTED_REASON],
-                uuid.UUID(event_id),
+                event_id,
                 event_timestamp)
 
-        elif event_type == ORDER_MODIFIED:
+        elif order_event == ORDER_MODIFIED:
             return OrderModified(
                 symbol,
                 order_id,
                 unpacked[ORDER_ID_BROKER],
                 Decimal(unpacked[MODIFIED_PRICE]),
                 iso8601.parse_date(unpacked[MODIFIED_TIME]),
-                uuid.UUID(event_id),
+                event_id,
                 event_timestamp)
 
-        elif event_type == ORDER_EXPIRED:
+        elif order_event == ORDER_EXPIRED:
             return OrderExpired(
                 symbol,
                 order_id,
                 iso8601.parse_date(unpacked[EXPIRED_TIME]),
-                uuid.UUID(event_id),
+                event_id,
                 event_timestamp)
 
-        elif event_type == ORDER_PARTIALLY_FILLED:
+        elif order_event == ORDER_PARTIALLY_FILLED:
             return OrderPartiallyFilled(
                 symbol,
                 order_id,
@@ -208,10 +244,10 @@ class MsgPackEventSerializer(EventSerializer):
                 int(unpacked[LEAVES_QUANTITY]),
                 Decimal(unpacked[AVERAGE_PRICE]),
                 iso8601.parse_date(unpacked[EXECUTION_TIME]),
-                uuid.UUID(event_id),
+                event_id,
                 event_timestamp)
 
-        elif event_type == ORDER_FILLED:
+        elif order_event == ORDER_FILLED:
             return OrderFilled(
                 symbol,
                 order_id,
@@ -221,7 +257,7 @@ class MsgPackEventSerializer(EventSerializer):
                 int(unpacked[FILLED_QUANTITY]),
                 Decimal(unpacked[AVERAGE_PRICE]),
                 iso8601.parse_date(unpacked[EXECUTION_TIME]),
-                uuid.UUID(event_id),
+                event_id,
                 event_timestamp)
 
         else:
@@ -236,6 +272,7 @@ class CommandSerializer:
     __metaclass__ = abc.ABCMeta
 
     @staticmethod
+    @typechecking
     @abc.abstractmethod
     def serialize(order_command: OrderCommand) -> bytearray:
         """
@@ -253,17 +290,55 @@ class MsgPackCommandSerializer(CommandSerializer):
     """
 
     @staticmethod
-    def serialize(order_command: OrderCommand) -> bytearray:
+    @typechecking
+    def serialize(command: Command) -> bytearray:
         """
-        Serialize the given OrderCommand to Message Pack bytes.
+        Serialize the given command to a Message Pack bytes aray.
 
-        :param: order_command: The order command to serialize.
+        :param: command: The command to serialize.
+        """
+        if isinstance(command, OrderCommand):
+            return MsgPackCommandSerializer._serialize_order_command(command)
+
+        else:
+            raise ValueError("The command is invalid and cannot be serialized.")
+
+    @staticmethod
+    @typechecking
+    def _serialize_order_command(order_command: OrderCommand) -> bytearray:
+        """
+        Serialize the given order command to a Message Pack bytes array.
+
+        :param order_command: The order command to serialize.
+        :return: The serialized order command.
         """
         if isinstance(order_command, SubmitOrder):
             return msgpack.packb({
-                COMMAND_TYPE: SUBMIT_ORDER,
+                COMMAND_TYPE: ORDER_COMMAND,
+                ORDER_COMMAND: SUBMIT_ORDER,
                 ORDER_ID: order_command.order_id,
-                ORDER: MsgPackOrderSerializer.serialize(order_command.order)
+                ORDER: MsgPackOrderSerializer.serialize(order_command.order),
+                COMMAND_ID: order_command.command_id,
+                COMMAND_TIMESTAMP: order_command.command_timestamp
+            })
+
+        if isinstance(order_command, CancelOrder):
+            return msgpack.packb({
+                COMMAND_TYPE: ORDER_COMMAND,
+                ORDER_COMMAND: CANCEL_ORDER,
+                ORDER_ID: order_command.order_id,
+                COMMAND_ID: order_command.command_id,
+                COMMAND_TIMESTAMP: order_command.command_timestamp
+            })
+
+        if isinstance(order_command, ModifyOrder):
+            return msgpack.packb({
+                COMMAND_TYPE: ORDER_COMMAND,
+                ORDER_COMMAND: MODIFY_ORDER,
+                ORDER_ID: order_command.order_id,
+                MODIFIED_PRICE: order_command.modified_price,
+                COMMAND_ID: order_command.command_id,
+                COMMAND_TIMESTAMP: order_command.command_timestamp
             })
 
         else:
@@ -278,8 +353,9 @@ class OrderSerializer:
     __metaclass__ = abc.ABCMeta
 
     @staticmethod
+    @typechecking
     @abc.abstractmethod
-    def serialize(order_command: OrderCommand) -> bytearray:
+    def serialize(order: Order) -> bytearray:
         """
         Serialize the given order to a bytes array.
 
@@ -289,6 +365,7 @@ class OrderSerializer:
         raise NotImplementedError("Method must be implemented.")
 
     @staticmethod
+    @typechecking
     @abc.abstractmethod
     def deserialize(order_bytes: bytearray) -> Order:
         """
@@ -300,12 +377,13 @@ class OrderSerializer:
         raise NotImplementedError("Method must be implemented.")
 
 
-class MsgPackOrderSerializer(CommandSerializer):
+class MsgPackOrderSerializer(OrderSerializer):
     """
     Provides a command serializer for the Message Pack specification
     """
 
     @staticmethod
+    @typechecking
     def serialize(order: Order) -> bytearray:
         """
         Serialize the given Order to Message Pack bytes.
@@ -314,13 +392,13 @@ class MsgPackOrderSerializer(CommandSerializer):
         """
         # Convert price to string (could be None).
         if order.price is None:
-            price = 'none'
+            price = NONE
         else:
             price = str(order.price)
 
         # Convert expire time to string (could be None).
         if order.expire_time is None:
-            expire_time = 'none'
+            expire_time = NONE
         else:
             expire_time = iso8601.parse_date(order.expire_time)
 
@@ -338,6 +416,7 @@ class MsgPackOrderSerializer(CommandSerializer):
             })
 
     @staticmethod
+    @typechecking
     def deserialize(order_bytes: bytearray) -> Order:
         """
         Deserialize the given byte array to an Order.
@@ -352,14 +431,14 @@ class MsgPackOrderSerializer(CommandSerializer):
 
         # Deserialize price (could be 'none').
         price = unpacked[PRICE]
-        if price == 'none':
+        if price == NONE:
             price = None
         else:
             price = Decimal(unpacked[PRICE])
 
         # Deserialize expire_time (could be 'none').
         expire_time = unpacked[EXPIRE_TIME]
-        if expire_time == 'none':
+        if expire_time == NONE:
             expire_time = None
         else:
             expire_time = iso8601.parse_date(unpacked[EXPIRE_TIME])
