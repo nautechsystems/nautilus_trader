@@ -293,9 +293,10 @@ class MsgPackCommandSerializer(CommandSerializer):
     @typechecking
     def serialize(command: Command) -> bytearray:
         """
-        Serialize the given command to a Message Pack bytes aray.
+        Serialize the given command to a Message Pack bytes array.
 
         :param: command: The command to serialize.
+        :return: The serialized command.
         """
         if isinstance(command, OrderCommand):
             return MsgPackCommandSerializer._serialize_order_command(command)
@@ -360,6 +361,7 @@ class OrderSerializer:
         Serialize the given order to a bytes array.
 
         :param: order: The order to serialize.
+        :return: The serialized order.
         """
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented.")
@@ -372,6 +374,7 @@ class OrderSerializer:
         Deserialize the given byte array to an Order.
 
         :param: order_bytes: The byte array to deserialize.
+        :return: The deserialized order.
         """
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented.")
@@ -384,11 +387,12 @@ class MsgPackOrderSerializer(OrderSerializer):
 
     @staticmethod
     @typechecking
-    def serialize(order: Order) -> bytearray:
+    def serialize(order: Order) -> bytes:
         """
         Serialize the given Order to Message Pack bytes.
 
         :param: order: The order to serialize.
+        :return: The serialized order.
         """
         # Convert price to string (could be None).
         if order.price is None:
@@ -400,7 +404,7 @@ class MsgPackOrderSerializer(OrderSerializer):
         if order.expire_time is None:
             expire_time = NONE
         else:
-            expire_time = iso8601.parse_date(order.expire_time)
+            expire_time = order.expire_time.isoformat(timespec='milliseconds').replace('+00:00', 'Z')
 
         return msgpack.packb({
             SYMBOL: str(order.symbol),
@@ -417,11 +421,12 @@ class MsgPackOrderSerializer(OrderSerializer):
 
     @staticmethod
     @typechecking
-    def deserialize(order_bytes: bytearray) -> Order:
+    def deserialize(order_bytes: bytes) -> Order:
         """
         Deserialize the given byte array to an Order.
 
         :param: order_bytes: The byte array to deserialize.
+        :return: The deserialized order.
         """
         unpacked = msgpack.unpackb(order_bytes, encoding=UTF8)
 
