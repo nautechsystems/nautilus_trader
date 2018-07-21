@@ -219,7 +219,10 @@ class OrderFactory:
                      order_side,
                      OrderType.FOC,
                      quantity,
-                     datetime.utcnow())
+                     datetime.utcnow(),
+                     price=None,
+                     time_in_force=None,
+                     expire_time=None)
 
     @staticmethod
     @typechecking
@@ -245,4 +248,7 @@ class OrderFactory:
                      order_side,
                      OrderType.IOC,
                      quantity,
-                     datetime.utcnow())
+                     datetime.utcnow(),
+                     price=None,
+                     time_in_force=None,
+                     expire_time=None)
