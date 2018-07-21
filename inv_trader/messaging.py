@@ -143,7 +143,8 @@ class MQWorker(Thread):
             self._connection.ioloop.stop()
         else:
             self._log((f'Warning: Connection closed, '
-                       f'reopening in 5 seconds: ({reply_code}) {reply_text}'))
+                       f'reopening in 5 seconds: '
+                       f'(reply_code={reply_code}, reply_text={reply_text}).'))
             self._connection.add_timeout(5, self._reconnect)
 
     def _reconnect(self):
