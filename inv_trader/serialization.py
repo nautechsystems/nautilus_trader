@@ -16,11 +16,11 @@ from decimal import Decimal
 
 from inv_trader.model.enums import Venue, OrderSide, OrderType, TimeInForce
 from inv_trader.model.objects import Symbol
+from inv_trader.model.order import Order
 from inv_trader.model.events import OrderEvent
 from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
 from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
 from inv_trader.model.events import OrderPartiallyFilled, OrderFilled
-from inv_trader.model.order import Order
 from inv_trader.model.commands import OrderCommand, SubmitOrder
 
 # Constants
