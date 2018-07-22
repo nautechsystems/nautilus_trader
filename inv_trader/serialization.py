@@ -95,7 +95,7 @@ class EventSerializer:
         """
         Deserialize the given bytes to an order event.
 
-        :param: event_bytes: The byte array to deserialize.
+        :param: event_bytes: The bytes to deserialize.
         :return: The deserialized order event.
         """
         # Raise exception if not overridden in implementation.
@@ -113,7 +113,7 @@ class MsgPackEventSerializer(EventSerializer):
         """
         Deserialize the given Message Pack bytes to an order event.
 
-        :param event_bytes: The byte array to deserialize.
+        :param event_bytes: The bytes to deserialize.
         :return: The deserialized order event.
         """
         unpacked = msgpack.unpackb(event_bytes, encoding=UTF8)
@@ -261,7 +261,7 @@ class MsgPackEventSerializer(EventSerializer):
                 event_timestamp)
 
         else:
-            raise ValueError("The order event is invalid and cannot be deserialized.")
+            raise ValueError("Cannot deserialize event_bytes (unrecognized bytes pattern.")
 
 
 class CommandSerializer:
@@ -276,7 +276,7 @@ class CommandSerializer:
     @abc.abstractmethod
     def serialize(order_command: OrderCommand) -> bytes:
         """
-        Serialize the given order command to a bytes array to be sent.
+        Serialize the given order command to bytes to be sent.
 
         :param: order_command: The order command to serialize.
         """
@@ -293,7 +293,7 @@ class MsgPackCommandSerializer(CommandSerializer):
     @typechecking
     def serialize(command: Command) -> bytes:
         """
-        Serialize the given command to a Message Pack bytes array.
+        Serialize the given command to Message Pack specification bytes.
 
         :param: command: The command to serialize.
         :return: The serialized command.
@@ -302,13 +302,13 @@ class MsgPackCommandSerializer(CommandSerializer):
             return MsgPackCommandSerializer._serialize_order_command(command)
 
         else:
-            raise ValueError("The command is invalid and cannot be serialized.")
+            raise ValueError("Cannot serialize command (unrecognized command).")
 
     @staticmethod
     @typechecking
     def _serialize_order_command(order_command: OrderCommand) -> bytes:
         """
-        Serialize the given order command to a Message Pack bytes array.
+        Serialize the given order command to Message Pack specification bytes.
 
         :param order_command: The order command to serialize.
         :return: The serialized order command.
@@ -343,7 +343,7 @@ class MsgPackCommandSerializer(CommandSerializer):
             })
 
         else:
-            raise ValueError("The order command is invalid and cannot be serialized.")
+            raise ValueError("Cannot serialize order command (unrecognized command).")
 
 
 class OrderSerializer:
@@ -358,7 +358,7 @@ class OrderSerializer:
     @abc.abstractmethod
     def serialize(order: Order) -> bytes:
         """
-        Serialize the given order to a bytes array.
+        Serialize the given order to bytes.
 
         :param: order: The order to serialize.
         :return: The serialized order.
@@ -371,9 +371,9 @@ class OrderSerializer:
     @abc.abstractmethod
     def deserialize(order_bytes: bytes) -> Order:
         """
-        Deserialize the given byte array to an Order.
+        Deserialize the given bytes to an Order.
 
-        :param: order_bytes: The byte array to deserialize.
+        :param: order_bytes: The bytes to deserialize.
         :return: The deserialized order.
         """
         # Raise exception if not overridden in implementation.
@@ -389,7 +389,7 @@ class MsgPackOrderSerializer(OrderSerializer):
     @typechecking
     def serialize(order: Order) -> bytes:
         """
-        Serialize the given Order to Message Pack bytes.
+        Serialize the given Order to Message Pack specification bytes.
 
         :param: order: The order to serialize.
         :return: The serialized order.
@@ -423,9 +423,9 @@ class MsgPackOrderSerializer(OrderSerializer):
     @typechecking
     def deserialize(order_bytes: bytes) -> Order:
         """
-        Deserialize the given byte array to an Order.
+        Deserialize the given bytes to an Order.
 
-        :param: order_bytes: The byte array to deserialize.
+        :param: order_bytes: The bytes to deserialize.
         :return: The deserialized order.
         """
         unpacked = msgpack.unpackb(order_bytes, encoding=UTF8)
