@@ -118,7 +118,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
                       '65725f7375626d6974746564ae7375626d69747465645f74696d65b8'
                       '313937302d30312d30315430303a30303a30302e3030305a')
 
-        body = bytearray.fromhex(hex_string)
+        body = bytes.fromhex(hex_string)
 
         # Act
         result = serializer.deserialize(body)
@@ -145,7 +145,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
                       '65725f6163636570746564ad61636365707465645f74696d65b83139'
                       '37302d30312d30315430303a30303a30302e3030305a')
 
-        body = bytearray.fromhex(hex_string)
+        body = bytes.fromhex(hex_string)
 
         # Act
         result = serializer.deserialize(body)
@@ -173,7 +173,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
                       '37302d30312d30315430303a30303a30302e3030305aaf72656a6563'
                       '7465645f726561736f6ead494e56414c49445f4f52444552')
 
-        body = bytearray.fromhex(hex_string)
+        body = bytes.fromhex(hex_string)
 
         # Act
         result = serializer.deserialize(body)
@@ -206,7 +206,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
                       '4f4e45ac776f726b696e675f74696d65b8313937302d30312d303154'
                       '30303a30303a30302e3030305a')
 
-        body = bytearray.fromhex(hex_string)
+        body = bytes.fromhex(hex_string)
 
         # Act
         result = serializer.deserialize(body)
@@ -246,11 +246,11 @@ class MsgPackEventSerializerTests(unittest.TestCase):
                       '696e675f74696d65b8313937302d30312d30315430303a30303a3030'
                       '2e3030305a')
 
-        body = bytearray.fromhex(hex_string)
+        body = bytes.fromhex(hex_string)
 
         # Act
         result = serializer.deserialize(body)
-        print(type(result.expire_time))
+
         # Assert - Warnings can be ignored (its because PyCharm doesn't know the type).
         self.assertTrue(isinstance(result, OrderWorking))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
@@ -280,7 +280,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
                       '65725f63616e63656c6c6564ae63616e63656c6c65645f74696d65b8'
                       '313937302d30312d30315430303a30303a30302e3030305a')
 
-        body = bytearray.fromhex(hex_string)
+        body = bytes.fromhex(hex_string)
 
         # Act
         result = serializer.deserialize(body)
@@ -310,7 +310,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
                       '504f4e53453faf72656a65637465645f726561736f6eaf4f52444552'
                       '5f4e4f545f464f554e44')
 
-        body = bytearray.fromhex(hex_string)
+        body = bytes.fromhex(hex_string)
 
         # Act
         result = serializer.deserialize(body)
@@ -341,7 +341,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
                       '69666965645f74696d65b8313937302d30312d30315430303a30303a'
                       '30302e3030305a')
 
-        body = bytearray.fromhex(hex_string)
+        body = bytes.fromhex(hex_string)
 
         # Act
         result = serializer.deserialize(body)
@@ -370,7 +370,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
                       '65725f65787069726564ac657870697265645f74696d65b831393730'
                       '2d30312d30315430303a30303a30302e3030305a')
 
-        body = bytearray.fromhex(hex_string)
+        body = bytes.fromhex(hex_string)
 
         # Act
         result = serializer.deserialize(body)
@@ -402,7 +402,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
                       'ae657865637574696f6e5f74696d65b8313937302d30312d30315430'
                       '303a30303a30302e3030305a')
 
-        body = bytearray.fromhex(hex_string)
+        body = bytes.fromhex(hex_string)
 
         # Act
         result = serializer.deserialize(body)
@@ -439,7 +439,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
                       '65637574696f6e5f74696d65b8313937302d30312d30315430303a30'
                       '303a30302e3030305a')
 
-        body = bytearray.fromhex(hex_string)
+        body = bytes.fromhex(hex_string)
 
         # Act
         result = serializer.deserialize(body)

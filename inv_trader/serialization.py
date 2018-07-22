@@ -91,7 +91,7 @@ class EventSerializer:
     @staticmethod
     @typechecking
     @abc.abstractmethod
-    def deserialize(event_bytes: bytearray) -> OrderEvent:
+    def deserialize(event_bytes: bytes) -> OrderEvent:
         """
         Deserialize the given bytes to an order event.
 
@@ -109,7 +109,7 @@ class MsgPackEventSerializer(EventSerializer):
 
     @staticmethod
     @typechecking
-    def deserialize(event_bytes: bytearray) -> Event:
+    def deserialize(event_bytes: bytes) -> Event:
         """
         Deserialize the given Message Pack bytes to an order event.
 
@@ -274,7 +274,7 @@ class CommandSerializer:
     @staticmethod
     @typechecking
     @abc.abstractmethod
-    def serialize(order_command: OrderCommand) -> bytearray:
+    def serialize(order_command: OrderCommand) -> bytes:
         """
         Serialize the given order command to a bytes array to be sent.
 
@@ -291,7 +291,7 @@ class MsgPackCommandSerializer(CommandSerializer):
 
     @staticmethod
     @typechecking
-    def serialize(command: Command) -> bytearray:
+    def serialize(command: Command) -> bytes:
         """
         Serialize the given command to a Message Pack bytes array.
 
@@ -306,7 +306,7 @@ class MsgPackCommandSerializer(CommandSerializer):
 
     @staticmethod
     @typechecking
-    def _serialize_order_command(order_command: OrderCommand) -> bytearray:
+    def _serialize_order_command(order_command: OrderCommand) -> bytes:
         """
         Serialize the given order command to a Message Pack bytes array.
 
@@ -356,7 +356,7 @@ class OrderSerializer:
     @staticmethod
     @typechecking
     @abc.abstractmethod
-    def serialize(order: Order) -> bytearray:
+    def serialize(order: Order) -> bytes:
         """
         Serialize the given order to a bytes array.
 
@@ -369,7 +369,7 @@ class OrderSerializer:
     @staticmethod
     @typechecking
     @abc.abstractmethod
-    def deserialize(order_bytes: bytearray) -> Order:
+    def deserialize(order_bytes: bytes) -> Order:
         """
         Deserialize the given byte array to an Order.
 
