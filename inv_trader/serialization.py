@@ -313,34 +313,27 @@ class MsgPackCommandSerializer(CommandSerializer):
         :param order_command: The order command to serialize.
         :return: The serialized order command.
         """
+        package = {
+            COMMAND_TYPE: ORDER_COMMAND,
+            ORDER_ID: order_command.order_id,
+            COMMAND_ID: str(order_command.command_id),
+            COMMAND_TIMESTAMP: order_command.command_timestamp.isoformat(
+                timespec='milliseconds').replace('+00:00', 'Z')
+        }
+
         if isinstance(order_command, SubmitOrder):
-            return msgpack.packb({
-                COMMAND_TYPE: ORDER_COMMAND,
-                ORDER_COMMAND: SUBMIT_ORDER,
-                ORDER_ID: order_command.order_id,
-                ORDER: MsgPackOrderSerializer.serialize(order_command.order),
-                COMMAND_ID: order_command.command_id,
-                COMMAND_TIMESTAMP: order_command.command_timestamp
-            })
+            package[ORDER_COMMAND] = SUBMIT_ORDER
+            package[ORDER] = MsgPackOrderSerializer.serialize(order_command.order)
+            return msgpack.packb(package)
 
         if isinstance(order_command, CancelOrder):
-            return msgpack.packb({
-                COMMAND_TYPE: ORDER_COMMAND,
-                ORDER_COMMAND: CANCEL_ORDER,
-                ORDER_ID: order_command.order_id,
-                COMMAND_ID: order_command.command_id,
-                COMMAND_TIMESTAMP: order_command.command_timestamp
-            })
+            package[ORDER_COMMAND] = CANCEL_ORDER
+            return msgpack.packb(package)
 
         if isinstance(order_command, ModifyOrder):
-            return msgpack.packb({
-                COMMAND_TYPE: ORDER_COMMAND,
-                ORDER_COMMAND: MODIFY_ORDER,
-                ORDER_ID: order_command.order_id,
-                MODIFIED_PRICE: order_command.modified_price,
-                COMMAND_ID: order_command.command_id,
-                COMMAND_TIMESTAMP: order_command.command_timestamp
-            })
+            package[ORDER_COMMAND] = MODIFY_ORDER
+            package[MODIFIED_PRICE] = order_command.modified_price
+            return msgpack.packb(package)
 
         else:
             raise ValueError("Cannot serialize order command (unrecognized command).")
