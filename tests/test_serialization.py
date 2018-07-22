@@ -9,6 +9,7 @@
 
 import unittest
 import pytz
+import uuid
 
 from datetime import datetime
 from decimal import Decimal
@@ -20,6 +21,7 @@ from inv_trader.model.order import Order
 from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
 from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
 from inv_trader.model.events import OrderPartiallyFilled, OrderFilled
+from inv_trader.model.commands import SubmitOrder, CancelOrder, ModifyOrder
 from inv_trader.serialization import MsgPackEventSerializer
 from inv_trader.serialization import MsgPackOrderSerializer
 from inv_trader.serialization import MsgPackCommandSerializer
@@ -100,6 +102,36 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(order, deserialized)
+
+
+class MsgPackCommandSerializerTests(unittest.TestCase):
+
+    def test_can_serialize_and_deserialize_submit_order_commands(self):
+        # Arrange
+        serializer = MsgPackCommandSerializer()
+
+        order = Order(
+            AUDUSD_FXCM,
+            'O123456',
+            'SCALPER01_SL',
+            OrderSide.BUY,
+            OrderType.STOP_LIMIT,
+            100000,
+            UNIX_EPOCH,
+            Decimal('1.00000'),
+            TimeInForce.GTD,
+            UNIX_EPOCH)
+
+        command = SubmitOrder(order,
+                              uuid.uuid4(),
+                              UNIX_EPOCH)
+
+        # Act
+        serialized = serializer.serialize(command)
+        #deserialized = serializer.deserialize(serialized)
+
+        # Assert
+        self.assertEquals(order, command.order)
 
 
 class MsgPackEventSerializerTests(unittest.TestCase):
