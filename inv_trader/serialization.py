@@ -129,7 +129,7 @@ class MsgPackEventSerializer(EventSerializer):
                 unpacked)
 
         else:
-            raise ValueError("The event is invalid and cannot be deserialized.")
+            raise ValueError("Cannot deserialize event (unrecognized event).")
 
     @staticmethod
     @typechecking
