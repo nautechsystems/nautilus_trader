@@ -199,7 +199,7 @@ class MsgPackOrderSerializer(OrderSerializer):
     @typechecking
     def deserialize(order_bytes: bytes) -> Order:
         """
-        Deserialize the given bytes to an Order.
+        Deserialize the given Message Pack specification bytes to an Order.
 
         :param: order_bytes: The bytes to deserialize.
         :return: The deserialized order.
@@ -230,7 +230,7 @@ class CommandSerializer:
     @abc.abstractmethod
     def serialize(command: Command) -> bytes:
         """
-        Serialize the given command to bytes to be sent.
+        Serialize the given command to bytes.
 
         :param: command: The command to serialize.
         """
@@ -242,7 +242,7 @@ class CommandSerializer:
     @abc.abstractmethod
     def deserialize(command_bytes: bytes) -> Command:
         """
-        Deserialize the given command bytes to a Command.
+        Deserialize the given bytes to a Command.
 
         :param: command_bytes: The command bytes to deserialize.
         """
@@ -252,7 +252,7 @@ class CommandSerializer:
 
 class MsgPackCommandSerializer(CommandSerializer):
     """
-    Provides a command serializer for the Message Pack specification
+    Provides a command serializer for the Message Pack specification.
     """
 
     @staticmethod
@@ -275,10 +275,9 @@ class MsgPackCommandSerializer(CommandSerializer):
     @typechecking
     def deserialize(command_bytes: bytes) -> Command:
         """
-        Deserialize the given command bytes from Message Pack specification
-        bytes to a command.
+        Deserialize the given Message Pack specification bytes to a command.
 
-        :param: command: The command to serialize.
+        :param: command: The command to deserialize.
         :return: The deserialized command.
         :raises: ValueError: If the command cannot be deserialized.
         """
@@ -338,7 +337,7 @@ class MsgPackCommandSerializer(CommandSerializer):
             command_timestamp: datetime,
             unpacked: Dict) -> OrderCommand:
         """
-        Deserialize the given order command.
+        Deserialize the given parameters to an order command.
 
         :param command_id: The commands order id.
         :param command_timestamp: The commands timestamp.
@@ -388,7 +387,7 @@ class EventSerializer:
     @abc.abstractmethod
     def serialize(event: Event) -> bytes:
         """
-        Serialize the event to bytes.
+        Serialize the given event to bytes.
 
         :param: event_bytes: The bytes to deserialize.
         :return: The serialized event.
@@ -422,7 +421,7 @@ class MsgPackEventSerializer(EventSerializer):
         """
         Serialize the event to Message Pack specification bytes.
 
-        :param: event_bytes: The bytes to deserialize.
+        :param: event_bytes: The bytes to serialize.
         :return: The serialized event.
         :raises: ValueError: If the event cannot be serialized.
         """
@@ -436,7 +435,7 @@ class MsgPackEventSerializer(EventSerializer):
     @typechecking
     def deserialize(event_bytes: bytes) -> Event:
         """
-        Deserialize the given Message Pack bytes to an event.
+        Deserialize the given Message Pack specification bytes to an event.
 
         :param event_bytes: The bytes to deserialize.
         :return: The deserialized event.
