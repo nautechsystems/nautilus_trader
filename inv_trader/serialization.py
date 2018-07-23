@@ -423,7 +423,7 @@ class MsgPackEventSerializer(EventSerializer):
     @abc.abstractmethod
     def serialize(event: Event) -> bytes:
         """
-        Serialize the event to bytes.
+        Serialize the event to Message Pack specification bytes.
 
         :param: event_bytes: The bytes to deserialize.
         :return: The serialized event.
