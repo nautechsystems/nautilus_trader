@@ -240,7 +240,85 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
 
 class MsgPackEventSerializerTests(unittest.TestCase):
 
-    def test_can_deserialize_order_submitted_events(self):
+    def test_can_serialized_and_deserialize_order_submitted_events(self):
+        # Arrange
+        serializer = MsgPackEventSerializer()
+
+        event = OrderSubmitted(AUDUSD_FXCM,
+                               'O123456',
+                               UNIX_EPOCH,
+                               uuid.uuid4(),
+                               UNIX_EPOCH)
+
+        # Act
+        serialized = serializer.serialize(event)
+        deserialized = serializer.deserialize(serialized)
+
+        # Assert
+        self.assertEqual(deserialized, event)
+
+    def test_can_serialized_and_deserialize_order_accepted_events(self):
+        # Arrange
+        serializer = MsgPackEventSerializer()
+
+        event = OrderAccepted(AUDUSD_FXCM,
+                              'O123456',
+                              UNIX_EPOCH,
+                              uuid.uuid4(),
+                              UNIX_EPOCH)
+
+        # Act
+        serialized = serializer.serialize(event)
+        deserialized = serializer.deserialize(serialized)
+
+        # Assert
+        self.assertEqual(deserialized, event)
+
+    def test_can_serialized_and_deserialize_order_rejected_events(self):
+        # Arrange
+        serializer = MsgPackEventSerializer()
+
+        event = OrderRejected(AUDUSD_FXCM,
+                              'O123456',
+                              UNIX_EPOCH,
+                              'ORDER_ID_INVALID',
+                              uuid.uuid4(),
+                              UNIX_EPOCH)
+
+        # Act
+        serialized = serializer.serialize(event)
+        deserialized = serializer.deserialize(serialized)
+
+        # Assert
+        self.assertEqual(deserialized, event)
+
+    def test_can_serialized_and_deserialize_order_working_events(self):
+        # Arrange
+        serializer = MsgPackEventSerializer()
+
+        event = OrderWorking(
+            AUDUSD_FXCM,
+            'O123456',
+            'B123456',
+            'SCALPER1_PT',
+            OrderSide.SELL,
+            OrderType.STOP_LIMIT,
+            100000,
+            Decimal('1.50000'),
+            TimeInForce.DAY,
+            UNIX_EPOCH,
+            uuid.uuid4(),
+            UNIX_EPOCH,
+            expire_time=None)
+
+        # Act
+        serialized = serializer.serialize(event)
+        deserialized = serializer.deserialize(serialized)
+
+        # Assert
+        self.assertEqual(deserialized, event)
+
+    def test_can_deserialize_order_submitted_events_from_csharp(self):
         # Arrange
         serializer = MsgPackEventSerializer()
 
@@ -267,7 +345,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertTrue(isinstance(result.event_id, UUID))
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.event_timestamp)
 
-    def test_can_deserialize_order_accepted_events(self):
+    def test_can_deserialize_order_accepted_events_from_csharp(self):
         # Arrange
         serializer = MsgPackEventSerializer()
 
@@ -294,7 +372,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertTrue(isinstance(result.event_id, UUID))
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.event_timestamp)
 
-    def test_can_deserialize_order_rejected_events(self):
+    def test_can_deserialize_order_rejected_events_from_csharp(self):
         # Arrange
         serializer = MsgPackEventSerializer()
 
@@ -323,7 +401,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertTrue(isinstance(result.event_id, UUID))
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.event_timestamp)
 
-    def test_can_deserialize_order_working_events(self):
+    def test_can_deserialize_order_working_events_from_csharp(self):
         # Arrange
         serializer = MsgPackEventSerializer()
 
@@ -362,7 +440,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.event_timestamp)
         self.assertIsNone(result.expire_time)
 
-    def test_can_deserialize_order_working_events_with_expire_time(self):
+    def test_can_deserialize_order_working_events_with_expire_time_from_csharp(self):
         # Arrange
         serializer = MsgPackEventSerializer()
 
@@ -402,7 +480,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertEqual(datetime(1970, 1, 1, 0, 0, 0, 0, pytz.UTC), result.event_timestamp)
         self.assertEqual(datetime(1970, 1, 1, 0, 1, 0, 0, pytz.UTC), result.expire_time)
 
-    def test_can_deserialize_order_cancelled_events(self):
+    def test_can_deserialize_order_cancelled_events_from_csharp(self):
         # Arrange
         serializer = MsgPackEventSerializer()
 
@@ -429,7 +507,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertTrue(isinstance(result.event_id, UUID))
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.event_timestamp)
 
-    def test_can_deserialize_order_cancel_reject_events(self):
+    def test_can_deserialize_order_cancel_reject_events_from_csharp(self):
         # Arrange
         serializer = MsgPackEventSerializer()
 
@@ -461,7 +539,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertTrue(isinstance(result.event_id, UUID))
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.event_timestamp)
 
-    def test_can_deserialize_order_modified_events(self):
+    def test_can_deserialize_order_modified_events_from_csharp(self):
         # Arrange
         serializer = MsgPackEventSerializer()
 
@@ -492,7 +570,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertTrue(isinstance(result.event_id, UUID))
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.event_timestamp)
 
-    def test_can_deserialize_order_expired_events(self):
+    def test_can_deserialize_order_expired_events_from_csharp(self):
         # Arrange
         serializer = MsgPackEventSerializer()
 
@@ -519,7 +597,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertTrue(isinstance(result.event_id, UUID))
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.event_timestamp)
 
-    def test_can_deserialize_order_partially_filled_events(self):
+    def test_can_deserialize_order_partially_filled_events_from_csharp(self):
         # Arrange
         serializer = MsgPackEventSerializer()
 
@@ -557,7 +635,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertTrue(isinstance(result.event_id, UUID))
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.event_timestamp)
 
-    def test_can_deserialize_order_filled_events(self):
+    def test_can_deserialize_order_filled_events_from_csharp(self):
         # Arrange
         serializer = MsgPackEventSerializer()
 
