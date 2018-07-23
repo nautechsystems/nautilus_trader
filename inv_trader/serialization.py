@@ -504,6 +504,54 @@ class MsgPackEventSerializer(EventSerializer):
             package[EXPIRE_TIME] = _convert_datetime_to_string(order_event.expire_time)
             return msgpack.packb(package)
 
+        if isinstance(order_event, OrderCancelled):
+            package[ORDER_EVENT] = ORDER_CANCELLED
+            package[CANCELLED_TIME] = _convert_datetime_to_string(order_event.cancelled_time)
+            return msgpack.packb(package)
+
+        if isinstance(order_event, OrderCancelReject):
+            package[ORDER_EVENT] = ORDER_CANCEL_REJECT
+            package[REJECTED_TIME] = _convert_datetime_to_string(order_event.cancel_reject_time)
+            package[REJECTED_RESPONSE] = order_event.cancel_reject_response
+            package[REJECTED_REASON] = order_event.cancel_reject_reason
+            return msgpack.packb(package)
+
+        if isinstance(order_event, OrderModified):
+            package[ORDER_EVENT] = ORDER_MODIFIED
+            package[ORDER_ID_BROKER] = order_event.broker_order_id
+            package[MODIFIED_TIME] = _convert_datetime_to_string(order_event.modified_time)
+            package[MODIFIED_PRICE] = str(order_event.modified_price)
+            return msgpack.packb(package)
+
+        if isinstance(order_event, OrderExpired):
+            package[ORDER_EVENT] = ORDER_EXPIRED
+            package[EXPIRED_TIME] = _convert_datetime_to_string(order_event.expired_time)
+            return msgpack.packb(package)
+
+        if isinstance(order_event, OrderPartiallyFilled):
+            package[ORDER_EVENT] = ORDER_PARTIALLY_FILLED
+            package[EXECUTION_ID] = order_event.execution_id
+            package[EXECUTION_TICKET] = order_event.execution_ticket
+            package[ORDER_SIDE] = order_event.order_side.name
+            package[FILLED_QUANTITY] = order_event.filled_quantity
+            package[LEAVES_QUANTITY] = order_event.leaves_quantity
+            package[AVERAGE_PRICE] = str(order_event.average_price)
+            package[EXECUTION_TIME] = _convert_datetime_to_string(order_event.execution_time)
+            return msgpack.packb(package)
+
+        if isinstance(order_event, OrderFilled):
+            package[ORDER_EVENT] = ORDER_FILLED
+            package[EXECUTION_ID] = order_event.execution_id
+            package[EXECUTION_TICKET] = order_event.execution_ticket
+            package[ORDER_SIDE] = order_event.order_side.name
+            package[FILLED_QUANTITY] = order_event.filled_quantity
+            package[AVERAGE_PRICE] = str(order_event.average_price)
+            package[EXECUTION_TIME] = _convert_datetime_to_string(order_event.execution_time)
+            return msgpack.packb(package)
+
+        else:
+            raise ValueError("Cannot serialize event (unrecognized event.")
+
     @staticmethod
     @typechecking
     def _deserialize_order_event(
