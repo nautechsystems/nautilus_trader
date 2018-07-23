@@ -291,7 +291,7 @@ class MsgPackCommandSerializer(CommandSerializer):
 
         command_type = unpacked[COMMAND_TYPE]
         command_id = UUID(unpacked[COMMAND_ID])
-        command_timestamp = iso8601.parse_date(unpacked[COMMAND_TIMESTAMP])
+        command_timestamp = _convert_string_to_datetime(unpacked[COMMAND_TIMESTAMP])
 
         if command_type == ORDER_COMMAND:
             return MsgPackCommandSerializer._deserialize_order_command(
