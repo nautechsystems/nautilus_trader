@@ -558,7 +558,7 @@ class MsgPackEventSerializer(EventSerializer):
             event_timestamp: datetime,
             unpacked: Dict) -> OrderEvent:
         """
-        Deserialize the given order event.
+        Deserialize the given parameters to an order event.
 
         :param event_id: The events order id.
         :param event_timestamp: The events timestamp.
