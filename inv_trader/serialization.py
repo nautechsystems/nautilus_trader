@@ -206,23 +206,16 @@ class MsgPackOrderSerializer(OrderSerializer):
         """
         unpacked = msgpack.unpackb(order_bytes, encoding=UTF8)
 
-        # Deserialize expire_time (could be 'none').
-        expire_time = unpacked[EXPIRE_TIME]
-        if expire_time == NONE:
-            expire_time = None
-        else:
-            expire_time = iso8601.parse_date(unpacked[EXPIRE_TIME])
-
         return Order(symbol=_parse_symbol(unpacked[SYMBOL]),
                      order_id=unpacked[ORDER_ID],
                      label=unpacked[LABEL],
                      order_side=OrderSide[unpacked[ORDER_SIDE]],
                      order_type=OrderType[unpacked[ORDER_TYPE]],
                      quantity=unpacked[QUANTITY],
-                     timestamp=iso8601.parse_date(unpacked[TIMESTAMP]),
+                     timestamp=_convert_string_to_datetime(unpacked[TIMESTAMP]),
                      price=_convert_string_to_price(unpacked[PRICE]),
                      time_in_force=TimeInForce[unpacked[TIME_IN_FORCE]],
-                     expire_time=expire_time)
+                     expire_time=_convert_string_to_datetime(unpacked[EXPIRE_TIME]))
 
 
 class CommandSerializer:
@@ -270,6 +263,7 @@ class MsgPackCommandSerializer(CommandSerializer):
 
         :param: command: The command to serialize.
         :return: The serialized command.
+        :raises: ValueError: If the command cannot be serialized.
         """
         if isinstance(command, OrderCommand):
             return MsgPackCommandSerializer._serialize_order_command(command)
@@ -286,6 +280,7 @@ class MsgPackCommandSerializer(CommandSerializer):
 
         :param: command: The command to serialize.
         :return: The deserialized command.
+        :raises: ValueError: If the command cannot be deserialized.
         """
         unpacked = msgpack.unpackb(command_bytes, encoding=UTF8)
 
@@ -309,6 +304,7 @@ class MsgPackCommandSerializer(CommandSerializer):
 
         :param order_command: The order command to serialize.
         :return: The serialized order command.
+        :raises: ValueError: If the order command cannot be serialized.
         """
         package = {
             COMMAND_TYPE: ORDER_COMMAND,
@@ -348,6 +344,7 @@ class MsgPackCommandSerializer(CommandSerializer):
         :param command_timestamp: The commands timestamp.
         :param unpacked: The commands unpacked dictionary.
         :return: The deserialized order command.
+        :raises: ValueError: If the order command cannot be deserialized.
         """
         order_symbol = _parse_symbol(unpacked[SYMBOL])
         order_id = unpacked[ORDER_ID]
@@ -427,6 +424,7 @@ class MsgPackEventSerializer(EventSerializer):
 
         :param: event_bytes: The bytes to deserialize.
         :return: The serialized event.
+        :raises: ValueError: If the event cannot be serialized.
         """
         if isinstance(event, OrderEvent):
             return MsgPackEventSerializer._serialize_order_event(event)
@@ -442,6 +440,7 @@ class MsgPackEventSerializer(EventSerializer):
 
         :param event_bytes: The bytes to deserialize.
         :return: The deserialized event.
+        :raises: ValueError: If the event cannot be deserialized.
         """
         unpacked = msgpack.unpackb(event_bytes, encoding=UTF8)
 
@@ -466,6 +465,7 @@ class MsgPackEventSerializer(EventSerializer):
 
         :param order_event: The order event to serialize.
         :return: The serialized order event.
+        :raises: ValueError: If the order event cannot be serialized.
         """
         package = {
             EVENT_TYPE: ORDER_EVENT,
@@ -565,6 +565,7 @@ class MsgPackEventSerializer(EventSerializer):
         :param event_timestamp: The events timestamp.
         :param unpacked: The events unpacked dictionary.
         :return: The deserialized order event.
+        :raises: ValueError: If the order event cannot be deserialized.
         """
         order_symbol = _parse_symbol(unpacked[SYMBOL])
         order_id = unpacked[ORDER_ID]
