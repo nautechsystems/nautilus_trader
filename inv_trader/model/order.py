@@ -87,7 +87,7 @@ class Order:
         self._slippage = Decimal('0')
         self._status = OrderStatus.INITIALIZED
         self._order_events = []         # type: List[OrderEvent]
-        self._order_ids = [order_id]            # type: List[str]
+        self._order_ids = [order_id]    # type: List[str]
         self._order_ids_broker = []     # type: List[str]
         self._order_execution_ids = []  # type: List[str]
         self._execution_tickets = []    # type: List[str]
@@ -190,14 +190,14 @@ class Order:
         return self._time_in_force
 
     @property
-    def expire_time(self) -> datetime:
+    def expire_time(self) -> Optional[datetime]:
         """
         :return: The orders expire time (optional could be None).
         """
         return self._expire_time
 
     @property
-    def price(self) -> Decimal:
+    def price(self) -> Optional[Decimal]:
         """
         :return: The orders price (optional could be None).
         """

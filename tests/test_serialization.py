@@ -26,11 +26,80 @@ from inv_trader.model.commands import SubmitOrder, CancelOrder, ModifyOrder
 from inv_trader.serialization import MsgPackEventSerializer
 from inv_trader.serialization import MsgPackOrderSerializer
 from inv_trader.serialization import MsgPackCommandSerializer
+from inv_trader.serialization import _convert_price_to_string, _convert_datetime_to_string
+from inv_trader.serialization import _convert_string_to_price, _convert_string_to_datetime
 from test_kit.stubs import TestStubs
 
 UNIX_EPOCH = TestStubs.unix_epoch()
 AUDUSD_FXCM = Symbol('AUDUSD', Venue.FXCM)
 GBPUSD_FXCM = Symbol('GBPUSD', Venue.FXCM)
+
+
+class SerializationFunctionTests(unittest.TestCase):
+
+    def test_can_convert_price_to_string_from_none(self):
+        # Arrange
+        # Act
+        result = _convert_price_to_string(None)
+
+        # Assert
+        self.assertEqual('NONE', result)
+
+    def test_can_convert_price_to_string_from_decimal(self):
+        # Arrange
+        # Act
+        result = _convert_price_to_string(Decimal('1.00000'))
+
+        # Assert
+        self.assertEqual('1.00000', result)
+
+    def test_can_convert_string_to_price_from_none(self):
+        # Arrange
+        # Act
+        result = _convert_string_to_price('NONE')
+
+        # Assert
+        self.assertEqual(None, result)
+
+    def test_can_convert_string_to_price_from_decimal(self):
+        # Arrange
+        # Act
+        result = _convert_string_to_price('1.00000')
+
+        # Assert
+        self.assertEqual(Decimal('1.00000'), result)
+
+    def test_can_convert_expire_time_to_string_from_none(self):
+        # Arrange
+        # Act
+        result = _convert_datetime_to_string(None)
+
+        # Assert
+        self.assertEqual('NONE', result)
+
+    def test_can_convert_expire_time_to_string_from_datetime(self):
+        # Arrange
+        # Act
+        result = _convert_datetime_to_string(UNIX_EPOCH)
+
+        # Assert
+        self.assertEqual('1970-01-01T00:00:00.000Z', result)
+
+    def test_can_convert_string_to_expire_time_from_datetime(self):
+        # Arrange
+        # Act
+        result = _convert_string_to_datetime('1970-01-01T00:00:00.000Z')
+
+        # Assert
+        self.assertEqual(UNIX_EPOCH, result)
+
+    def test_can_convert_string_to_expire_time_from_none(self):
+        # Arrange
+        # Act
+        result = _convert_string_to_datetime('NONE')
+
+        # Assert
+        self.assertEqual(None, result)
 
 
 class MsgPackOrderSerializerTests(unittest.TestCase):

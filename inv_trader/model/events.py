@@ -13,6 +13,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
+from typing import Optional
 
 from inv_trader.core.checks import typechecking
 from inv_trader.model.enums import OrderSide, OrderType, TimeInForce
@@ -261,8 +262,6 @@ class OrderWorking(OrderEvent):
         self._time_in_force = time_in_force
         self._working_time = working_time
         self._expire_time = expire_time
-        if self._expire_time is not None:
-            self._expire_time = expire_time[0]
 
     @property
     def broker_order_id(self) -> str:
@@ -321,7 +320,7 @@ class OrderWorking(OrderEvent):
         return self._working_time
 
     @property
-    def expire_time(self) -> datetime:
+    def expire_time(self) -> Optional[datetime]:
         """
         :return: The events order expire time (optional could be None).
         """

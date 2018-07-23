@@ -14,7 +14,7 @@ import iso8601
 from uuid import UUID
 from datetime import datetime
 from decimal import Decimal
-from typing import Dict
+from typing import Dict, Optional
 
 from inv_trader.core.checks import typechecking
 from inv_trader.model.enums import Venue, OrderSide, OrderType, TimeInForce
@@ -81,6 +81,59 @@ PRICE = 'price'
 TIME_IN_FORCE = 'time_in_force'
 
 
+@typechecking
+def _parse_symbol(symbol_string: str) -> Symbol:
+    """
+    Parse the given string to a Symbol.
+
+    :param symbol_string: The symbol string to parse.
+    :return: The parsed symbol.
+    """
+    split_symbol = symbol_string.split('.')
+    return Symbol(split_symbol[0], Venue[split_symbol[1].upper()])
+
+
+def _convert_price_to_string(price: Optional[Decimal]) -> str:
+    """
+    Convert the given object to a decimal or 'NONE' string.
+
+    :param price: The price to convert.
+    :return: The converted string.
+    """
+    return NONE if price is None else str(price)
+
+
+def _convert_string_to_price(price_string: str) -> Optional[Decimal]:
+    """
+    Convert the given price string to a Decimal or None.
+
+    :param price_string: The price string to convert.
+    :return: The converted price, or None.
+    """
+    return None if price_string == NONE else Decimal(price_string)
+
+
+def _convert_datetime_to_string(expire_time: Optional[datetime]) -> str:
+    """
+    Convert the given object to a valid ISO8601 string, or 'NONE'.
+
+    :param expire_time: The datetime string to convert
+    :return: The converted string.
+    """
+    return (NONE if expire_time is None
+            else expire_time.isoformat(timespec='milliseconds').replace('+00:00', 'Z'))
+
+
+def _convert_string_to_datetime(expire_time_string: str) -> Optional[datetime]:
+    """
+    Convert the given string to a datetime object, or None.
+
+    :param expire_time_string: The string to convert.
+    :return: The converted datetime, or None.
+    """
+    return None if expire_time_string == NONE else iso8601.parse_date(expire_time_string)
+
+
 class OrderSerializer:
     """
     The abstract base class for all order serializers.
@@ -129,18 +182,6 @@ class MsgPackOrderSerializer(OrderSerializer):
         :param: order: The order to serialize.
         :return: The serialized order.
         """
-        # Convert price to string (could be None).
-        if order.price is None:
-            price = NONE
-        else:
-            price = str(order.price)
-
-        # Convert expire time to string (could be None).
-        if order.expire_time is None:
-            expire_time = NONE
-        else:
-            expire_time = order.expire_time.isoformat(timespec='milliseconds').replace('+00:00', 'Z')
-
         return msgpack.packb({
             SYMBOL: str(order.symbol),
             ORDER_ID: order.id,
@@ -148,10 +189,10 @@ class MsgPackOrderSerializer(OrderSerializer):
             ORDER_SIDE: order.side.name,
             ORDER_TYPE: order.type.name,
             QUANTITY: order.quantity,
-            TIMESTAMP: order.timestamp.isoformat(timespec='milliseconds').replace('+00:00', 'Z'),
-            PRICE: price,
+            TIMESTAMP: _convert_datetime_to_string(order.timestamp),
+            PRICE: _convert_price_to_string(order.price),
             TIME_IN_FORCE: order.time_in_force.name,
-            EXPIRE_TIME: expire_time
+            EXPIRE_TIME: _convert_datetime_to_string(order.expire_time)
             })
 
     @staticmethod
@@ -165,17 +206,6 @@ class MsgPackOrderSerializer(OrderSerializer):
         """
         unpacked = msgpack.unpackb(order_bytes, encoding=UTF8)
 
-        # Deserialize symbol
-        split_symbol = unpacked[SYMBOL].split('.')
-        symbol = Symbol(split_symbol[0], Venue[split_symbol[1].upper()])
-
-        # Deserialize price (could be 'none').
-        price = unpacked[PRICE]
-        if price == NONE:
-            price = None
-        else:
-            price = Decimal(unpacked[PRICE])
-
         # Deserialize expire_time (could be 'none').
         expire_time = unpacked[EXPIRE_TIME]
         if expire_time == NONE:
@@ -183,14 +213,14 @@ class MsgPackOrderSerializer(OrderSerializer):
         else:
             expire_time = iso8601.parse_date(unpacked[EXPIRE_TIME])
 
-        return Order(symbol=symbol,
+        return Order(symbol=_parse_symbol(unpacked[SYMBOL]),
                      order_id=unpacked[ORDER_ID],
                      label=unpacked[LABEL],
                      order_side=OrderSide[unpacked[ORDER_SIDE]],
                      order_type=OrderType[unpacked[ORDER_TYPE]],
                      quantity=unpacked[QUANTITY],
                      timestamp=iso8601.parse_date(unpacked[TIMESTAMP]),
-                     price=price,
+                     price=_convert_string_to_price(unpacked[PRICE]),
                      time_in_force=TimeInForce[unpacked[TIME_IN_FORCE]],
                      expire_time=expire_time)
 
@@ -285,8 +315,7 @@ class MsgPackCommandSerializer(CommandSerializer):
             SYMBOL: str(order_command.symbol),
             ORDER_ID: order_command.order_id,
             COMMAND_ID: str(order_command.command_id),
-            COMMAND_TIMESTAMP: order_command.command_timestamp.isoformat(
-                timespec='milliseconds').replace('+00:00', 'Z')
+            COMMAND_TIMESTAMP: _convert_datetime_to_string(order_command.command_timestamp)
         }
 
         if isinstance(order_command, SubmitOrder):
@@ -320,8 +349,7 @@ class MsgPackCommandSerializer(CommandSerializer):
         :param unpacked: The commands unpacked dictionary.
         :return: The deserialized order command.
         """
-        split_symbol = unpacked[SYMBOL].split('.')
-        order_symbol = Symbol(split_symbol[0], Venue[split_symbol[1].upper()])
+        order_symbol = _parse_symbol(unpacked[SYMBOL])
         order_id = unpacked[ORDER_ID]
         order_command = unpacked[ORDER_COMMAND]
 
@@ -390,7 +418,7 @@ class MsgPackEventSerializer(EventSerializer):
 
         event_type = unpacked[EVENT_TYPE]
         event_id = UUID(unpacked[EVENT_ID])
-        event_timestamp = iso8601.parse_date(unpacked[EVENT_TIMESTAMP])
+        event_timestamp = _convert_string_to_datetime(unpacked[EVENT_TIMESTAMP])
 
         if event_type == ORDER_EVENT:
             return MsgPackEventSerializer._deserialize_order_event(
@@ -415,45 +443,38 @@ class MsgPackEventSerializer(EventSerializer):
         :param unpacked: The events unpacked dictionary.
         :return: The deserialized order event.
         """
-        split_symbol = unpacked[SYMBOL].split('.')
-        symbol = Symbol(split_symbol[0], Venue[split_symbol[1].upper()])
+        order_symbol = _parse_symbol(unpacked[SYMBOL])
         order_id = unpacked[ORDER_ID]
         order_event = unpacked[ORDER_EVENT]
 
         if order_event == ORDER_SUBMITTED:
             return OrderSubmitted(
-                symbol,
+                order_symbol,
                 order_id,
-                iso8601.parse_date(unpacked[SUBMITTED_TIME]),
+                _convert_string_to_datetime(unpacked[SUBMITTED_TIME]),
                 event_id,
                 event_timestamp)
 
         if order_event == ORDER_ACCEPTED:
             return OrderAccepted(
-                symbol,
+                order_symbol,
                 order_id,
-                iso8601.parse_date(unpacked[ACCEPTED_TIME]),
+                _convert_string_to_datetime(unpacked[ACCEPTED_TIME]),
                 event_id,
                 event_timestamp)
 
         if order_event == ORDER_REJECTED:
             return OrderRejected(
-                symbol,
+                order_symbol,
                 order_id,
-                iso8601.parse_date(unpacked[REJECTED_TIME]),
+                _convert_string_to_datetime(unpacked[REJECTED_TIME]),
                 unpacked[REJECTED_REASON],
                 event_id,
                 event_timestamp)
 
         if order_event == ORDER_WORKING:
-            expire_time_string = unpacked[EXPIRE_TIME]
-            if expire_time_string == NONE:
-                expire_time = None
-            else:
-                expire_time = iso8601.parse_date(expire_time_string),
-
             return OrderWorking(
-                symbol,
+                order_symbol,
                 order_id,
                 unpacked[ORDER_ID_BROKER],
                 unpacked[LABEL],
@@ -462,24 +483,24 @@ class MsgPackEventSerializer(EventSerializer):
                 unpacked[QUANTITY],
                 Decimal(unpacked[PRICE]),
                 TimeInForce[unpacked[TIME_IN_FORCE]],
-                iso8601.parse_date(unpacked[WORKING_TIME]),
+                _convert_string_to_datetime(unpacked[WORKING_TIME]),
                 event_id,
                 event_timestamp,
-                expire_time)
+                _convert_string_to_datetime(unpacked[EXPIRE_TIME]))
 
         if order_event == ORDER_CANCELLED:
             return OrderCancelled(
-                symbol,
+                order_symbol,
                 order_id,
-                iso8601.parse_date(unpacked[CANCELLED_TIME]),
+                _convert_string_to_datetime(unpacked[CANCELLED_TIME]),
                 event_id,
                 event_timestamp)
 
         if order_event == ORDER_CANCEL_REJECT:
             return OrderCancelReject(
-                symbol,
+                order_symbol,
                 order_id,
-                iso8601.parse_date(unpacked[REJECTED_TIME]),
+                _convert_string_to_datetime(unpacked[REJECTED_TIME]),
                 unpacked[REJECTED_RESPONSE],
                 unpacked[REJECTED_REASON],
                 event_id,
@@ -487,25 +508,25 @@ class MsgPackEventSerializer(EventSerializer):
 
         if order_event == ORDER_MODIFIED:
             return OrderModified(
-                symbol,
+                order_symbol,
                 order_id,
                 unpacked[ORDER_ID_BROKER],
                 Decimal(unpacked[MODIFIED_PRICE]),
-                iso8601.parse_date(unpacked[MODIFIED_TIME]),
+                _convert_string_to_datetime(unpacked[MODIFIED_TIME]),
                 event_id,
                 event_timestamp)
 
         if order_event == ORDER_EXPIRED:
             return OrderExpired(
-                symbol,
+                order_symbol,
                 order_id,
-                iso8601.parse_date(unpacked[EXPIRED_TIME]),
+                _convert_string_to_datetime(unpacked[EXPIRED_TIME]),
                 event_id,
                 event_timestamp)
 
         if order_event == ORDER_PARTIALLY_FILLED:
             return OrderPartiallyFilled(
-                symbol,
+                order_symbol,
                 order_id,
                 unpacked[EXECUTION_ID],
                 unpacked[EXECUTION_TICKET],
@@ -513,20 +534,20 @@ class MsgPackEventSerializer(EventSerializer):
                 int(unpacked[FILLED_QUANTITY]),
                 int(unpacked[LEAVES_QUANTITY]),
                 Decimal(unpacked[AVERAGE_PRICE]),
-                iso8601.parse_date(unpacked[EXECUTION_TIME]),
+                _convert_string_to_datetime(unpacked[EXECUTION_TIME]),
                 event_id,
                 event_timestamp)
 
         if order_event == ORDER_FILLED:
             return OrderFilled(
-                symbol,
+                order_symbol,
                 order_id,
                 unpacked[EXECUTION_ID],
                 unpacked[EXECUTION_TICKET],
                 OrderSide[unpacked[ORDER_SIDE].upper()],
                 int(unpacked[FILLED_QUANTITY]),
                 Decimal(unpacked[AVERAGE_PRICE]),
-                iso8601.parse_date(unpacked[EXECUTION_TIME]),
+                _convert_string_to_datetime(unpacked[EXECUTION_TIME]),
                 event_id,
                 event_timestamp)
 
