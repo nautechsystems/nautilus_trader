@@ -10,6 +10,7 @@
 import unittest
 import pytz
 import uuid
+import msgpack
 
 from datetime import datetime
 from decimal import Decimal
@@ -128,10 +129,44 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
 
         # Act
         serialized = serializer.serialize(command)
-        #deserialized = serializer.deserialize(serialized)
+        deserialized = serializer.deserialize(serialized)
 
         # Assert
-        self.assertEquals(order, command.order)
+        self.assertEqual(command, deserialized)
+        self.assertEqual(order, deserialized.order)
+
+    def test_can_serialize_and_deserialize_cancel_order_commands(self):
+        # Arrange
+        serializer = MsgPackCommandSerializer()
+
+        command = CancelOrder(AUDUSD_FXCM,
+                              'O123456',
+                              uuid.uuid4(),
+                              UNIX_EPOCH)
+
+        # Act
+        serialized = serializer.serialize(command)
+        deserialized = serializer.deserialize(serialized)
+
+        # Assert
+        self.assertEqual(command, deserialized)
+
+    def test_can_serialize_and_deserialize_modify_order_commands(self):
+        # Arrange
+        serializer = MsgPackCommandSerializer()
+
+        command = ModifyOrder(AUDUSD_FXCM,
+                              'O123456',
+                              Decimal('1.00001'),
+                              uuid.uuid4(),
+                              UNIX_EPOCH)
+
+        # Act
+        serialized = serializer.serialize(command)
+        deserialized = serializer.deserialize(serialized)
+
+        # Assert
+        self.assertEqual(command, deserialized)
 
 
 class MsgPackEventSerializerTests(unittest.TestCase):
