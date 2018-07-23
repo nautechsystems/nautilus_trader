@@ -389,12 +389,25 @@ class EventSerializer:
     @staticmethod
     @typechecking
     @abc.abstractmethod
-    def deserialize(event_bytes: bytes) -> OrderEvent:
+    def serialize(event: Event) -> bytes:
         """
-        Deserialize the given bytes to an order event.
+        Serialize the event to bytes.
 
         :param: event_bytes: The bytes to deserialize.
-        :return: The deserialized order event.
+        :return: The serialized event.
+        """
+        # Raise exception if not overridden in implementation.
+        raise NotImplementedError("Method must be implemented.")
+
+    @staticmethod
+    @typechecking
+    @abc.abstractmethod
+    def deserialize(event_bytes: bytes) -> Event:
+        """
+        Deserialize the given bytes to an event.
+
+        :param: event_bytes: The bytes to deserialize.
+        :return: The deserialized event.
         """
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented.")
@@ -407,12 +420,28 @@ class MsgPackEventSerializer(EventSerializer):
 
     @staticmethod
     @typechecking
+    @abc.abstractmethod
+    def serialize(event: Event) -> bytes:
+        """
+        Serialize the event to bytes.
+
+        :param: event_bytes: The bytes to deserialize.
+        :return: The serialized event.
+        """
+        if isinstance(event, OrderEvent):
+            return MsgPackEventSerializer._serialize_order_event(event)
+
+        else:
+            raise ValueError("Cannot serialize event (unrecognized event).")
+
+    @staticmethod
+    @typechecking
     def deserialize(event_bytes: bytes) -> Event:
         """
-        Deserialize the given Message Pack bytes to an order event.
+        Deserialize the given Message Pack bytes to an event.
 
         :param event_bytes: The bytes to deserialize.
-        :return: The deserialized order event.
+        :return: The deserialized event.
         """
         unpacked = msgpack.unpackb(event_bytes, encoding=UTF8)
 
@@ -428,6 +457,52 @@ class MsgPackEventSerializer(EventSerializer):
 
         else:
             raise ValueError("Cannot deserialize event (unrecognized event).")
+
+    @staticmethod
+    @typechecking
+    def _serialize_order_event(order_event: OrderEvent) -> bytes:
+        """
+        Serialize the given order event to Message Pack specification bytes.
+
+        :param order_event: The order event to serialize.
+        :return: The serialized order event.
+        """
+        package = {
+            EVENT_TYPE: ORDER_EVENT,
+            SYMBOL: str(order_event.symbol),
+            ORDER_ID: order_event.order_id,
+            EVENT_ID: str(order_event.event_id),
+            EVENT_TIMESTAMP: _convert_datetime_to_string(order_event.event_timestamp)
+        }
+
+        if isinstance(order_event, OrderSubmitted):
+            package[ORDER_EVENT] = ORDER_SUBMITTED
+            package[SUBMITTED_TIME] = _convert_datetime_to_string(order_event.submitted_time)
+            return msgpack.packb(package)
+
+        if isinstance(order_event, OrderAccepted):
+            package[ORDER_EVENT] = ORDER_ACCEPTED
+            package[ACCEPTED_TIME] = _convert_datetime_to_string(order_event.accepted_time)
+            return msgpack.packb(package)
+
+        if isinstance(order_event, OrderRejected):
+            package[ORDER_EVENT] = ORDER_REJECTED
+            package[REJECTED_TIME] = _convert_datetime_to_string(order_event.rejected_time)
+            package[REJECTED_REASON] = order_event.rejected_reason
+            return msgpack.packb(package)
+
+        if isinstance(order_event, OrderWorking):
+            package[ORDER_EVENT] = ORDER_WORKING
+            package[ORDER_ID_BROKER] = order_event.broker_order_id
+            package[LABEL] = order_event.label
+            package[ORDER_SIDE] = order_event.order_side.name
+            package[ORDER_TYPE] = order_event.order_type.name
+            package[QUANTITY] = order_event.quantity
+            package[PRICE] = str(order_event.price)
+            package[TIME_IN_FORCE] = order_event.time_in_force.name
+            package[WORKING_TIME] = _convert_datetime_to_string(order_event.working_time)
+            package[EXPIRE_TIME] = _convert_datetime_to_string(order_event.expire_time)
+            return msgpack.packb(package)
 
     @staticmethod
     @typechecking
