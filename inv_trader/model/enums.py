@@ -20,14 +20,14 @@ class Resolution(Enum):
     SECOND = 1,
     MINUTE = 2,
     HOUR = 3,
-    DAY = 4,
+    DAY = 4
 
 
 class QuoteType(Enum):
     BID = 0,
     ASK = 1,
     LAST = 2,
-    MID = 3,
+    MID = 3
 
 
 class OrderSide(Enum):
@@ -39,10 +39,8 @@ class OrderType(Enum):
     MARKET = 0,
     LIMIT = 1,
     STOP_MARKET = 2,
-    STOP_LIMIT = 3
-    MIT = 4,
-    FOC = 5,
-    IOC = 6
+    STOP_LIMIT = 3,
+    MIT = 4
 
 
 class TimeInForce(Enum):

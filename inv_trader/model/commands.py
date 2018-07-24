@@ -13,13 +13,15 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
+from typing import List
 
 from inv_trader.core.checks import typechecking
-from inv_trader.model.enums import OrderSide, OrderType, TimeInForce
 from inv_trader.model.objects import Symbol
 from inv_trader.model.order import Order
 
+# Constants
 OrderId = str
+Ticket = str
 
 
 class Command:
@@ -206,3 +208,40 @@ class ModifyOrder(OrderCommand):
         :return: The commands price to modify the order to.
         """
         return self._modified_price
+
+
+class ClosePosition(OrderCommand):
+    """
+    Represents a command to close the position corresponding to the given ticket.
+    """
+
+    @typechecking
+    def __init__(self,
+                 symbol: Symbol,
+                 from_order_id: OrderId,
+                 tickets: list,
+                 command_id: UUID,
+                 command_timestamp: datetime):
+        """
+        Initializes a new instance of the CancelOrder class.
+
+        :param: symbol: The commands position symbol.
+        :param: from_order_id: The commands order id the position entered from.
+        :param: tickets: The commands position tickets to close.
+        :param: event_id: The commands identifier.
+        :param: event_timestamp: The commands timestamp.
+        """
+        super().__init__(
+            symbol,
+            from_order_id,
+            command_id,
+            command_timestamp)
+
+        self._tickets = tickets
+
+    @property
+    def tickets(self) -> List[Ticket]:
+        """
+        :return: The commands position ticket list.
+        """
+        return self._tickets

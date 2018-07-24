@@ -138,7 +138,8 @@ class OrderTests(unittest.TestCase):
             100000)
 
         # Assert
-        self.assertEqual(OrderType.FOC, order.type)
+        self.assertEqual(OrderType.MARKET, order.type)
+        self.assertEqual(TimeInForce.FOC, order.time_in_force)
         self.assertEqual(OrderStatus.INITIALIZED, order.status)
         self.assertFalse(order.is_complete)
 
@@ -153,7 +154,8 @@ class OrderTests(unittest.TestCase):
             100000)
 
         # Assert
-        self.assertEqual(OrderType.IOC, order.type)
+        self.assertEqual(OrderType.MARKET, order.type)
+        self.assertEqual(TimeInForce.IOC, order.time_in_force)
         self.assertEqual(OrderStatus.INITIALIZED, order.status)
         self.assertFalse(order.is_complete)
 

@@ -22,7 +22,7 @@ from inv_trader.model.order import Order
 from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
 from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
 from inv_trader.model.events import OrderPartiallyFilled, OrderFilled
-from inv_trader.model.commands import SubmitOrder, CancelOrder, ModifyOrder
+from inv_trader.model.commands import SubmitOrder, CancelOrder, ModifyOrder, ClosePosition
 from inv_trader.serialization import MsgPackEventSerializer
 from inv_trader.serialization import MsgPackOrderSerializer
 from inv_trader.serialization import MsgPackCommandSerializer
@@ -125,9 +125,34 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
         deserialized = serializer.deserialize(serialized)
 
         # Assert
+        print(serialized.hex())
         self.assertEqual(order, deserialized)
 
     def test_can_serialize_and_deserialize_limit_orders(self):
+        # Arrange
+        serializer = MsgPackOrderSerializer()
+
+        order = Order(
+            AUDUSD_FXCM,
+            'O123456',
+            'SCALPER01_SL',
+            OrderSide.BUY,
+            OrderType.LIMIT,
+            100000,
+            UNIX_EPOCH,
+            Decimal('1.00000'),
+            TimeInForce.DAY,
+            expire_time=None)
+
+        # Act
+        serialized = serializer.serialize(order)
+        deserialized = serializer.deserialize(serialized)
+
+        # Assert
+        print(serialized.hex())
+        self.assertEqual(order, deserialized)
+
+    def test_can_serialize_and_deserialize_stop_limit_orders(self):
         # Arrange
         serializer = MsgPackOrderSerializer()
 
@@ -148,9 +173,10 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
         deserialized = serializer.deserialize(serialized)
 
         # Assert
+        print(serialized.hex())
         self.assertEqual(order, deserialized)
 
-    def test_can_serialize_and_deserialize_limit_orders_with_expire_time(self):
+    def test_can_serialize_and_deserialize_stop_limit_orders_with_expire_time(self):
         # Arrange
         serializer = MsgPackOrderSerializer()
 
@@ -229,6 +255,23 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
                               Decimal('1.00001'),
                               uuid.uuid4(),
                               UNIX_EPOCH)
+
+        # Act
+        serialized = serializer.serialize(command)
+        deserialized = serializer.deserialize(serialized)
+
+        # Assert
+        self.assertEqual(command, deserialized)
+
+    def test_can_serialize_and_deserialize_close_position_commands(self):
+        # Arrange
+        serializer = MsgPackCommandSerializer()
+
+        command = ClosePosition(AUDUSD_FXCM,
+                                'O123456',
+                                ['E0001, E0002'],
+                                uuid.uuid4(),
+                                UNIX_EPOCH)
 
         # Act
         serialized = serializer.serialize(command)
