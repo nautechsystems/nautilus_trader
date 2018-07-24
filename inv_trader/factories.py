@@ -217,11 +217,11 @@ class OrderFactory:
                      order_id,
                      label,
                      order_side,
-                     OrderType.FOC,
+                     OrderType.MARKET,
                      quantity,
                      datetime.utcnow(),
                      price=None,
-                     time_in_force=None,
+                     time_in_force=TimeInForce.FOC,
                      expire_time=None)
 
     @staticmethod
@@ -246,9 +246,9 @@ class OrderFactory:
                      order_id,
                      label,
                      order_side,
-                     OrderType.IOC,
+                     OrderType.MARKET,
                      quantity,
                      datetime.utcnow(),
                      price=None,
-                     time_in_force=None,
+                     time_in_force=TimeInForce.IOC,
                      expire_time=None)

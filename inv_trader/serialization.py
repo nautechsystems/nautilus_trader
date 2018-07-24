@@ -25,6 +25,7 @@ from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected
 from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
 from inv_trader.model.events import OrderPartiallyFilled, OrderFilled
 from inv_trader.model.commands import Command, OrderCommand, SubmitOrder, CancelOrder, ModifyOrder
+from inv_trader.model.commands import ClosePosition
 
 # Constants
 UTF8 = 'utf-8'
@@ -36,6 +37,7 @@ ORDER_COMMAND = 'order_command'
 SUBMIT_ORDER = 'submit_order'
 CANCEL_ORDER = 'cancel_order'
 MODIFY_ORDER = 'modify_order'
+CLOSE_POSITION = 'close_position'
 ORDER = 'order'
 TIMESTAMP = 'timestamp'
 EVENT_TYPE = 'event_type'
@@ -71,6 +73,7 @@ EXPIRED_TIME = 'expired_time'
 EXECUTION_TIME = 'execution_time'
 EXECUTION_ID = 'execution_id'
 EXECUTION_TICKET = 'execution_ticket'
+EXECUTION_TICKETS = 'execution_tickets'
 ORDER_SIDE = 'order_side'
 ORDER_TYPE = 'order_type'
 FILLED_QUANTITY = 'filled_quantity'
@@ -327,6 +330,11 @@ class MsgPackCommandSerializer(CommandSerializer):
             package[MODIFIED_PRICE] = str(order_command.modified_price)
             return msgpack.packb(package)
 
+        if isinstance(order_command, ClosePosition):
+            package[ORDER_COMMAND] = CLOSE_POSITION
+            package[EXECUTION_TICKETS] = str(order_command.tickets).strip('[]').replace(' ', '')
+            return msgpack.packb(package)
+
         else:
             raise ValueError("Cannot serialize order command (unrecognized command).")
 
@@ -368,6 +376,14 @@ class MsgPackCommandSerializer(CommandSerializer):
                 order_symbol,
                 order_id,
                 Decimal(unpacked[MODIFIED_PRICE]),
+                command_id,
+                command_timestamp)
+
+        if order_command == CLOSE_POSITION:
+            return ClosePosition(
+                order_symbol,
+                order_id,
+                unpacked[EXECUTION_TICKETS].split(','),
                 command_id,
                 command_timestamp)
 
