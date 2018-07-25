@@ -187,7 +187,7 @@ class ModifyOrder(OrderCommand):
                  command_id: UUID,
                  command_timestamp: datetime):
         """
-        Initializes a new instance of the CancelOrder class.
+        Initializes a new instance of the ModifyOrder class.
 
         :param: order_symbol: The commands order symbol.
         :param: order_id: The commands order identifier to modify.
@@ -223,7 +223,7 @@ class ClosePosition(OrderCommand):
                  command_id: UUID,
                  command_timestamp: datetime):
         """
-        Initializes a new instance of the CancelOrder class.
+        Initializes a new instance of the ClosePosition class.
 
         :param: symbol: The commands position symbol.
         :param: from_order_id: The commands order id the position entered from.
