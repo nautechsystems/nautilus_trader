@@ -13,7 +13,7 @@ import uuid
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Dict
+from typing import Dict, Callable
 from pika import PlainCredentials, ConnectionParameters
 
 from inv_trader.core.checks import typechecking
@@ -30,17 +30,17 @@ UTF8 = 'utf-8'
 StrategyId = str
 OrderId = str
 
-ORDER_EVENTS = MQProps(
-    exchange_name='nautilus.execution.events',
-    exchange_type='fanout',
-    queue_name='inv_trader',
-    routing_key='')
-
-ORDER_COMMANDS = MQProps(
+EXECUTION_COMMANDS = MQProps(
     exchange_name='nautilus.execution.commands',
     exchange_type='direct',
     queue_name='inv_trader',
     routing_key='inv_trader')
+
+EXECUTION_EVENTS = MQProps(
+    exchange_name='nautilus.execution.events',
+    exchange_type='fanout',
+    queue_name='inv_trader',
+    routing_key='')
 
 
 class ExecutionClient:
@@ -57,7 +57,7 @@ class ExecutionClient:
         """
         self._event_serializer = MsgPackEventSerializer
         self._command_serializer = MsgPackCommandSerializer
-        self._registered_strategies = {}  # type: Dict[StrategyId, callable]
+        self._registered_strategies = {}  # type: Dict[StrategyId, Callable]
         self._order_index = {}            # type: Dict[OrderId, StrategyId]
 
         self._log("Initialized.")
@@ -196,13 +196,13 @@ class LiveExecClient(ExecutionClient):
 
         self._order_events_worker = MQWorker(
             self._connection_params,
-            ORDER_EVENTS,
+            EXECUTION_EVENTS,
             self._event_handler,
             'MQWorker[01]')
 
         self._order_commands_worker = MQWorker(
             self._connection_params,
-            ORDER_COMMANDS,
+            EXECUTION_COMMANDS,
             self._command_ack_handler,
             'MQWorker[02]')
 
