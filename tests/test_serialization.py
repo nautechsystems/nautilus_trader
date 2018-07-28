@@ -10,9 +10,8 @@
 import unittest
 import pytz
 import uuid
-import msgpack
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from uuid import UUID
 
@@ -144,6 +143,28 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
         print(serialized.hex())
         self.assertEqual(order, deserialized)
 
+    def test_can_serialize_and_deserialize_limit_orders_with_expire_time(self):
+        # Arrange
+        serializer = MsgPackOrderSerializer()
+
+        order = OrderFactory.limit(
+            AUDUSD_FXCM,
+            'O123456',
+            'SCALPER01_SL',
+            OrderSide.BUY,
+            100000,
+            Decimal('1.00000'),
+            TimeInForce.GTD,
+            expire_time=UNIX_EPOCH)
+
+        # Act
+        serialized = serializer.serialize(order)
+        deserialized = serializer.deserialize(serialized)
+
+        # Assert
+        print(serialized.hex())
+        self.assertEqual(order, deserialized)
+
     def test_can_serialize_and_deserialize_stop_limit_orders(self):
         # Arrange
         serializer = MsgPackOrderSerializer()
@@ -224,7 +245,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             100000,
             Decimal('1.00000'),
             TimeInForce.GTD,
-            UNIX_EPOCH)
+            expire_time=datetime.max)
 
         command = CancelOrder(order,
                               'EXPIRED',
@@ -237,6 +258,8 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(command, deserialized)
+        self.assertEqual(order, deserialized.order)
+        print(serialized.hex())
 
     def test_can_serialize_and_deserialize_modify_order_commands(self):
         # Arrange
@@ -250,7 +273,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             100000,
             Decimal('1.00000'),
             TimeInForce.GTD,
-            UNIX_EPOCH)
+            expire_time=datetime.max)
 
         command = ModifyOrder(order,
                               Decimal('1.00001'),
@@ -263,6 +286,8 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(command, deserialized)
+        self.assertEqual(order, deserialized.order)
+        print(serialized.hex())
 
 
 class MsgPackEventSerializerTests(unittest.TestCase):
