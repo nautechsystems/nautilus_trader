@@ -194,7 +194,7 @@ class MsgPackOrderSerializer(OrderSerializer):
             PRICE: _convert_price_to_string(order.price),
             TIME_IN_FORCE: order.time_in_force.name,
             EXPIRE_TIME: _convert_datetime_to_string(order.expire_time)
-            })
+            }, encoding=UTF8)
 
     @staticmethod
     @typechecking
