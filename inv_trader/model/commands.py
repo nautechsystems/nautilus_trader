@@ -13,15 +13,9 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
-from typing import List
 
 from inv_trader.core.checks import typechecking
-from inv_trader.model.objects import Symbol
 from inv_trader.model.order import Order
-
-# Constants
-OrderId = str
-Ticket = str
 
 
 class Command:
@@ -82,35 +76,25 @@ class OrderCommand(Command):
 
     @typechecking
     def __init__(self,
-                 order_symbol: Symbol,
-                 order_id: str,
+                 order: Order,
                  command_id: UUID,
                  command_timestamp: datetime):
         """
         Initializes a new instance of the OrderCommand abstract class.
 
-        :param: order_symbol: The commands order symbol.
-        :param: order_id: The commands order identifier.
+        :param: order: The commands order.
         :param: event_id: The commands identifier.
         :param: event_timestamp: The order commands timestamp.
         """
         super().__init__(command_id, command_timestamp)
-        self._symbol = order_symbol
-        self._order_id = order_id
+        self._order = order
 
     @property
-    def symbol(self) -> Symbol:
+    def order(self) -> Order:
         """
-        :return: The commands order symbol.
+        :return: The commands order.
         """
-        return self._symbol
-
-    @property
-    def order_id(self) -> str:
-        """
-        :return: The commands order identifier.
-        """
-        return self._order_id
+        return self._order
 
 
 class SubmitOrder(OrderCommand):
@@ -131,19 +115,9 @@ class SubmitOrder(OrderCommand):
         :param: event_timestamp: The commands timestamp.
         """
         super().__init__(
-            order.symbol,
-            order.id,
+            order,
             command_id,
             command_timestamp)
-
-        self._order = order
-
-    @property
-    def order(self) -> Order:
-        """
-        :return: The commands order to submit.
-        """
-        return self._order
 
 
 class CancelOrder(OrderCommand):
@@ -154,49 +128,54 @@ class CancelOrder(OrderCommand):
 
     @typechecking
     def __init__(self,
-                 order_symbol: Symbol,
-                 order_id: OrderId,
+                 order: Order,
+                 cancel_reason: str,
                  command_id: UUID,
                  command_timestamp: datetime):
         """
         Initializes a new instance of the CancelOrder class.
 
-        :param: order_symbol: The commands order symbol.
-        :param: order: The commands order identifier to cancel.
+        :param: order: The commands order to cancel.
+        :param: cancel_reason: The order cancel reason.
         :param: event_id: The commands identifier.
         :param: event_timestamp: The commands timestamp.
         """
         super().__init__(
-            order_symbol,
-            order_id,
+            order,
             command_id,
             command_timestamp)
+
+        self._cancel_reason = cancel_reason
+
+    @property
+    def cancel_reason(self) -> str:
+        """
+        :return: The commands order cancel reason.
+        """
+        return self._cancel_reason
 
 
 class ModifyOrder(OrderCommand):
     """
-    Represents a command to modify the order corresponding to the given order
-    identifier with the given modified price.
+    Represents a command to modify the given order with the given modified price.
     """
 
     @typechecking
     def __init__(self,
-                 order_symbol: Symbol,
-                 order_id: OrderId,
+                 order: Order,
                  modified_price: Decimal,
                  command_id: UUID,
                  command_timestamp: datetime):
         """
         Initializes a new instance of the ModifyOrder class.
 
-        :param: order_symbol: The commands order symbol.
-        :param: order_id: The commands order identifier to modify.
+        :param: order: The commands order to modify.
+        :param: modified_price: The commands modified price for the order.
         :param: event_id: The commands identifier.
         :param: event_timestamp: The commands timestamp.
         """
         super().__init__(
-            order_symbol,
-            order_id,
+            order,
             command_id,
             command_timestamp)
 
@@ -205,43 +184,6 @@ class ModifyOrder(OrderCommand):
     @property
     def modified_price(self) -> Decimal:
         """
-        :return: The commands price to modify the order to.
+        :return: The commands modified price for the order.
         """
         return self._modified_price
-
-
-class ClosePosition(OrderCommand):
-    """
-    Represents a command to close the position corresponding to the given ticket.
-    """
-
-    @typechecking
-    def __init__(self,
-                 symbol: Symbol,
-                 from_order_id: OrderId,
-                 tickets: list,
-                 command_id: UUID,
-                 command_timestamp: datetime):
-        """
-        Initializes a new instance of the ClosePosition class.
-
-        :param: symbol: The commands position symbol.
-        :param: from_order_id: The commands order id the position entered from.
-        :param: tickets: The commands position tickets to close.
-        :param: event_id: The commands identifier.
-        :param: event_timestamp: The commands timestamp.
-        """
-        super().__init__(
-            symbol,
-            from_order_id,
-            command_id,
-            command_timestamp)
-
-        self._tickets = tickets
-
-    @property
-    def tickets(self) -> List[Ticket]:
-        """
-        :return: The commands position ticket list.
-        """
-        return self._tickets

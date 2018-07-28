@@ -25,7 +25,6 @@ from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected
 from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
 from inv_trader.model.events import OrderPartiallyFilled, OrderFilled
 from inv_trader.model.commands import Command, OrderCommand, SubmitOrder, CancelOrder, ModifyOrder
-from inv_trader.model.commands import ClosePosition
 
 # Constants
 UTF8 = 'utf-8'
@@ -37,7 +36,7 @@ ORDER_COMMAND = 'order_command'
 SUBMIT_ORDER = 'submit_order'
 CANCEL_ORDER = 'cancel_order'
 MODIFY_ORDER = 'modify_order'
-CLOSE_POSITION = 'close_position'
+CANCEL_REASON = 'cancel_reason'
 ORDER = 'order'
 TIMESTAMP = 'timestamp'
 EVENT_TYPE = 'event_type'
@@ -73,7 +72,6 @@ EXPIRED_TIME = 'expired_time'
 EXECUTION_TIME = 'execution_time'
 EXECUTION_ID = 'execution_id'
 EXECUTION_TICKET = 'execution_ticket'
-EXECUTION_TICKETS = 'execution_tickets'
 ORDER_SIDE = 'order_side'
 ORDER_TYPE = 'order_type'
 FILLED_QUANTITY = 'filled_quantity'
@@ -310,29 +308,23 @@ class MsgPackCommandSerializer(CommandSerializer):
         """
         package = {
             COMMAND_TYPE: ORDER_COMMAND,
-            SYMBOL: str(order_command.symbol),
-            ORDER_ID: order_command.order_id,
+            ORDER: MsgPackOrderSerializer.serialize(order_command.order).hex(),
             COMMAND_ID: str(order_command.command_id),
             COMMAND_TIMESTAMP: _convert_datetime_to_string(order_command.command_timestamp)
         }
 
         if isinstance(order_command, SubmitOrder):
             package[ORDER_COMMAND] = SUBMIT_ORDER
-            package[ORDER] = MsgPackOrderSerializer.serialize(order_command.order).hex()
             return msgpack.packb(package)
 
         if isinstance(order_command, CancelOrder):
             package[ORDER_COMMAND] = CANCEL_ORDER
+            package[CANCEL_REASON] = order_command.cancel_reason
             return msgpack.packb(package)
 
         if isinstance(order_command, ModifyOrder):
             package[ORDER_COMMAND] = MODIFY_ORDER
             package[MODIFIED_PRICE] = str(order_command.modified_price)
-            return msgpack.packb(package)
-
-        if isinstance(order_command, ClosePosition):
-            package[ORDER_COMMAND] = CLOSE_POSITION
-            package[EXECUTION_TICKETS] = str(order_command.tickets).strip('[]').replace(' ', '')
             return msgpack.packb(package)
 
         else:
@@ -353,12 +345,10 @@ class MsgPackCommandSerializer(CommandSerializer):
         :return: The deserialized order command.
         :raises: ValueError: If the order command cannot be deserialized.
         """
-        order_symbol = _parse_symbol(unpacked[SYMBOL])
-        order_id = unpacked[ORDER_ID]
         order_command = unpacked[ORDER_COMMAND]
+        order = MsgPackOrderSerializer.deserialize(bytes.fromhex(unpacked[ORDER]))
 
         if order_command == SUBMIT_ORDER:
-            order = MsgPackOrderSerializer.deserialize(bytes.fromhex(unpacked[ORDER]))
             return SubmitOrder(
                 order,
                 command_id,
@@ -366,24 +356,15 @@ class MsgPackCommandSerializer(CommandSerializer):
 
         if order_command == CANCEL_ORDER:
             return CancelOrder(
-                order_symbol,
-                order_id,
+                order,
+                unpacked[CANCEL_REASON],
                 command_id,
                 command_timestamp)
 
         if order_command == MODIFY_ORDER:
             return ModifyOrder(
-                order_symbol,
-                order_id,
+                order,
                 Decimal(unpacked[MODIFIED_PRICE]),
-                command_id,
-                command_timestamp)
-
-        if order_command == CLOSE_POSITION:
-            return ClosePosition(
-                order_symbol,
-                order_id,
-                unpacked[EXECUTION_TICKETS].split(','),
                 command_id,
                 command_timestamp)
 

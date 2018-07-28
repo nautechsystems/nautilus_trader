@@ -253,7 +253,7 @@ class Order:
         Override the default equality comparison.
         """
         if isinstance(other, self.__class__):
-            return self.__dict__ == other.__dict__
+            return self.id == other.id
         else:
             return False
 

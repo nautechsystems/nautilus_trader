@@ -18,11 +18,11 @@ from uuid import UUID
 
 from inv_trader.model.enums import Venue, OrderSide, OrderType, OrderStatus, TimeInForce
 from inv_trader.model.objects import Symbol, Resolution, QuoteType, BarType, Bar
-from inv_trader.model.order import Order
+from inv_trader.factories import OrderFactory
 from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
 from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
 from inv_trader.model.events import OrderPartiallyFilled, OrderFilled
-from inv_trader.model.commands import SubmitOrder, CancelOrder, ModifyOrder, ClosePosition
+from inv_trader.model.commands import SubmitOrder, CancelOrder, ModifyOrder
 from inv_trader.serialization import MsgPackEventSerializer
 from inv_trader.serialization import MsgPackOrderSerializer
 from inv_trader.serialization import MsgPackCommandSerializer
@@ -108,17 +108,12 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
         # Arrange
         serializer = MsgPackOrderSerializer()
 
-        order = Order(
+        order = OrderFactory.market(
             AUDUSD_FXCM,
             'O123456',
             'SCALPER01_SL',
             OrderSide.BUY,
-            OrderType.MARKET,
-            100000,
-            UNIX_EPOCH,
-            price=None,
-            time_in_force=TimeInForce.DAY,
-            expire_time=None)
+            100000)
 
         # Act
         serialized = serializer.serialize(order)
@@ -132,17 +127,14 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
         # Arrange
         serializer = MsgPackOrderSerializer()
 
-        order = Order(
+        order = OrderFactory.limit(
             AUDUSD_FXCM,
             'O123456',
             'SCALPER01_SL',
             OrderSide.BUY,
-            OrderType.LIMIT,
             100000,
-            UNIX_EPOCH,
             Decimal('1.00000'),
-            TimeInForce.DAY,
-            expire_time=None)
+            TimeInForce.DAY)
 
         # Act
         serialized = serializer.serialize(order)
@@ -156,17 +148,13 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
         # Arrange
         serializer = MsgPackOrderSerializer()
 
-        order = Order(
+        order = OrderFactory.stop_limit(
             AUDUSD_FXCM,
             'O123456',
             'SCALPER01_SL',
             OrderSide.BUY,
-            OrderType.STOP_LIMIT,
             100000,
-            UNIX_EPOCH,
-            Decimal('1.00000'),
-            TimeInForce.DAY,
-            expire_time=None)
+            Decimal('1.00000'))
 
         # Act
         serialized = serializer.serialize(order)
@@ -180,17 +168,15 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
         # Arrange
         serializer = MsgPackOrderSerializer()
 
-        order = Order(
+        order = OrderFactory.stop_limit(
             AUDUSD_FXCM,
             'O123456',
             'SCALPER01_SL',
             OrderSide.BUY,
-            OrderType.STOP_LIMIT,
             100000,
-            UNIX_EPOCH,
             Decimal('1.00000'),
             TimeInForce.GTD,
-            UNIX_EPOCH)
+            expire_time=UNIX_EPOCH)
 
         # Act
         serialized = serializer.serialize(order)
@@ -206,17 +192,12 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         # Arrange
         serializer = MsgPackCommandSerializer()
 
-        order = Order(
+        order = OrderFactory.market(
             AUDUSD_FXCM,
             'O123456',
             'SCALPER01_SL',
             OrderSide.BUY,
-            OrderType.STOP_LIMIT,
-            100000,
-            UNIX_EPOCH,
-            Decimal('1.00000'),
-            TimeInForce.GTD,
-            UNIX_EPOCH)
+            100000)
 
         command = SubmitOrder(order,
                               uuid.uuid4(),
@@ -234,8 +215,18 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         # Arrange
         serializer = MsgPackCommandSerializer()
 
-        command = CancelOrder(AUDUSD_FXCM,
-                              'O123456',
+        order = OrderFactory.limit(
+            AUDUSD_FXCM,
+            'O123456',
+            'SCALPER01_SL',
+            OrderSide.BUY,
+            100000,
+            Decimal('1.00000'),
+            TimeInForce.GTD,
+            UNIX_EPOCH)
+
+        command = CancelOrder(order,
+                              'EXPIRED',
                               uuid.uuid4(),
                               UNIX_EPOCH)
 
@@ -250,28 +241,20 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         # Arrange
         serializer = MsgPackCommandSerializer()
 
-        command = ModifyOrder(AUDUSD_FXCM,
-                              'O123456',
+        order = OrderFactory.limit(
+            AUDUSD_FXCM,
+            'O123456',
+            'SCALPER01_SL',
+            OrderSide.BUY,
+            100000,
+            Decimal('1.00000'),
+            TimeInForce.GTD,
+            UNIX_EPOCH)
+
+        command = ModifyOrder(order,
                               Decimal('1.00001'),
                               uuid.uuid4(),
                               UNIX_EPOCH)
-
-        # Act
-        serialized = serializer.serialize(command)
-        deserialized = serializer.deserialize(serialized)
-
-        # Assert
-        self.assertEqual(command, deserialized)
-
-    def test_can_serialize_and_deserialize_close_position_commands(self):
-        # Arrange
-        serializer = MsgPackCommandSerializer()
-
-        command = ClosePosition(AUDUSD_FXCM,
-                                'O123456',
-                                ['E0001, E0002'],
-                                uuid.uuid4(),
-                                UNIX_EPOCH)
 
         # Act
         serialized = serializer.serialize(command)
