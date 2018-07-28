@@ -15,8 +15,6 @@ from inv_trader.core.checks import typechecking
 from inv_trader.model.enums import MarketPosition, OrderSide
 from inv_trader.model.objects import Symbol
 from inv_trader.model.events import OrderEvent
-from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
-from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
 from inv_trader.model.events import OrderPartiallyFilled, OrderFilled
 
 # Constants
@@ -50,7 +48,9 @@ class Position:
         self._timestamp = timestamp
         self._relative_quantity = 0
         self._entry_time = None
-        self._average_price = Decimal('0')
+        self._exit_time = None
+        self._average_entry_price = None
+        self._average_exit_price = None
         self._events = []               # type: List[OrderEvent]
         self._execution_ids = []        # type: List[ExecutionId]
         self._execution_tickets = []    # type: List[ExecutionId]
@@ -105,11 +105,18 @@ class Position:
         return self._timestamp
 
     @property
-    def average_price(self) -> Optional[Decimal]:
+    def average_entry_price(self) -> Optional[Decimal]:
         """
-        :return: The orders average filled price (optional could be None).
+        :return: The orders average filled entry price (optional could be None).
         """
-        return self._average_price
+        return self._average_entry_price
+
+    @property
+    def average_exit_price(self) -> Optional[Decimal]:
+        """
+        :return: The orders average filled exit price (optional could be None).
+        """
+        return self._average_exit_price
 
     @property
     def entry_time(self) -> Optional[datetime]:
@@ -117,6 +124,13 @@ class Position:
         :return: The positions market entry time (optional could be None).
         """
         return self._entry_time
+
+    @property
+    def exit_time(self) -> Optional[datetime]:
+        """
+        :return: The positions market exit time (optional could be None).
+        """
+        return self._exit_time
 
     @property
     def market_position(self) -> MarketPosition:
@@ -212,10 +226,16 @@ class Position:
         elif order_side is OrderSide.SELL:
             self._relative_quantity -= quantity
 
+        # Capture the first time of entry
         if self._entry_time is None:
             self._entry_time = event_time
 
-        self._average_price = average_price
+        self._average_entry_price = average_price
+
+        # Position was exited
+        if self._relative_quantity == 0:
+            self._exit_time = event_time
+            self._average_exit_price = average_price
 
     def _calculate_market_position(self) -> MarketPosition:
         if self._relative_quantity > 0:
