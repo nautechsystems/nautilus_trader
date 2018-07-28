@@ -86,10 +86,10 @@ class Order:
         self._average_price = Decimal('0')
         self._slippage = Decimal('0')
         self._status = OrderStatus.INITIALIZED
-        self._order_events = []         # type: List[OrderEvent]
+        self._events = []               # type: List[OrderEvent]
         self._order_ids = [order_id]    # type: List[str]
         self._order_ids_broker = []     # type: List[str]
-        self._order_execution_ids = []  # type: List[str]
+        self._execution_ids = []        # type: List[str]
         self._execution_tickets = []    # type: List[str]
 
     @property
@@ -102,21 +102,21 @@ class Order:
     @property
     def id(self) -> str:
         """
-        :return: The orders id.
+        :return: The orders identifier.
         """
         return self._id
 
     @property
     def id_current(self) -> str:
         """
-        :return: The orders current id.
+        :return: The orders current identifier.
         """
         return self._order_ids[-1]
 
     @property
     def broker_id(self) -> str:
         """
-        :return: The orders broker-side order id (could be an empty string).
+        :return: The orders broker-side order identifier (could be an empty string).
         """
         if len(self._order_ids_broker) == 0:
             return ''
@@ -127,9 +127,9 @@ class Order:
         """
         :return: The orders last execution (could be an empty string).
         """
-        if len(self._order_execution_ids) == 0:
+        if len(self._execution_ids) == 0:
             return ''
-        return self._order_execution_ids[-1]
+        return self._execution_ids[-1]
 
     @property
     def execution_ticket(self) -> str:
@@ -204,7 +204,7 @@ class Order:
         return self._price
 
     @property
-    def average_price(self) -> Decimal:
+    def average_price(self) -> Optional[Decimal]:
         """
         :return: The orders average filled price (optional could be None).
         """
@@ -239,14 +239,14 @@ class Order:
         """
         :return: The count of events since the order was initialized.
         """
-        return len(self._order_events)
+        return len(self._events)
 
     @property
     def events(self) -> List[OrderEvent]:
         """
         :return: The orders internal events list.
         """
-        return self._order_events
+        return self._events
 
     def __eq__(self, other) -> bool:
         """
@@ -283,13 +283,11 @@ class Order:
         :param order_event: The order event to apply.
         """
         # Preconditions
-        if not isinstance(order_event, OrderEvent):
-            raise TypeError(f"The order_event must be of type OrderEvent (was {type(order_event)}")
         if order_event.order_id is not self.id:
             raise ValueError(
                 f"The event order id is invalid for this order (was {order_event.order_id}).")
 
-        self._order_events.append(order_event)
+        self._events.append(order_event)
 
         # Handle event
         if isinstance(order_event, OrderSubmitted):
@@ -320,7 +318,7 @@ class Order:
 
         elif isinstance(order_event, OrderFilled):
             self._status = OrderStatus.FILLED
-            self._order_execution_ids.append(order_event.execution_id)
+            self._execution_ids.append(order_event.execution_id)
             self._execution_tickets.append(order_event.execution_ticket)
             self._filled_quantity = order_event.filled_quantity
             self._average_price = order_event.average_price
@@ -329,7 +327,7 @@ class Order:
 
         elif isinstance(order_event, OrderPartiallyFilled):
             self._status = OrderStatus.PARTIALLY_FILLED
-            self._order_execution_ids.append(order_event.execution_id)
+            self._execution_ids.append(order_event.execution_id)
             self._execution_tickets.append(order_event.execution_ticket)
             self._filled_quantity = order_event.filled_quantity
             self._average_price = order_event.average_price

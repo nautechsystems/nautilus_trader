@@ -62,3 +62,9 @@ class OrderStatus(Enum):
     PARTIALLY_FILLED = 7,
     FILLED = 8,
     EXPIRED = 9
+
+
+class MarketPosition(Enum):
+    FLAT = 0,
+    LONG = 1,
+    SHORT = 2,
