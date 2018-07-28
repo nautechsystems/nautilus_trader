@@ -7,12 +7,10 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import abc
 import datetime
 import uuid
 
 from decimal import Decimal
-from typing import Dict
 
 from inv_trader.core.checks import typechecking
 from inv_trader.model.enums import Venue, Resolution, QuoteType, OrderSide, OrderType, OrderStatus
