@@ -252,6 +252,10 @@ class OrderWorking(OrderEvent):
         :param: event_timestamp: The events timestamp.
         :param: expire_time: The events order expire time (optional can be None).
         """
+        # Preconditions
+        if quantity <= 0:
+            raise ValueError(f"The quantity must be positive (value={quantity}).")
+
         super().__init__(symbol, order_id, event_id, event_timestamp)
         self._broker_order_id = broker_order_id
         self._label = label
@@ -526,6 +530,10 @@ class OrderFilled(OrderEvent):
         :param: event_id: The events identifier.
         :param: event_timestamp: The events timestamp.
         """
+        # Preconditions
+        if filled_quantity <= 0:
+            raise ValueError(f"The filled quantity must be positive (value={filled_quantity}).")
+
         super().__init__(symbol, order_id, event_id, event_timestamp)
         self._execution_id = execution_id
         self._execution_ticket = execution_ticket
@@ -610,6 +618,12 @@ class OrderPartiallyFilled(OrderEvent):
         :param: event_id: The events identifier.
         :param: event_timestamp: The events timestamp.
         """
+        # Preconditions
+        if filled_quantity <= 0:
+            raise ValueError(f"The filled quantity must be positive (value={filled_quantity}).")
+        if leaves_quantity <= 0:
+            raise ValueError(f"The leaves quantity must be positive (value={leaves_quantity}).")
+
         super().__init__(symbol, order_id, event_id, event_timestamp)
         self._execution_id = execution_id
         self._execution_ticket = execution_ticket
