@@ -207,9 +207,10 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         serialized = serializer.serialize(command)
         deserialized = serializer.deserialize(serialized)
 
-        # Assert
+        # Assert - ignore warning (PyCharm doesn't know the type).
         self.assertEqual(command, deserialized)
         self.assertEqual(order, deserialized.order)
+        print(serialized.hex())
 
     def test_can_serialize_and_deserialize_cancel_order_commands(self):
         # Arrange
@@ -512,7 +513,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Act
         result = serializer.deserialize(body)
 
-        # Assert - Warning can be ignored (its because PyCharm doesn't know the type).
+        # Assert - Warning can be ignored (PyCharm doesn't know the type).
         self.assertTrue(isinstance(result, OrderSubmitted))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual('StubOrderId', result.order_id)
@@ -539,7 +540,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Act
         result = serializer.deserialize(body)
 
-        # Assert - Warnings can be ignored (its because PyCharm doesn't know the type).
+        # Assert - Warnings can be ignored (PyCharm doesn't know the type).
         self.assertTrue(isinstance(result, OrderAccepted))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual('StubOrderId', result.order_id)
@@ -567,7 +568,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Act
         result = serializer.deserialize(body)
 
-        # Assert - Warnings can be ignored (its because PyCharm doesn't know the type).
+        # Assert - Warnings can be ignored (PyCharm doesn't know the type).
         self.assertTrue(isinstance(result, OrderRejected))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual('StubOrderId', result.order_id)
@@ -600,7 +601,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Act
         result = serializer.deserialize(body)
 
-        # Assert - Warnings can be ignored (its because PyCharm doesn't know the type).
+        # Assert - Warnings can be ignored (PyCharm doesn't know the type).
         self.assertTrue(isinstance(result, OrderWorking))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual('StubOrderId', result.order_id)
@@ -640,7 +641,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Act
         result = serializer.deserialize(body)
 
-        # Assert - Warnings can be ignored (its because PyCharm doesn't know the type).
+        # Assert - Warnings can be ignored (PyCharm doesn't know the type).
         self.assertTrue(isinstance(result, OrderWorking))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual('StubOrderId', result.order_id)
@@ -674,7 +675,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Act
         result = serializer.deserialize(body)
 
-        # Assert - Warning can be ignored (its because PyCharm doesn't know the type).
+        # Assert - Warning can be ignored (PyCharm doesn't know the type).
         self.assertTrue(isinstance(result, OrderCancelled))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual('StubOrderId', result.order_id)
@@ -704,7 +705,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Act
         result = serializer.deserialize(body)
 
-        # Assert - Warnings can be ignored (its because PyCharm doesn't know the type).
+        # Assert - Warnings can be ignored (PyCharm doesn't know the type).
         self.assertTrue(isinstance(result, OrderCancelReject))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual('StubOrderId', result.order_id)
@@ -735,7 +736,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Act
         result = serializer.deserialize(body)
 
-        # Assert - Warnings can be ignored (its because PyCharm doesn't know the type).
+        # Assert - Warnings can be ignored (PyCharm doesn't know the type).
         self.assertTrue(isinstance(result, OrderModified))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual('StubOrderId', result.order_id)
@@ -764,7 +765,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Act
         result = serializer.deserialize(body)
 
-        # Assert - Warning can be ignored (is because PyCharm doesn't know the type).
+        # Assert - Warning can be ignored (PyCharm doesn't know the type).
         self.assertTrue(isinstance(result, OrderExpired))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual('StubOrderId', result.order_id)
@@ -796,7 +797,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Act
         result = serializer.deserialize(body)
 
-        # Assert - Warnings can be ignored (its because PyCharm doesn't know the type).
+        # Assert - Warnings can be ignored (PyCharm doesn't know the type).
         self.assertTrue(isinstance(result, OrderPartiallyFilled))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual('StubOrderId', result.order_id)
@@ -833,7 +834,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Act
         result = serializer.deserialize(body)
 
-        # Assert - Warnings can be ignored (its because PyCharm doesn't know the type).
+        # Assert - Warnings can be ignored (PyCharm doesn't know the type).
         self.assertTrue(isinstance(result, OrderFilled))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual('StubOrderId', result.order_id)
