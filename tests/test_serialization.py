@@ -11,12 +11,12 @@ import unittest
 import pytz
 import uuid
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from inv_trader.model.enums import Venue, OrderSide, OrderType, OrderStatus, TimeInForce
-from inv_trader.model.objects import Symbol, Resolution, QuoteType, BarType, Bar
+from inv_trader.model.enums import Venue, OrderSide, OrderType, TimeInForce
+from inv_trader.model.objects import Symbol
 from inv_trader.factories import OrderFactory
 from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
 from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
