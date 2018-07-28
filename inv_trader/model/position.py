@@ -107,14 +107,14 @@ class Position:
     @property
     def average_entry_price(self) -> Optional[Decimal]:
         """
-        :return: The orders average filled entry price (optional could be None).
+        :return: The positions average filled entry price (optional could be None).
         """
         return self._average_entry_price
 
     @property
     def average_exit_price(self) -> Optional[Decimal]:
         """
-        :return: The orders average filled exit price (optional could be None).
+        :return: The positions average filled exit price (optional could be None).
         """
         return self._average_exit_price
 
