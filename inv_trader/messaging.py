@@ -71,9 +71,9 @@ class MQWorker(Thread):
         """
         self._open_connection()
 
-    def send(self, message: bytearray):
+    def send(self, message: bytes):
         """
-        Send the given byte array as a message to the AMQP broker.
+        Send the given bytes as a message to the AMQP broker.
 
         :param message: The message body to send to the AMQP broker.
         """
