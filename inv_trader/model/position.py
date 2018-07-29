@@ -31,22 +31,20 @@ class Position:
     @typechecking
     def __init__(self,
                  symbol: Symbol,
-                 from_entry_order_id: OrderId,
                  position_id: PositionId,
                  timestamp: datetime):
         """
         Initializes a new instance of the Position class.
 
         :param: symbol: The orders symbol.
-        :param: from_entry_order_id: The position from entry orders identifier.
         :param: position_id: The positions identifier.
         :param: timestamp: The positions initialization timestamp.
         """
         self._symbol = symbol
-        self._from_entry_order_id = from_entry_order_id
         self._id = position_id
         self._timestamp = timestamp
         self._relative_quantity = 0
+        self._peak_quantity = 0
         self._entry_time = None
         self._exit_time = None
         self._average_entry_price = None
@@ -133,6 +131,20 @@ class Position:
         return self._exit_time
 
     @property
+    def is_entered(self) -> bool:
+        """
+        :return: A value indicating whether the position has entered into the market.
+        """
+        return self._entry_time is not None
+
+    @property
+    def is_exited(self) -> bool:
+        """
+        :return: A value indicating whether the position has exited from the market.
+        """
+        return self._exit_time is not None
+
+    @property
     def market_position(self) -> MarketPosition:
         """
         :return: The positions current market position.
@@ -187,11 +199,6 @@ class Position:
 
         :param event: The order event to apply.
         """
-        # Preconditions
-        if event.order_id is not self._from_entry_order_id:
-            raise ValueError(
-                f"The event order id is invalid for this position (was {event.order_id}).")
-
         self._events.append(event)
 
         # Handle event
@@ -226,6 +233,10 @@ class Position:
         elif order_side is OrderSide.SELL:
             self._relative_quantity -= quantity
 
+        # Update the peak quantity
+        if abs(self._relative_quantity) > self._peak_quantity:
+            self._peak_quantity = self._relative_quantity
+
         # Capture the first time of entry
         if self._entry_time is None:
             self._entry_time = event_time
@@ -233,7 +244,7 @@ class Position:
         self._average_entry_price = average_price
 
         # Position was exited
-        if self._relative_quantity == 0:
+        if self.is_entered and self._relative_quantity == 0:
             self._exit_time = event_time
             self._average_exit_price = average_price
 

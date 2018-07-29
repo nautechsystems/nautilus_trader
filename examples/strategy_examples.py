@@ -7,13 +7,19 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from inv_trader.model.enums import Venue, Resolution, QuoteType
+from inv_trader.model.enums import Venue, Resolution, QuoteType, OrderSide
 from inv_trader.model.objects import Symbol, Tick, BarType, Bar
+from inv_trader.factories import OrderFactory
 from inv_trader.model.events import Event
 from inv_trader.strategy import TradeStrategy
 from inv_indicators.average.ema import ExponentialMovingAverage
 
-AUDUSD_FXCM = 'audusd.fxcm'
+# Constants
+AUDUSD_FXCM = Symbol('AUDUSD', Venue.FXCM)
+AUDUSD_FXCM_1_SECOND_MID = BarType(AUDUSD_FXCM,
+                                   1,
+                                   Resolution.SECOND,
+                                   QuoteType.MID)
 
 
 class EMACross(TradeStrategy):
@@ -28,18 +34,13 @@ class EMACross(TradeStrategy):
         """
         Initializes a new instance of the EMACross class.
         """
-        super().__init__(label)
-
-        self.audusd_fxcm_1_second_mid = BarType(Symbol('AUDUSD', Venue.FXCM),
-                                                1,
-                                                Resolution.SECOND,
-                                                QuoteType.MID)
+        super().__init__(label, order_id_tag='001')
 
         self.ema1 = ExponentialMovingAverage(fast)
         self.ema2 = ExponentialMovingAverage(slow)
 
-        self.add_indicator(self.audusd_fxcm_1_second_mid, self.ema1, self.ema1.update, 'ema1')
-        self.add_indicator(self.audusd_fxcm_1_second_mid, self.ema2, self.ema2.update, 'ema2')
+        self.add_indicator(AUDUSD_FXCM_1_SECOND_MID, self.ema1, self.ema1.update, 'ema1')
+        self.add_indicator(AUDUSD_FXCM_1_SECOND_MID, self.ema2, self.ema2.update, 'ema2')
 
     def on_start(self):
         pass
@@ -49,11 +50,21 @@ class EMACross(TradeStrategy):
 
     def on_bar(self, bar_type: BarType, bar: Bar):
 
-        if bar_type == self.audusd_fxcm_1_second_mid and AUDUSD_FXCM in self.ticks:
+        if bar_type == AUDUSD_FXCM_1_SECOND_MID and AUDUSD_FXCM in self.ticks:
             if self.ema1.value > self.ema2.value:
-                print(f"BUY at {self.last_tick('audusd', Venue.FXCM).ask}")
+                order = OrderFactory.market(AUDUSD_FXCM,
+                                            self.generate_order_id(AUDUSD_FXCM),
+                                            'S1_E',
+                                            OrderSide.BUY,
+                                            100000)
+                self.submit_order(order)
             elif self.ema1.value < self.ema2.value:
-                print(f"SELL at {self.last_tick('audusd', Venue.FXCM).bid}")
+                order = OrderFactory.market(AUDUSD_FXCM,
+                                            self.generate_order_id(AUDUSD_FXCM),
+                                            'S1_E',
+                                            OrderSide.SELL,
+                                            100000)
+                self.submit_order(order)
 
     def on_event(self, event: Event):
         pass

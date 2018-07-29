@@ -7,14 +7,20 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+import pytz
+
 from datetime import datetime
 from decimal import Decimal
-from typing import Optional
+from typing import List, Dict, Optional
 
 from inv_trader.core.checks import typechecking
 from inv_trader.model.enums import OrderSide, OrderType, TimeInForce
 from inv_trader.model.objects import Symbol
 from inv_trader.model.order import Order
+
+# Constants
+MILLISECONDS_PER_SECOND = 1000
+OrderId = str
 
 
 class OrderFactory:
@@ -252,3 +258,55 @@ class OrderFactory:
                      price=None,
                      time_in_force=TimeInForce.IOC,
                      expire_time=None)
+
+
+class OrderIdGenerator:
+    """
+    Provides a generator for unique order identifiers.
+    """
+
+    @typechecking
+    def __init__(self, order_id_tag: str):
+        """
+        Initializes a new instance of the OrderIdentifierFactory class.
+
+        :param order_id_tag: The generators unique order identifier tag.
+        """
+        # Unix epoch is the UTC time at 00:00:00 on 1/1/1970.
+        self._unix_epoch = datetime(1970, 1, 1, 0, 0, 0, 0, pytz.UTC)
+        self._order_id_tag = order_id_tag
+        self._order_symbol_counts = {}  # type: Dict[Symbol, int]
+        self._order_ids = []            # type: List[OrderId]
+
+    @typechecking
+    def generate(self, order_symbol: Symbol) -> OrderId:
+        """
+        Create a unique order identifier for the strategy using the given symbol.
+
+        :param order_symbol: The order symbol for the unique identifier.
+        :return: The unique order identifier.
+        """
+        if order_symbol not in self._order_symbol_counts:
+            self._order_symbol_counts[order_symbol] = 0
+
+        self._order_symbol_counts[order_symbol] += 1
+        milliseconds = self._milliseconds_since_unix_epoch
+        order_count = str(self._order_symbol_counts[order_symbol])
+        order_id = (str(order_symbol)
+                    + '|' + order_count
+                    + '|' + self._order_id_tag
+                    + '|' + milliseconds)
+
+        if order_id in self._order_ids:
+            return self.generate(order_symbol)
+        self._order_ids.append(order_id)
+        return order_id
+
+    @typechecking
+    def _milliseconds_since_unix_epoch(self) -> int:
+        """
+        Returns the number of ticks of the given time now since the Unix Epoch.
+
+        :return: The milliseconds since the Unix Epoch.
+        """
+        return int((datetime.utcnow() - self._unix_epoch).total_seconds() * MILLISECONDS_PER_SECOND)

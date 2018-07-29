@@ -8,22 +8,23 @@
 # -------------------------------------------------------------------------------------------------
 
 import abc
-import datetime
 import inspect
 
+from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import List, Dict, KeysView, Callable
 
 from inv_trader.core.checks import typechecking
-from inv_trader.model.objects import Tick, BarType, Bar
+from inv_trader.model.objects import Symbol, Tick, BarType, Bar
 from inv_trader.model.order import Order
-from inv_trader.model.events import Event, OrderEvent
+from inv_trader.model.position import Position
+from inv_trader.model.events import Event, OrderEvent, OrderFilled, OrderPartiallyFilled
+from inv_trader.factories import OrderIdGenerator
 
 # Constants
-Label = str
-Symbol = str
-Indicator = object
 OrderId = str
+Label = str
+Indicator = object
 
 POINT = 'point'
 PRICE = 'price'
@@ -44,17 +45,21 @@ class TradeStrategy:
     __metaclass__ = abc.ABCMeta
 
     @typechecking
-    def __init__(self, label: str=None):
+    def __init__(self,
+                 label: str=None,
+                 order_id_tag: str=''):
         """
         Initializes a new instance of the TradeStrategy abstract class.
 
         :param: label: The unique label for the strategy (can be None).
+        :param: order_id_tag: The unique order identifier tag for the strategy (can be empty).
         """
         if label is None:
             label = ''
 
         self._name = self.__class__.__name__
         self._label = label
+        self._order_id_generator = OrderIdGenerator(order_id_tag)
         self._is_running = False
         self._ticks = {}               # type: Dict[Symbol, Tick]
         self._bars = {}                # type: Dict[BarType, List[Bar]]
@@ -62,6 +67,7 @@ class TradeStrategy:
         self._indicator_updaters = {}  # type: Dict[BarType, List[IndicatorUpdater]]
         self._indicator_index = {}     # type: Dict[Label, Indicator]
         self._order_book = {}          # type: Dict[OrderId, Order]
+        self._positions = {}           # type: Dict[Symbol, Position]
         self._exec_client = None
 
         self._log(f"Initialized.")
@@ -210,6 +216,13 @@ class TradeStrategy:
         """
         return self._order_book
 
+    @property
+    def positions(self) -> Dict[Symbol, Position]:
+        """
+        :return: The entire dictionary of positions.
+        """
+        return self._positions
+
     @typechecking
     def indicators(self, bar_type: BarType) -> List[Indicator]:
         """
@@ -287,11 +300,10 @@ class TradeStrategy:
         :raises: KeyError: If the strategy does not contain a tick for the symbol and venue string.
         """
         # Preconditions
-        key = str(symbol)
-        if key not in self._ticks:
-            raise KeyError(f"The ticks dictionary does not contain {key}.")
+        if symbol not in self._ticks:
+            raise KeyError(f"The ticks dictionary does not contain {symbol}.")
 
-        return self._ticks[key]
+        return self._ticks[symbol]
 
     @typechecking
     def order(self, order_id: OrderId) -> Order:
@@ -307,6 +319,22 @@ class TradeStrategy:
             raise KeyError(f"The order book does not contain the order with id {order_id}.")
 
         return self._order_book[order_id]
+
+    @typechecking
+    def position(self, symbol: Symbol) -> Position:
+        """
+        Get the position from the positions dictionary for the given symbol.
+
+        :param symbol: The positions symbol.
+        :return: The position (if found).
+        :raises: KeyError: If the strategy does not contain a position for the given symbol.
+        """
+        # Preconditions
+        if symbol not in self._positions:
+            raise KeyError(
+                f"The positions dictionary does not contain a position for symbol {symbol}.")
+
+        return self._positions[symbol]
 
     @typechecking  # @ typechecking: indicator checked in preconditions.
     def add_indicator(
@@ -346,7 +374,7 @@ class TradeStrategy:
     def set_timer(
             self,
             label: Label,
-            step: datetime.timedelta,
+            step: timedelta,
             repeat: bool=True):
         """
         Set a timer with the given step (time delta). The timer will run once
@@ -364,7 +392,7 @@ class TradeStrategy:
     def set_time_alert(
             self,
             label: Label,
-            alert_time: datetime.datetime):
+            alert_time: datetime):
         """
         Set a time alert for the given time. When the time is reached and the
         strategy is running, on_event() is passed the TimeEvent containing the
@@ -383,6 +411,16 @@ class TradeStrategy:
         self._is_running = True
         self.on_start()
         self._log(f"Running...")
+
+    @typechecking
+    def generate_order_id(self, symbol: Symbol) -> OrderId:
+        """
+        Generates a unique order identifier with the given symbol.
+
+        :param symbol: The order symbol.
+        :return: The unique order identifier.
+        """
+        return self._order_id_generator.generate(symbol)
 
     @typechecking
     def submit_order(self, order: Order):
@@ -478,7 +516,7 @@ class TradeStrategy:
         :param tick: The tick received.
         """
         # Update the internal ticks.
-        key = str(tick.symbol)
+        key = tick.symbol
         self._ticks[key] = tick
 
         # Calls on_tick() if the strategy is running.
@@ -543,6 +581,20 @@ class TradeStrategy:
                 raise ValueError("The given event order id was not in the order book.")
             self._order_book[order_id].apply(event)
 
+            # If event is relevant to positions.
+            if isinstance(event, OrderFilled) or isinstance(event, OrderPartiallyFilled):
+                if event.symbol not in self._positions:
+                    self._positions[event.symbol] = Position(event.symbol,
+                                                             order_id,
+                                                             datetime.utcnow())
+                self._positions[event.symbol].apply(event)
+
+                # If this order event exits the position then save to the database,
+                # and remove from list.
+                if self._positions[event.symbol].is_exited:
+                    # TODO: Save to database.
+                    self._positions.pop(event.symbol)
+
         # Calls on_event() if the strategy is running.
         if self._is_running:
             self.on_event(event)
@@ -550,7 +602,7 @@ class TradeStrategy:
     @typechecking
     def _add_order(self, order: Order):
         """
-        Adds the given order to the order book (the order id must be unique).
+        Adds the given order to the order book (the order identifier must be unique).
 
         :param order: The order to add.
         """
