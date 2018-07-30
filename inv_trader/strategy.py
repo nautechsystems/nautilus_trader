@@ -574,26 +574,31 @@ class TradeStrategy:
 
         :param event: The event received.
         """
-        # Apply order event if order id contained in the order book.
+        # For order events.
         if isinstance(event, OrderEvent):
             order_id = event.order_id
-            if order_id not in self._order_book.keys():
-                raise ValueError("The given event order id was not in the order book.")
-            self._order_book[order_id].apply(event)
+            if order_id in self._order_book.keys():
+                self._order_book[order_id].apply(event)
+            else:
+                self._log("Warning: The event order id not found in the order book.")
 
             # If event is relevant to positions.
             if isinstance(event, OrderFilled) or isinstance(event, OrderPartiallyFilled):
                 if event.symbol not in self._positions:
-                    self._positions[event.symbol] = Position(event.symbol,
-                                                             order_id,
-                                                             datetime.utcnow())
+                    new_position = Position(event.symbol,
+                                            order_id,
+                                            datetime.utcnow())
+                    self._positions[event.symbol] = new_position
+                    self._log(f"{new_position} entered.")
                 self._positions[event.symbol].apply(event)
 
                 # If this order event exits the position then save to the database,
                 # and remove from list.
                 if self._positions[event.symbol].is_exited:
                     # TODO: Save to database.
+                    exited_position = self._positions[event.symbol]
                     self._positions.pop(event.symbol)
+                    self._log(f"{exited_position} exited.")
 
         # Calls on_event() if the strategy is running.
         if self._is_running:
