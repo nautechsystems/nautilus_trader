@@ -99,7 +99,7 @@ class OrderCommand(Command):
 
 class SubmitOrder(OrderCommand):
     """
-    Represents a command to submit the contained order.
+    Represents a command to submit the given order.
     """
 
     @typechecking
@@ -122,8 +122,7 @@ class SubmitOrder(OrderCommand):
 
 class CancelOrder(OrderCommand):
     """
-    Represents a command to cancel the order corresponding to the given order
-    identifier.
+    Represents a command to cancel the given order.
     """
 
     @typechecking
