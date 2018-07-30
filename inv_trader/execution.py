@@ -140,12 +140,13 @@ class ExecutionClient:
         Handle events received from the execution service.
         """
         # Order event
+        self._log(f"Received {event}.")
         if isinstance(event, OrderEvent):
             order_id = event.order_id
             if order_id not in self._order_index.keys():
                 self._log(
                     f"[Warning]: The given event order id was not contained in "
-                    f"order index {order_id}")
+                    f"order index {order_id}.")
                 return
 
             strategy_id = self._order_index[order_id]
@@ -229,7 +230,7 @@ class LiveExecClient(ExecutionClient):
         Send a submit order request to the execution service.
 
         :param: order: The order to submit.
-        :param: strategy_id: The strategy id to register the order with.
+        :param: strategy_id: The strategy identifier to register the order with.
         """
         super()._register_order(order, strategy_id)
 
@@ -261,7 +262,7 @@ class LiveExecClient(ExecutionClient):
         self._order_commands_worker.send(bytearray(b'modify_order'))
 
     @typechecking
-    def _event_handler(self, body: bytearray):
+    def _event_handler(self, body: bytes):
         """"
         Handle the event message by parsing to an Event and sending
         to the registered strategy.
@@ -277,7 +278,7 @@ class LiveExecClient(ExecutionClient):
         self._on_event(event)
 
     @typechecking
-    def _command_ack_handler(self, body: bytearray):
+    def _command_ack_handler(self, body: bytes):
         """"
         Handle the command acknowledgement message.
 

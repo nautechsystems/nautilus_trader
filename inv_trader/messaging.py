@@ -335,9 +335,10 @@ class MQWorker(Thread):
         """
         self._log((f'Received message #{basic_deliver.delivery_tag} '
                    f'on channel {channel.channel_number} '
-                   f'from {properties.app_id}: {body}'))
+                   f'from {properties.app_id}.'))
 
         self._acknowledge_message(basic_deliver.delivery_tag)
+        self._message_handler(body)
 
     @typechecking
     def _acknowledge_message(self, delivery_tag: int):
