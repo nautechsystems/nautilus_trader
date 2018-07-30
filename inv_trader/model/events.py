@@ -68,6 +68,24 @@ class Event:
         """
         return not self.__eq__(other)
 
+    def __hash__(self):
+        """"
+        Override the default hash implementation.
+        """
+        return hash(self.event_id)
+
+    def __str__(self) -> str:
+        """
+        :return: The str() string representation of the event.
+        """
+        return f"{self.__class__.__name__}"
+
+    def __repr__(self) -> str:
+        """
+        :return: The repr() string representation of the event.
+        """
+        return f"<{str(self)} object at {id(self)}>"
+
 
 class OrderEvent(Event):
     """
@@ -93,6 +111,18 @@ class OrderEvent(Event):
         super().__init__(event_id, event_timestamp)
         self._symbol = order_symbol
         self._order_id = order_id
+
+    def __str__(self) -> str:
+        """
+        :return: The str() string representation of the event.
+        """
+        return f"{self.__class__.__name__}(order_id={self._order_id})"
+
+    def __repr__(self) -> str:
+        """
+        :return: The repr() string representation of the event.
+        """
+        return f"<{str(self)} object at {id(self)}>"
 
     @property
     def symbol(self) -> Symbol:
