@@ -89,6 +89,18 @@ class OrderCommand(Command):
         super().__init__(command_id, command_timestamp)
         self._order = order
 
+    def __str__(self) -> str:
+        """
+        :return: The str() string representation of the order command.
+        """
+        return f"{self.__class__.__name__}(order_id={self._order.id})"
+
+    def __repr__(self) -> str:
+        """
+        :return: The repr() string representation of the order command.
+        """
+        return f"<{str(self)} object at {id(self)}>"
+
     @property
     def order(self) -> Order:
         """
@@ -135,7 +147,7 @@ class CancelOrder(OrderCommand):
         Initializes a new instance of the CancelOrder class.
 
         :param: order: The commands order to cancel.
-        :param: cancel_reason: The order cancel reason.
+        :param: cancel_reason: The reason for cancellation.
         :param: event_id: The commands identifier.
         :param: event_timestamp: The commands timestamp.
         """

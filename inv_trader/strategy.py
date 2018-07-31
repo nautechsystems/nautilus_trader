@@ -9,10 +9,12 @@
 
 import abc
 import inspect
+import uuid
 
 from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import List, Dict, KeysView, Callable
+from uuid import UUID
 
 from inv_trader.core.checks import typechecking
 from inv_trader.model.objects import Symbol, Tick, BarType, Bar
@@ -58,6 +60,7 @@ class TradeStrategy:
             label = ''
 
         self._name = self.__class__.__name__
+        self._id = uuid.uuid4()
         self._label = label
         self._order_id_generator = OrderIdGenerator(order_id_tag)
         self._is_running = False
@@ -168,9 +171,16 @@ class TradeStrategy:
         return self._name
 
     @property
+    def id(self) -> UUID:
+        """
+        :return: The unique identifier of the strategy.
+        """
+        return self._id
+
+    @property
     def label(self) -> str:
         """
-        :return: The unique label of the strategy.
+        :return: The label of the strategy.
         """
         return self._label
 
@@ -434,23 +444,32 @@ class TradeStrategy:
             raise ValueError("The order id is already contained in the order book (must be unique).")
 
         self._order_book[order.id] = order
-        self._exec_client.submit_order(order, str(self))
+        self._exec_client.submit_order(order, self._id)
 
     @typechecking
-    def cancel_order(self, order: Order):
+    def cancel_order(
+            self,
+            order: Order,
+            cancel_reason: str=None):
         """
         Send a cancel order request for the given order to the execution client.
 
         :param order: The order to cancel.
+        :param cancel_reason: The reason for cancellation (will be logged).
         """
         # Preconditions
         if order.id not in self._order_book.keys():
             raise ValueError("The order id was not found in the order book.")
 
-        self._exec_client.cancel_order(order)
+        if cancel_reason is None:
+            cancel_reason = 'NONE'
+        self._exec_client.cancel_order(order, cancel_reason)
 
     @typechecking
-    def modify_order(self, order: Order, new_price: Decimal):
+    def modify_order(
+            self,
+            order: Order,
+            new_price: Decimal):
         """
         Send a modify order request for the given order with the given new price
         to the execution client.

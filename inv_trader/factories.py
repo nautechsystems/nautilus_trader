@@ -290,7 +290,7 @@ class OrderIdGenerator:
             self._order_symbol_counts[order_symbol] = 0
 
         self._order_symbol_counts[order_symbol] += 1
-        milliseconds = self._milliseconds_since_unix_epoch
+        milliseconds = str(self._milliseconds_since_unix_epoch())
         order_count = str(self._order_symbol_counts[order_symbol])
         order_id = (str(order_symbol)
                     + '|' + order_count
@@ -309,4 +309,4 @@ class OrderIdGenerator:
 
         :return: The milliseconds since the Unix Epoch.
         """
-        return int((datetime.utcnow() - self._unix_epoch).total_seconds() * MILLISECONDS_PER_SECOND)
+        return int((datetime.now(tz=pytz.UTC) - self._unix_epoch).total_seconds() * MILLISECONDS_PER_SECOND)

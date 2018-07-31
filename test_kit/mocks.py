@@ -11,6 +11,7 @@ import datetime
 import uuid
 
 from decimal import Decimal
+from uuid import UUID
 
 from inv_trader.core.checks import typechecking
 from inv_trader.model.enums import Venue, Resolution, QuoteType, OrderSide, OrderType, OrderStatus
@@ -47,27 +48,29 @@ class MockExecClient(ExecutionClient):
     def submit_order(
             self,
             order: Order,
-            strategy_id: StrategyId):
+            strategy_id: UUID):
         """
         Send a submit order request to the execution service.
         """
         super()._register_order(order, strategy_id)
 
-        order_submitted = OrderSubmitted(
+        submitted = OrderSubmitted(
             order.symbol,
             order.id,
             datetime.datetime.utcnow(),
             uuid.uuid4(),
             datetime.datetime.utcnow())
 
-        order_accepted = OrderAccepted(
+        self._log(f"Sent {submitted}.")
+
+        accepted = OrderAccepted(
             order.symbol,
             order.id,
             datetime.datetime.utcnow(),
             uuid.uuid4(),
             datetime.datetime.utcnow())
 
-        order_working = OrderWorking(
+        working = OrderWorking(
             order.symbol,
             order.id,
             'B' + order.id,
@@ -82,30 +85,35 @@ class MockExecClient(ExecutionClient):
             datetime.datetime.utcnow(),
             order.expire_time)
 
-        super()._on_event(order_submitted)
-        super()._on_event(order_accepted)
-        super()._on_event(order_working)
+        super()._on_event(submitted)
+        super()._on_event(accepted)
+        super()._on_event(working)
 
     @typechecking
-    def cancel_order(self, order: Order):
+    def cancel_order(
+            self,
+            order: Order,
+            cancel_reason: str):
         """
         Send a cancel order request to the execution service.
         """
-        order_cancelled = OrderCancelled(
+        cancelled = OrderCancelled(
             order.symbol,
             order.id,
             datetime.datetime.utcnow(),
             uuid.uuid4(),
             datetime.datetime.utcnow())
 
-        super()._on_event(order_cancelled)
+        self._log(f"Sent {cancelled}.")
+
+        super()._on_event(cancelled)
 
     @typechecking
     def modify_order(self, order: Order, new_price: Decimal):
         """
         Send a modify order request to the execution service.
         """
-        order_modified = OrderModified(
+        modified = OrderModified(
             order.symbol,
             order.id,
             'B' + order.id,
@@ -114,4 +122,16 @@ class MockExecClient(ExecutionClient):
             uuid.uuid4(),
             datetime.datetime.utcnow())
 
-        super()._on_event(order_modified)
+        self._log(f"Sent {modified}.")
+
+        super()._on_event(modified)
+
+    @staticmethod
+    @typechecking
+    def _log(message: str):
+        """
+        Log the given message (if no logger then prints).
+
+        :param message: The message to log.
+        """
+        print(f"ExecClient: {message}")

@@ -26,7 +26,7 @@ class TestStrategy1(TradeStrategy):
         """
         Initializes a new instance of the TestStrategy1 class.
         """
-        super().__init__('01')
+        super().__init__(label='TestStrategy1', order_id_tag='TS01')
         self.object_storer = object_storer
 
         self.gbpusd_1sec_mid = BarType(GBPUSD_FXCM,
