@@ -16,7 +16,7 @@ from uuid import UUID
 from typing import Optional
 
 from inv_trader.core.checks import typechecking
-from inv_trader.model.enums import OrderSide, OrderType, TimeInForce
+from inv_trader.model.enums import CurrencyCode, OrderSide, OrderType, TimeInForce
 from inv_trader.model.objects import Symbol
 
 
@@ -85,6 +85,97 @@ class Event:
         :return: The repr() string representation of the event.
         """
         return f"<{str(self)} object at {id(self)}>"
+
+
+class AccountEvent(Event):
+    """
+    Represents an account event produced from a collateral report.
+    """
+
+    @typechecking
+    def __init__(self,
+                 currency: CurrencyCode,
+                 cash_balance: Decimal,
+                 cash_start_day: Decimal,
+                 cash_activity_day: Decimal,
+                 margin_used_liquidation: Decimal,
+                 margin_used_maintenance: Decimal,
+                 margin_ratio: Decimal,
+                 margin_call_status: str,
+                 event_id: UUID,
+                 event_timestamp: datetime):
+        """
+        Initializes a new instance of the Bar class.
+
+        :param currency: The currency for the account.
+        :param cash_balance: The events account cash balance.
+        :param cash_start_day: The events account cash start of day.
+        :param cash_activity_day: The events account activity for the trading day.
+        :param margin_used_liquidation: The events margin used before liquidation.
+        :param margin_used_maintenance: The events margin used for maintenance.
+        :param margin_ratio: The events account margin ratio.
+        :param margin_ratio: The events margin call status.
+        :param: event_id: The events identifier.
+        :param: event_timestamp: The order events timestamp.
+        """
+        super().__init__(event_id, event_timestamp)
+        self._currency = currency
+        self._cash_balance = cash_balance
+        self._cash_start_day = cash_start_day
+        self._cash_activity_day = cash_activity_day
+        self._margin_used_liquidation = margin_used_liquidation
+        self._margin_used_maintenance = margin_used_maintenance
+        self._margin_ratio = margin_ratio
+        self._margin_call_status = margin_call_status
+
+    @property
+    def cash_balance(self) -> Decimal:
+        """
+        :return: The events account cash balance.
+        """
+        return self._cash_balance
+
+    @property
+    def cash_start_day(self) -> Decimal:
+        """
+        :return: The events account balance at the start of the trading day.
+        """
+        return self._cash_start_day
+
+    @property
+    def cash_activity_day(self) -> Decimal:
+        """
+        :return: The events account activity for the day.
+        """
+        return self._cash_start_day
+
+    @property
+    def margin_used_liquidation(self) -> Decimal:
+        """
+        :return: The events account liquidation margin used.
+        """
+        return self._margin_used_liquidation
+
+    @property
+    def margin_used_maintenance(self) -> Decimal:
+        """
+        :return: The events account maintenance margin used.
+        """
+        return self._margin_used_maintenance
+
+    @property
+    def margin_ratio(self) -> Decimal:
+        """
+        :return: The events account margin ratio.
+        """
+        return self._margin_ratio
+
+    @property
+    def margin_call_status(self) -> str:
+        """
+        :return: The events account margin call status.
+        """
+        return self._margin_call_status
 
 
 class OrderEvent(Event):
@@ -711,24 +802,6 @@ class OrderPartiallyFilled(OrderEvent):
         :return: The events execution time.
         """
         return self._execution_time
-
-
-class AccountEvent(Event):
-    """
-    Represents an account event where there have been changes to the account.
-    """
-
-    @typechecking
-    def __init__(self,
-                 event_id: UUID,
-                 event_timestamp: datetime):
-        """
-        Initializes a new instance of the AccountEvent class.
-
-        :param: event_id: The account events identifier.
-        :param: event_timestamp: The account events timestamp.
-        """
-        super().__init__(event_id, event_timestamp)
 
 
 class TimeEvent(Event):
