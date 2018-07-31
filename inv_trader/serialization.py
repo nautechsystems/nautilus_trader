@@ -20,7 +20,7 @@ from inv_trader.core.checks import typechecking
 from inv_trader.model.enums import Venue, OrderSide, OrderType, TimeInForce
 from inv_trader.model.objects import Symbol
 from inv_trader.model.order import Order
-from inv_trader.model.events import Event, OrderEvent
+from inv_trader.model.events import Event, OrderEvent, AccountEvent
 from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
 from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
 from inv_trader.model.events import OrderPartiallyFilled, OrderFilled
@@ -80,6 +80,14 @@ QUANTITY = 'quantity'
 AVERAGE_PRICE = 'average_price'
 PRICE = 'price'
 TIME_IN_FORCE = 'time_in_force'
+CURRENCY = 'currency'
+CASH_BALANCE = 'cash_balance'
+CASH_START_DAY = 'cash_start_day'
+CASH_ACTIVITY_DAY = 'cash_activity_day'
+MARGIN_USED_LIQUIDATION = 'margin_used_liquidation'
+MARGIN_USED_MAINTENANCE = 'margin_used_maintenance'
+MARGIN_RATIO = 'margin_ratio'
+MARGIN_CALL_STATUS = 'margin_call_status'
 
 
 @typechecking
@@ -449,6 +457,17 @@ class MsgPackEventSerializer(EventSerializer):
                 event_id,
                 event_timestamp,
                 unpacked)
+
+        if event_type == ACCOUNT_EVENT:
+            return AccountEvent(
+                unpacked[CURRENCY],
+                unpacked[CASH_BALANCE],
+                unpacked[CASH_START_DAY],
+                unpacked[CASH_ACTIVITY_DAY],
+                unpacked[MARGIN_USED_LIQUIDATION],
+                unpacked[MARGIN_USED_MAINTENANCE],
+                unpacked[MARGIN_RATIO],
+                unpacked[MARGIN_CALL_STATUS])
 
         else:
             raise ValueError("Cannot deserialize event (unrecognized event).")
