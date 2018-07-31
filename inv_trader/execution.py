@@ -15,10 +15,11 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Dict, Callable
 from pika import PlainCredentials, ConnectionParameters
+from uuid import UUID
 
 from inv_trader.core.checks import typechecking
 from inv_trader.model.order import Order
-from inv_trader.model.commands import SubmitOrder
+from inv_trader.model.commands import SubmitOrder, CancelOrder, ModifyOrder
 from inv_trader.model.events import Event, OrderEvent
 from inv_trader.messaging import MQProps, MQWorker
 from inv_trader.strategy import TradeStrategy
@@ -27,19 +28,18 @@ from inv_trader.serialization import MsgPackEventSerializer
 
 # Constants
 UTF8 = 'utf-8'
-StrategyId = str
 OrderId = str
 
 EXECUTION_COMMANDS = MQProps(
     exchange_name='nautilus.execution.commands',
     exchange_type='direct',
-    queue_name='inv_trader',
-    routing_key='inv_trader')
+    queue_name='inv_trader_commands',
+    routing_key='inv_trader_commands')
 
 EXECUTION_EVENTS = MQProps(
     exchange_name='nautilus.execution.events',
     exchange_type='fanout',
-    queue_name='inv_trader',
+    queue_name='inv_trader_events',
     routing_key='')
 
 
@@ -57,8 +57,8 @@ class ExecutionClient:
         """
         self._event_serializer = MsgPackEventSerializer
         self._command_serializer = MsgPackCommandSerializer
-        self._registered_strategies = {}  # type: Dict[StrategyId, Callable]
-        self._order_index = {}            # type: Dict[OrderId, StrategyId]
+        self._registered_strategies = {}  # type: Dict[UUID, Callable]
+        self._order_index = {}            # type: Dict[OrderId, UUID]
 
         self._log("Initialized.")
 
@@ -67,12 +67,10 @@ class ExecutionClient:
         """
         Register the given strategy with the execution client.
         """
-        strategy_id = str(strategy)
-
-        if strategy_id in self._registered_strategies.keys():
+        if strategy.id in self._registered_strategies.keys():
             raise ValueError("The strategy must have a unique name and label.")
 
-        self._registered_strategies[strategy_id] = strategy._update_events
+        self._registered_strategies[strategy.id] = strategy._update_events
         strategy._register_execution_client(self)
 
     @abc.abstractmethod
@@ -95,7 +93,7 @@ class ExecutionClient:
     def submit_order(
             self,
             order: Order,
-            strategy_id: StrategyId):
+            strategy_id: UUID):
         """
         Send a submit order request to the execution service.
         """
@@ -103,7 +101,9 @@ class ExecutionClient:
         raise NotImplementedError("Method must be implemented in the execution client.")
 
     @abc.abstractmethod
-    def cancel_order(self, order: Order):
+    def cancel_order(
+            self, order: Order,
+            cancel_reason: str):
         """
         Send a cancel order request to the execution service.
         """
@@ -111,7 +111,10 @@ class ExecutionClient:
         raise NotImplementedError("Method must be implemented in the execution client.")
 
     @abc.abstractmethod
-    def modify_order(self, order: Order, new_price: Decimal):
+    def modify_order(
+            self,
+            order: Order,
+            new_price: Decimal):
         """
         Send a modify order request to the execution service.
         """
@@ -122,7 +125,7 @@ class ExecutionClient:
     def _register_order(
             self,
             order: Order,
-            strategy_id: StrategyId):
+            strategy_id: UUID):
         """
         Register the given order with the execution client.
 
@@ -225,7 +228,7 @@ class LiveExecClient(ExecutionClient):
     def submit_order(
             self,
             order: Order,
-            strategy_id: StrategyId):
+            strategy_id: UUID):
         """
         Send a submit order request to the execution service.
 
@@ -234,24 +237,40 @@ class LiveExecClient(ExecutionClient):
         """
         super()._register_order(order, strategy_id)
 
-        command = SubmitOrder(order, uuid.uuid4(), datetime.utcnow())
+        command = SubmitOrder(
+            order,
+            uuid.uuid4(),
+            datetime.utcnow())
         message = MsgPackCommandSerializer.serialize(command)
 
         self._order_commands_worker.send(message)
+        self._log(f"Sent {command}.")
 
     @typechecking
-    def cancel_order(self, order_id: OrderId):
+    def cancel_order(
+            self,
+            order: Order,
+            cancel_reason: str):
         """
         Send a cancel order request to the execution service.
 
         :param: order: The order identifier to cancel.
+        :param: cancel_reason: The reason for cancellation (will be logged).
         """
-        self._order_commands_worker.send(bytearray(b'cancel_order'))
+        command = CancelOrder(
+            order,
+            cancel_reason,
+            uuid.uuid4(),
+            datetime.utcnow())
+        message = MsgPackCommandSerializer.serialize(command)
+
+        self._order_commands_worker.send(message)
+        self._log(f"Sent {command}.")
 
     @typechecking
     def modify_order(
             self,
-            order_id: OrderId,
+            order: Order,
             new_price: Decimal):
         """
         Send a modify order request to the execution service.
@@ -259,7 +278,15 @@ class LiveExecClient(ExecutionClient):
         :param: order: The order identifier to modify.
         :param: new_price: The new modified price for the order.
         """
-        self._order_commands_worker.send(bytearray(b'modify_order'))
+        command = ModifyOrder(
+            order,
+            new_price,
+            uuid.uuid4(),
+            datetime.utcnow())
+        message = MsgPackCommandSerializer.serialize(command)
+
+        self._order_commands_worker.send(message)
+        self._log(f"Sent {command}.")
 
     @typechecking
     def _event_handler(self, body: bytes):
