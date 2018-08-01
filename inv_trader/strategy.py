@@ -20,7 +20,8 @@ from inv_trader.core.checks import typechecking
 from inv_trader.model.objects import Symbol, Tick, BarType, Bar
 from inv_trader.model.order import Order
 from inv_trader.model.position import Position
-from inv_trader.model.events import Event, OrderEvent, OrderFilled, OrderPartiallyFilled
+from inv_trader.model.account import Account
+from inv_trader.model.events import Event, AccountEvent, OrderEvent, OrderFilled, OrderPartiallyFilled
 from inv_trader.factories import OrderIdGenerator
 
 # Constants
@@ -71,6 +72,7 @@ class TradeStrategy:
         self._indicator_index = {}     # type: Dict[Label, Indicator]
         self._order_book = {}          # type: Dict[OrderId, Order]
         self._positions = {}           # type: Dict[Symbol, Position]
+        self._account = Account()
         self._exec_client = None
 
         self._log(f"Initialized.")
@@ -232,6 +234,13 @@ class TradeStrategy:
         :return: The entire dictionary of positions.
         """
         return self._positions
+
+    @property
+    def account(self) -> Account:
+        """
+        :return: The strategies account.
+        """
+        return self._account
 
     @typechecking
     def indicators(self, bar_type: BarType) -> List[Indicator]:
@@ -593,7 +602,7 @@ class TradeStrategy:
 
         :param event: The event received.
         """
-        # For order events.
+        # Order events.
         if isinstance(event, OrderEvent):
             order_id = event.order_id
             if order_id in self._order_book.keys():
@@ -601,23 +610,28 @@ class TradeStrategy:
             else:
                 self._log("Warning: The event order id not found in the order book.")
 
-            # If event is relevant to positions.
+            # Position events.
             if isinstance(event, OrderFilled) or isinstance(event, OrderPartiallyFilled):
                 if event.symbol not in self._positions:
-                    new_position = Position(event.symbol,
-                                            order_id,
-                                            datetime.utcnow())
-                    self._positions[event.symbol] = new_position
-                    self._log(f"{new_position} entered.")
+                    opened_position = Position(
+                        event.symbol,
+                        order_id,
+                        datetime.utcnow())
+                    self._positions[event.symbol] = opened_position
+                    self._log(f"{opened_position} opened.")
                 self._positions[event.symbol].apply(event)
 
                 # If this order event exits the position then save to the database,
                 # and remove from list.
                 if self._positions[event.symbol].is_exited:
                     # TODO: Save to database.
-                    exited_position = self._positions[event.symbol]
+                    closed_position = self._positions[event.symbol]
                     self._positions.pop(event.symbol)
-                    self._log(f"{exited_position} exited.")
+                    self._log(f"{closed_position} closed.")
+
+        # Account Events
+        if isinstance(event, AccountEvent):
+            self._account.apply(event)
 
         # Calls on_event() if the strategy is running.
         if self._is_running:
