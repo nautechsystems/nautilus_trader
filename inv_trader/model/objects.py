@@ -7,8 +7,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import datetime
-
+from datetime import datetime
 from decimal import Decimal
 
 from inv_trader.core.checks import typechecking
@@ -109,14 +108,14 @@ class Tick:
                  symbol: Symbol,
                  bid: Decimal,
                  ask: Decimal,
-                 timestamp: datetime.datetime):
+                 timestamp: datetime):
         """
         Initializes a new instance of the Tick class.
 
         :param: symbol: The tick symbol.
         :param: bid: The tick bid price.
         :param: ask: The tick ask price.
-        :param: timestamp: The tick timestamp.
+        :param: timestamp: The tick timestamp (UTC).
         """
         self._symbol = symbol
         self._bid = bid
@@ -145,9 +144,9 @@ class Tick:
         return self._ask
 
     @property
-    def timestamp(self) -> datetime.datetime:
+    def timestamp(self) -> datetime:
         """
-        :return: The ticks timestamp (ISO8601).
+        :return: The ticks timestamp (UTC).
         """
         return self._timestamp
 
@@ -281,7 +280,7 @@ class Bar:
                  low_price: Decimal,
                  close_price: Decimal,
                  volume: int,
-                 timestamp: datetime.datetime):
+                 timestamp: datetime):
         """
         Initializes a new instance of the Bar class.
 
@@ -290,7 +289,7 @@ class Bar:
         :param low_price: The bars low price.
         :param close_price: The bars close price.
         :param volume: The bars volume.
-        :param timestamp: The bars timestamp.
+        :param timestamp: The bars timestamp (UTC).
         """
         self._open = open_price
         self._high = high_price
@@ -335,9 +334,9 @@ class Bar:
         return self._volume
 
     @property
-    def timestamp(self) -> datetime.datetime:
+    def timestamp(self) -> datetime:
         """
-        :return: The bars timestamp (ISO8601).
+        :return: The bars timestamp (UTC).
         """
         return self._timestamp
 
