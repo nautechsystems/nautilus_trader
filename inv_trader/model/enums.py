@@ -10,12 +10,24 @@
 from enum import Enum
 
 
+class Broker(Enum):
+    """
+    Represents a brokerage.
+    """
+    DUKASCOPY = 0,
+    FXCM = 1,
+    INTERACTIVE_BROKERS = 2
+
+
 class Venue(Enum):
     """
     Represents an execution venue.
     """
     DUKASCOPY = 0,
-    FXCM = 1
+    FXCM = 1,
+    IDEAL_PRO = 2,
+    NYSE = 3,
+    GLOBEX = 4
 
 
 class Resolution(Enum):

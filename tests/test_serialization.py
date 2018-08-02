@@ -20,7 +20,7 @@ from inv_trader.model.objects import Symbol
 from inv_trader.factories import OrderFactory
 from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
 from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
-from inv_trader.model.events import OrderPartiallyFilled, OrderFilled
+from inv_trader.model.events import OrderPartiallyFilled, OrderFilled, AccountEvent
 from inv_trader.model.commands import SubmitOrder, CancelOrder, ModifyOrder
 from inv_trader.serialization import MsgPackEventSerializer
 from inv_trader.serialization import MsgPackOrderSerializer
@@ -869,5 +869,33 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertEqual(100000, result.filled_quantity)
         self.assertEqual(Decimal('2'), result.average_price)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.execution_time)
+        self.assertTrue(isinstance(result.event_id, UUID))
+        self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.event_timestamp)
+
+    def test_can_deserialize_account_events_from_csharp(self):
+        # Arrange
+        serializer = MsgPackEventSerializer()
+
+        # Hex bytes string from C# MsgPack.Cli
+        hex_string = ('8eaa6576656e745f74797065ad6163636f756e745f6576656e74aa61'
+                      '63636f756e745f6964ab4658434d2d313233343536a662726f6b6572'
+                      'a44658434dae6163636f756e745f6e756d626572a6313233343536a8'
+                      '63757272656e6379a3555344ac636173685f62616c616e6365a63130'
+                      '30303030ae636173685f73746172745f646179a6313030303030b163'
+                      '6173685f61637469766974795f646179a130b76d617267696e5f7573'
+                      '65645f6c69717569646174696f6ea130b76d617267696e5f75736564'
+                      '5f6d61696e74656e616e6365a130ac6d617267696e5f726174696fa1'
+                      '30b26d617267696e5f63616c6c5f737461747573a0a86576656e745f'
+                      '6964d92438303335363063642d656566622d343962622d616338652d'
+                      '653766303337383638393938af6576656e745f74696d657374616d70'
+                      'b8313937302d30312d30315430303a30303a30302e3030305a')
+
+        body = bytes.fromhex(hex_string)
+
+        # Act
+        result = serializer.deserialize(body)
+
+        # Assert - Warnings can be ignored (PyCharm doesn't know the type).
+        self.assertTrue(isinstance(result, AccountEvent))
         self.assertTrue(isinstance(result.event_id, UUID))
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.event_timestamp)
