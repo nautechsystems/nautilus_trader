@@ -17,7 +17,7 @@ from decimal import Decimal
 from typing import Dict, Optional
 
 from inv_trader.core.checks import typechecking
-from inv_trader.model.enums import Venue, OrderSide, OrderType, TimeInForce
+from inv_trader.model.enums import Venue, OrderSide, OrderType, TimeInForce, CurrencyCode, Broker
 from inv_trader.model.objects import Symbol
 from inv_trader.model.order import Order
 from inv_trader.model.events import Event, OrderEvent, AccountEvent
@@ -80,6 +80,9 @@ QUANTITY = 'quantity'
 AVERAGE_PRICE = 'average_price'
 PRICE = 'price'
 TIME_IN_FORCE = 'time_in_force'
+ACCOUNT_ID = 'account_id'
+ACCOUNT_NUMBER = 'account_number'
+BROKER = 'broker'
 CURRENCY = 'currency'
 CASH_BALANCE = 'cash_balance'
 CASH_START_DAY = 'cash_start_day'
@@ -460,14 +463,19 @@ class MsgPackEventSerializer(EventSerializer):
 
         if event_type == ACCOUNT_EVENT:
             return AccountEvent(
-                unpacked[CURRENCY],
-                unpacked[CASH_BALANCE],
-                unpacked[CASH_START_DAY],
-                unpacked[CASH_ACTIVITY_DAY],
-                unpacked[MARGIN_USED_LIQUIDATION],
-                unpacked[MARGIN_USED_MAINTENANCE],
-                unpacked[MARGIN_RATIO],
-                unpacked[MARGIN_CALL_STATUS])
+                unpacked[ACCOUNT_ID],
+                Broker[unpacked[BROKER]],
+                unpacked[ACCOUNT_NUMBER],
+                CurrencyCode[unpacked[CURRENCY]],
+                Decimal(unpacked[CASH_BALANCE]),
+                Decimal(unpacked[CASH_START_DAY]),
+                Decimal(unpacked[CASH_ACTIVITY_DAY]),
+                Decimal(unpacked[MARGIN_USED_LIQUIDATION]),
+                Decimal(unpacked[MARGIN_USED_MAINTENANCE]),
+                Decimal(unpacked[MARGIN_RATIO]),
+                unpacked[MARGIN_CALL_STATUS],
+                event_id,
+                event_timestamp)
 
         else:
             raise ValueError("Cannot deserialize event (unrecognized event).")
