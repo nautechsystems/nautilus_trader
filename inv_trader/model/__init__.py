@@ -8,6 +8,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from inv_trader.model.enums import Venue, Resolution, QuoteType, OrderSide, OrderStatus, OrderType
+from inv_trader.model.commands import Command, OrderCommand, SubmitOrder, ModifyOrder, CancelOrder
 from inv_trader.model.events import Event, OrderEvent, AccountEvent, TimeEvent
 from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
 from inv_trader.model.events import OrderCancelled, OrderCancelReject, OrderModified
