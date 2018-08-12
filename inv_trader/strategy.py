@@ -21,7 +21,8 @@ from inv_trader.model.objects import Symbol, Tick, BarType, Bar
 from inv_trader.model.order import Order
 from inv_trader.model.position import Position
 from inv_trader.model.account import Account
-from inv_trader.model.events import Event, AccountEvent, OrderEvent, OrderFilled, OrderPartiallyFilled
+from inv_trader.model.events import Event, AccountEvent, OrderEvent
+from inv_trader.model.events import OrderFilled, OrderPartiallyFilled
 from inv_trader.factories import OrderIdGenerator
 
 # Constants
