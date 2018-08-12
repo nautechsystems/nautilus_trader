@@ -544,8 +544,7 @@ class TradeStrategy:
         :param tick: The tick received.
         """
         # Update the internal ticks.
-        key = tick.symbol
-        self._ticks[key] = tick
+        self._ticks[tick.symbol] = tick
 
         # Calls on_tick() if the strategy is running.
         if self._is_running:
@@ -687,7 +686,7 @@ class IndicatorUpdater:
             TIMESTAMP: TIMESTAMP
         }
 
-        for param in list(inspect.signature(update_method).parameters.keys()):
+        for param in inspect.signature(update_method).parameters:
             self._update_params.append(param_map[param])
 
     @typechecking
