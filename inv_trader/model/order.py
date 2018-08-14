@@ -283,9 +283,11 @@ class Order:
         :param order_event: The order event to apply.
         """
         # Preconditions
-        if order_event.order_id is not self.id:
+        if order_event.order_id != self.id:
             raise ValueError(
-                f"The event order id is invalid for this order (was {order_event.order_id}).")
+                f"The event order id is invalid for this order "
+                f"(event order id was {order_event.order_id},"
+                f"this order id was {self.id}).")
 
         self._events.append(order_event)
 
