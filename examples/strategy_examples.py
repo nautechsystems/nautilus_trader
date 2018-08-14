@@ -7,9 +7,11 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
+
 from inv_trader.model.enums import Resolution, QuoteType, OrderSide, MarketPosition
 from inv_trader.model.objects import Tick, BarType, Bar
-from inv_trader.model.events import Event
+from inv_trader.model.events import Event, OrderFilled, OrderPartiallyFilled
 from inv_trader.factories import OrderFactory
 from inv_trader.broker.fxcm import FXCMSymbols
 from inv_trader.strategy import TradeStrategy
@@ -43,6 +45,9 @@ class EMACross(TradeStrategy):
         self.add_indicator(AUDUSD_FXCM_1_SECOND_MID, self.ema1, self.ema1.update, 'ema1')
         self.add_indicator(AUDUSD_FXCM_1_SECOND_MID, self.ema2, self.ema2.update, 'ema2')
 
+        self.entry_orders = {}
+        self.stop_loss_orders = {}
+
     def on_start(self):
         pass
 
@@ -54,22 +59,42 @@ class EMACross(TradeStrategy):
         if bar_type == AUDUSD_FXCM_1_SECOND_MID and AUDUSD_FXCM in self.ticks:
             if len(self.positions) == 0:
                 if self.ema1.value > self.ema2.value:
-                    order = OrderFactory.market(AUDUSD_FXCM,
-                                                self.generate_order_id(AUDUSD_FXCM),
-                                                'S1_E',
-                                                OrderSide.BUY,
-                                                100000)
-                    self.submit_order(order)
+                    entry_order = OrderFactory.market(
+                        AUDUSD_FXCM,
+                        self.generate_order_id(AUDUSD_FXCM),
+                        'S1_E',
+                        OrderSide.BUY,
+                        100000)
+                    self.entry_orders[entry_order.id] = entry_order
+                    self.submit_order(entry_order)
+                    print(f"Added {entry_order.id} to entry orders.")
                 elif self.ema1.value < self.ema2.value:
-                    order = OrderFactory.market(AUDUSD_FXCM,
-                                                self.generate_order_id(AUDUSD_FXCM),
-                                                'S1_E',
-                                                OrderSide.SELL,
-                                                100000)
-                    self.submit_order(order)
+                    entry_order = OrderFactory.market(
+                        AUDUSD_FXCM,
+                        self.generate_order_id(AUDUSD_FXCM),
+                        'S1_E',
+                        OrderSide.SELL,
+                        100000)
+                    self.entry_orders[entry_order.id] = entry_order
+                    self.submit_order(entry_order)
+                    print(f"Added {entry_order.id} to entry orders.")
 
     def on_event(self, event: Event):
-        print(f"strategy received {event}")
+        if isinstance(event, OrderFilled):
+            if event.order_id in self.entry_orders.keys():
+                stop_side = self.get_opposite_side(event.order_side)
+                stop_price = event.average_price - Decimal('0.00020') if stop_side is OrderSide.SELL else event.average_price + Decimal('0.00020')
+
+                stop_order = OrderFactory.stop_market(
+                    AUDUSD_FXCM,
+                    self.generate_order_id(AUDUSD_FXCM),
+                    'S1_SL',
+                    stop_side,
+                    event.filled_quantity,
+                    stop_price)
+                self.stop_loss_orders[stop_order.id] = stop_order
+                self.submit_order(stop_order)
+                print(f"Added {stop_order.id} to stop-loss orders.")
 
     def on_stop(self):
         pass
