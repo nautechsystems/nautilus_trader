@@ -7,8 +7,8 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from inv_trader.model.enums import Venue, Resolution, QuoteType, OrderSide
-from inv_trader.model.objects import Symbol, Tick, BarType, Bar
+from inv_trader.model.enums import Resolution, QuoteType, OrderSide, MarketPosition
+from inv_trader.model.objects import Tick, BarType, Bar
 from inv_trader.model.events import Event
 from inv_trader.factories import OrderFactory
 from inv_trader.broker.fxcm import FXCMSymbols
@@ -52,23 +52,24 @@ class EMACross(TradeStrategy):
     def on_bar(self, bar_type: BarType, bar: Bar):
 
         if bar_type == AUDUSD_FXCM_1_SECOND_MID and AUDUSD_FXCM in self.ticks:
-            if self.ema1.value > self.ema2.value:
-                order = OrderFactory.market(AUDUSD_FXCM,
-                                            self.generate_order_id(AUDUSD_FXCM),
-                                            'S1_E',
-                                            OrderSide.BUY,
-                                            100000)
-                self.submit_order(order)
-            elif self.ema1.value < self.ema2.value:
-                order = OrderFactory.market(AUDUSD_FXCM,
-                                            self.generate_order_id(AUDUSD_FXCM),
-                                            'S1_E',
-                                            OrderSide.SELL,
-                                            100000)
-                self.submit_order(order)
+            if len(self.positions) == 0:
+                if self.ema1.value > self.ema2.value:
+                    order = OrderFactory.market(AUDUSD_FXCM,
+                                                self.generate_order_id(AUDUSD_FXCM),
+                                                'S1_E',
+                                                OrderSide.BUY,
+                                                100000)
+                    self.submit_order(order)
+                elif self.ema1.value < self.ema2.value:
+                    order = OrderFactory.market(AUDUSD_FXCM,
+                                                self.generate_order_id(AUDUSD_FXCM),
+                                                'S1_E',
+                                                OrderSide.SELL,
+                                                100000)
+                    self.submit_order(order)
 
     def on_event(self, event: Event):
-        pass
+        print(f"strategy received {event}")
 
     def on_stop(self):
         pass

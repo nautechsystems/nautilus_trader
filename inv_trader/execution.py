@@ -148,8 +148,8 @@ class ExecutionClient:
             order_id = event.order_id
             if order_id not in self._order_index.keys():
                 self._log(
-                    f"[Warning]: The given event order id was not contained in "
-                    f"order index {order_id}.")
+                    f"[Warning]: The given event order id {order_id} "
+                    f"was not contained in the order index.")
                 return
 
             strategy_id = self._order_index[order_id]
@@ -301,7 +301,7 @@ class LiveExecClient(ExecutionClient):
 
         # If no registered strategies then print message to console.
         if len(self._registered_strategies) == 0:
-            print(f"Received event from queue: {event}")
+            self._log(f"Received event from queue: {event}")
 
         self._on_event(event)
 
@@ -312,5 +312,4 @@ class LiveExecClient(ExecutionClient):
 
         :param body: The order command acknowledgement message body.
         """
-        print(f"Received order command acknowledgement: {body}")
-        # TODO
+        self._log("Received order command ack.")
