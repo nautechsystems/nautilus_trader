@@ -17,6 +17,7 @@ from typing import List, Dict, KeysView, Callable
 from uuid import UUID
 
 from inv_trader.core.checks import typechecking
+from inv_trader.model.enums import OrderSide
 from inv_trader.model.objects import Symbol, Tick, BarType, Bar
 from inv_trader.model.order import Order
 from inv_trader.model.position import Position
@@ -441,6 +442,16 @@ class TradeStrategy:
         :return: The unique order identifier.
         """
         return self._order_id_generator.generate(symbol)
+
+    @typechecking
+    def get_opposite_side(self, side: OrderSide) -> OrderSide:
+        """
+        Get the opposite order side from the original side given.
+
+        :param side: The original order side.
+        :return: The opposite order side.
+        """
+        return OrderSide.BUY if side is OrderSide.SELL else OrderSide.SELL
 
     @typechecking
     def submit_order(self, order: Order):
