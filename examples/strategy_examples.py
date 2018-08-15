@@ -9,16 +9,15 @@
 
 from decimal import Decimal
 
-from inv_trader.model.enums import Resolution, QuoteType, OrderSide, MarketPosition
-from inv_trader.model.objects import Tick, BarType, Bar
+from inv_trader.model.enums import Resolution, QuoteType, OrderSide, MarketPosition, Venue
+from inv_trader.model.objects import Symbol, Tick, BarType, Bar
 from inv_trader.model.events import Event, OrderFilled, OrderPartiallyFilled
 from inv_trader.factories import OrderFactory
-from inv_trader.broker.fxcm import FXCMSymbols
 from inv_trader.strategy import TradeStrategy
 from inv_indicators.average.ema import ExponentialMovingAverage
 
 # Constants
-AUDUSD_FXCM = FXCMSymbols.AUDUSD()
+AUDUSD_FXCM = Symbol("AUDUSD", Venue.FXCM)
 AUDUSD_FXCM_1_SECOND_MID = BarType(AUDUSD_FXCM,
                                    1,
                                    Resolution.SECOND,
@@ -55,6 +54,9 @@ class EMACross(TradeStrategy):
         pass
 
     def on_bar(self, bar_type: BarType, bar: Bar):
+
+        if not self.ema1.initialized and not self.ema2.initialized:
+            return
 
         if bar_type == AUDUSD_FXCM_1_SECOND_MID and AUDUSD_FXCM in self.ticks:
             if len(self.positions) == 0:

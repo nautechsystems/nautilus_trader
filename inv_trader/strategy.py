@@ -643,6 +643,7 @@ class TradeStrategy:
         # Account Events
         if isinstance(event, AccountEvent):
             self._account.apply(event)
+            self._log(f"Account cash_balance={event.cash_balance}")
 
         # Calls on_event() if the strategy is running.
         if self._is_running:
