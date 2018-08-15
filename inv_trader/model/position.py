@@ -184,7 +184,9 @@ class Position:
         """
         :return: The str() string representation of the position.
         """
-        return f"Position: {self._id}"
+        attrs = vars(self)
+        props = ', '.join("%s=%s" % item for item in attrs.items()).replace(', _', ', ')
+        return f"{self.__class__.__name__}({props})"
 
     def __repr__(self) -> str:
         """

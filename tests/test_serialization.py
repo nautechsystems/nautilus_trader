@@ -232,6 +232,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         self.assertEqual(command, deserialized)
         self.assertEqual(order, deserialized.order)
         print(serialized.hex())
+        print(command)
 
     def test_can_serialize_and_deserialize_cancel_order_commands(self):
         # Arrange
@@ -869,7 +870,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertEqual(100000, result.filled_quantity)
         self.assertEqual(Decimal('2'), result.average_price)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.execution_time)
-        self.assertTrue(isinstance(result.event_id, UUID))
+
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.event_timestamp)
 
     def test_can_deserialize_account_events_from_csharp(self):

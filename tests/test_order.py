@@ -181,7 +181,7 @@ class OrderTests(unittest.TestCase):
         # Assert
         self.assertEqual(OrderStatus.SUBMITTED, order.status)
         self.assertEqual(1, order.event_count)
-        self.assertEqual(event, order.events[0])
+        self.assertEqual(event, order.get_events()[0])
         self.assertFalse(order.is_complete)
 
     def test_can_apply_order_accepted_event_to_order(self):
@@ -259,6 +259,7 @@ class OrderTests(unittest.TestCase):
         order.apply(event)
 
         # Assert
+        print(order)
         self.assertEqual(OrderStatus.WORKING, order.status)
         self.assertEqual('SOME_BROKER_ID', order.broker_id)
         self.assertFalse(order.is_complete)

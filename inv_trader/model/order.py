@@ -241,13 +241,6 @@ class Order:
         """
         return len(self._events)
 
-    @property
-    def events(self) -> List[OrderEvent]:
-        """
-        :return: The orders internal events list.
-        """
-        return self._events
-
     def __eq__(self, other) -> bool:
         """
         Override the default equality comparison.
@@ -267,7 +260,9 @@ class Order:
         """
         :return: The str() string representation of the order.
         """
-        return f"Order: {self._id}"
+        attrs = vars(self)
+        props = ', '.join("%s=%s" % item for item in attrs.items()).replace(', _', ', ')
+        return f"{self.__class__.__name__}({props})"
 
     def __repr__(self) -> str:
         """
@@ -335,6 +330,12 @@ class Order:
             self._average_price = order_event.average_price
             self._set_slippage()
             self._check_overfill()
+
+    def get_events(self) -> List[OrderEvent]:
+        """
+        :return: The orders internal events list.
+        """
+        return self._events
 
     def _set_slippage(self):
         if self._type not in PRICED_ORDER_TYPES:

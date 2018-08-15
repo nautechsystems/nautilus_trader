@@ -36,22 +36,22 @@ class Event:
         :param: identifier: The events identifier.
         :param: uuid: The events timestamp.
         """
-        self._id = identifier
-        self._timestamp = timestamp
+        self._event_id = identifier
+        self._event_timestamp = timestamp
 
     @property
     def event_id(self) -> uuid:
         """
         :return: The events identifier.
         """
-        return self._id
+        return self._event_id
 
     @property
     def event_timestamp(self) -> datetime:
         """
         :return: The events timestamp (the time the event was created).
         """
-        return self._timestamp
+        return self._event_timestamp
 
     def __eq__(self, other) -> bool:
         """
@@ -78,7 +78,9 @@ class Event:
         """
         :return: The str() string representation of the event.
         """
-        return f"{self.__class__.__name__}"
+        attrs = vars(self)
+        props = ', '.join("%s=%s" % item for item in attrs.items()).replace(', _', ', ')
+        return f"{self.__class__.__name__}({props})"
 
     def __repr__(self) -> str:
         """
@@ -205,18 +207,6 @@ class OrderEvent(Event):
         super().__init__(event_id, event_timestamp)
         self._symbol = order_symbol
         self._order_id = order_id
-
-    def __str__(self) -> str:
-        """
-        :return: The str() string representation of the event.
-        """
-        return f"{self.__class__.__name__}(order_id={self._order_id})"
-
-    def __repr__(self) -> str:
-        """
-        :return: The repr() string representation of the event.
-        """
-        return f"<{str(self)} object at {id(self)}>"
 
     @property
     def symbol(self) -> Symbol:
