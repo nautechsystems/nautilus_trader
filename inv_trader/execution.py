@@ -156,8 +156,8 @@ class ExecutionClient:
             self._registered_strategies[strategy_id](event)
 
         if isinstance(event, AccountEvent):
-            for strategy_id, strategy in self._registered_strategies:
-                strategy(event)
+            for strategy_id in self._registered_strategies.keys():
+                self._registered_strategies[strategy_id](event)
 
     @staticmethod
     @typechecking
