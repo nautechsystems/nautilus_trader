@@ -613,10 +613,12 @@ class TradeStrategy:
 
         :param event: The event received.
         """
+        self._log(str(event))
+
         # Order events.
         if isinstance(event, OrderEvent):
             order_id = event.order_id
-            if order_id in self._order_book.keys():
+            if order_id in self._order_book:
                 self._order_book[order_id].apply(event)
             else:
                 self._log("Warning: The event order id not found in the order book.")
@@ -643,7 +645,6 @@ class TradeStrategy:
         # Account Events
         if isinstance(event, AccountEvent):
             self._account.apply(event)
-            self._log(f"Account cash_balance={event.cash_balance}")
 
         # Calls on_event() if the strategy is running.
         if self._is_running:
@@ -657,7 +658,9 @@ class TradeStrategy:
         :param order: The order to add.
         """
         if order.id in self._order_book.keys():
-            raise ValueError("The order id is already contained in the order book for the strategy.")
+            self._log(
+                "[Warning]: The order id is already contained in the order book for the strategy.")
+            return
 
         self._order_book[order.id] = order
 

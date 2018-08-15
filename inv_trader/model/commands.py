@@ -34,22 +34,22 @@ class Command:
         :param: identifier: The commands identifier.
         :param: uuid: The commands timestamp.
         """
-        self._id = identifier
-        self._timestamp = timestamp
+        self._command_id = identifier
+        self._command_timestamp = timestamp
 
     @property
     def command_id(self) -> uuid:
         """
         :return: The commands identifier.
         """
-        return self._id
+        return self._command_id
 
     @property
     def command_timestamp(self) -> datetime:
         """
         :return: The commands timestamp (the time the command was created).
         """
-        return self._timestamp
+        return self._command_timestamp
 
     def __eq__(self, other) -> bool:
         """
@@ -65,6 +65,20 @@ class Command:
         Override the default not-equals comparison.
         """
         return not self.__eq__(other)
+
+    def __str__(self) -> str:
+        """
+        :return: The str() string representation of the command.
+        """
+        attrs = vars(self)
+        props = ', '.join("%s=%s" % item for item in attrs.items()).replace(', _', ', ')
+        return f"{self.__class__.__name__}({props})"
+
+    def __repr__(self) -> str:
+        """
+        :return: The repr() string representation of the command.
+        """
+        return f"<{str(self)} object at {id(self)}>"
 
 
 class OrderCommand(Command):
@@ -88,18 +102,6 @@ class OrderCommand(Command):
         """
         super().__init__(command_id, command_timestamp)
         self._order = order
-
-    def __str__(self) -> str:
-        """
-        :return: The str() string representation of the order command.
-        """
-        return f"{self.__class__.__name__}({self._order.id})"
-
-    def __repr__(self) -> str:
-        """
-        :return: The repr() string representation of the order command.
-        """
-        return f"<{str(self)} object at {id(self)}>"
 
     @property
     def order(self) -> Order:
