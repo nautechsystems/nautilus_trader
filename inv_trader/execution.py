@@ -312,4 +312,5 @@ class LiveExecClient(ExecutionClient):
 
         :param body: The order command acknowledgement message body.
         """
-        self._log("Received order command ack.")
+        command = MsgPackCommandSerializer.deserialize(body)
+        self._log(f"Received order command ack {command}.")

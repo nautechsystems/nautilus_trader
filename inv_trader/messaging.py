@@ -80,6 +80,9 @@ class MQWorker(Thread):
         self._channel.basic_publish(exchange=self._exchange_name,
                                     routing_key=self._routing_key,
                                     body=message)
+        self._log((f"Sent message: exchange={self._exchange_name}, "
+                   f"routing_key={self._routing_key} "
+                   f"body={message}"))
 
     def stop(self):
         """

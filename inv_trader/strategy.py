@@ -461,8 +461,10 @@ class TradeStrategy:
         :param order: The order to submit.
         """
         # Preconditions
-        if order.id in self._order_book.keys():
-            raise ValueError("The order id is already contained in the order book (must be unique).")
+        if order.id in self._order_book:
+            self._log(
+                "[Warning]: The order id is already contained in the order book (must be unique).")
+            return
 
         self._order_book[order.id] = order
         self._exec_client.submit_order(order, self._id)
