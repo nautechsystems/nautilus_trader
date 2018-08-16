@@ -7,6 +7,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+from datetime import datetime, timedelta
 from decimal import Decimal
 
 from inv_trader.model.enums import Resolution, QuoteType, OrderSide, TimeInForce, Venue
@@ -47,11 +48,18 @@ class EMACross(TradeStrategy):
         self.entry_orders = {}
         self.stop_loss_orders = {}
 
+        self.trading = False
+
     def on_start(self):
         pass
 
     def on_tick(self, tick: Tick):
-        pass
+        for order in self.stop_loss_orders.values():
+            if not order.is_complete:
+                if order.side == OrderSide.SELL:
+                    self.modify_order(order, tick.bid - Decimal('0.00020'))
+                else:
+                    self.modify_order(order, tick.ask + Decimal('0.00020'))
 
     def on_bar(self, bar_type: BarType, bar: Bar):
 
@@ -59,8 +67,9 @@ class EMACross(TradeStrategy):
             return
 
         if bar_type == AUDUSD_FXCM_1_SECOND_MID and AUDUSD_FXCM in self.ticks:
-            if len(self.positions) == 0:
+            if self.trading is False:
                 if self.ema1.value > self.ema2.value:
+                    self.trading = True
                     entry_order = OrderFactory.market(
                         AUDUSD_FXCM,
                         self.generate_order_id(AUDUSD_FXCM),
@@ -71,19 +80,8 @@ class EMACross(TradeStrategy):
                     self.submit_order(entry_order)
                     print(f"Added {entry_order.id} to entry orders.")
 
-                    stop_order = OrderFactory.stop_market(
-                        AUDUSD_FXCM,
-                        self.generate_order_id(AUDUSD_FXCM),
-                        'S1_SL',
-                        OrderSide.SELL,
-                        entry_order.quantity,
-                        self.last_tick(AUDUSD_FXCM).bid - Decimal('0.00020'),
-                        time_in_force=TimeInForce.DAY,
-                        expire_time=None)
-                    self.stop_loss_orders[stop_order.id] = stop_order
-                    self.submit_order(stop_order)
-                    print(f"Added {stop_order.id} to stop-loss orders.")
                 elif self.ema1.value < self.ema2.value:
+                    self.trading = True
                     entry_order = OrderFactory.market(
                         AUDUSD_FXCM,
                         self.generate_order_id(AUDUSD_FXCM),
@@ -93,39 +91,28 @@ class EMACross(TradeStrategy):
                     self.entry_orders[entry_order.id] = entry_order
                     self.submit_order(entry_order)
                     print(f"Added {entry_order.id} to entry orders.")
-
-                    stop_order = OrderFactory.stop_market(
-                        AUDUSD_FXCM,
-                        self.generate_order_id(AUDUSD_FXCM),
-                        'S1_SL',
-                        OrderSide.BUY,
-                        entry_order.quantity,
-                        self.last_tick(AUDUSD_FXCM).ask + Decimal('0.00020'),
-                        time_in_force=TimeInForce.DAY,
-                        expire_time=None)
-                    self.stop_loss_orders[stop_order.id] = stop_order
-                    self.submit_order(stop_order)
-                    print(f"Added {stop_order.id} to stop-loss orders.")
 
     def on_event(self, event: Event):
         pass
-        # if isinstance(event, OrderFilled):
-        #     if event.order_id in self.entry_orders.keys():
-        #         stop_side = self.get_opposite_side(event.order_side)
-        #         stop_price = event.average_price - Decimal('0.00020') if stop_side is OrderSide.SELL else event.average_price + Decimal('0.00020')
-        #
-        #         stop_order = OrderFactory.stop_market(
-        #             AUDUSD_FXCM,
-        #             self.generate_order_id(AUDUSD_FXCM),
-        #             'S1_SL',
-        #             stop_side,
-        #             event.filled_quantity,
-        #             stop_price,
-        #             time_in_force=TimeInForce.DAY,
-        #             expire_time=None)
-        #         self.stop_loss_orders[stop_order.id] = stop_order
-        #         self.submit_order(stop_order)
-        #         print(f"Added {stop_order.id} to stop-loss orders.")
+        if isinstance(event, OrderFilled):
+            if event.order_id in self.entry_orders.keys():
+                stop_side = self.get_opposite_side(event.order_side)
+                stop_price = event.average_price - Decimal('0.00020') if stop_side is OrderSide.SELL else event.average_price + Decimal('0.00020')
+
+                stop_order = OrderFactory.stop_market(
+                    AUDUSD_FXCM,
+                    self.generate_order_id(AUDUSD_FXCM),
+                    'S1_SL',
+                    stop_side,
+                    event.filled_quantity,
+                    stop_price,
+                    time_in_force=TimeInForce.GTC)
+                self.stop_loss_orders[stop_order.id] = stop_order
+                self.submit_order(stop_order)
+                print(f"Added {stop_order.id} to stop-loss orders.")
+
+        if len(self.positions) == 0:
+            self.trading = False
 
     def on_stop(self):
         pass
