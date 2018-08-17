@@ -7,14 +7,14 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+import pytz
 import time
 
+from datetime import datetime, timedelta
 from decimal import Decimal
-from typing import List, Dict
 
 from inv_trader.model.enums import Resolution, QuoteType, OrderSide, TimeInForce, Venue
 from inv_trader.model.objects import Symbol, Tick, BarType, Bar
-from inv_trader.model.order import Order
 from inv_trader.model.events import Event, OrderFilled, OrderPartiallyFilled, OrderModified
 from inv_trader.factories import OrderFactory
 from inv_trader.strategy import TradeStrategy
@@ -56,12 +56,14 @@ class EMACross(TradeStrategy):
         pass
 
     def on_tick(self, tick: Tick):
+        pass
         for order in self.entry_orders.values():
             if not order.is_complete:
-                if order.side == OrderSide.BUY and tick.bid - Decimal('0.00010') > order.price:
-                    self.modify_order(order, tick.bid - Decimal('0.00010'))
-                elif order.side == OrderSide.SELL and tick.ask + Decimal('0.00010') < order.price:
-                    self.modify_order(order, tick.ask + Decimal('0.00010'))
+                # Slide entry price with market
+                if order.side == OrderSide.BUY and tick.ask - Decimal('0.00010') > order.price:
+                    self.modify_order(order, tick.ask - Decimal('0.00010'))
+                elif order.side == OrderSide.SELL and tick.bid + Decimal('0.00010') < order.price:
+                    self.modify_order(order, tick.bid + Decimal('0.00010'))
 
         for order in self.stop_loss_orders.values():
             if not order.is_complete:
@@ -75,6 +77,17 @@ class EMACross(TradeStrategy):
         if not self.ema1.initialized and not self.ema2.initialized:
             return
 
+        for order in self.entry_orders.values():
+            print(f"ENTRY ORDER: {order.id} {order.status} {order.is_complete}")
+            if not order.is_complete:
+                # Check if order should be expired
+                if order.expire_time is not None and bar.timestamp >= order.expire_time:
+                    self.cancel_order(order)
+                    return
+
+        for order in self.stop_loss_orders.values():
+            print(f"STOP-LOSS ORDER: {order.id} {order.status} {order.is_complete}")
+
         if bar_type == AUDUSD_FXCM_1_SECOND_MID and AUDUSD_FXCM in self.ticks:
             # If any open positions or pending entry orders then return
             if len(self.positions) > 0:
@@ -82,6 +95,7 @@ class EMACross(TradeStrategy):
             if any(order.is_complete is False for order in self.entry_orders.values()):
                 return
 
+            expire_time = datetime.now(pytz.utc)
             # BUY LOGIC
             if self.ema1.value >= self.ema2.value:
                 entry_order = OrderFactory.limit(
@@ -90,7 +104,9 @@ class EMACross(TradeStrategy):
                     'S1_E',
                     OrderSide.BUY,
                     100000,
-                    self.ticks[AUDUSD_FXCM].bid - Decimal('0.00010'))
+                    self.ticks[AUDUSD_FXCM].bid - Decimal('0.00010'),
+                    TimeInForce.GTD,
+                    expire_time + timedelta(seconds=10))
                 self.entry_orders[entry_order.id] = entry_order
                 self.submit_order(entry_order)
                 self._log(f"Added {entry_order.id} to entry orders.")
@@ -103,7 +119,9 @@ class EMACross(TradeStrategy):
                     'S1_E',
                     OrderSide.SELL,
                     100000,
-                    self.ticks[AUDUSD_FXCM].ask + Decimal('0.00010'))
+                    self.ticks[AUDUSD_FXCM].ask + Decimal('0.00010'),
+                    TimeInForce.GTD,
+                    expire_time + timedelta(seconds=10))
                 self.entry_orders[entry_order.id] = entry_order
                 self.submit_order(entry_order)
                 self._log(f"Added {entry_order.id} to entry orders.")
@@ -147,12 +165,6 @@ class EMACross(TradeStrategy):
         # Cancel all stop-loss orders
         for order in self.stop_loss_orders.values():
             self.cancel_order(order, "STOPPING STRATEGY")
-
-        # Wait for all orders to cancel
-        while (any(order.is_complete is False for order in self.entry_orders.values()) or
-               any(order.is_complete is False for order in self.stop_loss_orders.values())):
-            self._log("Waiting for orders to cancel...")
-            time.sleep(1000)
 
     def on_reset(self):
         pass
