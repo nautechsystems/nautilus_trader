@@ -526,8 +526,8 @@ class TradeStrategy:
         Stops the trade strategy.
         """
         self._log(f"Stopping...")
-        self._is_running = False
         self.on_stop()
+        self._is_running = False
         self._log(f"Stopped.")
 
     def reset(self):

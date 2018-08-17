@@ -20,7 +20,7 @@ from uuid import UUID
 from inv_trader.core.checks import typechecking
 from inv_trader.model.order import Order
 from inv_trader.model.commands import SubmitOrder, CancelOrder, ModifyOrder
-from inv_trader.model.events import Event, OrderEvent, AccountEvent
+from inv_trader.model.events import Event, OrderEvent, AccountEvent, OrderCancelReject
 from inv_trader.messaging import MQProps, MQWorker
 from inv_trader.strategy import TradeStrategy
 from inv_trader.serialization import MsgPackCommandSerializer
@@ -154,6 +154,9 @@ class ExecutionClient:
 
             strategy_id = self._order_index[order_id]
             self._registered_strategies[strategy_id](event)
+
+        if isinstance(event, OrderCancelReject):
+            self._log(f"[Warning]: {event}.")
 
         if isinstance(event, AccountEvent):
             for strategy_id in self._registered_strategies.keys():

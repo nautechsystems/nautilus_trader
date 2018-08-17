@@ -7,17 +7,21 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from datetime import datetime, timedelta
+import time
+
 from decimal import Decimal
+from typing import List, Dict
 
 from inv_trader.model.enums import Resolution, QuoteType, OrderSide, TimeInForce, Venue
 from inv_trader.model.objects import Symbol, Tick, BarType, Bar
-from inv_trader.model.events import Event, OrderFilled, OrderPartiallyFilled
+from inv_trader.model.order import Order
+from inv_trader.model.events import Event, OrderFilled, OrderPartiallyFilled, OrderModified
 from inv_trader.factories import OrderFactory
 from inv_trader.strategy import TradeStrategy
 from inv_indicators.average.ema import ExponentialMovingAverage
 
 # Constants
+OrderId = str
 AUDUSD_FXCM = Symbol("AUDUSD", Venue.FXCM)
 AUDUSD_FXCM_1_SECOND_MID = BarType(AUDUSD_FXCM,
                                    1,
@@ -47,19 +51,33 @@ class EMACross(TradeStrategy):
 
         self.entry_orders = {}
         self.stop_loss_orders = {}
-
-        self.trading = False
+        self.orders_in_process = []  # type: List[OrderId]
 
     def on_start(self):
         pass
 
     def on_tick(self, tick: Tick):
+        for order in self.entry_orders.values():
+            if not order.is_complete:
+                if order.side == OrderSide.BUY and tick.bid - Decimal('0.00010') > order.price:
+                    if order.id not in self.orders_in_process:
+                        self.modify_order(order, tick.bid - Decimal('0.00010'))
+                        self.orders_in_process.append(order.id)
+                elif order.side == OrderSide.SELL and tick.ask + Decimal('0.00010') < order.price:
+                    if order.id not in self.orders_in_process:
+                        self.modify_order(order, tick.ask + Decimal('0.00010'))
+                        self.orders_in_process.append(order.id)
+
         for order in self.stop_loss_orders.values():
             if not order.is_complete:
-                if order.side == OrderSide.SELL:
-                    self.modify_order(order, tick.bid - Decimal('0.00020'))
-                else:
-                    self.modify_order(order, tick.ask + Decimal('0.00020'))
+                if order.side == OrderSide.SELL and tick.bid - Decimal('0.00020') > order.price:
+                    if order.id not in self.orders_in_process:
+                        self.modify_order(order, tick.bid - Decimal('0.00020'))
+                        self.orders_in_process.append(order.id)
+                elif order.side == OrderSide.BUY and tick.ask + Decimal('0.00020') < order.price:
+                    if order.id not in self.orders_in_process:
+                        self.modify_order(order, tick.ask + Decimal('0.00020'))
+                        self.orders_in_process.append(order.id)
 
     def on_bar(self, bar_type: BarType, bar: Bar):
 
@@ -67,34 +85,42 @@ class EMACross(TradeStrategy):
             return
 
         if bar_type == AUDUSD_FXCM_1_SECOND_MID and AUDUSD_FXCM in self.ticks:
-            if self.trading is False:
-                if self.ema1.value > self.ema2.value:
-                    self.trading = True
-                    entry_order = OrderFactory.market(
-                        AUDUSD_FXCM,
-                        self.generate_order_id(AUDUSD_FXCM),
-                        'S1_E',
-                        OrderSide.BUY,
-                        100000)
-                    self.entry_orders[entry_order.id] = entry_order
-                    self.submit_order(entry_order)
-                    print(f"Added {entry_order.id} to entry orders.")
+            # If any open positions or pending entry orders then return
+            if len(self.positions) > 0:
+                return
+            if any(order.is_complete is False for order in self.entry_orders.values()):
+                return
 
-                elif self.ema1.value < self.ema2.value:
-                    self.trading = True
-                    entry_order = OrderFactory.market(
-                        AUDUSD_FXCM,
-                        self.generate_order_id(AUDUSD_FXCM),
-                        'S1_E',
-                        OrderSide.SELL,
-                        100000)
-                    self.entry_orders[entry_order.id] = entry_order
-                    self.submit_order(entry_order)
-                    self._log(f"Added {entry_order.id} to entry orders.")
+            # BUY LOGIC
+            if self.ema1.value >= self.ema2.value:
+                entry_order = OrderFactory.limit(
+                    AUDUSD_FXCM,
+                    self.generate_order_id(AUDUSD_FXCM),
+                    'S1_E',
+                    OrderSide.BUY,
+                    100000,
+                    self.ticks[AUDUSD_FXCM].bid - Decimal('0.00010'))
+                self.entry_orders[entry_order.id] = entry_order
+                self.submit_order(entry_order)
+                self._log(f"Added {entry_order.id} to entry orders.")
+
+            # SELL LOGIC
+            elif self.ema1.value < self.ema2.value:
+                entry_order = OrderFactory.limit(
+                    AUDUSD_FXCM,
+                    self.generate_order_id(AUDUSD_FXCM),
+                    'S1_E',
+                    OrderSide.SELL,
+                    100000,
+                    self.ticks[AUDUSD_FXCM].ask + Decimal('0.00010'))
+                self.entry_orders[entry_order.id] = entry_order
+                self.submit_order(entry_order)
+                self._log(f"Added {entry_order.id} to entry orders.")
 
     def on_event(self, event: Event):
         pass
         if isinstance(event, OrderFilled):
+            # SET TRAILING STOP
             if event.order_id in self.entry_orders.keys():
                 stop_side = self.get_opposite_side(event.order_side)
                 stop_price = event.average_price - Decimal('0.00020') if stop_side is OrderSide.SELL else event.average_price + Decimal('0.00020')
@@ -111,13 +137,15 @@ class EMACross(TradeStrategy):
                 self.submit_order(stop_order)
                 self._log(f"Added {stop_order.id} to stop-loss orders.")
 
-        if len(self.positions) == 0:
-            self.trading = False
+        # ORDER MODIFIED
+        if isinstance(event, OrderModified):
+            if event.order_id in self.orders_in_process:
+                self.orders_in_process.remove(event.order_id)
 
     def on_stop(self):
         # Flatten existing positions
         for position in self.positions.values():
-            self._log(f"Flattening position {position},")
+            self._log(f"Flattening {position}.")
             order = OrderFactory.market(
                 position.symbol,
                 self.generate_order_id(position.symbol),
@@ -133,6 +161,12 @@ class EMACross(TradeStrategy):
         # Cancel all stop-loss orders
         for order in self.stop_loss_orders.values():
             self.cancel_order(order, "STOPPING STRATEGY")
+
+        # Wait for all orders to cancel
+        while (any(order.is_complete is False for order in self.entry_orders.values()) or
+               any(order.is_complete is False for order in self.stop_loss_orders.values())):
+            self._log("Waiting for orders to cancel...")
+            time.sleep(1000)
 
     def on_reset(self):
         pass
