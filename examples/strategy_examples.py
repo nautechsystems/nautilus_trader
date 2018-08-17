@@ -51,7 +51,6 @@ class EMACross(TradeStrategy):
 
         self.entry_orders = {}
         self.stop_loss_orders = {}
-        self.orders_in_process = []  # type: List[OrderId]
 
     def on_start(self):
         pass
@@ -60,24 +59,16 @@ class EMACross(TradeStrategy):
         for order in self.entry_orders.values():
             if not order.is_complete:
                 if order.side == OrderSide.BUY and tick.bid - Decimal('0.00010') > order.price:
-                    if order.id not in self.orders_in_process:
-                        self.modify_order(order, tick.bid - Decimal('0.00010'))
-                        self.orders_in_process.append(order.id)
+                    self.modify_order(order, tick.bid - Decimal('0.00010'))
                 elif order.side == OrderSide.SELL and tick.ask + Decimal('0.00010') < order.price:
-                    if order.id not in self.orders_in_process:
-                        self.modify_order(order, tick.ask + Decimal('0.00010'))
-                        self.orders_in_process.append(order.id)
+                    self.modify_order(order, tick.ask + Decimal('0.00010'))
 
         for order in self.stop_loss_orders.values():
             if not order.is_complete:
                 if order.side == OrderSide.SELL and tick.bid - Decimal('0.00020') > order.price:
-                    if order.id not in self.orders_in_process:
-                        self.modify_order(order, tick.bid - Decimal('0.00020'))
-                        self.orders_in_process.append(order.id)
+                    self.modify_order(order, tick.bid - Decimal('0.00020'))
                 elif order.side == OrderSide.BUY and tick.ask + Decimal('0.00020') < order.price:
-                    if order.id not in self.orders_in_process:
-                        self.modify_order(order, tick.ask + Decimal('0.00020'))
-                        self.orders_in_process.append(order.id)
+                    self.modify_order(order, tick.ask + Decimal('0.00020'))
 
     def on_bar(self, bar_type: BarType, bar: Bar):
 
@@ -136,11 +127,6 @@ class EMACross(TradeStrategy):
                 self.stop_loss_orders[stop_order.id] = stop_order
                 self.submit_order(stop_order)
                 self._log(f"Added {stop_order.id} to stop-loss orders.")
-
-        # ORDER MODIFIED
-        if isinstance(event, OrderModified):
-            if event.order_id in self.orders_in_process:
-                self.orders_in_process.remove(event.order_id)
 
     def on_stop(self):
         # Flatten existing positions
