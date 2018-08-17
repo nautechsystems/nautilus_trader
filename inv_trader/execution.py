@@ -34,13 +34,13 @@ EXECUTION_COMMANDS = MQProps(
     exchange_name='nautilus.execution.commands',
     exchange_type='fanout',
     queue_name='inv_trader_commands',
-    routing_key='')
+    routing_key='inv_trader_commands')
 
 EXECUTION_EVENTS = MQProps(
     exchange_name='nautilus.execution.events',
     exchange_type='fanout',
     queue_name='inv_trader_events',
-    routing_key='')
+    routing_key='inv_trader_events')
 
 
 class ExecutionClient:
