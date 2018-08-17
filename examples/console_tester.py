@@ -27,8 +27,7 @@ if __name__ == "__main__":
     exec_client.connect()
     strategy.start()
 
-    input("Press Enter to disconnect...")
-    print("")
+    input("Press Enter to disconnect...\n")
 
     strategy.stop()
     exec_client.disconnect()

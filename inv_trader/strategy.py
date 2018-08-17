@@ -648,7 +648,7 @@ class TradeStrategy:
                         order_id,
                         datetime.utcnow())
                     self._positions[event.symbol] = opened_position
-                    self._log(f"{opened_position} opened.")
+                    self._log(f"Opened {opened_position}.")
                 self._positions[event.symbol].apply(event)
 
                 # If this order event exits the position then save to the database,
@@ -657,7 +657,7 @@ class TradeStrategy:
                     # TODO: Save to database.
                     closed_position = self._positions[event.symbol]
                     self._positions.pop(event.symbol)
-                    self._log(f"{closed_position} closed.")
+                    self._log(f"Closed {closed_position}.")
 
         # Account Events
         if isinstance(event, AccountEvent):

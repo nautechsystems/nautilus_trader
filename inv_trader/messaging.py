@@ -81,7 +81,7 @@ class MQWorker(Thread):
                                     routing_key=self._routing_key,
                                     body=message)
         self._log((f"Sent message: exchange={self._exchange_name}, "
-                   f"routing_key={self._routing_key} "
+                   f"routing_key={self._routing_key}, "
                    f"body={message}"))
 
     def stop(self):
@@ -176,7 +176,7 @@ class MQWorker(Thread):
 
     def _on_channel_open(self, channel: Channel):
         """
-        This method is invoked by pika when the channel has been opened.
+        Invoked by pika when the channel has been opened.
         The channel object is passed in so we can make use of it.
         Since the channel is now open, we'll declare the exchange to use.
 
