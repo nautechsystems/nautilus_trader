@@ -17,7 +17,7 @@ from typing import List, Dict, KeysView, Callable
 from uuid import UUID
 
 from inv_trader.core.checks import typechecking
-from inv_trader.model.enums import OrderSide
+from inv_trader.model.enums import OrderSide, MarketPosition
 from inv_trader.model.objects import Symbol, Tick, BarType, Bar
 from inv_trader.model.order import Order
 from inv_trader.model.position import Position
@@ -452,6 +452,21 @@ class TradeStrategy:
         :return: The opposite order side.
         """
         return OrderSide.BUY if side is OrderSide.SELL else OrderSide.SELL
+
+    @typechecking
+    def get_flatten_side(self, market_position: MarketPosition) -> OrderSide:
+        """
+        Get the order side needed to flatten the position from the given market position.
+
+        :param market_position: The market position to flatten.
+        :return: The order side to flatten.
+        """
+        if market_position is MarketPosition.LONG:
+            return OrderSide.SELL
+        elif market_position is MarketPosition.SHORT:
+            return OrderSide.BUY
+        else:
+            raise ValueError("Cannot flatten a FLAT position.")
 
     @typechecking
     def submit_order(self, order: Order):

@@ -90,7 +90,7 @@ class EMACross(TradeStrategy):
                         100000)
                     self.entry_orders[entry_order.id] = entry_order
                     self.submit_order(entry_order)
-                    print(f"Added {entry_order.id} to entry orders.")
+                    self._log(f"Added {entry_order.id} to entry orders.")
 
     def on_event(self, event: Event):
         pass
@@ -109,13 +109,30 @@ class EMACross(TradeStrategy):
                     time_in_force=TimeInForce.GTC)
                 self.stop_loss_orders[stop_order.id] = stop_order
                 self.submit_order(stop_order)
-                print(f"Added {stop_order.id} to stop-loss orders.")
+                self._log(f"Added {stop_order.id} to stop-loss orders.")
 
         if len(self.positions) == 0:
             self.trading = False
 
     def on_stop(self):
-        pass
+        # Flatten existing positions
+        for position in self.positions.values():
+            self._log(f"Flattening position {position},")
+            order = OrderFactory.market(
+                position.symbol,
+                self.generate_order_id(position.symbol),
+                "FLATTEN",
+                self.get_flatten_side(position.market_position),
+                position.quantity)
+            self.submit_order(order)
+
+        # Cancel all entry orders
+        for order in self.entry_orders.values():
+            self.cancel_order(order, "STOPPING STRATEGY")
+
+        # Cancel all stop-loss orders
+        for order in self.stop_loss_orders.values():
+            self.cancel_order(order, "STOPPING STRATEGY")
 
     def on_reset(self):
         pass
