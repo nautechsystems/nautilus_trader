@@ -41,7 +41,8 @@ class Order:
                  order_type: OrderType,
                  quantity: int,
                  timestamp: datetime,
-                 price: Optional[Decimal]=None,
+                 price: Optional[float or Decimal]=None,
+                 decimals: int=None,
                  time_in_force: Optional[TimeInForce]=None,
                  expire_time: Optional[datetime]=None):
         """
@@ -55,6 +56,7 @@ class Order:
         :param: quantity: The orders quantity (> 0).
         :param: timestamp: The orders initialization timestamp.
         :param: price: The orders price (can be None for market orders > 0).
+        :param: decimals: The decimal precision for the orders price (>= 0).
         :param: time_in_force: The orders time in force (optional can be None).
         :param: expire_time: The orders expire time (optional can be None).
         """
@@ -65,12 +67,23 @@ class Order:
             raise ValueError(f"The quantity must be positive (was {quantity}).")
         if time_in_force is TimeInForce.GTD and expire_time is None:
             raise ValueError(f"The expire_time cannot be None for GTD orders.")
-        if order_type in PRICED_ORDER_TYPES and price is None:
-            raise ValueError("The price cannot be None.")
-        if order_type in PRICED_ORDER_TYPES and not isinstance(price, Decimal):
-            raise TypeError(f"The price must be of type decimal (was {type(price)}).")
-        if order_type not in PRICED_ORDER_TYPES and price is not None:
-            raise ValueError(f"{order_type.name} orders cannot have a price.")
+        # Orders without prices
+        if order_type not in PRICED_ORDER_TYPES:
+            if price is not None:
+                raise ValueError(f"{order_type.name} orders cannot have a price.")
+            if decimals is not None:
+                raise ValueError(f"{order_type.name} orders cannot have a decimal precision.")
+        # Orders with prices
+        if order_type in PRICED_ORDER_TYPES:
+            if price is None:
+                raise ValueError("The price cannot be None.")
+            if price <= 0.:
+                raise ValueError("The price must be > 0.")
+            if type(price) is not Decimal:
+                if decimals is None:
+                    raise ValueError("The decimals cannot be None.")
+                if decimals < 0:
+                    raise ValueError("The decimals must be >= 0.")
 
         self._symbol = symbol
         self._id = order_id
@@ -81,7 +94,14 @@ class Order:
         self._timestamp = timestamp
         self._time_in_force = time_in_force  # Can be None
         self._expire_time = expire_time      # Can be None
-        self._price = price                  # Can be None
+
+        if price is Decimal:
+            self._price = price
+        if price is not None and decimals is not None:
+            self._price = Decimal(f'{price:.{decimals}f}')
+        else:
+            self._price = price  # Can be None
+
         self._filled_quantity = 0
         self._average_price = Decimal('0')
         self._slippage = Decimal('0')
