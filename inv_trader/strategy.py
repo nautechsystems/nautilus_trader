@@ -477,9 +477,8 @@ class TradeStrategy:
         """
         # Preconditions
         if order.id in self._order_book:
-            self._log(
-                "[Warning]: The order id is already contained in the order book (must be unique).")
-            return
+            raise ValueError(
+                "The order id is already contained in the order book (must be unique).")
 
         self._order_book[order.id] = order
         self._exec_client.submit_order(order, self._id)

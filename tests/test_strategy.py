@@ -334,7 +334,7 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Act
         # Assert
-        # self.assertRaises(ValueError, strategy.submit_order, order)
+        self.assertRaises(ValueError, strategy.submit_order, order)
 
     def test_strategy_can_cancel_order(self):
         # Arrange
