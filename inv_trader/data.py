@@ -319,7 +319,6 @@ class LiveDataClient:
         :param bar_type_string: The bar type string to parse.
         :return: The parsed bar type object.
         """
-        # TODO: Improve this regex.
         split_string = re.split(r'[.-]+', bar_type_string)
         resolution = split_string[3].split('[')[0]
         quote_type = split_string[3].split('[')[1].strip(']')
