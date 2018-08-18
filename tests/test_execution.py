@@ -153,7 +153,8 @@ class ExecutionClientTests(unittest.TestCase):
             'S1_E',
             OrderSide.BUY,
             100000,
-            Decimal('1.00000'),
+            1.00000,
+            5,
             TimeInForce.DAY)
 
         # Act
@@ -240,7 +241,8 @@ class LiveExecClientTests(unittest.TestCase):
             'S1_E',
             OrderSide.BUY,
             100000,
-            Decimal('1.00000'),
+            1.00000,
+            5,
             TimeInForce.DAY)
 
         # Act

@@ -14,7 +14,6 @@ import pytz
 
 from decimal import Decimal
 
-
 from inv_trader.model.enums import Venue, Resolution, QuoteType, OrderSide, OrderType, OrderStatus
 from inv_trader.model.enums import MarketPosition
 from inv_trader.model.objects import Symbol, BarType, Bar
@@ -390,7 +389,8 @@ class TradeStrategyTests(unittest.TestCase):
             'SCALPER-01',
             OrderSide.BUY,
             100000,
-            Decimal('1.00000'))
+            1.00000,
+            5)
 
         strategy.submit_order(order)
 

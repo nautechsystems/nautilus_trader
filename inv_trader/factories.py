@@ -9,8 +9,8 @@
 
 import pytz
 
-from datetime import datetime
 from decimal import Decimal
+from datetime import datetime
 from typing import List, Dict, Optional
 
 from inv_trader.core.checks import typechecking
@@ -19,6 +19,7 @@ from inv_trader.model.objects import Symbol
 from inv_trader.model.order import Order
 
 # Constants
+SEPARATOR = '-'
 MILLISECONDS_PER_SECOND = 1000
 OrderId = str
 
@@ -65,7 +66,8 @@ class OrderFactory:
             label: str,
             order_side: OrderSide,
             quantity: int,
-            price: Decimal,
+            price: float or Decimal,
+            decimals: int or None=None,
             time_in_force: Optional[TimeInForce]=None,
             expire_time: Optional[datetime]=None) -> Order:
         """
@@ -78,6 +80,7 @@ class OrderFactory:
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
         :param price: The orders price (> 0).
+        :param decimals: The decimal precision of the price (>= 0).
         :param time_in_force: The orders time in force (optional can be None).
         :param expire_time: The orders expire time (optional can be None unless GTD).
         :return: The limit order.
@@ -90,6 +93,7 @@ class OrderFactory:
                      quantity,
                      datetime.utcnow(),
                      price,
+                     decimals,
                      time_in_force,
                      expire_time)
 
@@ -101,7 +105,8 @@ class OrderFactory:
             label: str,
             order_side: OrderSide,
             quantity: int,
-            price: Decimal,
+            price: float or Decimal,
+            decimals: int or None=None,
             time_in_force: Optional[TimeInForce]=None,
             expire_time: Optional[datetime]=None) -> Order:
         """
@@ -114,6 +119,7 @@ class OrderFactory:
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
         :param price: The orders price (> 0).
+        :param decimals: The decimal precision of the price (>= 0).
         :param time_in_force: The orders time in force (optional can be None).
         :param expire_time: The orders expire time (optional can be None unless GTD).
         :return: The stop-market order.
@@ -126,6 +132,7 @@ class OrderFactory:
                      quantity,
                      datetime.utcnow(),
                      price,
+                     decimals,
                      time_in_force,
                      expire_time)
 
@@ -137,7 +144,8 @@ class OrderFactory:
             label: str,
             order_side: OrderSide,
             quantity: int,
-            price: Decimal,
+            price: float or Decimal,
+            decimals: int or None=None,
             time_in_force: Optional[TimeInForce]=None,
             expire_time: Optional[datetime]=None) -> Order:
         """
@@ -150,6 +158,7 @@ class OrderFactory:
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
         :param price: The orders price (> 0).
+        :param decimals: The decimal precision of the price (>= 0).
         :param time_in_force: The orders time in force (optional can be None).
         :param expire_time: The orders expire time (optional can be None unless GTD).
         :return: The stop-limit order.
@@ -162,6 +171,7 @@ class OrderFactory:
                      quantity,
                      datetime.utcnow(),
                      price,
+                     decimals,
                      time_in_force,
                      expire_time)
 
@@ -173,7 +183,8 @@ class OrderFactory:
             label: str,
             order_side: OrderSide,
             quantity: int,
-            price: Decimal,
+            price: float or Decimal,
+            decimals: int or None=None,
             time_in_force: Optional[TimeInForce]=None,
             expire_time: Optional[datetime]=None) -> Order:
         """
@@ -186,6 +197,7 @@ class OrderFactory:
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
         :param price: The orders price (> 0).
+        :param decimals: The decimal precision of the price (>= 0).
         :param time_in_force: The orders time in force (optional can be None).
         :param expire_time: The orders expire time (optional can be None unless GTD).
         :return: The market-if-touched order.
@@ -198,6 +210,7 @@ class OrderFactory:
                      quantity,
                      datetime.utcnow(),
                      price,
+                     decimals,
                      time_in_force,
                      expire_time)
 
@@ -293,9 +306,9 @@ class OrderIdGenerator:
         milliseconds = str(self._milliseconds_since_unix_epoch())
         order_count = str(self._order_symbol_counts[order_symbol])
         order_id = (str(order_symbol)
-                    + '|' + order_count
-                    + '|' + self._order_id_tag
-                    + '|' + milliseconds)
+                    + SEPARATOR + order_count
+                    + SEPARATOR + self._order_id_tag
+                    + SEPARATOR + milliseconds)
 
         if order_id in self._order_ids:
             return self.generate(order_symbol)
