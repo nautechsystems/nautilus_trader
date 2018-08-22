@@ -267,7 +267,7 @@ class Order:
         """
         attrs = vars(self)
         props = ', '.join("%s=%s" % item for item in attrs.items()).replace(', _', ', ')
-        return f"{self.__class__.__name__}({props})"
+        return f"{self.__class__.__name__}({props[1:]})"
 
     def __repr__(self) -> str:
         """
