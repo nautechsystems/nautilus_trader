@@ -37,8 +37,8 @@ class TestStrategy1(TradeStrategy):
         self.ema1 = ExponentialMovingAverage(10)
         self.ema2 = ExponentialMovingAverage(20)
 
-        self.add_indicator(self.gbpusd_1sec_mid, self.ema1, self.ema1.update, 'ema1')
-        self.add_indicator(self.gbpusd_1sec_mid, self.ema2, self.ema2.update, 'ema2')
+        self.register_indicator(self.gbpusd_1sec_mid, self.ema1, self.ema1.update, 'ema1')
+        self.register_indicator(self.gbpusd_1sec_mid, self.ema2, self.ema2.update, 'ema2')
 
     def on_start(self):
         self.object_storer.store('custom start logic')

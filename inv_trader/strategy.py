@@ -358,7 +358,7 @@ class TradeStrategy:
         return self._positions[symbol]
 
     @typechecking  # @ typechecking: indicator checked in preconditions.
-    def add_indicator(
+    def register_indicator(
             self,
             bar_type: BarType,
             indicator: Indicator,

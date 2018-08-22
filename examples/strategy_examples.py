@@ -40,22 +40,36 @@ class EMACross(TradeStrategy):
         """
         Initializes a new instance of the EMACross class.
         """
-        super().__init__(label, order_id_tag='001')
+        super().__init__(label, order_id_tag='001')  # Note you can add a unique order id tag
 
+        # Create the indicators for the strategy
         self.ema1 = ExponentialMovingAverage(fast)
         self.ema2 = ExponentialMovingAverage(slow)
 
-        self.add_indicator(AUDUSD_FXCM_1_SECOND_MID, self.ema1, self.ema1.update, 'ema1')
-        self.add_indicator(AUDUSD_FXCM_1_SECOND_MID, self.ema2, self.ema2.update, 'ema2')
+        # Register the indicators for updating
+        self.register_indicator(AUDUSD_FXCM_1_SECOND_MID, self.ema1, self.ema1.update, 'ema1')
+        self.register_indicator(AUDUSD_FXCM_1_SECOND_MID, self.ema2, self.ema2.update, 'ema2')
 
+        # Users custom order management logic if you like...
         self.entry_orders = {}
         self.stop_loss_orders = {}
 
     def on_start(self):
-        pass
+        """
+        This method is called when self.start() is called, and after internal
+        start logic.
+        """
+        self._log(f"My strategy started at {datetime.utcnow()}.")
 
     def on_tick(self, tick: Tick):
-        pass
+        """
+        This method is called whenever a Tick is received by the strategy, after
+        the Tick has been processed by the base class (update last received Tick
+        for the Symbol).
+        The received Tick object is also passed into the method.
+
+        :param tick: The received tick.
+        """
         for order in self.entry_orders.values():
             if not order.is_complete:
                 # Slide entry price with market
@@ -72,7 +86,14 @@ class EMACross(TradeStrategy):
                     self.modify_order(order, tick.ask + Decimal('0.00020'))
 
     def on_bar(self, bar_type: BarType, bar: Bar):
+        """
+        This method is called whenever the strategy receives a Bar, after the
+        Bar has been processed by the base class (update indicators etc).
+        The received BarType and Bar objects are also passed into the method.
 
+        :param bar_type: The received bar type.
+        :param bar: The received bar.
+        """
         if not self.ema1.initialized and not self.ema2.initialized:
             return
 
@@ -126,10 +147,18 @@ class EMACross(TradeStrategy):
                 self._log(f"Added {entry_order.id} to entry orders.")
 
     def on_event(self, event: Event):
-        pass
+        """
+        This method is called whenever the strategy receives an Event object,
+        after the event has been processed by the base class (updating any objects it needs to).
+        These events could be AccountEvent, OrderEvent.
+
+        :param event: The received event.
+        """
         if isinstance(event, OrderFilled):
-            # SET TRAILING STOP
+            # A real strategy should also cover the OrderPartiallyFilled case...
+
             if event.order_id in self.entry_orders.keys():
+                # SET TRAILING STOP
                 stop_side = self.get_opposite_side(event.order_side)
                 stop_price = event.average_price - Decimal('0.00020') if stop_side is OrderSide.SELL else event.average_price + Decimal('0.00020')
 
@@ -146,6 +175,12 @@ class EMACross(TradeStrategy):
                 self._log(f"Added {stop_order.id} to stop-loss orders.")
 
     def on_stop(self):
+        """
+        This method is called when self.stop() is called, and after internal
+        stopping logic.
+
+        You could put custom code to clean up existing positions and orders here.
+        """
         # Flatten existing positions
         for position in self.positions.values():
             self._log(f"Flattening {position}.")
@@ -166,4 +201,12 @@ class EMACross(TradeStrategy):
             self.cancel_order(order, "STOPPING STRATEGY")
 
     def on_reset(self):
-        pass
+        """
+        This method is called when self.reset() is called, and after internal
+        reset logic such as clearing the internally held bars, ticks and resetting
+        all indicators.
+
+        Put custom code to be run on a strategy reset here.
+        """
+        self.entry_orders = {}
+        self.stop_loss_orders = {}
