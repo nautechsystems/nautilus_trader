@@ -16,7 +16,7 @@ from decimal import Decimal
 from uuid import UUID
 
 from inv_trader.model.enums import Venue, OrderSide, OrderType, TimeInForce
-from inv_trader.model.objects import Symbol
+from inv_trader.model.objects import Symbol, Price
 from inv_trader.model.order import Order
 from inv_trader.factories import OrderFactory
 from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
@@ -133,8 +133,7 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
             'SCALPER01_SL',
             OrderSide.BUY,
             100000,
-            1.00000,
-            5,
+            Price.create(1.00000, 5),
             TimeInForce.DAY)
 
         # Act

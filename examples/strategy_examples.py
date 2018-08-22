@@ -8,7 +8,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import pytz
-import time
 
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -105,8 +104,8 @@ class EMACross(TradeStrategy):
                     OrderSide.BUY,
                     100000,
                     self.ticks[AUDUSD_FXCM].bid - Decimal('0.00010'),
-                    TimeInForce.GTD,
-                    expire_time + timedelta(seconds=10))
+                    time_in_force=TimeInForce.GTD,
+                    expire_time=expire_time + timedelta(seconds=10))
                 self.entry_orders[entry_order.id] = entry_order
                 self.submit_order(entry_order)
                 self._log(f"Added {entry_order.id} to entry orders.")
@@ -120,8 +119,8 @@ class EMACross(TradeStrategy):
                     OrderSide.SELL,
                     100000,
                     self.ticks[AUDUSD_FXCM].ask + Decimal('0.00010'),
-                    TimeInForce.GTD,
-                    expire_time + timedelta(seconds=10))
+                    time_in_force=TimeInForce.GTD,
+                    expire_time=expire_time + timedelta(seconds=10))
                 self.entry_orders[entry_order.id] = entry_order
                 self.submit_order(entry_order)
                 self._log(f"Added {entry_order.id} to entry orders.")
