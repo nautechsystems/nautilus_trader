@@ -14,6 +14,31 @@ from inv_trader.core.checks import typechecking
 from inv_trader.model.enums import Venue, Resolution, QuoteType
 
 
+class Price:
+    """
+    Provides a factory for creating Decimal objects representing price.
+    """
+
+    @staticmethod
+    @typechecking
+    def create(
+            price: float,
+            decimals: int) -> Decimal:
+        """
+        Creates and returns a new price from the given values.
+
+        :param price: The price value.
+        :param decimals: The decimal precision of the price.
+        :return: A Decimal representing the price.
+        """
+        if price <= 0.0:
+            raise ValueError("The price must be > 0.")
+        if decimals < 0:
+            raise ValueError("The decimals must be >= 0.")
+
+        return Decimal(f'{price:.{decimals}f}')
+
+
 class Symbol:
     """
     Represents the symbol for a financial market tradeable instrument.

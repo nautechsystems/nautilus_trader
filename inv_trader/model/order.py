@@ -41,8 +41,7 @@ class Order:
                  order_type: OrderType,
                  quantity: int,
                  timestamp: datetime,
-                 price: Optional[float or Decimal]=None,
-                 decimals: int=None,
+                 price: Optional[Decimal]=None,
                  time_in_force: Optional[TimeInForce]=None,
                  expire_time: Optional[datetime]=None):
         """
@@ -71,19 +70,12 @@ class Order:
         if order_type not in PRICED_ORDER_TYPES:
             if price is not None:
                 raise ValueError(f"{order_type.name} orders cannot have a price.")
-            if decimals is not None:
-                raise ValueError(f"{order_type.name} orders cannot have a decimal precision.")
         # Orders with prices
         if order_type in PRICED_ORDER_TYPES:
             if price is None:
                 raise ValueError("The price cannot be None.")
             if price <= 0.:
                 raise ValueError("The price must be > 0.")
-            if type(price) is not Decimal:
-                if decimals is None:
-                    raise ValueError("The decimals cannot be None.")
-                if decimals < 0:
-                    raise ValueError("The decimals must be >= 0.")
 
         self._symbol = symbol
         self._id = order_id
@@ -92,19 +84,12 @@ class Order:
         self._type = order_type
         self._quantity = quantity
         self._timestamp = timestamp
+        self._price = price                  # Can be None
         self._time_in_force = time_in_force  # Can be None
         self._expire_time = expire_time      # Can be None
-
-        if price is Decimal:
-            self._price = price
-        if price is not None and decimals is not None:
-            self._price = Decimal(f'{price:.{decimals}f}')
-        else:
-            self._price = price  # Can be None
-
         self._filled_quantity = 0
-        self._average_price = Decimal('0')
-        self._slippage = Decimal('0')
+        self._average_price = Decimal('0.0')
+        self._slippage = Decimal('0.0')
         self._status = OrderStatus.INITIALIZED
         self._events = []               # type: List[OrderEvent]
         self._order_ids = [order_id]    # type: List[str]
@@ -217,7 +202,7 @@ class Order:
         return self._expire_time
 
     @property
-    def price(self) -> Optional[Decimal]:
+    def price(self) -> Decimal or None:
         """
         :return: The orders price (optional could be None).
         """

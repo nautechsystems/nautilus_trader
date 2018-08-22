@@ -15,7 +15,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from inv_trader.model.enums import Venue, OrderSide, OrderType, OrderStatus, TimeInForce
-from inv_trader.model.objects import Symbol, Resolution, QuoteType, BarType, Bar
+from inv_trader.model.objects import Price, Symbol, Resolution, QuoteType, BarType, Bar
 from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
 from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
 from inv_trader.model.events import OrderPartiallyFilled, OrderFilled
@@ -153,8 +153,7 @@ class ExecutionClientTests(unittest.TestCase):
             'S1_E',
             OrderSide.BUY,
             100000,
-            1.00000,
-            5,
+            Price.create(1.00000, 5),
             TimeInForce.DAY)
 
         # Act
@@ -241,8 +240,7 @@ class LiveExecClientTests(unittest.TestCase):
             'S1_E',
             OrderSide.BUY,
             100000,
-            1.00000,
-            5,
+            Price.create(1.00000, 5),
             TimeInForce.DAY)
 
         # Act

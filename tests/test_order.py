@@ -13,7 +13,7 @@ import uuid
 from decimal import Decimal
 
 from inv_trader.model.enums import Venue, OrderSide, OrderType, OrderStatus, TimeInForce
-from inv_trader.model.objects import Symbol
+from inv_trader.model.objects import Price, Symbol
 from inv_trader.model.order import Order
 from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
 from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
@@ -55,8 +55,7 @@ class OrderTests(unittest.TestCase):
             OrderType.LIMIT,
             100000,
             UNIX_EPOCH,
-            1.00000,
-            5,
+            price=Price.create(1.00000, 5),
             time_in_force=TimeInForce.GTD,
             expire_time=None)
 
@@ -73,23 +72,7 @@ class OrderTests(unittest.TestCase):
             OrderType.MARKET,
             100000,
             UNIX_EPOCH,
-            price=1.00000)
-
-    def test_market_order_with_decimal_input_raises_exception(self):
-        # Arrange
-        # Act
-        self.assertRaises(
-            ValueError,
-            Order,
-            AUDUSD_FXCM,
-            'AUDUSD-123456-1',
-            'S1_E',
-            OrderSide.BUY,
-            OrderType.MARKET,
-            100000,
-            UNIX_EPOCH,
-            price=None,
-            decimals=5)
+            price=Price.create(1.00000, 5))
 
     def test_stop_order_with_no_price_input_raises_exception(self):
         # Arrange
@@ -118,38 +101,7 @@ class OrderTests(unittest.TestCase):
             OrderType.STOP_MARKET,
             100000,
             UNIX_EPOCH,
-            price=0.)
-
-    def test_stop_order_with_no_decimals_input_raises_exception(self):
-        # Arrange
-        # Act
-        self.assertRaises(
-            ValueError,
-            Order,
-            AUDUSD_FXCM,
-            'AUDUSD-123456-1',
-            'S1_E',
-            OrderSide.BUY,
-            OrderType.STOP_MARKET,
-            100000,
-            UNIX_EPOCH,
-            price=1.00000)
-
-    def test_stop_order_with_negative_decimals_input_raises_exception(self):
-        # Arrange
-        # Act
-        self.assertRaises(
-            ValueError,
-            Order,
-            AUDUSD_FXCM,
-            'AUDUSD-123456-1',
-            'S1_E',
-            OrderSide.BUY,
-            OrderType.STOP_MARKET,
-            100000,
-            UNIX_EPOCH,
-            price=1.00000,
-            decimals=-1)
+            price=None)
 
     def test_limit_order_can_create_expected_decimal_price(self):
         # Arrange
@@ -160,8 +112,7 @@ class OrderTests(unittest.TestCase):
             'S1_E',
             OrderSide.BUY,
             100000,
-            1.,
-            5)
+            Price.create(1.00000, 5))
 
         order2 = OrderFactory.limit(
             AUDUSD_FXCM,
@@ -169,8 +120,7 @@ class OrderTests(unittest.TestCase):
             'S1_E',
             OrderSide.BUY,
             100000,
-            1.00000,
-            5)
+            Price.create(1.00000, 5))
 
         order3 = OrderFactory.limit(
             AUDUSD_FXCM,
@@ -178,8 +128,7 @@ class OrderTests(unittest.TestCase):
             'S1_E',
             OrderSide.BUY,
             100000,
-            1.000001,
-            5)
+            Price.create(1.000001, 5))
 
         order4 = OrderFactory.limit(
             AUDUSD_FXCM,
@@ -187,8 +136,7 @@ class OrderTests(unittest.TestCase):
             'S1_E',
             OrderSide.BUY,
             100000,
-            1.000005,
-            5)
+            Price.create(1.000005, 5))
 
         # Assert
         self.assertEqual(Decimal('1.00000'), order1.price)
@@ -220,8 +168,7 @@ class OrderTests(unittest.TestCase):
             'SCALPER-01',
             OrderSide.BUY,
             100000,
-            1.00000,
-            5)
+            Price.create(1.00000, 5))
 
         # Assert
         self.assertEqual(OrderType.LIMIT, order.type)
@@ -238,8 +185,7 @@ class OrderTests(unittest.TestCase):
             'SCALPER-01',
             OrderSide.BUY,
             100000,
-            1.00000,
-            5,
+            Price.create(1.00000, 5),
             TimeInForce.GTD,
             UNIX_EPOCH)
 
@@ -261,8 +207,7 @@ class OrderTests(unittest.TestCase):
             'SCALPER-01',
             OrderSide.BUY,
             100000,
-            1.00000,
-            5)
+            Price.create(1.00000, 5))
 
         # Assert
         self.assertEqual(OrderType.STOP_MARKET, order.type)
@@ -278,8 +223,7 @@ class OrderTests(unittest.TestCase):
             'SCALPER-01',
             OrderSide.BUY,
             100000,
-            1.00000,
-            5)
+            Price.create(1.00000, 5))
 
         # Assert
         self.assertEqual(OrderType.STOP_LIMIT, order.type)
@@ -295,8 +239,7 @@ class OrderTests(unittest.TestCase):
             'SCALPER-01',
             OrderSide.BUY,
             100000,
-            1.00000,
-            5)
+            Price.create(1.00000, 5))
 
         # Assert
         self.assertEqual(OrderType.MIT, order.type)
@@ -592,8 +535,7 @@ class OrderTests(unittest.TestCase):
             'SCALPER-01',
             OrderSide.BUY,
             100000,
-            1.00000,
-            5)
+            Price.create(1.00000, 5))
 
         event = OrderFilled(
             order.symbol,
@@ -626,8 +568,7 @@ class OrderTests(unittest.TestCase):
             'SCALPER-01',
             OrderSide.BUY,
             100000,
-            1.00000,
-            5)
+            Price.create(1.00000, 5))
 
         event = OrderPartiallyFilled(
             order.symbol,
@@ -661,8 +602,7 @@ class OrderTests(unittest.TestCase):
             'SCALPER-01',
             OrderSide.BUY,
             100000,
-            1.00000,
-            5)
+            Price.create(1.00000, 5))
 
         event = OrderFilled(
             order.symbol,
