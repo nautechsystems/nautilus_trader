@@ -54,6 +54,9 @@ class Symbol:
         :param code: The symbols code.
         :param venue: The symbols venue.
         """
+        if code is "" or code.isspace():
+            raise ValueError("The code cannot be empty or whitespace.")
+
         self._code = code.upper()
         self._venue = venue
 
@@ -124,6 +127,11 @@ class Tick:
         :param: ask: The tick ask price.
         :param: timestamp: The tick timestamp (UTC).
         """
+        if bid <= 0.0:
+            raise ValueError("The bid must be > 0.")
+        if ask <= 0.0:
+            raise ValueError("The ask must be > 0.")
+
         self._symbol = symbol
         self._bid = bid
         self._ask = ask
@@ -205,6 +213,9 @@ class BarType:
         :param resolution: The bar resolution.
         :param quote_type: The bar quote type.
         """
+        if period <= 0:
+            raise ValueError("The period must be > 0.")
+
         self._symbol = symbol
         self._period = period
         self._resolution = resolution

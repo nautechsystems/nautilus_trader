@@ -11,7 +11,8 @@ import unittest
 
 from decimal import Decimal
 
-from inv_trader.model.objects import Price
+from inv_trader.model.enums import Venue
+from inv_trader.model.objects import Price, Symbol
 
 
 class PriceTests(unittest.TestCase):
@@ -39,3 +40,10 @@ class PriceTests(unittest.TestCase):
         self.assertEqual(Decimal('1.00000'), result1)
         self.assertEqual(Decimal('1'), result2)
         self.assertEqual(Decimal('1.00'), result3)
+
+    def test_symbol_with_invalid_strings_raises_exception(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertRaises(ValueError, Symbol, "", Venue.FXCM)
+        self.assertRaises(ValueError, Symbol, " ", Venue.FXCM)
