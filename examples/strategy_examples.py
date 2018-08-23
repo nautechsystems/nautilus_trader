@@ -98,15 +98,15 @@ class EMACross(TradeStrategy):
             return
 
         for order in self.entry_orders.values():
-            print(f"ENTRY ORDER: {order.id} {order.status} {order.is_complete}")
+            # print(f"ENTRY ORDER: {order.id} {order.status} {order.is_complete}")
             if not order.is_complete:
                 # Check if order should be expired
                 if order.expire_time is not None and bar.timestamp >= order.expire_time:
                     self.cancel_order(order)
                     return
 
-        for order in self.stop_loss_orders.values():
-            print(f"STOP-LOSS ORDER: {order.id} {order.status} {order.is_complete}")
+        # for order in self.stop_loss_orders.values():
+        #     print(f"STOP-LOSS ORDER: {order.id} {order.status} {order.is_complete}")
 
         if bar_type == AUDUSD_FXCM_1_SECOND_MID and AUDUSD_FXCM in self.ticks:
             # If any open positions or pending entry orders then return
