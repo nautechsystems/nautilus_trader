@@ -32,7 +32,7 @@ OrderId = str
 
 EXECUTION_COMMANDS = MQProps(
     exchange_name='nautilus.execution.commands',
-    exchange_type='fanout',
+    exchange_type='direct',
     queue_name='inv_trader_commands',
     routing_key='inv_trader_commands')
 
