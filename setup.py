@@ -56,7 +56,7 @@ setup(
               'pytz',
               'msgpack',
               'redis',
-              'pika'],
+              'pyzmq'],
     ext_modules=cythonize(extensions),
     cmdclass={'build_ext': Cython.Build.build_ext},
     options={'build_ext': {'inplace': False, 'force': False}})
