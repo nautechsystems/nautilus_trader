@@ -9,8 +9,10 @@
 
 import datetime
 import uuid
+import zmq
 
 from decimal import Decimal
+from threading import Thread
 from uuid import UUID
 
 from inv_trader.core.checks import typechecking
