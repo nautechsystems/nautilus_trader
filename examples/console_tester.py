@@ -10,11 +10,11 @@
 from inv_trader.data import LiveDataClient
 from inv_trader.execution import LiveExecClient
 from inv_trader.model.enums import Venue, Resolution, QuoteType
-from examples.strategy_examples import EMACross
+from examples.strategy_examples import EMACrossLimitEntry, EMACrossStopEntry
 
 
 if __name__ == "__main__":
-    strategy = EMACross('01', 10, 20)
+    strategy = EMACrossLimitEntry('01', 10, 20)
     data_client = LiveDataClient()
     exec_client = LiveExecClient()
     data_client.register_strategy(strategy)
