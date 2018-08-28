@@ -46,8 +46,8 @@ class RequestWorker(Thread):
 
     def run(self):
         """
-        Overrides the threads run method.
-        Starts the worker and opens a connection (use the start method).
+        Overrides the threads run method (call .start() to run in a separate thread).
+        Starts the worker and opens a connection.
         """
         self._open_connection()
 
@@ -72,14 +72,14 @@ class RequestWorker(Thread):
 
     def _open_connection(self):
         """
-        Open a new connection to the service socket.
+        Open a new connection to the service.
         """
         self._log(f"Connecting to {self._service_address}...")
         self._socket.connect(self._service_address)
 
     def _close_connection(self):
         """
-        Close the connection with the service socket.
+        Close the connection with the service.
         """
         self._log(f"Disconnecting from {self._service_address}...")
         self._socket.disconnect(self._service_address)
@@ -124,8 +124,8 @@ class SubscriberWorker(Thread):
 
     def run(self):
         """
-        Overrides the threads run method.
-        Starts the worker and opens a connection (use the start method).
+        Overrides the threads run method (call .start() to run in a separate thread).
+        Starts the worker and opens a connection.
         """
         self._open_connection()
 
@@ -149,7 +149,7 @@ class SubscriberWorker(Thread):
 
     def _open_connection(self):
         """
-        Open a new connection to the service socket..
+        Open a new connection to the service.
         """
         self._log(f"Connecting to {self._service_address}...")
         self._socket.connect(self._service_address)
@@ -169,7 +169,7 @@ class SubscriberWorker(Thread):
 
     def _close_connection(self):
         """
-        Close the connection with the service socket.
+        Close the connection with the service.
         """
         self._log(f"Disconnecting from {self._service_address}...")
         self._socket.disconnect(self._service_address)
