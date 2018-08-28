@@ -197,7 +197,7 @@ class LiveExecClient(ExecutionClient):
             host_address,
             events_port,
             "nautilus_execution_events",
-            self._on_event)
+            self._event_handler)
 
         self._log(f"ZMQ v{zmq.pyzmq_version()}")
 

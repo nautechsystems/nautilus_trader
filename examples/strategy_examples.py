@@ -73,17 +73,17 @@ class EMACross(TradeStrategy):
         for order in self.entry_orders.values():
             if not order.is_complete:
                 # Slide entry price with market
-                if order.side == OrderSide.BUY and tick.ask - Decimal('0.00010') > order.price:
-                    self.modify_order(order, tick.ask - Decimal('0.00010'))
-                elif order.side == OrderSide.SELL and tick.bid + Decimal('0.00010') < order.price:
-                    self.modify_order(order, tick.bid + Decimal('0.00010'))
+                if order.side == OrderSide.BUY and tick.ask - Decimal('0.00002') > order.price:
+                    self.modify_order(order, tick.ask - Decimal('0.00002'))
+                elif order.side == OrderSide.SELL and tick.bid + Decimal('0.00002') < order.price:
+                    self.modify_order(order, tick.bid + Decimal('0.00002'))
 
         for order in self.stop_loss_orders.values():
             if not order.is_complete:
-                if order.side == OrderSide.SELL and tick.bid - Decimal('0.00020') > order.price:
-                    self.modify_order(order, tick.bid - Decimal('0.00020'))
-                elif order.side == OrderSide.BUY and tick.ask + Decimal('0.00020') < order.price:
-                    self.modify_order(order, tick.ask + Decimal('0.00020'))
+                if order.side == OrderSide.SELL and tick.bid - Decimal('0.00010') > order.price:
+                    self.modify_order(order, tick.bid - Decimal('0.00010'))
+                elif order.side == OrderSide.BUY and tick.ask + Decimal('0.00010') < order.price:
+                    self.modify_order(order, tick.ask + Decimal('0.00010'))
 
     def on_bar(self, bar_type: BarType, bar: Bar):
         """
@@ -100,7 +100,8 @@ class EMACross(TradeStrategy):
         for order in self.entry_orders.values():
             if not order.is_complete:
                 # Check if order should be expired
-                if bar.timestamp >= order.timestamp + timedelta(seconds=10):
+                # Check if order should be expired
+                if order.expire_time is not None and bar.timestamp >= order.expire_time:
                     self.cancel_order(order)
                     return
 
@@ -111,6 +112,8 @@ class EMACross(TradeStrategy):
             if any(order.is_complete is False for order in self.entry_orders.values()):
                 return
 
+            expire_time = datetime.now(pytz.utc)
+
             # BUY LOGIC
             if self.ema1.value >= self.ema2.value:
                 entry_order = OrderFactory.limit(
@@ -119,7 +122,9 @@ class EMACross(TradeStrategy):
                     'S1_E',
                     OrderSide.BUY,
                     100000,
-                    self.ticks[AUDUSD_FXCM].bid - Decimal('0.00010'))
+                    self.ticks[AUDUSD_FXCM].ask + Decimal('0.00005'),
+                    time_in_force=TimeInForce.GTD,
+                    expire_time=expire_time + timedelta(seconds=10))
                 self.entry_orders[entry_order.id] = entry_order
                 self.submit_order(entry_order)
                 self._log(f"Added {entry_order.id} to entry orders.")
@@ -132,7 +137,9 @@ class EMACross(TradeStrategy):
                     'S1_E',
                     OrderSide.SELL,
                     100000,
-                    self.ticks[AUDUSD_FXCM].ask + Decimal('0.00010'))
+                    self.ticks[AUDUSD_FXCM].bid + Decimal('0.00005'),
+                    time_in_force=TimeInForce.GTD,
+                    expire_time=expire_time + timedelta(seconds=10))
                 self.entry_orders[entry_order.id] = entry_order
                 self.submit_order(entry_order)
                 self._log(f"Added {entry_order.id} to entry orders.")
@@ -151,9 +158,9 @@ class EMACross(TradeStrategy):
             if event.order_id in self.entry_orders.keys():
                 # SET TRAILING STOP
                 stop_side = self.get_opposite_side(event.order_side)
-                stop_price = event.average_price - Decimal('0.00020') \
+                stop_price = event.average_price - Decimal('0.00010') \
                     if stop_side is OrderSide.SELL \
-                    else event.average_price + Decimal('0.00020')
+                    else event.average_price + Decimal('0.00010')
 
                 stop_order = OrderFactory.stop_market(
                     AUDUSD_FXCM,
