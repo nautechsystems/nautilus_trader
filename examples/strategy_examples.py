@@ -160,7 +160,9 @@ class EMACross(TradeStrategy):
             if event.order_id in self.entry_orders.keys():
                 # SET TRAILING STOP
                 stop_side = self.get_opposite_side(event.order_side)
-                stop_price = event.average_price - Decimal('0.00020') if stop_side is OrderSide.SELL else event.average_price + Decimal('0.00020')
+                stop_price = event.average_price - Decimal('0.00020') \
+                    if stop_side is OrderSide.SELL \
+                    else event.average_price + Decimal('0.00020')
 
                 stop_order = OrderFactory.stop_market(
                     AUDUSD_FXCM,
