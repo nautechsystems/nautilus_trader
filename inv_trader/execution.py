@@ -192,6 +192,8 @@ class LiveExecClient(ExecutionClient):
             self._command_ack_handler)
         self._order_events_worker = "MQWorker[2]" #Subscription worker
 
+        self._log(f"ZMQ v{zmq.pyzmq_version()}")
+
     def connect(self):
         """
         Connect to the execution service.

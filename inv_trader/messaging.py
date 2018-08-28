@@ -38,7 +38,7 @@ class RequestWorker(Thread):
         self._context = context
         self._service_address = f'tcp://{host}:{port}'
         self._handler = handler
-        self._socket = self._context.socket(zmq.REQ)
+        self._socket = self._context.socket(zmq.DLR)
         self._cycles = 0
 
     def run(self):
