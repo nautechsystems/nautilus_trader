@@ -14,7 +14,7 @@ from decimal import Decimal
 
 from inv_trader.model.enums import Resolution, QuoteType, OrderSide, TimeInForce, Venue
 from inv_trader.model.objects import Symbol, Tick, BarType, Bar
-from inv_trader.model.events import Event, OrderFilled, OrderPartiallyFilled, OrderModified
+from inv_trader.model.events import Event, OrderRejected, OrderFilled, OrderPartiallyFilled, OrderModified
 from inv_trader.factories import OrderFactory
 from inv_trader.strategy import TradeStrategy
 from inv_indicators.average.ema import ExponentialMovingAverage
@@ -73,10 +73,10 @@ class EMACross(TradeStrategy):
         for order in self.entry_orders.values():
             if not order.is_complete:
                 # Slide entry price with market
-                if order.side == OrderSide.BUY and tick.ask - Decimal('0.00002') > order.price:
-                    self.modify_order(order, tick.ask - Decimal('0.00002'))
-                elif order.side == OrderSide.SELL and tick.bid + Decimal('0.00002') < order.price:
-                    self.modify_order(order, tick.bid + Decimal('0.00002'))
+                if order.side == OrderSide.BUY and tick.ask - Decimal('0.00003') > order.price:
+                    self.modify_order(order, tick.ask - Decimal('0.00003'))
+                elif order.side == OrderSide.SELL and tick.bid + Decimal('0.00003') < order.price:
+                    self.modify_order(order, tick.bid + Decimal('0.00003'))
 
         for order in self.stop_loss_orders.values():
             if not order.is_complete:
@@ -97,9 +97,21 @@ class EMACross(TradeStrategy):
         if not self.ema1.initialized and not self.ema2.initialized:
             return
 
+        for order in self.stop_loss_orders.values():
+            if len(self.bars(AUDUSD_FXCM_1_SECOND_MID)) > 20 and not order.is_complete:
+                bars = self.bars(AUDUSD_FXCM_1_SECOND_MID)[-20:]
+                # Trail stop to last minute
+                if order.side is OrderSide.BUY:
+                    min_low = min(bar.low for bar in bars)
+                    if order.price < min_low - Decimal('0.00003'):
+                        self.modify_order(order, min_low - Decimal('0.00003'))
+                elif order.side is OrderSide.SELL:
+                    max_high = max(bar.high for bar in bars)
+                    if order.price > max_high + Decimal('0.00003'):
+                        self.modify_order(order, max_high + Decimal('0.00003'))
+
         for order in self.entry_orders.values():
             if not order.is_complete:
-                # Check if order should be expired
                 # Check if order should be expired
                 if order.expire_time is not None and bar.timestamp >= order.expire_time:
                     self.cancel_order(order)
@@ -122,7 +134,7 @@ class EMACross(TradeStrategy):
                     'S1_E',
                     OrderSide.BUY,
                     100000,
-                    self.ticks[AUDUSD_FXCM].ask + Decimal('0.00005'),
+                    self.ticks[AUDUSD_FXCM].ask - Decimal('0.00005'),
                     time_in_force=TimeInForce.GTD,
                     expire_time=expire_time + timedelta(seconds=10))
                 self.entry_orders[entry_order.id] = entry_order
