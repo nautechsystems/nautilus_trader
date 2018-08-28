@@ -78,7 +78,7 @@ class MQWorker(Thread):
         Close the connection and stop the worker.
         """
         self._close_connection()
-        self._log(f"Stopped")
+        self._log(f"Stopped.")
 
     @abc.abstractmethod
     def _open_connection(self):
@@ -187,16 +187,21 @@ class SubscriberWorker(MQWorker):
         """
         self._log(f"Connecting to {self._service_address}...")
         self._socket.connect(self._service_address)
-        self._socket.setsockopt(zmq.SUBSCRIBE, self._topic)
+        self._socket.setsockopt(zmq.SUBSCRIBE, self._topic.encode(UTF8))
         self._consume_messages()
+        self._log(f"Subscribed to {self._topic}.")
 
     def _consume_messages(self):
         """
         Start the consumption loop to receive published messages.
         """
+        self._log("Ready to consume messages...")
+
         while True:
             message = self._socket.recv()
-            topic, data = message.split()
+
+            # Split on first occurrence of empty byte delimiter
+            topic, data = message.split(b' ', 1)
             self._handler(data)
             self._cycles += 1
             self._log(f"Received message[{self._cycles}] from {topic}")
