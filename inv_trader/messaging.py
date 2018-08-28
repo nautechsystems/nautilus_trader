@@ -46,7 +46,8 @@ class RequestWorker(Thread):
 
     def run(self):
         """
-        Starts the worker and opens a connection.
+        Overrides the threads run method.
+        Starts the worker and opens a connection (use the start method).
         """
         self._open_connection()
 
@@ -123,7 +124,8 @@ class SubscriberWorker(Thread):
 
     def run(self):
         """
-        Starts the worker and opens a connection.
+        Overrides the threads run method.
+        Starts the worker and opens a connection (use the start method).
         """
         self._open_connection()
 
