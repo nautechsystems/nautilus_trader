@@ -13,7 +13,9 @@ import zmq
 
 from decimal import Decimal
 from threading import Thread
+from typing import Callable
 from uuid import UUID
+from zmq import Context
 
 from inv_trader.core.checks import typechecking
 from inv_trader.model.enums import Venue, Resolution, QuoteType, OrderSide, OrderType, OrderStatus
@@ -27,6 +29,88 @@ from inv_trader.strategy import TradeStrategy
 
 StrategyId = str
 OrderId = str
+
+
+class MockServer(Thread):
+    @typechecking
+    def __init__(
+            self,
+            context: Context,
+            port: int,
+            handler: Callable):
+        """
+        Initializes a new instance of the MockServer class.
+
+        :param context: The ZeroMQ context.
+        :param host: The service host address.
+        :param port: The service port.
+        :param handler: The response handler.
+        """
+        super().__init__()
+        self._context = context
+        self._service_address = f'tcp://127.0.0.1:{port}'
+        self._handler = handler
+        self._socket = self._context.socket(zmq.REP)
+        self._cycles = 0
+
+    def run(self):
+        """
+        Starts the worker and opens a connection.
+        """
+        self._open_connection()
+
+    def send(self, message: bytes):
+        """
+        Send the message to the service socket.
+
+        :param message: The message bytes to send.
+        """
+        self._socket.send(message)
+        self._cycles += 1
+        self._log(f"Sending message[{self._cycles}] {message}")
+
+        response = self._socket.recv()
+        self._log(f"Received {response}")
+
+    def stop(self):
+        """
+        Close the connection and stop the worker.
+        """
+        self._close_connection()
+
+    def _open_connection(self):
+        """
+        Open a new connection to the service socket..
+        """
+        self._log(f"Connecting to {self._service_address}...")
+        self._socket.bind(self._service_address)
+        # self._consume_messages()
+
+    def _consume_messages(self):
+        """
+        Start the consumption loop to receive published messages.
+        """
+        while True:
+            message = self._socket.recv()
+            self._handler(message)
+            self._log(f"Received message[{self._cycles}] from {message}")
+            self._socket.send("OK")
+
+    def _close_connection(self):
+        """
+        Close the connection with the service socket.
+        """
+        self._log(f"Disconnecting from {self._service_address}...")
+        self._socket.disconnect(self._service_address)
+
+    @typechecking
+    def _log(self, message: str):
+        """
+        Log the given message (if no logger then prints).
+
+        :param message: The message to log.
+        """
+        print(f"{MockServer}: {message}")
 
 
 class MockExecClient(ExecutionClient):

@@ -10,18 +10,18 @@
 
 import abc
 import uuid
+import zmq
 
 from datetime import datetime
 from decimal import Decimal
 from typing import Dict, Callable
-from pika import PlainCredentials, ConnectionParameters
 from uuid import UUID
 
 from inv_trader.core.checks import typechecking
 from inv_trader.model.order import Order
 from inv_trader.model.commands import SubmitOrder, CancelOrder, ModifyOrder
 from inv_trader.model.events import Event, OrderEvent, AccountEvent, OrderCancelReject
-from inv_trader.messaging import MQProps, MQWorker
+from inv_trader.messaging import RequestWorker
 from inv_trader.strategy import TradeStrategy
 from inv_trader.serialization import MsgPackCommandSerializer
 from inv_trader.serialization import MsgPackEventSerializer
@@ -29,18 +29,6 @@ from inv_trader.serialization import MsgPackEventSerializer
 # Constants
 UTF8 = 'utf-8'
 OrderId = str
-
-EXECUTION_COMMANDS = MQProps(
-    exchange_name='nautilus.execution.commands',
-    exchange_type='direct',
-    queue_name='inv_trader_commands',
-    routing_key='inv_trader_commands')
-
-EXECUTION_EVENTS = MQProps(
-    exchange_name='nautilus.execution.events',
-    exchange_type='fanout',
-    queue_name='inv_trader_events',
-    routing_key='inv_trader_events')
 
 
 class ExecutionClient:
@@ -182,37 +170,27 @@ class LiveExecClient(ExecutionClient):
     @typechecking
     def __init__(
             self,
-            host: str= 'localhost',
-            port: int=5672,
-            username: str='guest',
-            password: str='guest'):
+            host_address: str='localhost',
+            commands_port: int=5555,
+            events_port: int=5556):
         """
         Initializes a new instance of the LiveExecClient class.
         The host and port parameters are for the order event subscription
         channel.
 
-        :param host: The execution service host IP address (default=127.0.0.1).
-        :param port: The execution service host port (default=5672).
-        :param username: The AMQP message broker authentication username.
-        :param password: The AMQP message broker authentication password.
+        :param host_address: The execution service host IP address (default=127.0.0.1).
+        :param commands_port: The execution service commands port.
+        :param events_port: The execution service events port.
         """
         super().__init__()
-        self._connection_params = ConnectionParameters(
-            host=host,
-            port=port,
-            credentials=PlainCredentials(username, password))
-
-        self._order_events_worker = MQWorker(
-            self._connection_params,
-            EXECUTION_EVENTS,
-            self._event_handler,
-            'MQWorker[01]')
-
-        self._order_commands_worker = MQWorker(
-            self._connection_params,
-            EXECUTION_COMMANDS,
-            self._command_ack_handler,
-            'MQWorker[02]')
+        self._context = zmq.Context()
+        self._order_commands_worker = RequestWorker(
+            'MQWorker[1]',
+            self._context,
+            host_address,
+            commands_port,
+            self._command_ack_handler)
+        self._order_events_worker = "MQWorker[2]" #Subscription worker
 
     def connect(self):
         """
