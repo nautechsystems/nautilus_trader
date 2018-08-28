@@ -23,81 +23,61 @@ class RequestWorkerTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
+        self.context = zmq.Context()
+        self.response_list = []
+        self.response_handler = self.response_list.append
+
+        self.worker = RequestWorker(
+            "TestRequester",
+            self.context,
+            LOCAL_HOST,
+            TEST_PORT,
+            self.response_handler)
 
         print("\n")
 
-    def test_can_connect_to_socket(self):
-        # Arrange
-        context = zmq.Context()
-        response_list = []
-        response_handler = response_list.append
-
-        worker = RequestWorker(
-            "TestRequester",
-            context,
-            LOCAL_HOST,
-            TEST_PORT,
-            response_handler)
-
-        # Act
-        # Assert (no exception raised)
-        worker.run()
-
+    def tearDown(self):
         # Tear Down
-        worker.stop()
+        self.worker.stop()
 
     def test_can_send_one_message_and_receive_response(self):
         # Arrange
-        context = zmq.Context()
-        response_list = []
-        response_handler = response_list.append
-
-        server = MockServer(context, TEST_PORT, response_handler)
+        server = MockServer(
+            self.context,
+            TEST_PORT,
+            self.response_handler)
         server.start()
 
-        worker = RequestWorker(
-            "TestRequester",
-            context,
-            LOCAL_HOST,
-            TEST_PORT,
-            response_handler)
-
         # Act
-        worker.start()
-        worker.send(b'hello')
+        self.worker.start()
+        self.worker.send(b'hello')
+
+        # Assert
+        self.assertEqual(b'hello', self.response_list[0])
 
         # Tear Down
-        worker.stop()
         server.stop()
-
-        self.assertEqual(b'hello', response_list[0])
 
     def test_can_send_multiple_messages_and_receive_correctly_ordered_responses(self):
         # Arrange
-        context = zmq.Context()
-        response_list = []
-        response_handler = response_list.append
-
-        server = MockServer(context, TEST_PORT, response_handler)
+        server = MockServer(
+            self.context,
+            TEST_PORT,
+            self.response_handler)
         server.start()
 
-        worker = RequestWorker(
-            "TestRequester",
-            context,
-            LOCAL_HOST,
-            TEST_PORT,
-            response_handler)
-
         # Act
-        worker.start()
-        worker.send(b'hello1')
-        worker.send(b'hello2')
-        worker.send(b'hello3')
+        self.worker.start()
+        self.worker.send(b'hello1')
+        self.worker.send(b'hello2')
+        self.worker.send(b'hello3')
+
+        # Assert
+        self.assertEqual(b'hello1', self.response_list[0])
+        self.assertEqual(b'hello2', self.response_list[1])
+        self.assertEqual(b'hello3', self.response_list[2])
 
         # Tear Down
-        worker.stop()
         server.stop()
 
-        self.assertEqual(b'hello1', response_list[0])
-        self.assertEqual(b'hello2', response_list[1])
-        self.assertEqual(b'hello3', response_list[2])
+
