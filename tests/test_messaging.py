@@ -47,7 +47,7 @@ class RequestWorkerTests(unittest.TestCase):
         # Tear Down
         worker.stop()
 
-    def test_can_send_bytes(self):
+    def test_can_send_one_message_and_receive_response(self):
         # Arrange
         context = zmq.Context()
         response_list = []
@@ -65,11 +65,40 @@ class RequestWorkerTests(unittest.TestCase):
 
         # Act
         worker.start()
-        worker.send("hello1".encode(UTF8))
-        worker.send("hello2".encode(UTF8))
+        worker.send(b'hello')
 
         # Tear Down
         worker.stop()
         server.stop()
 
-        self.assertTrue(True)
+        self.assertEqual(b'hello', response_list[0])
+
+    def test_can_send_multiple_messages_and_receive_correctly_ordered_responses(self):
+        # Arrange
+        context = zmq.Context()
+        response_list = []
+        response_handler = response_list.append
+
+        server = MockServer(context, TEST_PORT, response_handler)
+        server.start()
+
+        worker = RequestWorker(
+            "TestRequester",
+            context,
+            LOCAL_HOST,
+            TEST_PORT,
+            response_handler)
+
+        # Act
+        worker.start()
+        worker.send(b'hello1')
+        worker.send(b'hello2')
+        worker.send(b'hello3')
+
+        # Tear Down
+        worker.stop()
+        server.stop()
+
+        self.assertEqual(b'hello1', response_list[0])
+        self.assertEqual(b'hello2', response_list[1])
+        self.assertEqual(b'hello3', response_list[2])
