@@ -27,6 +27,7 @@ from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected
 from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
 from inv_trader.strategy import TradeStrategy
 
+UTF8 = 'utf-8'
 StrategyId = str
 OrderId = str
 
@@ -42,11 +43,11 @@ class MockServer(Thread):
         Initializes a new instance of the MockServer class.
 
         :param context: The ZeroMQ context.
-        :param host: The service host address.
         :param port: The service port.
         :param handler: The response handler.
         """
         super().__init__()
+        self.daemon = True
         self._context = context
         self._service_address = f'tcp://127.0.0.1:{port}'
         self._handler = handler
@@ -84,17 +85,20 @@ class MockServer(Thread):
         """
         self._log(f"Connecting to {self._service_address}...")
         self._socket.bind(self._service_address)
-        # self._consume_messages()
+        self._consume_messages()
 
     def _consume_messages(self):
         """
         Start the consumption loop to receive published messages.
         """
+        self._log("Ready to consume...")
+
         while True:
             message = self._socket.recv()
             self._handler(message)
-            self._log(f"Received message[{self._cycles}] from {message}")
-            self._socket.send("OK")
+            self._cycles += 1
+            self._log(f"Received message[{self._cycles}] {message}")
+            self._socket.send("OK".encode(UTF8))
 
     def _close_connection(self):
         """
@@ -110,7 +114,7 @@ class MockServer(Thread):
 
         :param message: The message to log.
         """
-        print(f"{MockServer}: {message}")
+        print(f"MockServer: {message}")
 
 
 class MockExecClient(ExecutionClient):
