@@ -8,7 +8,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import unittest
-import time
 import zmq
 
 from inv_trader.messaging import RequestWorker
