@@ -98,15 +98,11 @@ class EMACross(TradeStrategy):
             return
 
         for order in self.entry_orders.values():
-            # print(f"ENTRY ORDER: {order.id} {order.status} {order.is_complete}")
             if not order.is_complete:
                 # Check if order should be expired
-                if order.expire_time is not None and bar.timestamp >= order.expire_time:
+                if bar.timestamp >= order.timestamp + timedelta(seconds=10):
                     self.cancel_order(order)
                     return
-
-        # for order in self.stop_loss_orders.values():
-        #     print(f"STOP-LOSS ORDER: {order.id} {order.status} {order.is_complete}")
 
         if bar_type == AUDUSD_FXCM_1_SECOND_MID and AUDUSD_FXCM in self.ticks:
             # If any open positions or pending entry orders then return
@@ -115,7 +111,6 @@ class EMACross(TradeStrategy):
             if any(order.is_complete is False for order in self.entry_orders.values()):
                 return
 
-            expire_time = datetime.now(pytz.utc)
             # BUY LOGIC
             if self.ema1.value >= self.ema2.value:
                 entry_order = OrderFactory.limit(
@@ -124,9 +119,7 @@ class EMACross(TradeStrategy):
                     'S1_E',
                     OrderSide.BUY,
                     100000,
-                    self.ticks[AUDUSD_FXCM].bid - Decimal('0.00010'),
-                    time_in_force=TimeInForce.GTD,
-                    expire_time=expire_time + timedelta(seconds=10))
+                    self.ticks[AUDUSD_FXCM].bid - Decimal('0.00010'))
                 self.entry_orders[entry_order.id] = entry_order
                 self.submit_order(entry_order)
                 self._log(f"Added {entry_order.id} to entry orders.")
@@ -139,9 +132,7 @@ class EMACross(TradeStrategy):
                     'S1_E',
                     OrderSide.SELL,
                     100000,
-                    self.ticks[AUDUSD_FXCM].ask + Decimal('0.00010'),
-                    time_in_force=TimeInForce.GTD,
-                    expire_time=expire_time + timedelta(seconds=10))
+                    self.ticks[AUDUSD_FXCM].ask + Decimal('0.00010'))
                 self.entry_orders[entry_order.id] = entry_order
                 self.submit_order(entry_order)
                 self._log(f"Added {entry_order.id} to entry orders.")
