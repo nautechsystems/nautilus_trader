@@ -21,7 +21,7 @@ from inv_trader.core.checks import typechecking
 from inv_trader.model.order import Order
 from inv_trader.model.commands import SubmitOrder, CancelOrder, ModifyOrder
 from inv_trader.model.events import Event, OrderEvent, AccountEvent, OrderCancelReject
-from inv_trader.messaging import RequestWorker
+from inv_trader.messaging import RequestWorker, SubscriberWorker
 from inv_trader.strategy import TradeStrategy
 from inv_trader.serialization import MsgPackCommandSerializer
 from inv_trader.serialization import MsgPackEventSerializer
@@ -185,12 +185,19 @@ class LiveExecClient(ExecutionClient):
         super().__init__()
         self._context = zmq.Context()
         self._order_commands_worker = RequestWorker(
-            'MQWorker[1]',
+            'CommandSender',
             self._context,
             host_address,
             commands_port,
             self._command_ack_handler)
-        self._order_events_worker = "MQWorker[2]" #Subscription worker
+
+        self._order_events_worker = SubscriberWorker(
+            "EventSubscriber",
+            self._context,
+            host_address,
+            events_port,
+            "nautilus_execution_events",
+            self._on_event)
 
         self._log(f"ZMQ v{zmq.pyzmq_version()}")
 
