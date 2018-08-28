@@ -61,7 +61,7 @@ class RequestWorker(Thread):
         self._log(f"Sending message[{self._cycles}] {message}")
 
         response = self._socket.recv()
-        self._log(f"Received {response.decode(UTF8)}")
+        self._log(f"Received {response.decode(UTF8)}[{self._cycles}] response.")
 
     def stop(self):
         """
@@ -137,7 +137,7 @@ class SubscriberWorker(Thread):
         self._log(f"Sending {message}")
 
         response = self._socket.recv()
-        self._log(f"Received {response} response.")
+        self._log(f"Received {response.decode(UTF8)}[{self._cycles}] response.")
 
     def stop(self):
         """
