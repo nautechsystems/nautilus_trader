@@ -15,6 +15,8 @@ from zmq import Context
 
 from inv_trader.core.checks import typechecking
 
+UTF8 = 'utf-8'
+
 
 class RequestWorker(Thread):
     @typechecking
@@ -34,11 +36,12 @@ class RequestWorker(Thread):
         :param handler: The response handler.
         """
         super().__init__()
+        self.daemon = True
         self._name = name
         self._context = context
         self._service_address = f'tcp://{host}:{port}'
         self._handler = handler
-        self._socket = self._context.socket(zmq.DLR)
+        self._socket = self._context.socket(zmq.REQ)
         self._cycles = 0
 
     def run(self):
@@ -58,7 +61,7 @@ class RequestWorker(Thread):
         self._log(f"Sending message[{self._cycles}] {message}")
 
         response = self._socket.recv()
-        self._log(f"Received {response}")
+        self._log(f"Received {response.decode(UTF8)}")
 
     def stop(self):
         """
@@ -68,7 +71,7 @@ class RequestWorker(Thread):
 
     def _open_connection(self):
         """
-        Open a new connection to the service socket..
+        Open a new connection to the service socket.
         """
         self._log(f"Connecting to {self._service_address}...")
         self._socket.connect(self._service_address)
@@ -122,7 +125,6 @@ class SubscriberWorker(Thread):
         """
         Starts the worker and opens a connection.
         """
-        self.start()
         self._open_connection()
 
     def send(self, message: bytes):
@@ -135,7 +137,7 @@ class SubscriberWorker(Thread):
         self._log(f"Sending {message}")
 
         response = self._socket.recv()
-        self._log(f"Received {response}")
+        self._log(f"Received {response} response.")
 
     def stop(self):
         """

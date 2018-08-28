@@ -22,6 +22,11 @@ TEST_ADDRESS = f"tcp://{LOCAL_HOST}:{TEST_PORT}"
 
 class RequestWorkerTests(unittest.TestCase):
 
+    def setUp(self):
+        # Fixture Setup
+
+        print("\n")
+
     def test_can_connect_to_socket(self):
         # Arrange
         context = zmq.Context()
@@ -49,26 +54,22 @@ class RequestWorkerTests(unittest.TestCase):
         response_handler = response_list.append
 
         server = MockServer(context, TEST_PORT, response_handler)
-        server.run()
+        server.start()
 
-        # socket = context.socket(zmq.REQ)
-        # socket.connect(TEST_ADDRESS)
-        # socket.send_string("HI")
-        # # message = socket.recv_string()
-        # # print(message)
-        # worker = RequestWorker(
-        #     "TestRequester",
-        #     context,
-        #     LOCAL_HOST,
-        #     TEST_PORT,
-        #     response_handler)
+        worker = RequestWorker(
+            "TestRequester",
+            context,
+            LOCAL_HOST,
+            TEST_PORT,
+            response_handler)
 
         # Act
-        # worker.run()
-        # worker.send("hello".encode(UTF8))
-        #
-        # # Tear Down
-        # worker.stop()
+        worker.start()
+        worker.send("hello1".encode(UTF8))
+        worker.send("hello2".encode(UTF8))
+
+        # Tear Down
+        worker.stop()
         server.stop()
 
         self.assertTrue(True)
