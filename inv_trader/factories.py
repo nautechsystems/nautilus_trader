@@ -55,7 +55,7 @@ class OrderFactory:
                      order_side,
                      OrderType.MARKET,
                      quantity,
-                     datetime.utcnow(),
+                     datetime.now(tz=pytz.UTC),
                      price=None,
                      time_in_force=None,
                      expire_time=None)
@@ -91,7 +91,7 @@ class OrderFactory:
                      order_side,
                      OrderType.LIMIT,
                      quantity,
-                     datetime.utcnow(),
+                     datetime.now(tz=pytz.UTC),
                      price,
                      time_in_force,
                      expire_time)
@@ -127,7 +127,7 @@ class OrderFactory:
                      order_side,
                      OrderType.STOP_MARKET,
                      quantity,
-                     datetime.utcnow(),
+                     datetime.now(tz=pytz.UTC),
                      price,
                      time_in_force,
                      expire_time)
@@ -163,7 +163,7 @@ class OrderFactory:
                      order_side,
                      OrderType.STOP_LIMIT,
                      quantity,
-                     datetime.utcnow(),
+                     datetime.now(tz=pytz.UTC),
                      price,
                      time_in_force,
                      expire_time)
@@ -199,7 +199,7 @@ class OrderFactory:
                      order_side,
                      OrderType.MIT,
                      quantity,
-                     datetime.utcnow(),
+                     datetime.now(tz=pytz.UTC),
                      price,
                      time_in_force,
                      expire_time)
@@ -228,7 +228,7 @@ class OrderFactory:
                      order_side,
                      OrderType.MARKET,
                      quantity,
-                     datetime.utcnow(),
+                     datetime.now(tz=pytz.UTC),
                      price=None,
                      time_in_force=TimeInForce.FOC,
                      expire_time=None)
@@ -257,7 +257,7 @@ class OrderFactory:
                      order_side,
                      OrderType.MARKET,
                      quantity,
-                     datetime.utcnow(),
+                     datetime.now(tz=pytz.UTC),
                      price=None,
                      time_in_force=TimeInForce.IOC,
                      expire_time=None)
@@ -293,7 +293,8 @@ class OrderIdGenerator:
         self._order_symbol_counts[order_symbol] += 1
         milliseconds = str(self._milliseconds_since_unix_epoch())
         order_count = str(self._order_symbol_counts[order_symbol])
-        order_id = (str(order_symbol)
+        order_id = (str(order_symbol.code)
+                    + SEPARATOR + str(order_symbol.venue)
                     + SEPARATOR + order_count
                     + SEPARATOR + self._order_id_tag
                     + SEPARATOR + milliseconds)

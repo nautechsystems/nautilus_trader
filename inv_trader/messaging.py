@@ -199,7 +199,7 @@ class SubscriberWorker(MQWorker):
 
         while True:
             message = self._socket.recv()
-
+            print(f"**************** RECEIVED {message}")
             # Split on first occurrence of empty byte delimiter
             topic, data = message.split(b' ', 1)
             self._handler(data)
