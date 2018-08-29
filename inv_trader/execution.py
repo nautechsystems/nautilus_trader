@@ -170,7 +170,7 @@ class LiveExecClient(ExecutionClient):
     @typechecking
     def __init__(
             self,
-            host_address: str='localhost',
+            host: str='localhost',
             commands_port: int=5555,
             events_port: int=5556):
         """
@@ -178,7 +178,7 @@ class LiveExecClient(ExecutionClient):
         The host and port parameters are for the order event subscription
         channel.
 
-        :param host_address: The execution service host IP address (default=127.0.0.1).
+        :param host: The execution service host IP address (default=127.0.0.1).
         :param commands_port: The execution service commands port.
         :param events_port: The execution service events port.
         """
@@ -187,14 +187,14 @@ class LiveExecClient(ExecutionClient):
         self._order_commands_worker = RequestWorker(
             'CommandSender',
             self._context,
-            host_address,
+            host,
             commands_port,
             self._command_ack_handler)
 
         self._order_events_worker = SubscriberWorker(
             "EventSubscriber",
             self._context,
-            host_address,
+            host,
             events_port,
             "nautilus_execution_events",
             self._event_handler)
