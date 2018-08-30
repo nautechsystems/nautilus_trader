@@ -294,7 +294,7 @@ class OrderIdGenerator:
         milliseconds = str(self._milliseconds_since_unix_epoch())
         order_count = str(self._order_symbol_counts[order_symbol])
         order_id = (str(order_symbol.code)
-                    + SEPARATOR + str(order_symbol.venue)
+                    + SEPARATOR + str(order_symbol.venue.name)
                     + SEPARATOR + order_count
                     + SEPARATOR + self._order_id_tag
                     + SEPARATOR + milliseconds)
