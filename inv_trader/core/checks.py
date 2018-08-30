@@ -203,7 +203,9 @@ def func_beartyped(*args, __beartype_func=__beartype_func, **kwargs):
         return local_attrs['func_beartyped']
 
     _PARAMETER_KIND_IGNORED = {
-        Parameter.POSITIONAL_ONLY, Parameter.VAR_POSITIONAL, Parameter.VAR_KEYWORD,
+        Parameter.POSITIONAL_ONLY,
+        Parameter.VAR_POSITIONAL,
+        Parameter.VAR_KEYWORD,
     }
     '''
     Set of all `inspect.Parameter.kind` constants to be ignored during
@@ -249,7 +251,6 @@ def func_beartyped(*args, __beartype_func=__beartype_func, **kwargs):
             If this annotation is neither a new-style class nor a tuple of
             new-style classes.
         '''
-
         # If this annotation is a tuple, raise an exception if any member of
         # this tuple is not a new-style class. Note that the "__name__"
         # attribute tested below is not defined by old-style classes and hence
