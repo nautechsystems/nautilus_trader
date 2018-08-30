@@ -17,6 +17,7 @@ from zmq import Context
 from inv_trader.core.checks import typechecking
 
 UTF8 = 'utf-8'
+DELIMITER = b' '
 
 
 class MQWorker(Thread):
@@ -163,7 +164,7 @@ class SubscriberWorker(MQWorker):
         :param host: The service host address.
         :param port: The service port.
         :param topic: The topic to subscribe to.
-        :param handler: The response handler.
+        :param handler: The message handler.
         """
         super().__init__(
             name,
@@ -201,7 +202,7 @@ class SubscriberWorker(MQWorker):
             message = self._socket.recv()
 
             # Split on first occurrence of empty byte delimiter
-            topic, data = message.split(b' ', 1)
+            topic, data = message.split(DELIMITER, 1)
             self._handler(data)
             self._cycles += 1
             self._log(f"Received message[{self._cycles}] from {topic.decode(UTF8)}: {data}")
