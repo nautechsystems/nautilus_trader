@@ -97,18 +97,18 @@ class EMACrossLimitEntry(TradeStrategy):
         if not self.ema1.initialized and not self.ema2.initialized:
             return
 
-        for order in self.stop_loss_orders.values():
-            if len(self.bars(AUDUSD_FXCM_1_SECOND_MID)) > 20 and not order.is_complete:
-                bars = self.bars(AUDUSD_FXCM_1_SECOND_MID)[-20:]
-                # Trail stop to last minute
-                if order.side is OrderSide.SELL:
-                    min_low = min(bar.low for bar in bars)
-                    if order.price < min_low - Decimal('0.00003'):
-                        self.modify_order(order, min_low - Decimal('0.00003'))
-                elif order.side is OrderSide.BUY:
-                    max_high = max(bar.high for bar in bars)
-                    if order.price > max_high + Decimal('0.00003'):
-                        self.modify_order(order, max_high + Decimal('0.00003'))
+        # for order in self.stop_loss_orders.values():
+        #     if len(self.bars(AUDUSD_FXCM_1_SECOND_MID)) > 20 and not order.is_complete:
+        #         bars = self.bars(AUDUSD_FXCM_1_SECOND_MID)[-20:]
+        #         # Trail stop to last minute
+        #         if order.side is OrderSide.SELL:
+        #             min_low = min(bar.low for bar in bars)
+        #             if order.price < min_low - Decimal('0.00010'):
+        #                 self.modify_order(order, min_low - Decimal('0.00010'))
+        #         elif order.side is OrderSide.BUY:
+        #             max_high = max(bar.high for bar in bars)
+        #             if order.price > max_high + Decimal('0.00010'):
+        #                 self.modify_order(order, max_high + Decimal('0.00010'))
 
         for order in self.entry_orders.values():
             if not order.is_complete:
@@ -286,12 +286,12 @@ class EMACrossStopEntry(TradeStrategy):
                 # Trail stop to last minute
                 if order.side is OrderSide.SELL:
                     min_low = min(bar.low for bar in bars)
-                    if order.price < min_low - Decimal('0.00003'):
-                        self.modify_order(order, min_low - Decimal('0.00003'))
+                    if order.price < min_low - Decimal('0.00010'):
+                        self.modify_order(order, min_low - Decimal('0.00010'))
                 elif order.side is OrderSide.BUY:
                     max_high = max(bar.high for bar in bars)
-                    if order.price > max_high + Decimal('0.00003'):
-                        self.modify_order(order, max_high + Decimal('0.00003'))
+                    if order.price > max_high + Decimal('0.00010'):
+                        self.modify_order(order, max_high + Decimal('0.00010'))
 
         for order in self.entry_orders.values():
             if not order.is_complete:
