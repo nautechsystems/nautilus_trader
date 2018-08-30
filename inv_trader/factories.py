@@ -13,7 +13,7 @@ from decimal import Decimal
 from datetime import datetime
 from typing import List, Dict, Optional
 
-from inv_trader.core.checks import typechecking
+from inv_trader.core.typing import typechecking
 from inv_trader.model.enums import OrderSide, OrderType, TimeInForce
 from inv_trader.model.objects import Symbol
 from inv_trader.model.order import Order

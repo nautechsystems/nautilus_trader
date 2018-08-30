@@ -14,7 +14,7 @@ from typing import Callable
 from threading import Thread
 from zmq import Context
 
-from inv_trader.core.checks import typechecking
+from inv_trader.core.typing import typechecking
 
 UTF8 = 'utf-8'
 DELIMITER = b' '

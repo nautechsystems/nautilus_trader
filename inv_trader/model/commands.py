@@ -14,7 +14,7 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from inv_trader.core.checks import typechecking
+from inv_trader.core.typing import typechecking
 from inv_trader.model.order import Order
 
 

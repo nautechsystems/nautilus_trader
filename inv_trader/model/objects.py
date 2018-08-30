@@ -10,7 +10,7 @@
 from datetime import datetime
 from decimal import Decimal
 
-from inv_trader.core.checks import typechecking
+from inv_trader.core.typing import typechecking
 from inv_trader.model.enums import Venue, Resolution, QuoteType
 
 

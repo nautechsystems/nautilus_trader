@@ -16,7 +16,7 @@ from decimal import Decimal
 from typing import List, Dict, KeysView, Callable
 from uuid import UUID
 
-from inv_trader.core.checks import typechecking
+from inv_trader.core.typing import typechecking
 from inv_trader.model.enums import OrderSide, MarketPosition
 from inv_trader.model.objects import Symbol, Tick, BarType, Bar
 from inv_trader.model.order import Order

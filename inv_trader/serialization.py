@@ -16,7 +16,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Dict, Optional
 
-from inv_trader.core.checks import typechecking
+from inv_trader.core.typing import typechecking
 from inv_trader.model.enums import Venue, OrderSide, OrderType, TimeInForce, CurrencyCode, Broker
 from inv_trader.model.objects import Symbol
 from inv_trader.model.order import Order
