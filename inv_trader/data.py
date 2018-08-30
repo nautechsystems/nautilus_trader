@@ -15,7 +15,7 @@ from decimal import Decimal
 from redis import StrictRedis, ConnectionError
 from typing import List, Dict
 
-from inv_trader.core.checks import typechecking
+from inv_trader.core.typing import typechecking
 from inv_trader.model.enums import Resolution, QuoteType, Venue
 from inv_trader.model.objects import Symbol, Tick, BarType, Bar
 from inv_trader.strategy import TradeStrategy

@@ -9,7 +9,7 @@
 
 import pytest
 
-from inv_trader.core.checks import typechecking
+from inv_trader.core.typing import typechecking
 
 # ....................{ TESTS                              }....................
 def test_beartype_noop() -> None:

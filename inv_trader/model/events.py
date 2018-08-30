@@ -15,7 +15,7 @@ from decimal import Decimal
 from uuid import UUID
 from typing import Optional
 
-from inv_trader.core.checks import typechecking
+from inv_trader.core.typing import typechecking
 from inv_trader.model.enums import CurrencyCode, OrderSide, OrderType, TimeInForce, Broker
 from inv_trader.model.objects import Symbol
 

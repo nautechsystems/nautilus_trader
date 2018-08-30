@@ -7,4 +7,4 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from inv_trader.core.checks import typechecking
+from inv_trader.core.typing import typechecking

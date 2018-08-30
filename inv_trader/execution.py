@@ -17,7 +17,7 @@ from decimal import Decimal
 from typing import Dict, Callable
 from uuid import UUID
 
-from inv_trader.core.checks import typechecking
+from inv_trader.core.typing import typechecking
 from inv_trader.model.order import Order
 from inv_trader.model.commands import SubmitOrder, CancelOrder, ModifyOrder
 from inv_trader.model.events import Event, OrderEvent, AccountEvent, OrderCancelReject

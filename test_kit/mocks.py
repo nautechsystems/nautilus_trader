@@ -17,7 +17,7 @@ from typing import Callable
 from uuid import UUID
 from zmq import Context
 
-from inv_trader.core.checks import typechecking
+from inv_trader.core.typing import typechecking
 from inv_trader.model.enums import Venue, Resolution, QuoteType, OrderSide, OrderType, OrderStatus
 from inv_trader.model.objects import Symbol, BarType, Bar
 from inv_trader.execution import ExecutionClient
