@@ -157,8 +157,6 @@ class ExecutionClient:
 
         :param message: The message to log.
         """
-        Precondition.valid_string(message, 'message')
-
         print(f"ExecClient: {message}")
 
 
@@ -302,8 +300,6 @@ class LiveExecClient(ExecutionClient):
 
         :param body: The order event message body.
         """
-        Precondition.not_empty(body, 'body')
-
         event = self._event_serializer.deserialize(body)
 
         # If no registered strategies then print message to console.
@@ -319,7 +315,5 @@ class LiveExecClient(ExecutionClient):
 
         :param body: The order command acknowledgement message body.
         """
-        Precondition.not_empty(body, 'body')
-
         command = self._command_serializer.deserialize(body)
         self._log(f"Received order command ack {command}.")

@@ -102,8 +102,6 @@ def _parse_symbol(symbol_string: str) -> Symbol:
     :param symbol_string: The symbol string to parse.
     :return: The parsed symbol.
     """
-    Precondition.valid_string(symbol_string, 'symbol_string')
-
     split_symbol = symbol_string.split('.')
     return Symbol(split_symbol[0], Venue[split_symbol[1].upper()])
 
@@ -125,8 +123,6 @@ def _convert_string_to_price(price_string: str) -> Decimal or None:
     :param price_string: The price string to convert.
     :return: The converted price, or None.
     """
-    Precondition.valid_string(price_string, 'price_string')
-
     return None if price_string == NONE else Decimal(price_string)
 
 
@@ -148,8 +144,6 @@ def _convert_string_to_datetime(expire_time_string: str) -> datetime or None:
     :param expire_time_string: The string to convert.
     :return: The converted datetime, or None.
     """
-    Precondition.valid_string(expire_time_string, 'expire_time_string')
-
     return None if expire_time_string == NONE else iso8601.parse_date(expire_time_string)
 
 
