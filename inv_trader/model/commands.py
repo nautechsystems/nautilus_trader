@@ -15,6 +15,7 @@ from decimal import Decimal
 from uuid import UUID
 
 from inv_trader.core.typing import typechecking
+from inv_trader.core.preconditions import Precondition
 from inv_trader.model.order import Order
 
 
@@ -153,6 +154,8 @@ class CancelOrder(OrderCommand):
         :param: event_id: The commands identifier.
         :param: event_timestamp: The commands timestamp.
         """
+        Precondition.valid_string(cancel_reason, 'cancel_reason')
+
         super().__init__(
             order,
             command_id,
@@ -187,6 +190,8 @@ class ModifyOrder(OrderCommand):
         :param: event_id: The commands identifier.
         :param: event_timestamp: The commands timestamp.
         """
+        Precondition.positive(modified_price, 'modified_price')
+
         super().__init__(
             order,
             command_id,

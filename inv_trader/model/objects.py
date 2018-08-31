@@ -11,6 +11,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from inv_trader.core.typing import typechecking
+from inv_trader.core.preconditions import Precondition
 from inv_trader.model.enums import Venue, Resolution, QuoteType
 
 
@@ -31,10 +32,8 @@ class Price:
         :param decimals: The decimal precision of the price.
         :return: A Decimal representing the price.
         """
-        if price <= 0.0:
-            raise ValueError("The price must be > 0.")
-        if decimals < 0:
-            raise ValueError("The decimals must be >= 0.")
+        Precondition.positive(price, 'price')
+        Precondition.not_negative(decimals, 'decimals')
 
         return Decimal(f'{price:.{decimals}f}')
 
@@ -54,8 +53,7 @@ class Symbol:
         :param code: The symbols code.
         :param venue: The symbols venue.
         """
-        if code is "" or code.isspace():
-            raise ValueError("The code cannot be empty or whitespace.")
+        Precondition.valid_string(code, 'code')
 
         self._code = code.upper()
         self._venue = venue
@@ -123,14 +121,12 @@ class Tick:
         Initializes a new instance of the Tick class.
 
         :param: symbol: The tick symbol.
-        :param: bid: The tick bid price.
-        :param: ask: The tick ask price.
+        :param: bid: The tick best bid price.
+        :param: ask: The tick best ask price.
         :param: timestamp: The tick timestamp (UTC).
         """
-        if bid <= 0.0:
-            raise ValueError("The bid must be > 0.")
-        if ask <= 0.0:
-            raise ValueError("The ask must be > 0.")
+        Precondition.positive(bid, 'bid')
+        Precondition.positive(ask, 'ask')
 
         self._symbol = symbol
         self._bid = bid
@@ -213,8 +209,7 @@ class BarType:
         :param resolution: The bar resolution.
         :param quote_type: The bar quote type.
         """
-        if period <= 0:
-            raise ValueError("The period must be > 0.")
+        Precondition.positive(period, 'period')
 
         self._symbol = symbol
         self._period = period
@@ -309,6 +304,12 @@ class Bar:
         :param volume: The bars volume.
         :param timestamp: The bars timestamp (UTC).
         """
+        Precondition.positive(open_price, 'open_price')
+        Precondition.positive(high_price, 'high_price')
+        Precondition.positive(low_price, 'low_price')
+        Precondition.positive(close_price, 'close_price')
+        Precondition.not_negative(volume, 'volume')
+
         self._open = open_price
         self._high = high_price
         self._low = low_price

@@ -12,6 +12,8 @@
 import unittest
 
 from collections import deque
+from decimal import Decimal
+
 from inv_trader.core.preconditions import Precondition
 
 
@@ -56,22 +58,28 @@ class PreconditionsTests(unittest.TestCase):
         Precondition.not_none("something", "param_name")
         self.assertTrue(True)  # ValueError not raised.
 
-    def test_precondition_not_empty_or_whitespace_with_various_invalid_strings_raises_value_error(self):
+    def test_precondition_valid_with_various_invalid_strings_raises_value_error(self):
         # arrange
         # act
         # assert
-        self.assertRaises(ValueError, Precondition.not_none_empty_or_whitespace, None, "param_name")
-        self.assertRaises(ValueError, Precondition.not_none_empty_or_whitespace, "", "param_name")
-        self.assertRaises(ValueError, Precondition.not_none_empty_or_whitespace, " ", "param_name")
-        self.assertRaises(ValueError, Precondition.not_none_empty_or_whitespace, "   ", "param_name")
+        self.assertRaises(ValueError, Precondition.valid_string, None, "param_name")
+        self.assertRaises(ValueError, Precondition.valid_string, "", "param_name")
+        self.assertRaises(ValueError, Precondition.valid_string, " ", "param_name")
+        self.assertRaises(ValueError, Precondition.valid_string, "   ", "param_name")
+
+        long_string = "x"
+        for i in range(256):
+            long_string += "x"
+
+        self.assertRaises(ValueError, Precondition.valid_string, long_string, "param_name")
 
     def test_precondition_not_empty_or_whitespace_with_valid_string_does_nothing(self):
         # arrange
         # act
         # assert
-        Precondition.not_none_empty_or_whitespace("123", "param_name")
-        Precondition.not_none_empty_or_whitespace(" 123", "param_name")
-        Precondition.not_none_empty_or_whitespace("abc  ", "param_name")
+        Precondition.valid_string("123", "param_name")
+        Precondition.valid_string(" 123", "param_name")
+        Precondition.valid_string("abc  ", "param_name")
         self.assertTrue(True)  # ValueError not raised.
 
     def test_precondition_equal_when_args_not_equal_raises_value_error(self):
@@ -111,13 +119,16 @@ class PreconditionsTests(unittest.TestCase):
         self.assertRaises(ValueError, Precondition.not_negative, -float("inf"), "param_name")
         self.assertRaises(ValueError, Precondition.not_negative, -1, "param_name")
         self.assertRaises(ValueError, Precondition.not_negative, -0.00000000000000001, "param_name")
+        self.assertRaises(ValueError, Precondition.not_negative, Decimal('-0.1'), "param_name")
 
-    def test_precondition_not_negative_when_args_positive_does_nothing(self):
+    def test_precondition_not_negative_when_args_zero_or_positive_does_nothing(self):
         # arrange
         # act
         # assert
         Precondition.not_negative(0, "param_name")
+        Precondition.not_negative(1, "param_name")
         Precondition.not_negative(0., "param_name")
+        Precondition.not_negative(Decimal('0'), "param_name")
         Precondition.not_negative(float("inf"), "param_name")
         self.assertTrue(True)  # ValueError not raised.
 
@@ -129,6 +140,7 @@ class PreconditionsTests(unittest.TestCase):
         self.assertRaises(ValueError, Precondition.positive, -0.0000000001, "param_name")
         self.assertRaises(ValueError, Precondition.positive, 0, "param_name")
         self.assertRaises(ValueError, Precondition.positive, 0., "param_name")
+        self.assertRaises(ValueError, Precondition.positive, Decimal('0'), "param_name")
 
     def test_precondition_positive_when_args_positive_does_nothing(self):
         # arrange
@@ -138,6 +150,7 @@ class PreconditionsTests(unittest.TestCase):
         Precondition.positive(0.000000000000000000000000000000000001, "param_name")
         Precondition.positive(1, "param_name")
         Precondition.positive(1., "param_name")
+        Precondition.positive(Decimal('1.0'), "param_name")
         self.assertTrue(True)  # AssertionError not raised.
 
     def test_precondition_in_range_when_arg_out_of_range_raises_value_error(self):
@@ -147,6 +160,7 @@ class PreconditionsTests(unittest.TestCase):
         self.assertRaises(ValueError, Precondition.in_range, 2, "param_name", 0, 1)
         self.assertRaises(ValueError, Precondition.in_range, -0.000001, "param_name", 0., 1.)
         self.assertRaises(ValueError, Precondition.in_range, 1.0000001, "param_name", 0., 1.)
+        self.assertRaises(ValueError, Precondition.in_range, Decimal('-1.0'), "param_name", 0, 1)
 
     def test_precondition_in_range_when_args_in_range_does_nothing(self):
         # arrange
