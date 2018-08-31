@@ -127,8 +127,6 @@ class Logger:
             self,
             log_level: str,
             message: str):
-        Precondition.valid_string(log_level, 'log_level')
-        Precondition.valid_string(message, 'message')
 
         time = datetime.utcnow().isoformat(timespec='milliseconds') + 'Z'
         return (f'{time} [{threading.current_thread().ident}][{log_level}] '
@@ -138,7 +136,6 @@ class Logger:
             self,
             message: str,
             log_level: logging):
-        Precondition.valid_string(message, 'message')
 
         if self._console_prints and self._log_level_console <= log_level:
             print(message)

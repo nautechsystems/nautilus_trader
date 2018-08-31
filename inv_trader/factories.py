@@ -50,9 +50,7 @@ class OrderFactory:
         :param quantity: The orders quantity (> 0).
         :return: The market order.
         """
-        Precondition.valid_string(order_id, 'order_id')
-        Precondition.valid_string(label, 'label')
-        Precondition.positive(quantity, 'quantity')
+        # Preconditions checked inside Order.
 
         return Order(symbol,
                      order_id,
@@ -90,10 +88,7 @@ class OrderFactory:
         :param expire_time: The orders expire time (optional can be None unless GTD).
         :return: The limit order.
         """
-        Precondition.valid_string(order_id, 'order_id')
-        Precondition.valid_string(label, 'label')
-        Precondition.positive(quantity, 'quantity')
-        Precondition.positive(price, 'price')
+        # Preconditions checked inside Order.
 
         return Order(symbol,
                      order_id,
@@ -131,10 +126,7 @@ class OrderFactory:
         :param expire_time: The orders expire time (optional can be None unless GTD).
         :return: The stop-market order.
         """
-        Precondition.valid_string(order_id, 'order_id')
-        Precondition.valid_string(label, 'label')
-        Precondition.positive(quantity, 'quantity')
-        Precondition.positive(price, 'price')
+        # Preconditions checked inside Order.
 
         return Order(symbol,
                      order_id,
@@ -172,10 +164,7 @@ class OrderFactory:
         :param expire_time: The orders expire time (optional can be None unless GTD).
         :return: The stop-limit order.
         """
-        Precondition.valid_string(order_id, 'order_id')
-        Precondition.valid_string(label, 'label')
-        Precondition.positive(quantity, 'quantity')
-        Precondition.positive(price, 'price')
+        # Preconditions checked inside Order.
 
         return Order(symbol,
                      order_id,
@@ -213,10 +202,7 @@ class OrderFactory:
         :param expire_time: The orders expire time (optional can be None unless GTD).
         :return: The market-if-touched order.
         """
-        Precondition.valid_string(order_id, 'order_id')
-        Precondition.valid_string(label, 'label')
-        Precondition.positive(quantity, 'quantity')
-        Precondition.positive(price, 'price')
+        # Preconditions checked inside Order.
 
         return Order(symbol,
                      order_id,
@@ -247,9 +233,7 @@ class OrderFactory:
         :param quantity: The orders quantity (> 0).
         :return: The market order.
         """
-        Precondition.valid_string(order_id, 'order_id')
-        Precondition.valid_string(label, 'label')
-        Precondition.positive(quantity, 'quantity')
+        # Preconditions checked inside Order.
 
         return Order(symbol,
                      order_id,
@@ -280,9 +264,7 @@ class OrderFactory:
         :param quantity: The orders quantity (> 0).
         :return: The market order.
         """
-        Precondition.valid_string(order_id, 'order_id')
-        Precondition.valid_string(label, 'label')
-        Precondition.positive(quantity, 'quantity')
+        # Preconditions checked inside Order.
 
         return Order(symbol,
                      order_id,

@@ -301,8 +301,6 @@ class LiveDataClient:
 
         :param message: The message to log.
         """
-        Precondition.valid_string(message, 'message')
-
         print(f"DataClient: {message}")
 
     @staticmethod
@@ -317,9 +315,6 @@ class LiveDataClient:
         :param tick_string: The tick string.
         :return: The parsed tick object.
         """
-        Precondition.valid_string(tick_channel, 'tick_channel')
-        Precondition.valid_string(tick_string, 'tick_string')
-
         split_channel = tick_channel.split('.')
         split_tick = tick_string.split(',')
 
@@ -337,8 +332,6 @@ class LiveDataClient:
         :param bar_type_string: The bar type string to parse.
         :return: The parsed bar type object.
         """
-        Precondition.valid_string(bar_type_string, 'bar_type_string')
-
         split_string = re.split(r'[.-]+', bar_type_string)
         resolution = split_string[3].split('[')[0]
         quote_type = split_string[3].split('[')[1].strip(']')
@@ -357,8 +350,6 @@ class LiveDataClient:
         :param bar_string: The bar string to parse.
         :return: The parsed bar object.
         """
-        Precondition.valid_string(bar_string, 'bar_string')
-
         split_bar = bar_string.split(',')
 
         return Bar(Decimal(split_bar[0]),
@@ -376,8 +367,6 @@ class LiveDataClient:
         """
         Return the tick channel name from the given parameters.
         """
-        Precondition.valid_string(symbol, 'symbol')
-
         return f'{symbol.lower()}.{venue.name.lower()}'
 
     @staticmethod
@@ -391,9 +380,6 @@ class LiveDataClient:
         """
         Return the bar channel name from the given parameters.
         """
-        Precondition.valid_string(symbol, 'symbol')
-        Precondition.positive(period, 'period')
-
         return (f'{symbol.lower()}.{venue.name.lower()}-{period}-'
                 f'{resolution.name.lower()}[{quote_type.name.lower()}]')
 
@@ -416,8 +402,6 @@ class LiveDataClient:
 
         :param message: The tick message.
         """
-        Precondition.not_empty(message, 'message')
-
         # If no tick handlers then print message to console.
         if len(self._tick_handlers) == 0:
             print(f"Received message {message['channel'].decode(UTF8)} "
@@ -436,8 +420,6 @@ class LiveDataClient:
 
         :param message: The bar message.
         """
-        Precondition.not_empty(message, 'message')
-
         # If no bar handlers then print message to console.
         if len(self._bar_handlers) == 0:
             print(f"Received message {message['channel'].decode(UTF8)} "

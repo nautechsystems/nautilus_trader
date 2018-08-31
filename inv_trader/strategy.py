@@ -33,16 +33,6 @@ OrderId = str
 Label = str
 Indicator = object
 
-POINT = 'point'
-PRICE = 'price'
-MID = 'mid'
-OPEN = 'open'
-HIGH = 'high'
-LOW = 'low'
-CLOSE = 'close'
-VOLUME = 'volume'
-TIMESTAMP = 'timestamp'
-
 
 class TradeStrategy:
     """
@@ -219,7 +209,7 @@ class TradeStrategy:
         return self._indicators
 
     @property
-    def all_bars(self) -> Dict[BarType, List[Bar]]:
+    def all_bars(self) -> Dict[BarType, Deque[Bar]]:
         """
         :return: The bars dictionary for the strategy.
         """
@@ -262,7 +252,6 @@ class TradeStrategy:
         :return: The internally held indicators for the given bar type.
         :raises: KeyError: If the strategy does not contain indicators for the bar type.
         """
-        # Preconditions
         if bar_type not in self._indicators:
             raise KeyError(f"The indicators dictionary does not contain {bar_type}.")
 
@@ -304,10 +293,10 @@ class TradeStrategy:
             bar_type: BarType,
             index: int) -> Bar:
         """
-        Get the bar for the given bar type at the given index (reverse indexed, 0 is last bar).
+        Get the bar for the given bar type at the given index.
 
         :param bar_type: The bar type to get.
-        :param index: The index to get.
+        :param index: The index to get (can be positive or negative but not out of range).
         :return: The found bar.
         :raises: KeyError: If the strategy does not contain the bar type.
         :raises: ValueError: If the index is negative.
@@ -362,7 +351,7 @@ class TradeStrategy:
 
         return self._positions[symbol]
 
-    @typechecking  # @ typechecking: indicator checked in preconditions.
+    @typechecking
     def register_indicator(
             self,
             bar_type: BarType,
@@ -378,9 +367,6 @@ class TradeStrategy:
         :param update_method: The update method for the indicator.
         :param label: The unique label for this indicator.
         """
-        Precondition.not_none(indicator, 'indicator')
-        if indicator.__class__.__mro__[-2].__name__ != 'Indicator':
-            raise TypeError("The indicator must inherit from the Indicator base class.")
         if label in self._indicator_index.keys():
             raise KeyError("The indicator label must be unique for this strategy.")
 
@@ -552,7 +538,7 @@ class TradeStrategy:
         self.on_reset()
         self._log(f"Reset.")
 
-    # @typechecking: client checked in preconditions.
+    # @typechecking: client checked in preconditions (cannot import ExecutionClient).
     def _register_execution_client(self, client):
         """
         Register the execution client with the strategy.
@@ -618,7 +604,6 @@ class TradeStrategy:
         :param bar_type: The bar type to update.
         :param bar: The bar for update.
         """
-        # Preconditions checked in _update_bars.
         if bar_type not in self._indicators:
             # No indicators to update with this bar.
             return
@@ -692,6 +677,18 @@ class TradeStrategy:
         :param message: The message to log.
         """
         print(f"{str(self)}: {message}")
+
+
+# Constants
+POINT = 'point'
+PRICE = 'price'
+MID = 'mid'
+OPEN = 'open'
+HIGH = 'high'
+LOW = 'low'
+CLOSE = 'close'
+VOLUME = 'volume'
+TIMESTAMP = 'timestamp'
 
 
 class IndicatorUpdater:

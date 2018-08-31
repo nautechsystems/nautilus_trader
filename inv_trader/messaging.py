@@ -111,8 +111,6 @@ class MQWorker(Thread):
 
         :param message: The message to log.
         """
-        Precondition.valid_string(message, 'message')
-
         print(f"{self._name}: {message}")
 
 
