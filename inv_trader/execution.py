@@ -47,11 +47,11 @@ class ExecutionClient:
 
         :param logger: The logging adapter for the component.
         """
-        self._logger = logger
+        self._log = logger
         self._registered_strategies = {}  # type: Dict[UUID, Callable]
         self._order_index = {}            # type: Dict[OrderId, UUID]
 
-        self._logger.info("Initialized.")
+        self._log.info("Initialized.")
 
     @typechecking
     def register_strategy(self, strategy: TradeStrategy):
@@ -134,11 +134,11 @@ class ExecutionClient:
         Handle events received from the execution service.
         """
         # Order event
-        self._logger.debug(f"Received {event}.")
+        self._log.debug(f"Received {event}.")
         if isinstance(event, OrderEvent):
             order_id = event.order_id
             if order_id not in self._order_index.keys():
-                self._logger.warning(
+                self._log.warning(
                     f"The given event order id {order_id} was not contained in the order index.")
                 return
 
@@ -146,7 +146,7 @@ class ExecutionClient:
             self._registered_strategies[strategy_id](event)
 
         if isinstance(event, OrderCancelReject):
-            self._logger.warning(f"{event}.")
+            self._log.warning(f"{event}.")
 
         if isinstance(event, AccountEvent):
             for strategy_id in self._registered_strategies.keys():
@@ -204,7 +204,7 @@ class LiveExecClient(ExecutionClient):
             "nautilus_execution_events",
             self._event_handler)
 
-        self._logger.info(f"ZMQ v{zmq.pyzmq_version()}")
+        self._log.info(f"ZMQ v{zmq.pyzmq_version()}")
 
     def connect(self):
         """
@@ -263,7 +263,7 @@ class LiveExecClient(ExecutionClient):
         message = self._command_serializer.serialize(command)
 
         self._order_commands_worker.send(message)
-        self._logger.debug(f"Sent {command}.")
+        self._log.debug(f"Sent {command}.")
 
     @typechecking
     def modify_order(
@@ -286,7 +286,7 @@ class LiveExecClient(ExecutionClient):
         message = self._command_serializer.serialize(command)
 
         self._order_commands_worker.send(message)
-        self._logger.debug(f"Sent {command}.")
+        self._log.debug(f"Sent {command}.")
 
     @typechecking
     def _event_handler(self, body: bytes):
@@ -300,7 +300,7 @@ class LiveExecClient(ExecutionClient):
 
         # If no registered strategies then print message to console.
         if len(self._registered_strategies) == 0:
-            self._logger.debug(f"Received event from queue: {event}")
+            self._log.debug(f"Received event from queue: {event}")
 
         self._on_event(event)
 
@@ -312,4 +312,4 @@ class LiveExecClient(ExecutionClient):
         :param body: The order command acknowledgement message body.
         """
         command = self._command_serializer.deserialize(body)
-        self._logger.debug(f"Received order command ack {command}.")
+        self._log.debug(f"Received order command ack {command}.")

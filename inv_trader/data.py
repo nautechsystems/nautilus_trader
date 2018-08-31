@@ -47,7 +47,7 @@ class LiveDataClient:
 
         self._host = host
         self._port = port
-        self._logger = logger
+        self._log = logger
         self._client = None
         self._pubsub = None
         self._pubsub_thread = None
@@ -56,7 +56,7 @@ class LiveDataClient:
         self._tick_handlers = []
         self._bar_handlers = []
 
-        self._logger.info("Initialized.")
+        self._log.info("Initialized.")
 
     @property
     def is_connected(self) -> bool:
@@ -103,7 +103,7 @@ class LiveDataClient:
                                    db=0)
         self._pubsub = self._client.pubsub()
 
-        self._logger.info(f"Connected to the data service at {self._host}:{self._port}.")
+        self._log.info(f"Connected to the data service at {self._host}:{self._port}.")
 
     def disconnect(self):
         """
@@ -115,16 +115,16 @@ class LiveDataClient:
         if self._pubsub_thread is not None:
             self._pubsub_thread.stop()
             time.sleep(0.100)  # Allows thread to stop.
-            self._logger.debug(f"Stopped PubSub thread {self._pubsub_thread}.")
+            self._log.debug(f"Stopped PubSub thread {self._pubsub_thread}.")
 
-        self._logger.info(f"Unsubscribed from tick data {self._subscriptions_ticks}.")
-        self._logger.info(f"Unsubscribed from bar data {self._subscriptions_bars}.")
+        self._log.info(f"Unsubscribed from tick data {self._subscriptions_ticks}.")
+        self._log.info(f"Unsubscribed from bar data {self._subscriptions_bars}.")
 
         if self._client is not None:
             self._client.connection_pool.disconnect()
-            self._logger.info(f"Disconnected from live database at {self._host}:{self._port}.")
+            self._log.info(f"Disconnected from live database at {self._host}:{self._port}.")
         else:
-            self._logger.info("Disconnected (the client was already disconnected).")
+            self._log.info("Disconnected (the client was already disconnected).")
 
         self._client = None
         self._pubsub = None
@@ -165,7 +165,7 @@ class LiveDataClient:
             self._subscriptions_ticks.append(ticks_channel)
             self._subscriptions_ticks.sort()
 
-        self._logger.info(f"Subscribed to tick data for {ticks_channel}.")
+        self._log.info(f"Subscribed to tick data for {ticks_channel}.")
 
     @typechecking
     def unsubscribe_ticks(
@@ -190,7 +190,7 @@ class LiveDataClient:
             self._subscriptions_ticks.remove(tick_channel)
             self._subscriptions_ticks.sort()
 
-        self._logger.info(f"Unsubscribed from tick data for {tick_channel}.")
+        self._log.info(f"Unsubscribed from tick data for {tick_channel}.")
 
     @typechecking
     def subscribe_bars(
@@ -235,7 +235,7 @@ class LiveDataClient:
             self._subscriptions_bars.append(bars_channel)
             self._subscriptions_bars.sort()
 
-        self._logger.info(f"Subscribed to bar data for {bars_channel}.")
+        self._log.info(f"Subscribed to bar data for {bars_channel}.")
 
     @typechecking
     def unsubscribe_bars(
@@ -272,7 +272,7 @@ class LiveDataClient:
             self._subscriptions_bars.remove(bar_channel)
             self._subscriptions_bars.sort()
 
-        self._logger.info(f"Unsubscribed from bar data for {bar_channel}.")
+        self._log.info(f"Unsubscribed from bar data for {bar_channel}.")
 
     @typechecking
     def register_strategy(self, strategy: TradeStrategy):
@@ -292,7 +292,7 @@ class LiveDataClient:
         if strategy_bar_handler not in self._bar_handlers:
             self._bar_handlers.append(strategy_bar_handler)
 
-        self._logger.info(f"Registered strategy {strategy} with the live data client.")
+        self._log.info(f"Registered strategy {strategy} with the live data client.")
 
     @staticmethod
     @typechecking

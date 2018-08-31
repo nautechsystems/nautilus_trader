@@ -59,7 +59,7 @@ class MQWorker(Thread):
         self._context = context
         self._service_address = f'tcp://{host}:{port}'
         self._handler = handler
-        self._logger = logger
+        self._log = logger
         self._socket = self._context.socket(socket_type)
         self._cycles = 0
 
@@ -80,17 +80,17 @@ class MQWorker(Thread):
 
         self._socket.send(message)
         self._cycles += 1
-        self._logger.debug(f"Sending message[{self._cycles}] {message}")
+        self._log.debug(f"Sending message[{self._cycles}] {message}")
 
         response = self._socket.recv()
-        self._logger.debug(f"Received {response.decode(UTF8)}[{self._cycles}] response.")
+        self._log.debug(f"Received {response.decode(UTF8)}[{self._cycles}] response.")
 
     def stop(self):
         """
         Close the connection and stop the worker.
         """
         self._close_connection()
-        self._logger.debug(f"Stopped.")
+        self._log.debug(f"Stopped.")
 
     @abc.abstractmethod
     def _open_connection(self):
@@ -145,14 +145,14 @@ class RequestWorker(MQWorker):
         """
         Open a new connection to the service.
         """
-        self._logger.info(f"Connecting to {self._service_address}...")
+        self._log.info(f"Connecting to {self._service_address}...")
         self._socket.connect(self._service_address)
 
     def _close_connection(self):
         """
         Close the connection with the service.
         """
-        self._logger.info(f"Disconnecting from {self._service_address}...")
+        self._log.info(f"Disconnecting from {self._service_address}...")
         self._socket.disconnect(self._service_address)
 
 
@@ -203,17 +203,17 @@ class SubscriberWorker(MQWorker):
         """
         Open a new connection to the service.
         """
-        self._logger.info(f"Connecting to {self._service_address}...")
+        self._log.info(f"Connecting to {self._service_address}...")
         self._socket.connect(self._service_address)
         self._socket.setsockopt(zmq.SUBSCRIBE, self._topic.encode(UTF8))
         self._consume_messages()
-        self._logger.info(f"Subscribed to {self._topic}.")
+        self._log.info(f"Subscribed to {self._topic}.")
 
     def _consume_messages(self):
         """
         Start the consumption loop to receive published messages.
         """
-        self._logger.info("Ready to consume messages...")
+        self._log.info("Ready to consume messages...")
 
         while True:
             message = self._socket.recv()
@@ -222,11 +222,11 @@ class SubscriberWorker(MQWorker):
             topic, data = message.split(DELIMITER, 1)
             self._handler(data)
             self._cycles += 1
-            self._logger.debug(f"Received message[{self._cycles}] from {topic.decode(UTF8)}: {data}")
+            self._log.debug(f"Received message[{self._cycles}] from {topic.decode(UTF8)}: {data}")
 
     def _close_connection(self):
         """
         Close the connection with the service.
         """
-        self._logger.info(f"Disconnecting from {self._service_address}...")
+        self._log.info(f"Disconnecting from {self._service_address}...")
         self._socket.disconnect(self._service_address)
