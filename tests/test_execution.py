@@ -204,7 +204,7 @@ class LiveExecClientTests(unittest.TestCase):
         exec_client.register_strategy(strategy)
         exec_client.connect()
 
-        order_id_generator = OrderIdGenerator(order_id_tag='')
+        order_id_generator = OrderIdGenerator(order_id_tag='0')
         order_id = order_id_generator.generate(AUDUSD_FXCM)
 
         order = OrderFactory.market(

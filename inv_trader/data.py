@@ -16,6 +16,7 @@ from redis import StrictRedis, ConnectionError
 from typing import List, Dict
 
 from inv_trader.core.typing import typechecking
+from inv_trader.core.preconditions import Precondition
 from inv_trader.model.enums import Resolution, QuoteType, Venue
 from inv_trader.model.objects import Symbol, Tick, BarType, Bar
 from inv_trader.strategy import TradeStrategy
@@ -38,6 +39,9 @@ class LiveDataClient:
         :param host: The redis host IP address (default=127.0.0.1).
         :param port: The redis host port (default=6379).
         """
+        Precondition.valid_string(host, 'host')
+        Precondition.in_range(port, 'port', 0, 99999)
+
         self._host = host
         self._port = port
         self._client = None
@@ -139,6 +143,8 @@ class LiveDataClient:
         :param venue: The venue for subscription.
         :param handler: The callable handler for subscription (if None will just call print).
         """
+        Precondition.valid_string(symbol, 'symbol')
+
         self._check_connection()
 
         # If a handler is passed in, and doesn't already exist, then add to tick subscribers.
@@ -168,6 +174,8 @@ class LiveDataClient:
         :param symbol: The symbol to unsubscribe from.
         :param venue: The venue to unsubscribe from.
         """
+        Precondition.valid_string(symbol, 'symbol')
+
         self._check_connection()
 
         tick_channel = self._get_tick_channel_name(symbol, venue)
@@ -199,6 +207,9 @@ class LiveDataClient:
         :param quote_type: The bar quote type for subscription.
         :param handler: The callable handler for subscription (if None will just call print).
         """
+        Precondition.valid_string(symbol, 'symbol')
+        Precondition.positive(period, 'period')
+
         self._check_connection()
 
         # If a handler is passed in, and doesn't already exist, then add to bar subscribers.
@@ -239,9 +250,8 @@ class LiveDataClient:
         :param resolution: The bar resolution to unsubscribe from.
         :param quote_type: The bar quote type to unsubscribe from.
         """
-        # Preconditions
-        if period <= 0:
-            raise ValueError("The period must be > 0.")
+        Precondition.valid_string(symbol, 'symbol')
+        Precondition.positive(period, 'period')
 
         self._check_connection()
 
@@ -288,6 +298,8 @@ class LiveDataClient:
 
         :param message: The message to log.
         """
+        Precondition.valid_string(message, 'message')
+
         print(f"DataClient: {message}")
 
     @staticmethod
@@ -302,6 +314,9 @@ class LiveDataClient:
         :param tick_string: The tick string.
         :return: The parsed tick object.
         """
+        Precondition.valid_string(tick_channel, 'tick_channel')
+        Precondition.valid_string(tick_string, 'tick_string')
+
         split_channel = tick_channel.split('.')
         split_tick = tick_string.split(',')
 
@@ -319,6 +334,8 @@ class LiveDataClient:
         :param bar_type_string: The bar type string to parse.
         :return: The parsed bar type object.
         """
+        Precondition.valid_string(bar_type_string, 'bar_type_string')
+
         split_string = re.split(r'[.-]+', bar_type_string)
         resolution = split_string[3].split('[')[0]
         quote_type = split_string[3].split('[')[1].strip(']')
@@ -337,6 +354,8 @@ class LiveDataClient:
         :param bar_string: The bar string to parse.
         :return: The parsed bar object.
         """
+        Precondition.valid_string(bar_string, 'bar_string')
+
         split_bar = bar_string.split(',')
 
         return Bar(Decimal(split_bar[0]),
@@ -354,6 +373,8 @@ class LiveDataClient:
         """
         Return the tick channel name from the given parameters.
         """
+        Precondition.valid_string(symbol, 'symbol')
+
         return f'{symbol.lower()}.{venue.name.lower()}'
 
     @staticmethod
@@ -367,6 +388,9 @@ class LiveDataClient:
         """
         Return the bar channel name from the given parameters.
         """
+        Precondition.valid_string(symbol, 'symbol')
+        Precondition.positive(period, 'period')
+
         return (f'{symbol.lower()}.{venue.name.lower()}-{period}-'
                 f'{resolution.name.lower()}[{quote_type.name.lower()}]')
 
@@ -389,6 +413,8 @@ class LiveDataClient:
 
         :param message: The tick message.
         """
+        Precondition.not_empty(message, 'message')
+
         # If no tick handlers then print message to console.
         if len(self._tick_handlers) == 0:
             print(f"Received message {message['channel'].decode(UTF8)} "
@@ -407,6 +433,8 @@ class LiveDataClient:
 
         :param message: The bar message.
         """
+        Precondition.not_empty(message, 'message')
+
         # If no bar handlers then print message to console.
         if len(self._bar_handlers) == 0:
             print(f"Received message {message['channel'].decode(UTF8)} "

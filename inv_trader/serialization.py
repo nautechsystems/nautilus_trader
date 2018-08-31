@@ -17,6 +17,7 @@ from decimal import Decimal
 from typing import Dict, Optional
 
 from inv_trader.core.typing import typechecking
+from inv_trader.core.preconditions import Precondition
 from inv_trader.model.enums import Venue, OrderSide, OrderType, TimeInForce, CurrencyCode, Broker
 from inv_trader.model.objects import Symbol
 from inv_trader.model.order import Order
@@ -101,11 +102,13 @@ def _parse_symbol(symbol_string: str) -> Symbol:
     :param symbol_string: The symbol string to parse.
     :return: The parsed symbol.
     """
+    Precondition.valid_string(symbol_string, 'symbol_string')
+
     split_symbol = symbol_string.split('.')
     return Symbol(split_symbol[0], Venue[split_symbol[1].upper()])
 
 
-def _convert_price_to_string(price: Optional[Decimal]) -> str:
+def _convert_price_to_string(price: Decimal or None) -> str:
     """
     Convert the given object to a decimal or 'NONE' string.
 
@@ -115,17 +118,19 @@ def _convert_price_to_string(price: Optional[Decimal]) -> str:
     return NONE if price is None else str(price)
 
 
-def _convert_string_to_price(price_string: str) -> Optional[Decimal]:
+def _convert_string_to_price(price_string: str) -> Decimal or None:
     """
     Convert the given price string to a Decimal or None.
 
     :param price_string: The price string to convert.
     :return: The converted price, or None.
     """
+    Precondition.valid_string(price_string, 'price_string')
+
     return None if price_string == NONE else Decimal(price_string)
 
 
-def _convert_datetime_to_string(expire_time: Optional[datetime]) -> str:
+def _convert_datetime_to_string(expire_time: datetime or None) -> str:
     """
     Convert the given object to a valid ISO8601 string, or 'NONE'.
 
@@ -136,13 +141,15 @@ def _convert_datetime_to_string(expire_time: Optional[datetime]) -> str:
             else expire_time.isoformat(timespec='milliseconds').replace('+00:00', 'Z'))
 
 
-def _convert_string_to_datetime(expire_time_string: str) -> Optional[datetime]:
+def _convert_string_to_datetime(expire_time_string: str) -> datetime or None:
     """
     Convert the given string to a datetime object, or None.
 
     :param expire_time_string: The string to convert.
     :return: The converted datetime, or None.
     """
+    Precondition.valid_string(expire_time_string, 'expire_time_string')
+
     return None if expire_time_string == NONE else iso8601.parse_date(expire_time_string)
 
 
@@ -216,6 +223,8 @@ class MsgPackOrderSerializer(OrderSerializer):
         :param: order_bytes: The bytes to deserialize.
         :return: The deserialized order.
         """
+        Precondition.not_empty(order_bytes, 'order_bytes')
+
         unpacked = msgpack.unpackb(order_bytes, encoding=UTF8)
 
         return Order(symbol=_parse_symbol(unpacked[SYMBOL]),
@@ -293,6 +302,8 @@ class MsgPackCommandSerializer(CommandSerializer):
         :return: The deserialized command.
         :raises: ValueError: If the command cannot be deserialized.
         """
+        Precondition.not_empty(command_bytes, 'command_bytes')
+
         unpacked = msgpack.unpackb(command_bytes, encoding=UTF8)
 
         command_type = unpacked[COMMAND_TYPE]
@@ -449,6 +460,8 @@ class MsgPackEventSerializer(EventSerializer):
         :return: The deserialized event.
         :raises: ValueError: If the event cannot be deserialized.
         """
+        Precondition.not_empty(event_bytes, 'event_bytes')
+
         unpacked = msgpack.unpackb(event_bytes, encoding=UTF8)
 
         event_type = unpacked[EVENT_TYPE]

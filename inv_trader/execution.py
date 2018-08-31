@@ -18,13 +18,14 @@ from typing import Dict, Callable
 from uuid import UUID
 
 from inv_trader.core.typing import typechecking
+from inv_trader.core.preconditions import Precondition
 from inv_trader.model.order import Order
 from inv_trader.model.commands import SubmitOrder, CancelOrder, ModifyOrder
 from inv_trader.model.events import Event, OrderEvent, AccountEvent, OrderCancelReject
 from inv_trader.messaging import RequestWorker, SubscriberWorker
 from inv_trader.strategy import TradeStrategy
-from inv_trader.serialization import MsgPackCommandSerializer
-from inv_trader.serialization import MsgPackEventSerializer
+from inv_trader.serialization import CommandSerializer, EventSerializer
+from inv_trader.serialization import MsgPackCommandSerializer, MsgPackEventSerializer
 
 # Constants
 UTF8 = 'utf-8'
@@ -43,8 +44,6 @@ class ExecutionClient:
         """
         Initializes a new instance of the ExecutionClient class.
         """
-        self._event_serializer = MsgPackEventSerializer
-        self._command_serializer = MsgPackCommandSerializer
         self._registered_strategies = {}  # type: Dict[UUID, Callable]
         self._order_index = {}            # type: Dict[OrderId, UUID]
 
@@ -158,6 +157,8 @@ class ExecutionClient:
 
         :param message: The message to log.
         """
+        Precondition.valid_string(message, 'message')
+
         print(f"ExecClient: {message}")
 
 
@@ -172,7 +173,9 @@ class LiveExecClient(ExecutionClient):
             self,
             host: str='localhost',
             commands_port: int=5555,
-            events_port: int=5556):
+            events_port: int=5556,
+            command_serializer: CommandSerializer=MsgPackCommandSerializer,
+            event_serializer: EventSerializer=MsgPackEventSerializer):
         """
         Initializes a new instance of the LiveExecClient class.
         The host and port parameters are for the order event subscription
@@ -181,8 +184,16 @@ class LiveExecClient(ExecutionClient):
         :param host: The execution service host IP address (default=127.0.0.1).
         :param commands_port: The execution service commands port.
         :param events_port: The execution service events port.
+        :param: command_serializer: The command serializer for the client.
+        :param: event_serializer: The event serializer for the client.
         """
+        Precondition.valid_string(host, 'host')
+        Precondition.in_range(commands_port, 'commands_port', 0, 99999)
+        Precondition.in_range(events_port, 'events_port', 0, 99999)
+
         super().__init__()
+        self._command_serializer = command_serializer
+        self._event_serializer = event_serializer
         self._context = zmq.Context()
         self._order_commands_worker = RequestWorker(
             'CommandSender',
@@ -232,7 +243,7 @@ class LiveExecClient(ExecutionClient):
             order,
             uuid.uuid4(),
             datetime.utcnow())
-        message = MsgPackCommandSerializer.serialize(command)
+        message = self._command_serializer.serialize(command)
 
         self._order_commands_worker.send(message)
         self._log(f"Sent {command}.")
@@ -248,12 +259,14 @@ class LiveExecClient(ExecutionClient):
         :param: order: The order identifier to cancel.
         :param: cancel_reason: The reason for cancellation (will be logged).
         """
+        Precondition.valid_string(cancel_reason, 'cancel_reason')
+
         command = CancelOrder(
             order,
             cancel_reason,
             uuid.uuid4(),
             datetime.utcnow())
-        message = MsgPackCommandSerializer.serialize(command)
+        message = self._command_serializer.serialize(command)
 
         self._order_commands_worker.send(message)
         self._log(f"Sent {command}.")
@@ -269,12 +282,14 @@ class LiveExecClient(ExecutionClient):
         :param: order: The order identifier to modify.
         :param: new_price: The new modified price for the order.
         """
+        Precondition.positive(new_price, 'new_price')
+
         command = ModifyOrder(
             order,
             new_price,
             uuid.uuid4(),
             datetime.utcnow())
-        message = MsgPackCommandSerializer.serialize(command)
+        message = self._command_serializer.serialize(command)
 
         self._order_commands_worker.send(message)
         self._log(f"Sent {command}.")
@@ -287,6 +302,8 @@ class LiveExecClient(ExecutionClient):
 
         :param body: The order event message body.
         """
+        Precondition.not_empty(body, 'body')
+
         event = self._event_serializer.deserialize(body)
 
         # If no registered strategies then print message to console.
@@ -302,5 +319,7 @@ class LiveExecClient(ExecutionClient):
 
         :param body: The order command acknowledgement message body.
         """
-        command = MsgPackCommandSerializer.deserialize(body)
+        Precondition.not_empty(body, 'body')
+
+        command = self._command_serializer.deserialize(body)
         self._log(f"Received order command ack {command}.")

@@ -17,6 +17,7 @@ from typing import List, Dict, KeysView, Callable
 from uuid import UUID
 
 from inv_trader.core.typing import typechecking
+from inv_trader.core.preconditions import Precondition
 from inv_trader.model.enums import OrderSide, MarketPosition
 from inv_trader.model.objects import Symbol, Tick, BarType, Bar
 from inv_trader.model.order import Order
@@ -28,7 +29,6 @@ from inv_trader.factories import OrderIdGenerator
 
 # Constants
 OrderId = str
-Label = str
 Indicator = object
 
 POINT = 'point'
@@ -52,7 +52,7 @@ class TradeStrategy:
     @typechecking
     def __init__(self,
                  label: str=None,
-                 order_id_tag: str=''):
+                 order_id_tag: str=None):
         """
         Initializes a new instance of the TradeStrategy abstract class.
 
@@ -61,6 +61,8 @@ class TradeStrategy:
         """
         if label is None:
             label = ''
+        if order_id_tag is None:
+            order_id_tag = '0'
 
         self._name = self.__class__.__name__
         self._id = uuid.uuid4()
@@ -196,7 +198,7 @@ class TradeStrategy:
         return self._is_running
 
     @property
-    def indicator_labels(self) -> KeysView[Label]:
+    def indicator_labels(self) -> KeysView[str]:
         """
         :return: The indicator label list for the strategy (should be distinct).
         """
@@ -268,7 +270,8 @@ class TradeStrategy:
         :return: The internally held indicator for the given unique label.
         :raises: KeyError: If the strategy does not contain the indicator label.
         """
-        # Preconditions
+        Precondition.valid_string(label, 'label')
+
         if label not in self._indicator_index:
             raise KeyError(f"The indicator dictionary does not contain the label {label}.")
 
@@ -283,7 +286,6 @@ class TradeStrategy:
         :return: The list of bars.
         :raises: KeyError: If the strategy does not contain the bar type..
         """
-        # Preconditions
         if bar_type not in self._bars:
             raise KeyError(f"The bars dictionary does not contain {bar_type}.")
 
@@ -303,11 +305,9 @@ class TradeStrategy:
         :raises: KeyError: If the strategy does not contain the bar type.
         :raises: ValueError: If the index is negative.
         """
-        # Preconditions
         if bar_type not in self._bars:
             raise KeyError(f"The bars dictionary does not contain {bar_type}.")
-        if index < 0:
-            raise ValueError("The index cannot be negative.")
+        Precondition.not_negative(index, 'index')
 
         return self._bars[bar_type][index]
 
@@ -335,7 +335,8 @@ class TradeStrategy:
         :return: The order (if found).
         :raises: KeyError: If the strategy does not contain the order with the requested id.
         """
-        # Preconditions
+        Precondition.valid_string(order_id, 'order_id')
+
         if order_id not in self._order_book:
             raise KeyError(f"The order book does not contain the order with id {order_id}.")
 
@@ -350,7 +351,6 @@ class TradeStrategy:
         :return: The position (if found).
         :raises: KeyError: If the strategy does not contain a position for the given symbol.
         """
-        # Preconditions
         if symbol not in self._positions:
             raise KeyError(
                 f"The positions dictionary does not contain a position for symbol {symbol}.")
@@ -363,7 +363,7 @@ class TradeStrategy:
             bar_type: BarType,
             indicator: Indicator,
             update_method: Callable,
-            label: Label):
+            label: str):
         """
         Add the given indicator to the strategy. It will receive bars of the
         given bar type. The indicator must be from the inv_indicators package.
@@ -373,9 +373,7 @@ class TradeStrategy:
         :param update_method: The update method for the indicator.
         :param label: The unique label for this indicator.
         """
-        # Preconditions
-        if indicator is None:
-            raise ValueError("The indicator cannot be None.")
+        Precondition.not_none(indicator, 'indicator')
         if indicator.__class__.__mro__[-2].__name__ != 'Indicator':
             raise TypeError("The indicator must inherit from the Indicator base class.")
         if label in self._indicator_index.keys():
@@ -394,7 +392,7 @@ class TradeStrategy:
     @typechecking
     def set_timer(
             self,
-            label: Label,
+            label: str,
             step: timedelta,
             repeat: bool=True):
         """
@@ -407,12 +405,13 @@ class TradeStrategy:
         :param step: The time delta step for the timer.
         :param repeat: The option for the timer to repeat until the strategy is stopped.
         """
+        Precondition.valid_string(label, 'label')
         # TODO
 
     @typechecking
     def set_time_alert(
             self,
-            label: Label,
+            label: str,
             alert_time: datetime):
         """
         Set a time alert for the given time. When the time is reached and the
@@ -422,6 +421,7 @@ class TradeStrategy:
         :param label: The unique label for the alert.
         :param alert_time: The time for the alert.
         """
+        Precondition.valid_string(label, 'label')
         # TODO
 
     def start(self):
@@ -487,19 +487,18 @@ class TradeStrategy:
     def cancel_order(
             self,
             order: Order,
-            cancel_reason: str=None):
+            cancel_reason: str='NONE'):
         """
         Send a cancel order request for the given order to the execution client.
 
         :param order: The order to cancel.
         :param cancel_reason: The reason for cancellation (will be logged).
         """
-        # Preconditions
+
+        Precondition.valid_string(cancel_reason, 'cancel_reason')
         if order.id not in self._order_book.keys():
             raise ValueError("The order id was not found in the order book.")
 
-        if cancel_reason is None:
-            cancel_reason = 'NONE'
         self._exec_client.cancel_order(order, cancel_reason)
 
     @typechecking
@@ -514,7 +513,7 @@ class TradeStrategy:
         :param order: The order to modify.
         :param new_price: The new price for the given order.
         """
-        # Preconditions
+        Precondition.positive(new_price, 'new_price')
         if order.id not in self._order_book.keys():
             raise ValueError("The order id was not found in the order book.")
 
