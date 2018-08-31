@@ -40,6 +40,7 @@ class LiveDataClient:
 
         :param host: The redis host IP address (default=127.0.0.1).
         :param port: The redis host port (default=6379).
+        :param logger: The logging adapter for the component.
         """
         Precondition.valid_string(host, 'host')
         Precondition.in_range(port, 'port', 0, 99999)
@@ -102,7 +103,7 @@ class LiveDataClient:
                                    db=0)
         self._pubsub = self._client.pubsub()
 
-        self._log(f"Connected to the data service at {self._host}:{self._port}.")
+        self._logger.info(f"Connected to the data service at {self._host}:{self._port}.")
 
     def disconnect(self):
         """
@@ -164,7 +165,7 @@ class LiveDataClient:
             self._subscriptions_ticks.append(ticks_channel)
             self._subscriptions_ticks.sort()
 
-        self._log(f"Subscribed to tick data for {ticks_channel}.")
+        self._logger.info(f"Subscribed to tick data for {ticks_channel}.")
 
     @typechecking
     def unsubscribe_ticks(
@@ -189,7 +190,7 @@ class LiveDataClient:
             self._subscriptions_ticks.remove(tick_channel)
             self._subscriptions_ticks.sort()
 
-        self._log(f"Unsubscribed from tick data for {tick_channel}.")
+        self._logger.info(f"Unsubscribed from tick data for {tick_channel}.")
 
     @typechecking
     def subscribe_bars(
@@ -234,7 +235,7 @@ class LiveDataClient:
             self._subscriptions_bars.append(bars_channel)
             self._subscriptions_bars.sort()
 
-        self._log(f"Subscribed to bar data for {bars_channel}.")
+        self._logger.info(f"Subscribed to bar data for {bars_channel}.")
 
     @typechecking
     def unsubscribe_bars(
@@ -271,7 +272,7 @@ class LiveDataClient:
             self._subscriptions_bars.remove(bar_channel)
             self._subscriptions_bars.sort()
 
-        self._log(f"Unsubscribed from bar data for {bar_channel}.")
+        self._logger.info(f"Unsubscribed from bar data for {bar_channel}.")
 
     @typechecking
     def register_strategy(self, strategy: TradeStrategy):
@@ -291,17 +292,7 @@ class LiveDataClient:
         if strategy_bar_handler not in self._bar_handlers:
             self._bar_handlers.append(strategy_bar_handler)
 
-        self._log(f"Registered strategy {strategy} with the live data client.")
-
-    @staticmethod
-    @typechecking
-    def _log(message: str):
-        """
-        Log the given message (if no logger then prints).
-
-        :param message: The message to log.
-        """
-        print(f"DataClient: {message}")
+        self._logger.info(f"Registered strategy {strategy} with the live data client.")
 
     @staticmethod
     @typechecking

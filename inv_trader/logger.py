@@ -9,7 +9,6 @@
 
 import logging
 import threading
-import enum
 
 from datetime import datetime
 

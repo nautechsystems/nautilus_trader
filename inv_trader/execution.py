@@ -19,6 +19,7 @@ from uuid import UUID
 
 from inv_trader.core.typing import typechecking
 from inv_trader.core.preconditions import Precondition
+from inv_trader.logger import Logger
 from inv_trader.model.order import Order
 from inv_trader.model.commands import SubmitOrder, CancelOrder, ModifyOrder
 from inv_trader.model.events import Event, OrderEvent, AccountEvent, OrderCancelReject
@@ -40,14 +41,17 @@ class ExecutionClient:
     __metaclass__ = abc.ABCMeta
 
     @typechecking
-    def __init__(self):
+    def __init__(self, logger: Logger=Logger('ExecutionClient')):
         """
         Initializes a new instance of the ExecutionClient class.
+
+        :param logger: The logging adapter for the component.
         """
+        self._logger = logger
         self._registered_strategies = {}  # type: Dict[UUID, Callable]
         self._order_index = {}            # type: Dict[OrderId, UUID]
 
-        self._log("Initialized.")
+        self._logger.info("Initialized.")
 
     @typechecking
     def register_strategy(self, strategy: TradeStrategy):
@@ -130,34 +134,23 @@ class ExecutionClient:
         Handle events received from the execution service.
         """
         # Order event
-        self._log(f"Received {event}.")
+        self._logger.debug(f"Received {event}.")
         if isinstance(event, OrderEvent):
             order_id = event.order_id
             if order_id not in self._order_index.keys():
-                self._log(
-                    f"[Warning]: The given event order id {order_id} "
-                    f"was not contained in the order index.")
+                self._logger.warning(
+                    f"The given event order id {order_id} was not contained in the order index.")
                 return
 
             strategy_id = self._order_index[order_id]
             self._registered_strategies[strategy_id](event)
 
         if isinstance(event, OrderCancelReject):
-            self._log(f"[Warning]: {event}.")
+            self._logger.warning(f"{event}.")
 
         if isinstance(event, AccountEvent):
             for strategy_id in self._registered_strategies.keys():
                 self._registered_strategies[strategy_id](event)
-
-    @staticmethod
-    @typechecking
-    def _log(message: str):
-        """
-        Log the given message (if no logger then prints).
-
-        :param message: The message to log.
-        """
-        print(f"ExecClient: {message}")
 
 
 class LiveExecClient(ExecutionClient):
@@ -173,7 +166,8 @@ class LiveExecClient(ExecutionClient):
             commands_port: int=5555,
             events_port: int=5556,
             command_serializer: CommandSerializer=MsgPackCommandSerializer,
-            event_serializer: EventSerializer=MsgPackEventSerializer):
+            event_serializer: EventSerializer=MsgPackEventSerializer,
+            logger: Logger=Logger('ExecClient')):
         """
         Initializes a new instance of the LiveExecClient class.
         The host and port parameters are for the order event subscription
@@ -182,14 +176,16 @@ class LiveExecClient(ExecutionClient):
         :param host: The execution service host IP address (default=127.0.0.1).
         :param commands_port: The execution service commands port.
         :param events_port: The execution service events port.
-        :param: command_serializer: The command serializer for the client.
-        :param: event_serializer: The event serializer for the client.
+        :param command_serializer: The command serializer for the client.
+        :param event_serializer: The event serializer for the client.
+        :param event_serializer: The event serializer for the client.
+        :param logger: The logging adapter for the component.
         """
         Precondition.valid_string(host, 'host')
         Precondition.in_range(commands_port, 'commands_port', 0, 99999)
         Precondition.in_range(events_port, 'events_port', 0, 99999)
 
-        super().__init__()
+        super().__init__(logger)
         self._command_serializer = command_serializer
         self._event_serializer = event_serializer
         self._context = zmq.Context()
@@ -208,7 +204,7 @@ class LiveExecClient(ExecutionClient):
             "nautilus_execution_events",
             self._event_handler)
 
-        self._log(f"ZMQ v{zmq.pyzmq_version()}")
+        self._logger.info(f"ZMQ v{zmq.pyzmq_version()}")
 
     def connect(self):
         """
@@ -267,7 +263,7 @@ class LiveExecClient(ExecutionClient):
         message = self._command_serializer.serialize(command)
 
         self._order_commands_worker.send(message)
-        self._log(f"Sent {command}.")
+        self._logger.debug(f"Sent {command}.")
 
     @typechecking
     def modify_order(
@@ -277,8 +273,8 @@ class LiveExecClient(ExecutionClient):
         """
         Send a modify order request to the execution service.
 
-        :param: order: The order identifier to modify.
-        :param: new_price: The new modified price for the order.
+        :param order: The order identifier to modify.
+        :param new_price: The new modified price for the order.
         """
         Precondition.positive(new_price, 'new_price')
 
@@ -290,7 +286,7 @@ class LiveExecClient(ExecutionClient):
         message = self._command_serializer.serialize(command)
 
         self._order_commands_worker.send(message)
-        self._log(f"Sent {command}.")
+        self._logger.debug(f"Sent {command}.")
 
     @typechecking
     def _event_handler(self, body: bytes):
@@ -304,7 +300,7 @@ class LiveExecClient(ExecutionClient):
 
         # If no registered strategies then print message to console.
         if len(self._registered_strategies) == 0:
-            self._log(f"Received event from queue: {event}")
+            self._logger.debug(f"Received event from queue: {event}")
 
         self._on_event(event)
 
@@ -316,4 +312,4 @@ class LiveExecClient(ExecutionClient):
         :param body: The order command acknowledgement message body.
         """
         command = self._command_serializer.deserialize(body)
-        self._log(f"Received order command ack {command}.")
+        self._logger.debug(f"Received order command ack {command}.")
