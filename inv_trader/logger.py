@@ -25,8 +25,8 @@ class Logger:
     def __init__(self,
                  log_name=None,
                  component_name=None,
-                 log_level_console: enum=logging.INFO,
-                 log_level_file: enum=logging.DEBUG,
+                 log_level_console: logging=logging.INFO,
+                 log_level_file: logging=logging.DEBUG,
                  console_prints: bool=True,
                  log_to_file: bool=False,
                  log_file_path: str='var/tmp/'):
