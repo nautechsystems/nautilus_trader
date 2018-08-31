@@ -16,6 +16,7 @@ from uuid import UUID
 from typing import Optional
 
 from inv_trader.core.typing import typechecking
+from inv_trader.core.preconditions import Precondition
 from inv_trader.model.enums import CurrencyCode, OrderSide, OrderType, TimeInForce, Broker
 from inv_trader.model.objects import Symbol
 
@@ -123,6 +124,16 @@ class AccountEvent(Event):
         :param: event_id: The events identifier.
         :param: event_timestamp: The order events timestamp.
         """
+        Precondition.valid_string(account_id, 'account_id')
+        Precondition.valid_string(account_number, 'account_number')
+        Precondition.not_negative(cash_balance, 'cash_balance')
+        Precondition.not_negative(cash_start_day, 'cash_start_day')
+        Precondition.not_negative(cash_activity_day, 'cash_activity_day')
+        Precondition.not_negative(margin_used_liquidation, 'margin_used_liquidation')
+        Precondition.not_negative(margin_used_maintenance, 'margin_used_maintenance')
+        Precondition.not_negative(margin_ratio, 'margin_ratio')
+        # Precondition.valid_string(margin_call_status, 'margin_call_status')
+
         super().__init__(event_id, event_timestamp)
         self._currency = currency
         self._cash_balance = cash_balance
@@ -204,6 +215,8 @@ class OrderEvent(Event):
         :param: event_id: The events identifier.
         :param: event_timestamp: The order events timestamp.
         """
+        Precondition.valid_string(order_id, 'order_id')
+
         super().__init__(event_id, event_timestamp)
         self._symbol = order_symbol
         self._order_id = order_id
@@ -244,6 +257,8 @@ class OrderSubmitted(OrderEvent):
         :param: event_id: The events identifier.
         :param: event_timestamp: The events timestamp.
         """
+        Precondition.valid_string(order_id, 'order_id')
+
         super().__init__(symbol, order_id, event_id, event_timestamp)
         self._submitted_time = submitted_time
 
@@ -276,6 +291,8 @@ class OrderAccepted(OrderEvent):
         :param: event_id: The events identifier.
         :param: event_timestamp: The events timestamp.
         """
+        Precondition.valid_string(order_id, 'order_id')
+
         super().__init__(symbol, order_id, event_id, event_timestamp)
         self._accepted_time = accepted_time
 
@@ -310,6 +327,9 @@ class OrderRejected(OrderEvent):
         :param: event_id: The events identifier.
         :param: event_timestamp: The events timestamp.
         """
+        Precondition.valid_string(order_id, 'order_id')
+        Precondition.valid_string(rejected_reason, 'rejected_reason')
+
         super().__init__(symbol, order_id, event_id, event_timestamp)
         self._rejected_time = rejected_time
         self._rejected_reason = rejected_reason
@@ -366,9 +386,10 @@ class OrderWorking(OrderEvent):
         :param: event_timestamp: The events timestamp.
         :param: expire_time: The events order expire time (optional can be None).
         """
-        # Preconditions
-        if quantity <= 0:
-            raise ValueError(f"The quantity must be positive (value={quantity}).")
+        Precondition.valid_string(order_id, 'order_id')
+        Precondition.valid_string(broker_order_id, 'broker_order_id')
+        Precondition.valid_string(label, 'label')
+        Precondition.positive(quantity, 'quantity')
 
         super().__init__(symbol, order_id, event_id, event_timestamp)
         self._broker_order_id = broker_order_id
@@ -466,6 +487,8 @@ class OrderCancelled(OrderEvent):
         :param: event_id: The events identifier.
         :param: event_timestamp: The events timestamp.
         """
+        Precondition.valid_string(order_id, 'order_id')
+
         super().__init__(symbol, order_id, event_id, event_timestamp)
         self._cancelled_time = cancelled_time
 
@@ -502,6 +525,10 @@ class OrderCancelReject(OrderEvent):
         :param: event_id: The events identifier.
         :param: event_timestamp: The events timestamp.
         """
+        Precondition.valid_string(order_id, 'order_id')
+        Precondition.valid_string(cancel_response, 'cancel_response')
+        Precondition.valid_string(cancel_reject_reason, 'cancel_reject_reason')
+
         super().__init__(order_symbol, order_id, event_id, event_timestamp)
         self._cancel_reject_time = cancel_reject_time
         self._cancel_reject_response = cancel_response
@@ -550,6 +577,8 @@ class OrderExpired(OrderEvent):
         :param: event_id: The events identifier.
         :param: event_timestamp: The events timestamp.
         """
+        Precondition.valid_string(order_id, 'order_id')
+
         super().__init__(symbol, order_id, event_id, event_timestamp)
         self._expired_time = expired_time
 
@@ -586,6 +615,9 @@ class OrderModified(OrderEvent):
         :param: event_id: The events identifier.
         :param: event_timestamp: The events timestamp.
         """
+        Precondition.valid_string(order_id, 'order_id')
+        Precondition.valid_string(broker_order_id, 'broker_order_id')
+
         super().__init__(symbol, order_id, event_id, event_timestamp)
         self._broker_order_id = broker_order_id
         self._modified_price = modified_price
@@ -644,9 +676,10 @@ class OrderFilled(OrderEvent):
         :param: event_id: The events identifier.
         :param: event_timestamp: The events timestamp.
         """
-        # Preconditions
-        if filled_quantity <= 0:
-            raise ValueError(f"The filled quantity must be positive (value={filled_quantity}).")
+        Precondition.valid_string(order_id, 'order_id')
+        Precondition.valid_string(execution_id, 'execution_id')
+        Precondition.valid_string(execution_ticket, 'execution_ticket')
+        Precondition.positive(filled_quantity, 'filled_quantity')
 
         super().__init__(symbol, order_id, event_id, event_timestamp)
         self._execution_id = execution_id
@@ -732,11 +765,11 @@ class OrderPartiallyFilled(OrderEvent):
         :param: event_id: The events identifier.
         :param: event_timestamp: The events timestamp.
         """
-        # Preconditions
-        if filled_quantity <= 0:
-            raise ValueError(f"The filled quantity must be positive (value={filled_quantity}).")
-        if leaves_quantity <= 0:
-            raise ValueError(f"The leaves quantity must be positive (value={leaves_quantity}).")
+        Precondition.valid_string(order_id, 'order_id')
+        Precondition.valid_string(execution_id, 'execution_id')
+        Precondition.valid_string(execution_ticket, 'execution_ticket')
+        Precondition.positive(filled_quantity, 'filled_quantity')
+        Precondition.positive(leaves_quantity, 'leaves_quantity')
 
         super().__init__(symbol, order_id, event_id, event_timestamp)
         self._execution_id = execution_id
@@ -813,6 +846,8 @@ class TimeEvent(Event):
         :param: event_id: The time events identifier.
         :param: event_timestamp: The time events timestamp.
         """
+        Precondition.valid_string(label, 'label')
+
         super().__init__(event_id, event_timestamp)
         self._label = label
 

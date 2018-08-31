@@ -12,6 +12,7 @@ from decimal import Decimal
 from typing import List, Optional
 
 from inv_trader.core.typing import typechecking
+from inv_trader.core.preconditions import Precondition
 from inv_trader.model.enums import OrderSide, OrderType, TimeInForce, OrderStatus
 from inv_trader.model.objects import Symbol
 from inv_trader.model.events import OrderEvent
@@ -59,23 +60,21 @@ class Order:
         :param: time_in_force: The orders time in force (optional can be None).
         :param: expire_time: The orders expire time (optional can be None).
         """
-        # Preconditions
         if time_in_force is None:
             time_in_force = TimeInForce.DAY
-        if quantity <= 0:
-            raise ValueError(f"The quantity must be positive (was {quantity}).")
-        if time_in_force is TimeInForce.GTD and expire_time is None:
-            raise ValueError(f"The expire_time cannot be None for GTD orders.")
+
+        Precondition.valid_string(order_id, 'order_id')
+        Precondition.valid_string(label, 'label')
+        Precondition.positive(quantity, 'quantity')
         # Orders without prices
         if order_type not in PRICED_ORDER_TYPES:
-            if price is not None:
-                raise ValueError(f"{order_type.name} orders cannot have a price.")
+            Precondition.is_none(price, 'price')
         # Orders with prices
         if order_type in PRICED_ORDER_TYPES:
-            if price is None:
-                raise ValueError("The price cannot be None.")
-            if price <= 0.:
-                raise ValueError("The price must be > 0.")
+            Precondition.not_none(price, 'price')
+            Precondition.positive(price, 'price')
+        if time_in_force is TimeInForce.GTD:
+            Precondition.not_none(expire_time, 'expire_time')
 
         self._symbol = symbol
         self._id = order_id
@@ -282,7 +281,6 @@ class Order:
 
         :param order_event: The order event to apply.
         """
-        # Preconditions
         if order_event.order_id != self.id:
             raise ValueError(
                 f"The event order id is invalid for this order "

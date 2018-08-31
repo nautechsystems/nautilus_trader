@@ -10,7 +10,7 @@
 PRE_FAILED = "Precondition Failed"
 
 
-class Precondition:
+cdef class Precondition:
     """
     Provides static methods for the checking of function or method preconditions.
     A precondition is a condition or predicate that must always be true just prior
@@ -18,7 +18,7 @@ class Precondition:
     specification.
     """
     @staticmethod
-    def true(predicate: bool, description: str):
+    def true(object predicate, str description):
         """
         Check the preconditions predicate is true.
 
@@ -30,7 +30,7 @@ class Precondition:
             raise ValueError(f"{PRE_FAILED} (the predicate {description} was false).")
 
     @staticmethod
-    def is_none(argument, param_name: str):
+    def is_none(object argument, str param_name):
         """
         Check the preconditions argument is None.
 
@@ -42,7 +42,7 @@ class Precondition:
             raise ValueError(f"{PRE_FAILED} (the {param_name} argument was NOT none).")
 
     @staticmethod
-    def not_none(argument, param_name: str):
+    def not_none(object argument, str param_name):
         """
         Check the preconditions argument is not None.
 
@@ -54,7 +54,7 @@ class Precondition:
             raise ValueError(f"{PRE_FAILED} (the {param_name} argument was none).")
 
     @staticmethod
-    def not_none_empty_or_whitespace(argument: str, param_name: str):
+    def valid_string(str argument, str param_name):
         """
         Check the preconditions string argument is not None, empty or whitespace.
 
@@ -63,14 +63,16 @@ class Precondition:
         :raises ValueError: If the string argument is None, empty or whitespace.
         """
         if argument is None:
-            raise ValueError(f"{PRE_FAILED} (the {param_name} string argument was None")
+            raise ValueError(f"{PRE_FAILED} (the {param_name} string argument was None).")
         if argument is str(""):
-            raise ValueError(f"{PRE_FAILED} (the {param_name} string argument was empty.")
+            raise ValueError(f"{PRE_FAILED} (the {param_name} string argument was empty).")
         if argument.isspace():
             raise ValueError(f"{PRE_FAILED} (the {param_name} string argument was whitespace).")
+        if len(argument) > 256:
+            raise ValueError(f"{PRE_FAILED} (the {param_name} string argument exceeded 256 chars).")
 
     @staticmethod
-    def equal(argument1, argument2):
+    def equal(object argument1, object argument2):
         """
         Check the preconditions arguments are equal.
 
@@ -83,10 +85,10 @@ class Precondition:
 
     @staticmethod
     def equal_lengths(
-            collection1,
-            collection2,
-            collection1_name: str,
-            collection2_name: str):
+            object collection1,
+            object collection2,
+            str collection1_name,
+            str collection2_name):
         """
         Check the preconditions collections have equal lengths.
 
@@ -102,7 +104,7 @@ class Precondition:
                 f"(the lengths of {collection1_name} and {collection2_name} were not equal)."))
 
     @staticmethod
-    def positive(value, param_name: str):
+    def positive(double value, str param_name):
         """
         Check the preconditions value is positive (greater than or equal to zero.)
 
@@ -114,7 +116,7 @@ class Precondition:
             raise ValueError(f"{PRE_FAILED} (the {param_name} was NOT positive = {value}).")
 
     @staticmethod
-    def not_negative(value, param_name: str):
+    def not_negative(double value, str param_name):
         """
         Check the preconditions value is positive, and not zero.
 
@@ -126,7 +128,11 @@ class Precondition:
             raise ValueError(f"{PRE_FAILED} (the {param_name} was negative = {value}).")
 
     @staticmethod
-    def in_range(value, param_name: str, start, end):
+    def in_range(
+            double value,
+            str param_name,
+            double start,
+            double end):
         """
         Check the preconditions value is within the specified range (inclusive).
 
@@ -141,7 +147,7 @@ class Precondition:
                 f"{PRE_FAILED} (the {param_name} was out of range [{start} - {end}] = {value}).")
 
     @staticmethod
-    def not_empty(argument: [], param_name: str):
+    def not_empty(object argument, str param_name):
         """
         Check the preconditions iterable is not empty.
 
@@ -153,7 +159,7 @@ class Precondition:
             raise ValueError(f"{PRE_FAILED} (the {param_name} was an empty collection).")
 
     @staticmethod
-    def empty(argument: [], param_name: str):
+    def empty(object argument, str param_name):
         """
         Check the preconditions iterable is empty.
 

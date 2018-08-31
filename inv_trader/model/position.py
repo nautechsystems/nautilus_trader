@@ -12,6 +12,7 @@ from decimal import Decimal
 from typing import List, Optional
 
 from inv_trader.core.typing import typechecking
+from inv_trader.core.preconditions import Precondition
 from inv_trader.model.enums import MarketPosition, OrderSide
 from inv_trader.model.objects import Symbol
 from inv_trader.model.events import OrderEvent
@@ -40,6 +41,8 @@ class Position:
         :param: position_id: The positions identifier.
         :param: timestamp: The positions initialization timestamp.
         """
+        Precondition.valid_string(position_id, 'position_id')
+
         self._symbol = symbol
         self._id = position_id
         self._timestamp = timestamp
@@ -230,6 +233,9 @@ class Position:
             quantity: int,
             average_price: Decimal,
             event_time: datetime):
+        Precondition.positive(quantity, 'quantity')
+        Precondition.positive(average_price, 'average_price')
+
         if order_side is OrderSide.BUY:
             self._relative_quantity += quantity
         elif order_side is OrderSide.SELL:
