@@ -11,9 +11,10 @@ import abc
 import inspect
 import uuid
 
+from collections import deque
 from datetime import datetime, timedelta
 from decimal import Decimal
-from typing import List, Dict, KeysView, Callable
+from typing import List, Deque, Dict, KeysView, Callable
 from uuid import UUID
 
 from inv_trader.core.typing import typechecking
@@ -29,6 +30,7 @@ from inv_trader.factories import OrderIdGenerator
 
 # Constants
 OrderId = str
+Label = str
 Indicator = object
 
 POINT = 'point'
@@ -52,7 +54,8 @@ class TradeStrategy:
     @typechecking
     def __init__(self,
                  label: str=None,
-                 order_id_tag: str=None):
+                 order_id_tag: str=None,
+                 bar_capacity=1000):
         """
         Initializes a new instance of the TradeStrategy abstract class.
 
@@ -60,17 +63,21 @@ class TradeStrategy:
         :param: order_id_tag: The unique order identifier tag for the strategy (can be empty).
         """
         if label is None:
-            label = ''
+            label = '001'
         if order_id_tag is None:
-            order_id_tag = '0'
+            order_id_tag = '001'
+        Precondition.valid_string(label, 'label')
+        Precondition.valid_string(order_id_tag, 'order_id_tag')
+        Precondition.positive(bar_capacity, 'bar_capacity')
 
         self._name = self.__class__.__name__
         self._id = uuid.uuid4()
         self._label = label
         self._order_id_generator = OrderIdGenerator(order_id_tag)
+        self._bar_capacity = bar_capacity
         self._is_running = False
         self._ticks = {}               # type: Dict[Symbol, Tick]
-        self._bars = {}                # type: Dict[BarType, List[Bar]]
+        self._bars = {}                # type: Dict[BarType, Deque[Bar]]
         self._indicators = {}          # type: Dict[BarType, List[Indicator]]
         self._indicator_updaters = {}  # type: Dict[BarType, List[IndicatorUpdater]]
         self._indicator_index = {}     # type: Dict[Label, Indicator]
@@ -278,7 +285,7 @@ class TradeStrategy:
         return self._indicator_index[label]
 
     # @typechecking: cannot type check generics?
-    def bars(self, bar_type: BarType) -> List[Bar]:
+    def bars(self, bar_type: BarType) -> Deque[Bar]:
         """
         Get the bars for the given bar type.
 
@@ -307,7 +314,6 @@ class TradeStrategy:
         """
         if bar_type not in self._bars:
             raise KeyError(f"The bars dictionary does not contain {bar_type}.")
-        Precondition.not_negative(index, 'index')
 
         return self._bars[bar_type][index]
 
@@ -320,7 +326,6 @@ class TradeStrategy:
         :return: The tick object.
         :raises: KeyError: If the strategy does not contain a tick for the symbol and venue string.
         """
-        # Preconditions
         if symbol not in self._ticks:
             raise KeyError(f"The ticks dictionary does not contain {symbol}.")
 
@@ -591,8 +596,8 @@ class TradeStrategy:
         """
         # Update the internal bars.
         if bar_type not in self._bars:
-            self._bars[bar_type] = []  # type: List[Bar]
-        self._bars[bar_type].insert(0, bar)
+            self._bars[bar_type] = deque(maxlen=self._bar_capacity)  # type: Deque[Bar]
+        self._bars[bar_type].append(bar)
 
         # Update the internal indicators.
         if bar_type in self._indicators:
@@ -615,7 +620,7 @@ class TradeStrategy:
         """
         # Preconditions checked in _update_bars.
         if bar_type not in self._indicators:
-            # No indicators to update with this bar (remove this for production.)
+            # No indicators to update with this bar.
             return
 
         # For each updater matching the given bar type -> update with the bar.
@@ -657,7 +662,7 @@ class TradeStrategy:
                     self._positions.pop(event.symbol)
                     self._log(f"Closed {closed_position}.")
 
-        # Account Events
+        # Account Events.
         if isinstance(event, AccountEvent):
             self._account.apply(event)
 
