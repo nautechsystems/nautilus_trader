@@ -58,8 +58,8 @@ class TradeStrategyTests(unittest.TestCase):
         result3 = strategy3.label
 
         # Assert
-        self.assertEqual('', result1)
-        self.assertEqual('', result2)
+        self.assertEqual('001', result1)
+        self.assertEqual('001', result2)
         self.assertEqual('EURUSD-Scalper', result3)
 
     def test_strategy_equality(self):
