@@ -14,6 +14,7 @@ from datetime import datetime
 from typing import List, Dict, Optional
 
 from inv_trader.core.typing import typechecking
+from inv_trader.core.preconditions import Precondition
 from inv_trader.model.enums import OrderSide, OrderType, TimeInForce
 from inv_trader.model.objects import Symbol
 from inv_trader.model.order import Order
@@ -49,6 +50,10 @@ class OrderFactory:
         :param quantity: The orders quantity (> 0).
         :return: The market order.
         """
+        Precondition.valid_string(order_id, 'order_id')
+        Precondition.valid_string(label, 'label')
+        Precondition.positive(quantity, 'quantity')
+
         return Order(symbol,
                      order_id,
                      label,
@@ -85,6 +90,11 @@ class OrderFactory:
         :param expire_time: The orders expire time (optional can be None unless GTD).
         :return: The limit order.
         """
+        Precondition.valid_string(order_id, 'order_id')
+        Precondition.valid_string(label, 'label')
+        Precondition.positive(quantity, 'quantity')
+        Precondition.positive(price, 'price')
+
         return Order(symbol,
                      order_id,
                      label,
@@ -121,6 +131,11 @@ class OrderFactory:
         :param expire_time: The orders expire time (optional can be None unless GTD).
         :return: The stop-market order.
         """
+        Precondition.valid_string(order_id, 'order_id')
+        Precondition.valid_string(label, 'label')
+        Precondition.positive(quantity, 'quantity')
+        Precondition.positive(price, 'price')
+
         return Order(symbol,
                      order_id,
                      label,
@@ -157,6 +172,11 @@ class OrderFactory:
         :param expire_time: The orders expire time (optional can be None unless GTD).
         :return: The stop-limit order.
         """
+        Precondition.valid_string(order_id, 'order_id')
+        Precondition.valid_string(label, 'label')
+        Precondition.positive(quantity, 'quantity')
+        Precondition.positive(price, 'price')
+
         return Order(symbol,
                      order_id,
                      label,
@@ -193,6 +213,11 @@ class OrderFactory:
         :param expire_time: The orders expire time (optional can be None unless GTD).
         :return: The market-if-touched order.
         """
+        Precondition.valid_string(order_id, 'order_id')
+        Precondition.valid_string(label, 'label')
+        Precondition.positive(quantity, 'quantity')
+        Precondition.positive(price, 'price')
+
         return Order(symbol,
                      order_id,
                      label,
@@ -222,6 +247,10 @@ class OrderFactory:
         :param quantity: The orders quantity (> 0).
         :return: The market order.
         """
+        Precondition.valid_string(order_id, 'order_id')
+        Precondition.valid_string(label, 'label')
+        Precondition.positive(quantity, 'quantity')
+
         return Order(symbol,
                      order_id,
                      label,
@@ -251,6 +280,10 @@ class OrderFactory:
         :param quantity: The orders quantity (> 0).
         :return: The market order.
         """
+        Precondition.valid_string(order_id, 'order_id')
+        Precondition.valid_string(label, 'label')
+        Precondition.positive(quantity, 'quantity')
+
         return Order(symbol,
                      order_id,
                      label,
@@ -275,6 +308,8 @@ class OrderIdGenerator:
 
         :param order_id_tag: The generators unique order identifier tag.
         """
+        Precondition.valid_string(order_id_tag, 'order_id_tag')
+
         self._order_id_tag = order_id_tag
         self._order_symbol_counts = {}  # type: Dict[Symbol, int]
         self._order_ids = []            # type: List[OrderId]

@@ -42,9 +42,9 @@ class Order:
                  order_type: OrderType,
                  quantity: int,
                  timestamp: datetime,
-                 price: Optional[Decimal]=None,
-                 time_in_force: Optional[TimeInForce]=None,
-                 expire_time: Optional[datetime]=None):
+                 price: Decimal or None=None,
+                 time_in_force: TimeInForce or None=None,
+                 expire_time: datetime or None=None):
         """
         Initializes a new instance of the Order class.
 
@@ -194,7 +194,7 @@ class Order:
         return self._time_in_force
 
     @property
-    def expire_time(self) -> Optional[datetime]:
+    def expire_time(self) -> datetime or None:
         """
         :return: The orders expire time (optional could be None).
         """
@@ -208,7 +208,7 @@ class Order:
         return self._price
 
     @property
-    def average_price(self) -> Optional[Decimal]:
+    def average_price(self) -> Decimal or None:
         """
         :return: The orders average filled price (optional could be None).
         """

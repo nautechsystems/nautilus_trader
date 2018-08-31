@@ -15,6 +15,7 @@ from threading import Thread
 from zmq import Context
 
 from inv_trader.core.typing import typechecking
+from inv_trader.core.preconditions import Precondition
 
 UTF8 = 'utf-8'
 DELIMITER = b' '
@@ -45,6 +46,10 @@ class MQWorker(Thread):
         :param port: The service port.
         :param handler: The response handler.
         """
+        Precondition.valid_string(name, 'name')
+        Precondition.valid_string(host, 'host')
+        Precondition.in_range(port, 'port', 0, 99999)
+
         super().__init__()
         self.daemon = True
         self._name = name
@@ -67,6 +72,8 @@ class MQWorker(Thread):
 
         :param message: The message bytes to send.
         """
+        Precondition.not_empty(message, 'message')
+
         self._socket.send(message)
         self._cycles += 1
         self._log(f"Sending message[{self._cycles}] {message}")
@@ -104,6 +111,8 @@ class MQWorker(Thread):
 
         :param message: The message to log.
         """
+        Precondition.valid_string(message, 'message')
+
         print(f"{self._name}: {message}")
 
 
@@ -124,6 +133,10 @@ class RequestWorker(MQWorker):
         :param port: The service port.
         :param handler: The response handler.
         """
+        Precondition.valid_string(name, 'name')
+        Precondition.valid_string(host, 'host')
+        Precondition.in_range(port, 'port', 0, 99999)
+
         super().__init__(
             name,
             context,
@@ -166,6 +179,11 @@ class SubscriberWorker(MQWorker):
         :param topic: The topic to subscribe to.
         :param handler: The message handler.
         """
+        Precondition.valid_string(name, 'name')
+        Precondition.valid_string(host, 'host')
+        Precondition.in_range(port, 'port', 0, 99999)
+        Precondition.valid_string(topic, 'topic')
+
         super().__init__(
             name,
             context,
