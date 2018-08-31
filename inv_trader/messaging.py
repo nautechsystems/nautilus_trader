@@ -16,6 +16,7 @@ from zmq import Context
 
 from inv_trader.core.typing import typechecking
 from inv_trader.core.preconditions import Precondition
+from inv_trader.logger import Logger
 
 UTF8 = 'utf-8'
 DELIMITER = b' '
@@ -36,7 +37,8 @@ class MQWorker(Thread):
             socket_type: int,
             host: str,
             port: int,
-            handler: Callable):
+            handler: Callable,
+            logger: Logger=Logger('MQWorker')):
         """
         Initializes a new instance of the MQWorker class.
 
@@ -45,6 +47,7 @@ class MQWorker(Thread):
         :param host: The service host address.
         :param port: The service port.
         :param handler: The response handler.
+        :param logger: The logging adapter for the component.
         """
         Precondition.valid_string(name, 'name')
         Precondition.valid_string(host, 'host')
@@ -56,6 +59,7 @@ class MQWorker(Thread):
         self._context = context
         self._service_address = f'tcp://{host}:{port}'
         self._handler = handler
+        self._logger = logger
         self._socket = self._context.socket(socket_type)
         self._cycles = 0
 
@@ -76,17 +80,17 @@ class MQWorker(Thread):
 
         self._socket.send(message)
         self._cycles += 1
-        self._log(f"Sending message[{self._cycles}] {message}")
+        self._logger.debug(f"Sending message[{self._cycles}] {message}")
 
         response = self._socket.recv()
-        self._log(f"Received {response.decode(UTF8)}[{self._cycles}] response.")
+        self._logger.debug(f"Received {response.decode(UTF8)}[{self._cycles}] response.")
 
     def stop(self):
         """
         Close the connection and stop the worker.
         """
         self._close_connection()
-        self._log(f"Stopped.")
+        self._logger.debug(f"Stopped.")
 
     @abc.abstractmethod
     def _open_connection(self):
@@ -104,15 +108,6 @@ class MQWorker(Thread):
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    @typechecking
-    def _log(self, message: str):
-        """
-        Log the given message (if no logger then prints).
-
-        :param message: The message to log.
-        """
-        print(f"{self._name}: {message}")
-
 
 class RequestWorker(MQWorker):
     @typechecking
@@ -122,7 +117,8 @@ class RequestWorker(MQWorker):
             context: Context,
             host: str,
             port: int,
-            handler: Callable):
+            handler: Callable,
+            logger: Logger=Logger('RequestWorker')):
         """
         Initializes a new instance of the RequestWorker class.
 
@@ -130,6 +126,7 @@ class RequestWorker(MQWorker):
         :param host: The service host address.
         :param port: The service port.
         :param handler: The response handler.
+        :param logger: The logging adapter for the component.
         """
         Precondition.valid_string(name, 'name')
         Precondition.valid_string(host, 'host')
@@ -141,20 +138,21 @@ class RequestWorker(MQWorker):
             zmq.REQ,
             host,
             port,
-            handler)
+            handler,
+            logger)
 
     def _open_connection(self):
         """
         Open a new connection to the service.
         """
-        self._log(f"Connecting to {self._service_address}...")
+        self._logger.info(f"Connecting to {self._service_address}...")
         self._socket.connect(self._service_address)
 
     def _close_connection(self):
         """
         Close the connection with the service.
         """
-        self._log(f"Disconnecting from {self._service_address}...")
+        self._logger.info(f"Disconnecting from {self._service_address}...")
         self._socket.disconnect(self._service_address)
 
 
@@ -167,7 +165,8 @@ class SubscriberWorker(MQWorker):
             host: str,
             port: int,
             topic: str,
-            handler: Callable):
+            handler: Callable,
+            logger: Logger=Logger('SubscriberWorker')):
         """
         Initializes a new instance of the SubscriberWorker class.
 
@@ -176,6 +175,7 @@ class SubscriberWorker(MQWorker):
         :param port: The service port.
         :param topic: The topic to subscribe to.
         :param handler: The message handler.
+        :param logger: The logging adapter for the component.
         """
         Precondition.valid_string(name, 'name')
         Precondition.valid_string(host, 'host')
@@ -188,7 +188,8 @@ class SubscriberWorker(MQWorker):
             zmq.SUB,
             host,
             port,
-            handler)
+            handler,
+            logger)
         self._topic = topic
 
     def run(self):
@@ -202,17 +203,17 @@ class SubscriberWorker(MQWorker):
         """
         Open a new connection to the service.
         """
-        self._log(f"Connecting to {self._service_address}...")
+        self._logger.info(f"Connecting to {self._service_address}...")
         self._socket.connect(self._service_address)
         self._socket.setsockopt(zmq.SUBSCRIBE, self._topic.encode(UTF8))
         self._consume_messages()
-        self._log(f"Subscribed to {self._topic}.")
+        self._logger.info(f"Subscribed to {self._topic}.")
 
     def _consume_messages(self):
         """
         Start the consumption loop to receive published messages.
         """
-        self._log("Ready to consume messages...")
+        self._logger.info("Ready to consume messages...")
 
         while True:
             message = self._socket.recv()
@@ -221,11 +222,11 @@ class SubscriberWorker(MQWorker):
             topic, data = message.split(DELIMITER, 1)
             self._handler(data)
             self._cycles += 1
-            self._log(f"Received message[{self._cycles}] from {topic.decode(UTF8)}: {data}")
+            self._logger.debug(f"Received message[{self._cycles}] from {topic.decode(UTF8)}: {data}")
 
     def _close_connection(self):
         """
         Close the connection with the service.
         """
-        self._log(f"Disconnecting from {self._service_address}...")
+        self._logger.info(f"Disconnecting from {self._service_address}...")
         self._socket.disconnect(self._service_address)
