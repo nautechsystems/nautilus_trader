@@ -9,7 +9,7 @@
 
 from datetime import datetime
 from decimal import Decimal
-from typing import List, Optional
+from typing import List
 
 from inv_trader.core.typing import typechecking
 from inv_trader.core.preconditions import Precondition
@@ -106,28 +106,28 @@ class Position:
         return self._timestamp
 
     @property
-    def average_entry_price(self) -> Optional[Decimal]:
+    def average_entry_price(self) -> Decimal or None:
         """
         :return: The positions average filled entry price (optional could be None).
         """
         return self._average_entry_price
 
     @property
-    def average_exit_price(self) -> Optional[Decimal]:
+    def average_exit_price(self) -> Decimal or None:
         """
         :return: The positions average filled exit price (optional could be None).
         """
         return self._average_exit_price
 
     @property
-    def entry_time(self) -> Optional[datetime]:
+    def entry_time(self) -> datetime or None:
         """
         :return: The positions market entry time (optional could be None).
         """
         return self._entry_time
 
     @property
-    def exit_time(self) -> Optional[datetime]:
+    def exit_time(self) -> datetime or None:
         """
         :return: The positions market exit time (optional could be None).
         """

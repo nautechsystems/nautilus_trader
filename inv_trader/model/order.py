@@ -9,7 +9,7 @@
 
 from datetime import datetime
 from decimal import Decimal
-from typing import List, Optional
+from typing import List
 
 from inv_trader.core.typing import typechecking
 from inv_trader.core.preconditions import Precondition
