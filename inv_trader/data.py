@@ -34,7 +34,7 @@ class LiveDataClient:
     def __init__(self,
                  host: str='localhost',
                  port: int=6379,
-                 logger: Logger=Logger()):
+                 logger: Logger=Logger(component_name='DataClient')):
         """
         Initializes a new instance of the LiveDataClient class.
 
@@ -55,7 +55,7 @@ class LiveDataClient:
         self._tick_handlers = []
         self._bar_handlers = []
 
-        self._logger.info("DataClient: Initialized.")
+        self._logger.info("Initialized.")
 
     @property
     def is_connected(self) -> bool:
@@ -114,16 +114,16 @@ class LiveDataClient:
         if self._pubsub_thread is not None:
             self._pubsub_thread.stop()
             time.sleep(0.100)  # Allows thread to stop.
-            self._log(f"Stopped PubSub thread {self._pubsub_thread}.")
+            self._logger.debug(f"Stopped PubSub thread {self._pubsub_thread}.")
 
-        self._log(f"Unsubscribed from tick data {self._subscriptions_ticks}.")
-        self._log(f"Unsubscribed from bar data {self._subscriptions_bars}.")
+        self._logger.info(f"Unsubscribed from tick data {self._subscriptions_ticks}.")
+        self._logger.info(f"Unsubscribed from bar data {self._subscriptions_bars}.")
 
         if self._client is not None:
             self._client.connection_pool.disconnect()
-            self._log(f"Disconnected from live database at {self._host}:{self._port}.")
+            self._logger.info(f"Disconnected from live database at {self._host}:{self._port}.")
         else:
-            self._log("Disconnected (the client was already disconnected).")
+            self._logger.info("Disconnected (the client was already disconnected).")
 
         self._client = None
         self._pubsub = None
