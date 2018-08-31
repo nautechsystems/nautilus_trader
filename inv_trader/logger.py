@@ -24,33 +24,41 @@ class Logger:
 
     def __init__(self,
                  log_name=None,
+                 component_name=None,
                  log_level_console: enum=logging.INFO,
                  log_level_file: enum=logging.DEBUG,
                  console_prints: bool=True,
                  log_to_file: bool=False,
-                 log_file_name: str=None,
                  log_file_path: str='var/tmp/'):
         """
         Initializes a new instance of the Logger class.
 
+        :param: log_name: The name of the logger.
+        :param: component_name: The name of the component.
         :param: log_level_console: The minimum log level for logging messages to the console.
         :param: log_level_file: The minimum log level for logging messages to the log file.
         :param: console_prints: The boolean flag indicating whether log messages should print.
         :param: log_to_file: The boolean flag indicating whether log messages should log to file
         :param: log_file_name: The name of the log file (cannot be None if log_to_file is True).
         """
-        if log_name is None:
+        if log_name is not None:
+            Precondition.valid_string(log_name, 'log_name')
+        else:
             log_name = 'tmp'
-        Precondition.valid_string(log_name, 'log_name')
-        if log_to_file:
-            Precondition.valid_string(log_file_name, 'log_file_name')
-            Precondition.valid_string(log_file_path, 'log_file_path')
+        if component_name is not None:
+            Precondition.valid_string(component_name, 'component_name')
+            component_name = component_name + ':'
+        else:
+            component_name = ''
 
+        Precondition.valid_string(log_file_path, 'log_file_path')
+
+        self._component_name = component_name
         self._log_level_console = log_level_console
         self._log_level_file = log_level_file
         self._console_prints = console_prints
         self._log_to_file = log_to_file
-        self._log_file = f'{log_file_path}{log_file_name}.log'
+        self._log_file = f'{log_file_path}{log_name}.log'
         self._logger = logging.getLogger(log_name)
         self._logger.setLevel(log_level_file)
 
@@ -67,7 +75,7 @@ class Logger:
         """
         Precondition.valid_string(message, 'message')
 
-        log_message = Logger._format_message('DBG', message)
+        log_message = self._format_message('DBG', message)
         self._console_print_handler(log_message, logging.DEBUG)
 
         if self._log_to_file:
@@ -81,7 +89,7 @@ class Logger:
         """
         Precondition.valid_string(message, 'message')
 
-        log_message = Logger._format_message('INF', message)
+        log_message = self._format_message('INF', message)
         self._console_print_handler(log_message, logging.INFO)
 
         if self._log_to_file:
@@ -95,7 +103,7 @@ class Logger:
         """
         Precondition.valid_string(message, 'message')
 
-        log_message = Logger._format_message('WRN', message)
+        log_message = self._format_message('WRN', message)
         self._console_print_handler(log_message, logging.WARNING)
 
         if self._log_to_file:
@@ -109,21 +117,27 @@ class Logger:
         """
         Precondition.valid_string(message, 'message')
 
-        log_message = Logger._format_message('FTL', message)
+        log_message = self._format_message('FTL', message)
         self._console_print_handler(log_message, logging.CRITICAL)
 
         if self._log_to_file:
             self._logger.critical(log_message)
 
-    @staticmethod
-    def _format_message(log_level: str, message: str):
+    def _format_message(
+            self,
+            log_level: str,
+            message: str):
         Precondition.valid_string(log_level, 'log_level')
         Precondition.valid_string(message, 'message')
 
         time = datetime.utcnow().isoformat(timespec='milliseconds') + 'Z'
-        return f'{time} [{threading.current_thread().ident}][{log_level}] {message}'
+        return (f'{time} [{threading.current_thread().ident}][{log_level}] '
+                f'{self._component_name} {message}')
 
-    def _console_print_handler(self, message: str, log_level: logging):
+    def _console_print_handler(
+            self,
+            message: str,
+            log_level: logging):
         Precondition.valid_string(message, 'message')
 
         if self._console_prints and self._log_level_console <= log_level:
