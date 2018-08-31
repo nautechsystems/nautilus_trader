@@ -17,6 +17,7 @@ from typing import List, Dict
 
 from inv_trader.core.typing import typechecking
 from inv_trader.core.preconditions import Precondition
+from inv_trader.logger import Logger
 from inv_trader.model.enums import Resolution, QuoteType, Venue
 from inv_trader.model.objects import Symbol, Tick, BarType, Bar
 from inv_trader.strategy import TradeStrategy
@@ -32,7 +33,8 @@ class LiveDataClient:
     @typechecking
     def __init__(self,
                  host: str='localhost',
-                 port: int=6379):
+                 port: int=6379,
+                 logger: Logger=Logger()):
         """
         Initializes a new instance of the LiveDataClient class.
 
@@ -44,6 +46,7 @@ class LiveDataClient:
 
         self._host = host
         self._port = port
+        self._logger = logger
         self._client = None
         self._pubsub = None
         self._pubsub_thread = None
@@ -52,7 +55,7 @@ class LiveDataClient:
         self._tick_handlers = []
         self._bar_handlers = []
 
-        self._log("Initialized.")
+        self._logger.info("DataClient: Initialized.")
 
     @property
     def is_connected(self) -> bool:
