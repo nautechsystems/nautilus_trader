@@ -18,7 +18,7 @@ from inv_trader.core.preconditions import Precondition
 
 class Logger:
     """
-    Provides a logger for the trader package.
+    Provides a logger for the trader client which wraps the Python logging module.
     """
 
     @typechecking
@@ -33,7 +33,6 @@ class Logger:
         Initializes a new instance of the Logger class.
 
         :param: log_name: The name of the logger.
-        :param: component_name: The name of the component.
         :param: log_level_console: The minimum log level for logging messages to the console.
         :param: log_level_file: The minimum log level for logging messages to the log file.
         :param: console_prints: The boolean flag indicating whether log messages should print.
@@ -136,7 +135,7 @@ class Logger:
 
 class LoggingAdapter:
     """
-    Provides an adapter for the traders client logger.
+    Provides an adapter for the trading clients logger.
     """
 
     @typechecking
