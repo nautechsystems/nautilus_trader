@@ -16,7 +16,7 @@ from zmq import Context
 
 from inv_trader.core.typing import typechecking
 from inv_trader.core.preconditions import Precondition
-from inv_trader.logger import Logger
+from inv_trader.logging import Logger, LoggingAdapter
 
 UTF8 = 'utf-8'
 DELIMITER = b' '
@@ -38,7 +38,7 @@ class MQWorker(Thread):
             host: str,
             port: int,
             handler: Callable,
-            logger: Logger=Logger('MQWorker')):
+            logger: Logger=None):
         """
         Initializes a new instance of the MQWorker class.
 
@@ -59,7 +59,10 @@ class MQWorker(Thread):
         self._context = context
         self._service_address = f'tcp://{host}:{port}'
         self._handler = handler
-        self._log = logger
+        if logger is None:
+            self._log = LoggingAdapter(name)
+        else:
+            self._log = LoggingAdapter(name, logger)
         self._socket = self._context.socket(socket_type)
         self._cycles = 0
 
@@ -118,7 +121,7 @@ class RequestWorker(MQWorker):
             host: str,
             port: int,
             handler: Callable,
-            logger: Logger=Logger('RequestWorker')):
+            logger: Logger=None):
         """
         Initializes a new instance of the RequestWorker class.
 
@@ -166,7 +169,7 @@ class SubscriberWorker(MQWorker):
             port: int,
             topic: str,
             handler: Callable,
-            logger: Logger=Logger('SubscriberWorker')):
+            logger: Logger=None):
         """
         Initializes a new instance of the SubscriberWorker class.
 

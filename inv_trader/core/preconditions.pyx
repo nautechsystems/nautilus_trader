@@ -68,8 +68,8 @@ cdef class Precondition:
             raise ValueError(f"{PRE_FAILED} (the {param_name} string argument was empty).")
         if argument.isspace():
             raise ValueError(f"{PRE_FAILED} (the {param_name} string argument was whitespace).")
-        if len(argument) > 256:
-            raise ValueError(f"{PRE_FAILED} (the {param_name} string argument exceeded 256 chars).")
+        if len(argument) > 512:
+            raise ValueError(f"{PRE_FAILED} (the {param_name} string argument exceeded 512 chars).")
 
     @staticmethod
     def equal(object argument1, object argument2):
