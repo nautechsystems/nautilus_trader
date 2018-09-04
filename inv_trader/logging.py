@@ -21,11 +21,11 @@ class Logger:
     Provides a logger for the trader package.
     """
 
+    @typechecking
     def __init__(self,
                  log_name=None,
-                 component_name=None,
-                 log_level_console: logging=logging.INFO,
-                 log_level_file: logging=logging.DEBUG,
+                 log_level_console: int=logging.INFO,
+                 log_level_file: int=logging.DEBUG,
                  console_prints: bool=True,
                  log_to_file: bool=False,
                  log_file_path: str='var/tmp/'):
@@ -44,15 +44,9 @@ class Logger:
             Precondition.valid_string(log_name, 'log_name')
         else:
             log_name = 'tmp'
-        if component_name is not None:
-            Precondition.valid_string(component_name, 'component_name')
-            component_name = component_name + ':'
-        else:
-            component_name = ''
 
         Precondition.valid_string(log_file_path, 'log_file_path')
 
-        self._component_name = component_name
         self._log_level_console = log_level_console
         self._log_level_file = log_level_file
         self._console_prints = console_prints
@@ -122,14 +116,14 @@ class Logger:
         if self._log_to_file:
             self._logger.critical(log_message)
 
+    @staticmethod
     def _format_message(
-            self,
             log_level: str,
             message: str):
 
         time = datetime.utcnow().isoformat(timespec='milliseconds') + 'Z'
         return (f'{time} [{threading.current_thread().ident}][{log_level}] '
-                f'{self._component_name} {message}')
+                f'{message}')
 
     def _console_print_handler(
             self,
@@ -138,3 +132,72 @@ class Logger:
 
         if self._console_prints and self._log_level_console <= log_level:
             print(message)
+
+
+class LoggingAdapter:
+    """
+    Provides an adapter for the traders client logger.
+    """
+
+    @typechecking
+    def __init__(
+            self,
+            component_name: str = None,
+            logger: Logger=Logger()):
+        """
+        Initializes a new instance of the LoggingAdapter class.
+
+        :param: logger: The logger for the component.
+        :param: component_name: The name of the component.
+        """
+        if component_name is not None:
+            Precondition.valid_string(component_name, 'component_name')
+            component_name = component_name + ':'
+        else:
+            component_name = ''
+
+        self._logger = logger
+        self._component_name = component_name
+
+    def debug(self, message: str):
+        """
+        Log the given debug message with the logger.
+
+        :param message: The debug message to log.
+        """
+        Precondition.valid_string(message, 'message')
+
+        self._logger.debug(self._format_message(message))
+
+    def info(self, message: str):
+        """
+        Log the given information message with the logger.
+
+        :param message: The information message to log.
+        """
+        Precondition.valid_string(message, 'message')
+
+        self._logger.info(self._format_message(message))
+
+    def warning(self, message: str):
+        """
+        Log the given warning message with the logger.
+
+        :param message: The warning message to log.
+        """
+        Precondition.valid_string(message, 'message')
+
+        self._logger.warning(self._format_message(message))
+
+    def critical(self, message: str):
+        """
+        Log the given critical message with the logger.
+
+        :param message: The critical message to log.
+        """
+        Precondition.valid_string(message, 'message')
+
+        self._logger.critical(self._format_message(message))
+
+    def _format_message(self, message: str):
+        return f"{self._component_name} {message}"

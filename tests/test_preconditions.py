@@ -68,7 +68,7 @@ class PreconditionsTests(unittest.TestCase):
         self.assertRaises(ValueError, Precondition.valid_string, "   ", "param_name")
 
         long_string = "x"
-        for i in range(256):
+        for i in range(512):
             long_string += "x"
 
         self.assertRaises(ValueError, Precondition.valid_string, long_string, "param_name")

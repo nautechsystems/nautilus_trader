@@ -19,7 +19,7 @@ from uuid import UUID
 
 from inv_trader.core.typing import typechecking
 from inv_trader.core.preconditions import Precondition
-from inv_trader.logger import Logger
+from inv_trader.logging import Logger, LoggingAdapter
 from inv_trader.model.order import Order
 from inv_trader.model.commands import SubmitOrder, CancelOrder, ModifyOrder
 from inv_trader.model.events import Event, OrderEvent, AccountEvent, OrderCancelReject
@@ -41,13 +41,16 @@ class ExecutionClient:
     __metaclass__ = abc.ABCMeta
 
     @typechecking
-    def __init__(self, logger: Logger=Logger('ExecutionClient')):
+    def __init__(self, logger: Logger=None):
         """
         Initializes a new instance of the ExecutionClient class.
 
         :param logger: The logging adapter for the component.
         """
-        self._log = logger
+        if logger is None:
+            self._log = LoggingAdapter(f"ExecClient")
+        else:
+            self._log = LoggingAdapter(f"ExecClient", logger)
         self._registered_strategies = {}  # type: Dict[UUID, Callable]
         self._order_index = {}            # type: Dict[OrderId, UUID]
 
@@ -167,7 +170,7 @@ class LiveExecClient(ExecutionClient):
             events_port: int=5556,
             command_serializer: CommandSerializer=MsgPackCommandSerializer,
             event_serializer: EventSerializer=MsgPackEventSerializer,
-            logger: Logger=Logger('ExecClient')):
+            logger: Logger=None):
         """
         Initializes a new instance of the LiveExecClient class.
         The host and port parameters are for the order event subscription
@@ -240,7 +243,7 @@ class LiveExecClient(ExecutionClient):
         message = self._command_serializer.serialize(command)
 
         self._order_commands_worker.send(message)
-        self._log(f"Sent {command}.")
+        self._log.debug(f"Sent {command}.")
 
     @typechecking
     def cancel_order(

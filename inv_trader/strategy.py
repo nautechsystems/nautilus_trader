@@ -19,13 +19,14 @@ from uuid import UUID
 
 from inv_trader.core.typing import typechecking
 from inv_trader.core.preconditions import Precondition
+from inv_trader.model.account import Account
 from inv_trader.model.enums import OrderSide, MarketPosition
+from inv_trader.model.events import Event, AccountEvent, OrderEvent
+from inv_trader.model.events import OrderFilled, OrderPartiallyFilled
 from inv_trader.model.objects import Symbol, Tick, BarType, Bar
 from inv_trader.model.order import Order
 from inv_trader.model.position import Position
-from inv_trader.model.account import Account
-from inv_trader.model.events import Event, AccountEvent, OrderEvent
-from inv_trader.model.events import OrderFilled, OrderPartiallyFilled
+from inv_trader.logging import Logger, LoggingAdapter
 from inv_trader.factories import OrderIdGenerator
 
 # Constants
@@ -45,7 +46,8 @@ class TradeStrategy:
     def __init__(self,
                  label: str=None,
                  order_id_tag: str=None,
-                 bar_capacity=1000):
+                 bar_capacity=1000,
+                 logger: Logger=None):
         """
         Initializes a new instance of the TradeStrategy abstract class.
 
@@ -65,6 +67,10 @@ class TradeStrategy:
         self._label = label
         self._order_id_generator = OrderIdGenerator(order_id_tag)
         self._bar_capacity = bar_capacity
+        if logger is None:
+            self._log = LoggingAdapter(f"{self._name}-{self._label}")
+        else:
+            self._log = LoggingAdapter(f"{self._name}-{self._label}", logger)
         self._is_running = False
         self._ticks = {}               # type: Dict[Symbol, Tick]
         self._bars = {}                # type: Dict[BarType, Deque[Bar]]
@@ -76,7 +82,7 @@ class TradeStrategy:
         self._account = Account()
         self._exec_client = None
 
-        self._log(f"Initialized.")
+        self._log.info(f"Initialized.")
 
     def __eq__(self, other) -> bool:
         """
@@ -419,10 +425,10 @@ class TradeStrategy:
         """
         Starts the trade strategy.
         """
-        self._log(f"Starting...")
+        self._log.info(f"Starting...")
         self._is_running = True
         self.on_start()
-        self._log(f"Running...")
+        self._log.info(f"Running...")
 
     @typechecking
     def generate_order_id(self, symbol: Symbol) -> OrderId:
@@ -514,10 +520,10 @@ class TradeStrategy:
         """
         Stops the trade strategy.
         """
-        self._log(f"Stopping...")
+        self._log.info(f"Stopping...")
         self.on_stop()
         self._is_running = False
-        self._log(f"Stopped.")
+        self._log.info(f"Stopped.")
 
     def reset(self):
         """
@@ -525,7 +531,7 @@ class TradeStrategy:
         returning it to a fresh state (strategy must not be running).
         """
         if self._is_running:
-            self._log(f"[Warning] Cannot reset a running strategy...")
+            self._log.warning(f"Cannot reset a running strategy...")
             return
 
         self._ticks = {}  # type: Dict[Symbol, Tick]
@@ -536,7 +542,7 @@ class TradeStrategy:
             [indicator.reset() for indicator in indicator_list]
 
         self.on_reset()
-        self._log(f"Reset.")
+        self._log.info(f"Reset.")
 
     # @typechecking: client checked in preconditions (cannot import ExecutionClient).
     def _register_execution_client(self, client):
@@ -618,7 +624,7 @@ class TradeStrategy:
 
         :param event: The event received.
         """
-        self._log(str(event))
+        self._log.info(str(event))
 
         # Order events.
         if isinstance(event, OrderEvent):
@@ -626,7 +632,7 @@ class TradeStrategy:
             if order_id in self._order_book:
                 self._order_book[order_id].apply(event)
             else:
-                self._log("Warning: The event order id not found in the order book.")
+                self._log.warning("The event order id not found in the order book.")
 
             # Position events.
             if isinstance(event, OrderFilled) or isinstance(event, OrderPartiallyFilled):
@@ -636,7 +642,7 @@ class TradeStrategy:
                         order_id,
                         datetime.utcnow())
                     self._positions[event.symbol] = opened_position
-                    self._log(f"Opened {opened_position}.")
+                    self._log.info(f"Opened {opened_position}.")
                 self._positions[event.symbol].apply(event)
 
                 # If this order event exits the position then save to the database,
@@ -645,7 +651,7 @@ class TradeStrategy:
                     # TODO: Save to database.
                     closed_position = self._positions[event.symbol]
                     self._positions.pop(event.symbol)
-                    self._log(f"Closed {closed_position}.")
+                    self._log.info(f"Closed {closed_position}.")
 
         # Account Events.
         if isinstance(event, AccountEvent):
@@ -663,20 +669,10 @@ class TradeStrategy:
         :param order: The order to add.
         """
         if order.id in self._order_book.keys():
-            self._log(
-                "[Warning]: The order id is already contained in the order book for the strategy.")
+            self._log.warning("The order id is already contained in the order book.")
             return
 
         self._order_book[order.id] = order
-
-    @typechecking
-    def _log(self, message: str):
-        """
-        Logs the given message.
-
-        :param message: The message to log.
-        """
-        print(f"{str(self)}: {message}")
 
 
 # Constants

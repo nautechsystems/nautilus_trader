@@ -200,13 +200,13 @@ class MockExecClient(ExecutionClient):
         """
         Connect to the execution service.
         """
-        self._log("MockExecClient connected.")
+        self._log.info("MockExecClient connected.")
 
     def disconnect(self):
         """
         Disconnect from the execution service.
         """
-        self._log("MockExecClient disconnected.")
+        self._log.info("MockExecClient disconnected.")
 
     @typechecking
     def submit_order(
@@ -225,7 +225,7 @@ class MockExecClient(ExecutionClient):
             uuid.uuid4(),
             datetime.datetime.utcnow())
 
-        self._log(f"Sent {submitted}.")
+        self._log.info(f"Sent {submitted}.")
 
         accepted = OrderAccepted(
             order.symbol,
@@ -268,7 +268,7 @@ class MockExecClient(ExecutionClient):
             uuid.uuid4(),
             datetime.datetime.utcnow())
 
-        self._log(f"Sent {cancelled}.")
+        self._log.info(f"Sent {cancelled}.")
 
         super()._on_event(cancelled)
 
@@ -286,16 +286,6 @@ class MockExecClient(ExecutionClient):
             uuid.uuid4(),
             datetime.datetime.utcnow())
 
-        self._log(f"Sent {modified}.")
+        self._log.info(f"Sent {modified}.")
 
         super()._on_event(modified)
-
-    @staticmethod
-    @typechecking
-    def _log(message: str):
-        """
-        Log the given message (if no logger then prints).
-
-        :param message: The message to log.
-        """
-        print(f"ExecClient: {message}")
