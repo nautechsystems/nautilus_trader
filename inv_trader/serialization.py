@@ -14,10 +14,11 @@ import iso8601
 from uuid import UUID
 from datetime import datetime
 from decimal import Decimal
-from typing import Dict, Optional
+from typing import Dict
 
 from inv_trader.core.typing import typechecking
 from inv_trader.core.preconditions import Precondition
+from inv_trader.commands import Command, OrderCommand, SubmitOrder, CancelOrder, ModifyOrder
 from inv_trader.model.enums import Venue, OrderSide, OrderType, TimeInForce, CurrencyCode, Broker
 from inv_trader.model.objects import Symbol
 from inv_trader.model.order import Order
@@ -25,7 +26,6 @@ from inv_trader.model.events import Event, OrderEvent, AccountEvent
 from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
 from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
 from inv_trader.model.events import OrderPartiallyFilled, OrderFilled
-from inv_trader.model.commands import Command, OrderCommand, SubmitOrder, CancelOrder, ModifyOrder
 
 # Constants
 UTF8 = 'utf-8'
