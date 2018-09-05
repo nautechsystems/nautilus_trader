@@ -22,7 +22,7 @@ from inv_trader.factories import OrderFactory
 from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
 from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
 from inv_trader.model.events import OrderPartiallyFilled, OrderFilled, AccountEvent
-from inv_trader.commands import SubmitOrder, CancelOrder, ModifyOrder
+from inv_trader.control.commands import SubmitOrder, CancelOrder, ModifyOrder
 from inv_trader.serialization import MsgPackEventSerializer
 from inv_trader.serialization import MsgPackOrderSerializer
 from inv_trader.serialization import MsgPackCommandSerializer

@@ -20,7 +20,7 @@ from uuid import UUID
 from inv_trader.core.logging import Logger, LoggingAdapter
 from inv_trader.core.preconditions import Precondition
 from inv_trader.core.typing import typechecking
-from inv_trader.commands import SubmitOrder, CancelOrder, ModifyOrder
+from inv_trader.control.commands import SubmitOrder, CancelOrder, ModifyOrder
 from inv_trader.model.order import Order
 from inv_trader.model.events import Event, OrderEvent, AccountEvent, OrderCancelReject
 from inv_trader.messaging import RequestWorker, SubscriberWorker
