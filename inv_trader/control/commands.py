@@ -8,7 +8,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import abc
-import uuid
 
 from datetime import datetime
 from decimal import Decimal
@@ -26,8 +25,9 @@ class Command:
 
     __metaclass__ = abc.ABCMeta
 
+    @typechecking
     def __init__(self,
-                 identifier: uuid,
+                 identifier: UUID,
                  timestamp: datetime):
         """
         Initializes a new instance of the Command abstract class.
@@ -39,7 +39,7 @@ class Command:
         self._command_timestamp = timestamp
 
     @property
-    def command_id(self) -> uuid:
+    def command_id(self) -> UUID:
         """
         :return: The commands identifier.
         """
