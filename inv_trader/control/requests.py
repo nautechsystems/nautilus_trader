@@ -44,7 +44,7 @@ class Request:
         return self._request_id
 
     @property
-    def requests_timestamp(self) -> datetime:
+    def request_timestamp(self) -> datetime:
         """
         :return: The requests timestamp (the time the request was created).
         """
@@ -80,7 +80,7 @@ class Request:
         return f"<{str(self)} object at {id(self)}>"
 
 
-class RequestCollateralInquiry(Request):
+class CollateralInquiry(Request):
     """
     Represents a request for a FIX collateral inquiry.
     """
@@ -94,7 +94,7 @@ class RequestCollateralInquiry(Request):
                  identifier: UUID,
                  timestamp: datetime):
         """
-        Initializes a new instance of the RequestCollateralInquiry class.
+        Initializes a new instance of the CollateralInquiry class.
 
         :param: order: The commands order.
         :param: event_id: The commands identifier.

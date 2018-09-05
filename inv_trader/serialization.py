@@ -19,6 +19,7 @@ from typing import Dict
 from inv_trader.core.typing import typechecking
 from inv_trader.core.preconditions import Precondition
 from inv_trader.control.commands import Command, OrderCommand, SubmitOrder, CancelOrder, ModifyOrder
+from inv_trader.control.requests import Request, CollateralInquiry
 from inv_trader.model.enums import Venue, OrderSide, OrderType, TimeInForce, CurrencyCode, Broker
 from inv_trader.model.objects import Symbol
 from inv_trader.model.order import Order
@@ -27,9 +28,14 @@ from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected
 from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
 from inv_trader.model.events import OrderPartiallyFilled, OrderFilled
 
+
 # Constants
 UTF8 = 'utf-8'
 NONE = 'NONE'
+REQUEST_TYPE = 'request_type'
+REQUEST_ID = 'request_id'
+REQUEST_TIMESTAMP = 'request_timestamp'
+COLLATERAL_INQUIRY = 'collateral_inquiry'
 COMMAND_TYPE = 'command_type'
 COMMAND_ID = 'command_id'
 COMMAND_TIMESTAMP = 'command_timestamp'
@@ -386,6 +392,95 @@ class MsgPackCommandSerializer(CommandSerializer):
 
         else:
             raise ValueError("Cannot deserialize order command (unrecognized bytes pattern).")
+
+
+class RequestSerializer:
+    """
+    The abstract base class for all request serializers.
+    """
+
+    __metaclass__ = abc.ABCMeta
+
+    @staticmethod
+    @typechecking
+    @abc.abstractmethod
+    def serialize(request: Request) -> bytes:
+        """
+        Serialize the given request to bytes.
+
+        :param: request: The request to serialize.
+        """
+        # Raise exception if not overridden in implementation.
+        raise NotImplementedError("Method must be implemented.")
+
+    @staticmethod
+    @typechecking
+    @abc.abstractmethod
+    def deserialize(request_bytes: bytes) -> Request:
+        """
+        Deserialize the given bytes to a Request.
+
+        :param: request_bytes: The request bytes to deserialize.
+        """
+        # Raise exception if not overridden in implementation.
+        raise NotImplementedError("Method must be implemented.")
+
+
+class MsgPackRequestSerializer(RequestSerializer):
+        """
+        Provides a command serializer for the Message Pack specification.
+        """
+
+        @staticmethod
+        @typechecking
+        def serialize(request: Request) -> bytes:
+            """
+            Serialize the given request to Message Pack specification bytes.
+
+            :param: request: The request to serialize.
+            :return: The serialized request.
+            :raises: ValueError: If the request cannot be serialized.
+            """
+            package = {
+                REQUEST_ID: str(request.request_id),
+                REQUEST_TIMESTAMP: _convert_datetime_to_string(request.request_timestamp)
+            }
+
+            if isinstance(request, CollateralInquiry):
+                package[REQUEST_TYPE] = COLLATERAL_INQUIRY
+                package[BROKER] = request.broker.name
+                package[ACCOUNT_NUMBER] = request.account_number
+                return msgpack.packb(package)
+
+            else:
+                raise ValueError("Cannot serialize request (unrecognized request).")
+
+        @staticmethod
+        @typechecking
+        def deserialize(request_bytes: bytes) -> Request:
+            """
+            Deserialize the given Message Pack specification bytes to a request.
+
+            :param: request: The request to deserialize.
+            :return: The deserialized request.
+            :raises: ValueError: If the request cannot be deserialized.
+            """
+            Precondition.not_empty(request_bytes, 'request_bytes')
+
+            unpacked = msgpack.unpackb(request_bytes, encoding=UTF8)
+
+            request_type = unpacked[REQUEST_TYPE]
+            request_id = UUID(unpacked[REQUEST_ID])
+            request_timestamp = _convert_string_to_datetime(unpacked[REQUEST_TIMESTAMP])
+
+            if request_type == COLLATERAL_INQUIRY:
+                return CollateralInquiry(
+                    Broker[unpacked[BROKER]],
+                    unpacked[ACCOUNT_NUMBER],
+                    request_id,
+                    request_timestamp)
+            else:
+                raise ValueError("Cannot deserialize request (unrecognized request).")
 
 
 class EventSerializer:
