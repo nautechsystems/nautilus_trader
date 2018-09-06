@@ -15,6 +15,7 @@ from uuid import UUID
 
 from inv_trader.core.typing import typechecking
 from inv_trader.core.preconditions import Precondition
+from inv_trader.model.enums import Broker
 from inv_trader.model.order import Order
 
 
@@ -205,3 +206,21 @@ class ModifyOrder(OrderCommand):
         :return: The commands modified price for the order.
         """
         return self._modified_price
+
+
+class CollateralInquiry(Command):
+    """
+    Represents a request for a FIX collateral inquiry of all connected accounts.
+    """
+
+    @typechecking
+    def __init__(self,
+                 identifier: UUID,
+                 timestamp: datetime):
+        """
+        Initializes a new instance of the CollateralInquiry class.
+
+        :param: event_id: The commands identifier.
+        :param: event_timestamp: The order commands timestamp.
+        """
+        super().__init__(identifier, timestamp)
