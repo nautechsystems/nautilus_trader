@@ -104,7 +104,7 @@ cdef class Precondition:
                 f"(the lengths of {collection1_name} and {collection2_name} were not equal)."))
 
     @staticmethod
-    def positive(double value, str param_name):
+    def positive(double value: double, str param_name: str):
         """
         Check the preconditions value is positive (greater than or equal to zero.)
 

@@ -20,13 +20,15 @@ from uuid import UUID
 from inv_trader.core.logging import Logger, LoggingAdapter
 from inv_trader.core.preconditions import Precondition
 from inv_trader.core.typing import typechecking
+from inv_trader.control.commands import CollateralInquiry
 from inv_trader.control.commands import SubmitOrder, CancelOrder, ModifyOrder
 from inv_trader.model.order import Order
 from inv_trader.model.events import Event, OrderEvent, AccountEvent, OrderCancelReject
 from inv_trader.messaging import RequestWorker, SubscriberWorker
 from inv_trader.strategy import TradeStrategy
 from inv_trader.serialization import CommandSerializer, EventSerializer
-from inv_trader.serialization import MsgPackCommandSerializer, MsgPackEventSerializer
+from inv_trader.serialization import MsgPackCommandSerializer
+from inv_trader.serialization import MsgPackEventSerializer
 
 # Constants
 UTF8 = 'utf-8'
@@ -192,14 +194,15 @@ class LiveExecClient(ExecutionClient):
         self._command_serializer = command_serializer
         self._event_serializer = event_serializer
         self._context = zmq.Context()
-        self._order_commands_worker = RequestWorker(
+
+        self._commands_worker = RequestWorker(
             'CommandSender',
             self._context,
             host,
             commands_port,
             self._command_ack_handler)
 
-        self._order_events_worker = SubscriberWorker(
+        self._events_worker = SubscriberWorker(
             "EventSubscriber",
             self._context,
             host,
@@ -213,15 +216,15 @@ class LiveExecClient(ExecutionClient):
         """
         Connect to the execution service.
         """
-        self._order_events_worker.start()
-        self._order_commands_worker.start()
+        self._events_worker.start()
+        self._commands_worker.start()
 
     def disconnect(self):
         """
         Disconnect from the execution service.
         """
-        self._order_commands_worker.stop()
-        self._order_events_worker.stop()
+        self._commands_worker.stop()
+        self._events_worker.stop()
 
     @typechecking
     def submit_order(
@@ -229,7 +232,7 @@ class LiveExecClient(ExecutionClient):
             order: Order,
             strategy_id: UUID):
         """
-        Send a submit order request to the execution service.
+        Send a submit order command to the execution service.
 
         :param: order: The order to submit.
         :param: strategy_id: The strategy identifier to register the order with.
@@ -242,7 +245,7 @@ class LiveExecClient(ExecutionClient):
             datetime.utcnow())
         message = self._command_serializer.serialize(command)
 
-        self._order_commands_worker.send(message)
+        self._commands_worker.send(message)
         self._log.debug(f"Sent {command}.")
 
     @typechecking
@@ -251,7 +254,7 @@ class LiveExecClient(ExecutionClient):
             order: Order,
             cancel_reason: str):
         """
-        Send a cancel order request to the execution service.
+        Send a cancel order command to the execution service.
 
         :param: order: The order identifier to cancel.
         :param: cancel_reason: The reason for cancellation (will be logged).
@@ -265,7 +268,7 @@ class LiveExecClient(ExecutionClient):
             datetime.utcnow())
         message = self._command_serializer.serialize(command)
 
-        self._order_commands_worker.send(message)
+        self._commands_worker.send(message)
         self._log.debug(f"Sent {command}.")
 
     @typechecking
@@ -274,7 +277,7 @@ class LiveExecClient(ExecutionClient):
             order: Order,
             new_price: Decimal):
         """
-        Send a modify order request to the execution service.
+        Send a modify order command to the execution service.
 
         :param order: The order identifier to modify.
         :param new_price: The new modified price for the order.
@@ -288,7 +291,18 @@ class LiveExecClient(ExecutionClient):
             datetime.utcnow())
         message = self._command_serializer.serialize(command)
 
-        self._order_commands_worker.send(message)
+        self._commands_worker.send(message)
+        self._log.debug(f"Sent {command}.")
+
+    @typechecking
+    def collateral_inquiry(self):
+        """
+        Send a collateral inquiry command to the execution service.
+        """
+        command = CollateralInquiry(uuid.uuid4(), datetime.utcnow())
+        message = self._command_serializer.serialize(command)
+
+        self._commands_worker.send(message)
         self._log.debug(f"Sent {command}.")
 
     @typechecking

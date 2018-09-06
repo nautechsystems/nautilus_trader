@@ -16,7 +16,7 @@ from decimal import Decimal
 from uuid import UUID
 
 from inv_trader.control.commands import SubmitOrder, CancelOrder, ModifyOrder
-from inv_trader.control.requests import CollateralInquiry
+from inv_trader.control.commands import CollateralInquiry
 from inv_trader.model.enums import Broker, Venue, OrderSide, OrderType, TimeInForce
 from inv_trader.model.objects import Symbol, Price
 from inv_trader.model.order import Order
@@ -26,7 +26,6 @@ from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled,
 from inv_trader.model.events import OrderPartiallyFilled, OrderFilled, AccountEvent
 from inv_trader.serialization import MsgPackOrderSerializer
 from inv_trader.serialization import MsgPackCommandSerializer
-from inv_trader.serialization import MsgPackRequestSerializer
 from inv_trader.serialization import MsgPackEventSerializer
 from inv_trader.serialization import _convert_price_to_string, _convert_datetime_to_string
 from inv_trader.serialization import _convert_string_to_price, _convert_string_to_datetime
@@ -303,17 +302,11 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         self.assertEqual(order, deserialized.order)
         print(serialized.hex())
 
-
-class MsgPackRequestSerializerTests(unittest.TestCase):
-
     def test_can_serialized_and_deserialize_collateral_inquiry_requests(self):
         # Arrange
-        serializer = MsgPackRequestSerializer()
+        serializer = MsgPackCommandSerializer()
 
-        request = CollateralInquiry(Broker.FXCM,
-                                    123456,
-                                    uuid.uuid4(),
-                                    UNIX_EPOCH)
+        request = CollateralInquiry(uuid.uuid4(), UNIX_EPOCH)
 
         # Act
         serialized = serializer.serialize(request)
@@ -321,6 +314,7 @@ class MsgPackRequestSerializerTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(deserialized, request)
+        print(serialized.hex())
 
 
 class MsgPackEventSerializerTests(unittest.TestCase):
