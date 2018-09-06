@@ -492,8 +492,8 @@ class TradeStrategy:
         :param order: The order to cancel.
         :param cancel_reason: The reason for cancellation (will be logged).
         """
-
         Precondition.valid_string(cancel_reason, 'cancel_reason')
+
         if order.id not in self._order_book.keys():
             raise ValueError("The order id was not found in the order book.")
 
@@ -512,6 +512,7 @@ class TradeStrategy:
         :param new_price: The new price for the given order.
         """
         Precondition.positive(new_price, 'new_price')
+
         if order.id not in self._order_book.keys():
             raise ValueError("The order id was not found in the order book.")
 
