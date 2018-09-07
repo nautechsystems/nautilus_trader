@@ -172,7 +172,7 @@ class LiveDataClientTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(tick, result)
-        self.assertEqual('Tick: AUDUSD.FXCM,1.00000,1.00001,2018-01-01T19:59:01+00:00', str(result))
+        self.assertEqual('Tick(AUDUSD.FXCM,1.00000,1.00001,2018-01-01T19:59:01+00:00)', str(result))
 
     def test_can_parse_bars(self):
         # Arrange
@@ -190,7 +190,7 @@ class LiveDataClientTests(unittest.TestCase):
         # Assert
         self.assertEqual(bar, result)
         self.assertEqual(
-            'Bar: 1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T19:59:01+00:00', str(result))
+            'Bar(1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T19:59:01+00:00)', str(result))
 
     def test_can_parse_bar_type(self):
         # Arrange
@@ -271,7 +271,7 @@ class LiveDataClientTests(unittest.TestCase):
         # Assert
         time.sleep(0.1)  # Allow threads to work.
         self.assertEqual(5, storer.count)
-        self.assertEqual('Tick: AUDUSD.FXCM,1.00000,1.00005,2018-01-01T20:00:05+00:00', str(storer.get_store[4]))
+        self.assertEqual('Tick(AUDUSD.FXCM,1.00000,1.00005,2018-01-01T20:00:05+00:00)', str(storer.get_store[4]))
 
     def test_can_receive_ticks_from_multiple_subscribers(self):
         # Arrange
@@ -301,7 +301,7 @@ class LiveDataClientTests(unittest.TestCase):
         # Assert
         time.sleep(0.1)  # Allow threads to work.
         self.assertEqual(15, storer.count)
-        self.assertEqual('Tick: EURUSD.FXCM,1.00000,1.00005,2018-01-01T20:00:05+00:00', str(storer.get_store[14]))
+        self.assertEqual('Tick(EURUSD.FXCM,1.00000,1.00005,2018-01-01T20:00:05+00:00)', str(storer.get_store[14]))
 
     def test_can_receive_bar(self):
         # Arrange
@@ -347,7 +347,7 @@ class LiveDataClientTests(unittest.TestCase):
         # Assert
         time.sleep(0.1)  # Allow threads to work.
         self.assertEqual(10, storer.count)  # All bar types and bars.
-        self.assertEqual('Bar: 1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T12:00:04+00:00', str(storer.get_store[9]))
+        self.assertEqual('Bar(1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T12:00:04+00:00)', str(storer.get_store[9]))
 
     def test_can_receive_bars_from_multiple_subscribers(self):
         # Arrange
@@ -392,7 +392,7 @@ class LiveDataClientTests(unittest.TestCase):
         # Assert
         time.sleep(0.1)  # Allow threads to work.
         self.assertEqual(30, storer.count)  # All bar types and bars.
-        self.assertEqual('Bar: 1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T12:00:04+00:00', str(storer.get_store[29]))
+        self.assertEqual('Bar(1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T12:00:04+00:00)', str(storer.get_store[29]))
 
     def test_can_add_bartype_to_dict(self):
         # Arrange

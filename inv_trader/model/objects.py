@@ -180,8 +180,8 @@ class Tick:
         """
         :return: The str() string representation of the tick.
         """
-        return (f"Tick: {self._symbol},{self._bid},{self._ask},"
-                f"{self._timestamp.isoformat()}")
+        return (f"Tick({self._symbol},{self._bid},{self._ask},"
+                f"{self._timestamp.isoformat()})")
 
     def __repr__(self) -> str:
         """
@@ -276,8 +276,7 @@ class BarType:
         """
         :return: The repr() string representation of the bar type.
         """
-        return (f"<{str(self._symbol)}"
-                f"-{self._period}-{self._resolution.name}[{self._quote_type.name}] "
+        return (f"<{str(self) }"
                 f"object at {id(self)}>")
 
 
@@ -378,8 +377,8 @@ class Bar:
         """
         :return: The str() string representation of the bar.
         """
-        return (f"Bar: {self._open},{self._high},{self._low},{self._close},"
-                f"{self._volume},{self._timestamp.isoformat()}")
+        return (f"Bar({self._open},{self._high},{self._low},{self._close},"
+                f"{self._volume},{self._timestamp.isoformat()})")
 
     def __repr__(self) -> str:
         """
