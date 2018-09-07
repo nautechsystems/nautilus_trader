@@ -68,8 +68,8 @@ cdef class Precondition:
             raise ValueError(f"{PRE_FAILED} (the {param_name} string argument was empty).")
         if argument.isspace():
             raise ValueError(f"{PRE_FAILED} (the {param_name} string argument was whitespace).")
-        if len(argument) > 512:
-            raise ValueError(f"{PRE_FAILED} (the {param_name} string argument exceeded 512 chars).")
+        if len(argument) > 5000:
+            raise ValueError(f"{PRE_FAILED} (the {param_name} string argument exceeded 1024 chars).")
 
     @staticmethod
     def equal(object argument1, object argument2):
@@ -104,7 +104,7 @@ cdef class Precondition:
                 f"(the lengths of {collection1_name} and {collection2_name} were not equal)."))
 
     @staticmethod
-    def positive(double value: double, str param_name: str):
+    def positive(double value, str param_name):
         """
         Check the preconditions value is positive (greater than or equal to zero.)
 

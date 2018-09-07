@@ -7,10 +7,10 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import datetime
 import uuid
 import zmq
 
+from datetime import datetime
 from decimal import Decimal
 from threading import Thread
 from typing import Callable
@@ -21,10 +21,12 @@ from inv_trader.core.typing import typechecking
 from inv_trader.model.enums import Venue, Resolution, QuoteType, OrderSide, OrderType, OrderStatus
 from inv_trader.model.objects import Symbol, BarType, Bar
 from inv_trader.execution import ExecutionClient
+from inv_trader.model.objects import Price
 from inv_trader.model.order import Order
 from inv_trader.model.events import Event, OrderEvent
 from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
 from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
+from inv_trader.model.events import OrderFilled, OrderPartiallyFilled
 from inv_trader.strategy import TradeStrategy
 
 UTF8 = 'utf-8'
@@ -221,18 +223,18 @@ class MockExecClient(ExecutionClient):
         submitted = OrderSubmitted(
             order.symbol,
             order.id,
-            datetime.datetime.utcnow(),
+            datetime.utcnow(),
             uuid.uuid4(),
-            datetime.datetime.utcnow())
+            datetime.utcnow())
 
         self._log.info(f"Sent {submitted}.")
 
         accepted = OrderAccepted(
             order.symbol,
             order.id,
-            datetime.datetime.utcnow(),
+            datetime.utcnow(),
             uuid.uuid4(),
-            datetime.datetime.utcnow())
+            datetime.utcnow())
 
         working = OrderWorking(
             order.symbol,
@@ -244,14 +246,29 @@ class MockExecClient(ExecutionClient):
             order.quantity,
             Decimal('1'),
             order.time_in_force,
-            datetime.datetime.utcnow(),
+            datetime.utcnow(),
             uuid.uuid4(),
-            datetime.datetime.utcnow(),
+            datetime.utcnow(),
             order.expire_time)
+
+        filled_price = Price.create(1.00000, 5) if order.price is None else order.price
+
+        filled = OrderFilled(
+            order.symbol,
+            order.id,
+            'E' + order.id,
+            'ET' + order.id,
+            order.side,
+            order.quantity,
+            filled_price,
+            datetime.utcnow(),
+            uuid.uuid4(),
+            datetime.utcnow())
 
         super()._on_event(submitted)
         super()._on_event(accepted)
         super()._on_event(working)
+        super()._on_event(filled)
 
     @typechecking
     def cancel_order(
@@ -264,9 +281,9 @@ class MockExecClient(ExecutionClient):
         cancelled = OrderCancelled(
             order.symbol,
             order.id,
-            datetime.datetime.utcnow(),
+            datetime.utcnow(),
             uuid.uuid4(),
-            datetime.datetime.utcnow())
+            datetime.utcnow())
 
         self._log.info(f"Sent {cancelled}.")
 
@@ -282,9 +299,9 @@ class MockExecClient(ExecutionClient):
             order.id,
             'B' + order.id,
             new_price,
-            datetime.datetime.utcnow(),
+            datetime.utcnow(),
             uuid.uuid4(),
-            datetime.datetime.utcnow())
+            datetime.utcnow())
 
         self._log.info(f"Sent {modified}.")
 

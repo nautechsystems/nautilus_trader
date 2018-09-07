@@ -32,6 +32,7 @@ from inv_trader.factories import OrderIdGenerator
 
 # Constants
 OrderId = str
+PositionId = str
 Label = str
 Indicator = object
 
@@ -73,13 +74,14 @@ class TradeStrategy:
         else:
             self._log = LoggingAdapter(f"{self._name}-{self._label}", logger)
         self._is_running = False
-        self._ticks = {}               # type: Dict[Symbol, Tick]
-        self._bars = {}                # type: Dict[BarType, Deque[Bar]]
-        self._indicators = {}          # type: Dict[BarType, List[Indicator]]
-        self._indicator_updaters = {}  # type: Dict[BarType, List[IndicatorUpdater]]
-        self._indicator_index = {}     # type: Dict[Label, Indicator]
-        self._order_book = {}          # type: Dict[OrderId, Order]
-        self._positions = {}           # type: Dict[Symbol, Position]
+        self._ticks = {}                 # type: Dict[Symbol, Tick]
+        self._bars = {}                  # type: Dict[BarType, Deque[Bar]]
+        self._indicators = {}            # type: Dict[BarType, List[Indicator]]
+        self._indicator_updaters = {}    # type: Dict[BarType, List[IndicatorUpdater]]
+        self._indicator_index = {}       # type: Dict[Label, Indicator]
+        self._order_book = {}            # type: Dict[OrderId, Order]
+        self._order_position_index = {}  # type: Dict[OrderId, PositionId]
+        self._position_book = {}         # type: Dict[PositionId, Position or None]
         self._account = Account()
         self._exec_client = None
 
@@ -237,11 +239,11 @@ class TradeStrategy:
         return self._order_book
 
     @property
-    def positions(self) -> Dict[Symbol, Position]:
+    def positions(self) -> Dict[PositionId, Position]:
         """
-        :return: The entire dictionary of positions.
+        :return: The entire position book for the strategy.
         """
-        return self._positions
+        return self._position_book
 
     @property
     def account(self) -> Account:
@@ -344,19 +346,21 @@ class TradeStrategy:
         return self._order_book[order_id]
 
     @typechecking
-    def position(self, symbol: Symbol) -> Position:
+    def position(self, position_id: PositionId) -> Position:
         """
-        Get the position from the positions dictionary for the given symbol.
+        Get the position from the positions dictionary for the given position id.
 
-        :param symbol: The positions symbol.
+        :param position_id: The positions identifier.
         :return: The position (if found).
-        :raises: KeyError: If the strategy does not contain a position for the given symbol.
+        :raises: KeyError: If the strategy does not contain a position for the given position id.
         """
-        if symbol not in self._positions:
-            raise KeyError(
-                f"The positions dictionary does not contain a position for symbol {symbol}.")
+        Precondition.valid_string(position_id, 'position_id')
 
-        return self._positions[symbol]
+        if position_id not in self._position_book:
+            raise KeyError(
+                f"The positions dictionary does not contain the position {position_id}.")
+
+        return self._position_book[position_id]
 
     @typechecking
     def register_indicator(
@@ -458,6 +462,7 @@ class TradeStrategy:
 
         :param market_position: The market position to flatten.
         :return: The order side to flatten.
+        :raises: KeyError: If the given market position is flat.
         """
         if market_position is MarketPosition.LONG:
             return OrderSide.SELL
@@ -467,18 +472,25 @@ class TradeStrategy:
             raise ValueError("Cannot flatten a FLAT position.")
 
     @typechecking
-    def submit_order(self, order: Order):
+    def submit_order(
+            self,
+            order: Order,
+            position_id: PositionId):
         """
         Send a submit order request with the given order to the execution client.
 
         :param order: The order to submit.
+        :param position_id: The position id to associate with this order.
+        :raises: KeyError: If order id is already contained in the order book (must be unique).
         """
         # Preconditions
         if order.id in self._order_book:
-            raise ValueError(
+            raise KeyError(
                 "The order id is already contained in the order book (must be unique).")
 
         self._order_book[order.id] = order
+        self._order_position_index[order.id] = position_id
+
         self._exec_client.submit_order(order, self._id)
 
     @typechecking
@@ -638,43 +650,39 @@ class TradeStrategy:
 
             # Position events.
             if isinstance(event, OrderFilled) or isinstance(event, OrderPartiallyFilled):
-                if event.symbol not in self._positions:
-                    opened_position = Position(
-                        event.symbol,
-                        order_id,
-                        datetime.utcnow())
-                    self._positions[event.symbol] = opened_position
-                    self._log.info(f"Opened {opened_position}.")
-                self._positions[event.symbol].apply(event)
+                if event.order_id in self._order_position_index:
+                    position_id = self._order_position_index[event.order_id]
 
-                # If this order event exits the position then save to the database,
-                # and remove from list.
-                if self._positions[event.symbol].is_exited:
-                    # TODO: Save to database.
-                    closed_position = self._positions[event.symbol]
-                    self._positions.pop(event.symbol)
-                    self._log.info(f"Closed {closed_position}.")
+                    if position_id not in self._position_book:
+                        opened_position = Position(
+                            event.symbol,
+                            position_id,
+                            event.execution_time)
+                        self._position_book[position_id] = opened_position
+                        self._position_book[position_id].apply(event)
+                        self._log.info(f"Opened {opened_position}.")
+                    else:
+                        self._position_book[position_id].apply(event)
+
+                        # If this order event exits the position then save to the database,
+                        # and remove from list.
+                        if self._position_book[position_id].is_exited:
+                            # TODO: Save to database.
+                            closed_position = self._position_book[position_id]
+                            self._position_book.pop(position_id)
+                            self._log.info(f"Closed {closed_position}.")
+                        else:
+                            self._log.info(f"Modified {self._position_book[position_id]}.")
+                else:
+                    self._log.warning("The event order id not found in the order position index.")
 
         # Account Events.
-        if isinstance(event, AccountEvent):
+        elif isinstance(event, AccountEvent):
             self._account.apply(event)
 
         # Calls on_event() if the strategy is running.
         if self._is_running:
             self.on_event(event)
-
-    @typechecking
-    def _add_order(self, order: Order):
-        """
-        Adds the given order to the order book (the order identifier must be unique).
-
-        :param order: The order to add.
-        """
-        if order.id in self._order_book.keys():
-            self._log.warning("The order id is already contained in the order book.")
-            return
-
-        self._order_book[order.id] = order
 
 
 # Constants
