@@ -684,6 +684,18 @@ class TradeStrategy:
         if self._is_running:
             self.on_event(event)
 
+    @typechecking
+    def _add_order(self, order: Order):
+            """
+            Adds the given order to the order book (the order identifier must be unique).
+            :param order: The order to add.
+            """
+            if order.id in self._order_book.keys():
+                self._log.warning("The order id is already contained in the order book.")
+                return
+
+            self._order_book[order.id] = order
+
 
 # Constants
 POINT = 'point'

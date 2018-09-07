@@ -103,7 +103,7 @@ class OrderFactory:
 
     @staticmethod
     @typechecking
-    def stop_market(
+    def stop(
             symbol: Symbol,
             order_id: str,
             label: str,

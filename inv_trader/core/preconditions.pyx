@@ -68,7 +68,7 @@ cdef class Precondition:
             raise ValueError(f"{PRE_FAILED} (the {param_name} string argument was empty).")
         if argument.isspace():
             raise ValueError(f"{PRE_FAILED} (the {param_name} string argument was whitespace).")
-        if len(argument) > 5000:
+        if len(argument) > 1024:
             raise ValueError(f"{PRE_FAILED} (the {param_name} string argument exceeded 1024 chars).")
 
     @staticmethod

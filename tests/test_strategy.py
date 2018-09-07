@@ -309,11 +309,11 @@ class TradeStrategyTests(unittest.TestCase):
             100000)
 
         # Act
-        strategy.submit_order(order)
+        strategy.submit_order(order, order.id)
 
         # Assert
         self.assertEqual(order, strategy.orders[order.id])
-        self.assertEqual(OrderStatus.WORKING, strategy.orders[order.id].status)
+        self.assertEqual(OrderStatus.FILLED, strategy.orders[order.id].status)
 
     def test_submitting_order_with_identical_id_raises_ex(self):
         # Arrange
@@ -330,11 +330,11 @@ class TradeStrategyTests(unittest.TestCase):
             OrderSide.BUY,
             100000)
 
-        strategy.submit_order(order)
+        strategy.submit_order(order, order.id)
 
         # Act
         # Assert
-        self.assertRaises(ValueError, strategy.submit_order, order)
+        self.assertRaises(KeyError, strategy.submit_order, order, order.id)
 
     def test_strategy_can_cancel_order(self):
         # Arrange
@@ -351,7 +351,7 @@ class TradeStrategyTests(unittest.TestCase):
             OrderSide.BUY,
             100000)
 
-        strategy.submit_order(order)
+        strategy.submit_order(order, order.id)
 
         # Act
         strategy.cancel_order(order)
@@ -392,14 +392,14 @@ class TradeStrategyTests(unittest.TestCase):
             100000,
             Price.create(1.00000, 5))
 
-        strategy.submit_order(order)
+        strategy.submit_order(order, order.id)
 
         # Act
         strategy.modify_order(order, Decimal('1.00001'))
 
         # Assert
         self.assertEqual(order, strategy.orders[order.id])
-        self.assertEqual(OrderStatus.WORKING, strategy.orders[order.id].status)
+        self.assertEqual(OrderStatus.FILLED, strategy.orders[order.id].status)
         self.assertEqual(Decimal('1.00001'), strategy.orders[order.id].price)
 
     def test_modifying_order_which_does_not_exist_raises_ex(self):
@@ -426,7 +426,6 @@ class TradeStrategyTests(unittest.TestCase):
 
         exec_client.register_strategy(strategy)
 
-        position1 = "position1"
         order = OrderFactory.market(
             AUDUSD_FXCM,
             'AUDUSD|123456|1',
@@ -434,12 +433,12 @@ class TradeStrategyTests(unittest.TestCase):
             OrderSide.BUY,
             100000)
 
-        strategy.submit_order(order, position1)
+        strategy.submit_order(order, order.id)
 
         # Act
         # Assert
-        self.assertEqual(position1, strategy._order_position_index[order.id])
-        self.assertTrue(position1 in strategy._position_book)
+        self.assertEqual('AUDUSD|123456|1', strategy._order_position_index[order.id])
+        self.assertTrue('AUDUSD|123456|1' in strategy._position_book)
 
     def test_strategy_can_track_orders_for_a_closing_position(self):
         # Arrange
