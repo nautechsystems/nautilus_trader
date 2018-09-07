@@ -265,7 +265,8 @@ class Order:
         :return: The str() string representation of the order.
         """
         quantity = '{:,}'.format(self._quantity)
-        return f"Order(id={self._id}, label={self._label}: {self._side.name} {quantity} {self._symbol} @ {self._price} {self._type.name})"
+        return (f"Order(id={self._id}, label={self._label}: "
+                f"{self._side.name} {quantity} {self._symbol} @ {self._price} {self._type.name})")
 
     def __repr__(self) -> str:
         """

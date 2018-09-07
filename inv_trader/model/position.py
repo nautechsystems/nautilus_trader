@@ -187,15 +187,16 @@ class Position:
         """
         :return: The str() string representation of the position.
         """
-        attrs = vars(self)
-        props = ', '.join("%s=%s" % item for item in attrs.items()).replace(', _', ', ')
-        return f"{self.__class__.__name__}({props[1:]})"
+        return (f"Position(id={self._id}: "
+                f"{self._symbol} {self.market_position.name} {self.quantity})")
 
     def __repr__(self) -> str:
         """
         :return: The repr() string representation of the position.
         """
-        return f"<{str(self)} object at {id(self)}>"
+        attrs = vars(self)
+        props = ', '.join("%s=%s" % item for item in attrs.items()).replace(', _', ', ')
+        return f"<{self.__class__.__name__}({props[1:]}) object at {id(self)}>"
 
     @typechecking
     def apply(self, event: OrderEvent):
