@@ -176,6 +176,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(OrderStatus.INITIALIZED, order.status)
         self.assertEqual(TimeInForce.DAY, order.time_in_force)
         self.assertFalse(order.is_complete)
+        print(order)
 
     def test_can_initialize_limit_order_with_expire_time(self):
         # Arrange
@@ -560,6 +561,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(Decimal('1.00001'), order.average_price)
         self.assertEqual(Decimal('0.00001'), order.slippage)
         self.assertTrue(order.is_complete)
+        print(order)
 
     def test_can_apply_order_partially_filled_event_to_buy_limit_order(self):
         # Arrange
