@@ -199,6 +199,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(TimeInForce.GTD, order.time_in_force)
         self.assertEqual(UNIX_EPOCH, order.expire_time)
         self.assertFalse(order.is_complete)
+        print(order)
 
     def test_can_initialize_stop_market_order(self):
         # Arrange
