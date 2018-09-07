@@ -53,6 +53,7 @@ class EMACrossLimitEntry(TradeStrategy):
         # Users custom order management logic if you like...
         self.entry_orders = {}
         self.stop_loss_orders = {}
+        self.position_id = None
 
     def on_start(self):
         """
@@ -97,19 +98,6 @@ class EMACrossLimitEntry(TradeStrategy):
         if not self.ema1.initialized and not self.ema2.initialized:
             return
 
-        # for order in self.stop_loss_orders.values():
-        #     if len(self.bars(AUDUSD_FXCM_1_SECOND_MID)) > 20 and not order.is_complete:
-        #         bars = self.bars(AUDUSD_FXCM_1_SECOND_MID)[-20:]
-        #         # Trail stop to last minute
-        #         if order.side is OrderSide.SELL:
-        #             min_low = min(bar.low for bar in bars)
-        #             if order.price < min_low - Decimal('0.00010'):
-        #                 self.modify_order(order, min_low - Decimal('0.00010'))
-        #         elif order.side is OrderSide.BUY:
-        #             max_high = max(bar.high for bar in bars)
-        #             if order.price > max_high + Decimal('0.00010'):
-        #                 self.modify_order(order, max_high + Decimal('0.00010'))
-
         for order in self.entry_orders.values():
             if not order.is_complete:
                 # Check if order should be expired
@@ -138,7 +126,8 @@ class EMACrossLimitEntry(TradeStrategy):
                     time_in_force=TimeInForce.GTD,
                     expire_time=expire_time + timedelta(seconds=10))
                 self.entry_orders[entry_order.id] = entry_order
-                self.submit_order(entry_order)
+                self.submit_order(entry_order, entry_order.id)
+                self.position_id = entry_order.id
                 self._log(f"Added {entry_order.id} to entry orders.")
 
             # SELL LOGIC
@@ -153,7 +142,8 @@ class EMACrossLimitEntry(TradeStrategy):
                     time_in_force=TimeInForce.GTD,
                     expire_time=expire_time + timedelta(seconds=10))
                 self.entry_orders[entry_order.id] = entry_order
-                self.submit_order(entry_order)
+                self.submit_order(entry_order, entry_order.id)
+                self.position_id = entry_order.id
                 self._log(f"Added {entry_order.id} to entry orders.")
 
     def on_event(self, event: Event):
@@ -174,7 +164,7 @@ class EMACrossLimitEntry(TradeStrategy):
                     if stop_side is OrderSide.SELL \
                     else event.average_price + Decimal('0.00010')
 
-                stop_order = OrderFactory.stop_market(
+                stop_order = OrderFactory.stop(
                     AUDUSD_FXCM,
                     self.generate_order_id(AUDUSD_FXCM),
                     'S1_SL',
@@ -183,7 +173,7 @@ class EMACrossLimitEntry(TradeStrategy):
                     stop_price,
                     time_in_force=TimeInForce.GTC)
                 self.stop_loss_orders[stop_order.id] = stop_order
-                self.submit_order(stop_order)
+                self.submit_order(stop_order, self.position_id)
                 self._log(f"Added {stop_order.id} to stop-loss orders.")
 
     def on_stop(self):
@@ -202,7 +192,7 @@ class EMACrossLimitEntry(TradeStrategy):
                 "FLATTEN",
                 self.get_flatten_side(position.market_position),
                 position.quantity)
-            self.submit_order(order)
+            self.submit_order(order, self.position_id)
 
         # Cancel all entry orders
         for order in self.entry_orders.values():
@@ -311,7 +301,7 @@ class EMACrossStopEntry(TradeStrategy):
 
             # BUY LOGIC
             if self.ema1.value >= self.ema2.value:
-                entry_order = OrderFactory.stop_market(
+                entry_order = OrderFactory.stop(
                     AUDUSD_FXCM,
                     self.generate_order_id(AUDUSD_FXCM),
                     'S1_E',
@@ -326,7 +316,7 @@ class EMACrossStopEntry(TradeStrategy):
 
             # SELL LOGIC
             elif self.ema1.value < self.ema2.value:
-                entry_order = OrderFactory.stop_market(
+                entry_order = OrderFactory.stop(
                     AUDUSD_FXCM,
                     self.generate_order_id(AUDUSD_FXCM),
                     'S1_E',
@@ -358,7 +348,7 @@ class EMACrossStopEntry(TradeStrategy):
                     if stop_side is OrderSide.SELL \
                     else event.average_price + Decimal('0.00010')
 
-                stop_order = OrderFactory.stop_market(
+                stop_order = OrderFactory.stop(
                     AUDUSD_FXCM,
                     self.generate_order_id(AUDUSD_FXCM),
                     'S1_SL',

@@ -264,15 +264,16 @@ class Order:
         """
         :return: The str() string representation of the order.
         """
-        attrs = vars(self)
-        props = ', '.join("%s=%s" % item for item in attrs.items()).replace(', _', ', ')
-        return f"{self.__class__.__name__}({props[1:]})"
+        quantity = '{:,}'.format(self._quantity)
+        return f"Order(id={self._id}, label={self._label}: {self._side.name} {quantity} {self._symbol} @ {self._price} {self._type.name})"
 
     def __repr__(self) -> str:
         """
         :return: The repr() string representation of the order.
         """
-        return f"<{str(self)} object at {id(self)}>"
+        attrs = vars(self)
+        props = ', '.join("%s=%s" % item for item in attrs.items()).replace(', _', ', ')
+        return f"<{self.__class__.__name__}({props[1:]}) object at {id(self)}>"
 
     @typechecking
     def apply(self, order_event: OrderEvent):

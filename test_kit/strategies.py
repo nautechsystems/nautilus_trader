@@ -40,6 +40,8 @@ class TestStrategy1(TradeStrategy):
         self.register_indicator(self.gbpusd_1sec_mid, self.ema1, self.ema1.update, 'ema1')
         self.register_indicator(self.gbpusd_1sec_mid, self.ema2, self.ema2.update, 'ema2')
 
+        self.position_id = None
+
     def on_start(self):
         self.object_storer.store('custom start logic')
 
@@ -62,7 +64,8 @@ class TestStrategy1(TradeStrategy):
                     OrderSide.BUY,
                     100000)
 
-                self.submit_order(buy_order)
+                self.submit_order(buy_order, buy_order.id)
+                self.position_id = buy_order.id
 
             elif self.ema1.value < self.ema2.value:
                 sell_order = OrderFactory.market(
@@ -72,7 +75,8 @@ class TestStrategy1(TradeStrategy):
                     OrderSide.SELL,
                     100000)
 
-                self.submit_order(sell_order)
+                self.submit_order(sell_order, sell_order.id)
+                self.position_id = sell_order.id
 
     def on_event(self, event: Event):
         self.object_storer.store(event)
