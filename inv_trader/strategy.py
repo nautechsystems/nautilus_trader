@@ -89,7 +89,7 @@ class TradeStrategy:
         self._order_book = {}            # type: Dict[OrderId, Order]
         self._order_position_index = {}  # type: Dict[OrderId, PositionId]
         self._position_book = {}         # type: Dict[PositionId, Position or None]
-        self._account = Account()
+        self._account = None  # Initialized with registered with execution client.
         self._exec_client = None
 
         self._log.info(f"Initialized.")
@@ -253,9 +253,9 @@ class TradeStrategy:
         return self._position_book
 
     @property
-    def account(self) -> Account:
+    def account(self) -> Account or None:
         """
-        :return: The strategies account.
+        :return: The strategies account (initialized once registered with execution client).
         """
         return self._account
 
@@ -627,6 +627,7 @@ class TradeStrategy:
             raise TypeError("The client must inherit from the ExecutionClient base class.")
 
         self._exec_client = client
+        self._account = client.account
 
     def _update_ticks(self, tick: Tick):
         """"

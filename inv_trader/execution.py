@@ -21,6 +21,7 @@ from inv_trader.core.preconditions import Precondition
 from inv_trader.core.logger import Logger, LoggingAdapter
 from inv_trader.commands import CollateralInquiry
 from inv_trader.commands import SubmitOrder, CancelOrder, ModifyOrder
+from inv_trader.model.account import Account
 from inv_trader.model.order import Order
 from inv_trader.model.events import Event, OrderEvent, AccountEvent, OrderCancelReject
 from inv_trader.messaging import RequestWorker, SubscriberWorker
@@ -51,10 +52,18 @@ class ExecutionClient:
             self._log = LoggingAdapter(f"ExecClient")
         else:
             self._log = LoggingAdapter(f"ExecClient", logger)
+        self._account = Account()
         self._registered_strategies = {}  # type: Dict[UUID, Callable]
         self._order_index = {}            # type: Dict[OrderId, UUID]
 
         self._log.info("Initialized.")
+
+    @property
+    def account(self) -> Account:
+        """
+        :return: The account held by the execution client.
+        """
+        return self._account
 
     def register_strategy(self, strategy: TradeStrategy):
         """
@@ -141,8 +150,8 @@ class ExecutionClient:
         """
         Handle events received from the execution service.
         """
-        # Order event
         self._log.debug(f"Received {event}")
+
         if isinstance(event, OrderEvent):
             order_id = event.order_id
             if order_id not in self._order_index.keys():
@@ -153,12 +162,11 @@ class ExecutionClient:
             strategy_id = self._order_index[order_id]
             self._registered_strategies[strategy_id](event)
 
-        if isinstance(event, OrderCancelReject):
-            self._log.warning(f"{event}")
+            if isinstance(event, OrderCancelReject):
+                self._log.warning(f"{event}")
 
-        if isinstance(event, AccountEvent):
-            for strategy_id in self._registered_strategies.keys():
-                self._registered_strategies[strategy_id](event)
+        elif isinstance(event, AccountEvent):
+            self._account.apply(event)
 
 
 class LiveExecClient(ExecutionClient):
@@ -220,6 +228,7 @@ class LiveExecClient(ExecutionClient):
         """
         self._events_worker.start()
         self._commands_worker.start()
+        # self.collateral_inquiry()  # TODO: Fix this.
 
     def disconnect(self):
         """
