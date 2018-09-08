@@ -426,9 +426,10 @@ class TradeStrategy:
             priority: int=1,
             repeat: bool=False):
         """
-        Set a timer with the given step (time delta). The timer will run once
-        the strategy is started. When the time delta is reached on_event() is
-        passed the TimeEvent containing the timers unique label.
+        Set a timer with the given interval (time delta). The timer will run once
+        the strategy is started and the start time is reached. When the interval
+        is reached on_event() is passed the TimeEvent containing the timers
+        unique label.
 
         A priority can be set in the case that time events occur simultaneously,
         the events will be raised in the order of priority with the lower the
