@@ -185,8 +185,9 @@ class Position:
         """
         :return: The str() string representation of the position.
         """
+        quantity = '{:,}'.format(self.quantity)
         return (f"Position(id={self._id}) "
-                f"{self._symbol} {self.market_position.name} {self.quantity})")
+                f"{self._symbol} {self.market_position.name} {quantity}")
 
     def __repr__(self) -> str:
         """

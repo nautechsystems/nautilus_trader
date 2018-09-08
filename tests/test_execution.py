@@ -82,7 +82,7 @@ class ExecutionClientTests(unittest.TestCase):
         result = storer.get_store[-1]
 
         # Assert
-        self.assertTrue(isinstance(result, OrderFilled))
+        self.assertTrue(isinstance(result, OrderWorking))
 
     def test_can_send_submit_order_command_to_mock_exec_client(self):
         # Arrange
@@ -107,7 +107,7 @@ class ExecutionClientTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(order, strategy.order(order_id))
-        self.assertEqual(OrderStatus.FILLED, order.status)
+        self.assertEqual(OrderStatus.WORKING, order.status)
         exec_client.disconnect()
 
     def test_can_send_cancel_order_command_to_mock_exec_clint(self):
@@ -163,7 +163,7 @@ class ExecutionClientTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(order, strategy.order(order_id))
-        self.assertEqual(OrderStatus.FILLED, order.status)
+        self.assertEqual(OrderStatus.WORKING, order.status)
         self.assertEqual(Decimal('1.00001'), order.price)
         exec_client.disconnect()
 
