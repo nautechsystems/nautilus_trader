@@ -15,7 +15,6 @@ from decimal import Decimal
 from uuid import UUID
 from typing import Optional
 
-from inv_trader.core.typing import typechecking
 from inv_trader.core.preconditions import Precondition
 from inv_trader.model.enums import CurrencyCode, OrderSide, OrderType, TimeInForce, Broker
 from inv_trader.model.objects import Symbol
@@ -95,7 +94,6 @@ class AccountEvent(Event):
     Represents an account event produced from a collateral report.
     """
 
-    @typechecking
     def __init__(self,
                  account_id: str,
                  broker: Broker,
@@ -201,7 +199,6 @@ class OrderEvent(Event):
 
     __metaclass__ = abc.ABCMeta
 
-    @typechecking
     def __init__(self,
                  order_symbol: Symbol,
                  order_id: str,
@@ -241,7 +238,6 @@ class OrderSubmitted(OrderEvent):
     Represents an event where an order has been submitted to the execution system.
     """
 
-    @typechecking
     def __init__(self,
                  symbol: Symbol,
                  order_id: str,
@@ -275,7 +271,6 @@ class OrderAccepted(OrderEvent):
     Represents an event where an order has been accepted by the broker.
     """
 
-    @typechecking
     def __init__(self,
                  symbol: Symbol,
                  order_id: str,
@@ -309,7 +304,6 @@ class OrderRejected(OrderEvent):
     Represents an event where an order has been rejected by the broker.
     """
 
-    @typechecking
     def __init__(self,
                  symbol: Symbol,
                  order_id: str,
@@ -354,7 +348,6 @@ class OrderWorking(OrderEvent):
     Represents an event where an order is working with the broker.
     """
 
-    @typechecking
     def __init__(self,
                  symbol: Symbol,
                  order_id: str,
@@ -471,7 +464,6 @@ class OrderCancelled(OrderEvent):
     Represents an event where an order has been cancelled with the broker.
     """
 
-    @typechecking
     def __init__(self,
                  symbol: Symbol,
                  order_id: str,
@@ -505,7 +497,6 @@ class OrderCancelReject(OrderEvent):
     Represents an event where an order cancel request has been rejected by the broker.
     """
 
-    @typechecking
     def __init__(self,
                  order_symbol: Symbol,
                  order_id: str,
@@ -561,7 +552,6 @@ class OrderExpired(OrderEvent):
     Represents an event where an order has expired with the broker.
     """
 
-    @typechecking
     def __init__(self,
                  symbol: Symbol,
                  order_id: str,
@@ -595,7 +585,6 @@ class OrderModified(OrderEvent):
     Represents an event where an order has been modified with the broker.
     """
 
-    @typechecking
     def __init__(self,
                  symbol: Symbol,
                  order_id: str,
@@ -650,7 +639,6 @@ class OrderFilled(OrderEvent):
     Represents an event where an order has been completely filled with the broker.
     """
 
-    @typechecking
     def __init__(self,
                  symbol: Symbol,
                  order_id: str,
@@ -737,7 +725,6 @@ class OrderPartiallyFilled(OrderEvent):
     Represents an event where an order has been partially filled with the broker.
     """
 
-    @typechecking
     def __init__(self,
                  symbol: Symbol,
                  order_id: str,
@@ -835,7 +822,6 @@ class TimeEvent(Event):
     Represents a time event occurring at the event timestamp.
     """
 
-    @typechecking
     def __init__(self,
                  label: str,
                  event_id: UUID,

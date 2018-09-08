@@ -10,7 +10,6 @@
 from datetime import datetime
 from decimal import Decimal
 
-from inv_trader.core.typing import typechecking
 from inv_trader.core.preconditions import Precondition
 from inv_trader.model.enums import Venue, Resolution, QuoteType
 
@@ -21,7 +20,6 @@ class Price:
     """
 
     @staticmethod
-    @typechecking
     def create(
             price: float,
             decimals: int) -> Decimal:
@@ -43,7 +41,6 @@ class Symbol:
     Represents the symbol for a financial market tradeable instrument.
     """
 
-    @typechecking
     def __init__(self,
                  code: str,
                  venue: Venue):
@@ -111,7 +108,6 @@ class Tick:
     Represents a single tick in a financial market.
     """
 
-    @typechecking
     def __init__(self,
                  symbol: Symbol,
                  bid: Decimal,
@@ -195,7 +191,6 @@ class BarType:
     Represents a symbol and bar specification.
     """
 
-    @typechecking
     def __init__(self,
                  symbol: Symbol,
                  period: int,
@@ -285,7 +280,6 @@ class Bar:
     Represents a financial market trade bar.
     """
 
-    @typechecking
     def __init__(self,
                  open_price: Decimal,
                  high_price: Decimal,

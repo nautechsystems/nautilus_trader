@@ -21,7 +21,7 @@ class PriceTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ValueError, Price.create, 0.0, 0)
+        self.assertRaises(ValueError, Price.create, -1, 0)
 
     def test_create_price_with_negative_decimals_raises_exception(self):
         # Arrange

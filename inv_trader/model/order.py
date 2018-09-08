@@ -11,7 +11,6 @@ from datetime import datetime
 from decimal import Decimal
 from typing import List
 
-from inv_trader.core.typing import typechecking
 from inv_trader.core.preconditions import Precondition
 from inv_trader.model.enums import OrderSide, OrderType, TimeInForce, OrderStatus
 from inv_trader.model.objects import Symbol
@@ -33,7 +32,6 @@ class Order:
     Represents an order in a financial market.
     """
 
-    @typechecking
     def __init__(self,
                  symbol: Symbol,
                  order_id: str,
@@ -279,7 +277,6 @@ class Order:
         props = ', '.join("%s=%s" % item for item in attrs.items()).replace(', _', ', ')
         return f"<{self.__class__.__name__}({props[1:]}) object at {id(self)}>"
 
-    @typechecking
     def apply(self, order_event: OrderEvent):
         """
         Applies the given order event to the order.

@@ -16,7 +16,6 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Dict
 
-from inv_trader.core.typing import typechecking
 from inv_trader.core.preconditions import Precondition
 from inv_trader.control.commands import Command, OrderCommand, SubmitOrder, CancelOrder, ModifyOrder
 from inv_trader.control.commands import CollateralInquiry
@@ -97,7 +96,6 @@ MARGIN_RATIO = 'margin_ratio'
 MARGIN_CALL_STATUS = 'margin_call_status'
 
 
-@typechecking
 def _parse_symbol(symbol_string: str) -> Symbol:
     """
     Parse the given string to a Symbol.
@@ -158,7 +156,6 @@ class OrderSerializer:
     __metaclass__ = abc.ABCMeta
 
     @staticmethod
-    @typechecking
     @abc.abstractmethod
     def serialize(order: Order) -> bytes:
         """
@@ -171,7 +168,6 @@ class OrderSerializer:
         raise NotImplementedError("Method must be implemented.")
 
     @staticmethod
-    @typechecking
     @abc.abstractmethod
     def deserialize(order_bytes: bytes) -> Order:
         """
@@ -190,7 +186,6 @@ class MsgPackOrderSerializer(OrderSerializer):
     """
 
     @staticmethod
-    @typechecking
     def serialize(order: Order) -> bytes:
         """
         Serialize the given Order to Message Pack specification bytes.
@@ -212,7 +207,6 @@ class MsgPackOrderSerializer(OrderSerializer):
             }, encoding=UTF8)
 
     @staticmethod
-    @typechecking
     def deserialize(order_bytes: bytes) -> Order:
         """
         Deserialize the given Message Pack specification bytes to an Order.
@@ -244,7 +238,6 @@ class CommandSerializer:
     __metaclass__ = abc.ABCMeta
 
     @staticmethod
-    @typechecking
     @abc.abstractmethod
     def serialize(command: Command) -> bytes:
         """
@@ -256,7 +249,6 @@ class CommandSerializer:
         raise NotImplementedError("Method must be implemented.")
 
     @staticmethod
-    @typechecking
     @abc.abstractmethod
     def deserialize(command_bytes: bytes) -> Command:
         """
@@ -274,7 +266,6 @@ class MsgPackCommandSerializer(CommandSerializer):
     """
 
     @staticmethod
-    @typechecking
     def serialize(command: Command) -> bytes:
         """
         Serialize the given command to Message Pack specification bytes.
@@ -299,7 +290,6 @@ class MsgPackCommandSerializer(CommandSerializer):
             raise ValueError("Cannot serialize command (unrecognized command).")
 
     @staticmethod
-    @typechecking
     def deserialize(command_bytes: bytes) -> Command:
         """
         Deserialize the given Message Pack specification bytes to a command.
@@ -331,7 +321,6 @@ class MsgPackCommandSerializer(CommandSerializer):
             raise ValueError("Cannot deserialize command (unrecognized command).")
 
     @staticmethod
-    @typechecking
     def _serialize_order_command(order_command: OrderCommand) -> bytes:
         """
         Serialize the given order command to Message Pack specification bytes.
@@ -365,7 +354,6 @@ class MsgPackCommandSerializer(CommandSerializer):
             raise ValueError("Cannot serialize order command (unrecognized command).")
 
     @staticmethod
-    @typechecking
     def _deserialize_order_command(
             command_id: UUID,
             command_timestamp: datetime,
@@ -414,7 +402,6 @@ class EventSerializer:
     __metaclass__ = abc.ABCMeta
 
     @staticmethod
-    @typechecking
     @abc.abstractmethod
     def serialize(event: Event) -> bytes:
         """
@@ -427,7 +414,6 @@ class EventSerializer:
         raise NotImplementedError("Method must be implemented.")
 
     @staticmethod
-    @typechecking
     @abc.abstractmethod
     def deserialize(event_bytes: bytes) -> Event:
         """
@@ -446,7 +432,6 @@ class MsgPackEventSerializer(EventSerializer):
     """
 
     @staticmethod
-    @typechecking
     @abc.abstractmethod
     def serialize(event: Event) -> bytes:
         """
@@ -463,7 +448,6 @@ class MsgPackEventSerializer(EventSerializer):
             raise ValueError("Cannot serialize event (unrecognized event).")
 
     @staticmethod
-    @typechecking
     def deserialize(event_bytes: bytes) -> Event:
         """
         Deserialize the given Message Pack specification bytes to an event.
@@ -506,7 +490,6 @@ class MsgPackEventSerializer(EventSerializer):
             raise ValueError("Cannot deserialize event (unrecognized event).")
 
     @staticmethod
-    @typechecking
     def _serialize_order_event(order_event: OrderEvent) -> bytes:
         """
         Serialize the given order event to Message Pack specification bytes.
@@ -601,7 +584,6 @@ class MsgPackEventSerializer(EventSerializer):
             raise ValueError("Cannot serialize event (unrecognized event.")
 
     @staticmethod
-    @typechecking
     def _deserialize_order_event(
             event_id: UUID,
             event_timestamp: datetime,

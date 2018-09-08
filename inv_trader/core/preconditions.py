@@ -7,10 +7,13 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
+
+
 PRE_FAILED = "Precondition Failed"
 
 
-cdef class Precondition:
+class Precondition:
     """
     Provides static methods for the checking of function or method preconditions.
     A precondition is a condition or predicate that must always be true just prior
@@ -18,7 +21,7 @@ cdef class Precondition:
     specification.
     """
     @staticmethod
-    def true(object predicate, str description):
+    def true(predicate: bool, description: str):
         """
         Check the preconditions predicate is true.
 
@@ -30,7 +33,7 @@ cdef class Precondition:
             raise ValueError(f"{PRE_FAILED} (the predicate {description} was false).")
 
     @staticmethod
-    def is_none(object argument, str param_name):
+    def is_none(argument, param_name: str):
         """
         Check the preconditions argument is None.
 
@@ -42,7 +45,7 @@ cdef class Precondition:
             raise ValueError(f"{PRE_FAILED} (the {param_name} argument was NOT none).")
 
     @staticmethod
-    def not_none(object argument, str param_name):
+    def not_none(argument, param_name: str):
         """
         Check the preconditions argument is not None.
 
@@ -54,7 +57,7 @@ cdef class Precondition:
             raise ValueError(f"{PRE_FAILED} (the {param_name} argument was none).")
 
     @staticmethod
-    def valid_string(str argument, str param_name):
+    def valid_string(argument: str, param_name: str):
         """
         Check the preconditions string argument is not None, empty or whitespace.
 
@@ -72,7 +75,7 @@ cdef class Precondition:
             raise ValueError(f"{PRE_FAILED} (the {param_name} string argument exceeded 1024 chars).")
 
     @staticmethod
-    def equal(object argument1, object argument2):
+    def equal(argument1, argument2):
         """
         Check the preconditions arguments are equal.
 
@@ -85,10 +88,10 @@ cdef class Precondition:
 
     @staticmethod
     def equal_lengths(
-            object collection1,
-            object collection2,
-            str collection1_name,
-            str collection2_name):
+            collection1,
+            collection2,
+            collection1_name: str,
+            collection2_name: str):
         """
         Check the preconditions collections have equal lengths.
 
@@ -104,7 +107,7 @@ cdef class Precondition:
                 f"(the lengths of {collection1_name} and {collection2_name} were not equal)."))
 
     @staticmethod
-    def positive(double value, str param_name):
+    def positive(value: int or float or Decimal, param_name: str):
         """
         Check the preconditions value is positive (greater than or equal to zero.)
 
@@ -116,7 +119,7 @@ cdef class Precondition:
             raise ValueError(f"{PRE_FAILED} (the {param_name} was NOT positive = {value}).")
 
     @staticmethod
-    def not_negative(double value, str param_name):
+    def not_negative(value: int or float or Decimal, param_name: str):
         """
         Check the preconditions value is positive, and not zero.
 
@@ -129,10 +132,10 @@ cdef class Precondition:
 
     @staticmethod
     def in_range(
-            double value,
-            str param_name,
-            double start,
-            double end):
+            value: int or float or Decimal,
+            param_name: str,
+            start: int or float or Decimal,
+            end: int or float or Decimal):
         """
         Check the preconditions value is within the specified range (inclusive).
 
@@ -147,7 +150,7 @@ cdef class Precondition:
                 f"{PRE_FAILED} (the {param_name} was out of range [{start} - {end}] = {value}).")
 
     @staticmethod
-    def not_empty(object argument, str param_name):
+    def not_empty(argument, param_name: str):
         """
         Check the preconditions iterable is not empty.
 
@@ -159,7 +162,7 @@ cdef class Precondition:
             raise ValueError(f"{PRE_FAILED} (the {param_name} was an empty collection).")
 
     @staticmethod
-    def empty(object argument, str param_name):
+    def empty(argument, param_name: str):
         """
         Check the preconditions iterable is empty.
 

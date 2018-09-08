@@ -11,9 +11,8 @@ import pytz
 
 from decimal import Decimal
 from datetime import datetime
-from typing import List, Dict, Optional
+from typing import List, Dict
 
-from inv_trader.core.typing import typechecking
 from inv_trader.core.preconditions import Precondition
 from inv_trader.model.enums import OrderSide, OrderType, TimeInForce
 from inv_trader.model.objects import Symbol
@@ -33,7 +32,6 @@ class OrderFactory:
     """
 
     @staticmethod
-    @typechecking
     def market(
             symbol: Symbol,
             order_id: str,
@@ -64,7 +62,6 @@ class OrderFactory:
                      expire_time=None)
 
     @staticmethod
-    @typechecking
     def limit(
             symbol: Symbol,
             order_id: str,
@@ -102,7 +99,6 @@ class OrderFactory:
                      expire_time)
 
     @staticmethod
-    @typechecking
     def stop(
             symbol: Symbol,
             order_id: str,
@@ -140,7 +136,6 @@ class OrderFactory:
                      expire_time)
 
     @staticmethod
-    @typechecking
     def stop_limit(
             symbol: Symbol,
             order_id: str,
@@ -178,7 +173,6 @@ class OrderFactory:
                      expire_time)
 
     @staticmethod
-    @typechecking
     def market_if_touched(
             symbol: Symbol,
             order_id: str,
@@ -216,7 +210,6 @@ class OrderFactory:
                      expire_time)
 
     @staticmethod
-    @typechecking
     def fill_or_kill(
             symbol: Symbol,
             order_id: str,
@@ -247,7 +240,6 @@ class OrderFactory:
                      expire_time=None)
 
     @staticmethod
-    @typechecking
     def immediate_or_cancel(
             symbol: Symbol,
             order_id: str,
@@ -283,7 +275,6 @@ class OrderIdGenerator:
     Provides a generator for unique order identifiers.
     """
 
-    @typechecking
     def __init__(self, order_id_tag: str):
         """
         Initializes a new instance of the OrderIdentifierFactory class.
@@ -296,7 +287,6 @@ class OrderIdGenerator:
         self._order_symbol_counts = {}  # type: Dict[Symbol, int]
         self._order_ids = []            # type: List[OrderId]
 
-    @typechecking
     def generate(self, order_symbol: Symbol) -> OrderId:
         """
         Create a unique order identifier for the strategy using the given symbol.
@@ -321,8 +311,8 @@ class OrderIdGenerator:
         self._order_ids.append(order_id)
         return order_id
 
-    @typechecking
-    def _milliseconds_since_unix_epoch(self) -> int:
+    @staticmethod
+    def _milliseconds_since_unix_epoch() -> int:
         """
         Returns the number of ticks of the given time now since the Unix Epoch.
 

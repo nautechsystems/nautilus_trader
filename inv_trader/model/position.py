@@ -11,7 +11,6 @@ from datetime import datetime
 from decimal import Decimal
 from typing import List
 
-from inv_trader.core.typing import typechecking
 from inv_trader.core.preconditions import Precondition
 from inv_trader.model.enums import MarketPosition, OrderSide
 from inv_trader.model.objects import Symbol
@@ -29,7 +28,6 @@ class Position:
     Represents a position in a financial market.
     """
 
-    @typechecking
     def __init__(self,
                  symbol: Symbol,
                  position_id: PositionId,
@@ -198,7 +196,6 @@ class Position:
         props = ', '.join("%s=%s" % item for item in attrs.items()).replace(', _', ', ')
         return f"<{self.__class__.__name__}({props[1:]}) object at {id(self)}>"
 
-    @typechecking
     def apply(self, event: OrderEvent):
         """
         Applies the given order event to the position.
@@ -227,7 +224,6 @@ class Position:
         else:
             raise TypeError("Cannot apply event (unrecognized event).")
 
-    @typechecking
     def _update_position(
             self,
             order_side: OrderSide,

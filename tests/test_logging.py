@@ -10,7 +10,7 @@
 import unittest
 import logging
 
-from inv_trader.core.logging import Logger
+from inv_trader.core.logger import Logger
 
 
 class LoggerTests(unittest.TestCase):
