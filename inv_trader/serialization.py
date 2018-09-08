@@ -31,10 +31,10 @@ from inv_trader.model.events import OrderPartiallyFilled, OrderFilled
 # Constants
 UTF8 = 'utf-8'
 NONE = 'NONE'
-COLLATERAL_INQUIRY = 'collateral_inquiry'
 COMMAND_TYPE = 'command_type'
 COMMAND_ID = 'command_id'
 COMMAND_TIMESTAMP = 'command_timestamp'
+COLLATERAL_INQUIRY = 'collateral_inquiry'
 ORDER_COMMAND = 'order_command'
 SUBMIT_ORDER = 'submit_order'
 CANCEL_ORDER = 'cancel_order'
