@@ -24,6 +24,7 @@ from inv_trader.model.objects import Price, Symbol, Tick, BarType, Bar
 from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
 from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
 from inv_trader.model.events import TimeEvent
+from inv_trader.model.position import Position
 from inv_trader.factories import OrderFactory
 from inv_trader.strategy import TradeStrategy
 from inv_trader.strategy import IndicatorUpdater
@@ -288,6 +289,58 @@ class TradeStrategyTests(unittest.TestCase):
         # Assert
         self.assertEqual(tick, result)
 
+    def test_getting_order_with_unknown_id_raises_exception(self):
+        # Arrange
+        strategy = TestStrategy1()
+
+        # Act
+        # Assert
+        self.assertRaises(KeyError, strategy.order, 'unknown_order_id')
+
+    def test_can_get_order(self):
+        # Arrange
+        strategy = TestStrategy1()
+
+        order = OrderFactory.market(
+            AUDUSD_FXCM,
+            'AUDUSD|123456|1',
+            'SCALPER-01',
+            OrderSide.BUY,
+            100000)
+
+        strategy._order_book[order.id] = order
+
+        # Act
+        result = strategy.order(order.id)
+
+        # Assert
+        self.assertEqual(order, result)
+
+    def test_getting_position_with_unknown_id_raises_exception(self):
+        # Arrange
+        strategy = TestStrategy1()
+
+        # Act
+        # Assert
+        self.assertRaises(KeyError, strategy.position, 'unknown_position_id')
+
+    def test_can_get_position(self):
+        # Arrange
+        strategy = TestStrategy1()
+
+        position = Position(
+            AUDUSD_FXCM,
+            'AUDUSD-123456-1',
+            TestStubs.unix_epoch())
+
+        strategy._position_book[position.id] = position
+
+        # Act
+        result = strategy.position(position.id)
+
+        # Assert
+        self.assertEqual(position, result)
+
     def test_can_register_indicator_with_strategy(self):
         # Arrange
         strategy = TestStrategy1()
@@ -397,7 +450,7 @@ class TradeStrategyTests(unittest.TestCase):
             100000)
 
         # Act
-        strategy._add_order(order)
+        strategy._order_book[order.id] = order
 
         # Assert
         self.assertEqual(order, strategy.orders[order.id])
@@ -419,7 +472,7 @@ class TradeStrategyTests(unittest.TestCase):
             uuid.uuid4(),
             UNIX_EPOCH)
 
-        strategy._add_order(order)
+        strategy._order_book[order.id] = order
 
         # Act
         strategy._update_events(event)
