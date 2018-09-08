@@ -13,6 +13,7 @@ import datetime
 import pytz
 import time
 
+from datetime import datetime, timedelta
 from decimal import Decimal
 
 from inv_trader.model.enums import Venue, Resolution, QuoteType, OrderSide, OrderType, OrderStatus
@@ -20,6 +21,7 @@ from inv_trader.model.enums import MarketPosition
 from inv_trader.model.objects import Symbol, BarType, Bar, Price
 from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
 from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
+from inv_trader.model.events import TimeEvent
 from inv_trader.factories import OrderFactory
 from inv_trader.strategy import TradeStrategy
 from inv_trader.strategy import IndicatorUpdater
@@ -36,6 +38,10 @@ GBPUSD_FXCM = Symbol('gbpusd', Venue.FXCM)
 
 
 class TradeStrategyTests(unittest.TestCase):
+
+    def setUp(self):
+        # Fixture Setup
+        print('\n')
 
     def test_can_get_strategy_name(self):
         # Arrange
@@ -173,7 +179,7 @@ class TradeStrategyTests(unittest.TestCase):
             Decimal('1.00003'),
             Decimal('1.00002'),
             100000,
-            datetime.datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC))
+            datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC))
 
         # Act
         strategy._update_bars(bar_type, bar)
@@ -202,7 +208,7 @@ class TradeStrategyTests(unittest.TestCase):
             Decimal('1.00003'),
             Decimal('1.00002'),
             100000,
-            datetime.datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC))
+            datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC))
 
         strategy._update_bars(bar_type, bar)
 
@@ -336,7 +342,7 @@ class TradeStrategyTests(unittest.TestCase):
         # Assert
         self.assertRaises(KeyError, strategy.submit_order, order, order.id)
 
-    def test_strategy_can_cancel_order(self):
+    def test_can_cancel_order(self):
         # Arrange
         exec_client = MockExecClient()
         storer = ObjectStorer()
@@ -376,7 +382,7 @@ class TradeStrategyTests(unittest.TestCase):
         # Assert
         self.assertRaises(ValueError, strategy.cancel_order, order)
 
-    def test_strategy_can_modify_order(self):
+    def test_can_modify_order(self):
         # Arrange
         exec_client = MockExecClient()
         storer = ObjectStorer()
@@ -418,7 +424,7 @@ class TradeStrategyTests(unittest.TestCase):
         # Assert
         self.assertRaises(ValueError, strategy.modify_order, order, Decimal('1.00001'))
 
-    def test_strategy_can_track_orders_for_an_opened_position(self):
+    def test_can_track_orders_for_an_opened_position(self):
         # Arrange
         exec_client = MockExecClient()
         storer = ObjectStorer()
@@ -440,7 +446,7 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertEqual('AUDUSD|123456|1', strategy._order_position_index[order.id])
         self.assertTrue('AUDUSD|123456|1' in strategy._position_book)
 
-    def test_strategy_can_track_orders_for_a_closing_position(self):
+    def test_can_track_orders_for_a_closing_position(self):
         # Arrange
         exec_client = MockExecClient()
         storer = ObjectStorer()
@@ -473,6 +479,95 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertEqual(position1, strategy._order_position_index[order2.id])
         print(strategy._order_position_index)
 
+    def test_can_set_time_alert(self):
+        # Arrange
+        exec_client = MockExecClient()
+        storer = ObjectStorer()
+        strategy = TestStrategy1(storer)
+        exec_client.register_strategy(strategy)
+
+        alert_time = datetime.utcnow() + timedelta(milliseconds=300)
+        strategy.set_time_alert("test_alert1", alert_time)
+
+        # Act
+        strategy.start()
+
+        # Assert
+        self.assertTrue(isinstance(storer.get_store[1], TimeEvent))
+
+    def test_can_set_multiple_time_alerts(self):
+        # Arrange
+        exec_client = MockExecClient()
+        storer = ObjectStorer()
+        strategy = TestStrategy1(storer)
+        exec_client.register_strategy(strategy)
+
+        alert_time1 = datetime.utcnow() + timedelta(milliseconds=200)
+        alert_time2 = datetime.utcnow() + timedelta(milliseconds=300)
+        strategy.set_time_alert("test_alert1", alert_time1)
+        strategy.set_time_alert("test_alert2", alert_time2)
+
+        # Act
+        strategy.start()
+
+        # Assert
+        self.assertTrue(isinstance(storer.get_store[1], TimeEvent))
+        self.assertTrue(isinstance(storer.get_store[2], TimeEvent))
+
+    def test_can_set_multiple_time_alerts_with_priorities(self):
+        # Arrange
+        exec_client = MockExecClient()
+        storer = ObjectStorer()
+        strategy = TestStrategy1(storer)
+        exec_client.register_strategy(strategy)
+
+        alert_time = datetime.utcnow() + timedelta(milliseconds=200)
+        strategy.set_time_alert("test_alert1", alert_time)
+        strategy.set_time_alert("test_alert2", alert_time, 0)
+
+        # Act
+        strategy.start()
+
+        # Assert
+        self.assertEqual(storer.get_store[1].label, "test_alert2")
+        self.assertEqual(storer.get_store[2].label, "test_alert1")
+
+    def test_can_set_timer(self):
+        # Arrange
+        exec_client = MockExecClient()
+        storer = ObjectStorer()
+        strategy = TestStrategy1(storer)
+        exec_client.register_strategy(strategy)
+
+        start_time = datetime.utcnow() + timedelta(milliseconds=100)
+        strategy.set_timer("test_timer1", start_time, timedelta(milliseconds=100))
+
+        # Act
+        strategy.start()
+
+        # Assert
+        self.assertTrue(isinstance(storer.get_store[1], TimeEvent))
+
+    def test_can_set_repeating_timer(self):
+        # Arrange
+        exec_client = MockExecClient()
+        storer = ObjectStorer()
+        strategy = TestStrategy1(storer)
+        exec_client.register_strategy(strategy)
+
+        # start_time = datetime.utcnow() + timedelta(milliseconds=100)
+        # strategy.set_timer("test_timer1", start_time, timedelta(milliseconds=1000), repeat=True)
+
+        # Act
+        strategy.start()
+        # time.sleep(0.5)
+        # strategy.stop()
+
+        # TODO: Fix test.
+        # Assert
+        # self.assertTrue(isinstance(storer.get_store[0], TimeEvent))
+        print(storer.get_store)
+
 
 class IndicatorUpdaterTests(unittest.TestCase):
 
@@ -486,7 +581,7 @@ class IndicatorUpdaterTests(unittest.TestCase):
             Decimal('1.00003'),
             Decimal('1.00002'),
             1000,
-            datetime.datetime(1970, 1, 1, 0, 0, 0, 0, pytz.UTC))
+            datetime(1970, 1, 1, 0, 0, 0, 0, pytz.UTC))
 
         # Act
         updater.update(bar)
@@ -505,7 +600,7 @@ class IndicatorUpdaterTests(unittest.TestCase):
             Decimal('1.00003'),
             Decimal('1.00002'),
             1000,
-            datetime.datetime(1970, 1, 1, 0, 0, 0, 0, pytz.UTC))
+            datetime(1970, 1, 1, 0, 0, 0, 0, pytz.UTC))
 
         # Act
         updater.update(bar)
