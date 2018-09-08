@@ -130,8 +130,7 @@ class TradeStrategyTests(unittest.TestCase):
         print(result)
 
     def test_can_get_logger(self):
-        storer = ObjectStorer()
-        strategy = TestStrategy1(storer)
+        strategy = TestStrategy1()
 
         # Act
         result = strategy.log
@@ -141,8 +140,7 @@ class TradeStrategyTests(unittest.TestCase):
         print(result)
 
     def test_can_get_indicators(self):
-        storer = ObjectStorer()
-        strategy = TestStrategy1(storer)
+        strategy = TestStrategy1()
 
         # Act
         result = strategy.indicators(strategy.gbpusd_1sec_mid)
@@ -152,8 +150,7 @@ class TradeStrategyTests(unittest.TestCase):
         print(result)
 
     def test_getting_indicators_for_unknown_bar_type_raises_exception(self):
-        storer = ObjectStorer()
-        strategy = TestStrategy1(storer)
+        strategy = TestStrategy1()
 
         unknown_bar_type = BarType(
             AUDUSD_FXCM,
@@ -166,16 +163,14 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertRaises(KeyError, strategy.indicators, unknown_bar_type)
 
     def test_getting_indicator_for_unknown_label_raises_exception(self):
-        storer = ObjectStorer()
-        strategy = TestStrategy1(storer)
+        strategy = TestStrategy1()
 
         # Act
         # Assert
         self.assertRaises(KeyError, strategy.indicator, 'unknown_bar_type')
 
     def test_getting_bars_for_unknown_bar_type_raises_exception(self):
-        storer = ObjectStorer()
-        strategy = TestStrategy1(storer)
+        strategy = TestStrategy1()
 
         unknown_bar_type = BarType(
             AUDUSD_FXCM,
@@ -188,8 +183,7 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertRaises(KeyError, strategy.bars, unknown_bar_type)
 
     def test_can_get_bars(self):
-        storer = ObjectStorer()
-        strategy = TestStrategy1(storer)
+        strategy = TestStrategy1()
 
         bar_type = BarType(GBPUSD_FXCM,
                            1,
@@ -213,8 +207,7 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertTrue(bar, result[0])
 
     def test_getting_bar_for_unknown_bar_type_raises_exception(self):
-        storer = ObjectStorer()
-        strategy = TestStrategy1(storer)
+        strategy = TestStrategy1()
 
         unknown_bar_type = BarType(
             AUDUSD_FXCM,
@@ -227,8 +220,7 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertRaises(KeyError, strategy.bar, unknown_bar_type, 0)
 
     def test_getting_bar_at_out_of_range_index_raises_exception(self):
-        storer = ObjectStorer()
-        strategy = TestStrategy1(storer)
+        strategy = TestStrategy1()
 
         bar_type = BarType(GBPUSD_FXCM,
                            1,
@@ -250,8 +242,7 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertRaises(IndexError, strategy.bar, bar_type, -2)
 
     def test_can_get_bar(self):
-        storer = ObjectStorer()
-        strategy = TestStrategy1(storer)
+        strategy = TestStrategy1()
 
         bar_type = BarType(GBPUSD_FXCM,
                            1,
@@ -275,16 +266,14 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertEqual(bar, result)
 
     def test_getting_last_tick_with_unknown_symbol_raises_exception(self):
-        storer = ObjectStorer()
-        strategy = TestStrategy1(storer)
+        strategy = TestStrategy1()
 
         # Act
         # Assert
         self.assertRaises(KeyError, strategy.last_tick, AUDUSD_FXCM)
 
     def test_can_get_last_tick(self):
-        storer = ObjectStorer()
-        strategy = TestStrategy1(storer)
+        strategy = TestStrategy1()
 
         tick = Tick(Symbol('AUDUSD', Venue.FXCM),
                     Decimal('1.00000'),
@@ -301,19 +290,19 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_register_indicator_with_strategy(self):
         # Arrange
-        storer = ObjectStorer()
+        strategy = TestStrategy1()
 
         # Act
-        strategy = TestStrategy1(storer)
+        result1 = strategy.all_indicators[strategy.gbpusd_1sec_mid][0]
+        result2 = strategy.all_indicators[strategy.gbpusd_1sec_mid][1]
 
         # Assert
-        self.assertEqual(strategy.ema1, strategy.all_indicators[strategy.gbpusd_1sec_mid][0])
-        self.assertEqual(strategy.ema2, strategy.all_indicators[strategy.gbpusd_1sec_mid][1])
+        self.assertEqual(strategy.ema1, result1)
+        self.assertEqual(strategy.ema2, result2)
 
     def test_can_start_strategy(self):
         # Arrange
-        storer = ObjectStorer()
-        strategy = TestStrategy1(storer)
+        strategy = TestStrategy1()
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
@@ -325,12 +314,11 @@ class TradeStrategyTests(unittest.TestCase):
         # Assert
         self.assertFalse(result1)
         self.assertTrue(result2)
-        self.assertTrue('custom start logic' in storer.get_store)
+        self.assertTrue('custom start logic' in strategy.object_storer.get_store)
 
     def test_can_stop_strategy(self):
         # Arrange
-        storer = ObjectStorer()
-        strategy = TestStrategy1(storer)
+        strategy = TestStrategy1()
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
@@ -339,12 +327,11 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Assert
         self.assertFalse(strategy.is_running)
-        self.assertTrue('custom stop logic' in storer.get_store)
+        self.assertTrue('custom stop logic' in strategy.object_storer.get_store)
 
     def test_can_update_strategy_bars(self):
         # Arrange
-        storer = ObjectStorer()
-        strategy = TestStrategy1(storer)
+        strategy = TestStrategy1()
 
         bar_type = BarType(GBPUSD_FXCM,
                            1,
@@ -368,12 +355,11 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertEqual(1, len(strategy.bars(bar_type)))
         self.assertEqual(1, strategy.ema1.count)
         self.assertEqual(1, strategy.ema2.count)
-        self.assertEqual(0, len(storer.get_store))
+        self.assertEqual(0, len(strategy.object_storer.get_store))
 
     def test_can_reset_strategy(self):
         # Arrange
-        storer = ObjectStorer()
-        strategy = TestStrategy1(storer)
+        strategy = TestStrategy1()
 
         bar_type = BarType(GBPUSD_FXCM,
                            1,
@@ -397,12 +383,11 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertFalse(strategy.is_running)
         self.assertEqual(0, strategy.ema1.count)
         self.assertEqual(0, strategy.ema2.count)
-        self.assertTrue('custom reset logic' in storer.get_store)
+        self.assertTrue('custom reset logic' in strategy.object_storer.get_store)
 
     def test_can_add_order_to_strategy(self):
         # Arrange
-        storer = ObjectStorer()
-        strategy = TestStrategy1(storer)
+        strategy = TestStrategy1()
 
         order = OrderFactory.market(
             AUDUSD_FXCM,
@@ -419,8 +404,7 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_update_order_events(self):
         # Arrange
-        storer = ObjectStorer()
-        strategy = TestStrategy1(storer)
+        strategy = TestStrategy1()
         order = OrderFactory.market(
             AUDUSD_FXCM,
             'AUDUSD|123456|1',
@@ -445,8 +429,7 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_get_opposite_side_returns_expected_sides(self):
         # Arrange
-        storer = ObjectStorer()
-        strategy = TestStrategy1(storer)
+        strategy = TestStrategy1()
 
         # Act
         result1 = strategy.get_opposite_side(OrderSide.BUY)
@@ -458,8 +441,7 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_get_flatten_side_with_long_or_short_market_position_returns_expected_sides(self):
         # Arrange
-        storer = ObjectStorer()
-        strategy = TestStrategy1(storer)
+        strategy = TestStrategy1()
 
         # Act
         result1 = strategy.get_flatten_side(MarketPosition.LONG)
@@ -471,8 +453,7 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_get_flatten_side_with_flat_market_position_raises_exception(self):
         # Arrange
-        storer = ObjectStorer()
-        strategy = TestStrategy1(storer)
+        strategy = TestStrategy1()
 
         # Act
         # Assert
@@ -480,8 +461,7 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_strategy_can_submit_order(self):
         # Arrange
-        storer = ObjectStorer()
-        strategy = TestStrategy1(storer)
+        strategy = TestStrategy1()
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
@@ -501,8 +481,7 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_submitting_order_with_identical_id_raises_ex(self):
         # Arrange
-        storer = ObjectStorer()
-        strategy = TestStrategy1(storer)
+        strategy = TestStrategy1()
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
@@ -521,8 +500,7 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_cancel_order(self):
         # Arrange
-        storer = ObjectStorer()
-        strategy = TestStrategy1(storer)
+        strategy = TestStrategy1()
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
@@ -544,8 +522,7 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_cancelling_order_which_does_not_exist_raises_ex(self):
         # Arrange
-        storer = ObjectStorer()
-        strategy = TestStrategy1(storer)
+        strategy = TestStrategy1()
 
         order = OrderFactory.market(
             AUDUSD_FXCM,
@@ -560,8 +537,7 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_modify_order(self):
         # Arrange
-        storer = ObjectStorer()
-        strategy = TestStrategy1(storer)
+        strategy = TestStrategy1()
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
@@ -585,8 +561,7 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_modifying_order_which_does_not_exist_raises_ex(self):
         # Arrange
-        storer = ObjectStorer()
-        strategy = TestStrategy1(storer)
+        strategy = TestStrategy1()
 
         order = OrderFactory.market(
             AUDUSD_FXCM,
@@ -601,8 +576,7 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_track_orders_for_an_opened_position(self):
         # Arrange
-        storer = ObjectStorer()
-        strategy = TestStrategy1(storer)
+        strategy = TestStrategy1()
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
@@ -623,8 +597,7 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_track_orders_for_a_closing_position(self):
         # Arrange
-        storer = ObjectStorer()
-        strategy = TestStrategy1(storer)
+        strategy = TestStrategy1()
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
@@ -655,8 +628,7 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_set_time_alert(self):
         # Arrange
-        storer = ObjectStorer()
-        strategy = TestStrategy1(storer)
+        strategy = TestStrategy1()
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
@@ -667,31 +639,29 @@ class TradeStrategyTests(unittest.TestCase):
         strategy.start()
 
         # Assert
-        self.assertTrue(isinstance(storer.get_store[1], TimeEvent))
+        self.assertTrue(isinstance(strategy.object_storer.get_store[1], TimeEvent))
 
     def test_can_set_multiple_time_alerts(self):
         # Arrange
-        storer = ObjectStorer()
-        strategy = TestStrategy1(storer)
+        strategy = TestStrategy1()
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
         alert_time1 = datetime.utcnow() + timedelta(milliseconds=200)
         alert_time2 = datetime.utcnow() + timedelta(milliseconds=300)
-        strategy.set_time_alert("test_alert1", alert_time1)
-        strategy.set_time_alert("test_alert2", alert_time2)
 
         # Act
+        strategy.set_time_alert("test_alert1", alert_time1)
+        strategy.set_time_alert("test_alert2", alert_time2)
         strategy.start()
 
         # Assert
-        self.assertTrue(isinstance(storer.get_store[1], TimeEvent))
-        self.assertTrue(isinstance(storer.get_store[2], TimeEvent))
+        self.assertTrue(isinstance(strategy.object_storer.get_store[1], TimeEvent))
+        self.assertTrue(isinstance(strategy.object_storer.get_store[2], TimeEvent))
 
     def test_can_set_multiple_time_alerts_with_priorities(self):
         # Arrange
-        storer = ObjectStorer()
-        strategy = TestStrategy1(storer)
+        strategy = TestStrategy1()
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
@@ -703,13 +673,12 @@ class TradeStrategyTests(unittest.TestCase):
         strategy.start()
 
         # Assert
-        self.assertEqual(storer.get_store[1].label, "test_alert2")
-        self.assertEqual(storer.get_store[2].label, "test_alert1")
+        self.assertEqual(strategy.object_storer.get_store[1].label, "test_alert2")
+        self.assertEqual(strategy.object_storer.get_store[2].label, "test_alert1")
 
     def test_can_set_timer(self):
         # Arrange
-        storer = ObjectStorer()
-        strategy = TestStrategy1(storer)
+        strategy = TestStrategy1()
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
@@ -720,12 +689,11 @@ class TradeStrategyTests(unittest.TestCase):
         strategy.start()
 
         # Assert
-        self.assertTrue(isinstance(storer.get_store[1], TimeEvent))
+        self.assertTrue(isinstance(strategy.object_storer.get_store[1], TimeEvent))
 
     def test_can_set_repeating_timer(self):
         # Arrange
-        storer = ObjectStorer()
-        strategy = TestStrategy1(storer)
+        strategy = TestStrategy1()
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
@@ -738,14 +706,13 @@ class TradeStrategyTests(unittest.TestCase):
         strategy.stop()
 
         # Assert
-        self.assertTrue(isinstance(storer.get_store[1], TimeEvent))
-        self.assertTrue(isinstance(storer.get_store[2], TimeEvent))
-        self.assertTrue(isinstance(storer.get_store[3], TimeEvent))
+        self.assertTrue(isinstance(strategy.object_storer.get_store[1], TimeEvent))
+        self.assertTrue(isinstance(strategy.object_storer.get_store[2], TimeEvent))
+        self.assertTrue(isinstance(strategy.object_storer.get_store[3], TimeEvent))
 
     def test_can_set_two_repeating_timers(self):
         # Arrange
-        storer = ObjectStorer()
-        strategy = TestStrategy1(storer)
+        strategy = TestStrategy1()
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
@@ -759,8 +726,8 @@ class TradeStrategyTests(unittest.TestCase):
         strategy.stop()
 
         # Assert
-        self.assertTrue(storer.get_store[1].label.startswith("test_timer"))
-        self.assertTrue(storer.get_store[2].label.startswith("test_timer"))
+        self.assertTrue(strategy.object_storer.get_store[1].label.startswith("test_timer"))
+        self.assertTrue(strategy.object_storer.get_store[2].label.startswith("test_timer"))
 
 
 class IndicatorUpdaterTests(unittest.TestCase):

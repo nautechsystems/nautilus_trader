@@ -35,8 +35,7 @@ class ExecutionClientTests(unittest.TestCase):
 
     def test_can_register_strategy(self):
         # Arrange
-        storer = ObjectStorer()
-        strategy = TestStrategy1(storer)
+        strategy = TestStrategy1()
         exec_client = ExecutionClient()
         exec_client.register_strategy(strategy)
 
@@ -48,8 +47,7 @@ class ExecutionClientTests(unittest.TestCase):
 
     def test_can_receive_bars(self):
         # Arrange
-        storer = ObjectStorer()
-        strategy = TestStrategy1(storer)
+        strategy = TestStrategy1()
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
@@ -79,15 +77,14 @@ class ExecutionClientTests(unittest.TestCase):
         # Act
         strategy._update_bars(bar_type, bar1)
         strategy._update_bars(bar_type, bar2)
-        result = storer.get_store[-1]
+        result = strategy.object_storer.get_store[-1]
 
         # Assert
         self.assertTrue(isinstance(result, OrderWorking))
 
     def test_can_send_submit_order_command_to_mock_exec_client(self):
         # Arrange
-        storer = ObjectStorer()
-        strategy = TestStrategy1(storer)
+        strategy = TestStrategy1()
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
         exec_client.connect()
@@ -112,8 +109,7 @@ class ExecutionClientTests(unittest.TestCase):
 
     def test_can_send_cancel_order_command_to_mock_exec_clint(self):
         # Arrange
-        storer = ObjectStorer()
-        strategy = TestStrategy1(storer)
+        strategy = TestStrategy1()
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
         exec_client.connect()
@@ -139,8 +135,7 @@ class ExecutionClientTests(unittest.TestCase):
 
     def test_can_send_modify_order_command_to_mock_exec_client(self):
         # Arrange
-        storer = ObjectStorer()
-        strategy = TestStrategy1(storer)
+        strategy = TestStrategy1()
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
         exec_client.connect()
@@ -172,8 +167,7 @@ class LiveExecClientTests(unittest.TestCase):
 
     def test_can_send_submit_order_command(self):
         # Arrange
-        storer = ObjectStorer()
-        strategy = TestStrategy1(storer)
+        strategy = TestStrategy1()
         exec_client = LiveExecClient()
         exec_client.register_strategy(strategy)
         exec_client.connect()
@@ -197,8 +191,7 @@ class LiveExecClientTests(unittest.TestCase):
 
     def test_can_send_cancel_order_command(self):
         # Arrange
-        storer = ObjectStorer()
-        strategy = TestStrategy1(storer)
+        strategy = TestStrategy1()
         exec_client = LiveExecClient()
         exec_client.register_strategy(strategy)
         exec_client.connect()
@@ -225,8 +218,7 @@ class LiveExecClientTests(unittest.TestCase):
 
     def test_can_send_modify_order_command(self):
         # Arrange
-        storer = ObjectStorer()
-        strategy = TestStrategy1(storer)
+        strategy = TestStrategy1()
         exec_client = LiveExecClient()
         exec_client.register_strategy(strategy)
         exec_client.connect()

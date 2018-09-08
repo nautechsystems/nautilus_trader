@@ -13,6 +13,7 @@ from inv_trader.model.events import Event
 from inv_trader.factories import OrderFactory
 from inv_trader.strategy import TradeStrategy
 from inv_indicators.average.ema import ExponentialMovingAverage
+from test_kit.objects import ObjectStorer
 
 GBPUSD_FXCM = Symbol('GBPUSD', Venue.FXCM)
 
@@ -22,12 +23,12 @@ class TestStrategy1(TradeStrategy):
     A simple strategy for unit testing.
     """
 
-    def __init__(self, object_storer):
+    def __init__(self):
         """
         Initializes a new instance of the TestStrategy1 class.
         """
         super().__init__(label='UnitTests', order_id_tag='TS01')
-        self.object_storer = object_storer
+        self.object_storer = ObjectStorer()
 
         self.gbpusd_1sec_mid = BarType(GBPUSD_FXCM,
                                        1,
