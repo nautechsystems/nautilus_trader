@@ -78,9 +78,7 @@ class Event:
         """
         :return: The str() string representation of the event.
         """
-        attrs = vars(self)
-        props = ', '.join("%s=%s" % item for item in attrs.items()).replace(', _', ', ')
-        return f"{self.__class__.__name__}({props[1:]})"
+        return f"{self.__class__.__name__}()"
 
     def __repr__(self) -> str:
         """
@@ -191,6 +189,19 @@ class AccountEvent(Event):
         """
         return self._margin_call_status
 
+    def __str__(self) -> str:
+        """
+        :return: The str() string representation of the event.
+        """
+        return (f"{self.__class__.__name__}"
+                f"(order_id={self._cash_balance}, margin_used={self._margin_used_maintenance})")
+
+    def __repr__(self) -> str:
+        """
+        :return: The repr() string representation of the event.
+        """
+        return f"<{str(self)} object at {id(self)}>"
+
 
 class OrderEvent(Event):
     """
@@ -231,6 +242,19 @@ class OrderEvent(Event):
         :return: The events order identifier.
         """
         return self._order_id
+
+    def __str__(self) -> str:
+        """
+        :return: The str() string representation of the event.
+        """
+        return (f"{self.__class__.__name__}"
+                f"(order_id={self._order_id}, symbol={self._symbol})")
+
+    def __repr__(self) -> str:
+        """
+        :return: The repr() string representation of the event.
+        """
+        return f"<{str(self)} object at {id(self)}>"
 
 
 class OrderSubmitted(OrderEvent):
@@ -843,3 +867,15 @@ class TimeEvent(Event):
         :return: The time events label.
         """
         return self._label
+
+    def __str__(self) -> str:
+        """
+        :return: The str() string representation of the event.
+        """
+        return f"{self.__class__.__name__}(label={self._label}, timestamp={self._event_timestamp})"
+
+    def __repr__(self) -> str:
+        """
+        :return: The repr() string representation of the event.
+        """
+        return f"<{str(self)} object at {id(self)}>"
