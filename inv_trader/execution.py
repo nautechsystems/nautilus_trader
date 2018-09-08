@@ -114,6 +114,14 @@ class ExecutionClient:
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the execution client.")
 
+    @abc.abstractmethod
+    def collateral_inquiry(self):
+        """
+        Send a collateral inquiry command to the execution service.
+        """
+        # Raise exception if not overridden in implementation.
+        raise NotImplementedError("Method must be implemented in the execution client.")
+
     def _register_order(
             self,
             order: Order,
@@ -306,7 +314,7 @@ class LiveExecClient(ExecutionClient):
 
         # If no registered strategies then print message to console.
         if len(self._registered_strategies) == 0:
-            self._log.debug(f"Received event from queue: {event}")
+            self._log.debug(f"Received {event}")
 
         self._on_event(event)
 

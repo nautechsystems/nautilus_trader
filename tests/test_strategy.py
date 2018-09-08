@@ -142,6 +142,8 @@ class TradeStrategyTests(unittest.TestCase):
         # Arrange
         storer = ObjectStorer()
         strategy = TestStrategy1(storer)
+        exec_client = MockExecClient()
+        exec_client.register_strategy(strategy)
 
         # Act
         strategy.start()
@@ -154,7 +156,8 @@ class TradeStrategyTests(unittest.TestCase):
         # Arrange
         storer = ObjectStorer()
         strategy = TestStrategy1(storer)
-        strategy.start()
+        exec_client = MockExecClient()
+        exec_client.register_strategy(strategy)
 
         # Act
         strategy.stop()
@@ -225,6 +228,7 @@ class TradeStrategyTests(unittest.TestCase):
         # Arrange
         storer = ObjectStorer()
         strategy = TestStrategy1(storer)
+
         order = OrderFactory.market(
             AUDUSD_FXCM,
             'AUDUSD|123456|1',
@@ -301,10 +305,9 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_strategy_can_submit_order(self):
         # Arrange
-        exec_client = MockExecClient()
         storer = ObjectStorer()
         strategy = TestStrategy1(storer)
-
+        exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
         order = OrderFactory.market(
@@ -323,10 +326,9 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_submitting_order_with_identical_id_raises_ex(self):
         # Arrange
-        exec_client = MockExecClient()
         storer = ObjectStorer()
         strategy = TestStrategy1(storer)
-
+        exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
         order = OrderFactory.market(
@@ -344,10 +346,9 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_cancel_order(self):
         # Arrange
-        exec_client = MockExecClient()
         storer = ObjectStorer()
         strategy = TestStrategy1(storer)
-
+        exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
         order = OrderFactory.market(
@@ -384,10 +385,9 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_modify_order(self):
         # Arrange
-        exec_client = MockExecClient()
         storer = ObjectStorer()
         strategy = TestStrategy1(storer)
-
+        exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
         order = OrderFactory.limit(
@@ -426,10 +426,9 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_track_orders_for_an_opened_position(self):
         # Arrange
-        exec_client = MockExecClient()
         storer = ObjectStorer()
         strategy = TestStrategy1(storer)
-
+        exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
         order = OrderFactory.market(
@@ -449,10 +448,9 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_track_orders_for_a_closing_position(self):
         # Arrange
-        exec_client = MockExecClient()
         storer = ObjectStorer()
         strategy = TestStrategy1(storer)
-
+        exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
         position1 = "position1"
@@ -482,9 +480,9 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_set_time_alert(self):
         # Arrange
-        exec_client = MockExecClient()
         storer = ObjectStorer()
         strategy = TestStrategy1(storer)
+        exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
         alert_time = datetime.utcnow() + timedelta(milliseconds=300)
@@ -498,9 +496,9 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_set_multiple_time_alerts(self):
         # Arrange
-        exec_client = MockExecClient()
         storer = ObjectStorer()
         strategy = TestStrategy1(storer)
+        exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
         alert_time1 = datetime.utcnow() + timedelta(milliseconds=200)
@@ -517,9 +515,9 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_set_multiple_time_alerts_with_priorities(self):
         # Arrange
-        exec_client = MockExecClient()
         storer = ObjectStorer()
         strategy = TestStrategy1(storer)
+        exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
         alert_time = datetime.utcnow() + timedelta(milliseconds=200)
@@ -535,9 +533,9 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_set_timer(self):
         # Arrange
-        exec_client = MockExecClient()
         storer = ObjectStorer()
         strategy = TestStrategy1(storer)
+        exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
         start_time = datetime.utcnow() + timedelta(milliseconds=100)
@@ -551,9 +549,9 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_set_repeating_timer(self):
         # Arrange
-        exec_client = MockExecClient()
         storer = ObjectStorer()
         strategy = TestStrategy1(storer)
+        exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
         start_time = datetime.utcnow() + timedelta(milliseconds=100)
@@ -571,9 +569,9 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_set_two_repeating_timers(self):
         # Arrange
-        exec_client = MockExecClient()
         storer = ObjectStorer()
         strategy = TestStrategy1(storer)
+        exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
         start_time = datetime.utcnow() + timedelta(milliseconds=100)
