@@ -208,6 +208,13 @@ class TradeStrategy:
         return self._is_running
 
     @property
+    def log(self) -> LoggingAdapter:
+        """
+        :return: The logging adapter.
+        """
+        return self._log
+
+    @property
     def indicator_labels(self) -> KeysView[str]:
         """
         :return: The indicator label list for the strategy (should contain distinct elements).
@@ -523,6 +530,7 @@ class TradeStrategy:
         self._order_book[order.id] = order
         self._order_position_index[order.id] = position_id
 
+        self._log.info(f"Submitting {order}")
         self._exec_client.submit_order(order, self._id)
 
     def cancel_order(
@@ -539,8 +547,9 @@ class TradeStrategy:
         Precondition.valid_string(cancel_reason, 'cancel_reason')
 
         if order.id not in self._order_book.keys():
-            raise ValueError("The order id was not found in the order book.")
+            raise KeyError("The order id was not found in the order book.")
 
+        self._log.info(f"Cancelling {order}")
         self._exec_client.cancel_order(order, cancel_reason)
 
     def modify_order(
@@ -558,8 +567,9 @@ class TradeStrategy:
         Precondition.positive(new_price, 'new_price')
 
         if order.id not in self._order_book.keys():
-            raise ValueError("The order id was not found in the order book.")
+            raise KeyError("The order id was not found in the order book.")
 
+        self._log.info(f"Modifying {order} with new price {new_price}")
         self._exec_client.modify_order(order, new_price)
 
     def stop(self):
@@ -688,7 +698,7 @@ class TradeStrategy:
                             event.execution_time)
                         self._position_book[position_id] = opened_position
                         self._position_book[position_id].apply(event)
-                        self._log.info(f"Opened {opened_position}.")
+                        self._log.info(f"Opened {opened_position}")
                     else:
                         self._position_book[position_id].apply(event)
 
@@ -698,9 +708,9 @@ class TradeStrategy:
                             # TODO: Save to database.
                             closed_position = self._position_book[position_id]
                             self._position_book.pop(position_id)
-                            self._log.info(f"Closed {closed_position}.")
+                            self._log.info(f"Closed {closed_position}")
                         else:
-                            self._log.info(f"Modified {self._position_book[position_id]}.")
+                            self._log.info(f"Modified {self._position_book[position_id]}")
                 else:
                     self._log.warning("The event order id not found in the order position index.")
 

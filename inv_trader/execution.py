@@ -134,7 +134,7 @@ class ExecutionClient:
         Handle events received from the execution service.
         """
         # Order event
-        self._log.debug(f"Received {event}.")
+        self._log.debug(f"Received {event}")
         if isinstance(event, OrderEvent):
             order_id = event.order_id
             if order_id not in self._order_index.keys():
@@ -146,7 +146,7 @@ class ExecutionClient:
             self._registered_strategies[strategy_id](event)
 
         if isinstance(event, OrderCancelReject):
-            self._log.warning(f"{event}.")
+            self._log.warning(f"{event}")
 
         if isinstance(event, AccountEvent):
             for strategy_id in self._registered_strategies.keys():
@@ -239,7 +239,7 @@ class LiveExecClient(ExecutionClient):
         message = self._command_serializer.serialize(command)
 
         self._commands_worker.send(message)
-        self._log.debug(f"Sent {command}.")
+        self._log.debug(f"Sent {command}")
 
     def cancel_order(
             self,
@@ -261,7 +261,7 @@ class LiveExecClient(ExecutionClient):
         message = self._command_serializer.serialize(command)
 
         self._commands_worker.send(message)
-        self._log.debug(f"Sent {command}.")
+        self._log.debug(f"Sent {command}")
 
     def modify_order(
             self,
@@ -283,7 +283,7 @@ class LiveExecClient(ExecutionClient):
         message = self._command_serializer.serialize(command)
 
         self._commands_worker.send(message)
-        self._log.debug(f"Sent {command}.")
+        self._log.debug(f"Sent {command}")
 
     def collateral_inquiry(self):
         """
@@ -293,7 +293,7 @@ class LiveExecClient(ExecutionClient):
         message = self._command_serializer.serialize(command)
 
         self._commands_worker.send(message)
-        self._log.debug(f"Sent {command}.")
+        self._log.debug(f"Sent {command}")
 
     def _event_handler(self, body: bytes):
         """"
@@ -317,4 +317,4 @@ class LiveExecClient(ExecutionClient):
         :param body: The order command acknowledgement message body.
         """
         command = self._command_serializer.deserialize(body)
-        self._log.debug(f"Received order command ack {command}.")
+        self._log.debug(f"Received order command ack for command_id {command.command_id}.")

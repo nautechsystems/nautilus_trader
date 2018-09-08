@@ -265,9 +265,9 @@ class Order:
         quantity = '{:,}'.format(self._quantity)
         price = '' if self._price is None else f' {self.price}'
         expire_time = '' if self._expire_time is None else f' {self._expire_time}'
-        return (f"Order(id={self._id}, label={self._label}: "
+        return (f"Order(id={self._id}, label={self._label}) "
                 f"{self._side.name} {quantity} {self._symbol} @ {self._type.name}{price} "
-                f"{self._time_in_force.name}{expire_time})")
+                f"{self._time_in_force.name}{expire_time}")
 
     def __repr__(self) -> str:
         """

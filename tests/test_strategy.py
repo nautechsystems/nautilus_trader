@@ -309,7 +309,7 @@ class TradeStrategyTests(unittest.TestCase):
 
         order = OrderFactory.market(
             AUDUSD_FXCM,
-            'AUDUSD|123456|1',
+            'AUDUSD-123456-1',
             'SCALPER-01',
             OrderSide.BUY,
             100000)
@@ -331,7 +331,7 @@ class TradeStrategyTests(unittest.TestCase):
 
         order = OrderFactory.market(
             AUDUSD_FXCM,
-            'AUDUSD|123456|1',
+            'AUDUSD-123456-1',
             'SCALPER-01',
             OrderSide.BUY,
             100000)
@@ -352,7 +352,7 @@ class TradeStrategyTests(unittest.TestCase):
 
         order = OrderFactory.market(
             AUDUSD_FXCM,
-            'AUDUSD|123456|1',
+            'AUDUSD-123456-1',
             'SCALPER-01',
             OrderSide.BUY,
             100000)
@@ -373,14 +373,14 @@ class TradeStrategyTests(unittest.TestCase):
 
         order = OrderFactory.market(
             AUDUSD_FXCM,
-            'AUDUSD|123456|1',
+            'AUDUSD-123456-1',
             'SCALPER-01',
             OrderSide.BUY,
             100000)
 
         # Act
         # Assert
-        self.assertRaises(ValueError, strategy.cancel_order, order)
+        self.assertRaises(KeyError, strategy.cancel_order, order)
 
     def test_can_modify_order(self):
         # Arrange
@@ -392,7 +392,7 @@ class TradeStrategyTests(unittest.TestCase):
 
         order = OrderFactory.limit(
             AUDUSD_FXCM,
-            'AUDUSD|123456|1',
+            'AUDUSD-123456-1',
             'SCALPER-01',
             OrderSide.BUY,
             100000,
@@ -415,14 +415,14 @@ class TradeStrategyTests(unittest.TestCase):
 
         order = OrderFactory.market(
             AUDUSD_FXCM,
-            'AUDUSD|123456|1',
+            'AUDUSD-123456-1',
             'SCALPER-01',
             OrderSide.BUY,
             100000)
 
         # Act
         # Assert
-        self.assertRaises(ValueError, strategy.modify_order, order, Decimal('1.00001'))
+        self.assertRaises(KeyError, strategy.modify_order, order, Decimal('1.00001'))
 
     def test_can_track_orders_for_an_opened_position(self):
         # Arrange
@@ -434,7 +434,7 @@ class TradeStrategyTests(unittest.TestCase):
 
         order = OrderFactory.market(
             AUDUSD_FXCM,
-            'AUDUSD|123456|1',
+            'AUDUSD-123456-1',
             'SCALPER-01',
             OrderSide.BUY,
             100000)
@@ -443,8 +443,8 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual('AUDUSD|123456|1', strategy._order_position_index[order.id])
-        self.assertTrue('AUDUSD|123456|1' in strategy._position_book)
+        self.assertEqual('AUDUSD-123456-1', strategy._order_position_index[order.id])
+        self.assertTrue('AUDUSD-123456-1' in strategy._position_book)
 
     def test_can_track_orders_for_a_closing_position(self):
         # Arrange
@@ -457,14 +457,14 @@ class TradeStrategyTests(unittest.TestCase):
         position1 = "position1"
         order1 = OrderFactory.market(
             AUDUSD_FXCM,
-            'AUDUSD|123456|1',
+            'AUDUSD-123456-1',
             'SCALPER-01',
             OrderSide.BUY,
             100000)
 
         order2 = OrderFactory.market(
             AUDUSD_FXCM,
-            'AUDUSD|123456|2',
+            'AUDUSD-123456-2',
             'SCALPER-01',
             OrderSide.SELL,
             100000)
