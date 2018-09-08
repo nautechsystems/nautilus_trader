@@ -14,7 +14,6 @@ from decimal import Decimal
 from uuid import UUID
 
 from inv_trader.core.preconditions import Precondition
-from inv_trader.model.enums import Broker
 from inv_trader.model.order import Order
 
 
