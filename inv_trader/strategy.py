@@ -259,6 +259,46 @@ class TradeStrategy:
         """
         return self._account
 
+    def start(self):
+        """
+        Starts the trade strategy and calls the on_start() method.
+        """
+        self._exec_client.collateral_inquiry()
+
+        self._log.info(f"Starting...")
+        self._is_running = True
+        self.on_start()
+        self._scheduler.run()
+        self._log.info(f"Running...")
+
+    def stop(self):
+        """
+        Stops the trade strategy and calls the on_stop() method.
+        """
+        self._log.info(f"Stopping...")
+        self.on_stop()
+        self._is_running = False
+        self._log.info(f"Stopped.")
+
+    def reset(self):
+        """
+        Reset the trade strategy by clearing all stateful internal values and
+        returning it to a fresh state (strategy must not be running).
+        """
+        if self._is_running:
+            self._log.warning(f"Cannot reset a running strategy...")
+            return
+
+        self._ticks = {}  # type: Dict[Symbol, Tick]
+        self._bars = {}   # type: Dict[BarType, List[Bar]]
+
+        # Reset all indicators.
+        for indicator_list in self._indicators.values():
+            [indicator.reset() for indicator in indicator_list]
+
+        self.on_reset()
+        self._log.info(f"Reset.")
+
     def indicators(self, bar_type: BarType) -> List[Indicator]:
         """
         Get the indicators list for the given bar type.
@@ -475,18 +515,6 @@ class TradeStrategy:
                 action=self._raise_time_event,
                 argument=(label, alert_time))
 
-    def start(self):
-        """
-        Starts the trade strategy and calls the on_start() method.
-        """
-        self._exec_client.collateral_inquiry()
-
-        self._log.info(f"Starting...")
-        self._is_running = True
-        self.on_start()
-        self._scheduler.run()
-        self._log.info(f"Running...")
-
     def generate_order_id(self, symbol: Symbol) -> OrderId:
         """
         Generates a unique order identifier with the given symbol.
@@ -584,34 +612,6 @@ class TradeStrategy:
 
         self._log.info(f"Modifying {order} with new price {new_price}")
         self._exec_client.modify_order(order, new_price)
-
-    def stop(self):
-        """
-        Stops the trade strategy and calls the on_stop() method.
-        """
-        self._log.info(f"Stopping...")
-        self.on_stop()
-        self._is_running = False
-        self._log.info(f"Stopped.")
-
-    def reset(self):
-        """
-        Reset the trade strategy by clearing all stateful internal values and
-        returning it to a fresh state (strategy must not be running).
-        """
-        if self._is_running:
-            self._log.warning(f"Cannot reset a running strategy...")
-            return
-
-        self._ticks = {}  # type: Dict[Symbol, Tick]
-        self._bars = {}   # type: Dict[BarType, List[Bar]]
-
-        # Reset all indicators.
-        for indicator_list in self._indicators.values():
-            [indicator.reset() for indicator in indicator_list]
-
-        self.on_reset()
-        self._log.info(f"Reset.")
 
     def _register_execution_client(self, client):
         """
