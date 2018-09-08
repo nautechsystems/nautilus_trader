@@ -10,11 +10,13 @@
 import abc
 import inspect
 import uuid
+import threading
 
 from collections import deque
 from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Callable, Deque, Dict, KeysView, List
+from sched import scheduler
 from uuid import UUID
 
 from inv_trader.core.preconditions import Precondition
@@ -23,6 +25,7 @@ from inv_trader.model.account import Account
 from inv_trader.model.enums import OrderSide, MarketPosition
 from inv_trader.model.events import Event, AccountEvent, OrderEvent
 from inv_trader.model.events import OrderFilled, OrderPartiallyFilled
+from inv_trader.model.events import TimeEvent
 from inv_trader.model.objects import Symbol, Tick, BarType, Bar
 from inv_trader.model.order import Order
 from inv_trader.model.position import Position
@@ -74,6 +77,7 @@ class TradeStrategy:
         else:
             self._log = LoggingAdapter(f"{self._name}-{self._label}", logger)
         self._is_running = False
+        self._scheduler = scheduler()
         self._ticks = {}                 # type: Dict[Symbol, Tick]
         self._bars = {}                  # type: Dict[BarType, Deque[Bar]]
         self._indicators = {}            # type: Dict[BarType, List[Indicator]]
@@ -386,38 +390,75 @@ class TradeStrategy:
 
         self._indicator_index[label] = indicator
 
-    def set_timer(
-            self,
-            label: str,
-            step: timedelta,
-            repeat: bool=True):
-        """
-        Set a timer with the given step (time delta). The timer will run once
-        the strategy is started. When the time delta is reached on_event() is
-        passed the TimeEvent containing the timers unique label.
-        Optionally the timer can be run repeatedly whilst the strategy is running.
-
-        :param label: The unique label for the timer.
-        :param step: The time delta step for the timer.
-        :param repeat: The option for the timer to repeat until the strategy is stopped.
-        """
-        Precondition.valid_string(label, 'label')
-        # TODO
-
     def set_time_alert(
             self,
             label: str,
-            alert_time: datetime):
+            alert_time: datetime,
+            priority: int=1):
         """
         Set a time alert for the given time. When the time is reached and the
         strategy is running, on_event() is passed the TimeEvent containing the
         alerts unique label.
 
+        A priority can be set in the case that time events occur simultaneously,
+        the events will be raised in the order of priority with the lower the
+        number the higher the priority.
+
         :param label: The unique label for the alert.
         :param alert_time: The time for the alert.
+        :param priority: The priority for the alert.
         """
         Precondition.valid_string(label, 'label')
-        # TODO
+        Precondition.true(alert_time > datetime.utcnow(), 'alert_time > datetime.utcnow()')
+        Precondition.not_negative(priority, 'priority')
+
+        self._scheduler.enterabs(
+            (alert_time - datetime.utcnow()).total_seconds(),
+            priority,
+            action=self._raise_time_event,
+            argument=(label, alert_time))
+
+    def set_timer(
+            self,
+            label: str,
+            start_time: datetime,
+            interval: timedelta,
+            priority: int=1,
+            repeat: bool=False):
+        """
+        Set a timer with the given step (time delta). The timer will run once
+        the strategy is started. When the time delta is reached on_event() is
+        passed the TimeEvent containing the timers unique label.
+
+        A priority can be set in the case that time events occur simultaneously,
+        the events will be raised in the order of priority with the lower the
+        number the higher the priority.
+
+        Optionally the timer can be run repeatedly whilst the strategy is running.
+
+        :param label: The unique label for the timer.
+        :param start_time: The time the timer should start at.
+        :param interval: The time delta interval for the timer.
+        :param priority: The priority for the alert.
+        :param repeat: The option for the timer to repeat until the strategy is stopped.
+        """
+        Precondition.valid_string(label, 'label')
+        Precondition.true(start_time > datetime.utcnow(), 'start_time > datetime.utcnow()')
+
+        alert_time = start_time + interval
+        if repeat:
+            print("yes its repeating..........")
+            self._scheduler.enter(
+                (alert_time - datetime.utcnow()).total_seconds(),
+                priority,
+                action=self._raise_repeating_time_event,
+                argument=(label, alert_time, interval, priority))
+        else:
+            self._scheduler.enter(
+                (alert_time - datetime.utcnow()).total_seconds(),
+                priority,
+                action=self._raise_time_event,
+                argument=(label, alert_time))
 
     def start(self):
         """
@@ -426,6 +467,7 @@ class TradeStrategy:
         self._log.info(f"Starting...")
         self._is_running = True
         self.on_start()
+        self._scheduler.run()
         self._log.info(f"Running...")
 
     def generate_order_id(self, symbol: Symbol) -> OrderId:
@@ -671,15 +713,42 @@ class TradeStrategy:
             self.on_event(event)
 
     def _add_order(self, order: Order):
-            """
-            Adds the given order to the order book (the order identifier must be unique).
-            :param order: The order to add.
-            """
-            if order.id in self._order_book.keys():
-                self._log.warning("The order id is already contained in the order book.")
-                return
+        """
+        Adds the given order to the order book (the order identifier must be unique).
 
-            self._order_book[order.id] = order
+        :param order: The order to add.
+        """
+        if order.id in self._order_book.keys():
+            self._log.warning("The order id is already contained in the order book.")
+            return
+
+        self._order_book[order.id] = order
+
+    def _raise_time_event(
+            self,
+            label: str,
+            alert_time: datetime):
+        """
+        Pass the given time event into the on_event method.
+        """
+        self.on_event(TimeEvent(label, uuid.uuid4(), alert_time))
+
+    def _raise_repeating_time_event(
+            self,
+            label: str,
+            alert_time: datetime,
+            interval: timedelta,
+            priority: int):
+        self.on_event(TimeEvent(label, uuid.uuid4(), alert_time))
+
+        if self._is_running:
+            print("********************")
+            next_alert_time = alert_time + interval
+            self._scheduler.enter(
+                (next_alert_time - datetime.utcnow()).total_seconds(),
+                priority,
+                action=self._raise_repeating_time_event,
+                argument=(label, next_alert_time, interval, priority))
 
 
 # Constants
