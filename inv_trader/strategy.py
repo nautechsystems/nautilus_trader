@@ -14,7 +14,7 @@ import uuid
 from collections import deque
 from datetime import datetime, timedelta
 from decimal import Decimal
-from typing import Callable, Deque, Dict, KeysView, List
+from typing import Callable, Deque, Dict, List
 from threading import Timer
 from sched import scheduler
 from uuid import UUID
@@ -218,13 +218,6 @@ class TradeStrategy:
         return self._log
 
     @property
-    def indicator_labels(self) -> KeysView[str]:
-        """
-        :return: The indicator label list for the strategy (should contain distinct elements).
-        """
-        return self._indicator_index.keys()
-
-    @property
     def all_indicators(self) -> Dict[BarType, List[Indicator]]:
         """
         :return: The indicators dictionary for the strategy.
@@ -318,6 +311,7 @@ class TradeStrategy:
         :param index: The index to get (can be positive or negative but not out of range).
         :return: The bar (if found).
         :raises: KeyError: If the strategies bars dictionary does not contain the bar type.
+        :raises: IndexError: If the strategies bars dictionary does not contain a bar at the given index.
         """
         if bar_type not in self._bars:
             raise KeyError(f"The bars dictionary does not contain {bar_type}.")
