@@ -9,10 +9,10 @@
 
 import unittest
 import redis
-import datetime
 import pytz
 import time
 
+from datetime import datetime
 from decimal import Decimal
 
 from inv_trader.data import LiveDataClient
@@ -163,7 +163,7 @@ class LiveDataClientTests(unittest.TestCase):
         tick = Tick(Symbol('AUDUSD', Venue.FXCM),
                     Decimal('1.00000'),
                     Decimal('1.00001'),
-                    datetime.datetime(2018, 1, 1, 19, 59, 1, 0, pytz.UTC))
+                    datetime(2018, 1, 1, 19, 59, 1, 0, pytz.UTC))
 
         # Act
         result = self.data_client._parse_tick(
@@ -181,7 +181,7 @@ class LiveDataClientTests(unittest.TestCase):
                   Decimal('1.00003'),
                   Decimal('1.00002'),
                   100000,
-                  datetime.datetime(2018, 1, 1, 19, 59, 1, 0, pytz.UTC))
+                  datetime(2018, 1, 1, 19, 59, 1, 0, pytz.UTC))
 
         # Act
         result = self.data_client._parse_bar(
@@ -209,7 +209,7 @@ class LiveDataClientTests(unittest.TestCase):
         tick = Tick(Symbol('AUDUSD', Venue.FXCM),
                     Decimal('1.00000'),
                     Decimal('1.00001'),
-                    datetime.datetime(2018, 1, 1, 19, 59, 1, 0, pytz.UTC))
+                    datetime(2018, 1, 1, 19, 59, 1, 0, pytz.UTC))
 
         # Act
         self.data_client._tick_handler(
@@ -225,7 +225,7 @@ class LiveDataClientTests(unittest.TestCase):
                   Decimal('1.00003'),
                   Decimal('1.00002'),
                   100000,
-                  datetime.datetime(2018, 1, 1, 19, 59, 1, 0, pytz.UTC))
+                  datetime(2018, 1, 1, 19, 59, 1, 0, pytz.UTC))
 
         # Act
         self.data_client._bar_handler(
@@ -244,7 +244,7 @@ class LiveDataClientTests(unittest.TestCase):
         tick = Tick(Symbol('AUDUSD', Venue.FXCM),
                     Decimal('1.00000'),
                     Decimal('1.00001'),
-                    datetime.datetime(2018, 1, 1, 19, 59, 1, 0, pytz.UTC))
+                    datetime(2018, 1, 1, 19, 59, 1, 0, pytz.UTC))
 
         # Act
         self.redis_tester.publish(
@@ -315,7 +315,7 @@ class LiveDataClientTests(unittest.TestCase):
             Decimal('1.00003'),
             Decimal('1.00002'),
             100000,
-            datetime.datetime(2018, 1, 1, 19, 59, 1, 0, pytz.UTC))
+            datetime(2018, 1, 1, 19, 59, 1, 0, pytz.UTC))
 
         # Act
         self.redis_tester.publish(
@@ -407,7 +407,7 @@ class LiveDataClientTests(unittest.TestCase):
             Decimal('1.00003'),
             Decimal('1.00002'),
             100000,
-            datetime.datetime(2018, 1, 1, 19, 59, 1, 0, pytz.UTC))
+            datetime(2018, 1, 1, 19, 59, 1, 0, pytz.UTC))
 
         # Act
         bar_dictionary = {bar_type: bar}

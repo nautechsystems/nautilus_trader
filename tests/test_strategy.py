@@ -15,10 +15,12 @@ import time
 
 from datetime import datetime, timedelta
 from decimal import Decimal
+from uuid import UUID
 
+from inv_trader.core.logger import LoggingAdapter
 from inv_trader.model.enums import Venue, Resolution, QuoteType, OrderSide, OrderType, OrderStatus
 from inv_trader.model.enums import MarketPosition
-from inv_trader.model.objects import Symbol, BarType, Bar, Price
+from inv_trader.model.objects import Price, Symbol, Tick, BarType, Bar
 from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
 from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
 from inv_trader.model.events import TimeEvent
@@ -42,32 +44,6 @@ class TradeStrategyTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
         print('\n')
-
-    def test_can_get_strategy_name(self):
-        # Arrange
-        strategy = TradeStrategy()
-
-        # Act
-        result = strategy.name
-
-        # Assert
-        self.assertEqual('TradeStrategy', result)
-
-    def test_can_get_strategy_label(self):
-        # Arrange
-        strategy1 = TradeStrategy()
-        strategy2 = TradeStrategy(None)  # Simulating user ignoring type hint.
-        strategy3 = TradeStrategy('EURUSD-Scalper')
-
-        # Act
-        result1 = strategy1.label
-        result2 = strategy2.label
-        result3 = strategy3.label
-
-        # Assert
-        self.assertEqual('001', result1)
-        self.assertEqual('001', result2)
-        self.assertEqual('EURUSD-Scalper', result3)
 
     def test_strategy_equality(self):
         # Arrange
@@ -115,6 +91,214 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertTrue(result2.startswith('<TradeStrategy-GBPUSD-MM object at'))
         self.assertTrue(result2.endswith('>'))
 
+    def test_can_get_strategy_name(self):
+        # Arrange
+        strategy = TradeStrategy()
+
+        # Act
+        result = strategy.name
+
+        # Assert
+        self.assertEqual('TradeStrategy', result)
+
+    def test_can_get_strategy_label(self):
+        # Arrange
+        strategy1 = TradeStrategy()
+        strategy2 = TradeStrategy(None)  # Simulating user ignoring type hint.
+        strategy3 = TradeStrategy('EURUSD-Scalper')
+
+        # Act
+        result1 = strategy1.label
+        result2 = strategy2.label
+        result3 = strategy3.label
+
+        # Assert
+        self.assertEqual('001', result1)
+        self.assertEqual('001', result2)
+        self.assertEqual('EURUSD-Scalper', result3)
+        self.assertEqual('TradeStrategy-EURUSD-Scalper', str(strategy3))
+
+    def test_can_get_strategy_id(self):
+        # Arrange
+        strategy = TradeStrategy()
+
+        # Act
+        result = strategy.id
+
+        # Assert
+        self.assertTrue(isinstance(result, UUID))
+        print(result)
+
+    def test_can_get_logger(self):
+        storer = ObjectStorer()
+        strategy = TestStrategy1(storer)
+
+        # Act
+        result = strategy.log
+
+        # Assert
+        self.assertTrue(isinstance(result, LoggingAdapter))
+        print(result)
+
+    def test_can_get_indicators(self):
+        storer = ObjectStorer()
+        strategy = TestStrategy1(storer)
+
+        # Act
+        result = strategy.indicators(strategy.gbpusd_1sec_mid)
+
+        # Assert
+        self.assertTrue(2, len(result))
+        print(result)
+
+    def test_getting_indicators_for_unknown_bar_type_raises_exception(self):
+        storer = ObjectStorer()
+        strategy = TestStrategy1(storer)
+
+        unknown_bar_type = BarType(
+            AUDUSD_FXCM,
+            5,
+            Resolution.MINUTE,
+            QuoteType.BID)
+
+        # Act
+        # Assert
+        self.assertRaises(KeyError, strategy.indicators, unknown_bar_type)
+
+    def test_getting_indicator_for_unknown_label_raises_exception(self):
+        storer = ObjectStorer()
+        strategy = TestStrategy1(storer)
+
+        # Act
+        # Assert
+        self.assertRaises(KeyError, strategy.indicator, 'unknown_bar_type')
+
+    def test_getting_bars_for_unknown_bar_type_raises_exception(self):
+        storer = ObjectStorer()
+        strategy = TestStrategy1(storer)
+
+        unknown_bar_type = BarType(
+            AUDUSD_FXCM,
+            5,
+            Resolution.MINUTE,
+            QuoteType.BID)
+
+        # Act
+        # Assert
+        self.assertRaises(KeyError, strategy.bars, unknown_bar_type)
+
+    def test_can_get_bars(self):
+        storer = ObjectStorer()
+        strategy = TestStrategy1(storer)
+
+        bar_type = BarType(GBPUSD_FXCM,
+                           1,
+                           Resolution.SECOND,
+                           QuoteType.MID)
+
+        bar = Bar(
+            Decimal('1.00001'),
+            Decimal('1.00004'),
+            Decimal('1.00003'),
+            Decimal('1.00002'),
+            100000,
+            datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC))
+
+        strategy._update_bars(bar_type, bar)
+
+        # Act
+        result = strategy.bars(bar_type)
+
+        # Assert
+        self.assertTrue(bar, result[0])
+
+    def test_getting_bar_for_unknown_bar_type_raises_exception(self):
+        storer = ObjectStorer()
+        strategy = TestStrategy1(storer)
+
+        unknown_bar_type = BarType(
+            AUDUSD_FXCM,
+            5,
+            Resolution.MINUTE,
+            QuoteType.BID)
+
+        # Act
+        # Assert
+        self.assertRaises(KeyError, strategy.bar, unknown_bar_type, 0)
+
+    def test_getting_bar_at_out_of_range_index_raises_exception(self):
+        storer = ObjectStorer()
+        strategy = TestStrategy1(storer)
+
+        bar_type = BarType(GBPUSD_FXCM,
+                           1,
+                           Resolution.SECOND,
+                           QuoteType.MID)
+
+        bar = Bar(
+            Decimal('1.00001'),
+            Decimal('1.00004'),
+            Decimal('1.00003'),
+            Decimal('1.00002'),
+            100000,
+            datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC))
+
+        strategy._update_bars(bar_type, bar)
+
+        # Act
+        # Assert
+        self.assertRaises(IndexError, strategy.bar, bar_type, -2)
+
+    def test_can_get_bar(self):
+        storer = ObjectStorer()
+        strategy = TestStrategy1(storer)
+
+        bar_type = BarType(GBPUSD_FXCM,
+                           1,
+                           Resolution.SECOND,
+                           QuoteType.MID)
+
+        bar = Bar(
+            Decimal('1.00001'),
+            Decimal('1.00004'),
+            Decimal('1.00003'),
+            Decimal('1.00002'),
+            100000,
+            datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC))
+
+        strategy._update_bars(bar_type, bar)
+
+        # Act
+        result = strategy.bar(bar_type, 0)
+
+        # Assert
+        self.assertEqual(bar, result)
+
+    def test_getting_last_tick_with_unknown_symbol_raises_exception(self):
+        storer = ObjectStorer()
+        strategy = TestStrategy1(storer)
+
+        # Act
+        # Assert
+        self.assertRaises(KeyError, strategy.last_tick, AUDUSD_FXCM)
+
+    def test_can_get_last_tick(self):
+        storer = ObjectStorer()
+        strategy = TestStrategy1(storer)
+
+        tick = Tick(Symbol('AUDUSD', Venue.FXCM),
+                    Decimal('1.00000'),
+                    Decimal('1.00001'),
+                    datetime(2018, 1, 1, 19, 59, 1, 0, pytz.UTC))
+
+        strategy._update_ticks(tick)
+
+        # Act
+        result = strategy.last_tick(AUDUSD_FXCM)
+
+        # Assert
+        self.assertEqual(tick, result)
+
     def test_can_register_indicator_with_strategy(self):
         # Arrange
         storer = ObjectStorer()
@@ -126,18 +310,6 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertEqual(strategy.ema1, strategy.all_indicators[strategy.gbpusd_1sec_mid][0])
         self.assertEqual(strategy.ema2, strategy.all_indicators[strategy.gbpusd_1sec_mid][1])
 
-    def test_indicator_labels_returns_expected_list(self):
-        # Arrange
-        storer = ObjectStorer()
-        strategy = TestStrategy1(storer)
-
-        # Act
-        result = strategy.indicator_labels
-
-        # Assert
-        self.assertTrue('ema1' in result)
-        self.assertTrue('ema2' in result)
-
     def test_can_start_strategy(self):
         # Arrange
         storer = ObjectStorer()
@@ -145,11 +317,14 @@ class TradeStrategyTests(unittest.TestCase):
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
+        result1 = strategy.is_running
         # Act
         strategy.start()
+        result2 = strategy.is_running
 
         # Assert
-        self.assertTrue(strategy.is_running)
+        self.assertFalse(result1)
+        self.assertTrue(result2)
         self.assertTrue('custom start logic' in storer.get_store)
 
     def test_can_stop_strategy(self):
