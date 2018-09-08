@@ -719,7 +719,7 @@ class TradeStrategyTests(unittest.TestCase):
         strategy = TestStrategy1()
         order = OrderFactory.market(
             AUDUSD_FXCM,
-            'AUDUSD|123456|1',
+            'AUDUSD-123456-1',
             'SCALPER-01',
             OrderSide.BUY,
             100000)
