@@ -58,6 +58,9 @@ class TradeStrategy:
         :param: order_id_tag: The unique order identifier tag for the strategy (can be None).
         :param: bar_capacity: The capacity for the internal bar deque(s).
         :param: logger: The logger (can be None, and will print).
+        :raises: ValueError: If the label is an invalid string.
+        :raises: ValueError: If the order_id_tag is an invalid string.
+        :raises: ValueError: If the bar_capacity is not positive (> 0).
         """
         if label is None:
             label = '001'
@@ -269,7 +272,7 @@ class TradeStrategy:
 
         :param: The bar type for the indicators list.
         :return: The internally held indicators for the given bar type.
-        :raises: KeyError: If the strategy does not contain indicators for the bar type.
+        :raises: KeyError: If the strategies indicators dictionary does not contain the given bar_type.
         """
         if bar_type not in self._indicators:
             raise KeyError(f"The indicators dictionary does not contain {bar_type}.")
@@ -282,7 +285,7 @@ class TradeStrategy:
 
         :param: label: The unique label for the indicator.
         :return: The internally held indicator for the given unique label.
-        :raises: KeyError: If the strategy does not contain the indicator label.
+        :raises: KeyError: If the strategies indicator dictionary does not contain the given label.
         """
         Precondition.valid_string(label, 'label')
 
@@ -297,7 +300,7 @@ class TradeStrategy:
 
         :param bar_type: The bar type to get.
         :return: The list of bars.
-        :raises: KeyError: If the strategy does not contain the bar type..
+        :raises: KeyError: If the strategies bars dictionary does not contain the bar type.
         """
         if bar_type not in self._bars:
             raise KeyError(f"The bars dictionary does not contain {bar_type}.")
@@ -314,7 +317,7 @@ class TradeStrategy:
         :param bar_type: The bar type to get.
         :param index: The index to get (can be positive or negative but not out of range).
         :return: The bar (if found).
-        :raises: KeyError: If the strategy does not contain the bar type.
+        :raises: KeyError: If the strategies bars dictionary does not contain the bar type.
         """
         if bar_type not in self._bars:
             raise KeyError(f"The bars dictionary does not contain {bar_type}.")
@@ -327,7 +330,7 @@ class TradeStrategy:
 
         :param symbol: The last tick symbol.
         :return: The tick object.
-        :raises: KeyError: If the strategy does not contain a tick for the symbol and venue string.
+        :raises: KeyError: If the strategies tick dictionary does not contain a tick for the given symbol.
         """
         if symbol not in self._ticks:
             raise KeyError(f"The ticks dictionary does not contain {symbol}.")
@@ -340,7 +343,7 @@ class TradeStrategy:
 
         :param order_id: The order identifier.
         :return: The order (if found).
-        :raises: KeyError: If the strategy does not contain the order with the requested id.
+        :raises: KeyError: If the strategies order book does not contain the order with the given id.
         """
         Precondition.valid_string(order_id, 'order_id')
 
@@ -355,7 +358,7 @@ class TradeStrategy:
 
         :param position_id: The positions identifier.
         :return: The position (if found).
-        :raises: KeyError: If the strategy does not contain a position for the given position id.
+        :raises: KeyError: If the strategies positions dictionary does not contain the given position_id.
         """
         Precondition.valid_string(position_id, 'position_id')
 
@@ -380,7 +383,8 @@ class TradeStrategy:
         :param indicator: The indicator to set.
         :param update_method: The update method for the indicator.
         :param label: The unique label for this indicator.
-        :raises: KeyError: If the indicator label is not unique for this strategy.
+        :raises: ValueError: If the label is an invalid string.
+        :raises: KeyError: If the given indicator label is not unique for this strategy.
         """
         Precondition.valid_string(label, 'label')
 
@@ -413,7 +417,10 @@ class TradeStrategy:
 
         :param label: The unique label for the alert.
         :param alert_time: The time for the alert.
-        :param priority: The priority for the alert.
+        :param priority: The priority for the alert (lower numbers are higher priority).
+        :raises: ValueError: If the label is an invalid string.
+        :raises: ValueError: If the alert_time is not greater than the current time (UTC).
+        :raises: ValueError: If the priority is negative (< 0).
         """
         Precondition.valid_string(label, 'label')
         Precondition.true(alert_time > datetime.utcnow(), 'alert_time > datetime.utcnow()')
@@ -447,11 +454,17 @@ class TradeStrategy:
         :param label: The unique label for the timer.
         :param start_time: The time the timer should start at.
         :param interval: The time delta interval for the timer.
-        :param priority: The priority for the alert.
-        :param repeat: The option for the timer to repeat until the strategy is stopped.
+        :param priority: The priority for the alert (lower numbers are higher priority,
+        not applicable to repeating timers).
+        :param repeat: The option for the timer to repeat until the strategy is stopped
+        (no priority).
+        :raises: ValueError: If the label is an invalid string.
+        :raises: ValueError: If the alert_time is not greater than the current time (UTC).
+        :raises: ValueError: If the priority is negative (< 0).
         """
         Precondition.valid_string(label, 'label')
         Precondition.true(start_time > datetime.utcnow(), 'start_time > datetime.utcnow()')
+        Precondition.not_negative(priority, 'priority')
 
         alert_time = start_time + interval
         delay = (alert_time - datetime.utcnow()).total_seconds()
@@ -470,7 +483,7 @@ class TradeStrategy:
 
     def start(self):
         """
-        Starts the trade strategy.
+        Starts the trade strategy and calls the on_start() method.
         """
         self._log.info(f"Starting...")
         self._is_running = True
@@ -520,7 +533,8 @@ class TradeStrategy:
 
         :param order: The order to submit.
         :param position_id: The position id to associate with this order.
-        :raises: KeyError: If order id is already contained in the order book (must be unique).
+        :raises: ValueError: If the position_id is an invalid string.
+        :raises: KeyError: If the order_id is already contained in the order book (must be unique).
         """
         Precondition.valid_string(position_id, 'position_id')
 
@@ -543,7 +557,8 @@ class TradeStrategy:
 
         :param order: The order to cancel.
         :param cancel_reason: The reason for cancellation (will be logged).
-        :raises: KeyError: If order id was not found in the order book.
+        :raises: ValueError: If the cancel_reason is an invalid string.
+        :raises: KeyError: If the order_id was not found in the order book.
         """
         Precondition.valid_string(cancel_reason, 'cancel_reason')
 
@@ -563,7 +578,8 @@ class TradeStrategy:
 
         :param order: The order to modify.
         :param new_price: The new price for the given order.
-        :raises: KeyError: If order id was not found in the order book.
+        :raises: ValueError: If the new_price is not positive (> 0).
+        :raises: KeyError: If order_id was not found in the order book.
         """
         Precondition.positive(new_price, 'new_price')
 
@@ -575,7 +591,7 @@ class TradeStrategy:
 
     def stop(self):
         """
-        Stops the trade strategy.
+        Stops the trade strategy and calls the on_stop() method.
         """
         self._log.info(f"Stopping...")
         self.on_stop()
