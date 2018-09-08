@@ -448,7 +448,6 @@ class TradeStrategy:
 
         alert_time = start_time + interval
         if repeat:
-            print("yes its repeating..........")
             self._scheduler.enter(
                 (alert_time - datetime.utcnow()).total_seconds(),
                 priority,
@@ -743,7 +742,6 @@ class TradeStrategy:
         self.on_event(TimeEvent(label, uuid.uuid4(), alert_time))
 
         if self._is_running:
-            print("********************")
             next_alert_time = alert_time + interval
             self._scheduler.enter(
                 (next_alert_time - datetime.utcnow()).total_seconds(),
