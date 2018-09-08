@@ -13,7 +13,6 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from inv_trader.core.typing import typechecking
 from inv_trader.core.preconditions import Precondition
 from inv_trader.model.enums import Broker
 from inv_trader.model.order import Order
@@ -26,7 +25,6 @@ class Command:
 
     __metaclass__ = abc.ABCMeta
 
-    @typechecking
     def __init__(self,
                  identifier: UUID,
                  timestamp: datetime):
@@ -90,7 +88,6 @@ class OrderCommand(Command):
 
     __metaclass__ = abc.ABCMeta
 
-    @typechecking
     def __init__(self,
                  order: Order,
                  command_id: UUID,
@@ -118,7 +115,6 @@ class SubmitOrder(OrderCommand):
     Represents a command to submit the given order.
     """
 
-    @typechecking
     def __init__(self,
                  order: Order,
                  command_id: UUID,
@@ -141,7 +137,6 @@ class CancelOrder(OrderCommand):
     Represents a command to cancel the given order.
     """
 
-    @typechecking
     def __init__(self,
                  order: Order,
                  cancel_reason: str,
@@ -177,7 +172,6 @@ class ModifyOrder(OrderCommand):
     Represents a command to modify the given order with the given modified price.
     """
 
-    @typechecking
     def __init__(self,
                  order: Order,
                  modified_price: Decimal,
@@ -213,7 +207,6 @@ class CollateralInquiry(Command):
     Represents a request for a FIX collateral inquiry of all connected accounts.
     """
 
-    @typechecking
     def __init__(self,
                  identifier: UUID,
                  timestamp: datetime):

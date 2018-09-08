@@ -10,7 +10,6 @@
 from datetime import datetime
 from decimal import Decimal
 
-from inv_trader.core.typing import typechecking
 from inv_trader.model.events import AccountEvent
 
 
@@ -19,7 +18,6 @@ class Account:
     Represents a brokerage account.
     """
 
-    @typechecking
     def __init__(self):
         """
         Initializes a new instance of the Account class.
@@ -104,7 +102,6 @@ class Account:
         """
         return self._last_updated
 
-    @typechecking
     def apply(self, event: AccountEvent):
         """
         Applies the given account event to the account.

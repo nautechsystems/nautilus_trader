@@ -17,9 +17,8 @@ from decimal import Decimal
 from typing import Dict, Callable
 from uuid import UUID
 
-from inv_trader.core.logging import Logger, LoggingAdapter
 from inv_trader.core.preconditions import Precondition
-from inv_trader.core.typing import typechecking
+from inv_trader.core.logger import Logger, LoggingAdapter
 from inv_trader.control.commands import CollateralInquiry
 from inv_trader.control.commands import SubmitOrder, CancelOrder, ModifyOrder
 from inv_trader.model.order import Order
@@ -42,7 +41,6 @@ class ExecutionClient:
 
     __metaclass__ = abc.ABCMeta
 
-    @typechecking
     def __init__(self, logger: Logger=None):
         """
         Initializes a new instance of the ExecutionClient class.
@@ -58,7 +56,6 @@ class ExecutionClient:
 
         self._log.info("Initialized.")
 
-    @typechecking
     def register_strategy(self, strategy: TradeStrategy):
         """
         Register the given strategy with the execution client.
@@ -117,7 +114,6 @@ class ExecutionClient:
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the execution client.")
 
-    @typechecking
     def _register_order(
             self,
             order: Order,
@@ -133,7 +129,6 @@ class ExecutionClient:
 
         self._order_index[order.id] = strategy_id
 
-    @typechecking
     def _on_event(self, event: Event):
         """
         Handle events received from the execution service.
@@ -164,7 +159,6 @@ class LiveExecClient(ExecutionClient):
     (Advanced Message Queue Protocol) 0-9-1 message broker.
     """
 
-    @typechecking
     def __init__(
             self,
             host: str='localhost',
@@ -226,7 +220,6 @@ class LiveExecClient(ExecutionClient):
         self._commands_worker.stop()
         self._events_worker.stop()
 
-    @typechecking
     def submit_order(
             self,
             order: Order,
@@ -248,7 +241,6 @@ class LiveExecClient(ExecutionClient):
         self._commands_worker.send(message)
         self._log.debug(f"Sent {command}.")
 
-    @typechecking
     def cancel_order(
             self,
             order: Order,
@@ -271,7 +263,6 @@ class LiveExecClient(ExecutionClient):
         self._commands_worker.send(message)
         self._log.debug(f"Sent {command}.")
 
-    @typechecking
     def modify_order(
             self,
             order: Order,
@@ -294,7 +285,6 @@ class LiveExecClient(ExecutionClient):
         self._commands_worker.send(message)
         self._log.debug(f"Sent {command}.")
 
-    @typechecking
     def collateral_inquiry(self):
         """
         Send a collateral inquiry command to the execution service.
@@ -305,7 +295,6 @@ class LiveExecClient(ExecutionClient):
         self._commands_worker.send(message)
         self._log.debug(f"Sent {command}.")
 
-    @typechecking
     def _event_handler(self, body: bytes):
         """"
         Handle the event message by parsing to an Event and sending
@@ -321,7 +310,6 @@ class LiveExecClient(ExecutionClient):
 
         self._on_event(event)
 
-    @typechecking
     def _command_ack_handler(self, body: bytes):
         """"
         Handle the command acknowledgement message.

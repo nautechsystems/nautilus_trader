@@ -17,7 +17,6 @@ from typing import Callable
 from uuid import UUID
 from zmq import Context
 
-from inv_trader.core.typing import typechecking
 from inv_trader.model.enums import Venue, Resolution, QuoteType, OrderSide, OrderType, OrderStatus
 from inv_trader.model.objects import Symbol, BarType, Bar
 from inv_trader.execution import ExecutionClient
@@ -35,7 +34,7 @@ OrderId = str
 
 
 class MockServer(Thread):
-    @typechecking
+
     def __init__(
             self,
             context: Context,
@@ -110,7 +109,6 @@ class MockServer(Thread):
         self._log(f"Disconnecting from {self._service_address}...")
         self._socket.disconnect(self._service_address)
 
-    @typechecking
     def _log(self, message: str):
         """
         Log the given message (if no logger then prints).
@@ -121,7 +119,7 @@ class MockServer(Thread):
 
 
 class MockPublisher(Thread):
-    @typechecking
+
     def __init__(
             self,
             context: Context,
@@ -183,7 +181,6 @@ class MockPublisher(Thread):
         self._log(f"Disconnecting from {self._service_address}...")
         self._socket.disconnect(self._service_address)
 
-    @typechecking
     def _log(self, message: str):
         """
         Log the given message (if no logger then prints).
@@ -210,7 +207,6 @@ class MockExecClient(ExecutionClient):
         """
         self._log.info("MockExecClient disconnected.")
 
-    @typechecking
     def submit_order(
             self,
             order: Order,
@@ -270,7 +266,6 @@ class MockExecClient(ExecutionClient):
         super()._on_event(working)
         super()._on_event(filled)
 
-    @typechecking
     def cancel_order(
             self,
             order: Order,
@@ -289,7 +284,6 @@ class MockExecClient(ExecutionClient):
 
         super()._on_event(cancelled)
 
-    @typechecking
     def modify_order(self, order: Order, new_price: Decimal):
         """
         Send a modify order request to the execution service.

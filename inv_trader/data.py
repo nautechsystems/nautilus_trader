@@ -15,9 +15,8 @@ from decimal import Decimal
 from redis import StrictRedis, ConnectionError
 from typing import List, Dict
 
-from inv_trader.core.logging import Logger, LoggingAdapter
-from inv_trader.core.typing import typechecking
 from inv_trader.core.preconditions import Precondition
+from inv_trader.core.logger import Logger, LoggingAdapter
 
 from inv_trader.model.enums import Resolution, QuoteType, Venue
 from inv_trader.model.objects import Symbol, Tick, BarType, Bar
@@ -31,7 +30,6 @@ class LiveDataClient:
     Provides a live data client for alpha models and trading strategies.
     """
 
-    @typechecking
     def __init__(self,
                  host: str='localhost',
                  port: int=6379,
@@ -138,7 +136,6 @@ class LiveDataClient:
         self._tick_handlers = []
         self._bar_handlers = []
 
-    @typechecking
     def subscribe_ticks(
             self,
             symbol: str,
@@ -171,7 +168,6 @@ class LiveDataClient:
 
         self._log.info(f"Subscribed to tick data for {ticks_channel}.")
 
-    @typechecking
     def unsubscribe_ticks(
             self,
             symbol: str,
@@ -196,7 +192,6 @@ class LiveDataClient:
 
         self._log.info(f"Unsubscribed from tick data for {tick_channel}.")
 
-    @typechecking
     def subscribe_bars(
             self,
             symbol: str,
@@ -241,7 +236,6 @@ class LiveDataClient:
 
         self._log.info(f"Subscribed to bar data for {bars_channel}.")
 
-    @typechecking
     def unsubscribe_bars(
             self,
             symbol: str,
@@ -278,7 +272,6 @@ class LiveDataClient:
 
         self._log.info(f"Unsubscribed from bar data for {bar_channel}.")
 
-    @typechecking
     def register_strategy(self, strategy: TradeStrategy):
         """
         Registers the trade strategy to receive all ticks and bars from the
@@ -299,7 +292,6 @@ class LiveDataClient:
         self._log.info(f"Registered strategy {strategy} with the live data client.")
 
     @staticmethod
-    @typechecking
     def _parse_tick(
             tick_channel: str,
             tick_string: str) -> Tick:
@@ -319,7 +311,6 @@ class LiveDataClient:
                     iso8601.parse_date(split_tick[2]))
 
     @staticmethod
-    @typechecking
     def _parse_bar_type(bar_type_string: str) -> BarType:
         """
         Parse a BarType object from the given UTF-8 string.
@@ -337,7 +328,6 @@ class LiveDataClient:
                        QuoteType[quote_type.upper()])
 
     @staticmethod
-    @typechecking
     def _parse_bar(bar_string: str) -> Bar:
         """
         Parse a Bar object from the given UTF-8 string.
@@ -355,17 +345,15 @@ class LiveDataClient:
                    iso8601.parse_date(split_bar[5]))
 
     @staticmethod
-    @typechecking
     def _get_tick_channel_name(
             symbol: str,
             venue: Venue) -> str:
         """
         Return the tick channel name from the given parameters.
         """
-        return f'{symbol.lower()}.{venue.name.lower()}'
+        return str(f'{symbol.lower()}.{venue.name.lower()}')
 
     @staticmethod
-    @typechecking
     def _get_bar_channel_name(
             symbol: str,
             venue: Venue,
@@ -375,7 +363,7 @@ class LiveDataClient:
         """
         Return the bar channel name from the given parameters.
         """
-        return (f'{symbol.lower()}.{venue.name.lower()}-{period}-'
+        return str(f'{symbol.lower()}.{venue.name.lower()}-{period}-'
                 f'{resolution.name.lower()}[{quote_type.name.lower()}]')
 
     def _check_connection(self):
@@ -390,7 +378,6 @@ class LiveDataClient:
         if not self.is_connected:
             raise ConnectionError("No connection is established with the live database.")
 
-    @typechecking
     def _tick_handler(self, message: Dict):
         """"
         Handle the tick message by parsing to a Tick and sending to all subscribers.
@@ -408,7 +395,6 @@ class LiveDataClient:
 
         [handler(tick) for handler in self._tick_handlers]
 
-    @typechecking
     def _bar_handler(self, message: Dict):
         """"
         Handle the bar message by parsing to a Bar and sending to all subscribers.

@@ -14,10 +14,8 @@ from typing import Callable
 from threading import Thread
 from zmq import Context
 
-from inv_trader.core.logging import Logger, LoggingAdapter
 from inv_trader.core.preconditions import Precondition
-from inv_trader.core.typing import typechecking
-
+from inv_trader.core.logger import Logger, LoggingAdapter
 
 UTF8 = 'utf-8'
 DELIMITER = b' '
@@ -30,7 +28,6 @@ class MQWorker(Thread):
 
     __metaclass__ = abc.ABCMeta
 
-    @typechecking
     def __init__(
             self,
             name: str,
@@ -114,7 +111,10 @@ class MQWorker(Thread):
 
 
 class RequestWorker(MQWorker):
-    @typechecking
+    """
+    Provides an asynchronous worker thread for ZMQ request messaging.
+    """
+
     def __init__(
             self,
             name: str,
@@ -161,7 +161,10 @@ class RequestWorker(MQWorker):
 
 
 class SubscriberWorker(MQWorker):
-    @typechecking
+    """
+    Provides an asynchronous worker thread for ZMQ subscriber messaging.
+    """
+
     def __init__(
             self,
             name: str,

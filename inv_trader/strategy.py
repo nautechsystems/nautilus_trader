@@ -14,12 +14,11 @@ import uuid
 from collections import deque
 from datetime import datetime, timedelta
 from decimal import Decimal
-from typing import List, Deque, Dict, KeysView, Callable
+from typing import Callable, Deque, Dict, KeysView, List
 from uuid import UUID
 
-from inv_trader.core.logging import Logger, LoggingAdapter
 from inv_trader.core.preconditions import Precondition
-from inv_trader.core.typing import typechecking
+from inv_trader.core.logger import Logger, LoggingAdapter
 from inv_trader.model.account import Account
 from inv_trader.model.enums import OrderSide, MarketPosition
 from inv_trader.model.events import Event, AccountEvent, OrderEvent
@@ -37,14 +36,13 @@ Label = str
 Indicator = object
 
 
-class TradeStrategy:
+class TradeStrategy(object):
     """
     The abstract base class for all trade strategies.
     """
 
     __metaclass__ = abc.ABCMeta
 
-    @typechecking
     def __init__(self,
                  label: str=None,
                  order_id_tag: str=None,
@@ -54,7 +52,9 @@ class TradeStrategy:
         Initializes a new instance of the TradeStrategy abstract class.
 
         :param: label: The unique label for the strategy (can be None).
-        :param: order_id_tag: The unique order identifier tag for the strategy (can be empty).
+        :param: order_id_tag: The unique order identifier tag for the strategy (can be None).
+        :param: bar_capacity: The capacity for the internal bar deque(s).
+        :param: logger: The logger (can be None, and will print).
         """
         if label is None:
             label = '001'
@@ -252,7 +252,6 @@ class TradeStrategy:
         """
         return self._account
 
-    @typechecking
     def indicators(self, bar_type: BarType) -> List[Indicator]:
         """
         Get the indicators list for the given bar type.
@@ -266,7 +265,6 @@ class TradeStrategy:
 
         return self._indicators[bar_type]
 
-    @typechecking
     def indicator(self, label: str) -> Indicator:
         """
         Get the indicator for the given unique label.
@@ -282,7 +280,6 @@ class TradeStrategy:
 
         return self._indicator_index[label]
 
-    # @typechecking: cannot type check generics?
     def bars(self, bar_type: BarType) -> Deque[Bar]:
         """
         Get the bars for the given bar type.
@@ -296,7 +293,6 @@ class TradeStrategy:
 
         return self._bars[bar_type]
 
-    @typechecking
     def bar(
             self,
             bar_type: BarType,
@@ -315,7 +311,6 @@ class TradeStrategy:
 
         return self._bars[bar_type][index]
 
-    @typechecking
     def last_tick(self, symbol: Symbol) -> Tick:
         """
         Get the last tick held for the given parameters.
@@ -329,7 +324,6 @@ class TradeStrategy:
 
         return self._ticks[symbol]
 
-    @typechecking
     def order(self, order_id: OrderId) -> Order:
         """
         Get the order from the order book with the given order_id.
@@ -345,7 +339,6 @@ class TradeStrategy:
 
         return self._order_book[order_id]
 
-    @typechecking
     def position(self, position_id: PositionId) -> Position:
         """
         Get the position from the positions dictionary for the given position id.
@@ -362,7 +355,6 @@ class TradeStrategy:
 
         return self._position_book[position_id]
 
-    @typechecking
     def register_indicator(
             self,
             bar_type: BarType,
@@ -391,7 +383,6 @@ class TradeStrategy:
 
         self._indicator_index[label] = indicator
 
-    @typechecking
     def set_timer(
             self,
             label: str,
@@ -410,7 +401,6 @@ class TradeStrategy:
         Precondition.valid_string(label, 'label')
         # TODO
 
-    @typechecking
     def set_time_alert(
             self,
             label: str,
@@ -435,7 +425,6 @@ class TradeStrategy:
         self.on_start()
         self._log.info(f"Running...")
 
-    @typechecking
     def generate_order_id(self, symbol: Symbol) -> OrderId:
         """
         Generates a unique order identifier with the given symbol.
@@ -445,7 +434,6 @@ class TradeStrategy:
         """
         return self._order_id_generator.generate(symbol)
 
-    @typechecking
     def get_opposite_side(self, side: OrderSide) -> OrderSide:
         """
         Get the opposite order side from the original side given.
@@ -455,7 +443,6 @@ class TradeStrategy:
         """
         return OrderSide.BUY if side is OrderSide.SELL else OrderSide.SELL
 
-    @typechecking
     def get_flatten_side(self, market_position: MarketPosition) -> OrderSide:
         """
         Get the order side needed to flatten the position from the given market position.
@@ -471,7 +458,6 @@ class TradeStrategy:
         else:
             raise ValueError("Cannot flatten a FLAT position.")
 
-    @typechecking
     def submit_order(
             self,
             order: Order,
@@ -493,7 +479,6 @@ class TradeStrategy:
 
         self._exec_client.submit_order(order, self._id)
 
-    @typechecking
     def cancel_order(
             self,
             order: Order,
@@ -511,7 +496,6 @@ class TradeStrategy:
 
         self._exec_client.cancel_order(order, cancel_reason)
 
-    @typechecking
     def modify_order(
             self,
             order: Order,
@@ -558,7 +542,6 @@ class TradeStrategy:
         self.on_reset()
         self._log.info(f"Reset.")
 
-    # @typechecking: client checked in preconditions (cannot import ExecutionClient).
     def _register_execution_client(self, client):
         """
         Register the execution client with the strategy.
@@ -573,7 +556,6 @@ class TradeStrategy:
 
         self._exec_client = client
 
-    @typechecking
     def _update_ticks(self, tick: Tick):
         """"
         Updates the last held tick with the given tick then calls the on_tick
@@ -588,7 +570,6 @@ class TradeStrategy:
         if self._is_running:
             self.on_tick(tick)
 
-    @typechecking
     def _update_bars(
             self,
             bar_type: BarType,
@@ -613,7 +594,6 @@ class TradeStrategy:
         if self._is_running:
             self.on_bar(bar_type, bar)
 
-    @typechecking
     def _update_indicators(
             self,
             bar_type: BarType,
@@ -631,7 +611,6 @@ class TradeStrategy:
         # For each updater matching the given bar type -> update with the bar.
         [updater.update(bar) for updater in self._indicator_updaters[bar_type]]
 
-    @typechecking
     def _update_events(self, event: Event):
         """
         Updates the strategy with the given event.
@@ -684,7 +663,6 @@ class TradeStrategy:
         if self._is_running:
             self.on_event(event)
 
-    @typechecking
     def _add_order(self, order: Order):
             """
             Adds the given order to the order book (the order identifier must be unique).
@@ -716,7 +694,6 @@ class IndicatorUpdater:
     construct the required parameter list for updates.
     """
 
-    @typechecking
     def __init__(self, update_method: Callable):
         """
         Initializes a new instance of the IndicatorUpdater class.
@@ -740,7 +717,6 @@ class IndicatorUpdater:
         for param in inspect.signature(update_method).parameters:
             self._update_params.append(param_map[param])
 
-    @typechecking
     def update(self, bar: Bar):
         """
         Passes the needed values from the given bar to the indicator update

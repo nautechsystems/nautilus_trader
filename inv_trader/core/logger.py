@@ -11,8 +11,8 @@ import logging
 import threading
 
 from datetime import datetime
+from logging import INFO, DEBUG
 
-from inv_trader.core.typing import typechecking
 from inv_trader.core.preconditions import Precondition
 
 
@@ -21,11 +21,10 @@ class Logger:
     Provides a logger for the trader client which wraps the Python logging module.
     """
 
-    @typechecking
     def __init__(self,
                  log_name=None,
-                 log_level_console: int=logging.INFO,
-                 log_level_file: int=logging.DEBUG,
+                 log_level_console: logging=INFO,
+                 log_level_file: logging=DEBUG,
                  console_prints: bool=True,
                  log_to_file: bool=False,
                  log_file_path: str='var/tmp/'):
@@ -138,7 +137,6 @@ class LoggingAdapter:
     Provides an adapter for the trading clients logger.
     """
 
-    @typechecking
     def __init__(
             self,
             component_name: str = None,
