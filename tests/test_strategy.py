@@ -341,18 +341,6 @@ class TradeStrategyTests(unittest.TestCase):
         # Assert
         self.assertEqual(position, result)
 
-    def test_can_register_indicator_with_strategy(self):
-        # Arrange
-        strategy = TestStrategy1()
-
-        # Act
-        result1 = strategy.all_indicators[strategy.gbpusd_1sec_mid][0]
-        result2 = strategy.all_indicators[strategy.gbpusd_1sec_mid][1]
-
-        # Assert
-        self.assertEqual(strategy.ema1, result1)
-        self.assertEqual(strategy.ema2, result2)
-
     def test_can_start_strategy(self):
         # Arrange
         strategy = TestStrategy1()
@@ -382,34 +370,6 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertFalse(strategy.is_running)
         self.assertTrue('custom stop logic' in strategy.object_storer.get_store)
 
-    def test_can_update_strategy_bars(self):
-        # Arrange
-        strategy = TestStrategy1()
-
-        bar_type = BarType(GBPUSD_FXCM,
-                           1,
-                           Resolution.SECOND,
-                           QuoteType.MID)
-
-        bar = Bar(
-            Decimal('1.00001'),
-            Decimal('1.00004'),
-            Decimal('1.00003'),
-            Decimal('1.00002'),
-            100000,
-            datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC))
-
-        # Act
-        strategy._update_bars(bar_type, bar)
-
-        # Assert
-        self.assertFalse(strategy.is_running)
-        self.assertEqual(1, len(strategy.all_bars[bar_type]))
-        self.assertEqual(1, len(strategy.bars(bar_type)))
-        self.assertEqual(1, strategy.ema1.count)
-        self.assertEqual(1, strategy.ema2.count)
-        self.assertEqual(0, len(strategy.object_storer.get_store))
-
     def test_can_reset_strategy(self):
         # Arrange
         strategy = TestStrategy1()
@@ -438,246 +398,17 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertEqual(0, strategy.ema2.count)
         self.assertTrue('custom reset logic' in strategy.object_storer.get_store)
 
-    def test_can_add_order_to_strategy(self):
-        # Arrange
-        strategy = TestStrategy1()
-
-        order = OrderFactory.market(
-            AUDUSD_FXCM,
-            'AUDUSD|123456|1',
-            'SCALPER-01',
-            OrderSide.BUY,
-            100000)
-
-        # Act
-        strategy._order_book[order.id] = order
-
-        # Assert
-        self.assertEqual(order, strategy.orders[order.id])
-
-    def test_can_update_order_events(self):
-        # Arrange
-        strategy = TestStrategy1()
-        order = OrderFactory.market(
-            AUDUSD_FXCM,
-            'AUDUSD|123456|1',
-            'SCALPER-01',
-            OrderSide.BUY,
-            100000)
-
-        event = OrderSubmitted(
-            order.symbol,
-            order.id,
-            UNIX_EPOCH,
-            uuid.uuid4(),
-            UNIX_EPOCH)
-
-        strategy._order_book[order.id] = order
-
-        # Act
-        strategy._update_events(event)
-
-        # Assert
-        self.assertEqual(OrderStatus.SUBMITTED, strategy.orders[order.id].status)
-
-    def test_get_opposite_side_returns_expected_sides(self):
+    def test_can_register_indicator_with_strategy(self):
         # Arrange
         strategy = TestStrategy1()
 
         # Act
-        result1 = strategy.get_opposite_side(OrderSide.BUY)
-        result2 = strategy.get_opposite_side(OrderSide.SELL)
+        result1 = strategy.all_indicators[strategy.gbpusd_1sec_mid][0]
+        result2 = strategy.all_indicators[strategy.gbpusd_1sec_mid][1]
 
         # Assert
-        self.assertEqual(OrderSide.SELL, result1)
-        self.assertEqual(OrderSide.BUY, result2)
-
-    def test_get_flatten_side_with_long_or_short_market_position_returns_expected_sides(self):
-        # Arrange
-        strategy = TestStrategy1()
-
-        # Act
-        result1 = strategy.get_flatten_side(MarketPosition.LONG)
-        result2 = strategy.get_flatten_side(MarketPosition.SHORT)
-
-        # Assert
-        self.assertEqual(OrderSide.SELL, result1)
-        self.assertEqual(OrderSide.BUY, result2)
-
-    def test_get_flatten_side_with_flat_market_position_raises_exception(self):
-        # Arrange
-        strategy = TestStrategy1()
-
-        # Act
-        # Assert
-        self.assertRaises(ValueError, strategy.get_flatten_side, MarketPosition.FLAT)
-
-    def test_strategy_can_submit_order(self):
-        # Arrange
-        strategy = TestStrategy1()
-        exec_client = MockExecClient()
-        exec_client.register_strategy(strategy)
-
-        order = OrderFactory.market(
-            AUDUSD_FXCM,
-            'AUDUSD-123456-1',
-            'SCALPER-01',
-            OrderSide.BUY,
-            100000)
-
-        # Act
-        strategy.submit_order(order, order.id)
-
-        # Assert
-        self.assertEqual(order, strategy.orders[order.id])
-        self.assertEqual(OrderStatus.WORKING, strategy.orders[order.id].status)
-
-    def test_submitting_order_with_identical_id_raises_ex(self):
-        # Arrange
-        strategy = TestStrategy1()
-        exec_client = MockExecClient()
-        exec_client.register_strategy(strategy)
-
-        order = OrderFactory.market(
-            AUDUSD_FXCM,
-            'AUDUSD-123456-1',
-            'SCALPER-01',
-            OrderSide.BUY,
-            100000)
-
-        strategy.submit_order(order, order.id)
-
-        # Act
-        # Assert
-        self.assertRaises(KeyError, strategy.submit_order, order, order.id)
-
-    def test_can_cancel_order(self):
-        # Arrange
-        strategy = TestStrategy1()
-        exec_client = MockExecClient()
-        exec_client.register_strategy(strategy)
-
-        order = OrderFactory.market(
-            AUDUSD_FXCM,
-            'AUDUSD-123456-1',
-            'SCALPER-01',
-            OrderSide.BUY,
-            100000)
-
-        strategy.submit_order(order, order.id)
-
-        # Act
-        strategy.cancel_order(order)
-
-        # Assert
-        self.assertEqual(order, strategy.orders[order.id])
-        self.assertEqual(OrderStatus.CANCELLED, strategy.orders[order.id].status)
-
-    def test_cancelling_order_which_does_not_exist_raises_ex(self):
-        # Arrange
-        strategy = TestStrategy1()
-
-        order = OrderFactory.market(
-            AUDUSD_FXCM,
-            'AUDUSD-123456-1',
-            'SCALPER-01',
-            OrderSide.BUY,
-            100000)
-
-        # Act
-        # Assert
-        self.assertRaises(KeyError, strategy.cancel_order, order)
-
-    def test_can_modify_order(self):
-        # Arrange
-        strategy = TestStrategy1()
-        exec_client = MockExecClient()
-        exec_client.register_strategy(strategy)
-
-        order = OrderFactory.limit(
-            AUDUSD_FXCM,
-            'AUDUSD-123456-1',
-            'SCALPER-01',
-            OrderSide.BUY,
-            100000,
-            Price.create(1.00000, 5))
-
-        strategy.submit_order(order, order.id)
-
-        # Act
-        strategy.modify_order(order, Decimal('1.00001'))
-
-        # Assert
-        self.assertEqual(order, strategy.orders[order.id])
-        self.assertEqual(OrderStatus.WORKING, strategy.orders[order.id].status)
-        self.assertEqual(Decimal('1.00001'), strategy.orders[order.id].price)
-
-    def test_modifying_order_which_does_not_exist_raises_ex(self):
-        # Arrange
-        strategy = TestStrategy1()
-
-        order = OrderFactory.market(
-            AUDUSD_FXCM,
-            'AUDUSD-123456-1',
-            'SCALPER-01',
-            OrderSide.BUY,
-            100000)
-
-        # Act
-        # Assert
-        self.assertRaises(KeyError, strategy.modify_order, order, Decimal('1.00001'))
-
-    def test_can_track_orders_for_an_opened_position(self):
-        # Arrange
-        strategy = TestStrategy1()
-        exec_client = MockExecClient()
-        exec_client.register_strategy(strategy)
-
-        order = OrderFactory.market(
-            AUDUSD_FXCM,
-            'AUDUSD-123456-1',
-            'SCALPER-01',
-            OrderSide.BUY,
-            100000)
-
-        strategy.submit_order(order, order.id)
-        exec_client.fill_last_order()
-
-        # Act
-        # Assert
-        self.assertEqual('AUDUSD-123456-1', strategy._order_position_index[order.id])
-        self.assertTrue('AUDUSD-123456-1' in strategy._position_book)
-
-    def test_can_track_orders_for_a_closing_position(self):
-        # Arrange
-        strategy = TestStrategy1()
-        exec_client = MockExecClient()
-        exec_client.register_strategy(strategy)
-
-        position1 = "position1"
-        order1 = OrderFactory.market(
-            AUDUSD_FXCM,
-            'AUDUSD-123456-1',
-            'SCALPER-01',
-            OrderSide.BUY,
-            100000)
-
-        order2 = OrderFactory.market(
-            AUDUSD_FXCM,
-            'AUDUSD-123456-2',
-            'SCALPER-01',
-            OrderSide.SELL,
-            100000)
-
-        strategy.submit_order(order1, position1)
-        time.sleep(0.5)
-        strategy.submit_order(order2, position1)
-
-        # Act
-        # Assert
-        self.assertEqual(position1, strategy._order_position_index[order1.id])
-        self.assertEqual(position1, strategy._order_position_index[order2.id])
-        print(strategy._order_position_index)
+        self.assertEqual(strategy.ema1, result1)
+        self.assertEqual(strategy.ema2, result2)
 
     def test_can_set_time_alert(self):
         # Arrange
@@ -781,6 +512,268 @@ class TradeStrategyTests(unittest.TestCase):
         # Assert
         self.assertTrue(strategy.object_storer.get_store[1].label.startswith("test_timer"))
         self.assertTrue(strategy.object_storer.get_store[2].label.startswith("test_timer"))
+
+    def test_can_generate_order_id(self):
+        # Arrange
+        strategy = TestStrategy1()
+
+        # Act
+        result = strategy.generate_order_id(AUDUSD_FXCM)
+
+        # Assert
+        self.assertTrue(result.startswith('AUDUSD-FXCM-1-TS01-'))
+
+    def test_get_opposite_side_returns_expected_sides(self):
+        # Arrange
+        strategy = TestStrategy1()
+
+        # Act
+        result1 = strategy.get_opposite_side(OrderSide.BUY)
+        result2 = strategy.get_opposite_side(OrderSide.SELL)
+
+        # Assert
+        self.assertEqual(OrderSide.SELL, result1)
+        self.assertEqual(OrderSide.BUY, result2)
+
+    def test_get_flatten_side_with_flat_market_position_raises_exception(self):
+        # Arrange
+        strategy = TestStrategy1()
+
+        # Act
+        # Assert
+        self.assertRaises(ValueError, strategy.get_flatten_side, MarketPosition.FLAT)
+
+    def test_get_flatten_side_with_long_or_short_market_position_returns_expected_sides(self):
+        # Arrange
+        strategy = TestStrategy1()
+
+        # Act
+        result1 = strategy.get_flatten_side(MarketPosition.LONG)
+        result2 = strategy.get_flatten_side(MarketPosition.SHORT)
+
+        # Assert
+        self.assertEqual(OrderSide.SELL, result1)
+        self.assertEqual(OrderSide.BUY, result2)
+
+    def test_submitting_order_with_identical_id_raises_ex(self):
+        # Arrange
+        strategy = TestStrategy1()
+        exec_client = MockExecClient()
+        exec_client.register_strategy(strategy)
+
+        order = OrderFactory.market(
+            AUDUSD_FXCM,
+            'AUDUSD-123456-1',
+            'SCALPER-01',
+            OrderSide.BUY,
+            100000)
+
+        strategy.submit_order(order, order.id)
+
+        # Act
+        # Assert
+        self.assertRaises(KeyError, strategy.submit_order, order, order.id)
+
+    def test_strategy_can_submit_order(self):
+        # Arrange
+        strategy = TestStrategy1()
+        exec_client = MockExecClient()
+        exec_client.register_strategy(strategy)
+
+        order = OrderFactory.market(
+            AUDUSD_FXCM,
+            'AUDUSD-123456-1',
+            'SCALPER-01',
+            OrderSide.BUY,
+            100000)
+
+        # Act
+        strategy.submit_order(order, order.id)
+
+        # Assert
+        self.assertEqual(order, strategy.orders[order.id])
+        self.assertEqual(OrderStatus.WORKING, strategy.orders[order.id].status)
+
+    def test_cancelling_order_which_does_not_exist_raises_ex(self):
+        # Arrange
+        strategy = TestStrategy1()
+
+        order = OrderFactory.market(
+            AUDUSD_FXCM,
+            'AUDUSD-123456-1',
+            'SCALPER-01',
+            OrderSide.BUY,
+            100000)
+
+        # Act
+        # Assert
+        self.assertRaises(KeyError, strategy.cancel_order, order)
+
+    def test_can_cancel_order(self):
+        # Arrange
+        strategy = TestStrategy1()
+        exec_client = MockExecClient()
+        exec_client.register_strategy(strategy)
+
+        order = OrderFactory.market(
+            AUDUSD_FXCM,
+            'AUDUSD-123456-1',
+            'SCALPER-01',
+            OrderSide.BUY,
+            100000)
+
+        strategy.submit_order(order, order.id)
+
+        # Act
+        strategy.cancel_order(order)
+
+        # Assert
+        self.assertEqual(order, strategy.orders[order.id])
+        self.assertEqual(OrderStatus.CANCELLED, strategy.orders[order.id].status)
+
+    def test_modifying_order_which_does_not_exist_raises_ex(self):
+        # Arrange
+        strategy = TestStrategy1()
+
+        order = OrderFactory.market(
+            AUDUSD_FXCM,
+            'AUDUSD-123456-1',
+            'SCALPER-01',
+            OrderSide.BUY,
+            100000)
+
+        # Act
+        # Assert
+        self.assertRaises(KeyError, strategy.modify_order, order, Decimal('1.00001'))
+
+    def test_can_modify_order(self):
+        # Arrange
+        strategy = TestStrategy1()
+        exec_client = MockExecClient()
+        exec_client.register_strategy(strategy)
+
+        order = OrderFactory.limit(
+            AUDUSD_FXCM,
+            'AUDUSD-123456-1',
+            'SCALPER-01',
+            OrderSide.BUY,
+            100000,
+            Price.create(1.00000, 5))
+
+        strategy.submit_order(order, order.id)
+
+        # Act
+        strategy.modify_order(order, Decimal('1.00001'))
+
+        # Assert
+        self.assertEqual(order, strategy.orders[order.id])
+        self.assertEqual(OrderStatus.WORKING, strategy.orders[order.id].status)
+        self.assertEqual(Decimal('1.00001'), strategy.orders[order.id].price)
+
+    def test_can_track_orders_for_an_opened_position(self):
+        # Arrange
+        strategy = TestStrategy1()
+        exec_client = MockExecClient()
+        exec_client.register_strategy(strategy)
+
+        order = OrderFactory.market(
+            AUDUSD_FXCM,
+            'AUDUSD-123456-1',
+            'SCALPER-01',
+            OrderSide.BUY,
+            100000)
+
+        strategy.submit_order(order, order.id)
+        exec_client.fill_last_order()
+
+        # Act
+        # Assert
+        self.assertEqual('AUDUSD-123456-1', strategy._order_position_index[order.id])
+        self.assertTrue('AUDUSD-123456-1' in strategy._position_book)
+
+    def test_can_track_orders_for_a_closing_position(self):
+        # Arrange
+        strategy = TestStrategy1()
+        exec_client = MockExecClient()
+        exec_client.register_strategy(strategy)
+
+        position1 = "position1"
+        order1 = OrderFactory.market(
+            AUDUSD_FXCM,
+            'AUDUSD-123456-1',
+            'SCALPER-01',
+            OrderSide.BUY,
+            100000)
+
+        order2 = OrderFactory.market(
+            AUDUSD_FXCM,
+            'AUDUSD-123456-2',
+            'SCALPER-01',
+            OrderSide.SELL,
+            100000)
+
+        strategy.submit_order(order1, position1)
+        time.sleep(0.5)
+        strategy.submit_order(order2, position1)
+
+        # Act
+        # Assert
+        self.assertEqual(position1, strategy._order_position_index[order1.id])
+        self.assertEqual(position1, strategy._order_position_index[order2.id])
+        print(strategy._order_position_index)
+
+    def test_can_update_strategy_bars(self):
+        # Arrange
+        strategy = TestStrategy1()
+
+        bar_type = BarType(GBPUSD_FXCM,
+                           1,
+                           Resolution.SECOND,
+                           QuoteType.MID)
+
+        bar = Bar(
+            Decimal('1.00001'),
+            Decimal('1.00004'),
+            Decimal('1.00003'),
+            Decimal('1.00002'),
+            100000,
+            datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC))
+
+        # Act
+        strategy._update_bars(bar_type, bar)
+
+        # Assert
+        self.assertFalse(strategy.is_running)
+        self.assertEqual(1, len(strategy.all_bars[bar_type]))
+        self.assertEqual(1, len(strategy.bars(bar_type)))
+        self.assertEqual(1, strategy.ema1.count)
+        self.assertEqual(1, strategy.ema2.count)
+        self.assertEqual(0, len(strategy.object_storer.get_store))
+
+    def test_can_update_order_events(self):
+        # Arrange
+        strategy = TestStrategy1()
+        order = OrderFactory.market(
+            AUDUSD_FXCM,
+            'AUDUSD|123456|1',
+            'SCALPER-01',
+            OrderSide.BUY,
+            100000)
+
+        event = OrderSubmitted(
+            order.symbol,
+            order.id,
+            UNIX_EPOCH,
+            uuid.uuid4(),
+            UNIX_EPOCH)
+
+        strategy._order_book[order.id] = order
+
+        # Act
+        strategy._update_events(event)
+
+        # Assert
+        self.assertEqual(OrderStatus.SUBMITTED, strategy.orders[order.id].status)
 
 
 class IndicatorUpdaterTests(unittest.TestCase):
