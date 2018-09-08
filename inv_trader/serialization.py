@@ -17,8 +17,8 @@ from decimal import Decimal
 from typing import Dict
 
 from inv_trader.core.preconditions import Precondition
-from inv_trader.control.commands import Command, OrderCommand, SubmitOrder, CancelOrder, ModifyOrder
-from inv_trader.control.commands import CollateralInquiry
+from inv_trader.commands import Command, OrderCommand, SubmitOrder, CancelOrder, ModifyOrder
+from inv_trader.commands import CollateralInquiry
 from inv_trader.model.enums import Venue, OrderSide, OrderType, TimeInForce, CurrencyCode, Broker
 from inv_trader.model.objects import Symbol
 from inv_trader.model.order import Order
