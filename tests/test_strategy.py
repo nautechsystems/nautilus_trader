@@ -556,18 +556,38 @@ class TradeStrategyTests(unittest.TestCase):
         strategy = TestStrategy1(storer)
         exec_client.register_strategy(strategy)
 
-        # start_time = datetime.utcnow() + timedelta(milliseconds=100)
-        # strategy.set_timer("test_timer1", start_time, timedelta(milliseconds=1000), repeat=True)
+        start_time = datetime.utcnow() + timedelta(milliseconds=100)
+        strategy.set_timer("test_timer1", start_time, timedelta(milliseconds=100), repeat=True)
 
         # Act
         strategy.start()
-        # time.sleep(0.5)
-        # strategy.stop()
+        time.sleep(0.5)
+        strategy.stop()
 
-        # TODO: Fix test.
         # Assert
-        # self.assertTrue(isinstance(storer.get_store[0], TimeEvent))
-        print(storer.get_store)
+        self.assertTrue(isinstance(storer.get_store[1], TimeEvent))
+        self.assertTrue(isinstance(storer.get_store[2], TimeEvent))
+        self.assertTrue(isinstance(storer.get_store[3], TimeEvent))
+
+    def test_can_set_two_repeating_timers(self):
+        # Arrange
+        exec_client = MockExecClient()
+        storer = ObjectStorer()
+        strategy = TestStrategy1(storer)
+        exec_client.register_strategy(strategy)
+
+        start_time = datetime.utcnow() + timedelta(milliseconds=100)
+        strategy.set_timer("test_timer1", start_time, timedelta(milliseconds=100), repeat=True)
+        strategy.set_timer("test_timer2", start_time, timedelta(milliseconds=100), priority=0, repeat=True)
+
+        # Act
+        strategy.start()
+        time.sleep(0.5)
+        strategy.stop()
+
+        # Assert
+        self.assertTrue(storer.get_store[1].label.startswith("test_timer"))
+        self.assertTrue(storer.get_store[2].label.startswith("test_timer"))
 
 
 class IndicatorUpdaterTests(unittest.TestCase):

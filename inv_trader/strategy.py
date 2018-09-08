@@ -10,12 +10,12 @@
 import abc
 import inspect
 import uuid
-import threading
 
 from collections import deque
 from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Callable, Deque, Dict, KeysView, List
+from threading import Timer
 from sched import scheduler
 from uuid import UUID
 
@@ -440,7 +440,7 @@ class TradeStrategy:
 
         A priority can be set in the case that time events occur simultaneously,
         the events will be raised in the order of priority with the lower the
-        number the higher the priority.
+        number the higher the priority (not applicable to repeating timers).
 
         Optionally the timer can be run repeatedly whilst the strategy is running.
 
@@ -454,15 +454,16 @@ class TradeStrategy:
         Precondition.true(start_time > datetime.utcnow(), 'start_time > datetime.utcnow()')
 
         alert_time = start_time + interval
+        delay = (alert_time - datetime.utcnow()).total_seconds()
         if repeat:
-            self._scheduler.enter(
-                (alert_time - datetime.utcnow()).total_seconds(),
-                priority,
-                action=self._raise_repeating_time_event,
-                argument=(label, alert_time, interval, priority))
+            timer = Timer(
+                delay,
+                self._repeating_timer,
+                args=[label, alert_time, interval])
+            timer.start()
         else:
             self._scheduler.enter(
-                (alert_time - datetime.utcnow()).total_seconds(),
+                delay,
                 priority,
                 action=self._raise_time_event,
                 argument=(label, alert_time))
@@ -739,25 +740,29 @@ class TradeStrategy:
             label: str,
             alert_time: datetime):
         """
-        Pass the given time event into the on_event method.
+        Create a new time event and pass it into the on_event method.
         """
         self.on_event(TimeEvent(label, uuid.uuid4(), alert_time))
 
-    def _raise_repeating_time_event(
+    def _repeating_timer(
             self,
             label: str,
             alert_time: datetime,
-            interval: timedelta,
-            priority: int):
+            interval: timedelta):
+        """
+        Create a new time event and pass it into the on_event method.
+        Then start a timer for the next time event.
+        """
         self.on_event(TimeEvent(label, uuid.uuid4(), alert_time))
 
         if self._is_running:
             next_alert_time = alert_time + interval
-            self._scheduler.enter(
-                (next_alert_time - datetime.utcnow()).total_seconds(),
-                priority,
-                action=self._raise_repeating_time_event,
-                argument=(label, next_alert_time, interval, priority))
+            delay = (next_alert_time - datetime.utcnow()).total_seconds()
+            timer = Timer(
+                delay,
+                self._repeating_timer,
+                args=[label, alert_time, interval])
+            timer.start()
 
 
 # Constants
