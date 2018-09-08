@@ -36,7 +36,7 @@ Label = str
 Indicator = object
 
 
-class TradeStrategy(object):
+class TradeStrategy:
     """
     The abstract base class for all trade strategies.
     """
@@ -65,8 +65,8 @@ class TradeStrategy(object):
         Precondition.positive(bar_capacity, 'bar_capacity')
 
         self._name = self.__class__.__name__
-        self._id = uuid.uuid4()
         self._label = label
+        self._id = uuid.uuid4()
         self._order_id_generator = OrderIdGenerator(order_id_tag)
         self._bar_capacity = bar_capacity
         if logger is None:
@@ -183,18 +183,18 @@ class TradeStrategy(object):
         return self._name
 
     @property
-    def id(self) -> UUID:
-        """
-        :return: The unique identifier of the strategy.
-        """
-        return self._id
-
-    @property
     def label(self) -> str:
         """
         :return: The label of the strategy.
         """
         return self._label
+
+    @property
+    def id(self) -> UUID:
+        """
+        :return: The unique identifier of the strategy.
+        """
+        return self._id
 
     @property
     def is_running(self) -> bool:
@@ -206,7 +206,7 @@ class TradeStrategy(object):
     @property
     def indicator_labels(self) -> KeysView[str]:
         """
-        :return: The indicator label list for the strategy (should be distinct).
+        :return: The indicator label list for the strategy (should contain distinct elements).
         """
         return self._indicator_index.keys()
 
@@ -302,9 +302,8 @@ class TradeStrategy(object):
 
         :param bar_type: The bar type to get.
         :param index: The index to get (can be positive or negative but not out of range).
-        :return: The found bar.
+        :return: The bar (if found).
         :raises: KeyError: If the strategy does not contain the bar type.
-        :raises: ValueError: If the index is negative.
         """
         if bar_type not in self._bars:
             raise KeyError(f"The bars dictionary does not contain {bar_type}.")
@@ -362,14 +361,18 @@ class TradeStrategy(object):
             update_method: Callable,
             label: str):
         """
-        Add the given indicator to the strategy. It will receive bars of the
-        given bar type. The indicator must be from the inv_indicators package.
+        Add the given indicator to the strategy. The indicator must be from the
+        inv_indicators package. Once added it will receive bars of the given
+        bar type.
 
         :param bar_type: The indicators bar type.
         :param indicator: The indicator to set.
         :param update_method: The update method for the indicator.
         :param label: The unique label for this indicator.
+        :raises: KeyError: If the indicator label is not unique for this strategy.
         """
+        Precondition.valid_string(label, 'label')
+
         if label in self._indicator_index.keys():
             raise KeyError("The indicator label must be unique for this strategy.")
 
@@ -469,7 +472,8 @@ class TradeStrategy(object):
         :param position_id: The position id to associate with this order.
         :raises: KeyError: If order id is already contained in the order book (must be unique).
         """
-        # Preconditions
+        Precondition.valid_string(position_id, 'position_id')
+
         if order.id in self._order_book:
             raise KeyError(
                 "The order id is already contained in the order book (must be unique).")
@@ -488,6 +492,7 @@ class TradeStrategy(object):
 
         :param order: The order to cancel.
         :param cancel_reason: The reason for cancellation (will be logged).
+        :raises: KeyError: If order id was not found in the order book.
         """
         Precondition.valid_string(cancel_reason, 'cancel_reason')
 
@@ -506,6 +511,7 @@ class TradeStrategy(object):
 
         :param order: The order to modify.
         :param new_price: The new price for the given order.
+        :raises: KeyError: If order id was not found in the order book.
         """
         Precondition.positive(new_price, 'new_price')
 
@@ -547,8 +553,9 @@ class TradeStrategy(object):
         Register the execution client with the strategy.
 
         :param client: The execution client to register.
+        :raises: ValueError: If client is None.
+        :raises: TypeError: If client does not inherit from ExecutionClient.
         """
-        # Preconditions
         if client is None:
             raise ValueError("The client cannot be None.")
         if client.__class__.__mro__[-2].__name__ != 'ExecutionClient':
