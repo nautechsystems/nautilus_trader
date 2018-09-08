@@ -427,8 +427,8 @@ class TradeStrategy:
         Precondition.not_negative(priority, 'priority')
 
         self._scheduler.enterabs(
-            (alert_time - datetime.utcnow()).total_seconds(),
-            priority,
+            time=(alert_time - datetime.utcnow()).total_seconds(),
+            priority=priority,
             action=self._raise_time_event,
             argument=(label, alert_time))
 
@@ -470,14 +470,14 @@ class TradeStrategy:
         delay = (alert_time - datetime.utcnow()).total_seconds()
         if repeat:
             timer = Timer(
-                delay,
-                self._repeating_timer,
+                interval=delay,
+                function=self._repeating_timer,
                 args=[label, alert_time, interval])
             timer.start()
         else:
-            self._scheduler.enter(
-                delay,
-                priority,
+            self._scheduler.enterabs(
+                time=delay,
+                priority=priority,
                 action=self._raise_time_event,
                 argument=(label, alert_time))
 
@@ -485,6 +485,8 @@ class TradeStrategy:
         """
         Starts the trade strategy and calls the on_start() method.
         """
+        self._exec_client.collateral_inquiry()
+
         self._log.info(f"Starting...")
         self._is_running = True
         self.on_start()
@@ -775,8 +777,8 @@ class TradeStrategy:
             next_alert_time = alert_time + interval
             delay = (next_alert_time - datetime.utcnow()).total_seconds()
             timer = Timer(
-                delay,
-                self._repeating_timer,
+                interval=delay,
+                function=self._repeating_timer,
                 args=[label, alert_time, interval])
             timer.start()
 

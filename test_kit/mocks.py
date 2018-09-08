@@ -26,7 +26,6 @@ from inv_trader.model.events import Event, OrderEvent
 from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
 from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
 from inv_trader.model.events import OrderFilled, OrderPartiallyFilled
-from inv_trader.strategy import TradeStrategy
 
 UTF8 = 'utf-8'
 StrategyId = str
@@ -219,7 +218,7 @@ class MockExecClient(ExecutionClient):
             order: Order,
             strategy_id: UUID):
         """
-        Send a submit order request to the execution service.
+        Send a submit order command to the mock execution service.
         """
         super()._register_order(order, strategy_id)
 
@@ -263,7 +262,7 @@ class MockExecClient(ExecutionClient):
             order: Order,
             cancel_reason: str):
         """
-        Send a cancel order request to the execution service.
+        Send a cancel order command to the mock execution service.
         """
         cancelled = OrderCancelled(
             order.symbol,
@@ -276,7 +275,7 @@ class MockExecClient(ExecutionClient):
 
     def modify_order(self, order: Order, new_price: Decimal):
         """
-        Send a modify order request to the execution service.
+        Send a modify order command to the mock execution service.
         """
         modified = OrderModified(
             order.symbol,
@@ -288,6 +287,12 @@ class MockExecClient(ExecutionClient):
             datetime.utcnow())
 
         super()._on_event(modified)
+
+    def collateral_inquiry(self):
+        """
+        Send a collateral inquiry command to the mock execution service.
+        """
+        # Does nothing.
 
     def fill_last_order(self):
         """
