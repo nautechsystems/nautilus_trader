@@ -25,6 +25,7 @@ from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected
 from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
 from inv_trader.model.events import TimeEvent
 from inv_trader.model.position import Position
+from inv_trader.data import LiveDataClient
 from inv_trader.factories import OrderFactory
 from inv_trader.strategy import TradeStrategy
 from inv_trader.strategy import IndicatorUpdater
@@ -670,6 +671,74 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertEqual(OrderStatus.WORKING, strategy.orders[order.id].status)
         self.assertEqual(Decimal('1.00001'), strategy.orders[order.id].price)
 
+    def test_registering_execution_client_with_none_raises_exception(self):
+        # Arrange
+        strategy = TestStrategy1()
+
+        # Act
+        # Assert
+        self.assertRaises(ValueError, strategy._register_execution_client, None)
+
+    def test_registering_execution_client_of_wrong_type_raises_exception(self):
+        # Arrange
+        strategy = TestStrategy1()
+
+        # Act
+        # Assert
+        self.assertRaises(TypeError, strategy._register_execution_client, LiveDataClient())
+
+    def test_can_update_bars_and_indicators(self):
+        # Arrange
+        strategy = TestStrategy1()
+
+        bar_type = BarType(GBPUSD_FXCM,
+                           1,
+                           Resolution.SECOND,
+                           QuoteType.MID)
+
+        bar = Bar(
+            Decimal('1.00001'),
+            Decimal('1.00004'),
+            Decimal('1.00003'),
+            Decimal('1.00002'),
+            100000,
+            datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC))
+
+        # Act
+        strategy._update_bars(bar_type, bar)
+
+        # Assert
+        self.assertEqual(1, len(strategy.all_bars[bar_type]))
+        self.assertEqual(1, len(strategy.bars(bar_type)))
+        self.assertEqual(1, strategy.ema1.count)
+        self.assertEqual(1, strategy.ema2.count)
+        self.assertEqual(0, len(strategy.object_storer.get_store))
+
+    def test_can_update_order_events(self):
+        # Arrange
+        strategy = TestStrategy1()
+        order = OrderFactory.market(
+            AUDUSD_FXCM,
+            'AUDUSD|123456|1',
+            'SCALPER-01',
+            OrderSide.BUY,
+            100000)
+
+        event = OrderSubmitted(
+            order.symbol,
+            order.id,
+            UNIX_EPOCH,
+            uuid.uuid4(),
+            UNIX_EPOCH)
+
+        strategy._order_book[order.id] = order
+
+        # Act
+        strategy._update_events(event)
+
+        # Assert
+        self.assertEqual(OrderStatus.SUBMITTED, strategy.orders[order.id].status)
+
     def test_can_track_orders_for_an_opened_position(self):
         # Arrange
         strategy = TestStrategy1()
@@ -721,59 +790,6 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertEqual(position1, strategy._order_position_index[order1.id])
         self.assertEqual(position1, strategy._order_position_index[order2.id])
         print(strategy._order_position_index)
-
-    def test_can_update_strategy_bars(self):
-        # Arrange
-        strategy = TestStrategy1()
-
-        bar_type = BarType(GBPUSD_FXCM,
-                           1,
-                           Resolution.SECOND,
-                           QuoteType.MID)
-
-        bar = Bar(
-            Decimal('1.00001'),
-            Decimal('1.00004'),
-            Decimal('1.00003'),
-            Decimal('1.00002'),
-            100000,
-            datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC))
-
-        # Act
-        strategy._update_bars(bar_type, bar)
-
-        # Assert
-        self.assertFalse(strategy.is_running)
-        self.assertEqual(1, len(strategy.all_bars[bar_type]))
-        self.assertEqual(1, len(strategy.bars(bar_type)))
-        self.assertEqual(1, strategy.ema1.count)
-        self.assertEqual(1, strategy.ema2.count)
-        self.assertEqual(0, len(strategy.object_storer.get_store))
-
-    def test_can_update_order_events(self):
-        # Arrange
-        strategy = TestStrategy1()
-        order = OrderFactory.market(
-            AUDUSD_FXCM,
-            'AUDUSD|123456|1',
-            'SCALPER-01',
-            OrderSide.BUY,
-            100000)
-
-        event = OrderSubmitted(
-            order.symbol,
-            order.id,
-            UNIX_EPOCH,
-            uuid.uuid4(),
-            UNIX_EPOCH)
-
-        strategy._order_book[order.id] = order
-
-        # Act
-        strategy._update_events(event)
-
-        # Assert
-        self.assertEqual(OrderStatus.SUBMITTED, strategy.orders[order.id].status)
 
 
 class IndicatorUpdaterTests(unittest.TestCase):
