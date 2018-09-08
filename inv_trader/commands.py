@@ -110,7 +110,7 @@ class OrderCommand(Command):
         """
         :return: The str() string representation of the command.
         """
-        return f"{self.__class__.__name__}(order_id={self._order.id})"
+        return f"{self.__class__.__name__}({self._order})"
 
     def __repr__(self) -> str:
         """

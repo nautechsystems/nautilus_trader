@@ -223,8 +223,6 @@ class MockExecClient(ExecutionClient):
             uuid.uuid4(),
             datetime.utcnow())
 
-        self._log.info(f"Sent {submitted}.")
-
         accepted = OrderAccepted(
             order.symbol,
             order.id,
@@ -280,8 +278,6 @@ class MockExecClient(ExecutionClient):
             uuid.uuid4(),
             datetime.utcnow())
 
-        self._log.info(f"Sent {cancelled}.")
-
         super()._on_event(cancelled)
 
     def modify_order(self, order: Order, new_price: Decimal):
@@ -296,7 +292,5 @@ class MockExecClient(ExecutionClient):
             datetime.utcnow(),
             uuid.uuid4(),
             datetime.utcnow())
-
-        self._log.info(f"Sent {modified}.")
 
         super()._on_event(modified)

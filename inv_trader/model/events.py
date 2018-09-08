@@ -248,7 +248,7 @@ class OrderEvent(Event):
         :return: The str() string representation of the event.
         """
         return (f"{self.__class__.__name__}"
-                f"(order_id={self._order_id}, symbol={self._symbol})")
+                f"(id={self._order_id}, symbol={self._symbol})")
 
     def __repr__(self) -> str:
         """

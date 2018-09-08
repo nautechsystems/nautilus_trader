@@ -185,7 +185,7 @@ class Position:
         """
         :return: The str() string representation of the position.
         """
-        return (f"Position(id={self._id}: "
+        return (f"Position(id={self._id}) "
                 f"{self._symbol} {self.market_position.name} {self.quantity})")
 
     def __repr__(self) -> str:
