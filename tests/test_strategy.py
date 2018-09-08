@@ -319,7 +319,7 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(order, strategy.orders[order.id])
-        self.assertEqual(OrderStatus.FILLED, strategy.orders[order.id].status)
+        self.assertEqual(OrderStatus.WORKING, strategy.orders[order.id].status)
 
     def test_submitting_order_with_identical_id_raises_ex(self):
         # Arrange
@@ -405,7 +405,7 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(order, strategy.orders[order.id])
-        self.assertEqual(OrderStatus.FILLED, strategy.orders[order.id].status)
+        self.assertEqual(OrderStatus.WORKING, strategy.orders[order.id].status)
         self.assertEqual(Decimal('1.00001'), strategy.orders[order.id].price)
 
     def test_modifying_order_which_does_not_exist_raises_ex(self):
@@ -440,6 +440,7 @@ class TradeStrategyTests(unittest.TestCase):
             100000)
 
         strategy.submit_order(order, order.id)
+        exec_client.fill_last_order()
 
         # Act
         # Assert

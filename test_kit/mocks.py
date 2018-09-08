@@ -195,6 +195,13 @@ class MockExecClient(ExecutionClient):
     Provides a mock execution client for trading strategies.
     """
 
+    def __init__(self):
+        """
+        Initializes a new instance of the MockExecClient class.
+        """
+        super().__init__()
+        self._working_orders = []
+
     def connect(self):
         """
         Connect to the execution service.
@@ -230,6 +237,8 @@ class MockExecClient(ExecutionClient):
             uuid.uuid4(),
             datetime.utcnow())
 
+        self._working_orders.append(order)
+
         working = OrderWorking(
             order.symbol,
             order.id,
@@ -245,24 +254,9 @@ class MockExecClient(ExecutionClient):
             datetime.utcnow(),
             order.expire_time)
 
-        filled_price = Price.create(1.00000, 5) if order.price is None else order.price
-
-        filled = OrderFilled(
-            order.symbol,
-            order.id,
-            'E' + order.id,
-            'ET' + order.id,
-            order.side,
-            order.quantity,
-            filled_price,
-            datetime.utcnow(),
-            uuid.uuid4(),
-            datetime.utcnow())
-
         super()._on_event(submitted)
         super()._on_event(accepted)
         super()._on_event(working)
-        super()._on_event(filled)
 
     def cancel_order(
             self,
@@ -294,3 +288,25 @@ class MockExecClient(ExecutionClient):
             datetime.utcnow())
 
         super()._on_event(modified)
+
+    def fill_last_order(self):
+        """
+        Fills the last order held by the execution service.
+        """
+        order = self._working_orders.pop(-1)
+
+        filled_price = Price.create(1.00000, 5) if order.price is None else order.price
+
+        filled = OrderFilled(
+            order.symbol,
+            order.id,
+            'E' + order.id,
+            'ET' + order.id,
+            order.side,
+            order.quantity,
+            filled_price,
+            datetime.utcnow(),
+            uuid.uuid4(),
+            datetime.utcnow())
+
+        super()._on_event(filled)
