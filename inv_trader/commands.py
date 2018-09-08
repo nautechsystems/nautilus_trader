@@ -69,9 +69,7 @@ class Command:
         """
         :return: The str() string representation of the command.
         """
-        attrs = vars(self)
-        props = ', '.join("%s=%s" % item for item in attrs.items()).replace(', _', ', ')
-        return f"{self.__class__.__name__}({props[1:]})"
+        return f"{self.__class__.__name__}()"
 
     def __repr__(self) -> str:
         """
@@ -107,6 +105,18 @@ class OrderCommand(Command):
         :return: The commands order.
         """
         return self._order
+
+    def __str__(self) -> str:
+        """
+        :return: The str() string representation of the command.
+        """
+        return f"{self.__class__.__name__}(order_id={self._order.id})"
+
+    def __repr__(self) -> str:
+        """
+        :return: The repr() string representation of the command.
+        """
+        return f"<{str(self)} object at {id(self)}>"
 
 
 class SubmitOrder(OrderCommand):
