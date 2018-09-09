@@ -10,6 +10,7 @@
 import unittest
 import pytz
 import time
+import zmq
 
 from datetime import datetime
 from decimal import Decimal
@@ -19,16 +20,20 @@ from inv_trader.model.objects import Price, Symbol, Resolution, QuoteType, BarTy
 from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
 from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
 from inv_trader.model.events import OrderPartiallyFilled, OrderFilled
+from inv_trader.messaging import RequestWorker
 from inv_trader.execution import ExecutionClient, LiveExecClient
 from inv_trader.factories import OrderFactory, OrderIdGenerator
 from test_kit.stubs import TestStubs
-from test_kit.mocks import MockExecClient
+from test_kit.mocks import MockExecClient, MockServer, MockPublisher
 from test_kit.objects import ObjectStorer
 from test_kit.strategies import TestStrategy1
 
 UNIX_EPOCH = TestStubs.unix_epoch()
 AUDUSD_FXCM = Symbol('AUDUSD', Venue.FXCM)
 GBPUSD_FXCM = Symbol('GBPUSD', Venue.FXCM)
+
+UTF8 = 'utf8'
+LOCAL_HOST = "127.0.0.1"
 
 
 class ExecutionClientTests(unittest.TestCase):
@@ -165,12 +170,38 @@ class ExecutionClientTests(unittest.TestCase):
 
 class LiveExecClientTests(unittest.TestCase):
 
+    def setUp(self):
+        # Fixture Setup
+        print("\n")
+
+        self.exec_client = LiveExecClient()
+
+        context = self.exec_client.zmq_context
+
+        self.response_list = []
+        self.response_handler = self.response_list.append
+
+        self.server1 = MockServer(
+            context,
+            5555,
+            self.response_handler)
+
+        self.server2 = MockServer(
+            context,
+            5556,
+            self.response_handler)
+
+    def tearDown(self):
+        # Tear Down
+        self.exec_client.disconnect()
+        # self.server1.stop()
+        # self.server2.stop()
+
     def test_can_send_submit_order_command(self):
         # Arrange
         strategy = TestStrategy1()
-        exec_client = LiveExecClient()
-        exec_client.register_strategy(strategy)
-        exec_client.connect()
+        self.exec_client.register_strategy(strategy)
+        self.exec_client.connect()
 
         order_id = strategy.generate_order_id(AUDUSD_FXCM)
 
@@ -187,14 +218,12 @@ class LiveExecClientTests(unittest.TestCase):
         # Assert
         # self.assertEqual(order, strategy.order(order_id))
         # self.assertEqual(OrderStatus.INITIALIZED, order.status)
-        # exec_client.disconnect()
 
     def test_can_send_cancel_order_command(self):
         # Arrange
         strategy = TestStrategy1()
-        exec_client = LiveExecClient()
-        exec_client.register_strategy(strategy)
-        exec_client.connect()
+        self.exec_client.register_strategy(strategy)
+        self.exec_client.connect()
 
         order_id_generator = OrderIdGenerator(order_id_tag='0')
         order_id = order_id_generator.generate(AUDUSD_FXCM)
@@ -214,14 +243,12 @@ class LiveExecClientTests(unittest.TestCase):
         # Assert
         # self.assertEqual(order, strategy.order(order_id))
         # self.assertEqual(OrderStatus.INITIALIZED, order.status)
-        exec_client.disconnect()
 
     def test_can_send_modify_order_command(self):
         # Arrange
         strategy = TestStrategy1()
-        exec_client = LiveExecClient()
-        exec_client.register_strategy(strategy)
-        exec_client.connect()
+        self.exec_client.register_strategy(strategy)
+        self.exec_client.connect()
 
         order_id = strategy.generate_order_id(AUDUSD_FXCM)
 
@@ -242,4 +269,3 @@ class LiveExecClientTests(unittest.TestCase):
         # Assert
         # self.assertEqual(order, strategy.order(order_id))
         # self.assertEqual(OrderStatus.INITIALIZED, order.status)
-        exec_client.disconnect()

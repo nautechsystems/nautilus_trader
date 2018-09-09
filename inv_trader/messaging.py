@@ -49,7 +49,7 @@ class MQWorker(Thread):
         """
         Precondition.valid_string(name, 'name')
         Precondition.valid_string(host, 'host')
-        Precondition.in_range(port, 'port', 0, 99999)
+        Precondition.in_range(port, 'port', 0, 65535)
 
         super().__init__()
         self.daemon = True
@@ -66,7 +66,9 @@ class MQWorker(Thread):
 
     def run(self):
         """
-        Overrides the threads run method (call .start() to run in a separate thread).
+        Overrides the threads run method (.start() should be called to run this
+        in a separate thread).
+
         Starts the worker and opens a connection.
         """
         self._open_connection()
@@ -134,7 +136,7 @@ class RequestWorker(MQWorker):
         """
         Precondition.valid_string(name, 'name')
         Precondition.valid_string(host, 'host')
-        Precondition.in_range(port, 'port', 0, 99999)
+        Precondition.in_range(port, 'port', 0, 65535)
 
         super().__init__(
             name,
@@ -149,15 +151,15 @@ class RequestWorker(MQWorker):
         """
         Open a new connection to the service.
         """
-        self._log.info(f"Connecting to {self._service_address}...")
         self._socket.connect(self._service_address)
+        self._log.info(f"Connected to {self._service_address}")
 
     def _close_connection(self):
         """
         Close the connection with the service.
         """
-        self._log.info(f"Disconnecting from {self._service_address}...")
         self._socket.disconnect(self._service_address)
+        self._log.info(f"Disconnected from {self._service_address}")
 
 
 class SubscriberWorker(MQWorker):
@@ -186,7 +188,7 @@ class SubscriberWorker(MQWorker):
         """
         Precondition.valid_string(name, 'name')
         Precondition.valid_string(host, 'host')
-        Precondition.in_range(port, 'port', 0, 99999)
+        Precondition.in_range(port, 'port', 0, 65535)
         Precondition.valid_string(topic, 'topic')
 
         super().__init__(
@@ -210,11 +212,11 @@ class SubscriberWorker(MQWorker):
         """
         Open a new connection to the service.
         """
-        self._log.info(f"Connecting to {self._service_address}...")
         self._socket.connect(self._service_address)
+        self._log.info(f"Connected to {self._service_address}")
         self._socket.setsockopt(zmq.SUBSCRIBE, self._topic.encode(UTF8))
+        self._log.info(f"Subscribed to topic {self._topic}.")
         self._consume_messages()
-        self._log.info(f"Subscribed to {self._topic}.")
 
     def _consume_messages(self):
         """
@@ -235,5 +237,5 @@ class SubscriberWorker(MQWorker):
         """
         Close the connection with the service.
         """
-        self._log.info(f"Disconnecting from {self._service_address}...")
         self._socket.disconnect(self._service_address)
+        self._log.info(f"Disconnected from {self._service_address}")

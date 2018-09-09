@@ -106,7 +106,7 @@ class MockServer(Thread):
         Close the connection with the service socket.
         """
         self._log(f"Disconnecting from {self._service_address}...")
-        self._socket.disconnect(self._service_address)
+        self._socket.unbind(self._service_address)
 
     def _log(self, message: str):
         """

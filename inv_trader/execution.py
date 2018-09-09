@@ -9,6 +9,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import abc
+import time
 import uuid
 import zmq
 
@@ -16,6 +17,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Dict, Callable
 from uuid import UUID
+from zmq import Context
 
 from inv_trader.core.preconditions import Precondition
 from inv_trader.core.logger import Logger, LoggingAdapter
@@ -193,12 +195,11 @@ class LiveExecClient(ExecutionClient):
         :param events_port: The execution service events port.
         :param command_serializer: The command serializer for the client.
         :param event_serializer: The event serializer for the client.
-        :param event_serializer: The event serializer for the client.
-        :param logger: The logging adapter for the component.
+        :param logger: The logger for the component (can be None).
         """
         Precondition.valid_string(host, 'host')
-        Precondition.in_range(commands_port, 'commands_port', 0, 99999)
-        Precondition.in_range(events_port, 'events_port', 0, 99999)
+        Precondition.in_range(commands_port, 'commands_port', 0, 65535)
+        Precondition.in_range(events_port, 'events_port', 0, 65535)
 
         super().__init__(logger)
         self._command_serializer = command_serializer
@@ -206,14 +207,14 @@ class LiveExecClient(ExecutionClient):
         self._context = zmq.Context()
 
         self._commands_worker = RequestWorker(
-            'CommandSender',
+            'ExecClient.CommandSender',
             self._context,
             host,
             commands_port,
             self._command_ack_handler)
 
         self._events_worker = SubscriberWorker(
-            "EventSubscriber",
+            "ExecClient.EventSubscriber",
             self._context,
             host,
             events_port,
@@ -222,13 +223,20 @@ class LiveExecClient(ExecutionClient):
 
         self._log.info(f"ZMQ v{zmq.pyzmq_version()}")
 
+    @property
+    def zmq_context(self) -> Context:
+        """
+        :return: The ZMQ context for the execution client.
+        """
+        return self._context
+
     def connect(self):
         """
         Connect to the execution service.
         """
         self._events_worker.start()
         self._commands_worker.start()
-        # self.collateral_inquiry()  # TODO: Fix this.
+        # self.collateral_inquiry()
 
     def disconnect(self):
         """
