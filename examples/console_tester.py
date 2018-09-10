@@ -10,7 +10,7 @@
 from inv_trader.data import LiveDataClient
 from inv_trader.execution import LiveExecClient
 from inv_trader.model.enums import Venue, Resolution, QuoteType
-from examples.strategy_examples import EMACrossLimitEntry, EMACrossStopEntry
+from examples.strategy_examples import EMACrossLimitEntry
 
 
 if __name__ == "__main__":
@@ -31,4 +31,5 @@ if __name__ == "__main__":
     strategy.stop()
 
     input("Press Enter to disconnect...\n")
+    print("Disconnecting...")
     exec_client.disconnect()
