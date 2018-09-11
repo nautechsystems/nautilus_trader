@@ -67,7 +67,7 @@ class Precondition:
         """
         if argument is None:
             raise ValueError(f"{PRE_FAILED} (the {param_name} string argument was None).")
-        if argument is str(""):
+        if argument is str(''):
             raise ValueError(f"{PRE_FAILED} (the {param_name} string argument was empty).")
         if argument.isspace():
             raise ValueError(f"{PRE_FAILED} (the {param_name} string argument was whitespace).")
@@ -109,11 +109,11 @@ class Precondition:
     @staticmethod
     def positive(value: int or float or Decimal, param_name: str):
         """
-        Check the preconditions value is positive (greater than or equal to zero.)
+        Check the preconditions value is positive (greater than zero.)
 
         :param value: The value to check.
         :param param_name: The name of the value.
-        :raises ValueError: If the value is not positive.
+        :raises ValueError: If the value is not positive (> 0).
         """
         if value <= 0:
             raise ValueError(f"{PRE_FAILED} (the {param_name} was NOT positive = {value}).")
@@ -125,7 +125,7 @@ class Precondition:
 
         :param value: The value to check.
         :param param_name: The values name.
-        :raises ValueError: If the value is not positive, or is equal to zero.
+        :raises ValueError: If the value is negative (< 0).
         """
         if value < 0:
             raise ValueError(f"{PRE_FAILED} (the {param_name} was negative = {value}).")
@@ -143,11 +143,11 @@ class Precondition:
         :param param_name: The values name.
         :param start: The start of the range.
         :param end: The end of the range.
-        :raises ValueError: If the value is not in range.
+        :raises ValueError: If the value is not in the inclusive range.
         """
         if value < start or value > end:
             raise ValueError(
-                f"{PRE_FAILED} (the {param_name} was out of range [{start} - {end}] = {value}).")
+                f"{PRE_FAILED} (the {param_name} was out of range [{start}-{end}] = {value}).")
 
     @staticmethod
     def not_empty(argument, param_name: str):
