@@ -149,7 +149,6 @@ class LoggingAdapter:
         """
         if component_name is not None:
             Precondition.valid_string(component_name, 'component_name')
-            component_name = component_name + ':'
         else:
             component_name = ''
 
@@ -197,4 +196,4 @@ class LoggingAdapter:
         self._logger.critical(self._format_message(message))
 
     def _format_message(self, message: str):
-        return f"{self._component_name} {message}"
+        return f"{self._component_name}: {message}"
