@@ -14,8 +14,8 @@ from decimal import Decimal
 
 from inv_trader.model.enums import Resolution, QuoteType, OrderSide, TimeInForce, Venue
 from inv_trader.model.objects import Symbol, Tick, BarType, Bar
+from inv_trader.model.order import OrderFactory
 from inv_trader.model.events import Event, OrderRejected, OrderFilled, OrderPartiallyFilled, OrderModified
-from inv_trader.factories import OrderFactory
 from inv_trader.strategy import TradeStrategy
 from inv_indicators.average.ema import ExponentialMovingAverage
 

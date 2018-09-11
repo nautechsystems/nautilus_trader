@@ -14,7 +14,7 @@ from typing import Callable
 from threading import Thread
 from zmq import Context
 
-from inv_trader.core.preconditions import Precondition
+from inv_trader.core.precondition import Precondition
 from inv_trader.core.logger import Logger, LoggingAdapter
 
 UTF8 = 'utf-8'

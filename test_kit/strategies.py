@@ -9,8 +9,8 @@
 
 from inv_trader.model.enums import Venue, Resolution, QuoteType, OrderSide
 from inv_trader.model.objects import Symbol, Tick, BarType, Bar
+from inv_trader.model.order import OrderFactory
 from inv_trader.model.events import Event
-from inv_trader.factories import OrderFactory
 from inv_trader.strategy import TradeStrategy
 from inv_indicators.average.ema import ExponentialMovingAverage
 from test_kit.objects import ObjectStorer

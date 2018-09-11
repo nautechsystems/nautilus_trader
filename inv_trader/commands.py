@@ -13,7 +13,7 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from inv_trader.core.preconditions import Precondition
+from inv_trader.core.precondition import Precondition
 from inv_trader.model.order import Order
 
 

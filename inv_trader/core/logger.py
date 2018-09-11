@@ -13,7 +13,7 @@ import threading
 from datetime import datetime
 from logging import INFO, DEBUG
 
-from inv_trader.core.preconditions import Precondition
+from inv_trader.core.precondition import Precondition
 
 
 class Logger:

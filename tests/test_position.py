@@ -14,9 +14,9 @@ from decimal import Decimal
 
 from inv_trader.model.enums import Venue, OrderSide, MarketPosition
 from inv_trader.model.objects import Symbol
+from inv_trader.model.order import OrderFactory
 from inv_trader.model.position import Position
 from inv_trader.model.events import OrderPartiallyFilled, OrderFilled
-from inv_trader.factories import OrderFactory
 from test_kit.stubs import TestStubs
 
 UNIX_EPOCH = TestStubs.unix_epoch()

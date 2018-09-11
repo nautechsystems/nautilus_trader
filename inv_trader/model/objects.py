@@ -10,7 +10,7 @@
 from datetime import datetime
 from decimal import Decimal
 
-from inv_trader.core.preconditions import Precondition
+from inv_trader.core.precondition import Precondition
 from inv_trader.model.enums import Venue, Resolution, QuoteType
 
 
