@@ -11,7 +11,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import List
 
-from inv_trader.core.preconditions import Precondition
+from inv_trader.core.precondition import Precondition
 from inv_trader.model.enums import MarketPosition, OrderSide
 from inv_trader.model.objects import Symbol
 from inv_trader.model.events import OrderEvent

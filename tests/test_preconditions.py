@@ -14,7 +14,7 @@ import unittest
 from collections import deque
 from decimal import Decimal
 
-from inv_trader.core.preconditions import Precondition
+from inv_trader.core.precondition import Precondition
 
 
 class PreconditionsTests(unittest.TestCase):

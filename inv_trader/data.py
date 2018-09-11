@@ -15,7 +15,7 @@ from decimal import Decimal
 from redis import StrictRedis, ConnectionError
 from typing import List, Dict
 
-from inv_trader.core.preconditions import Precondition
+from inv_trader.core.precondition import Precondition
 from inv_trader.core.logger import Logger, LoggingAdapter
 
 from inv_trader.model.enums import Resolution, QuoteType, Venue

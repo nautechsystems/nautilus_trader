@@ -19,8 +19,7 @@ from inv_trader.commands import SubmitOrder, CancelOrder, ModifyOrder
 from inv_trader.commands import CollateralInquiry
 from inv_trader.model.enums import Venue, OrderSide, OrderType, TimeInForce
 from inv_trader.model.objects import Symbol, Price
-from inv_trader.model.order import Order
-from inv_trader.factories import OrderFactory
+from inv_trader.model.order import Order, OrderFactory
 from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
 from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
 from inv_trader.model.events import OrderPartiallyFilled, OrderFilled, AccountEvent

@@ -19,7 +19,7 @@ from threading import Timer
 from sched import scheduler
 from uuid import UUID
 
-from inv_trader.core.preconditions import Precondition
+from inv_trader.core.precondition import Precondition
 from inv_trader.core.logger import Logger, LoggingAdapter
 from inv_trader.model.account import Account
 from inv_trader.model.enums import OrderSide, MarketPosition
@@ -27,10 +27,8 @@ from inv_trader.model.events import Event, AccountEvent, OrderEvent
 from inv_trader.model.events import OrderFilled, OrderPartiallyFilled
 from inv_trader.model.events import TimeEvent
 from inv_trader.model.objects import Symbol, Tick, BarType, Bar
-from inv_trader.model.order import Order
+from inv_trader.model.order import Order, OrderIdGenerator
 from inv_trader.model.position import Position
-
-from inv_trader.factories import OrderIdGenerator
 
 # Constants
 OrderId = str

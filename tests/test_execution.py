@@ -17,12 +17,12 @@ from decimal import Decimal
 
 from inv_trader.model.enums import Venue, OrderSide, OrderType, OrderStatus, TimeInForce
 from inv_trader.model.objects import Price, Symbol, Resolution, QuoteType, BarType, Bar
+from inv_trader.model.order import OrderIdGenerator, OrderFactory
 from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
 from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
 from inv_trader.model.events import OrderPartiallyFilled, OrderFilled
 from inv_trader.messaging import RequestWorker
 from inv_trader.execution import ExecutionClient, LiveExecClient
-from inv_trader.factories import OrderFactory, OrderIdGenerator
 from test_kit.stubs import TestStubs
 from test_kit.mocks import MockExecClient, MockServer, MockPublisher
 from test_kit.objects import ObjectStorer
