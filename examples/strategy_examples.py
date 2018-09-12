@@ -196,11 +196,13 @@ class EMACrossLimitEntry(TradeStrategy):
 
         # Cancel all entry orders
         for order in self.entry_orders.values():
-            self.cancel_order(order, "STOPPING STRATEGY")
+            if not order.is_complete:
+                self.cancel_order(order, "STOPPING STRATEGY")
 
         # Cancel all stop-loss orders
         for order in self.stop_loss_orders.values():
-            self.cancel_order(order, "STOPPING STRATEGY")
+            if not order.is_complete:
+                self.cancel_order(order, "STOPPING STRATEGY")
 
     def on_reset(self):
         """
