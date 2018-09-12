@@ -214,3 +214,4 @@ class EMACrossLimitEntry(TradeStrategy):
         """
         self.entry_orders = {}
         self.stop_loss_orders = {}
+        self.position_id = None
