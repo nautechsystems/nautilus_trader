@@ -741,7 +741,7 @@ class TradeStrategy:
         """
         Create a new time event and pass it into the on_event method.
         """
-        self.on_event(TimeEvent(label, uuid.uuid4(), alert_time))
+        self._update_events(TimeEvent(label, uuid.uuid4(), alert_time))
 
     def _repeating_timer(
             self,
@@ -752,7 +752,7 @@ class TradeStrategy:
         Create a new time event and pass it into the on_event method.
         Then start a timer for the next time event.
         """
-        self.on_event(TimeEvent(label, uuid.uuid4(), alert_time))
+        self._update_events(TimeEvent(label, uuid.uuid4(), alert_time))
 
         if self._is_running:
             next_alert_time = alert_time + interval
