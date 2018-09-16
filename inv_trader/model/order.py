@@ -462,8 +462,8 @@ class OrderFactory:
             order_side: OrderSide,
             quantity: int,
             price: Decimal,
-            time_in_force: TimeInForce or None = None,
-            expire_time: datetime or None = None) -> Order:
+            time_in_force: TimeInForce or None=None,
+            expire_time: datetime or None=None) -> Order:
         """
         Creates and returns a new limit order with the given parameters.
         If the time in force is GTD then a valid expire time must be given.
@@ -499,8 +499,8 @@ class OrderFactory:
             order_side: OrderSide,
             quantity: int,
             price: Decimal,
-            time_in_force: TimeInForce or None = None,
-            expire_time: datetime or None = None) -> Order:
+            time_in_force: TimeInForce or None=None,
+            expire_time: datetime or None=None) -> Order:
         """
         Creates and returns a new stop-market order with the given parameters.
         If the time in force is GTD then a valid expire time must be given.
@@ -536,8 +536,8 @@ class OrderFactory:
             order_side: OrderSide,
             quantity: int,
             price: Decimal,
-            time_in_force: TimeInForce or None = None,
-            expire_time: datetime or None = None) -> Order:
+            time_in_force: TimeInForce or None=None,
+            expire_time: datetime or None=None) -> Order:
         """
         Creates and returns a new stop-limit order with the given parameters.
         If the time in force is GTD then a valid expire time must be given.
@@ -573,8 +573,8 @@ class OrderFactory:
             order_side: OrderSide,
             quantity: int,
             price: Decimal,
-            time_in_force: TimeInForce or None = None,
-            expire_time: datetime or None = None) -> Order:
+            time_in_force: TimeInForce or None=None,
+            expire_time: datetime or None=None) -> Order:
         """
         Creates and returns a new market-if-touched order with the given parameters.
         If the time in force is GTD then a valid expire time must be given.
