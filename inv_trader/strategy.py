@@ -450,9 +450,8 @@ class TradeStrategy:
         :param label: The label for the alert (must be unique).
         :param alert_time: The time for the alert.
         :raises: ValueError: If the label is an invalid string.
-        :raises: KeyError: If the label is not unique.
+        :raises: KeyError: If the label is not unique for this strategy.
         :raises: ValueError: If the alert_time is not greater than the current time (UTC).
-        :raises: ValueError: If the priority is negative (< 0).
         """
         Precondition.valid_string(label, 'label')
         Precondition.true(alert_time > datetime.utcnow(), 'alert_time > datetime.utcnow()')
@@ -471,11 +470,11 @@ class TradeStrategy:
 
     def cancel_time_alert(self, label):
         """
-        Cancel the time alert corresponding to the given unique label.
+        Cancel the time alert corresponding to the given label.
 
         :param label: The label for the alert to cancel.
         :raises: ValueError: If the label is an invalid string.
-        :raises: KeyError: If the label is not found in the internal time events.
+        :raises: KeyError: If the label is not found in the internal timers.
         """
         Precondition.valid_string(label, 'label')
 
@@ -494,20 +493,18 @@ class TradeStrategy:
             stop_time: datetime or None=None,
             repeat: bool=False):
         """
-        Set a timer with the given interval (time delta). The timer will run once
-        the strategy is started and the start time is reached. When the interval
-        is reached and the strategy is running, then on_event() is passed the
+        Set a timer with the given interval (time delta). The timer will run from
+        the start time (optionally until the stop time). When the interval is
+        reached and the strategy is running, the on_event() is passed the
         TimeEvent containing the timers unique label.
 
         Optionally the timer can be run repeatedly whilst the strategy is running.
 
         :param label: The label for the timer (must be unique).
         :param interval: The time delta interval for the timer.
-        :param start_time: The time the timer should start at.
-        :param stop_time: The time the timer should stop at (can be None).
-        not applicable to repeating timers).
+        :param start_time: The start time for the timer.
+        :param stop_time: The stop time for the timer (can be None).
         :param repeat: The option for the timer to repeat until the strategy is stopped
-        (no priority).
         :raises: ValueError: If the label is an invalid string.
         :raises: KeyError: If the label is not unique.
         :raises: ValueError: If the start_time is not greater than the current time (UTC).
@@ -789,7 +786,7 @@ class TradeStrategy:
             label: str,
             alert_time: datetime):
         """
-        Create a new time event and pass it into the on_event method.
+        Create a new time event and pass it into the _update_events() method.
         """
         self._log.debug(f"Raising time event for {label}.")
         self._update_events(TimeEvent(label, uuid.uuid4(), alert_time))
@@ -802,7 +799,7 @@ class TradeStrategy:
             interval: timedelta,
             stop_time: datetime):
         """
-        Create a new time event and pass it into the on_event method.
+        Create a new time event and pass it into the _update_events() method.
         Then start a timer for the next time event.
         """
         self._update_events(TimeEvent(label, uuid.uuid4(), alert_time))
@@ -813,16 +810,15 @@ class TradeStrategy:
             del self._timers[label]
             return
 
-        if self._is_running:
-            next_alert_time = alert_time + interval
-            delay = (next_alert_time - datetime.utcnow()).total_seconds()
-            timer = Timer(
-                interval=delay,
-                function=self._repeating_timer,
-                args=[label, next_alert_time, interval, stop_time])
-            timer.start()
-            self._timers[label] = timer
-            self._log.debug(f"Continuing timer for {label}...")
+        next_alert_time = alert_time + interval
+        delay = (next_alert_time - datetime.utcnow()).total_seconds()
+        timer = Timer(
+            interval=delay,
+            function=self._repeating_timer,
+            args=[label, next_alert_time, interval, stop_time])
+        timer.start()
+        self._timers[label] = timer
+        self._log.debug(f"Continuing timer for {label}...")
 
 
 # Constants
