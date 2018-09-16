@@ -28,7 +28,6 @@ from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled,
 from inv_trader.model.events import OrderPartiallyFilled, OrderFilled
 
 
-# Constants
 UTF8 = 'utf-8'
 NONE = 'NONE'
 COMMAND_TYPE = 'command_type'
