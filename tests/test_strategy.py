@@ -550,8 +550,7 @@ class TradeStrategyTests(unittest.TestCase):
         strategy.stop()
 
         # Assert
-        self.assertTrue(strategy.object_storer.get_store[1].label.startswith("test_timer"))
-        self.assertTrue(strategy.object_storer.get_store[2].label.startswith("test_timer"))
+        self.assertEqual(10, strategy.object_storer.count)
 
     def test_can_generate_order_id(self):
         # Arrange

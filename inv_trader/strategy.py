@@ -272,6 +272,8 @@ class TradeStrategy:
         Stops the trade strategy and calls the on_stop() method.
         """
         self._log.info(f"Stopping...")
+        for timer in self._timers.values():
+            timer.cancel()
         self.on_stop()
         self._is_running = False
         self._log.info(f"Stopped.")
@@ -285,12 +287,17 @@ class TradeStrategy:
             self._log.warning(f"Cannot reset a running strategy...")
             return
 
-        self._ticks = {}  # type: Dict[Symbol, Tick]
-        self._bars = {}   # type: Dict[BarType, List[Bar]]
+        self._timers = {}  # type: Dict[Label, Timer]
+        self._ticks = {}   # type: Dict[Symbol, Tick]
+        self._bars = {}    # type: Dict[BarType, List[Bar]]
 
         # Reset all indicators.
         for indicator_list in self._indicators.values():
             [indicator.reset() for indicator in indicator_list]
+
+        self._order_book = {}            # type: Dict[OrderId, Order]
+        self._order_position_index = {}  # type: Dict[OrderId, PositionId]
+        self._position_book = {}         # type: Dict[PositionId, Position or None]
 
         self.on_reset()
         self._log.info(f"Reset.")
@@ -476,6 +483,7 @@ class TradeStrategy:
             raise KeyError(f"Cannot cancel time alert for {label} (The label was not found).")
 
         self._timers[label].cancel()
+        del self._timers[label]
         self._log.info(f"Cancelled time alert for {label}.")
 
     def set_timer(
@@ -552,6 +560,7 @@ class TradeStrategy:
             raise KeyError(f"Cannot cancel timer for {label} (The label was not found).")
 
         self._timers[label].cancel()
+        del self._timers[label]
         self._log.info(f"Cancelled timer for {label}.")
 
     def generate_order_id(self, symbol: Symbol) -> OrderId:
@@ -784,6 +793,7 @@ class TradeStrategy:
         """
         self._log.debug(f"Raising time event for {label}.")
         self._update_events(TimeEvent(label, uuid.uuid4(), alert_time))
+        del self._timers[label]
 
     def _repeating_timer(
             self,
@@ -799,6 +809,8 @@ class TradeStrategy:
 
         if stop_time is not None and alert_time + interval >= stop_time:
             self._log.info(f"Stop time reached for timer {label}.")
+            self._timers[label].cancel()
+            del self._timers[label]
             return
 
         if self._is_running:
