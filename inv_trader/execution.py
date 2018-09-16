@@ -253,8 +253,8 @@ class LiveExecClient(ExecutionClient):
         """
         Send a submit order command to the execution service.
 
-        :param: order: The order to submit.
-        :param: strategy_id: The strategy identifier to register the order with.
+        :param order: The order to submit.
+        :param strategy_id: The strategy identifier to register the order with.
         """
         super()._register_order(order, strategy_id)
 
@@ -274,8 +274,8 @@ class LiveExecClient(ExecutionClient):
         """
         Send a cancel order command to the execution service.
 
-        :param: order: The order identifier to cancel.
-        :param: cancel_reason: The reason for cancellation (will be logged).
+        :param order: The order identifier to cancel.
+        :param cancel_reason: The reason for cancellation (will be logged).
         :raises ValueError: If the cancel_reason is not a valid string.
         """
         Precondition.valid_string(cancel_reason, 'cancel_reason')

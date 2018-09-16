@@ -160,7 +160,7 @@ class OrderSerializer:
         """
         Serialize the given order to bytes.
 
-        :param: order: The order to serialize.
+        :param order: The order to serialize.
         :return: The serialized order.
         """
         # Raise exception if not overridden in implementation.
@@ -172,7 +172,7 @@ class OrderSerializer:
         """
         Deserialize the given bytes to an Order.
 
-        :param: order_bytes: The bytes to deserialize.
+        :param order_bytes: The bytes to deserialize.
         :return: The deserialized order.
         """
         # Raise exception if not overridden in implementation.
@@ -189,7 +189,7 @@ class MsgPackOrderSerializer(OrderSerializer):
         """
         Serialize the given Order to Message Pack specification bytes.
 
-        :param: order: The order to serialize.
+        :param order: The order to serialize.
         :return: The serialized order.
         """
         return msgpack.packb({
@@ -210,9 +210,9 @@ class MsgPackOrderSerializer(OrderSerializer):
         """
         Deserialize the given Message Pack specification bytes to an Order.
 
-        :param: order_bytes: The bytes to deserialize.
+        :param order_bytes: The bytes to deserialize.
         :return: The deserialized order.
-        :raises: ValueError: If the event_bytes is empty.
+        :raises ValueError: If the event_bytes is empty.
         """
         Precondition.not_empty(order_bytes, 'order_bytes')
 
@@ -294,10 +294,10 @@ class MsgPackCommandSerializer(CommandSerializer):
         """
         Deserialize the given Message Pack specification bytes to a command.
 
-        :param: command: The command to deserialize.
+        :param command_bytes: The command to deserialize.
         :return: The deserialized command.
-        :raises: ValueError: If the command_bytes is empty.
-        :raises: ValueError: If the command cannot be deserialized.
+        :raises ValueError: If the command_bytes is empty.
+        :raises ValueError: If the command cannot be deserialized.
         """
         Precondition.not_empty(command_bytes, 'command_bytes')
 
@@ -328,7 +328,7 @@ class MsgPackCommandSerializer(CommandSerializer):
 
         :param order_command: The order command to serialize.
         :return: The serialized order command.
-        :raises: ValueError: If the order command cannot be serialized.
+        :raises ValueError: If the order command cannot be serialized.
         """
         package = {
             COMMAND_TYPE: ORDER_COMMAND,
@@ -366,7 +366,7 @@ class MsgPackCommandSerializer(CommandSerializer):
         :param command_timestamp: The commands timestamp.
         :param unpacked: The commands unpacked dictionary.
         :return: The deserialized order command.
-        :raises: ValueError: If the order command cannot be deserialized.
+        :raises ValueError: If the order command cannot be deserialized.
         """
         order_command = unpacked[ORDER_COMMAND]
         order = MsgPackOrderSerializer.deserialize(bytes.fromhex(unpacked[ORDER]))
@@ -408,7 +408,7 @@ class EventSerializer:
         """
         Serialize the given event to bytes.
 
-        :param: event_bytes: The bytes to deserialize.
+        :param event: The bytes to deserialize.
         :return: The serialized event.
         """
         # Raise exception if not overridden in implementation.
@@ -420,7 +420,7 @@ class EventSerializer:
         """
         Deserialize the given bytes to an event.
 
-        :param: event_bytes: The bytes to deserialize.
+        :param event_bytes: The bytes to deserialize.
         :return: The deserialized event.
         """
         # Raise exception if not overridden in implementation.
@@ -438,7 +438,7 @@ class MsgPackEventSerializer(EventSerializer):
         """
         Serialize the event to Message Pack specification bytes.
 
-        :param: event_bytes: The bytes to serialize.
+        :param event: The bytes to serialize.
         :return: The serialized event.
         :raises: ValueError: If the event cannot be serialized.
         """
@@ -455,8 +455,8 @@ class MsgPackEventSerializer(EventSerializer):
 
         :param event_bytes: The bytes to deserialize.
         :return: The deserialized event.
-        :raises: ValueError: If the event_bytes is empty.
-        :raises: ValueError: If the event cannot be deserialized.
+        :raises ValueError: If the event_bytes is empty.
+        :raises ValueError: If the event cannot be deserialized.
         """
         Precondition.not_empty(event_bytes, 'event_bytes')
 
@@ -498,7 +498,7 @@ class MsgPackEventSerializer(EventSerializer):
 
         :param order_event: The order event to serialize.
         :return: The serialized order event.
-        :raises: ValueError: If the order event cannot be serialized.
+        :raises ValueError: If the order event cannot be serialized.
         """
         package = {
             EVENT_TYPE: ORDER_EVENT,
@@ -597,7 +597,7 @@ class MsgPackEventSerializer(EventSerializer):
         :param event_timestamp: The events timestamp.
         :param unpacked: The events unpacked dictionary.
         :return: The deserialized order event.
-        :raises: ValueError: If the order event cannot be deserialized.
+        :raises ValueError: If the order event cannot be deserialized.
         """
         order_symbol = _parse_symbol(unpacked[SYMBOL])
         order_id = unpacked[ORDER_ID]

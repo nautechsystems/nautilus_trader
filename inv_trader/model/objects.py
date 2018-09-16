@@ -116,10 +116,10 @@ class Tick:
         """
         Initializes a new instance of the Tick class.
 
-        :param: symbol: The tick symbol.
-        :param: bid: The tick best bid price.
-        :param: ask: The tick best ask price.
-        :param: timestamp: The tick timestamp (UTC).
+        :param symbol: The tick symbol.
+        :param bid: The tick best bid price.
+        :param ask: The tick best ask price.
+        :param timestamp: The tick timestamp (UTC).
         """
         Precondition.positive(bid, 'bid')
         Precondition.positive(ask, 'ask')

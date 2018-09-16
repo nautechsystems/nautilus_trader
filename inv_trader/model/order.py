@@ -49,17 +49,16 @@ class Order:
         """
         Initializes a new instance of the Order class.
 
-        :param: symbol: The orders symbol.
-        :param: order_id: The orders identifier.
-        :param: label: The orders label.
-        :param: order_side: The orders side.
-        :param: order_type: The orders type.
-        :param: quantity: The orders quantity (> 0).
-        :param: timestamp: The orders initialization timestamp.
-        :param: price: The orders price (can be None for market orders > 0).
-        :param: decimals: The decimal precision for the orders price (>= 0).
-        :param: time_in_force: The orders time in force (optional can be None).
-        :param: expire_time: The orders expire time (optional can be None).
+        :param symbol: The orders symbol.
+        :param order_id: The orders identifier.
+        :param label: The orders label.
+        :param order_side: The orders side.
+        :param order_type: The orders type.
+        :param quantity: The orders quantity (> 0).
+        :param timestamp: The orders initialization timestamp.
+        :param price: The orders price (can be None for market orders > 0).
+        :param time_in_force: The orders time in force (optional can be None).
+        :param expire_time: The orders expire time (optional can be None).
         """
         if time_in_force is None:
             time_in_force = TimeInForce.DAY
