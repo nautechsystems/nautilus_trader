@@ -40,8 +40,8 @@ class LiveDataClient:
         :param host: The redis host IP address (default=127.0.0.1).
         :param port: The redis host port (default=6379).
         :param logger: The logging adapter for the component.
-        :raises ValueError: If the host is an invalid string.
-        :raises ValueError: If the port is out of range [0, 65535]
+        :raises ValueError: If the host is not a valid string.
+        :raises ValueError: If the port is not in range [0, 65535]
         """
         Precondition.valid_string(host, 'host')
         Precondition.in_range(port, 'port', 0, 65535)
@@ -148,6 +148,7 @@ class LiveDataClient:
         :param symbol: The symbol for subscription.
         :param venue: The venue for subscription.
         :param handler: The callable handler for subscription (if None will just call print).
+        :raises ValueError: If the symbol is not a valid string.
         """
         Precondition.valid_string(symbol, 'symbol')
 
@@ -178,6 +179,7 @@ class LiveDataClient:
 
         :param symbol: The symbol to unsubscribe from.
         :param venue: The venue to unsubscribe from.
+        :raises ValueError: If the symbol is not a valid string.
         """
         Precondition.valid_string(symbol, 'symbol')
 
@@ -210,6 +212,8 @@ class LiveDataClient:
         :param resolution: The bar resolution for subscription.
         :param quote_type: The bar quote type for subscription.
         :param handler: The callable handler for subscription (if None will just call print).
+        :raises ValueError: If the symbol is not a valid string.
+        :raises ValueError: If the period is not positive (> 0).
         """
         Precondition.valid_string(symbol, 'symbol')
         Precondition.positive(period, 'period')
@@ -252,6 +256,8 @@ class LiveDataClient:
         :param period: The bar period to unsubscribe from (> 0).
         :param resolution: The bar resolution to unsubscribe from.
         :param quote_type: The bar quote type to unsubscribe from.
+        :raises ValueError: If the symbol is not a valid string.
+        :raises ValueError: If the period is not positive (> 0).
         """
         Precondition.valid_string(symbol, 'symbol')
         Precondition.positive(period, 'period')
@@ -288,7 +294,7 @@ class LiveDataClient:
         if strategy_bar_handler not in self._bar_handlers:
             self._bar_handlers.append(strategy_bar_handler)
 
-        self._log.info(f"Registered strategy {strategy} with the live data client.")
+        self._log.info(f"Registered strategy {strategy} with the data client.")
 
     @staticmethod
     def _parse_tick(

@@ -213,6 +213,7 @@ class MsgPackOrderSerializer(OrderSerializer):
 
         :param: order_bytes: The bytes to deserialize.
         :return: The deserialized order.
+        :raises: ValueError: If the event_bytes is empty.
         """
         Precondition.not_empty(order_bytes, 'order_bytes')
 
@@ -296,6 +297,7 @@ class MsgPackCommandSerializer(CommandSerializer):
 
         :param: command: The command to deserialize.
         :return: The deserialized command.
+        :raises: ValueError: If the command_bytes is empty.
         :raises: ValueError: If the command cannot be deserialized.
         """
         Precondition.not_empty(command_bytes, 'command_bytes')
@@ -454,6 +456,7 @@ class MsgPackEventSerializer(EventSerializer):
 
         :param event_bytes: The bytes to deserialize.
         :return: The deserialized event.
+        :raises: ValueError: If the event_bytes is empty.
         :raises: ValueError: If the event cannot be deserialized.
         """
         Precondition.not_empty(event_bytes, 'event_bytes')

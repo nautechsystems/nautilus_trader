@@ -9,7 +9,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import abc
-import time
 import uuid
 import zmq
 
@@ -196,9 +195,9 @@ class LiveExecClient(ExecutionClient):
         :param command_serializer: The command serializer for the client.
         :param event_serializer: The event serializer for the client.
         :param logger: The logger for the component (can be None).
-        :raises ValueError: If the host is an invalid string.
-        :raises ValueError: If the commands_port is out of range [0, 65535]
-        :raises ValueError: If the events_port is out of range [0, 65535]
+        :raises ValueError: If the host is not a valid string.
+        :raises ValueError: If the commands_port is not in range [0, 65535]
+        :raises ValueError: If the events_port is not in range [0, 65535]
         """
         Precondition.valid_string(host, 'host')
         Precondition.in_range(commands_port, 'commands_port', 0, 65535)
@@ -278,7 +277,7 @@ class LiveExecClient(ExecutionClient):
 
         :param: order: The order identifier to cancel.
         :param: cancel_reason: The reason for cancellation (will be logged).
-        :raises ValueError: If the cancel_reason is an invalid string.
+        :raises ValueError: If the cancel_reason is not a valid string.
         """
         Precondition.valid_string(cancel_reason, 'cancel_reason')
 
