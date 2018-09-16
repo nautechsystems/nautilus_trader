@@ -449,6 +449,8 @@ class TradeStrategy:
         strategy is running, on_event() is passed the TimeEvent containing the
         alerts unique label.
 
+        Note: The timer thread will begin immediately.
+
         :param label: The label for the alert (must be unique).
         :param alert_time: The time for the alert.
         :raises ValueError: If the label is not a valid string.
@@ -501,6 +503,8 @@ class TradeStrategy:
         TimeEvent containing the timers unique label.
 
         Optionally the timer can be run repeatedly whilst the strategy is running.
+
+        Note: The timer thread will begin immediately.
 
         :param label: The label for the timer (must be unique).
         :param interval: The time delta interval for the timer.
