@@ -752,7 +752,7 @@ class TradeStrategy:
             if order_id in self._order_book:
                 self._order_book[order_id].apply(event)
             else:
-                self._log.warning("The event order id not found in the order book.")
+                self._log.warning("The events order id was not found in the order book.")
 
             # Position events.
             if isinstance(event, OrderFilled) or isinstance(event, OrderPartiallyFilled):
@@ -780,7 +780,8 @@ class TradeStrategy:
                         else:
                             self._log.info(f"Modified {self._position_book[position_id]}")
                 else:
-                    self._log.warning("The event order id not found in the order position index.")
+                    self._log.warning(
+                        "The events order id was not found in the order position index.")
 
         # Account Events.
         elif isinstance(event, AccountEvent):
@@ -795,7 +796,7 @@ class TradeStrategy:
             label: str,
             alert_time: datetime):
         """
-        Create a new time event and pass it into the _update_events() method.
+        Create a new TimeEvent and pass it into the _update_events() method.
         """
         self._log.debug(f"Raising time event for {label}.")
         self._update_events(TimeEvent(label, uuid.uuid4(), alert_time))
@@ -808,7 +809,7 @@ class TradeStrategy:
             interval: timedelta,
             stop_time: datetime):
         """
-        Create a new time event and pass it into the _update_events() method.
+        Create a new TimeEvent and pass it into the _update_events() method.
         Then start a timer for the next time event.
         """
         self._update_events(TimeEvent(label, uuid.uuid4(), alert_time))
