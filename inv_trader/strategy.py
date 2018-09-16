@@ -16,7 +16,6 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Callable, Deque, Dict, List
 from threading import Timer
-from sched import scheduler
 from uuid import UUID
 
 from inv_trader.core.precondition import Precondition
@@ -78,7 +77,7 @@ class TradeStrategy:
         else:
             self._log = LoggingAdapter(f"{self._name}-{self._label}", logger)
         self._is_running = False
-        self._scheduler = scheduler()
+        self._timers = {}                # type: Dict[Label, Timer]
         self._ticks = {}                 # type: Dict[Symbol, Tick]
         self._bars = {}                  # type: Dict[BarType, Deque[Bar]]
         self._indicators = {}            # type: Dict[BarType, List[Indicator]]
@@ -87,7 +86,7 @@ class TradeStrategy:
         self._order_book = {}            # type: Dict[OrderId, Order]
         self._order_position_index = {}  # type: Dict[OrderId, PositionId]
         self._position_book = {}         # type: Dict[PositionId, Position or None]
-        self._account = None  # Initialized with registered with execution client.
+        self._account = None  # Initialized when registered with execution client.
         self._exec_client = None
 
         self._log.info(f"Initialized.")
@@ -266,7 +265,6 @@ class TradeStrategy:
         self._log.info(f"Starting...")
         self._is_running = True
         self.on_start()
-        self._scheduler.run()
         self._log.info(f"Running...")
 
     def stop(self):
@@ -436,67 +434,90 @@ class TradeStrategy:
     def set_time_alert(
             self,
             label: str,
-            alert_time: datetime,
-            priority: int=1):
+            alert_time: datetime):
         """
         Set a time alert for the given time. When the time is reached and the
         strategy is running, on_event() is passed the TimeEvent containing the
         alerts unique label.
 
-        A priority can be set in the case that time events occur simultaneously,
-        the events will be raised in the order of priority with the lower the
-        number the higher the priority.
-
-        :param label: The unique label for the alert.
+        :param label: The label for the alert (must be unique).
         :param alert_time: The time for the alert.
-        :param priority: The priority for the alert (lower numbers are higher priority).
         :raises: ValueError: If the label is an invalid string.
+        :raises: KeyError: If the label is not unique.
         :raises: ValueError: If the alert_time is not greater than the current time (UTC).
         :raises: ValueError: If the priority is negative (< 0).
         """
         Precondition.valid_string(label, 'label')
         Precondition.true(alert_time > datetime.utcnow(), 'alert_time > datetime.utcnow()')
-        Precondition.not_negative(priority, 'priority')
 
-        self._scheduler.enterabs(
-            time=(alert_time - datetime.utcnow()).total_seconds(),
-            priority=priority,
-            action=self._raise_time_event,
-            argument=(label, alert_time))
+        if label in self._timers:
+            raise KeyError("The time alert label must be unique for this strategy.")
+
+        timer = Timer(
+            interval=(alert_time - datetime.utcnow()).total_seconds(),
+            function=self._raise_time_event,
+            args=[label, alert_time])
+
+        timer.start()
+        self._timers[label] = timer
+        self._log.info(f"Set time alert for {label} at {alert_time}.")
+
+    def cancel_time_alert(self, label):
+        """
+        Cancel the time alert corresponding to the given unique label.
+
+        :param label: The label for the alert to cancel.
+        :raises: ValueError: If the label is an invalid string.
+        :raises: KeyError: If the label is not found in the internal time events.
+        """
+        Precondition.valid_string(label, 'label')
+
+        if label not in self._timers:
+            raise KeyError(f"Cannot cancel time alert for {label} (The label was not found).")
+
+        self._timers[label].cancel()
+        self._log.info(f"Cancelled time alert for {label}.")
 
     def set_timer(
             self,
             label: str,
-            start_time: datetime,
             interval: timedelta,
-            priority: int=1,
+            start_time: datetime,
+            stop_time: datetime or None=None,
             repeat: bool=False):
         """
         Set a timer with the given interval (time delta). The timer will run once
         the strategy is started and the start time is reached. When the interval
-        is reached on_event() is passed the TimeEvent containing the timers
-        unique label.
-
-        A priority can be set in the case that time events occur simultaneously,
-        the events will be raised in the order of priority with the lower the
-        number the higher the priority (not applicable to repeating timers).
+        is reached and the strategy is running, then on_event() is passed the
+        TimeEvent containing the timers unique label.
 
         Optionally the timer can be run repeatedly whilst the strategy is running.
 
-        :param label: The unique label for the timer.
-        :param start_time: The time the timer should start at.
+        :param label: The label for the timer (must be unique).
         :param interval: The time delta interval for the timer.
-        :param priority: The priority for the alert (lower numbers are higher priority,
+        :param start_time: The time the timer should start at.
+        :param stop_time: The time the timer should stop at (can be None).
         not applicable to repeating timers).
         :param repeat: The option for the timer to repeat until the strategy is stopped
         (no priority).
         :raises: ValueError: If the label is an invalid string.
-        :raises: ValueError: If the alert_time is not greater than the current time (UTC).
-        :raises: ValueError: If the priority is negative (< 0).
+        :raises: KeyError: If the label is not unique.
+        :raises: ValueError: If the start_time is not greater than the current time (UTC).
+        :raises: ValueError: If the stop_time is not None and repeat is False.
+        :raises: ValueError: If the stop_time is not None and not greater than the start_time.
+        :raises: ValueError: If the stop_time is not None and start_time plus interval is greater
+        than the stop_time.
         """
         Precondition.valid_string(label, 'label')
         Precondition.true(start_time > datetime.utcnow(), 'start_time > datetime.utcnow()')
-        Precondition.not_negative(priority, 'priority')
+        if stop_time is not None:
+            Precondition.true(repeat, 'repeat True')
+            Precondition.true(stop_time > start_time, 'stop_time > start_time')
+            Precondition.true(start_time + interval <= stop_time,
+                              'start_time + interval <= stop_time')
+
+        if label in self._timers:
+            raise ValueError("The timer label must be unique for this strategy.")
 
         alert_time = start_time + interval
         delay = (alert_time - datetime.utcnow()).total_seconds()
@@ -504,14 +525,34 @@ class TradeStrategy:
             timer = Timer(
                 interval=delay,
                 function=self._repeating_timer,
-                args=[label, alert_time, interval])
-            timer.start()
+                args=[label, alert_time, interval, stop_time])
         else:
-            self._scheduler.enterabs(
-                time=delay,
-                priority=priority,
-                action=self._raise_time_event,
-                argument=(label, alert_time))
+            timer = Timer(
+                interval=delay,
+                function=self._raise_time_event,
+                args=[label, alert_time])
+
+        timer.start()
+        self._timers[label] = timer
+        self._log.info(
+            (f"Set timer for {label} with interval {interval}, "
+             f"starting at {start_time}, stopping at {stop_time}, repeat={repeat}."))
+
+    def cancel_timer(self, label):
+        """
+        Cancel the timer corresponding to the given unique label.
+
+        :param label: The label for the timer to cancel.
+        :raises: ValueError: If the label is an invalid string.
+        :raises: KeyError: If the label is not found in the internal timers.
+        """
+        Precondition.valid_string(label, 'label')
+
+        if label not in self._timers:
+            raise KeyError(f"Cannot cancel timer for {label} (The label was not found).")
+
+        self._timers[label].cancel()
+        self._log.info(f"Cancelled timer for {label}.")
 
     def generate_order_id(self, symbol: Symbol) -> OrderId:
         """
@@ -741,18 +782,24 @@ class TradeStrategy:
         """
         Create a new time event and pass it into the on_event method.
         """
+        self._log.debug(f"Raising time event for {label}.")
         self._update_events(TimeEvent(label, uuid.uuid4(), alert_time))
 
     def _repeating_timer(
             self,
             label: str,
             alert_time: datetime,
-            interval: timedelta):
+            interval: timedelta,
+            stop_time: datetime):
         """
         Create a new time event and pass it into the on_event method.
         Then start a timer for the next time event.
         """
         self._update_events(TimeEvent(label, uuid.uuid4(), alert_time))
+
+        if stop_time is not None and alert_time + interval >= stop_time:
+            self._log.info(f"Stop time reached for timer {label}.")
+            return
 
         if self._is_running:
             next_alert_time = alert_time + interval
@@ -760,8 +807,10 @@ class TradeStrategy:
             timer = Timer(
                 interval=delay,
                 function=self._repeating_timer,
-                args=[label, alert_time, interval])
+                args=[label, next_alert_time, interval, stop_time])
             timer.start()
+            self._timers[label] = timer
+            self._log.debug(f"Continuing timer for {label}...")
 
 
 # Constants

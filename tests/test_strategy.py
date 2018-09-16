@@ -421,9 +421,28 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Act
         strategy.start()
+        time.sleep(0.8)
 
         # Assert
+        self.assertEqual(2, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store[1], TimeEvent))
+
+    def test_can_cancel_time_alert(self):
+        # Arrange
+        strategy = TestStrategy1()
+        exec_client = MockExecClient()
+        exec_client.register_strategy(strategy)
+
+        alert_time = datetime.utcnow() + timedelta(seconds=1)
+        strategy.set_time_alert("test_alert1", alert_time)
+
+        # Act
+        strategy.start()
+        time.sleep(0.5)
+        strategy.cancel_time_alert("test_alert1")
+
+        # Assert
+        self.assertEqual(1, strategy.object_storer.count)
 
     def test_can_set_multiple_time_alerts(self):
         # Arrange
@@ -438,27 +457,11 @@ class TradeStrategyTests(unittest.TestCase):
         strategy.set_time_alert("test_alert1", alert_time1)
         strategy.set_time_alert("test_alert2", alert_time2)
         strategy.start()
+        time.sleep(0.5)
 
         # Assert
         self.assertTrue(isinstance(strategy.object_storer.get_store[1], TimeEvent))
         self.assertTrue(isinstance(strategy.object_storer.get_store[2], TimeEvent))
-
-    def test_can_set_multiple_time_alerts_with_priorities(self):
-        # Arrange
-        strategy = TestStrategy1()
-        exec_client = MockExecClient()
-        exec_client.register_strategy(strategy)
-
-        alert_time = datetime.utcnow() + timedelta(milliseconds=200)
-        strategy.set_time_alert("test_alert1", alert_time)
-        strategy.set_time_alert("test_alert2", alert_time, 0)
-
-        # Act
-        strategy.start()
-
-        # Assert
-        self.assertEqual(strategy.object_storer.get_store[1].label, "test_alert2")
-        self.assertEqual(strategy.object_storer.get_store[2].label, "test_alert1")
 
     def test_can_set_timer(self):
         # Arrange
@@ -467,13 +470,32 @@ class TradeStrategyTests(unittest.TestCase):
         exec_client.register_strategy(strategy)
 
         start_time = datetime.utcnow() + timedelta(milliseconds=100)
-        strategy.set_timer("test_timer1", start_time, timedelta(milliseconds=100))
+        strategy.set_timer("test_timer1", timedelta(milliseconds=100), start_time)
 
         # Act
         strategy.start()
+        time.sleep(0.5)
 
         # Assert
         self.assertTrue(isinstance(strategy.object_storer.get_store[1], TimeEvent))
+
+    def test_can_cancel_timer(self):
+        # Arrange
+        strategy = TestStrategy1()
+        exec_client = MockExecClient()
+        exec_client.register_strategy(strategy)
+
+        start_time = datetime.utcnow() + timedelta(milliseconds=100)
+        strategy.set_timer("test_timer1", timedelta(milliseconds=100), start_time)
+
+        # Act
+        strategy.start()
+        time.sleep(0.1)
+        strategy.cancel_timer("test_timer1")
+        time.sleep(0.5)
+
+        # Assert
+        self.assertEqual(1, strategy.object_storer.count)
 
     def test_can_set_repeating_timer(self):
         # Arrange
@@ -482,7 +504,7 @@ class TradeStrategyTests(unittest.TestCase):
         exec_client.register_strategy(strategy)
 
         start_time = datetime.utcnow() + timedelta(milliseconds=100)
-        strategy.set_timer("test_timer1", start_time, timedelta(milliseconds=100), repeat=True)
+        strategy.set_timer("test_timer1", timedelta(milliseconds=100), start_time, None, repeat=True)
 
         # Act
         strategy.start()
@@ -494,6 +516,24 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertTrue(isinstance(strategy.object_storer.get_store[2], TimeEvent))
         self.assertTrue(isinstance(strategy.object_storer.get_store[3], TimeEvent))
 
+    def test_can_cancel_repeating_timer(self):
+        # Arrange
+        strategy = TestStrategy1()
+        exec_client = MockExecClient()
+        exec_client.register_strategy(strategy)
+
+        start_time = datetime.utcnow() + timedelta(milliseconds=100)
+        stop_time = start_time + timedelta(seconds=1)
+        strategy.set_timer("test_timer1", timedelta(milliseconds=100), start_time, stop_time, repeat=True)
+
+        # Act
+        strategy.start()
+        time.sleep(0.5)
+        strategy.cancel_timer("test_timer1")
+
+        # Assert
+        self.assertEqual(5, strategy.object_storer.count)
+
     def test_can_set_two_repeating_timers(self):
         # Arrange
         strategy = TestStrategy1()
@@ -501,8 +541,8 @@ class TradeStrategyTests(unittest.TestCase):
         exec_client.register_strategy(strategy)
 
         start_time = datetime.utcnow() + timedelta(milliseconds=100)
-        strategy.set_timer("test_timer1", start_time, timedelta(milliseconds=100), repeat=True)
-        strategy.set_timer("test_timer2", start_time, timedelta(milliseconds=100), priority=0, repeat=True)
+        strategy.set_timer("test_timer1", timedelta(milliseconds=100), start_time, repeat=True)
+        strategy.set_timer("test_timer2", timedelta(milliseconds=100), start_time, repeat=True)
 
         # Act
         strategy.start()
