@@ -70,9 +70,12 @@ class ExecutionClient:
     def register_strategy(self, strategy: TradeStrategy):
         """
         Register the given strategy with the execution client.
+
+        :raises ValueError: If the strategy is already registered (must have a unique UUID id).
         """
         if strategy.id in self._registered_strategies.keys():
-            raise ValueError("The strategy must have a unique name and label.")
+            raise ValueError(
+                "Cannot register strategy (The strategy must have a unique UUID id).")
 
         self._registered_strategies[strategy.id] = strategy._update_events
         strategy._register_execution_client(self)
@@ -173,8 +176,7 @@ class ExecutionClient:
 
 class LiveExecClient(ExecutionClient):
     """
-    Provides a live execution client for trading strategies utilizing an AMQP
-    (Advanced Message Queue Protocol) 0-9-1 message broker.
+    Provides a client for the execution service utilizing a ZMQ transport.
     """
 
     def __init__(
@@ -187,8 +189,6 @@ class LiveExecClient(ExecutionClient):
             logger: Logger=None):
         """
         Initializes a new instance of the LiveExecClient class.
-        The host and port parameters are for the order event subscription
-        channel.
 
         :param host: The execution service host IP address (default=127.0.0.1).
         :param commands_port: The execution service commands port.
@@ -196,6 +196,9 @@ class LiveExecClient(ExecutionClient):
         :param command_serializer: The command serializer for the client.
         :param event_serializer: The event serializer for the client.
         :param logger: The logger for the component (can be None).
+        :raises ValueError: If the host is an invalid string.
+        :raises ValueError: If the commands_port is out of range [0, 65535]
+        :raises ValueError: If the events_port is out of range [0, 65535]
         """
         Precondition.valid_string(host, 'host')
         Precondition.in_range(commands_port, 'commands_port', 0, 65535)
@@ -275,6 +278,7 @@ class LiveExecClient(ExecutionClient):
 
         :param: order: The order identifier to cancel.
         :param: cancel_reason: The reason for cancellation (will be logged).
+        :raises ValueError: If the cancel_reason is an invalid string.
         """
         Precondition.valid_string(cancel_reason, 'cancel_reason')
 
@@ -297,6 +301,7 @@ class LiveExecClient(ExecutionClient):
 
         :param order: The order identifier to modify.
         :param new_price: The new modified price for the order.
+        :raises ValueError: If the new_price is not positive.
         """
         Precondition.positive(new_price, 'new_price')
 
@@ -342,4 +347,4 @@ class LiveExecClient(ExecutionClient):
         :param body: The order command acknowledgement message body.
         """
         command = self._command_serializer.deserialize(body)
-        self._log.debug(f"Received order command ack for command_id {command.command_id}.")
+        self._log.debug(f"Received order command ack for command_id {command.id}.")

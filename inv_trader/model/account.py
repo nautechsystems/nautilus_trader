@@ -118,7 +118,7 @@ class Account:
 
         self._initialized = True
         self._events.append(event)
-        self._last_updated = event.event_timestamp
+        self._last_updated = event.timestamp
 
     def _calculate_free_equity(self) -> Decimal:
         margin_used = self._margin_used_maintenance + self._margin_used_liquidation

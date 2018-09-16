@@ -13,7 +13,7 @@ import time
 
 from decimal import Decimal
 from redis import StrictRedis, ConnectionError
-from typing import List, Dict
+from typing import List, Dict, Callable
 
 from inv_trader.core.precondition import Precondition
 from inv_trader.core.logger import Logger, LoggingAdapter
@@ -40,9 +40,11 @@ class LiveDataClient:
         :param host: The redis host IP address (default=127.0.0.1).
         :param port: The redis host port (default=6379).
         :param logger: The logging adapter for the component.
+        :raises ValueError: If the host is an invalid string.
+        :raises ValueError: If the port is out of range [0, 65535]
         """
         Precondition.valid_string(host, 'host')
-        Precondition.in_range(port, 'port', 0, 99999)
+        Precondition.in_range(port, 'port', 0, 65535)
 
         self._host = host
         self._port = port
@@ -50,7 +52,7 @@ class LiveDataClient:
             self._log = LoggingAdapter(f"DataClient")
         else:
             self._log = LoggingAdapter(f"DataClient", logger)
-        self._client = None
+        self._redis_client = None
         self._pubsub = None
         self._pubsub_thread = None
         self._subscriptions_ticks = []
@@ -65,11 +67,11 @@ class LiveDataClient:
         """
         :return: True if the client is connected, otherwise false.
         """
-        if self._client is None:
+        if self._redis_client is None:
             return False
 
         try:
-            self._client.ping()
+            self._redis_client.ping()
         except ConnectionError:
             return False
 
@@ -80,7 +82,7 @@ class LiveDataClient:
         """
         :return: All subscribed channels from the pub/sub server.
         """
-        return [channel.decode(UTF8) for channel in self._client.pubsub_channels()]
+        return [channel.decode(UTF8) for channel in self._redis_client.pubsub_channels()]
 
     @property
     def subscriptions_ticks(self) -> List[str]:
@@ -100,11 +102,10 @@ class LiveDataClient:
         """
         Connect to the live database and create a pub/sub server.
         """
-        self._client = StrictRedis(host=self._host,
-                                   port=self._port,
-                                   db=0)
-        self._pubsub = self._client.pubsub()
-
+        self._redis_client = StrictRedis(host=self._host,
+                                         port=self._port,
+                                         db=0)
+        self._pubsub = self._redis_client.pubsub()
         self._log.info(f"Connected to the data service at {self._host}:{self._port}.")
 
     def disconnect(self):
@@ -116,19 +117,19 @@ class LiveDataClient:
 
         if self._pubsub_thread is not None:
             self._pubsub_thread.stop()
-            time.sleep(0.100)  # Allows thread to stop.
+            time.sleep(0.1)  # Allows thread to stop.
             self._log.debug(f"Stopped PubSub thread {self._pubsub_thread}.")
 
         self._log.info(f"Unsubscribed from tick data {self._subscriptions_ticks}.")
         self._log.info(f"Unsubscribed from bar data {self._subscriptions_bars}.")
 
-        if self._client is not None:
-            self._client.connection_pool.disconnect()
+        if self._redis_client is not None:
+            self._redis_client.connection_pool.disconnect()
             self._log.info(f"Disconnected from live database at {self._host}:{self._port}.")
         else:
             self._log.info("Disconnected (the client was already disconnected).")
 
-        self._client = None
+        self._redis_client = None
         self._pubsub = None
         self._pubsub_thread = None
         self._subscriptions_ticks = []
@@ -140,7 +141,7 @@ class LiveDataClient:
             self,
             symbol: str,
             venue: Venue,
-            handler: callable=None):
+            handler: Callable=None):
         """
         Subscribe to live tick data for the given symbol and venue.
 
@@ -199,7 +200,7 @@ class LiveDataClient:
             period: int,
             resolution: Resolution,
             quote_type: QuoteType,
-            handler: callable=None):
+            handler: Callable=None):
         """
         Subscribe to live bar data for the given bar parameters.
 
@@ -278,8 +279,6 @@ class LiveDataClient:
         live data client.
 
         :param strategy: The strategy inheriting from TradeStrategy.
-        :raises: ValueError: If the strategy is None.
-        :raises: TypeError: If the strategy is not a type of TradeStrategy.
         """
         strategy_tick_handler = strategy._update_ticks
         if strategy_tick_handler not in self._tick_handlers:
@@ -300,7 +299,7 @@ class LiveDataClient:
 
         :param tick_string: The channel the tick was received on.
         :param tick_string: The tick string.
-        :return: The parsed tick object.
+        :return: The parsed Tick object.
         """
         split_channel = tick_channel.split('.')
         split_tick = tick_string.split(',')
@@ -316,7 +315,7 @@ class LiveDataClient:
         Parse a BarType object from the given UTF-8 string.
 
         :param bar_type_string: The bar type string to parse.
-        :return: The parsed bar type object.
+        :return: The parsed Bar object.
         """
         split_string = re.split(r'[.-]+', bar_type_string)
         resolution = split_string[3].split('[')[0]
@@ -370,9 +369,10 @@ class LiveDataClient:
         """
         Check the connection with the live database.
 
+        :raises: ConnectionError if the client is None.
         :raises: ConnectionError if the client is not connected.
         """
-        if self._client is None:
+        if self._redis_client is None:
             raise ConnectionError(("No connection has been established to the live database "
                                    "(please connect first)."))
         if not self.is_connected:

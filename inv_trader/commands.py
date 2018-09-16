@@ -37,14 +37,14 @@ class Command:
         self._command_timestamp = timestamp
 
     @property
-    def command_id(self) -> UUID:
+    def id(self) -> UUID:
         """
         :return: The commands identifier.
         """
         return self._command_id
 
     @property
-    def command_timestamp(self) -> datetime:
+    def timestamp(self) -> datetime:
         """
         :return: The commands timestamp (the time the command was created).
         """
@@ -55,7 +55,7 @@ class Command:
         Override the default equality comparison.
         """
         if isinstance(other, self.__class__):
-            return self.command_id == other.command_id
+            return self.id == other.id
         else:
             return False
 

@@ -272,10 +272,10 @@ class TradeStrategy:
         Stops the trade strategy and calls the on_stop() method.
         """
         self._log.info(f"Stopping...")
+        self._is_running = False
         for timer in self._timers.values():
             timer.cancel()
         self.on_stop()
-        self._is_running = False
         self._log.info(f"Stopped.")
 
     def reset(self):
