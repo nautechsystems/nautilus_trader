@@ -230,21 +230,21 @@ class TradeStrategy:
     @property
     def ticks(self) -> Dict[Symbol, Tick]:
         """
-        :return: The internally held ticks dictionary for the strategy
+        :return: The ticks dictionary for the strategy
         """
         return self._ticks
 
     @property
     def orders(self) -> Dict[OrderId, Order]:
         """
-        :return: The entire order book for the strategy
+        :return: The order book for the strategy
         """
         return self._order_book
 
     @property
     def positions(self) -> Dict[PositionId, Position]:
         """
-        :return: The entire position book for the strategy.
+        :return: The position book for the strategy.
         """
         return self._position_book
 
@@ -320,6 +320,7 @@ class TradeStrategy:
 
         :param: label: The unique label for the indicator.
         :return: The internally held indicator for the given unique label.
+        :raises ValueError: If the label is not a valid string.
         :raises: KeyError: If the strategies indicator dictionary does not contain the given label.
         """
         Precondition.valid_string(label, 'label')
