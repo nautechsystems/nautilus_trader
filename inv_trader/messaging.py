@@ -46,6 +46,9 @@ class MQWorker(Thread):
         :param port: The service port.
         :param handler: The response handler.
         :param logger: The logging adapter for the component.
+        :raises ValueError: If the name is not a valid string.
+        :raises ValueError: If the host is not a valid string.
+        :raises ValueError: If the port is not in range [0, 65535]
         """
         Precondition.valid_string(name, 'name')
         Precondition.valid_string(host, 'host')
@@ -133,6 +136,9 @@ class RequestWorker(MQWorker):
         :param port: The service port.
         :param handler: The response handler.
         :param logger: The logging adapter for the component.
+        :raises ValueError: If the name is not a valid string.
+        :raises ValueError: If the host is not a valid string.
+        :raises ValueError: If the port is not in range [0, 65535]
         """
         Precondition.valid_string(name, 'name')
         Precondition.valid_string(host, 'host')
@@ -185,6 +191,10 @@ class SubscriberWorker(MQWorker):
         :param topic: The topic to subscribe to.
         :param handler: The message handler.
         :param logger: The logging adapter for the component.
+        :raises ValueError: If the name is not a valid string.
+        :raises ValueError: If the host is not a valid string.
+        :raises ValueError: If the port is not in range [0, 65535]
+        :raises ValueError: If the topic is not a valid string.
         """
         Precondition.valid_string(name, 'name')
         Precondition.valid_string(host, 'host')

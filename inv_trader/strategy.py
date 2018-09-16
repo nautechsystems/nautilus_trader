@@ -55,8 +55,8 @@ class TradeStrategy:
         :param: order_id_tag: The unique order identifier tag for the strategy (can be None).
         :param: bar_capacity: The capacity for the internal bar deque(s).
         :param: logger: The logger (can be None, and will print).
-        :raises: ValueError: If the label is an invalid string.
-        :raises: ValueError: If the order_id_tag is an invalid string.
+        :raises: ValueError: If the label is not a valid string.
+        :raises: ValueError: If the order_id_tag is not a valid string.
         :raises: ValueError: If the bar_capacity is not positive (> 0).
         """
         if label is None:
@@ -420,7 +420,7 @@ class TradeStrategy:
         :param indicator: The indicator to set.
         :param update_method: The update method for the indicator.
         :param label: The unique label for this indicator.
-        :raises: ValueError: If the label is an invalid string.
+        :raises: ValueError: If the label is not a valid string.
         :raises: KeyError: If the given indicator label is not unique for this strategy.
         """
         Precondition.valid_string(label, 'label')
@@ -449,7 +449,7 @@ class TradeStrategy:
 
         :param label: The label for the alert (must be unique).
         :param alert_time: The time for the alert.
-        :raises: ValueError: If the label is an invalid string.
+        :raises: ValueError: If the label is not a valid string.
         :raises: KeyError: If the label is not unique for this strategy.
         :raises: ValueError: If the alert_time is not > than the current time (UTC).
         """
@@ -473,7 +473,7 @@ class TradeStrategy:
         Cancel the time alert corresponding to the given label.
 
         :param label: The label for the alert to cancel.
-        :raises: ValueError: If the label is an invalid string.
+        :raises: ValueError: If the label is not a valid string.
         :raises: KeyError: If the label is not found in the internal timers.
         """
         Precondition.valid_string(label, 'label')
@@ -505,7 +505,7 @@ class TradeStrategy:
         :param start_time: The start time for the timer (can be None, starts immediately).
         :param stop_time: The stop time for the timer (can be None).
         :param repeat: The option for the timer to repeat until the strategy is stopped
-        :raises: ValueError: If the label is an invalid string.
+        :raises: ValueError: If the label is not a valid string.
         :raises: KeyError: If the label is not unique.
         :raises: ValueError: If the start_time is not None and not >= the current time (UTC).
         :raises: ValueError: If the stop_time is not None and repeat is False.
@@ -551,7 +551,7 @@ class TradeStrategy:
         Cancel the timer corresponding to the given unique label.
 
         :param label: The label for the timer to cancel.
-        :raises: ValueError: If the label is an invalid string.
+        :raises: ValueError: If the label is not a valid string.
         :raises: KeyError: If the label is not found in the internal timers.
         """
         Precondition.valid_string(label, 'label')
@@ -605,7 +605,7 @@ class TradeStrategy:
 
         :param order: The order to submit.
         :param position_id: The position id to associate with this order.
-        :raises: ValueError: If the position_id is an invalid string.
+        :raises: ValueError: If the position_id is not a valid string.
         :raises: KeyError: If the order_id is already contained in the order book (must be unique).
         """
         Precondition.valid_string(position_id, 'position_id')
@@ -629,7 +629,7 @@ class TradeStrategy:
 
         :param order: The order to cancel.
         :param cancel_reason: The reason for cancellation (will be logged).
-        :raises: ValueError: If the cancel_reason is an invalid string.
+        :raises: ValueError: If the cancel_reason is not a valid string.
         :raises: KeyError: If the order_id was not found in the order book.
         """
         Precondition.valid_string(cancel_reason, 'cancel_reason')
