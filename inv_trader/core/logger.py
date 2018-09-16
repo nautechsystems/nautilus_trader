@@ -70,7 +70,10 @@ class Logger:
         self._console_print_handler(log_message, logging.DEBUG)
 
         if self._log_to_file:
-            self._logger.debug(log_message)
+            try:
+                self._logger.debug(log_message)
+            except IOError as ex:
+                self._console_print_handler(f"IOError: {ex}.", logging.CRITICAL)
 
     def info(self, message: str):
         """
@@ -84,7 +87,10 @@ class Logger:
         self._console_print_handler(log_message, logging.INFO)
 
         if self._log_to_file:
-            self._logger.info(log_message)
+            try:
+                self._logger.info(log_message)
+            except IOError as ex:
+                self._console_print_handler(f"IOError: {ex}.", logging.CRITICAL)
 
     def warning(self, message: str):
         """
@@ -98,7 +104,10 @@ class Logger:
         self._console_print_handler(log_message, logging.WARNING)
 
         if self._log_to_file:
-            self._logger.warning(log_message)
+            try:
+                self._logger.warning(log_message)
+            except IOError as ex:
+                self._console_print_handler(f"IOError: {ex}.", logging.CRITICAL)
 
     def critical(self, message: str):
         """
@@ -112,7 +121,10 @@ class Logger:
         self._console_print_handler(log_message, logging.CRITICAL)
 
         if self._log_to_file:
-            self._logger.critical(log_message)
+            try:
+                self._logger.critical(log_message)
+            except IOError as ex:
+                self._console_print_handler(f"IOError: {ex}.", logging.CRITICAL)
 
     @staticmethod
     def _format_message(
