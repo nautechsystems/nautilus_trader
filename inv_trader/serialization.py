@@ -278,8 +278,8 @@ class MsgPackCommandSerializer(CommandSerializer):
             return MsgPackCommandSerializer._serialize_order_command(command)
 
         package = {
-            COMMAND_ID: str(command.command_id),
-            COMMAND_TIMESTAMP: _convert_datetime_to_string(command.command_timestamp)
+            COMMAND_ID: str(command.id),
+            COMMAND_TIMESTAMP: _convert_datetime_to_string(command.timestamp)
         }
 
         if isinstance(command, CollateralInquiry):
@@ -332,8 +332,8 @@ class MsgPackCommandSerializer(CommandSerializer):
         package = {
             COMMAND_TYPE: ORDER_COMMAND,
             ORDER: MsgPackOrderSerializer.serialize(order_command.order).hex(),
-            COMMAND_ID: str(order_command.command_id),
-            COMMAND_TIMESTAMP: _convert_datetime_to_string(order_command.command_timestamp)
+            COMMAND_ID: str(order_command.id),
+            COMMAND_TIMESTAMP: _convert_datetime_to_string(order_command.timestamp)
         }
 
         if isinstance(order_command, SubmitOrder):
@@ -502,8 +502,8 @@ class MsgPackEventSerializer(EventSerializer):
             EVENT_TYPE: ORDER_EVENT,
             SYMBOL: str(order_event.symbol),
             ORDER_ID: order_event.order_id,
-            EVENT_ID: str(order_event.event_id),
-            EVENT_TIMESTAMP: _convert_datetime_to_string(order_event.event_timestamp)
+            EVENT_ID: str(order_event.id),
+            EVENT_TIMESTAMP: _convert_datetime_to_string(order_event.timestamp)
         }
 
         if isinstance(order_event, OrderSubmitted):

@@ -40,14 +40,14 @@ class Event:
         self._event_timestamp = timestamp
 
     @property
-    def event_id(self) -> uuid:
+    def id(self) -> uuid:
         """
         :return: The events identifier.
         """
         return self._event_id
 
     @property
-    def event_timestamp(self) -> datetime:
+    def timestamp(self) -> datetime:
         """
         :return: The events timestamp (the time the event was created).
         """
@@ -58,7 +58,7 @@ class Event:
         Override the default equality comparison.
         """
         if isinstance(other, self.__class__):
-            return self.event_id == other.event_id
+            return self.id == other.id
         else:
             return False
 
@@ -72,7 +72,7 @@ class Event:
         """"
         Override the default hash implementation.
         """
-        return hash(self.event_id)
+        return hash(self.id)
 
     def __str__(self) -> str:
         """

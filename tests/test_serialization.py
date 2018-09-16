@@ -569,8 +569,8 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual('StubOrderId', result.order_id)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.submitted_time)
-        self.assertTrue(isinstance(result.event_id, UUID))
-        self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.event_timestamp)
+        self.assertTrue(isinstance(result.id, UUID))
+        self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.timestamp)
 
     def test_can_deserialize_order_accepted_events_from_csharp(self):
         # Arrange
@@ -596,8 +596,8 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual('StubOrderId', result.order_id)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.accepted_time)
-        self.assertTrue(isinstance(result.event_id, UUID))
-        self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.event_timestamp)
+        self.assertTrue(isinstance(result.id, UUID))
+        self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.timestamp)
 
     def test_can_deserialize_order_rejected_events_from_csharp(self):
         # Arrange
@@ -625,8 +625,8 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertEqual('StubOrderId', result.order_id)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.rejected_time)
         self.assertEqual('INVALID_ORDER', result.rejected_reason)
-        self.assertTrue(isinstance(result.event_id, UUID))
-        self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.event_timestamp)
+        self.assertTrue(isinstance(result.id, UUID))
+        self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.timestamp)
 
     def test_can_deserialize_order_working_events_from_csharp(self):
         # Arrange
@@ -663,8 +663,8 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertEqual(Decimal('1'), result.price)
         self.assertEqual(TimeInForce.DAY, result.time_in_force)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.working_time)
-        self.assertTrue(isinstance(result.event_id, UUID))
-        self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.event_timestamp)
+        self.assertTrue(isinstance(result.id, UUID))
+        self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.timestamp)
         self.assertIsNone(result.expire_time)
 
     def test_can_deserialize_order_working_events_with_expire_time_from_csharp(self):
@@ -703,8 +703,8 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertEqual(Decimal('1'), result.price)
         self.assertEqual(TimeInForce.GTD, result.time_in_force)
         self.assertEqual(datetime(1970, 1, 1, 0, 0, 0, 0, pytz.UTC), result.working_time)
-        self.assertTrue(isinstance(result.event_id, UUID))
-        self.assertEqual(datetime(1970, 1, 1, 0, 0, 0, 0, pytz.UTC), result.event_timestamp)
+        self.assertTrue(isinstance(result.id, UUID))
+        self.assertEqual(datetime(1970, 1, 1, 0, 0, 0, 0, pytz.UTC), result.timestamp)
         self.assertEqual(datetime(1970, 1, 1, 0, 1, 0, 0, pytz.UTC), result.expire_time)
 
     def test_can_deserialize_order_cancelled_events_from_csharp(self):
@@ -731,8 +731,8 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual('StubOrderId', result.order_id)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.cancelled_time)
-        self.assertTrue(isinstance(result.event_id, UUID))
-        self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.event_timestamp)
+        self.assertTrue(isinstance(result.id, UUID))
+        self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.timestamp)
 
     def test_can_deserialize_order_cancel_reject_events_from_csharp(self):
         # Arrange
@@ -763,8 +763,8 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertEqual('REJECT_RESPONSE?', result.cancel_reject_response)
         self.assertEqual('ORDER_NOT_FOUND', result.cancel_reject_reason)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.cancel_reject_time)
-        self.assertTrue(isinstance(result.event_id, UUID))
-        self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.event_timestamp)
+        self.assertTrue(isinstance(result.id, UUID))
+        self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.timestamp)
 
     def test_can_deserialize_order_modified_events_from_csharp(self):
         # Arrange
@@ -794,8 +794,8 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertEqual('B123456', result.broker_order_id)
         self.assertEqual(Decimal('2'), result.modified_price)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.modified_time)
-        self.assertTrue(isinstance(result.event_id, UUID))
-        self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.event_timestamp)
+        self.assertTrue(isinstance(result.id, UUID))
+        self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.timestamp)
 
     def test_can_deserialize_order_expired_events_from_csharp(self):
         # Arrange
@@ -821,8 +821,8 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual('StubOrderId', result.order_id)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.expired_time)
-        self.assertTrue(isinstance(result.event_id, UUID))
-        self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.event_timestamp)
+        self.assertTrue(isinstance(result.id, UUID))
+        self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.timestamp)
 
     def test_can_deserialize_order_partially_filled_events_from_csharp(self):
         # Arrange
@@ -859,8 +859,8 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertEqual(50000, result.leaves_quantity)
         self.assertEqual(Decimal('2'), result.average_price)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.execution_time)
-        self.assertTrue(isinstance(result.event_id, UUID))
-        self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.event_timestamp)
+        self.assertTrue(isinstance(result.id, UUID))
+        self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.timestamp)
 
     def test_can_deserialize_order_filled_events_from_csharp(self):
         # Arrange
@@ -896,7 +896,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertEqual(Decimal('2'), result.average_price)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.execution_time)
 
-        self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.event_timestamp)
+        self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.timestamp)
 
     def test_can_deserialize_account_events_from_csharp(self):
         # Arrange
@@ -923,5 +923,5 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
         # Assert - Warnings can be ignored (PyCharm doesn't know the type).
         self.assertTrue(isinstance(result, AccountEvent))
-        self.assertTrue(isinstance(result.event_id, UUID))
-        self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.event_timestamp)
+        self.assertTrue(isinstance(result.id, UUID))
+        self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC), result.timestamp)
