@@ -451,7 +451,7 @@ class TradeStrategy:
         :param alert_time: The time for the alert.
         :raises: ValueError: If the label is an invalid string.
         :raises: KeyError: If the label is not unique for this strategy.
-        :raises: ValueError: If the alert_time is not greater than the current time (UTC).
+        :raises: ValueError: If the alert_time is not > than the current time (UTC).
         """
         Precondition.valid_string(label, 'label')
         Precondition.true(alert_time > datetime.utcnow(), 'alert_time > datetime.utcnow()')
@@ -489,7 +489,7 @@ class TradeStrategy:
             self,
             label: str,
             interval: timedelta,
-            start_time: datetime,
+            start_time: datetime or None=None,
             stop_time: datetime or None=None,
             repeat: bool=False):
         """
@@ -502,19 +502,22 @@ class TradeStrategy:
 
         :param label: The label for the timer (must be unique).
         :param interval: The time delta interval for the timer.
-        :param start_time: The start time for the timer.
+        :param start_time: The start time for the timer (can be None, starts immediately).
         :param stop_time: The stop time for the timer (can be None).
         :param repeat: The option for the timer to repeat until the strategy is stopped
         :raises: ValueError: If the label is an invalid string.
         :raises: KeyError: If the label is not unique.
-        :raises: ValueError: If the start_time is not greater than the current time (UTC).
+        :raises: ValueError: If the start_time is not None and not >= the current time (UTC).
         :raises: ValueError: If the stop_time is not None and repeat is False.
-        :raises: ValueError: If the stop_time is not None and not greater than the start_time.
+        :raises: ValueError: If the stop_time is not None and not > than the start_time.
         :raises: ValueError: If the stop_time is not None and start_time plus interval is greater
         than the stop_time.
         """
         Precondition.valid_string(label, 'label')
-        Precondition.true(start_time > datetime.utcnow(), 'start_time > datetime.utcnow()')
+        if start_time is not None:
+            Precondition.true(start_time >= datetime.utcnow(), 'start_time >= datetime.utcnow()')
+        else:
+            start_time = datetime.utcnow()
         if stop_time is not None:
             Precondition.true(repeat, 'repeat True')
             Precondition.true(stop_time > start_time, 'stop_time > start_time')
