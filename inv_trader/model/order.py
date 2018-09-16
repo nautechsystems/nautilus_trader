@@ -21,7 +21,6 @@ from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected
 from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
 from inv_trader.model.events import OrderPartiallyFilled, OrderFilled
 
-# Constants
 OrderId = str
 # Order types which require prices to be valid.
 PRICED_ORDER_TYPES = [

@@ -17,7 +17,6 @@ from inv_trader.model.objects import Symbol
 from inv_trader.model.events import OrderEvent
 from inv_trader.model.events import OrderPartiallyFilled, OrderFilled
 
-# Constants
 OrderId = str
 PositionId = str
 ExecutionId = str

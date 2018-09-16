@@ -29,7 +29,6 @@ from inv_trader.model.objects import Symbol, Tick, BarType, Bar
 from inv_trader.model.order import Order, OrderIdGenerator
 from inv_trader.model.position import Position
 
-# Constants
 OrderId = str
 PositionId = str
 Label = str
@@ -824,7 +823,6 @@ class TradeStrategy:
         self._log.debug(f"Continuing timer for {label}...")
 
 
-# Constants
 POINT = 'point'
 PRICE = 'price'
 MID = 'mid'

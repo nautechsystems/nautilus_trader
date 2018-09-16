@@ -31,7 +31,6 @@ from inv_trader.serialization import CommandSerializer, EventSerializer
 from inv_trader.serialization import MsgPackCommandSerializer
 from inv_trader.serialization import MsgPackEventSerializer
 
-# Constants
 UTF8 = 'utf-8'
 OrderId = str
 
