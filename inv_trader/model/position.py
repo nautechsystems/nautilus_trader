@@ -34,9 +34,9 @@ class Position:
         """
         Initializes a new instance of the Position class.
 
-        :param: symbol: The orders symbol.
-        :param: position_id: The positions identifier.
-        :param: timestamp: The positions initialization timestamp.
+        :param symbol: The orders symbol.
+        :param position_id: The positions identifier.
+        :param timestamp: The positions initialization timestamp.
         """
         Precondition.valid_string(position_id, 'position_id')
 

@@ -30,8 +30,8 @@ class Command:
         """
         Initializes a new instance of the Command abstract class.
 
-        :param: identifier: The commands identifier.
-        :param: uuid: The commands timestamp.
+        :param identifier: The commands identifier.
+        :param timestamp: The commands timestamp.
         """
         self._command_id = identifier
         self._command_timestamp = timestamp
@@ -92,9 +92,9 @@ class OrderCommand(Command):
         """
         Initializes a new instance of the OrderCommand abstract class.
 
-        :param: order: The commands order.
-        :param: event_id: The commands identifier.
-        :param: event_timestamp: The order commands timestamp.
+        :param order: The commands order.
+        :param command_id: The commands identifier.
+        :param command_timestamp: The order commands timestamp.
         """
         super().__init__(command_id, command_timestamp)
         self._order = order
@@ -131,9 +131,9 @@ class SubmitOrder(OrderCommand):
         """
         Initializes a new instance of the SubmitOrder class.
 
-        :param: order: The commands order to submit.
-        :param: event_id: The commands identifier.
-        :param: event_timestamp: The commands timestamp.
+        :param order: The commands order to submit.
+        :param command_id: The commands identifier.
+        :param command_timestamp: The commands timestamp.
         """
         super().__init__(
             order,
@@ -154,10 +154,10 @@ class CancelOrder(OrderCommand):
         """
         Initializes a new instance of the CancelOrder class.
 
-        :param: order: The commands order to cancel.
-        :param: cancel_reason: The reason for cancellation.
-        :param: event_id: The commands identifier.
-        :param: event_timestamp: The commands timestamp.
+        :param order: The commands order to cancel.
+        :param cancel_reason: The reason for cancellation.
+        :param command_id: The commands identifier.
+        :param command_timestamp: The commands timestamp.
         """
         Precondition.valid_string(cancel_reason, 'cancel_reason')
 
@@ -189,10 +189,10 @@ class ModifyOrder(OrderCommand):
         """
         Initializes a new instance of the ModifyOrder class.
 
-        :param: order: The commands order to modify.
-        :param: modified_price: The commands modified price for the order.
-        :param: event_id: The commands identifier.
-        :param: event_timestamp: The commands timestamp.
+        :param order: The commands order to modify.
+        :param modified_price: The commands modified price for the order.
+        :param command_id: The commands identifier.
+        :param command_timestamp: The commands timestamp.
         """
         Precondition.positive(modified_price, 'modified_price')
 
@@ -217,12 +217,12 @@ class CollateralInquiry(Command):
     """
 
     def __init__(self,
-                 identifier: UUID,
-                 timestamp: datetime):
+                 command_id: UUID,
+                 command_timestamp: datetime):
         """
         Initializes a new instance of the CollateralInquiry class.
 
-        :param: event_id: The commands identifier.
-        :param: event_timestamp: The order commands timestamp.
+        :param command_id: The commands identifier.
+        :param command_timestamp: The order commands timestamp.
         """
-        super().__init__(identifier, timestamp)
+        super().__init__(command_id, command_timestamp)

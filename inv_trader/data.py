@@ -375,8 +375,8 @@ class LiveDataClient:
         """
         Check the connection with the live database.
 
-        :raises: ConnectionError if the client is None.
-        :raises: ConnectionError if the client is not connected.
+        :raises ConnectionError if the client is None.
+        :raises ConnectionError if the client is not connected.
         """
         if self._redis_client is None:
             raise ConnectionError(("No connection has been established to the live database "

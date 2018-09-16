@@ -31,12 +31,12 @@ class Logger:
         """
         Initializes a new instance of the Logger class.
 
-        :param: log_name: The name of the logger.
-        :param: log_level_console: The minimum log level for logging messages to the console.
-        :param: log_level_file: The minimum log level for logging messages to the log file.
-        :param: console_prints: The boolean flag indicating whether log messages should print.
-        :param: log_to_file: The boolean flag indicating whether log messages should log to file
-        :param: log_file_name: The name of the log file (cannot be None if log_to_file is True).
+        :param log_name: The name of the logger.
+        :param log_level_console: The minimum log level for logging messages to the console.
+        :param log_level_file: The minimum log level for logging messages to the log file.
+        :param console_prints: The boolean flag indicating whether log messages should print.
+        :param log_to_file: The boolean flag indicating whether log messages should log to file
+        :param log_file_path: The name of the log file (cannot be None if log_to_file is True).
         """
         if log_name is not None:
             Precondition.valid_string(log_name, 'log_name')
@@ -156,8 +156,8 @@ class LoggingAdapter:
         """
         Initializes a new instance of the LoggingAdapter class.
 
-        :param: logger: The logger for the component.
-        :param: component_name: The name of the component.
+        :param logger: The logger for the component.
+        :param component_name: The name of the component.
         """
         if component_name is not None:
             Precondition.valid_string(component_name, 'component_name')

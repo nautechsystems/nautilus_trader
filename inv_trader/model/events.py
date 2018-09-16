@@ -33,8 +33,8 @@ class Event:
         """
         Initializes a new instance of the Event abstract class.
 
-        :param: identifier: The events identifier.
-        :param: uuid: The events timestamp.
+        :param identifier: The events identifier.
+        :param timestamp: The events timestamp.
         """
         self._event_id = identifier
         self._event_timestamp = timestamp
@@ -117,8 +117,8 @@ class AccountEvent(Event):
         :param margin_used_maintenance: The events margin used for maintenance.
         :param margin_ratio: The events account margin ratio.
         :param margin_ratio: The events margin call status.
-        :param: event_id: The events identifier.
-        :param: event_timestamp: The order events timestamp.
+        :param event_id: The events identifier.
+        :param event_timestamp: The order events timestamp.
         """
         Precondition.valid_string(account_id, 'account_id')
         Precondition.valid_string(account_number, 'account_number')
@@ -218,10 +218,11 @@ class OrderEvent(Event):
         """
         Initializes a new instance of the OrderEvent abstract class.
 
-        :param: order_symbol: The events order symbol.
-        :param: order_id: The events order identifier.
-        :param: event_id: The events identifier.
-        :param: event_timestamp: The order events timestamp.
+        :param order_symbol: The events order symbol.
+        :param order_id: The events order identifier.
+        :param event_id: The events identifier.
+        :param event_timestamp: The order events timestamp.
+        :raises ValueError: If the order_id is not a valid string.
         """
         Precondition.valid_string(order_id, 'order_id')
 
@@ -271,11 +272,11 @@ class OrderSubmitted(OrderEvent):
         """
         Initializes a new instance of the OrderSubmitted class.
 
-        :param: symbol: The events order symbol.
-        :param: order_id: The events order identifier.
-        :param: submitted_time: The events order submitted time.
-        :param: event_id: The events identifier.
-        :param: event_timestamp: The events timestamp.
+        :param symbol: The events order symbol.
+        :param order_id: The events order identifier.
+        :param submitted_time: The events order submitted time.
+        :param event_id: The events identifier.
+        :param event_timestamp: The events timestamp.
         """
         Precondition.valid_string(order_id, 'order_id')
 
@@ -304,11 +305,11 @@ class OrderAccepted(OrderEvent):
         """
         Initializes a new instance of the OrderAccepted class.
 
-        :param: symbol: The events order symbol.
-        :param: order_id: The events order identifier.
-        :param: accepted_time: The events order accepted time.
-        :param: event_id: The events identifier.
-        :param: event_timestamp: The events timestamp.
+        :param symbol: The events order symbol.
+        :param order_id: The events order identifier.
+        :param accepted_time: The events order accepted time.
+        :param event_id: The events identifier.
+        :param event_timestamp: The events timestamp.
         """
         Precondition.valid_string(order_id, 'order_id')
 
@@ -338,12 +339,12 @@ class OrderRejected(OrderEvent):
         """
         Initializes a new instance of the OrderRejected class.
 
-        :param: symbol: The events order symbol.
-        :param: order_id: The events order identifier.
-        :param: rejected_time: The events order rejected time.
-        :param: rejected_reason: The events order rejected reason.
-        :param: event_id: The events identifier.
-        :param: event_timestamp: The events timestamp.
+        :param symbol: The events order symbol.
+        :param order_id: The events order identifier.
+        :param rejected_time: The events order rejected time.
+        :param rejected_reason: The events order rejected reason.
+        :param event_id: The events identifier.
+        :param event_timestamp: The events timestamp.
         """
         Precondition.valid_string(order_id, 'order_id')
         Precondition.valid_string(rejected_reason, 'rejected_reason')
@@ -389,19 +390,19 @@ class OrderWorking(OrderEvent):
         """
         Initializes a new instance of the OrderWorking class.
 
-        :param: symbol: The events order symbol.
-        :param: order_id: The events order identifier.
-        :param: broker_order_id: The events broker order identifier.
-        :param: label: The events order label.
-        :param: order_side: The events order side.
-        :param: order_type: The events order type.
-        :param: quantity: The events order quantity.
-        :param: price: The events order price.
-        :param: time_in_force: The events order time in force.
-        :param: working_time: The events order working time.
-        :param: event_id: The events identifier.
-        :param: event_timestamp: The events timestamp.
-        :param: expire_time: The events order expire time (optional can be None).
+        :param symbol: The events order symbol.
+        :param order_id: The events order identifier.
+        :param broker_order_id: The events broker order identifier.
+        :param label: The events order label.
+        :param order_side: The events order side.
+        :param order_type: The events order type.
+        :param quantity: The events order quantity.
+        :param price: The events order price.
+        :param time_in_force: The events order time in force.
+        :param working_time: The events order working time.
+        :param event_id: The events identifier.
+        :param event_timestamp: The events timestamp.
+        :param expire_time: The events order expire time (optional can be None).
         """
         Precondition.valid_string(order_id, 'order_id')
         Precondition.valid_string(broker_order_id, 'broker_order_id')
@@ -497,11 +498,11 @@ class OrderCancelled(OrderEvent):
         """
         Initializes a new instance of the OrderCancelled class.
 
-        :param: symbol: The events order symbol.
-        :param: order_id: The events order identifier.
-        :param: cancelled_time: The events order cancelled time.
-        :param: event_id: The events identifier.
-        :param: event_timestamp: The events timestamp.
+        :param symbol: The events order symbol.
+        :param order_id: The events order identifier.
+        :param cancelled_time: The events order cancelled time.
+        :param event_id: The events identifier.
+        :param event_timestamp: The events timestamp.
         """
         Precondition.valid_string(order_id, 'order_id')
 
@@ -532,13 +533,13 @@ class OrderCancelReject(OrderEvent):
         """
         Initializes a new instance of the OrderCancelReject class.
 
-        :param: order_symbol: The events order symbol.
-        :param: order_id: The events order identifier.
-        :param: cancel_reject_time: The events order cancel reject time.
+        :param order_symbol: The events order symbol.
+        :param order_id: The events order identifier.
+        :param cancel_reject_time: The events order cancel reject time.
         :param cancel_response: The events order cancel reject response.
         :param cancel_reject_reason: The events order cancel reject reason.
-        :param: event_id: The events identifier.
-        :param: event_timestamp: The events timestamp.
+        :param event_id: The events identifier.
+        :param event_timestamp: The events timestamp.
         """
         Precondition.valid_string(order_id, 'order_id')
         Precondition.valid_string(cancel_response, 'cancel_response')
@@ -585,11 +586,11 @@ class OrderExpired(OrderEvent):
         """
         Initializes a new instance of the OrderExpired class.
 
-        :param: symbol: The events order symbol.
-        :param: order_id: The events order identifier.
-        :param: expired_time: The events order expired time.
-        :param: event_id: The events identifier.
-        :param: event_timestamp: The events timestamp.
+        :param symbol: The events order symbol.
+        :param order_id: The events order identifier.
+        :param expired_time: The events order expired time.
+        :param event_id: The events identifier.
+        :param event_timestamp: The events timestamp.
         """
         Precondition.valid_string(order_id, 'order_id')
 
@@ -620,13 +621,13 @@ class OrderModified(OrderEvent):
         """
         Initializes a new instance of the OrderPartiallyFilled class.
 
-        :param: symbol: The events order symbol.
-        :param: order_id: The events order identifier.
-        :param: broker_order_id: The events order broker identifier.
-        :param: modified_price: The events modified price.
-        :param: modified_time: The events modified time.
-        :param: event_id: The events identifier.
-        :param: event_timestamp: The events timestamp.
+        :param symbol: The events order symbol.
+        :param order_id: The events order identifier.
+        :param broker_order_id: The events order broker identifier.
+        :param modified_price: The events modified price.
+        :param modified_time: The events modified time.
+        :param event_id: The events identifier.
+        :param event_timestamp: The events timestamp.
         """
         Precondition.valid_string(order_id, 'order_id')
         Precondition.valid_string(broker_order_id, 'broker_order_id')
@@ -677,16 +678,16 @@ class OrderFilled(OrderEvent):
         """
         Initializes a new instance of the OrderFilled class.
 
-        :param: symbol: The events order symbol.
-        :param: order_id: The events order identifier.
-        :param: execution_id: The events order execution identifier.
-        :param: execution_ticket: The events order execution ticket.
-        :param: order_side: The events execution order side.
-        :param: filled_quantity: The events execution filled quantity.
-        :param: average_price: The events execution average price.
-        :param: execution_time: The events execution time.
-        :param: event_id: The events identifier.
-        :param: event_timestamp: The events timestamp.
+        :param symbol: The events order symbol.
+        :param order_id: The events order identifier.
+        :param execution_id: The events order execution identifier.
+        :param execution_ticket: The events order execution ticket.
+        :param order_side: The events execution order side.
+        :param filled_quantity: The events execution filled quantity.
+        :param average_price: The events execution average price.
+        :param execution_time: The events execution time.
+        :param event_id: The events identifier.
+        :param event_timestamp: The events timestamp.
         """
         Precondition.valid_string(order_id, 'order_id')
         Precondition.valid_string(execution_id, 'execution_id')
@@ -764,17 +765,17 @@ class OrderPartiallyFilled(OrderEvent):
         """
         Initializes a new instance of the OrderPartiallyFilled class.
 
-        :param: symbol: The events order symbol.
-        :param: order_id: The events order identifier.
-        :param: execution_id: The events order execution identifier.
-        :param: execution_ticket: The events order execution ticket.
-        :param: order_side: The events execution order side.
-        :param: filled_quantity: The events execution filled quantity.
-        :param: leaves_quantity: The events leaves quantity.
-        :param: average_price: The events execution average price.
-        :param: execution_time: The events execution time.
-        :param: event_id: The events identifier.
-        :param: event_timestamp: The events timestamp.
+        :param symbol: The events order symbol.
+        :param order_id: The events order identifier.
+        :param execution_id: The events order execution identifier.
+        :param execution_ticket: The events order execution ticket.
+        :param order_side: The events execution order side.
+        :param filled_quantity: The events execution filled quantity.
+        :param leaves_quantity: The events leaves quantity.
+        :param average_price: The events execution average price.
+        :param execution_time: The events execution time.
+        :param event_id: The events identifier.
+        :param event_timestamp: The events timestamp.
         """
         Precondition.valid_string(order_id, 'order_id')
         Precondition.valid_string(execution_id, 'execution_id')
@@ -853,8 +854,8 @@ class TimeEvent(Event):
         """
         Initializes a new instance of the TimeEvent class.
 
-        :param: event_id: The time events identifier.
-        :param: event_timestamp: The time events timestamp.
+        :param event_id: The time events identifier.
+        :param event_timestamp: The time events timestamp.
         """
         Precondition.valid_string(label, 'label')
 
