@@ -7,6 +7,8 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+from datetime import datetime, timedelta, timezone
+
 from inv_trader.data import LiveDataClient
 from inv_trader.execution import LiveExecClient
 from inv_trader.model.enums import Venue, Resolution, QuoteType
@@ -14,6 +16,7 @@ from examples.strategy_examples import EMACrossLimitEntry
 
 
 if __name__ == "__main__":
+
     strategy = EMACrossLimitEntry('01', 10, 20)
     data_client = LiveDataClient()
     exec_client = LiveExecClient()
@@ -22,6 +25,8 @@ if __name__ == "__main__":
 
     data_client.connect()
     data_client.subscribe_ticks('AUDUSD', Venue.FXCM)
+    # data_client.historical_bars('AUDUSD', Venue.FXCM, 1, Resolution.SECOND, QuoteType.MID)
+    data_client.historical_bars_from('AUDUSD', Venue.FXCM, 1, Resolution.SECOND, QuoteType.MID, datetime.now(timezone.utc) - timedelta(days=100))
     data_client.subscribe_bars('AUDUSD', Venue.FXCM, 1, Resolution.SECOND, QuoteType.MID)
 
     exec_client.connect()

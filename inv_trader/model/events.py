@@ -249,7 +249,7 @@ class OrderEvent(Event):
         :return: The str() string representation of the event.
         """
         return (f"{self.__class__.__name__}"
-                f"(id={self._order_id}, symbol={self._symbol})")
+                f"(id={self._order_id})")
 
     def __repr__(self) -> str:
         """
@@ -549,6 +549,13 @@ class OrderCancelReject(OrderEvent):
         self._cancel_reject_time = cancel_reject_time
         self._cancel_reject_response = cancel_response
         self._cancel_reject_reason = cancel_reject_reason
+
+    def __str__(self) -> str:
+        """
+        :return: The str() string representation of the event.
+        """
+        return (f"{self.__class__.__name__}"
+                f"(id={self._order_id}, reason={self._cancel_reject_reason})")
 
     @property
     def cancel_reject_time(self) -> datetime:
