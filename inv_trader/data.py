@@ -342,9 +342,11 @@ class LiveDataClient:
                     f"Historical bars are less than the requested amount ({len(bars)} vs {amount}).")
 
         bar_type = BarType(Symbol(symbol, venue), period, resolution, quote_type)
+        self._log.info(f"Historical download of {len(bars)} bars for {bar_type} complete.")
+
         for bar in bars:
             [handler(bar_type, bar) for handler in self._bar_handlers]
-        self._log.info(f"Downloaded {len(bars)} historical bars for {bar_type}.")
+        self._log.info(f"Historical bars hydrated for all registered strategies.")
 
     def historical_bars_from(
             self,
@@ -388,22 +390,25 @@ class LiveDataClient:
         for key in keys[::-1]:
             bar_list = self._redis_client.lrange(key, 0, -1)
             for bar_bytes in bar_list[::-1]:
-                bars.insert(0, self._parse_bar(bar_bytes.decode(UTF8)))
-            if bars[0].timestamp <= from_datetime:
-                print("********* break")
-                break
+                bar = self._parse_bar(bar_bytes.decode(UTF8))
+                if bar.timestamp >= from_datetime:
+                    bars.insert(0, self._parse_bar(bar_bytes.decode(UTF8)))
+                else:
+                    self._log.debug("His")
+                    break  # Reached from_datetime.
 
-        if bars[0].timestamp > from_datetime:
-            bars = bars[0:-1]
-        else:
+        first_bar_timestamp = bars[0].timestamp
+        if first_bar_timestamp > from_datetime:
             self._log.warning(
-                (f"Historical bars first bar datetime greater than requested from datetime "
-                 f"({bars[0].timestamp.isoformat()} vs {from_datetime.isoformat()})."))
+                (f"Historical bars first bar timestamp greater than requested from datetime "
+                 f"({first_bar_timestamp.isoformat()} vs {from_datetime.isoformat()})."))
 
         bar_type = BarType(Symbol(symbol, venue), period, resolution, quote_type)
+        self._log.info(f"Historical download of {len(bars)} bars for {bar_type} complete.")
+
         for bar in bars:
             [handler(bar_type, bar) for handler in self._bar_handlers]
-        self._log.info(f"Downloaded {len(bars)} historical bars for {bar_type}.")
+        self._log.info(f"Historical bars hydrated for all registered strategies.")
 
     def _get_redis_bar_keys(
             self,
