@@ -7,9 +7,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import pytz
-
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from inv_trader.model.enums import Resolution, QuoteType, OrderSide, TimeInForce, Venue
@@ -69,8 +67,6 @@ class EMACrossLimitEntry(TradeStrategy):
         self.log.info(f"Bar[-2]={bars[-2]}")
         self.log.info(f"Bar[0]={bars[0]}")
 
-        self.set_timer("TickTock", timedelta(seconds=1), repeat=True)
-
     def on_tick(self, tick: Tick):
         """
         This method is called whenever a Tick is received by the strategy, after
@@ -121,7 +117,7 @@ class EMACrossLimitEntry(TradeStrategy):
             if any(order.is_complete is False for order in self.entry_orders.values()):
                 return
 
-            expire_time = datetime.now(pytz.utc)
+            expire_time = datetime.now(timezone.utc)
 
             # BUY LOGIC
             if self.ema1.value >= self.ema2.value:

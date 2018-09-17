@@ -53,7 +53,6 @@ setup(
     license='Invariance Software License',
     requires=['cython',
               'iso8601',
-              'pytz',
               'msgpack',
               'redis',
               'pyzmq'],
