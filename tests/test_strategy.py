@@ -13,7 +13,7 @@ import datetime
 import pytz
 import time
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from uuid import UUID
 
@@ -416,7 +416,7 @@ class TradeStrategyTests(unittest.TestCase):
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
-        alert_time = datetime.utcnow() + timedelta(milliseconds=300)
+        alert_time = datetime.now(timezone.utc) + timedelta(milliseconds=300)
         strategy.set_time_alert("test_alert1", alert_time)
 
         # Act
@@ -433,7 +433,7 @@ class TradeStrategyTests(unittest.TestCase):
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
-        alert_time = datetime.utcnow() + timedelta(seconds=1)
+        alert_time = datetime.now(timezone.utc) + timedelta(seconds=1)
         strategy.set_time_alert("test_alert1", alert_time)
 
         # Act
@@ -450,8 +450,8 @@ class TradeStrategyTests(unittest.TestCase):
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
-        alert_time1 = datetime.utcnow() + timedelta(milliseconds=200)
-        alert_time2 = datetime.utcnow() + timedelta(milliseconds=300)
+        alert_time1 = datetime.now(timezone.utc) + timedelta(milliseconds=200)
+        alert_time2 = datetime.now(timezone.utc) + timedelta(milliseconds=300)
 
         # Act
         strategy.set_time_alert("test_alert1", alert_time1)
@@ -469,7 +469,7 @@ class TradeStrategyTests(unittest.TestCase):
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
-        start_time = datetime.utcnow() + timedelta(milliseconds=100)
+        start_time = datetime.now(timezone.utc) + timedelta(milliseconds=100)
         strategy.set_timer("test_timer1", timedelta(milliseconds=100), start_time)
 
         # Act
@@ -485,7 +485,7 @@ class TradeStrategyTests(unittest.TestCase):
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
-        start_time = datetime.utcnow() + timedelta(milliseconds=100)
+        start_time = datetime.now(timezone.utc) + timedelta(milliseconds=100)
         strategy.set_timer("test_timer1", timedelta(milliseconds=100), start_time)
 
         # Act
@@ -503,7 +503,7 @@ class TradeStrategyTests(unittest.TestCase):
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
-        start_time = datetime.utcnow() + timedelta(milliseconds=100)
+        start_time = datetime.now(timezone.utc) + timedelta(milliseconds=100)
         strategy.set_timer("test_timer1", timedelta(milliseconds=100), start_time, None, repeat=True)
 
         # Act
@@ -522,7 +522,7 @@ class TradeStrategyTests(unittest.TestCase):
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
-        start_time = datetime.utcnow() + timedelta(milliseconds=100)
+        start_time = datetime.now(timezone.utc) + timedelta(milliseconds=100)
         stop_time = start_time + timedelta(seconds=1)
         strategy.set_timer("test_timer1", timedelta(milliseconds=100), start_time, stop_time, repeat=True)
 
@@ -540,7 +540,7 @@ class TradeStrategyTests(unittest.TestCase):
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
-        start_time = datetime.utcnow() + timedelta(milliseconds=100)
+        start_time = datetime.now(timezone.utc) + timedelta(milliseconds=100)
         strategy.set_timer("test_timer1", timedelta(milliseconds=100), start_time, repeat=True)
         strategy.set_timer("test_timer2", timedelta(milliseconds=100), start_time, repeat=True)
 
