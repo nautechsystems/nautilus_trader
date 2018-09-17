@@ -61,6 +61,13 @@ class EMACrossLimitEntry(TradeStrategy):
         start logic.
         """
         self.log.info(f"Started at {datetime.utcnow()}")
+        self.log.info(f"EMA1 bar count={self.ema1.count}")
+        self.log.info(f"EMA2 bar count={self.ema2.count}")
+
+        bars = self.bars(AUDUSD_FXCM_1_SECOND_MID)
+        self.log.info(f"Bar[-1]={bars[-1]}")
+        self.log.info(f"Bar[-2]={bars[-2]}")
+        self.log.info(f"Bar[0]={bars[0]}")
 
     def on_tick(self, tick: Tick):
         """

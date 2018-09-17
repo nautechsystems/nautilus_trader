@@ -12,7 +12,7 @@ import inspect
 import uuid
 
 from collections import deque
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Callable, Deque, Dict, List
 from threading import Timer
@@ -458,7 +458,7 @@ class TradeStrategy:
         :raises ValueError: If the alert_time is not > than the current time (UTC).
         """
         Precondition.valid_string(label, 'label')
-        Precondition.true(alert_time > datetime.utcnow(), 'alert_time > datetime.utcnow()')
+        Precondition.true(alert_time > datetime.now(timezone.utc), 'alert_time > datetime.utcnow()')
 
         if label in self._timers:
             raise KeyError("The time alert label must be unique for this strategy.")
@@ -521,9 +521,9 @@ class TradeStrategy:
         """
         Precondition.valid_string(label, 'label')
         if start_time is not None:
-            Precondition.true(start_time >= datetime.utcnow(), 'start_time >= datetime.utcnow()')
+            Precondition.true(start_time >= datetime.now(timezone.utc), 'start_time >= datetime.utcnow()')
         else:
-            start_time = datetime.utcnow()
+            start_time = datetime.now(timezone.utc)
         if stop_time is not None:
             Precondition.true(repeat, 'repeat True')
             Precondition.true(stop_time > start_time, 'stop_time > start_time')
@@ -534,7 +534,7 @@ class TradeStrategy:
             raise ValueError("The timer label must be unique for this strategy.")
 
         alert_time = start_time + interval
-        delay = (alert_time - datetime.utcnow()).total_seconds()
+        delay = (alert_time - datetime.now(timezone.utc)).total_seconds()
         if repeat:
             timer = Timer(
                 interval=delay,

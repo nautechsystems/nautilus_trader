@@ -11,6 +11,7 @@ import re
 import iso8601
 import time
 
+from datetime import datetime, timezone
 from decimal import Decimal
 from redis import StrictRedis, ConnectionError
 from typing import List, Dict, Callable
@@ -279,6 +280,149 @@ class LiveDataClient:
 
         self._log.info(f"Unsubscribed from bar data for {bar_channel}.")
 
+    def historical_bars(
+            self,
+            symbol: str,
+            venue: Venue,
+            period: int,
+            resolution: Resolution,
+            quote_type: QuoteType,
+            amount: int or None=None):
+        """
+        Download the historical bars for the given parameters from the data service.
+        Then pass them to all registered strategies.
+
+        Note: Log warnings are given if the downloaded bars don't equal the
+        requested amount or from datetime range.
+
+        :param symbol: The symbol for the historical bars.
+        :param venue: The venue for the historical bars.
+        :param period: The bar period for the historical bars (> 0).
+        :param resolution: The bar resolution for the historical bars.
+        :param quote_type: The bar quote type for the historical bars.
+        :param amount: The number of historical bars to download, if None then will download all.
+        :raises ValueError: If the symbol is not a valid string.
+        :raises ValueError: If the period is not positive (> 0).
+        :raises ValueError: If the amount is not positive (> 0).
+        """
+        Precondition.valid_string(symbol, 'symbol')
+        Precondition.positive(period, 'period')
+        if amount is not None:
+            Precondition.positive(amount, 'amount')
+
+        self._check_connection()
+
+        keys = self._get_redis_bar_keys(symbol, venue, resolution, quote_type)
+
+        if len(keys) == 0:
+            self._log.warning(
+                "Cannot get historical bars (No bar keys found for the given parameters).")
+            return
+
+        bars = []
+        if amount is None:
+            for key in keys:
+                bar_list = self._redis_client.lrange(key, 0, -1)
+                for bar_bytes in bar_list:
+                    bars.append(self._parse_bar(bar_bytes.decode(UTF8)))
+        else:
+            for key in keys[::-1]:
+                bar_list = self._redis_client.lrange(key, 0, -1)
+                for bar_bytes in bar_list[::-1]:
+                    bars.insert(0, self._parse_bar(bar_bytes.decode(UTF8)))
+                if len(bars) >= amount:
+                    break
+
+            bar_count = len(bars)
+            if bar_count >= amount:
+                last_index = bar_count - amount
+                bars = bars[last_index:]
+            else:
+                self._log.warning(
+                    f"Historical bars are less than the requested amount ({len(bars)} vs {amount}).")
+
+        bar_type = BarType(Symbol(symbol, venue), period, resolution, quote_type)
+        for bar in bars:
+            [handler(bar_type, bar) for handler in self._bar_handlers]
+        self._log.info(f"Downloaded {len(bars)} historical bars for {bar_type}.")
+
+    def historical_bars_from(
+            self,
+            symbol: str,
+            venue: Venue,
+            period: int,
+            resolution: Resolution,
+            quote_type: QuoteType,
+            from_datetime: datetime):
+        """
+        Download the historical bars for the given parameters from the data service.
+        Then pass them to all registered strategies.
+
+        Note: Log warnings are given if the downloaded bars don't equal the
+        requested amount or from datetime range.
+
+        :param symbol: The symbol for the historical bars.
+        :param venue: The venue for the historical bars.
+        :param period: The bar period for the historical bars (> 0).
+        :param resolution: The bar resolution for the historical bars.
+        :param quote_type: The bar quote type for the historical bars.
+        :param from_datetime: The datetime from which the historical bars should be downloaded.
+        :raises ValueError: If the symbol is not a valid string.
+        :raises ValueError: If the period is not positive (> 0).
+        :raises ValueError: If the from_datetime is not less than datetime.utcnow().
+        """
+        Precondition.valid_string(symbol, 'symbol')
+        Precondition.positive(period, 'period')
+        Precondition.true(from_datetime < datetime.now(timezone.utc), 'from_datetime < datetime.now(timezone.utc)')
+
+        self._check_connection()
+
+        keys = self._get_redis_bar_keys(symbol, venue, resolution, quote_type)
+
+        if len(keys) == 0:
+            self._log.warning(
+                "Cannot get historical bars (No bar keys found for the given parameters).")
+            return
+
+        bars = []
+        for key in keys[::-1]:
+            bar_list = self._redis_client.lrange(key, 0, -1)
+            for bar_bytes in bar_list[::-1]:
+                bars.insert(0, self._parse_bar(bar_bytes.decode(UTF8)))
+            if bars[0].timestamp <= from_datetime:
+                print("********* break")
+                break
+
+        if bars[0].timestamp > from_datetime:
+            bars = bars[0:-1]
+        else:
+            self._log.warning(
+                (f"Historical bars first bar datetime greater than requested from datetime "
+                 f"({bars[0].timestamp.isoformat()} vs {from_datetime.isoformat()})."))
+
+        bar_type = BarType(Symbol(symbol, venue), period, resolution, quote_type)
+        for bar in bars:
+            [handler(bar_type, bar) for handler in self._bar_handlers]
+        self._log.info(f"Downloaded {len(bars)} historical bars for {bar_type}.")
+
+    def _get_redis_bar_keys(
+            self,
+            symbol: str,
+            venue: Venue,
+            resolution: Resolution,
+            quote_type: QuoteType,):
+        """
+        Generate the bar key wildcard pattern and return the held Redis keys.
+        """
+        keys = self._redis_client.keys(
+            (f'bars'
+             f':{venue.name.lower()}'
+             f':{symbol.lower()}'
+             f':{resolution.name.lower()}'
+             f':{quote_type.name.lower()}*'))
+        keys.sort()
+        return keys
+
     def register_strategy(self, strategy: TradeStrategy):
         """
         Registers the trade strategy to receive all ticks and bars from the
@@ -398,7 +542,6 @@ class LiveDataClient:
         tick = self._parse_tick(
             message['channel'].decode(UTF8),
             message['data'].decode(UTF8))
-
         [handler(tick) for handler in self._tick_handlers]
 
     def _bar_handler(self, message: Dict):
@@ -414,5 +557,4 @@ class LiveDataClient:
 
         bar_type = self._parse_bar_type(message['channel'].decode(UTF8))
         bar = self._parse_bar(message['data'].decode(UTF8))
-
         [handler(bar_type, bar) for handler in self._bar_handlers]
