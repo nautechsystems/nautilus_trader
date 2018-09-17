@@ -69,6 +69,8 @@ class EMACrossLimitEntry(TradeStrategy):
         self.log.info(f"Bar[-2]={bars[-2]}")
         self.log.info(f"Bar[0]={bars[0]}")
 
+        self.set_timer("TickTock", timedelta(seconds=1), repeat=True)
+
     def on_tick(self, tick: Tick):
         """
         This method is called whenever a Tick is received by the strategy, after

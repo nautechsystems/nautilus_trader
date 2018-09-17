@@ -464,7 +464,7 @@ class TradeStrategy:
             raise KeyError("The time alert label must be unique for this strategy.")
 
         timer = Timer(
-            interval=(alert_time - datetime.utcnow()).total_seconds(),
+            interval=(alert_time - datetime.now(timezone.utc)).total_seconds(),
             function=self._raise_time_event,
             args=[label, alert_time])
 
@@ -821,7 +821,7 @@ class TradeStrategy:
             return
 
         next_alert_time = alert_time + interval
-        delay = (next_alert_time - datetime.utcnow()).total_seconds()
+        delay = (next_alert_time - datetime.now(timezone.utc)).total_seconds()
         timer = Timer(
             interval=delay,
             function=self._repeating_timer,
