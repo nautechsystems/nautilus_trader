@@ -26,7 +26,7 @@ if __name__ == "__main__":
     data_client.connect()
     data_client.subscribe_ticks('AUDUSD', Venue.FXCM)
     # data_client.historical_bars('AUDUSD', Venue.FXCM, 1, Resolution.SECOND, QuoteType.MID)
-    data_client.historical_bars_from('AUDUSD', Venue.FXCM, 1, Resolution.SECOND, QuoteType.MID, datetime.now(timezone.utc) - timedelta(days=100))
+    data_client.historical_bars_from('AUDUSD', Venue.FXCM, 1, Resolution.SECOND, QuoteType.MID, datetime.now(timezone.utc) - timedelta(seconds=100))
     data_client.subscribe_bars('AUDUSD', Venue.FXCM, 1, Resolution.SECOND, QuoteType.MID)
 
     exec_client.connect()
