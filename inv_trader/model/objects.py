@@ -29,6 +29,8 @@ class Price:
         :param price: The price value.
         :param decimals: The decimal precision of the price.
         :return: A Decimal representing the price.
+        :raises ValueError: If the price is not positive (> 0).
+        :raises ValueError: If the decimals is negative.
         """
         Precondition.positive(price, 'price')
         Precondition.not_negative(decimals, 'decimals')
@@ -49,6 +51,7 @@ class Symbol:
 
         :param code: The symbols code.
         :param venue: The symbols venue.
+        :raises ValueError: If the code is not a valid string.
         """
         Precondition.valid_string(code, 'code')
 
@@ -120,6 +123,8 @@ class Tick:
         :param bid: The tick best bid price.
         :param ask: The tick best ask price.
         :param timestamp: The tick timestamp (UTC).
+        :raises ValueError: If the bid is not positive (> 0).
+        :raises ValueError: If the ask is not positive (> 0).
         """
         Precondition.positive(bid, 'bid')
         Precondition.positive(ask, 'ask')
@@ -203,6 +208,7 @@ class BarType:
         :param period: The bar period.
         :param resolution: The bar resolution.
         :param quote_type: The bar quote type.
+        :raises ValueError: If the period is not positive (> 0).
         """
         Precondition.positive(period, 'period')
 
@@ -296,6 +302,11 @@ class Bar:
         :param close_price: The bars close price.
         :param volume: The bars volume.
         :param timestamp: The bars timestamp (UTC).
+        :raises ValueError: If the open_price is not positive (> 0).
+        :raises ValueError: If the high_price is not positive (> 0).
+        :raises ValueError: If the low_price is not positive (> 0).
+        :raises ValueError: If the close_price is not positive (> 0).
+        :raises ValueError: If the volume is negative.
         """
         Precondition.positive(open_price, 'open_price')
         Precondition.positive(high_price, 'high_price')
