@@ -59,6 +59,13 @@ class Order:
         :param price: The orders price (can be None for market orders > 0).
         :param time_in_force: The orders time in force (optional can be None).
         :param expire_time: The orders expire time (optional can be None).
+        :raises ValueError: If the order_id is not a valid string.
+        :raises ValueError: If the label is not a valid string.
+        :raises ValueError: If the quantity is not positive (> 0).
+        :raises ValueError: If the order type has no price and the price is not None.
+        :raises ValueError: If the order type has a price and the price is None.
+        :raises ValueError: If the order type has a price and the price is not positive (> 0).
+        :raises ValueError: If the time_in_force is GTD and the expire_time is None.
         """
         if time_in_force is None:
             time_in_force = TimeInForce.DAY
@@ -284,12 +291,9 @@ class Order:
         Applies the given order event to the order.
 
         :param order_event: The order event to apply.
+        :raises ValueError: If the order_events order_id is not equal to the id.
         """
-        if order_event.order_id != self.id:
-            raise ValueError(
-                f"The event order id is invalid for this order "
-                f"(event order id was {order_event.order_id},"
-                f"this order id was {self.id}).")
+        Precondition.equal(order_event.id, self._id)
 
         self._events.append(order_event)
 
@@ -376,6 +380,7 @@ class OrderIdGenerator:
         Initializes a new instance of the OrderIdentifierFactory class.
 
         :param order_id_tag: The generators unique order identifier tag.
+        :raises ValueError: If the order_id_tag is not a valid string.
         """
         Precondition.valid_string(order_id_tag, 'order_id_tag')
 
@@ -438,6 +443,9 @@ class OrderFactory:
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
         :return: The market order.
+        :raises ValueError: If the order_id is not a valid string.
+        :raises ValueError: If the label is not a valid string.
+        :raises ValueError: If the quantity is not positive (> 0).
         """
         # Preconditions checked inside Order.
 
@@ -472,9 +480,14 @@ class OrderFactory:
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
         :param price: The orders price (> 0).
-        :param time_in_force: The orders time in force (optional can be None).
-        :param expire_time: The orders expire time (optional can be None unless GTD).
+        :param time_in_force: The orders time in force (can be None).
+        :param expire_time: The orders expire time (can be None unless time_in_force is GTD).
         :return: The limit order.
+        :raises ValueError: If the order_id is not a valid string.
+        :raises ValueError: If the label is not a valid string.
+        :raises ValueError: If the quantity is not positive (> 0).
+        :raises ValueError: If the price is not positive (> 0).
+        :raises ValueError: If the time_in_force is GTD and the expire_time is None.
         """
         # Preconditions checked inside Order.
 
@@ -509,9 +522,14 @@ class OrderFactory:
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
         :param price: The orders price (> 0).
-        :param time_in_force: The orders time in force (optional can be None).
-        :param expire_time: The orders expire time (optional can be None unless GTD).
+        :param time_in_force: The orders time in force (can be None).
+        :param expire_time: The orders expire time (can be None unless time_in_force is GTD).
         :return: The stop-market order.
+        :raises ValueError: If the order_id is not a valid string.
+        :raises ValueError: If the label is not a valid string.
+        :raises ValueError: If the quantity is not positive (> 0).
+        :raises ValueError: If the price is not positive (> 0).
+        :raises ValueError: If the time_in_force is GTD and the expire_time is None.
         """
         # Preconditions checked inside Order.
 
@@ -546,9 +564,14 @@ class OrderFactory:
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
         :param price: The orders price (> 0).
-        :param time_in_force: The orders time in force (optional can be None).
-        :param expire_time: The orders expire time (optional can be None unless GTD).
+        :param time_in_force: The orders time in force (can be None).
+        :param expire_time: The orders expire time (can be None unless time_in_force is GTD).
         :return: The stop-limit order.
+        :raises ValueError: If the order_id is not a valid string.
+        :raises ValueError: If the label is not a valid string.
+        :raises ValueError: If the quantity is not positive (> 0).
+        :raises ValueError: If the price is not positive (> 0).
+        :raises ValueError: If the time_in_force is GTD and the expire_time is None.
         """
         # Preconditions checked inside Order.
 
@@ -583,9 +606,14 @@ class OrderFactory:
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
         :param price: The orders price (> 0).
-        :param time_in_force: The orders time in force (optional can be None).
-        :param expire_time: The orders expire time (optional can be None unless GTD).
+        :param time_in_force: The orders time in force (can be None).
+        :param expire_time: The orders expire time (can be None unless time_in_force is GTD).
         :return: The market-if-touched order.
+        :raises ValueError: If the order_id is not a valid string.
+        :raises ValueError: If the label is not a valid string.
+        :raises ValueError: If the quantity is not positive (> 0).
+        :raises ValueError: If the price is not positive (> 0).
+        :raises ValueError: If the time_in_force is GTD and the expire_time is None.
         """
         # Preconditions checked inside Order.
 
@@ -615,7 +643,10 @@ class OrderFactory:
         :param label: The orders label.
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
-        :return: The market order.
+        :return: The fill or kill order.
+        :raises ValueError: If the order_id is not a valid string.
+        :raises ValueError: If the label is not a valid string.
+        :raises ValueError: If the quantity is not positive (> 0).
         """
         # Preconditions checked inside Order.
 
@@ -645,7 +676,10 @@ class OrderFactory:
         :param label: The orders label.
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
-        :return: The market order.
+        :return: The immediate or cancel order.
+        :raises ValueError: If the order_id is not a valid string.
+        :raises ValueError: If the label is not a valid string.
+        :raises ValueError: If the quantity is not positive (> 0).
         """
         # Preconditions checked inside Order.
 

@@ -37,6 +37,7 @@ class Position:
         :param symbol: The orders symbol.
         :param position_id: The positions identifier.
         :param timestamp: The positions initialization timestamp.
+        :raises ValueError: If the position_id is not a valid string.
         """
         Precondition.valid_string(position_id, 'position_id')
 
