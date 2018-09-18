@@ -546,7 +546,7 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Act
         strategy.start()
-        time.sleep(0.5)
+        time.sleep(0.55)
         strategy.stop()
 
         # Assert
