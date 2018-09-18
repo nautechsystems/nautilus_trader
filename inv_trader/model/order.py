@@ -293,7 +293,7 @@ class Order:
         :param order_event: The order event to apply.
         :raises ValueError: If the order_events order_id is not equal to the id.
         """
-        Precondition.equal(order_event.id, self._id)
+        Precondition.equal(order_event.order_id, self._id)
 
         self._events.append(order_event)
 

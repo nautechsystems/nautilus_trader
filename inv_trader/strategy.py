@@ -272,8 +272,9 @@ class TradeStrategy:
         """
         self._log.info(f"Stopping...")
         self._is_running = False
-        for timer in self._timers.values():
+        for label, timer in self._timers.items():
             timer.cancel()
+            self._log.info(f"Cancelled timer for {label}.")
         self.on_stop()
         self._log.info(f"Stopped.")
 
@@ -427,7 +428,7 @@ class TradeStrategy:
         """
         Precondition.valid_string(label, 'label')
 
-        if label in self._indicator_index.keys():
+        if label in self._indicator_index:
             raise KeyError("The indicator label must be unique for this strategy.")
 
         if bar_type not in self._indicators:
@@ -640,7 +641,7 @@ class TradeStrategy:
         """
         Precondition.valid_string(cancel_reason, 'cancel_reason')
 
-        if order.id not in self._order_book.keys():
+        if order.id not in self._order_book:
             raise KeyError("The order id was not found in the order book.")
 
         self._log.info(f"Cancelling {order}")
@@ -661,7 +662,7 @@ class TradeStrategy:
         """
         Precondition.positive(new_price, 'new_price')
 
-        if order.id not in self._order_book.keys():
+        if order.id not in self._order_book:
             raise KeyError("The order id was not found in the order book.")
 
         self._log.info(f"Modifying {order} with new price {new_price}")
