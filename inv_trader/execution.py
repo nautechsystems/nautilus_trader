@@ -71,7 +71,7 @@ class ExecutionClient:
 
         :raises ValueError: If the strategy is already registered (must have a unique UUID id).
         """
-        if strategy.id in self._registered_strategies.keys():
+        if strategy.id in self._registered_strategies:
             raise ValueError(
                 "Cannot register strategy (The strategy must have a unique UUID id).")
 
@@ -144,7 +144,7 @@ class ExecutionClient:
         :param order: The order to register.
         :param strategy_id: The strategy id to register with the order.
         """
-        if order.id in self._order_index.keys():
+        if order.id in self._order_index:
             raise ValueError(f"The order does not have a unique id.")
 
         self._order_index[order.id] = strategy_id
@@ -157,7 +157,7 @@ class ExecutionClient:
 
         if isinstance(event, OrderEvent):
             order_id = event.order_id
-            if order_id not in self._order_index.keys():
+            if order_id not in self._order_index:
                 self._log.warning(
                     f"The given event order id {order_id} was not contained in the order index.")
                 return
