@@ -508,7 +508,7 @@ class TradeStrategy:
 
         :param label: The label for the timer (must be unique).
         :param interval: The time delta interval for the timer.
-        :param start_time: The start time for the timer (can be None, starts immediately).
+        :param start_time: The start time for the timer (can be None, then starts immediately).
         :param stop_time: The stop time for the timer (can be None).
         :param repeat: The option for the timer to repeat until the strategy is stopped
         :raises ValueError: If the label is not a valid string.
@@ -807,7 +807,7 @@ class TradeStrategy:
             label: str,
             alert_time: datetime,
             interval: timedelta,
-            stop_time: datetime):
+            stop_time: datetime or None):
         """
         Create a new TimeEvent and pass it into the _update_events() method.
         Then start a timer for the next time event.
