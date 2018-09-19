@@ -10,6 +10,7 @@
 import abc
 import msgpack
 import iso8601
+import json
 
 from uuid import UUID
 from datetime import datetime
@@ -20,7 +21,7 @@ from inv_trader.core.precondition import Precondition
 from inv_trader.commands import Command, OrderCommand, SubmitOrder, CancelOrder, ModifyOrder
 from inv_trader.commands import CollateralInquiry
 from inv_trader.model.enums import Venue, OrderSide, OrderType, TimeInForce, CurrencyCode, Broker
-from inv_trader.model.objects import Symbol
+from inv_trader.model.objects import Symbol, Instrument
 from inv_trader.model.order import Order
 from inv_trader.model.events import Event, OrderEvent, AccountEvent
 from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
@@ -93,6 +94,8 @@ MARGIN_USED_LIQUIDATION = 'margin_used_liquidation'
 MARGIN_USED_MAINTENANCE = 'margin_used_maintenance'
 MARGIN_RATIO = 'margin_ratio'
 MARGIN_CALL_STATUS = 'margin_call_status'
+
+QUOTE_CURRENCY = 'quote_currency'
 
 
 def _parse_symbol(symbol_string: str) -> Symbol:
@@ -244,6 +247,7 @@ class CommandSerializer:
         Serialize the given command to bytes.
 
         :param: command: The command to serialize.
+        :return: The serialized command.
         """
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented.")
@@ -255,6 +259,7 @@ class CommandSerializer:
         Deserialize the given bytes to a Command.
 
         :param: command_bytes: The command bytes to deserialize.
+        :return: The deserialized command.
         """
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented.")
@@ -408,7 +413,7 @@ class EventSerializer:
         """
         Serialize the given event to bytes.
 
-        :param event: The bytes to deserialize.
+        :param event: The event to serialize.
         :return: The serialized event.
         """
         # Raise exception if not overridden in implementation.
@@ -433,12 +438,11 @@ class MsgPackEventSerializer(EventSerializer):
     """
 
     @staticmethod
-    @abc.abstractmethod
     def serialize(event: Event) -> bytes:
         """
         Serialize the event to Message Pack specification bytes.
 
-        :param event: The bytes to serialize.
+        :param event: The event to serialize.
         :return: The serialized event.
         :raises: ValueError: If the event cannot be serialized.
         """
@@ -709,3 +713,32 @@ class MsgPackEventSerializer(EventSerializer):
 
         else:
             raise ValueError("Cannot deserialize event_bytes (unrecognized bytes pattern.")
+
+
+class InstrumentSerializer:
+    """
+    Provides an instrument serializer using JSON.
+    """
+
+    @staticmethod
+    @abc.abstractmethod
+    def serialize(instrument: Instrument) -> bytes:
+        """
+        Serialize the event to JSON.
+
+        :param instrument: The instrument to serialize.
+        :return: The serialized instrument.
+        :raises: ValueError: If the instrument cannot be serialized.
+        """
+
+
+    @staticmethod
+    def deserialize(instrument_bytes: bytes) -> Instrument:
+        """
+        Deserialize the given JSON bytes to an instrument.
+
+        :param instrument_bytes: The bytes to deserialize.
+        :return: The deserialized instrument.
+        :raises ValueError: If the instrument_bytes is empty.
+        :raises ValueError: If the instrument cannot be deserialized.
+        """
