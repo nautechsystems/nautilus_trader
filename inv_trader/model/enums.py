@@ -106,6 +106,18 @@ class MarketPosition(Enum):
     SHORT = 2,
 
 
+class SecurityType(Enum):
+    """
+    Represents a security type.
+    """
+    FOREX = 0,
+    BOND = 1,
+    EQUITY = 2,
+    FUTURE = 3,
+    CFD = 4,
+    Option = 5
+
+
 class CurrencyCode(Enum):
     """
     Currency codes ISO 4217.
