@@ -27,9 +27,9 @@ from inv_trader.strategy import TradeStrategy
 UTF8 = 'utf-8'
 
 
-class LiveDataClient:
+class DataClient:
     """
-    Provides a live data client for alpha models and trading strategies.
+    Provides a data service client for alpha models and trading strategies.
     """
 
     def __init__(self,
@@ -37,7 +37,7 @@ class LiveDataClient:
                  port: int=6379,
                  logger: Logger=None):
         """
-        Initializes a new instance of the LiveDataClient class.
+        Initializes a new instance of the DataClient class.
 
         :param host: The redis host IP address (default=127.0.0.1).
         :param port: The redis host port (default=6379).
@@ -57,11 +57,11 @@ class LiveDataClient:
         self._redis_client = None
         self._pubsub = None
         self._pubsub_thread = None
-        self._subscriptions_ticks = []
-        self._subscriptions_bars = []
-        self._tick_handlers = []
-        self._bar_handlers = []
-        self._instruments = {}  # type: Dict[Symbol, Instrument]
+        self._subscriptions_ticks = []  # type: List[str]
+        self._subscriptions_bars = []   # type: List[str]
+        self._tick_handlers = []        # type: List[Callable]
+        self._bar_handlers = []         # type: List[Callable]
+        self._instruments = {}          # type: Dict[Symbol, Instrument]
 
         self._log.info("Initialized.")
 
@@ -125,7 +125,7 @@ class LiveDataClient:
 
     def connect(self):
         """
-        Connect to the live database and create a pub/sub server.
+        Connect to the data service and create a pub/sub server.
         """
         self._redis_client = StrictRedis(host=self._host,
                                          port=self._port,
@@ -135,7 +135,7 @@ class LiveDataClient:
 
     def disconnect(self):
         """
-        Disconnect from the local pub/sub server and the database.
+        Disconnect from the local pub/sub server and the data service.
         """
         if self._pubsub is not None:
             self._pubsub.unsubscribe()
@@ -150,9 +150,9 @@ class LiveDataClient:
 
         if self._redis_client is not None:
             self._redis_client.connection_pool.disconnect()
-            self._log.info(f"Disconnected from live database at {self._host}:{self._port}.")
+            self._log.info(f"Disconnected from the data service at {self._host}:{self._port}.")
         else:
-            self._log.info("Disconnected (the client was already disconnected).")
+            self._log.info("Disconnected (the data client was already disconnected).")
 
         self._redis_client = None
         self._pubsub = None
@@ -363,7 +363,7 @@ class LiveDataClient:
                 bars = bars[last_index:]
             else:
                 self._log.warning(
-                    f"Historical bars are less than the requested amount ({len(bars)} vs {amount}).")
+                    f"Historical bars are < the requested amount ({len(bars)} vs {amount}).")
 
         bar_type = BarType(Symbol(symbol, venue), period, resolution, quote_type)
         self._log.info(f"Historical download of {len(bars)} bars for {bar_type} complete.")
@@ -399,7 +399,8 @@ class LiveDataClient:
         """
         Precondition.valid_string(symbol, 'symbol')
         Precondition.positive(period, 'period')
-        Precondition.true(from_datetime < datetime.now(timezone.utc), 'from_datetime < datetime.now(timezone.utc)')
+        Precondition.true(from_datetime < datetime.now(timezone.utc),
+                          'from_datetime < datetime.now(timezone.utc)')
 
         self._check_connection()
 
@@ -509,6 +510,8 @@ class LiveDataClient:
         if strategy_bar_handler not in self._bar_handlers:
             self._bar_handlers.append(strategy_bar_handler)
 
+        strategy._register_data_client(self)
+
         self._log.info(f"Registered strategy {strategy} with the data client.")
 
     @staticmethod
@@ -584,7 +587,7 @@ class LiveDataClient:
         Return the bar channel name from the given parameters.
         """
         return str(f'{symbol.lower()}.{venue.name.lower()}-{period}-'
-                f'{resolution.name.lower()}[{quote_type.name.lower()}]')
+                   f'{resolution.name.lower()}[{quote_type.name.lower()}]')
 
     def _check_connection(self):
         """

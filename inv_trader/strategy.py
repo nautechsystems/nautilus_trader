@@ -85,8 +85,9 @@ class TradeStrategy:
         self._order_book = {}            # type: Dict[OrderId, Order]
         self._order_position_index = {}  # type: Dict[OrderId, PositionId]
         self._position_book = {}         # type: Dict[PositionId, Position or None]
-        self._account = None  # Initialized when registered with execution client.
+        self._data_client = None
         self._exec_client = None
+        self._account = None  # Initialized when registered with execution client.
 
         self._log.info(f"Initialized.")
 
@@ -675,6 +676,21 @@ class TradeStrategy:
         self._log.info(f"Modifying {order} with new price {new_price}")
         self._exec_client.modify_order(order, new_price)
 
+    def _register_data_client(self, client):
+        """
+        Register the data client with the strategy.
+
+        :param client: The data service client to register.
+        :raises ValueError: If client is None.
+        :raises TypeError: If client does not inherit from DataClient.
+        """
+        if client is None:
+            raise ValueError("Cannot register data client (the client cannot be None).")
+        if client.__class__.__name__ != 'DataClient':
+            raise TypeError("Cannot register data client (the client was not of type DataClient).")
+
+        self._data_client = client
+
     def _register_execution_client(self, client):
         """
         Register the execution client with the strategy.
@@ -684,9 +700,11 @@ class TradeStrategy:
         :raises TypeError: If client does not inherit from ExecutionClient.
         """
         if client is None:
-            raise ValueError("The client cannot be None.")
+            raise ValueError("Cannot register execution client (the client cannot be None).")
         if client.__class__.__mro__[-2].__name__ != 'ExecutionClient':
-            raise TypeError("The client must inherit from the ExecutionClient base class.")
+            raise TypeError(
+                ("Cannot register execution client "
+                 "(the given client does not inherit from the ExecutionClient base class)."))
 
         self._exec_client = client
         self._account = client.account
