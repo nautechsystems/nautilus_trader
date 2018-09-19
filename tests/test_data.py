@@ -14,18 +14,18 @@ import time
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from inv_trader.data import LiveDataClient
+from inv_trader.data import DataClient
 from inv_trader.model.objects import Symbol, Tick, BarType, Bar
 from inv_trader.model.enums import Venue, Resolution, QuoteType
 from test_kit.objects import ObjectStorer
 
 
-class LiveDataClientTests(unittest.TestCase):
+class DataClientTests(unittest.TestCase):
 
     # Fixture Setup
     def setUp(self):
         # Arrange
-        self.data_client = LiveDataClient()
+        self.data_client = DataClient()
         self.redis_tester = redis.StrictRedis(host='localhost', port=6379, db=0)
 
     # Fixture Tear Down
@@ -422,7 +422,7 @@ class LiveDataClientTests(unittest.TestCase):
         self.data_client.update_all_instruments()
 
         # Assert
-        self.assertTrue(len(self.data_client.instruments) > 1)
+        self.assertTrue(len(self.data_client.instruments) >= 1)
 
     def test_can_update_instrument(self):
         # Arrange
@@ -434,4 +434,3 @@ class LiveDataClientTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(symbol in self.data_client._instruments)
-        print(self.data_client.symbols)

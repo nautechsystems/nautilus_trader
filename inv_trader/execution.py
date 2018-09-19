@@ -78,6 +78,8 @@ class ExecutionClient:
         self._registered_strategies[strategy.id] = strategy._update_events
         strategy._register_execution_client(self)
 
+        self._log.info(f"Registered strategy {strategy} with the execution client.")
+
     @abc.abstractmethod
     def connect(self):
         """

@@ -730,7 +730,9 @@ class InstrumentSerializer:
         :raises ValueError: If the instrument_bytes is empty.
         :raises ValueError: If the instrument cannot be deserialized.
         """
-        inst_json = json.loads(instrument_bytes).replace("\"", "\'").replace("\'Timestamp\':", "\'Timestamp\':\'")[:-1] + "\'}"
+        inst_json = (json.loads(instrument_bytes)
+                     .replace("\"", "\'")
+                     .replace("\'Timestamp\':", "\'Timestamp\':\'")[:-1] + "\'}")
         inst_dict = ast.literal_eval(inst_json)
 
         tick_size = inst_dict['TickSize']
