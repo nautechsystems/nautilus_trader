@@ -11,7 +11,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from inv_trader.core.precondition import Precondition
-from inv_trader.model.enums import Venue, Resolution, QuoteType
+from inv_trader.model.enums import Venue, Resolution, QuoteType, SecurityType, CurrencyCode
 
 
 class Price:
@@ -193,7 +193,7 @@ class Tick:
 
 class BarType:
     """
-    Represents a symbol and bar specification.
+    Represents a financial market symbol and bar specification.
     """
 
     def __init__(self,
@@ -390,3 +390,213 @@ class Bar:
         :return: The repr() string representation of the bar.
         """
         return f"<{str(self)} object at {id(self)}>"
+
+
+class Instrument:
+    """
+    Represents a tradeable financial market instrument.
+    """
+
+    def __init__(self,
+                 symbol: Symbol,
+                 broker_symbol: str,
+                 quote_currency: CurrencyCode,
+                 security_type: SecurityType,
+                 tick_decimals: int,
+                 tick_size: Decimal,
+                 tick_value: Decimal,
+                 target_direct_spread: Decimal,
+                 contract_size: int,
+                 min_stop_distance_entry: int,
+                 min_limit_distance_entry: int,
+                 min_stop_distance: int,
+                 min_limit_distance: int,
+                 min_trade_size: int,
+                 max_trade_size: int,
+                 margin_requirement: Decimal,
+                 rollover_interest_buy: Decimal,
+                 rollover_interest_sell: Decimal,
+                 timestamp: datetime):
+        """
+        Initializes a new instance of the Instrument class.
+
+        :param symbol: The instruments symbol.
+        :param broker_symbol: The instruments broker symbol.
+        :param quote_currency: The instruments quote currency.
+        :param security_type: The instruments security type.
+        :param tick_decimals: The instruments tick decimal precision.
+        :param tick_size: The instruments tick size.
+        :param tick_value: The instruments tick value.
+        :param target_direct_spread: The instruments target direct spread (set by broker).
+        :param contract_size: The instruments contract size if applicable.
+        :param min_stop_distance_entry: The instruments minimum distance for stop entry orders.
+        :param min_limit_distance_entry: The instruments minimum distance for limit entry orders.
+        :param min_stop_distance: The instruments minimum tick distance for stop orders.
+        :param min_limit_distance: The instruments minimum tick distance for limit orders.
+        :param min_trade_size: The instruments minimum trade size.
+        :param max_trade_size: The instruments maximum trade size.
+        :param margin_requirement: The instruments margin requirement per unit.
+        :param rollover_interest_buy: The instruments rollover interest for long positions.
+        :param rollover_interest_sell: The instruments rollover interest for short positions.
+        :param timestamp: The timestamp the instrument was created/updated at.
+        """
+        Precondition.valid_string(broker_symbol, 'broker_symbol')
+        Precondition.not_negative(tick_decimals, 'tick_decimals')
+        Precondition.positive(tick_size, 'tick_size')
+        Precondition.positive(tick_value, 'tick_value')
+        Precondition.positive(target_direct_spread, 'target_direct_spread')
+        Precondition.positive(contract_size, 'contract_size')
+        Precondition.not_negative(min_stop_distance_entry, 'min_stop_distance_entry')
+        Precondition.not_negative(min_limit_distance_entry, 'min_limit_distance_entry')
+        Precondition.not_negative(min_stop_distance, 'min_stop_distance')
+        Precondition.not_negative(min_limit_distance, 'min_limit_distance')
+        Precondition.not_negative(min_limit_distance, 'min_limit_distance')
+        Precondition.positive(min_trade_size, 'min_trade_size')
+        Precondition.positive(max_trade_size, 'max_trade_size')
+        Precondition.positive(margin_requirement, 'margin_requirement')
+
+        self._symbol = symbol
+        self._broker_symbol = broker_symbol
+        self._quote_currency = quote_currency
+        self._security_type = security_type
+        self._tick_decimals = tick_decimals
+        self._tick_size = tick_size
+        self._tick_value = tick_value
+        self._target_direct_spread = target_direct_spread
+        self._contract_size = contract_size
+        self._min_stop_distance_entry = min_stop_distance_entry
+        self._min_limit_distance_entry = min_limit_distance_entry
+        self._min_stop_distance = min_stop_distance
+        self._min_limit_distance = min_limit_distance
+        self._min_trade_size = min_trade_size
+        self._max_trade_size = max_trade_size
+        self._margin_requirement = margin_requirement
+        self._rollover_interest_buy = rollover_interest_buy
+        self._rollover_interest_sell = rollover_interest_sell
+        self._timestamp = timestamp
+
+    @property
+    def symbol(self) -> Symbol:
+        """
+        :return: The instruments symbol.
+        """
+        return self._symbol
+
+    @property
+    def broker_symbol(self) -> str:
+        """
+        :return: The instruments broker symbol.
+        """
+        return self._broker_symbol
+
+    @property
+    def quote_currency(self) -> CurrencyCode:
+        """
+        :return: The instruments quote currency.
+        """
+        return self._quote_currency
+
+    @property
+    def security_type(self) -> SecurityType:
+        """
+        :return: The instruments security type.
+        """
+        return self._security_type
+
+    @property
+    def tick_decimals(self) -> int:
+        """
+        :return: The instruments tick decimal precision.
+        """
+        return self._tick_decimals
+
+    @property
+    def tick_value(self) -> Decimal:
+        """
+        :return: The instruments tick value.
+        """
+        return self._tick_value
+
+    @property
+    def target_direct_spread(self) -> Decimal:
+        """
+        :return: The instruments target direct spread (set by broker).
+        """
+        return self._target_direct_spread
+
+    @property
+    def contract_size(self) -> int:
+        """
+        :return: The instruments contract size.
+        """
+        return self._contract_size
+
+    @property
+    def min_stop_distance_entry(self) -> int:
+        """
+        :return: The instruments minimum tick distance for stop entry orders.
+        """
+        return self._min_stop_distance_entry
+
+    @property
+    def min_limit_distance_entry(self) -> int:
+        """
+        :return: The instruments minimum tick distance for limit entry orders.
+        """
+        return self._min_limit_distance_entry
+
+    @property
+    def min_stop_distance(self) -> int:
+        """
+        :return: The instruments minimum tick distance for stop orders.
+        """
+        return self._min_stop_distance
+
+    @property
+    def min_limit_distance(self) -> int:
+        """
+        :return: The instruments minimum tick distance for limit orders.
+        """
+        return self._min_limit_distance
+
+    @property
+    def min_trade_size(self) -> int:
+        """
+        :return: The instruments minimum trade size.
+        """
+        return self._min_trade_size
+
+    @property
+    def max_trade_size(self) -> int:
+        """
+        :return: The instruments maximum trade size.
+        """
+        return self._max_trade_size
+
+    @property
+    def margin_requirement(self) -> Decimal:
+        """
+        :return: The instruments margin requirement.
+        """
+        return self._margin_requirement
+
+    @property
+    def rollover_interest_buy(self) -> Decimal:
+        """
+        :return: The instruments rollover interest for long positions.
+        """
+        return self._rollover_interest_buy
+
+    @property
+    def rollover_interest_sell(self) -> Decimal:
+        """
+        :return: The instruments rollover interest for short positions.
+        """
+        return self._rollover_interest_sell
+
+    @property
+    def timestamp(self) -> datetime:
+        """
+        :return: The timestamp the instrument was created/updated at.
+        """
+        return self._timestamp
