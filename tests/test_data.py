@@ -434,4 +434,4 @@ class LiveDataClientTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(symbol in self.data_client._instruments)
-        print(self.data_client._instruments)
+        print(self.data_client.symbols)
