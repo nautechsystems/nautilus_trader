@@ -14,13 +14,14 @@ import time
 from datetime import datetime, timezone
 from decimal import Decimal
 from redis import StrictRedis, ConnectionError
-from typing import List, Dict, Callable
+from typing import List, Dict, Callable, KeysView
 
 from inv_trader.core.precondition import Precondition
 from inv_trader.core.logger import Logger, LoggingAdapter
 
 from inv_trader.model.enums import Resolution, QuoteType, Venue
-from inv_trader.model.objects import Symbol, Tick, BarType, Bar
+from inv_trader.model.objects import Symbol, Tick, BarType, Bar, Instrument
+from inv_trader.serialization import InstrumentSerializer
 from inv_trader.strategy import TradeStrategy
 
 UTF8 = 'utf-8'
@@ -60,6 +61,7 @@ class LiveDataClient:
         self._subscriptions_bars = []
         self._tick_handlers = []
         self._bar_handlers = []
+        self._instruments = {}  # type: Dict[Symbol, Instrument]
 
         self._log.info("Initialized.")
 
@@ -77,6 +79,28 @@ class LiveDataClient:
             return False
 
         return True
+
+    @property
+    def symbols(self) -> List[Symbol]:
+        """
+        :return: All instrument symbols held by the data client.
+        """
+        symbols = []
+        for symbol in self._instruments:
+            symbols.append(symbol)
+
+        return symbols
+
+    @property
+    def instruments(self) -> List[Instrument]:
+        """
+        :return: All instruments held by the data client.
+        """
+        instruments = []
+        for instrument in self._instruments.values():
+            instruments.append(instrument)
+
+        return instruments
 
     @property
     def subscriptions_all(self) -> List[str]:
@@ -409,6 +433,48 @@ class LiveDataClient:
         for bar in bars:
             [handler(bar_type, bar) for handler in self._bar_handlers]
         self._log.info(f"Historical bars hydrated for all registered strategies.")
+
+    def update_all_instruments(self):
+        """
+        Update all held instruments from the live database.
+        """
+        keys = self._redis_client.keys('instruments*')
+
+        for key in keys:
+            instrument = InstrumentSerializer.deserialize(self._redis_client.get(key))
+            self._instruments[instrument.symbol] = instrument
+            self._log.info(f"Updated instrument for {instrument.symbol}.")
+
+    def update_instrument(self, symbol: Symbol):
+        """
+        Update the instrument corresponding to the given symbol (if found).
+        Will log a warning is symbol is not found.
+
+        :param symbol: The symbol to update.
+        """
+        key = f'instruments:{symbol.code.lower()}.{symbol.venue.name.lower()}'
+
+        if key is None:
+            self._log.warning(
+                f"Cannot update instrument (symbol {symbol}not found in live database).")
+            return
+
+        instrument = InstrumentSerializer.deserialize(self._redis_client.get(key))
+        self._instruments[symbol] = instrument
+        self._log.info(f"Updated instrument for {symbol}.")
+
+    def get_instrument(self, symbol: Symbol) -> Instrument:
+        """
+        Get the instrument corresponding to the given symbol.
+
+        :param symbol: The symbol of the instrument to get.
+        :return: The instrument (if found)
+        :raises KeyError: If the instrument is not found.
+        """
+        if symbol not in self._instruments:
+            raise KeyError(f"Cannot find instrument for {symbol}.")
+
+        return self._instruments[symbol]
 
     def _get_redis_bar_keys(
             self,

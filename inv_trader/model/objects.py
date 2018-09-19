@@ -444,7 +444,7 @@ class Instrument:
         Precondition.not_negative(tick_decimals, 'tick_decimals')
         Precondition.positive(tick_size, 'tick_size')
         Precondition.positive(tick_value, 'tick_value')
-        Precondition.positive(target_direct_spread, 'target_direct_spread')
+        Precondition.not_negative(target_direct_spread, 'target_direct_spread')
         Precondition.positive(contract_size, 'contract_size')
         Precondition.not_negative(min_stop_distance_entry, 'min_stop_distance_entry')
         Precondition.not_negative(min_limit_distance_entry, 'min_limit_distance_entry')
@@ -453,7 +453,7 @@ class Instrument:
         Precondition.not_negative(min_limit_distance, 'min_limit_distance')
         Precondition.positive(min_trade_size, 'min_trade_size')
         Precondition.positive(max_trade_size, 'max_trade_size')
-        Precondition.positive(margin_requirement, 'margin_requirement')
+        Precondition.not_negative(margin_requirement, 'margin_requirement')
 
         self._symbol = symbol
         self._broker_symbol = broker_symbol

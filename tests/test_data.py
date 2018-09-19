@@ -9,10 +9,9 @@
 
 import unittest
 import redis
-import pytz
 import time
 
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 
 from inv_trader.data import LiveDataClient
@@ -163,7 +162,7 @@ class LiveDataClientTests(unittest.TestCase):
         tick = Tick(Symbol('AUDUSD', Venue.FXCM),
                     Decimal('1.00000'),
                     Decimal('1.00001'),
-                    datetime(2018, 1, 1, 19, 59, 1, 0, pytz.UTC))
+                    datetime(2018, 1, 1, 19, 59, 1, 0, timezone.utc))
 
         # Act
         result = self.data_client._parse_tick(
@@ -181,7 +180,7 @@ class LiveDataClientTests(unittest.TestCase):
                   Decimal('1.00003'),
                   Decimal('1.00002'),
                   100000,
-                  datetime(2018, 1, 1, 19, 59, 1, 0, pytz.UTC))
+                  datetime(2018, 1, 1, 19, 59, 1, 0, timezone.utc))
 
         # Act
         result = self.data_client._parse_bar(
@@ -209,7 +208,7 @@ class LiveDataClientTests(unittest.TestCase):
         tick = Tick(Symbol('AUDUSD', Venue.FXCM),
                     Decimal('1.00000'),
                     Decimal('1.00001'),
-                    datetime(2018, 1, 1, 19, 59, 1, 0, pytz.UTC))
+                    datetime(2018, 1, 1, 19, 59, 1, 0, timezone.utc))
 
         # Act
         self.data_client._tick_handler(
@@ -225,7 +224,7 @@ class LiveDataClientTests(unittest.TestCase):
                   Decimal('1.00003'),
                   Decimal('1.00002'),
                   100000,
-                  datetime(2018, 1, 1, 19, 59, 1, 0, pytz.UTC))
+                  datetime(2018, 1, 1, 19, 59, 1, 0, timezone.utc))
 
         # Act
         self.data_client._bar_handler(
@@ -244,7 +243,7 @@ class LiveDataClientTests(unittest.TestCase):
         tick = Tick(Symbol('AUDUSD', Venue.FXCM),
                     Decimal('1.00000'),
                     Decimal('1.00001'),
-                    datetime(2018, 1, 1, 19, 59, 1, 0, pytz.UTC))
+                    datetime(2018, 1, 1, 19, 59, 1, 0, timezone.utc))
 
         # Act
         self.redis_tester.publish(
@@ -315,7 +314,7 @@ class LiveDataClientTests(unittest.TestCase):
             Decimal('1.00003'),
             Decimal('1.00002'),
             100000,
-            datetime(2018, 1, 1, 19, 59, 1, 0, pytz.UTC))
+            datetime(2018, 1, 1, 19, 59, 1, 0, timezone.utc))
 
         # Act
         self.redis_tester.publish(
@@ -407,10 +406,32 @@ class LiveDataClientTests(unittest.TestCase):
             Decimal('1.00003'),
             Decimal('1.00002'),
             100000,
-            datetime(2018, 1, 1, 19, 59, 1, 0, pytz.UTC))
+            datetime(2018, 1, 1, 19, 59, 1, 0, timezone.utc))
 
         # Act
         bar_dictionary = {bar_type: bar}
 
         # Assert
         self.assertEqual(bar_dictionary[bar_type], bar)
+
+    def test_can_update_all_instruments(self):
+        # Arrange
+        self.data_client.connect()
+
+        # Act
+        self.data_client.update_all_instruments()
+
+        # Assert
+        self.assertTrue(len(self.data_client.instruments) > 1)
+
+    def test_can_update_instrument(self):
+        # Arrange
+        self.data_client.connect()
+        symbol = Symbol('AUDUSD', Venue.FXCM)
+
+        # Act
+        self.data_client.update_instrument(symbol)
+
+        # Assert
+        self.assertTrue(symbol in self.data_client._instruments)
+        print(self.data_client._instruments)
