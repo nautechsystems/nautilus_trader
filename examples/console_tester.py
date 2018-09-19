@@ -22,6 +22,7 @@ if __name__ == "__main__":
     exec_client.register_strategy(strategy)
 
     data_client.connect()
+    data_client.update_all_instruments()
     data_client.subscribe_ticks('AUDUSD', Venue.FXCM)
     data_client.historical_bars('AUDUSD', Venue.FXCM, 1, Resolution.SECOND, QuoteType.MID)
     data_client.subscribe_bars('AUDUSD', Venue.FXCM, 1, Resolution.SECOND, QuoteType.MID)

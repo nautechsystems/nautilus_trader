@@ -8,6 +8,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import abc
+import ast
 import msgpack
 import iso8601
 import json
@@ -20,7 +21,8 @@ from typing import Dict
 from inv_trader.core.precondition import Precondition
 from inv_trader.commands import Command, OrderCommand, SubmitOrder, CancelOrder, ModifyOrder
 from inv_trader.commands import CollateralInquiry
-from inv_trader.model.enums import Venue, OrderSide, OrderType, TimeInForce, CurrencyCode, Broker
+from inv_trader.model.enums import Venue, OrderSide, OrderType, TimeInForce
+from inv_trader.model.enums import Broker, CurrencyCode, SecurityType
 from inv_trader.model.objects import Symbol, Instrument
 from inv_trader.model.order import Order
 from inv_trader.model.events import Event, OrderEvent, AccountEvent
@@ -94,8 +96,6 @@ MARGIN_USED_LIQUIDATION = 'margin_used_liquidation'
 MARGIN_USED_MAINTENANCE = 'margin_used_maintenance'
 MARGIN_RATIO = 'margin_ratio'
 MARGIN_CALL_STATUS = 'margin_call_status'
-
-QUOTE_CURRENCY = 'quote_currency'
 
 
 def _parse_symbol(symbol_string: str) -> Symbol:
@@ -717,28 +717,46 @@ class MsgPackEventSerializer(EventSerializer):
 
 class InstrumentSerializer:
     """
-    Provides an instrument serializer using JSON.
+    Provides an instrument deserializer.
     """
-
-    @staticmethod
-    @abc.abstractmethod
-    def serialize(instrument: Instrument) -> bytes:
-        """
-        Serialize the event to JSON.
-
-        :param instrument: The instrument to serialize.
-        :return: The serialized instrument.
-        :raises: ValueError: If the instrument cannot be serialized.
-        """
-
 
     @staticmethod
     def deserialize(instrument_bytes: bytes) -> Instrument:
         """
-        Deserialize the given JSON bytes to an instrument.
+        Deserialize the given instrument bytes to an instrument.
 
-        :param instrument_bytes: The bytes to deserialize.
+        :param instrument_bytes: The string to deserialize.
         :return: The deserialized instrument.
         :raises ValueError: If the instrument_bytes is empty.
         :raises ValueError: If the instrument cannot be deserialized.
         """
+        inst_json = json.loads(instrument_bytes).replace("\"", "\'").replace("\'Timestamp\':", "\'Timestamp\':\'")[:-1] + "\'}"
+        inst_dict = ast.literal_eval(inst_json)
+
+        tick_size = inst_dict['TickSize']
+        tick_value = inst_dict['TickValue']
+        target_direct_spread = inst_dict['TargetDirectSpread']
+        margin_requirement = inst_dict['MarginRequirement']
+        rollover_interest_buy = inst_dict['RolloverInterestBuy']
+        rollover_interest_sell = inst_dict['RolloverInterestSell']
+
+        return Instrument(
+            Symbol(inst_dict['Symbol']['Code'], Venue[inst_dict['Symbol']['Venue'].upper()]),
+            inst_dict['BrokerSymbol']['Value'],
+            CurrencyCode[inst_dict['QuoteCurrency'].upper()],
+            SecurityType[inst_dict['SecurityType'].upper()],
+            inst_dict['TickDecimals'],
+            Decimal(tick_size),
+            Decimal(tick_value),
+            Decimal(target_direct_spread),
+            inst_dict['ContractSize'],
+            inst_dict['MinStopDistanceEntry'],
+            inst_dict['MinLimitDistanceEntry'],
+            inst_dict['MinStopDistance'],
+            inst_dict['MinLimitDistance'],
+            inst_dict['MinTradeSize'],
+            inst_dict['MaxTradeSize'],
+            Decimal(margin_requirement),
+            Decimal(rollover_interest_buy),
+            Decimal(rollover_interest_sell),
+            iso8601.parse_date(inst_dict['Timestamp']))
