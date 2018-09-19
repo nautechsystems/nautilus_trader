@@ -521,6 +521,7 @@ class TradeStrategy:
         than the stop_time.
         """
         Precondition.valid_string(label, 'label')
+
         if start_time is not None:
             Precondition.true(start_time >= datetime.now(timezone.utc), 'start_time >= datetime.utcnow()')
         else:
@@ -612,9 +613,11 @@ class TradeStrategy:
 
         :param order: The order to submit.
         :param position_id: The position id to associate with this order.
+        :raises ValueError: If the strategy has not been registered with an execution client.
         :raises ValueError: If the position_id is not a valid string.
         :raises KeyError: If the order_id is already contained in the order book (must be unique).
         """
+        Precondition.not_none(self._exec_client, 'exec_client')
         Precondition.valid_string(position_id, 'position_id')
 
         if order.id in self._order_book:
@@ -636,9 +639,11 @@ class TradeStrategy:
 
         :param order: The order to cancel.
         :param cancel_reason: The reason for cancellation (will be logged).
+        :raises ValueError: If the strategy has not been registered with an execution client.
         :raises ValueError: If the cancel_reason is not a valid string.
         :raises KeyError: If the order_id was not found in the order book.
         """
+        Precondition.not_none(self._exec_client, 'exec_client')
         Precondition.valid_string(cancel_reason, 'cancel_reason')
 
         if order.id not in self._order_book:
@@ -657,9 +662,11 @@ class TradeStrategy:
 
         :param order: The order to modify.
         :param new_price: The new price for the given order.
+        :raises ValueError: If the strategy has not been registered with an execution client.
         :raises ValueError: If the new_price is not positive (> 0).
         :raises KeyError: If order_id was not found in the order book.
         """
+        Precondition.not_none(self._exec_client, 'exec_client')
         Precondition.positive(new_price, 'new_price')
 
         if order.id not in self._order_book:

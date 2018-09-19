@@ -676,6 +676,8 @@ class TradeStrategyTests(unittest.TestCase):
     def test_cancelling_order_which_does_not_exist_raises_ex(self):
         # Arrange
         strategy = TestStrategy1()
+        exec_client = MockExecClient()
+        exec_client.register_strategy(strategy)
 
         order = OrderFactory.market(
             AUDUSD_FXCM,
@@ -713,6 +715,8 @@ class TradeStrategyTests(unittest.TestCase):
     def test_modifying_order_which_does_not_exist_raises_ex(self):
         # Arrange
         strategy = TestStrategy1()
+        exec_client = MockExecClient()
+        exec_client.register_strategy(strategy)
 
         order = OrderFactory.market(
             AUDUSD_FXCM,
