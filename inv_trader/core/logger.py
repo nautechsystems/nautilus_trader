@@ -8,6 +8,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import logging
+import os
 import threading
 
 from datetime import datetime
@@ -22,36 +23,42 @@ class Logger:
     """
 
     def __init__(self,
-                 log_name=None,
-                 log_level_console: logging=INFO,
-                 log_level_file: logging=DEBUG,
+                 name=None,
+                 level_console: logging=INFO,
+                 level_file: logging=DEBUG,
                  console_prints: bool=True,
                  log_to_file: bool=False,
-                 log_file_path: str='var/tmp/'):
+                 log_file_path: str='log/'):
         """
         Initializes a new instance of the Logger class.
 
-        :param log_name: The name of the logger.
-        :param log_level_console: The minimum log level for logging messages to the console.
-        :param log_level_file: The minimum log level for logging messages to the log file.
+        :param name: The name of the logger.
+        :param level_console: The minimum log level for logging messages to the console.
+        :param level_file: The minimum log level for logging messages to the log file.
         :param console_prints: The boolean flag indicating whether log messages should print.
         :param log_to_file: The boolean flag indicating whether log messages should log to file
         :param log_file_path: The name of the log file (cannot be None if log_to_file is True).
+        :raises ValueError: If the name is not a valid string.
+        :raises ValueError: If the log_file_path is not a valid string.
         """
-        if log_name is not None:
-            Precondition.valid_string(log_name, 'log_name')
+        if name is not None:
+            Precondition.valid_string(name, 'log_name')
         else:
-            log_name = 'tmp'
+            name = 'tmp'
 
         Precondition.valid_string(log_file_path, 'log_file_path')
 
-        self._log_level_console = log_level_console
-        self._log_level_file = log_level_file
+        self._log_level_console = level_console
+        self._log_level_file = level_file
         self._console_prints = console_prints
         self._log_to_file = log_to_file
-        self._log_file = f'{log_file_path}{log_name}.log'
-        self._logger = logging.getLogger(log_name)
-        self._logger.setLevel(log_level_file)
+        self._log_file = f'{log_file_path}{name}.log'
+        self._logger = logging.getLogger(name)
+        self._logger.setLevel(level_file)
+
+        # Create directory if it does not exist.
+        if not os.path.exists(log_file_path):
+            os.makedirs(log_file_path)
 
         # Setup log file handling.
         if log_to_file:

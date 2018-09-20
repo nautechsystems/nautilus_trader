@@ -20,7 +20,7 @@ class LoggerTests(unittest.TestCase):
 
     def test_can_log_debug_messages_to_console(self):
         # Arrange
-        logger = Logger(log_level_console=logging.DEBUG)
+        logger = Logger(level_console=logging.DEBUG)
 
         # Act
         logger.debug("This is a log message.")
@@ -30,7 +30,7 @@ class LoggerTests(unittest.TestCase):
 
     def test_can_log_info_messages_to_console(self):
         # Arrange
-        logger = Logger(log_level_console=logging.INFO)
+        logger = Logger(level_console=logging.INFO)
 
         # Act
         logger.info("This is a log message.")
@@ -40,7 +40,7 @@ class LoggerTests(unittest.TestCase):
 
     def test_can_log_warning_messages_to_console(self):
         # Arrange
-        logger = Logger(log_level_console=logging.WARNING)
+        logger = Logger(level_console=logging.WARNING)
 
         # Act
         logger.warning("This is a log message.")
@@ -50,7 +50,7 @@ class LoggerTests(unittest.TestCase):
 
     def test_can_log_critical_messages_to_console(self):
         # Arrange
-        logger = Logger(log_level_console=logging.CRITICAL)
+        logger = Logger(level_console=logging.CRITICAL)
 
         # Act
         logger.critical("This is a log message.")
