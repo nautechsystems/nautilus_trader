@@ -26,7 +26,14 @@ if __name__ == "__main__":
     exec_client.connect()
 
     instrument = data_client.get_instrument(AUDUSD_FXCM)
-    strategy = EMACrossLimitEntry('AUDUSD-01', instrument, AUDUSD_FXCM_1_SEC_MID, 100000, 10, 20)
+    strategy = EMACrossLimitEntry(
+        'AUDUSD-01',
+        '001',
+        instrument,
+        AUDUSD_FXCM_1_SEC_MID,
+        100000,
+        10,
+        20)
     data_client.register_strategy(strategy)
     exec_client.register_strategy(strategy)
 
