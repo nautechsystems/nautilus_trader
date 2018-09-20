@@ -491,18 +491,18 @@ class Instrument:
         return self._broker_symbol
 
     @property
-    def quote_currency(self) -> CurrencyCode:
+    def quote_currency(self) -> str:
         """
         :return: The instruments quote currency.
         """
-        return self._quote_currency
+        return self._quote_currency.name
 
     @property
-    def security_type(self) -> SecurityType:
+    def security_type(self) -> str:
         """
         :return: The instruments security type.
         """
-        return self._security_type
+        return self._security_type.name
 
     @property
     def tick_decimals(self) -> int:
