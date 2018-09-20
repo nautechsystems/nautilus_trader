@@ -752,7 +752,7 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertEqual(OrderStatus.WORKING, strategy.orders[order.id].status)
         self.assertEqual(Decimal('1.00001'), strategy.orders[order.id].price)
 
-    def test_cancel_all_orders_works(self):
+    def test_can_cancel_all_orders(self):
         # Arrange
         strategy = TestStrategy1()
         exec_client = MockExecClient()
@@ -785,6 +785,8 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertEqual(order2, strategy.orders[order2.id])
         self.assertEqual(OrderStatus.CANCELLED, strategy.orders[order1.id].status)
         self.assertEqual(OrderStatus.CANCELLED, strategy.orders[order2.id].status)
+        self.assertTrue(order1.id in strategy.completed_orders)
+        self.assertTrue(order2.id in strategy.completed_orders)
 
     def test_can_flatten_position(self):
         # Arrange
@@ -812,6 +814,16 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertEqual(MarketPosition.FLAT, strategy.position('some-position').market_position)
         self.assertTrue(strategy.position('some-position').is_exited)
         self.assertTrue('some-position' in strategy.completed_positions)
+
+    def test_flatten_position_which_does_not_exist_raises_exception(self):
+        # Arrange
+        strategy = TestStrategy1()
+        exec_client = MockExecClient()
+        exec_client.register_strategy(strategy)
+
+        # Act
+        # Assert
+        self.assertRaises(KeyError, strategy.flatten_position, 'some-position')
 
     def test_can_flatten_all_positions(self):
         # Arrange
