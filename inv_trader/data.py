@@ -29,7 +29,7 @@ UTF8 = 'utf-8'
 
 class LiveDataClient:
     """
-    Provides a data service client for alpha models and trading strategies.
+    Provides a live data client for alpha models and trading strategies.
     """
 
     def __init__(self,
@@ -39,8 +39,8 @@ class LiveDataClient:
         """
         Initializes a new instance of the DataClient class.
 
-        :param host: The redis host IP address (default=127.0.0.1).
-        :param port: The redis host port (default=6379).
+        :param host: The data service host IP address (default=127.0.0.1).
+        :param port: The data service port (default=6379).
         :param logger: The logging adapter for the component.
         :raises ValueError: If the host is not a valid string.
         :raises ValueError: If the port is not in range [0, 65535]
@@ -131,7 +131,7 @@ class LiveDataClient:
                                          port=self._port,
                                          db=0)
         self._pubsub = self._redis_client.pubsub()
-        self._log.info(f"Connected to the data service at {self._host}:{self._port}.")
+        self._log.info(f"Connected to the live data service at {self._host}:{self._port}.")
 
     def disconnect(self):
         """
@@ -150,9 +150,9 @@ class LiveDataClient:
 
         if self._redis_client is not None:
             self._redis_client.connection_pool.disconnect()
-            self._log.info(f"Disconnected from the data service at {self._host}:{self._port}.")
+            self._log.info(f"Disconnected from the live data service at {self._host}:{self._port}.")
         else:
-            self._log.info("Disconnected (the data client was already disconnected).")
+            self._log.info("Disconnected (the live data client was already disconnected).")
 
         self._redis_client = None
         self._pubsub = None
