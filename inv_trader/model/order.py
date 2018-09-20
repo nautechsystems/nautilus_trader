@@ -7,8 +7,6 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import pytz
-
 from datetime import datetime
 from decimal import Decimal
 from typing import Dict, List
