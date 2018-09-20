@@ -76,7 +76,7 @@ class EMACrossLimitEntry(TradeStrategy):
 
         # Users custom order management logic if you like...
         self.entry_orders = {}      # type: Dict[OrderId, Order]
-        self.stop_loss_orders = {}
+        self.stop_loss_orders = {}  # type: Dict[OrderId, Order]
         self.position_id = None
 
     def on_start(self):
