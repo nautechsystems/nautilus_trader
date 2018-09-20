@@ -159,7 +159,7 @@ class ExecutionClient:
 
         if isinstance(event, OrderEvent):
             order_id = event.order_id
-            if order_id not in self._order_index:
+            if order_id not in self._order_index.keys():
                 self._log.warning(
                     f"The given event order id {order_id} was not contained in the order index.")
                 return
