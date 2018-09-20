@@ -11,6 +11,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Dict
 
 from inv_trader.core.precondition import Precondition
+from inv_trader.core.logger import Logger
 from inv_trader.model.enums import OrderSide, TimeInForce
 from inv_trader.model.objects import Price, Tick, BarType, Bar, Instrument
 from inv_trader.model.order import Order, OrderFactory
@@ -35,7 +36,8 @@ class EMACrossLimitEntry(TradeStrategy):
                  position_size: int,
                  fast: int,
                  slow: int,
-                 bar_capacity: int=1000):
+                 bar_capacity: int=1000,
+                 logger: Logger=None):
         """
         Initializes a new instance of the EMACrossLimitEntry class.
 
@@ -53,7 +55,10 @@ class EMACrossLimitEntry(TradeStrategy):
         Precondition.positive(slow, 'slow')
         Precondition.true(slow > fast, 'slow > fast')
 
-        super().__init__(label, order_id_tag=order_id_tag, bar_capacity=bar_capacity)
+        super().__init__(label,
+                         order_id_tag=order_id_tag,
+                         bar_capacity=bar_capacity,
+                         logger=logger)
 
         self.instrument = instrument
         self.symbol = instrument.symbol

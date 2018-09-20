@@ -7,6 +7,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+from inv_trader.core.logger import Logger
 from inv_trader.data import LiveDataClient
 from inv_trader.execution import LiveExecClient
 from inv_trader.model.enums import Venue, Resolution, QuoteType
@@ -18,11 +19,12 @@ AUDUSD_FXCM_1_SEC_MID = BarType(AUDUSD_FXCM, 1, Resolution.SECOND, QuoteType.MID
 
 if __name__ == "__main__":
 
-    data_client = LiveDataClient()
+    logger = Logger(log_to_file=True)
+    data_client = LiveDataClient(logger=logger)
     data_client.connect()
     data_client.update_all_instruments()
 
-    exec_client = LiveExecClient()
+    exec_client = LiveExecClient(logger=logger)
     exec_client.connect()
 
     instrument = data_client.get_instrument(AUDUSD_FXCM)
@@ -33,7 +35,9 @@ if __name__ == "__main__":
         AUDUSD_FXCM_1_SEC_MID,
         100000,
         10,
-        20)
+        20,
+        logger=logger)
+
     data_client.register_strategy(strategy)
     exec_client.register_strategy(strategy)
 

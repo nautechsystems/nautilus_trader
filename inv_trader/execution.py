@@ -214,7 +214,8 @@ class LiveExecClient(ExecutionClient):
             self._context,
             host,
             commands_port,
-            self._command_ack_handler)
+            self._command_ack_handler,
+            logger)
 
         self._events_worker = SubscriberWorker(
             "ExecClient.EventSubscriber",
@@ -222,7 +223,8 @@ class LiveExecClient(ExecutionClient):
             host,
             events_port,
             "nautilus_execution_events",
-            self._event_handler)
+            self._event_handler,
+            logger)
 
         self._log.info(f"ZMQ v{zmq.pyzmq_version()}")
 
