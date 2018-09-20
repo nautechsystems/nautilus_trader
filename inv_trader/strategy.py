@@ -851,7 +851,6 @@ class TradeStrategy:
         # Update the internal ticks.
         self._ticks[tick.symbol] = tick
 
-        # Calls on_tick() if the strategy is running.
         if self._is_running:
             self.on_tick(tick)
 
@@ -866,16 +865,15 @@ class TradeStrategy:
         :param bar_type: The bar type received.
         :param bar: The bar received.
         """
-        # Update the internal bars.
+        # Update the bars.
         if bar_type not in self._bars:
             self._bars[bar_type] = deque(maxlen=self._bar_capacity)  # type: Deque[Bar]
         self._bars[bar_type].append(bar)
 
-        # Update the internal indicators.
+        # Update the indicators.
         if bar_type in self._indicators:
             self._update_indicators(bar_type, bar)
 
-        # Calls on_bar() if the strategy is running.
         if self._is_running:
             self.on_bar(bar_type, bar)
 
@@ -945,7 +943,6 @@ class TradeStrategy:
         elif isinstance(event, AccountEvent):
             self._account.apply(event)
 
-        # Calls on_event() if the strategy is running.
         if self._is_running:
             self.on_event(event)
 
