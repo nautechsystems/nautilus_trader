@@ -724,7 +724,7 @@ class TradeStrategy:
         """
         if client is None:
             raise ValueError("Cannot register data client (the client cannot be None).")
-        if client.__class__.__name__ != 'DataClient':
+        if not client.__class__.__name__.endswith('DataClient'):
             raise TypeError("Cannot register data client (the client was not of type DataClient).")
 
         self._data_client = client
