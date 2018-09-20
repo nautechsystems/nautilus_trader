@@ -26,7 +26,7 @@ from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected
 from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
 from inv_trader.model.events import TimeEvent
 from inv_trader.model.position import Position
-from inv_trader.data import DataClient
+from inv_trader.data import LiveDataClient
 from inv_trader.strategy import TradeStrategy
 from inv_trader.strategy import IndicatorUpdater
 from inv_indicators.average.ema import ExponentialMovingAverage
@@ -767,7 +767,7 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(TypeError, strategy._register_execution_client, DataClient())
+        self.assertRaises(TypeError, strategy._register_execution_client, LiveDataClient())
 
     def test_can_update_bars_and_indicators(self):
         # Arrange

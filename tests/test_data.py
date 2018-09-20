@@ -14,18 +14,18 @@ import time
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from inv_trader.data import DataClient
+from inv_trader.data import LiveDataClient
 from inv_trader.model.objects import Symbol, Tick, BarType, Bar
 from inv_trader.model.enums import Venue, Resolution, QuoteType
 from test_kit.objects import ObjectStorer
 
 
-class DataClientTests(unittest.TestCase):
+class LiveDataClientTests(unittest.TestCase):
 
     # Fixture Setup
     def setUp(self):
         # Arrange
-        self.data_client = DataClient()
+        self.data_client = LiveDataClient()
         self.redis_tester = redis.StrictRedis(host='localhost', port=6379, db=0)
 
     # Fixture Tear Down
