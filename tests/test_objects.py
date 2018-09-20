@@ -35,11 +35,15 @@ class PriceTests(unittest.TestCase):
         result1 = Price.create(1.00000, 5)
         result2 = Price.create(1.0, 0)
         result3 = Price.create(1.001, 2)
+        result4 = Price.create(1.1, 0)
+        result5 = Price.create(1.000001, 5)
 
         # Assert
         self.assertEqual(Decimal('1.00000'), result1)
         self.assertEqual(Decimal('1'), result2)
         self.assertEqual(Decimal('1.00'), result3)
+        self.assertEqual(Decimal('1.0'), result4)
+        self.assertEqual(Decimal('1.0'), result5)
 
     def test_symbol_with_invalid_strings_raises_exception(self):
         # Arrange

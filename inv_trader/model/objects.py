@@ -14,30 +14,6 @@ from inv_trader.core.precondition import Precondition
 from inv_trader.model.enums import Venue, Resolution, QuoteType, SecurityType, CurrencyCode
 
 
-class Price:
-    """
-    Provides a factory for creating Decimal objects representing price.
-    """
-
-    @staticmethod
-    def create(
-            price: float,
-            decimals: int) -> Decimal:
-        """
-        Creates and returns a new price from the given values.
-
-        :param price: The price value.
-        :param decimals: The decimal precision of the price.
-        :return: A Decimal representing the price.
-        :raises ValueError: If the price is not positive (> 0).
-        :raises ValueError: If the decimals is negative.
-        """
-        Precondition.positive(price, 'price')
-        Precondition.not_negative(decimals, 'decimals')
-
-        return Decimal(f'{price:.{decimals}f}')
-
-
 class Symbol:
     """
     Represents the symbol for a financial market tradeable instrument.
@@ -104,6 +80,31 @@ class Symbol:
         :return: The repr() string representation of the symbol.
         """
         return f"<{str(self)} object at {id(self)}>"
+
+
+class Price:
+    """
+    Provides a factory for creating Decimal objects representing price.
+    """
+
+    @staticmethod
+    def create(
+            price: float,
+            decimals: int) -> Decimal:
+        """
+        Creates and returns a new price from the given values.
+        The price is rounded to the given decimal digits.
+
+        :param price: The price value.
+        :param decimals: The decimal precision of the price.
+        :return: A Decimal representing the price.
+        :raises ValueError: If the price is not positive (> 0).
+        :raises ValueError: If the decimals is negative.
+        """
+        Precondition.positive(price, 'price')
+        Precondition.not_negative(decimals, 'decimals')
+
+        return Decimal(f'{round(price, decimals):.{decimals}f}')
 
 
 class Tick:
@@ -424,7 +425,7 @@ class Instrument:
         :param broker_symbol: The instruments broker symbol.
         :param quote_currency: The instruments quote currency.
         :param security_type: The instruments security type.
-        :param tick_decimals: The instruments tick decimal precision.
+        :param tick_decimals: The instruments tick decimal digits precision.
         :param tick_size: The instruments tick size.
         :param tick_value: The instruments tick value.
         :param target_direct_spread: The instruments target direct spread (set by broker).
@@ -506,9 +507,16 @@ class Instrument:
     @property
     def tick_decimals(self) -> int:
         """
-        :return: The instruments tick decimal precision.
+        :return: The instruments tick decimal digits precision.
         """
         return self._tick_decimals
+
+    @property
+    def tick_size(self) -> Decimal:
+        """
+        :return: The instruments tick size.
+        """
+        return self._tick_size
 
     @property
     def tick_value(self) -> Decimal:
