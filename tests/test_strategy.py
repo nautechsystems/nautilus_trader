@@ -10,7 +10,6 @@
 import unittest
 import uuid
 import datetime
-import pytz
 import time
 
 from datetime import datetime, timedelta, timezone
@@ -114,8 +113,8 @@ class TradeStrategyTests(unittest.TestCase):
         result3 = strategy3.label
 
         # Assert
-        self.assertEqual('001', result1)
-        self.assertEqual('001', result2)
+        self.assertEqual('0', result1)
+        self.assertEqual('0', result2)
         self.assertEqual('EURUSD-Scalper', result3)
         self.assertEqual('TradeStrategy-EURUSD-Scalper', str(strategy3))
 
@@ -197,7 +196,7 @@ class TradeStrategyTests(unittest.TestCase):
             Decimal('1.00003'),
             Decimal('1.00002'),
             100000,
-            datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC))
+            datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc))
 
         strategy._update_bars(bar_type, bar)
 
@@ -234,7 +233,7 @@ class TradeStrategyTests(unittest.TestCase):
             Decimal('1.00003'),
             Decimal('1.00002'),
             100000,
-            datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC))
+            datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc))
 
         strategy._update_bars(bar_type, bar)
 
@@ -256,7 +255,7 @@ class TradeStrategyTests(unittest.TestCase):
             Decimal('1.00003'),
             Decimal('1.00002'),
             100000,
-            datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC))
+            datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc))
 
         strategy._update_bars(bar_type, bar)
 
@@ -279,7 +278,7 @@ class TradeStrategyTests(unittest.TestCase):
         tick = Tick(Symbol('AUDUSD', Venue.FXCM),
                     Decimal('1.00000'),
                     Decimal('1.00001'),
-                    datetime(2018, 1, 1, 19, 59, 1, 0, pytz.UTC))
+                    datetime(2018, 1, 1, 19, 59, 1, 0, timezone.utc))
 
         strategy._update_ticks(tick)
 
@@ -385,7 +384,7 @@ class TradeStrategyTests(unittest.TestCase):
             Decimal('1.00003'),
             Decimal('1.00002'),
             100000,
-            datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC))
+            datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc))
 
         strategy._update_bars(bar_type, bar)
 
@@ -753,6 +752,109 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertEqual(OrderStatus.WORKING, strategy.orders[order.id].status)
         self.assertEqual(Decimal('1.00001'), strategy.orders[order.id].price)
 
+    def test_cancel_all_orders_works(self):
+        # Arrange
+        strategy = TestStrategy1()
+        exec_client = MockExecClient()
+        exec_client.register_strategy(strategy)
+
+        order1 = OrderFactory.stop(
+            AUDUSD_FXCM,
+            'AUDUSD-123456-1',
+            'SCALPER-01',
+            OrderSide.BUY,
+            100000,
+            Price.create(1.00000, 5))
+
+        order2 = OrderFactory.stop(
+            AUDUSD_FXCM,
+            'AUDUSD-123456-2',
+            'SCALPER-01',
+            OrderSide.BUY,
+            100000,
+            Price.create(1.00010, 5))
+
+        strategy.submit_order(order1, 'some-position')
+        strategy.submit_order(order2, 'some-position')
+
+        # Act
+        strategy.cancel_all_orders(cancel_reason='TEST')
+
+        # Assert
+        self.assertEqual(order1, strategy.orders[order1.id])
+        self.assertEqual(order2, strategy.orders[order2.id])
+        self.assertEqual(OrderStatus.CANCELLED, strategy.orders[order1.id].status)
+        self.assertEqual(OrderStatus.CANCELLED, strategy.orders[order2.id].status)
+
+    def test_can_flatten_position(self):
+        # Arrange
+        strategy = TestStrategy1()
+        exec_client = MockExecClient()
+        exec_client.register_strategy(strategy)
+
+        order = OrderFactory.market(
+            AUDUSD_FXCM,
+            'AUDUSD-123456-1',
+            'SCALPER-01',
+            OrderSide.BUY,
+            100000)
+
+        strategy.submit_order(order, 'some-position')
+        exec_client.fill_last_order()
+
+        # Act
+        strategy.flatten_position('some-position')
+        exec_client.fill_last_order()
+
+        # Assert
+        self.assertEqual(order, strategy.orders[order.id])
+        self.assertEqual(OrderStatus.FILLED, strategy.orders[order.id].status)
+        self.assertEqual(MarketPosition.FLAT, strategy.position('some-position').market_position)
+        self.assertTrue(strategy.position('some-position').is_exited)
+        self.assertTrue('some-position' in strategy.completed_positions)
+
+    def test_can_flatten_all_positions(self):
+        # Arrange
+        strategy = TestStrategy1()
+        exec_client = MockExecClient()
+        exec_client.register_strategy(strategy)
+
+        order1 = OrderFactory.market(
+            AUDUSD_FXCM,
+            'AUDUSD-123456-1',
+            'SCALPER-01',
+            OrderSide.BUY,
+            100000)
+
+        order2 = OrderFactory.market(
+            AUDUSD_FXCM,
+            'AUDUSD-123456-2',
+            'SCALPER-01',
+            OrderSide.BUY,
+            100000)
+
+        strategy.submit_order(order1, 'some-position1')
+        strategy.submit_order(order2, 'some-position2')
+        exec_client.fill_last_order()
+        exec_client.fill_last_order()
+
+        # Act
+        strategy.flatten_all_positions()
+        exec_client.fill_last_order()
+        exec_client.fill_last_order()
+
+        # Assert
+        self.assertEqual(order1, strategy.orders[order1.id])
+        self.assertEqual(order2, strategy.orders[order2.id])
+        self.assertEqual(OrderStatus.FILLED, strategy.orders[order1.id].status)
+        self.assertEqual(OrderStatus.FILLED, strategy.orders[order2.id].status)
+        self.assertEqual(MarketPosition.FLAT, strategy.position('some-position1').market_position)
+        self.assertEqual(MarketPosition.FLAT, strategy.position('some-position2').market_position)
+        self.assertTrue(strategy.position('some-position1').is_exited)
+        self.assertTrue(strategy.position('some-position2').is_exited)
+        self.assertTrue('some-position1' in strategy.completed_positions)
+        self.assertTrue('some-position2' in strategy.completed_positions)
+
     def test_registering_execution_client_with_none_raises_exception(self):
         # Arrange
         strategy = TestStrategy1()
@@ -784,7 +886,7 @@ class TradeStrategyTests(unittest.TestCase):
             Decimal('1.00003'),
             Decimal('1.00002'),
             100000,
-            datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC))
+            datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc))
 
         # Act
         strategy._update_bars(bar_type, bar)
@@ -886,7 +988,7 @@ class IndicatorUpdaterTests(unittest.TestCase):
             Decimal('1.00003'),
             Decimal('1.00002'),
             1000,
-            datetime(1970, 1, 1, 0, 0, 0, 0, pytz.UTC))
+            datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc))
 
         # Act
         updater.update(bar)
@@ -905,7 +1007,7 @@ class IndicatorUpdaterTests(unittest.TestCase):
             Decimal('1.00003'),
             Decimal('1.00002'),
             1000,
-            datetime(1970, 1, 1, 0, 0, 0, 0, pytz.UTC))
+            datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc))
 
         # Act
         updater.update(bar)

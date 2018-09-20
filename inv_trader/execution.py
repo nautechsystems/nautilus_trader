@@ -239,7 +239,7 @@ class LiveExecClient(ExecutionClient):
         """
         self._events_worker.start()
         self._commands_worker.start()
-        self.collateral_inquiry()
+        # self.collateral_inquiry()
 
     def disconnect(self):
         """
