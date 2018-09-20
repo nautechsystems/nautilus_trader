@@ -7,7 +7,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from inv_trader.data import DataClient
+from inv_trader.data import LiveDataClient
 from inv_trader.execution import LiveExecClient
 from inv_trader.model.enums import Venue, Resolution, QuoteType
 from inv_trader.model.objects import Symbol, BarType
@@ -18,7 +18,7 @@ AUDUSD_FXCM_1_SEC_MID = BarType(AUDUSD_FXCM, 1, Resolution.SECOND, QuoteType.MID
 
 if __name__ == "__main__":
 
-    data_client = DataClient()
+    data_client = LiveDataClient()
     data_client.connect()
     data_client.update_all_instruments()
 
@@ -26,7 +26,6 @@ if __name__ == "__main__":
     exec_client.connect()
 
     instrument = data_client.get_instrument(AUDUSD_FXCM)
-
     strategy = EMACrossLimitEntry('AUDUSD-01', instrument, AUDUSD_FXCM_1_SEC_MID, 100000, 10, 20)
     data_client.register_strategy(strategy)
     exec_client.register_strategy(strategy)

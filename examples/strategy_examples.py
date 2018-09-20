@@ -23,7 +23,7 @@ OrderId = str
 
 class EMACrossLimitEntry(TradeStrategy):
     """"
-    A simple moving average crossing example strategy.
+    A simple moving average cross example strategy.
     """
 
     def __init__(self,

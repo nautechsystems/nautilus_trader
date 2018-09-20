@@ -27,7 +27,7 @@ from inv_trader.strategy import TradeStrategy
 UTF8 = 'utf-8'
 
 
-class DataClient:
+class LiveDataClient:
     """
     Provides a data service client for alpha models and trading strategies.
     """
