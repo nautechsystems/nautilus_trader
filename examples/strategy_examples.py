@@ -222,31 +222,11 @@ class EMACrossLimitEntry(TradeStrategy):
 
     def on_stop(self):
         """
-        This method is called when self.stop() is called, and after internal
+        This method is called when self.stop() is called before internal
         stopping logic.
-
-        You could put custom code to clean up existing positions and orders here.
         """
-        # Flatten existing positions
-        for position in self.positions.values():
-            self.log.info(f"Flattening {position}.")
-            order = OrderFactory.market(
-                position.symbol,
-                self.generate_order_id(position.symbol),
-                "FLATTEN",
-                self.get_flatten_side(position.market_position),
-                position.quantity)
-            self.submit_order(order, self.position_id)
-
-        # Cancel all entry orders
-        for order in self.entry_orders.values():
-            if not order.is_complete:
-                self.cancel_order(order, "STOPPING STRATEGY")
-
-        # Cancel all stop-loss orders
-        for order in self.stop_loss_orders.values():
-            if not order.is_complete:
-                self.cancel_order(order, "STOPPING STRATEGY")
+        self.flatten_all_positions()
+        self.cancel_all_orders("STOPPING STRATEGY")
 
     def on_reset(self):
         """

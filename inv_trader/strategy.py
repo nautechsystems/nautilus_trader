@@ -26,7 +26,7 @@ from inv_trader.model.events import Event, AccountEvent, OrderEvent
 from inv_trader.model.events import OrderFilled, OrderPartiallyFilled
 from inv_trader.model.events import TimeEvent
 from inv_trader.model.objects import Symbol, Tick, BarType, Bar, Instrument
-from inv_trader.model.order import Order, OrderIdGenerator
+from inv_trader.model.order import Order, OrderIdGenerator, OrderFactory
 from inv_trader.model.position import Position
 
 OrderId = str
@@ -59,9 +59,9 @@ class TradeStrategy:
         :raises ValueError: If the bar_capacity is not positive (> 0).
         """
         if label is None:
-            label = '001'
+            label = '0'
         if order_id_tag is None:
-            order_id_tag = '001'
+            order_id_tag = '0'
         Precondition.valid_string(label, 'label')
         Precondition.valid_string(order_id_tag, 'order_id_tag')
         Precondition.positive(bar_capacity, 'bar_capacity')
@@ -254,7 +254,7 @@ class TradeStrategy:
         """
         :return: All instrument symbols held by the data client
         (available once registered with a data client).
-        :raises ValueError: If the strategy has not be registered with a data client.
+        :raises ValueError: If the strategy has not been registered with a data client.
         """
         Precondition.not_none(self._data_client, 'data_client')
 
@@ -265,7 +265,7 @@ class TradeStrategy:
         """
         :return: All instruments held by the data client
         (available once registered with a data client).
-        :raises ValueError: If the strategy has not be registered with a data client.
+        :raises ValueError: If the strategy has not been registered with a data client.
         """
         Precondition.not_none(self._data_client, 'data_client')
 
@@ -275,7 +275,7 @@ class TradeStrategy:
     def account(self) -> Account:
         """
         :return: The strategies account (available once registered with an execution client).
-        :raises ValueError: If the strategy has not be registered with an execution client.
+        :raises ValueError: If the strategy has not been registered with an execution client.
         """
         Precondition.not_none(self._account, 'account')
 
@@ -295,11 +295,11 @@ class TradeStrategy:
         Stops the trade strategy and calls the on_stop() method.
         """
         self._log.info(f"Stopping...")
-        self._is_running = False
+        self.on_stop()
         for label, timer in self._timers.items():
             timer.cancel()
             self._log.info(f"Cancelled timer for {label}.")
-        self.on_stop()
+        self._is_running = False
         self._log.info(f"Stopped.")
 
     def reset(self):
@@ -348,7 +348,8 @@ class TradeStrategy:
         :raises KeyError: If the strategies indicators dictionary does not contain the given bar_type.
         """
         if bar_type not in self._indicators:
-            raise KeyError(f"The indicators dictionary does not contain {bar_type}.")
+            raise KeyError(
+                f"Cannot get indicators (the indicators dictionary does not contain {bar_type}).")
 
         return self._indicators[bar_type]
 
@@ -364,7 +365,9 @@ class TradeStrategy:
         Precondition.valid_string(label, 'label')
 
         if label not in self._indicator_index:
-            raise KeyError(f"The indicator dictionary does not contain the label {label}.")
+            raise KeyError(
+                (f"Cannot get indicator "
+                 f"(the indicator dictionary does not contain the label {label})."))
 
         return self._indicator_index[label]
 
@@ -377,7 +380,8 @@ class TradeStrategy:
         :raises KeyError: If the strategies bars dictionary does not contain the bar type.
         """
         if bar_type not in self._bars:
-            raise KeyError(f"The bars dictionary does not contain {bar_type}.")
+            raise KeyError(
+                f"Cannot get bars (the bars dictionary does not contain {bar_type}).")
 
         return self._bars[bar_type]
 
@@ -395,7 +399,7 @@ class TradeStrategy:
         :raises IndexError: If the strategies bars dictionary does not contain a bar at the given index.
         """
         if bar_type not in self._bars:
-            raise KeyError(f"The bars dictionary does not contain {bar_type}.")
+            raise KeyError(f"Cannot get bar (the bars dictionary does not contain {bar_type}).")
 
         return self._bars[bar_type][index]
 
@@ -408,7 +412,7 @@ class TradeStrategy:
         :raises KeyError: If the strategies tick dictionary does not contain a tick for the given symbol.
         """
         if symbol not in self._ticks:
-            raise KeyError(f"The ticks dictionary does not contain {symbol}.")
+            raise KeyError(f"Cannot get last tick (the ticks dictionary does not contain {symbol}).")
 
         return self._ticks[symbol]
 
@@ -424,7 +428,8 @@ class TradeStrategy:
         Precondition.valid_string(order_id, 'order_id')
 
         if order_id not in self._order_book:
-            raise KeyError(f"The order book does not contain the order with id {order_id}.")
+            raise KeyError(
+                f"Cannot get order (the order book does not contain the order with id {order_id}).")
 
         return self._order_book[order_id]
 
@@ -441,7 +446,8 @@ class TradeStrategy:
 
         if position_id not in self._position_book:
             raise KeyError(
-                f"The positions dictionary does not contain the position {position_id}.")
+                (f"Cannot get position "
+                 f"(the positions dictionary does not contain the position {position_id})."))
 
         return self._position_book[position_id]
 
@@ -466,7 +472,8 @@ class TradeStrategy:
         Precondition.valid_string(label, 'label')
 
         if label in self._indicator_index:
-            raise KeyError("The indicator label must be unique for this strategy.")
+            raise KeyError(
+                "Cannot register indicator (the indicator label must be unique for this strategy).")
 
         if bar_type not in self._indicators:
             self._indicators[bar_type] = []  # type: List[Indicator]
@@ -499,7 +506,7 @@ class TradeStrategy:
         Precondition.true(alert_time > datetime.now(timezone.utc), 'alert_time > datetime.utcnow()')
 
         if label in self._timers:
-            raise KeyError("The time alert label must be unique for this strategy.")
+            raise KeyError("Cannot set time alert (The label must be unique for this strategy).")
 
         timer = Timer(
             interval=(alert_time - datetime.now(timezone.utc)).total_seconds(),
@@ -521,7 +528,7 @@ class TradeStrategy:
         Precondition.valid_string(label, 'label')
 
         if label not in self._timers:
-            raise KeyError(f"Cannot cancel time alert for {label} (The label was not found).")
+            raise KeyError(f"Cannot cancel time alert (The label {label} was not found).")
 
         self._timers[label].cancel()
         del self._timers[label]
@@ -570,7 +577,7 @@ class TradeStrategy:
                               'start_time + interval <= stop_time')
 
         if label in self._timers:
-            raise ValueError("The timer label must be unique for this strategy.")
+            raise ValueError("Cannot set timer (the label must be unique for this strategy).")
 
         alert_time = start_time + interval
         delay = (alert_time - datetime.now(timezone.utc)).total_seconds()
@@ -602,7 +609,7 @@ class TradeStrategy:
         Precondition.valid_string(label, 'label')
 
         if label not in self._timers:
-            raise KeyError(f"Cannot cancel timer for {label} (The label was not found).")
+            raise KeyError(f"Cannot cancel timer (The label {label} was not found).")
 
         self._timers[label].cancel()
         del self._timers[label]
@@ -617,7 +624,8 @@ class TradeStrategy:
         """
         return self._order_id_generator.generate(symbol)
 
-    def get_opposite_side(self, side: OrderSide) -> OrderSide:
+    @staticmethod
+    def get_opposite_side(side: OrderSide) -> OrderSide:
         """
         Get the opposite order side from the original side given.
 
@@ -626,7 +634,8 @@ class TradeStrategy:
         """
         return OrderSide.BUY if side is OrderSide.SELL else OrderSide.SELL
 
-    def get_flatten_side(self, market_position: MarketPosition) -> OrderSide:
+    @staticmethod
+    def get_flatten_side(market_position: MarketPosition) -> OrderSide:
         """
         Get the order side needed to flatten the position from the given market position.
 
@@ -646,7 +655,7 @@ class TradeStrategy:
             order: Order,
             position_id: PositionId):
         """
-        Send a submit order request with the given order to the execution client.
+        Send a submit order command with the given order to the execution service.
 
         :param order: The order to submit.
         :param position_id: The position id to associate with this order.
@@ -658,8 +667,7 @@ class TradeStrategy:
         Precondition.valid_string(position_id, 'position_id')
 
         if order.id in self._order_book:
-            raise KeyError(
-                "The order id is already contained in the order book (must be unique).")
+            raise KeyError(f"Cannot submit order (the order id {order.id} must be unique).")
 
         self._order_book[order.id] = order
         self._order_position_index[order.id] = position_id
@@ -667,50 +675,120 @@ class TradeStrategy:
         self._log.info(f"Submitting {order}")
         self._exec_client.submit_order(order, self._id)
 
-    def cancel_order(
-            self,
-            order: Order,
-            cancel_reason: str='NONE'):
-        """
-        Send a cancel order request for the given order to the execution client.
-
-        :param order: The order to cancel.
-        :param cancel_reason: The reason for cancellation (will be logged).
-        :raises ValueError: If the strategy has not been registered with an execution client.
-        :raises ValueError: If the cancel_reason is not a valid string.
-        :raises KeyError: If the order_id was not found in the order book.
-        """
-        Precondition.not_none(self._exec_client, 'exec_client')
-        Precondition.valid_string(cancel_reason, 'cancel_reason')
-
-        if order.id not in self._order_book:
-            raise KeyError("The order id was not found in the order book.")
-
-        self._log.info(f"Cancelling {order}")
-        self._exec_client.cancel_order(order, cancel_reason)
-
     def modify_order(
             self,
             order: Order,
             new_price: Decimal):
         """
-        Send a modify order request for the given order with the given new price
-        to the execution client.
+        Send a modify order command for the given order with the given new price
+        to the execution service.
 
         :param order: The order to modify.
         :param new_price: The new price for the given order.
         :raises ValueError: If the strategy has not been registered with an execution client.
         :raises ValueError: If the new_price is not positive (> 0).
-        :raises KeyError: If order_id was not found in the order book.
+        :raises KeyError: If order_id is not found in the order book.
         """
         Precondition.not_none(self._exec_client, 'exec_client')
         Precondition.positive(new_price, 'new_price')
 
         if order.id not in self._order_book:
-            raise KeyError("The order id was not found in the order book.")
+            raise KeyError(f"Cannot modify order (the order id {order.id} was not found).")
 
         self._log.info(f"Modifying {order} with new price {new_price}")
         self._exec_client.modify_order(order, new_price)
+
+    def cancel_order(
+            self,
+            order: Order,
+            cancel_reason: str='NONE'):
+        """
+        Send a cancel order command for the given order to the execution service.
+
+        :param order: The order to cancel.
+        :param cancel_reason: The reason for cancellation (will be logged).
+        :raises ValueError: If the strategy has not been registered with an execution client.
+        :raises ValueError: If the cancel_reason is not a valid string.
+        :raises KeyError: If the order_id is not found in the order book.
+        """
+        Precondition.not_none(self._exec_client, 'exec_client')
+        Precondition.valid_string(cancel_reason, 'cancel_reason')
+
+        if order.id not in self._order_book:
+            raise KeyError("Cannot cancel order (the order id was not found).")
+
+        self._log.info(f"Cancelling {order}")
+        self._exec_client.cancel_order(order, cancel_reason)
+
+    def cancel_all_orders(self, cancel_reason: str='NONE'):
+        """
+        Send a cancel order command for all currently working orders in the
+        order book to the execution service.
+
+        :param cancel_reason: The reason for cancellation (will be logged).
+        :raises ValueError: If the strategy has not been registered with an execution client.
+        :raises ValueError: If the cancel_reason is not a valid string.
+        """
+        Precondition.not_none(self._exec_client, 'exec_client')
+        Precondition.valid_string(cancel_reason, 'cancel_reason')
+
+        for order in self._order_book.values():
+            if not order.is_complete:
+                self.cancel_order(order, cancel_reason)
+
+    def flatten_position(self, position_id: PositionId):
+        """
+        Flatten the position corresponding to the given identifier by generating
+        the required market order and sending it to the execution service.
+
+        :param position_id: The position identifier to flatten.
+        :raises ValueError: If the strategy has not been registered with an execution client.
+        :raises ValueError: If the position_id is not a valid string.
+        :raises KeyError: If the position_id is not found in the position book.
+        """
+        Precondition.not_none(self._exec_client, 'exec_client')
+        Precondition.valid_string(position_id, 'position_id')
+
+        if position_id not in self._position_book.keys():
+            raise KeyError(f"Cannot flatten position (the position {position_id} was not found).")
+
+        position = self._position_book[position_id]
+
+        if position is None:
+            self._log.warning(f"Cannot flatten position (the position {position_id} was None).")
+            return
+
+        order = OrderFactory.market(
+            position.symbol,
+            self.generate_order_id(position.symbol),
+            "FLATTEN",
+            self.get_flatten_side(position.market_position),
+            position.quantity)
+
+        self.submit_order(order, position_id)
+
+    def flatten_all_positions(self):
+        """
+        Flatten all positions by generating the required market orders and sending
+        them to the execution service. If no positions found or a position is None
+        then will log a warning.
+        """
+        if len(self._position_book) == 0:
+            self._log.warning("Cannot flatten positions (no positions to flatten).")
+            return
+
+        for position_id, position in self._position_book.items():
+            if position is None:
+                self._log.warning(f"Cannot flatten position (the position {position_id} was None.")
+
+            self.log.info(f"Flattening {position}.")
+            order = OrderFactory.market(
+                position.symbol,
+                self.generate_order_id(position.symbol),
+                "FLATTEN",
+                self.get_flatten_side(position.market_position),
+                position.quantity)
+            self.submit_order(order, position_id)
 
     def _register_data_client(self, client):
         """
