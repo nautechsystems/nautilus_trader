@@ -7,7 +7,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Dict, List
 
@@ -363,7 +363,7 @@ class Order:
 
 # Constants
 # Unix epoch is the UTC time at 00:00:00 on 1/1/1970
-UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, pytz.UTC)
+UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc)
 SEPARATOR = '-'
 MILLISECONDS_PER_SECOND = 1000
 
@@ -417,7 +417,7 @@ class OrderIdGenerator:
 
         :return: The milliseconds since the Unix Epoch.
         """
-        return int((datetime.now(tz=pytz.UTC) - UNIX_EPOCH).total_seconds() * MILLISECONDS_PER_SECOND)
+        return int((datetime.now(timezone.utc) - UNIX_EPOCH).total_seconds() * MILLISECONDS_PER_SECOND)
 
 
 class OrderFactory:
@@ -453,7 +453,7 @@ class OrderFactory:
                      order_side,
                      OrderType.MARKET,
                      quantity,
-                     datetime.now(tz=pytz.UTC),
+                     datetime.now(timezone.utc),
                      price=None,
                      time_in_force=None,
                      expire_time=None)
@@ -495,7 +495,7 @@ class OrderFactory:
                      order_side,
                      OrderType.LIMIT,
                      quantity,
-                     datetime.now(tz=pytz.UTC),
+                     datetime.now(timezone.utc),
                      price,
                      time_in_force,
                      expire_time)
@@ -537,7 +537,7 @@ class OrderFactory:
                      order_side,
                      OrderType.STOP_MARKET,
                      quantity,
-                     datetime.now(tz=pytz.UTC),
+                     datetime.now(timezone.utc),
                      price,
                      time_in_force,
                      expire_time)
@@ -579,7 +579,7 @@ class OrderFactory:
                      order_side,
                      OrderType.STOP_LIMIT,
                      quantity,
-                     datetime.now(tz=pytz.UTC),
+                     datetime.now(timezone.utc),
                      price,
                      time_in_force,
                      expire_time)
@@ -621,7 +621,7 @@ class OrderFactory:
                      order_side,
                      OrderType.MIT,
                      quantity,
-                     datetime.now(tz=pytz.UTC),
+                     datetime.now(timezone.utc),
                      price,
                      time_in_force,
                      expire_time)
@@ -654,7 +654,7 @@ class OrderFactory:
                      order_side,
                      OrderType.MARKET,
                      quantity,
-                     datetime.now(tz=pytz.UTC),
+                     datetime.now(timezone.utc),
                      price=None,
                      time_in_force=TimeInForce.FOC,
                      expire_time=None)
@@ -687,7 +687,7 @@ class OrderFactory:
                      order_side,
                      OrderType.MARKET,
                      quantity,
-                     datetime.now(tz=pytz.UTC),
+                     datetime.now(timezone.utc),
                      price=None,
                      time_in_force=TimeInForce.IOC,
                      expire_time=None)
