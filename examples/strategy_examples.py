@@ -8,22 +8,17 @@
 # -------------------------------------------------------------------------------------------------
 
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal
+from typing import Dict
 
-from inv_trader.model.enums import Resolution, QuoteType, OrderSide, TimeInForce, Venue
-from inv_trader.model.objects import Symbol, Tick, BarType, Bar
-from inv_trader.model.order import OrderFactory
-from inv_trader.model.events import Event, OrderRejected, OrderFilled, OrderPartiallyFilled, OrderModified
+from inv_trader.core.precondition import Precondition
+from inv_trader.model.enums import OrderSide, TimeInForce
+from inv_trader.model.objects import Price, Tick, BarType, Bar, Instrument
+from inv_trader.model.order import Order, OrderFactory
+from inv_trader.model.events import Event, OrderFilled
 from inv_trader.strategy import TradeStrategy
 from inv_indicators.average.ema import ExponentialMovingAverage
 
-# Constants
 OrderId = str
-AUDUSD_FXCM = Symbol("AUDUSD", Venue.FXCM)
-AUDUSD_FXCM_1_SECOND_MID = BarType(AUDUSD_FXCM,
-                                   1,
-                                   Resolution.SECOND,
-                                   QuoteType.MID)
 
 
 class EMACrossLimitEntry(TradeStrategy):
@@ -32,24 +27,50 @@ class EMACrossLimitEntry(TradeStrategy):
     """
 
     def __init__(self,
-                 label,
-                 fast,
-                 slow):
+                 label: str,
+                 instrument: Instrument,
+                 bar_type: BarType,
+                 position_size: int,
+                 fast: int,
+                 slow: int):
         """
-        Initializes a new instance of the EMACross class.
+        Initializes a new instance of the EMACrossLimitEntry class.
+
+        :param label: The unique label for this instance of the strategy.
+        :param instrument: The trading instrument for the strategy (could also input any number of them).
+        :param bar_type: The bar type for the strategy (could also input any number of them)
+        :param position_size: The position unit size.
+        :param fast: The fast EMA period.
+        :param slow: The slow EMA period.
         """
+        Precondition.valid_string(label, 'label')
+        Precondition.positive(fast, 'fast')
+        Precondition.positive(slow, 'slow')
+        Precondition.true(slow > fast, 'slow > fast')
+
         super().__init__(label, order_id_tag='001')  # Note you can add a unique order id tag
+
+        self.instrument = instrument
+        self.symbol = instrument.symbol
+        self.bar_type = bar_type
+        self.position_size = position_size
+        self.tick_decimals = instrument.tick_decimals
+
+        tick_size = instrument.tick_size
+        self.entry_buffer_initial = tick_size * 5
+        self.entry_buffer = tick_size * 3
+        self.SL_buffer = tick_size * 10
 
         # Create the indicators for the strategy
         self.ema1 = ExponentialMovingAverage(fast)
         self.ema2 = ExponentialMovingAverage(slow)
 
         # Register the indicators for updating
-        self.register_indicator(AUDUSD_FXCM_1_SECOND_MID, self.ema1, self.ema1.update, 'ema1')
-        self.register_indicator(AUDUSD_FXCM_1_SECOND_MID, self.ema2, self.ema2.update, 'ema2')
+        self.register_indicator(self.bar_type, self.ema1, self.ema1.update, 'ema1')
+        self.register_indicator(self.bar_type, self.ema2, self.ema2.update, 'ema2')
 
         # Users custom order management logic if you like...
-        self.entry_orders = {}
+        self.entry_orders = {}      # type: Dict[OrderId, Order]
         self.stop_loss_orders = {}
         self.position_id = None
 
@@ -62,7 +83,7 @@ class EMACrossLimitEntry(TradeStrategy):
         self.log.info(f"EMA1 bar count={self.ema1.count}")
         self.log.info(f"EMA2 bar count={self.ema2.count}")
 
-        bars = self.bars(AUDUSD_FXCM_1_SECOND_MID)
+        bars = self.bars(self.bar_type)
         self.log.info(f"Bar[-1]={bars[-1]}")
         self.log.info(f"Bar[-2]={bars[-2]}")
         self.log.info(f"Bar[0]={bars[0]}")
@@ -79,17 +100,25 @@ class EMACrossLimitEntry(TradeStrategy):
         for order in self.entry_orders.values():
             if not order.is_complete:
                 # Slide entry price with market
-                if order.side == OrderSide.BUY and tick.ask - Decimal('0.00003') > order.price:
-                    self.modify_order(order, tick.ask - Decimal('0.00003'))
-                elif order.side == OrderSide.SELL and tick.bid + Decimal('0.00003') < order.price:
-                    self.modify_order(order, tick.bid + Decimal('0.00003'))
+                if order.side == OrderSide.BUY:
+                    temp_entry_slide = Price.create(tick.ask - self.entry_buffer, self.tick_decimals)
+                    if temp_entry_slide > order.price:
+                        self.modify_order(order, temp_entry_slide)
+                elif order.side == OrderSide.SELL:
+                    temp_entry_slide = Price.create(tick.bid + self.entry_buffer, self.tick_decimals)
+                    if temp_entry_slide < order.price:
+                        self.modify_order(order, temp_entry_slide)
 
         for order in self.stop_loss_orders.values():
             if not order.is_complete:
-                if order.side == OrderSide.SELL and tick.bid - Decimal('0.00010') > order.price:
-                    self.modify_order(order, tick.bid - Decimal('0.00010'))
-                elif order.side == OrderSide.BUY and tick.ask + Decimal('0.00010') < order.price:
-                    self.modify_order(order, tick.ask + Decimal('0.00010'))
+                if order.side == OrderSide.SELL:
+                    temp_stop_slide = Price.create(tick.bid - self.SL_buffer, self.tick_decimals)
+                    if temp_stop_slide > order.price:
+                        self.modify_order(order, temp_stop_slide)
+                elif order.side == OrderSide.BUY:
+                    temp_stop_slide = Price.create(tick.ask + self.SL_buffer, self.tick_decimals)
+                    if temp_stop_slide < order.price:
+                        self.modify_order(order, temp_stop_slide)
 
     def on_bar(self, bar_type: BarType, bar: Bar):
         """
@@ -110,7 +139,7 @@ class EMACrossLimitEntry(TradeStrategy):
                     self.cancel_order(order)
                     return
 
-        if bar_type == AUDUSD_FXCM_1_SECOND_MID and AUDUSD_FXCM in self.ticks:
+        if bar_type == self.bar_type and self.symbol in self.ticks:
             # If any open positions or pending entry orders then return
             if len(self.positions) > 0:
                 return
@@ -122,12 +151,13 @@ class EMACrossLimitEntry(TradeStrategy):
             # BUY LOGIC
             if self.ema1.value >= self.ema2.value:
                 entry_order = OrderFactory.limit(
-                    AUDUSD_FXCM,
-                    self.generate_order_id(AUDUSD_FXCM),
+                    self.symbol,
+                    self.generate_order_id(self.symbol),
                     'S1_E',
                     OrderSide.BUY,
-                    100000,
-                    self.ticks[AUDUSD_FXCM].ask - Decimal('0.00005'),
+                    self.position_size,
+                    Price.create(self.ticks[self.symbol].ask - self.entry_buffer_initial,
+                                 self.tick_decimals),
                     time_in_force=TimeInForce.GTD,
                     expire_time=expire_time + timedelta(seconds=10))
                 self.entry_orders[entry_order.id] = entry_order
@@ -138,12 +168,13 @@ class EMACrossLimitEntry(TradeStrategy):
             # SELL LOGIC
             elif self.ema1.value < self.ema2.value:
                 entry_order = OrderFactory.limit(
-                    AUDUSD_FXCM,
-                    self.generate_order_id(AUDUSD_FXCM),
+                    self.symbol,
+                    self.generate_order_id(self.symbol),
                     'S1_E',
                     OrderSide.SELL,
-                    100000,
-                    self.ticks[AUDUSD_FXCM].bid + Decimal('0.00005'),
+                    self.position_size,
+                    Price.create(self.ticks[self.symbol].bid + self.entry_buffer_initial,
+                                 self.tick_decimals),
                     time_in_force=TimeInForce.GTD,
                     expire_time=expire_time + timedelta(seconds=10))
                 self.entry_orders[entry_order.id] = entry_order
@@ -165,13 +196,16 @@ class EMACrossLimitEntry(TradeStrategy):
             if event.order_id in self.entry_orders.keys():
                 # SET TRAILING STOP
                 stop_side = self.get_opposite_side(event.order_side)
-                stop_price = event.average_price - Decimal('0.00010') \
-                    if stop_side is OrderSide.SELL \
-                    else event.average_price + Decimal('0.00010')
+                if stop_side is OrderSide.BUY:
+                    stop_price = Price.create(event.average_price + self.SL_buffer,
+                                              self.tick_decimals)
+                else:
+                    stop_price = Price.create(event.average_price - self.SL_buffer,
+                                              self.tick_decimals)
 
                 stop_order = OrderFactory.stop(
-                    AUDUSD_FXCM,
-                    self.generate_order_id(AUDUSD_FXCM),
+                    self.symbol,
+                    self.generate_order_id(self.symbol),
                     'S1_SL',
                     stop_side,
                     event.filled_quantity,

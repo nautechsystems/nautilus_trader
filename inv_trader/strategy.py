@@ -25,7 +25,7 @@ from inv_trader.model.enums import OrderSide, MarketPosition
 from inv_trader.model.events import Event, AccountEvent, OrderEvent
 from inv_trader.model.events import OrderFilled, OrderPartiallyFilled
 from inv_trader.model.events import TimeEvent
-from inv_trader.model.objects import Symbol, Tick, BarType, Bar
+from inv_trader.model.objects import Symbol, Tick, BarType, Bar, Instrument
 from inv_trader.model.order import Order, OrderIdGenerator
 from inv_trader.model.position import Position
 
@@ -250,10 +250,35 @@ class TradeStrategy:
         return self._position_book
 
     @property
-    def account(self) -> Account or None:
+    def symbols(self) -> List[Symbol]:
         """
-        :return: The strategies account (initialized once registered with execution client).
+        :return: All instrument symbols held by the data client
+        (available once registered with a data client).
+        :raises ValueError: If the strategy has not be registered with a data client.
         """
+        Precondition.not_none(self._data_client, 'data_client')
+
+        return self._data_client.symbols
+
+    @property
+    def instruments(self) -> List[Instrument]:
+        """
+        :return: All instruments held by the data client
+        (available once registered with a data client).
+        :raises ValueError: If the strategy has not be registered with a data client.
+        """
+        Precondition.not_none(self._data_client, 'data_client')
+
+        return self._data_client.symbols
+
+    @property
+    def account(self) -> Account:
+        """
+        :return: The strategies account (available once registered with an execution client).
+        :raises ValueError: If the strategy has not be registered with an execution client.
+        """
+        Precondition.not_none(self._account, 'account')
+
         return self._account
 
     def start(self):
@@ -302,6 +327,19 @@ class TradeStrategy:
 
         self.on_reset()
         self._log.info(f"Reset.")
+
+    def get_instrument(self, symbol: Symbol) -> Instrument:
+        """
+        Get the instrument corresponding to the given symbol from the data client.
+
+        :param symbol: The symbol of the instrument to get.
+        :return: The instrument (if found)
+        :raises ValueError: If the strategy has not been registered with a data client.
+        :raises KeyError: If the instrument is not found.
+        """
+        Precondition.not_none(self._data_client, 'data_client')
+
+        return self._data_client.get_instrument(symbol)
 
     def indicators(self, bar_type: BarType) -> List[Indicator]:
         """
@@ -678,7 +716,7 @@ class TradeStrategy:
 
     def _register_data_client(self, client):
         """
-        Register the data client with the strategy.
+        Register the strategy with the data client.
 
         :param client: The data service client to register.
         :raises ValueError: If client is None.
@@ -693,7 +731,7 @@ class TradeStrategy:
 
     def _register_execution_client(self, client):
         """
-        Register the execution client with the strategy.
+        Register the strategy with the execution client.
 
         :param client: The execution client to register.
         :raises ValueError: If client is None.
