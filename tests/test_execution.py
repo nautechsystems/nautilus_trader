@@ -8,11 +8,10 @@
 # -------------------------------------------------------------------------------------------------
 
 import unittest
-import pytz
 import time
 import zmq
 
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 
 from inv_trader.model.enums import Venue, OrderSide, OrderType, OrderStatus, TimeInForce
@@ -69,7 +68,7 @@ class ExecutionClientTests(unittest.TestCase):
             Decimal('1.00003'),
             Decimal('1.00002'),
             100000,
-            datetime(1970, 1, 1, 00, 00, 0, 0, pytz.UTC))
+            datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc))
 
         bar2 = Bar(
             Decimal('1.00011'),
@@ -77,7 +76,7 @@ class ExecutionClientTests(unittest.TestCase):
             Decimal('1.00013'),
             Decimal('1.00012'),
             100000,
-            datetime(1970, 1, 1, 00, 00, 1, 0, pytz.UTC))
+            datetime(1970, 1, 1, 00, 00, 1, 0, timezone.utc))
 
         # Act
         strategy._update_bars(bar_type, bar1)
