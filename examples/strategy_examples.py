@@ -42,13 +42,14 @@ class EMACrossLimitEntry(TradeStrategy):
         Initializes a new instance of the EMACrossLimitEntry class.
 
         :param label: The unique label for this instance of the strategy.
-        :param label: The unique order id tag for this instance of the strategy.
+        :param order_id_tag: The unique order id tag for this instance of the strategy.
         :param instrument: The trading instrument for the strategy (could also input any number of them).
         :param bar_type: The bar type for the strategy (could also input any number of them)
         :param position_size: The position unit size.
         :param fast: The fast EMA period.
         :param slow: The slow EMA period.
-        :param slow: The historical bar capacity.
+        :param bar_capacity: The historical bar capacity.
+        :param logger: The logger for the strategy (can be None, will just print).
         """
         Precondition.valid_string(label, 'label')
         Precondition.positive(fast, 'fast')
