@@ -954,7 +954,7 @@ class TradeStrategy:
         Move the given completed order from the order book to the completed
         orders dictionary.
 
-        :param order: The completed order to move.
+        :param order: The completed order to copy.
         """
         order_id = order.id
         if order_id in self._completed_orders:
@@ -968,7 +968,7 @@ class TradeStrategy:
         Move the given completed position from the position book to the
         completed positions dictionary.
 
-        :param position: The completed position to move.
+        :param position: The completed position to copy.
         """
         position_id = position.id
         if position_id in self._completed_positions:
