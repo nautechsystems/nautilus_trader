@@ -285,8 +285,6 @@ class TradeStrategy:
         """
         Starts the trade strategy and calls the on_start() method.
         """
-        self._exec_client.collateral_inquiry()
-
         self._log.info(f"Starting...")
         self._is_running = True
         self.on_start()
