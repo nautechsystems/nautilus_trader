@@ -28,27 +28,31 @@ class EMACrossLimitEntry(TradeStrategy):
 
     def __init__(self,
                  label: str,
+                 order_id_tag: str,
                  instrument: Instrument,
                  bar_type: BarType,
                  position_size: int,
                  fast: int,
-                 slow: int):
+                 slow: int,
+                 bar_capacity: int=1000):
         """
         Initializes a new instance of the EMACrossLimitEntry class.
 
         :param label: The unique label for this instance of the strategy.
+        :param label: The unique order id tag for this instance of the strategy.
         :param instrument: The trading instrument for the strategy (could also input any number of them).
         :param bar_type: The bar type for the strategy (could also input any number of them)
         :param position_size: The position unit size.
         :param fast: The fast EMA period.
         :param slow: The slow EMA period.
+        :param slow: The historical bar capacity.
         """
         Precondition.valid_string(label, 'label')
         Precondition.positive(fast, 'fast')
         Precondition.positive(slow, 'slow')
         Precondition.true(slow > fast, 'slow > fast')
 
-        super().__init__(label, order_id_tag='001')  # Note you can add a unique order id tag
+        super().__init__(label, order_id_tag=order_id_tag, bar_capacity=bar_capacity)
 
         self.instrument = instrument
         self.symbol = instrument.symbol
