@@ -97,6 +97,14 @@ class ExecutionClient:
         raise NotImplementedError("Method must be implemented in the execution client.")
 
     @abc.abstractmethod
+    def collateral_inquiry(self):
+        """
+        Send a collateral inquiry command to the execution service.
+        """
+        # Raise exception if not overridden in implementation.
+        raise NotImplementedError("Method must be implemented in the execution client.")
+
+    @abc.abstractmethod
     def submit_order(
             self,
             order: Order,
@@ -124,14 +132,6 @@ class ExecutionClient:
             new_price: Decimal):
         """
         Send a modify order request to the execution service.
-        """
-        # Raise exception if not overridden in implementation.
-        raise NotImplementedError("Method must be implemented in the execution client.")
-
-    @abc.abstractmethod
-    def collateral_inquiry(self):
-        """
-        Send a collateral inquiry command to the execution service.
         """
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the execution client.")
@@ -250,6 +250,16 @@ class LiveExecClient(ExecutionClient):
         self._commands_worker.stop()
         self._events_worker.stop()
 
+    def collateral_inquiry(self):
+        """
+        Send a collateral inquiry command to the execution service.
+        """
+        command = CollateralInquiry(uuid.uuid4(), datetime.utcnow())
+        message = self._command_serializer.serialize(command)
+
+        self._commands_worker.send(message)
+        self._log.debug(f"Sent {command}")
+
     def submit_order(
             self,
             order: Order,
@@ -312,16 +322,6 @@ class LiveExecClient(ExecutionClient):
             new_price,
             uuid.uuid4(),
             datetime.utcnow())
-        message = self._command_serializer.serialize(command)
-
-        self._commands_worker.send(message)
-        self._log.debug(f"Sent {command}")
-
-    def collateral_inquiry(self):
-        """
-        Send a collateral inquiry command to the execution service.
-        """
-        command = CollateralInquiry(uuid.uuid4(), datetime.utcnow())
         message = self._command_serializer.serialize(command)
 
         self._commands_worker.send(message)
