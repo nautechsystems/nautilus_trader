@@ -19,7 +19,7 @@ from threading import Timer
 from uuid import UUID
 
 from inv_trader.core.precondition import Precondition
-from inv_trader.core.logger import Logger, LoggingAdapter
+from inv_trader.core.logger import Logger, LoggerAdapter
 from inv_trader.model.account import Account
 from inv_trader.model.enums import OrderSide, MarketPosition
 from inv_trader.model.events import Event, AccountEvent, OrderEvent
@@ -72,9 +72,9 @@ class TradeStrategy:
         self._order_id_generator = OrderIdGenerator(order_id_tag)
         self._bar_capacity = bar_capacity
         if logger is None:
-            self._log = LoggingAdapter(f"{self._name}-{self._label}")
+            self._log = LoggerAdapter(f"{self._name}-{self._label}")
         else:
-            self._log = LoggingAdapter(f"{self._name}-{self._label}", logger)
+            self._log = LoggerAdapter(f"{self._name}-{self._label}", logger)
         self._is_running = False
         self._timers = {}                # type: Dict[Label, Timer]
         self._ticks = {}                 # type: Dict[Symbol, Tick]
@@ -208,7 +208,7 @@ class TradeStrategy:
         return self._is_running
 
     @property
-    def log(self) -> LoggingAdapter:
+    def log(self) -> LoggerAdapter:
         """
         :return: The logging adapter.
         """

@@ -19,7 +19,7 @@ from uuid import UUID
 from zmq import Context
 
 from inv_trader.core.precondition import Precondition
-from inv_trader.core.logger import Logger, LoggingAdapter
+from inv_trader.core.logger import Logger, LoggerAdapter
 from inv_trader.commands import CollateralInquiry
 from inv_trader.commands import SubmitOrder, CancelOrder, ModifyOrder
 from inv_trader.model.account import Account
@@ -49,9 +49,9 @@ class ExecutionClient:
         :param logger: The logging adapter for the component.
         """
         if logger is None:
-            self._log = LoggingAdapter(f"ExecClient")
+            self._log = LoggerAdapter(f"ExecClient")
         else:
-            self._log = LoggingAdapter(f"ExecClient", logger)
+            self._log = LoggerAdapter(f"ExecClient", logger)
         self._account = Account()
         self._registered_strategies = {}  # type: Dict[UUID, Callable]
         self._order_index = {}            # type: Dict[OrderId, UUID]

@@ -16,7 +16,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from uuid import UUID
 
-from inv_trader.core.logger import LoggingAdapter
+from inv_trader.core.logger import LoggerAdapter
 from inv_trader.model.enums import Venue, Resolution, QuoteType, OrderSide, OrderType, OrderStatus
 from inv_trader.model.enums import MarketPosition
 from inv_trader.model.objects import Price, Symbol, Tick, BarType, Bar
@@ -136,7 +136,7 @@ class TradeStrategyTests(unittest.TestCase):
         result = strategy.log
 
         # Assert
-        self.assertTrue(isinstance(result, LoggingAdapter))
+        self.assertTrue(isinstance(result, LoggerAdapter))
         print(result)
 
     def test_can_get_indicators(self):
