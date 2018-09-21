@@ -250,6 +250,22 @@ class TradeStrategy:
         return self._position_book
 
     @property
+    def active_orders(self) -> Dict[OrderId, Order]:
+        """
+        :return: The active orders for the strategy.
+        """
+        return ({order.id: order for order in self._order_book.values()
+                 if not order.is_complete})
+
+    @property
+    def active_positions(self) -> Dict[PositionId, Position]:
+        """
+        :return: The active positions for the strategy.
+        """
+        return ({position.id: position for position in self._position_book.values()
+                 if not position.is_exited})
+
+    @property
     def completed_orders(self) -> Dict[OrderId, Order]:
         """
         :return: The completed orders for the strategy.

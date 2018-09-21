@@ -671,6 +671,8 @@ class TradeStrategyTests(unittest.TestCase):
         # Assert
         self.assertEqual(order, strategy.orders[order.id])
         self.assertEqual(OrderStatus.WORKING, strategy.orders[order.id].status)
+        self.assertTrue(order.id in strategy.active_orders)
+        self.assertTrue(order.id not in strategy.completed_orders)
 
     def test_cancelling_order_which_does_not_exist_raises_ex(self):
         # Arrange
@@ -710,6 +712,8 @@ class TradeStrategyTests(unittest.TestCase):
         # Assert
         self.assertEqual(order, strategy.orders[order.id])
         self.assertEqual(OrderStatus.CANCELLED, strategy.orders[order.id].status)
+        self.assertTrue(order.id in strategy.completed_orders)
+        self.assertTrue(order.id not in strategy.active_orders)
 
     def test_modifying_order_which_does_not_exist_raises_ex(self):
         # Arrange

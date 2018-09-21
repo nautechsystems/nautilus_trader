@@ -8,8 +8,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import unittest
-import time
-import zmq
 
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -24,7 +22,6 @@ from inv_trader.messaging import RequestWorker
 from inv_trader.execution import ExecutionClient, LiveExecClient
 from test_kit.stubs import TestStubs
 from test_kit.mocks import MockExecClient, MockServer, MockPublisher
-from test_kit.objects import ObjectStorer
 from test_kit.strategies import TestStrategy1
 
 UNIX_EPOCH = TestStubs.unix_epoch()
@@ -103,7 +100,6 @@ class ExecutionClientTests(unittest.TestCase):
             100000)
 
         # Act
-        time.sleep(1)
         strategy.submit_order(order, order.id)
 
         # Assert
@@ -128,7 +124,6 @@ class ExecutionClientTests(unittest.TestCase):
             100000)
 
         # Act
-        time.sleep(1)
         strategy.submit_order(order, order.id)
         strategy.cancel_order(order, 'ORDER_EXPIRED')
 
@@ -156,7 +151,6 @@ class ExecutionClientTests(unittest.TestCase):
             TimeInForce.DAY)
 
         # Act
-        time.sleep(1)
         strategy.submit_order(order, order.id)
         strategy.modify_order(order, Decimal('1.00001'))
 
@@ -190,11 +184,14 @@ class LiveExecClientTests(unittest.TestCase):
             5556,
             self.response_handler)
 
+        self.server1.start()
+        self.server2.start()
+
     def tearDown(self):
         # Tear Down
         self.exec_client.disconnect()
-        # self.server1.stop()
-        # self.server2.stop()
+        self.server1.stop()
+        self.server2.stop()
 
     def test_can_send_submit_order_command(self):
         # Arrange
@@ -212,11 +209,10 @@ class LiveExecClientTests(unittest.TestCase):
             100000)
 
         # Act
-        # strategy.submit_order(order, order.id)
+        strategy.submit_order(order, order.id)
 
         # Assert
-        # self.assertEqual(order, strategy.order(order_id))
-        # self.assertEqual(OrderStatus.INITIALIZED, order.status)
+        self.assertEqual(order, strategy.order(order_id))
 
     def test_can_send_cancel_order_command(self):
         # Arrange
@@ -224,8 +220,7 @@ class LiveExecClientTests(unittest.TestCase):
         self.exec_client.register_strategy(strategy)
         self.exec_client.connect()
 
-        order_id_generator = OrderIdGenerator(order_id_tag='0')
-        order_id = order_id_generator.generate(AUDUSD_FXCM)
+        order_id = strategy.generate_order_id(AUDUSD_FXCM)
 
         order = OrderFactory.market(
             AUDUSD_FXCM,
@@ -235,13 +230,11 @@ class LiveExecClientTests(unittest.TestCase):
             100000)
 
         # Act
-        time.sleep(1)
-        # strategy.submit_order(order)
-        # strategy.cancel_order(order, 'ORDER_EXPIRED')
+        strategy.submit_order(order, 'some-position')
+        strategy.cancel_order(order, 'ORDER_EXPIRED')
 
         # Assert
-        # self.assertEqual(order, strategy.order(order_id))
-        # self.assertEqual(OrderStatus.INITIALIZED, order.status)
+        self.assertEqual(order, strategy.order(order_id))
 
     def test_can_send_modify_order_command(self):
         # Arrange
@@ -261,10 +254,32 @@ class LiveExecClientTests(unittest.TestCase):
             TimeInForce.DAY)
 
         # Act
-        time.sleep(1)
-        # strategy.submit_order(order)
-        # strategy.modify_order(order, Decimal('1.00001'))
+        strategy.submit_order(order, 'some-position')
+        strategy.modify_order(order, Price.create(1.00001, 5))
 
         # Assert
-        # self.assertEqual(order, strategy.order(order_id))
-        # self.assertEqual(OrderStatus.INITIALIZED, order.status)
+        self.assertEqual(order, strategy.order(order_id))
+
+    def test_can_send_collateral_inquiry(self):
+        # Arrange
+        strategy = TestStrategy1()
+        self.exec_client.register_strategy(strategy)
+        self.exec_client.connect()
+
+        order_id = strategy.generate_order_id(AUDUSD_FXCM)
+
+        order = OrderFactory.limit(
+            AUDUSD_FXCM,
+            order_id,
+            'S1_E',
+            OrderSide.BUY,
+            100000,
+            Price.create(1.00000, 5),
+            TimeInForce.DAY)
+
+        # Act
+        strategy.submit_order(order, 'some-position')
+        strategy.modify_order(order, Price.create(1.00001, 5))
+
+        # Assert
+        self.assertEqual(order, strategy.order(order_id))
