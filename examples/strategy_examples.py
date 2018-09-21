@@ -19,7 +19,7 @@ from inv_trader.model.events import Event, OrderFilled
 from inv_trader.strategy import TradeStrategy
 from inv_indicators.average.ema import ExponentialMovingAverage
 
-# Note: A 'valid_string' is not None, not empty or not white-space only and less than 1024 chars.
+# Note: A 'valid_string' is not None, not empty, not white-space only and less than 1024 chars.
 OrderId = str
 
 
