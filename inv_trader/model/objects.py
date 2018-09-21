@@ -461,7 +461,7 @@ class Instrument:
         self._quote_currency = quote_currency
         self._security_type = security_type
         self._tick_decimals = tick_decimals
-        self._tick_size = tick_size
+        self._tick_size = tick_size * 0.1  # TODO: Investigate tick_size error in db.
         self._tick_value = tick_value
         self._target_direct_spread = target_direct_spread
         self._contract_size = contract_size
