@@ -282,6 +282,15 @@ class TradeStrategy:
                  if position.is_exited})
 
     @property
+    def is_flat(self) -> bool:
+        """
+        :return: A value indicating whether this strategy is completely flat
+        (no positions other than FLAT).
+        """
+        return all(position.market_position == MarketPosition.FLAT
+                   for position in self._position_book.values())
+
+    @property
     def symbols(self) -> List[Symbol]:
         """
         :return: All instrument symbols held by the data client

@@ -730,7 +730,7 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(KeyError, strategy.modify_order, order, Decimal('1.00001'))
+        self.assertRaises(KeyError, strategy.modify_order, order, Price.create(1.00001, 5))
 
     def test_can_modify_order(self):
         # Arrange
@@ -749,12 +749,13 @@ class TradeStrategyTests(unittest.TestCase):
         strategy.submit_order(order, order.id)
 
         # Act
-        strategy.modify_order(order, Decimal('1.00001'))
+        strategy.modify_order(order, Price.create(1.00001, 5))
 
         # Assert
         self.assertEqual(order, strategy.orders[order.id])
         self.assertEqual(OrderStatus.WORKING, strategy.orders[order.id].status)
-        self.assertEqual(Decimal('1.00001'), strategy.orders[order.id].price)
+        self.assertEqual(Price.create(1.00001, 5), strategy.orders[order.id].price)
+        self.assertTrue(strategy.is_flat)
 
     def test_can_cancel_all_orders(self):
         # Arrange
@@ -818,6 +819,7 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertEqual(MarketPosition.FLAT, strategy.position('some-position').market_position)
         self.assertTrue(strategy.position('some-position').is_exited)
         self.assertTrue('some-position' in strategy.completed_positions)
+        self.assertTrue(strategy.is_flat)
 
     def test_flatten_position_which_does_not_exist_raises_exception(self):
         # Arrange
@@ -870,6 +872,7 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertTrue(strategy.position('some-position2').is_exited)
         self.assertTrue('some-position1' in strategy.completed_positions)
         self.assertTrue('some-position2' in strategy.completed_positions)
+        self.assertTrue(strategy.is_flat)
 
     def test_registering_execution_client_with_none_raises_exception(self):
         # Arrange
@@ -959,6 +962,11 @@ class TradeStrategyTests(unittest.TestCase):
         # Assert
         self.assertEqual('AUDUSD-123456-1', strategy._order_position_index[order.id])
         self.assertTrue('AUDUSD-123456-1' in strategy._position_book)
+        self.assertEqual(0, len(strategy.active_orders))
+        self.assertEqual(order, strategy.completed_orders[order.id])
+        self.assertEqual(0, len(strategy.completed_positions))
+        self.assertTrue('AUDUSD-123456-1' in strategy.active_positions)
+        self.assertFalse(strategy.is_flat)
 
     def test_can_track_orders_for_a_closing_position(self):
         # Arrange
@@ -982,14 +990,21 @@ class TradeStrategyTests(unittest.TestCase):
             100000)
 
         strategy.submit_order(order1, position1)
-        time.sleep(0.5)
+        exec_client.fill_last_order()
         strategy.submit_order(order2, position1)
+        exec_client.fill_last_order()
 
         # Act
         # Assert
         self.assertEqual(position1, strategy._order_position_index[order1.id])
         self.assertEqual(position1, strategy._order_position_index[order2.id])
-        print(strategy._order_position_index)
+        self.assertEqual(0, len(strategy.active_orders))
+        self.assertEqual(order1, strategy.completed_orders[order1.id])
+        self.assertEqual(order2, strategy.completed_orders[order2.id])
+        self.assertEqual(1, len(strategy.completed_positions))
+        self.assertFalse('position1' in strategy.active_positions)
+        self.assertTrue('position1' in strategy.completed_positions)
+        self.assertTrue(strategy.is_flat)
 
 
 class IndicatorUpdaterTests(unittest.TestCase):
