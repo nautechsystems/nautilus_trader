@@ -46,43 +46,6 @@ class ExecutionClientTests(unittest.TestCase):
         # Assert
         self.assertEqual(exec_client, result)
 
-    def test_can_receive_bars(self):
-        # Arrange
-        strategy = TestStrategy1()
-        exec_client = MockExecClient()
-        exec_client.register_strategy(strategy)
-
-        strategy.start()
-
-        bar_type = BarType(GBPUSD_FXCM,
-                           1,
-                           Resolution.SECOND,
-                           QuoteType.MID)
-
-        bar1 = Bar(
-            Decimal('1.00001'),
-            Decimal('1.00004'),
-            Decimal('1.00003'),
-            Decimal('1.00002'),
-            100000,
-            datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc))
-
-        bar2 = Bar(
-            Decimal('1.00011'),
-            Decimal('1.00014'),
-            Decimal('1.00013'),
-            Decimal('1.00012'),
-            100000,
-            datetime(1970, 1, 1, 00, 00, 1, 0, timezone.utc))
-
-        # Act
-        strategy._update_bars(bar_type, bar1)
-        strategy._update_bars(bar_type, bar2)
-        result = strategy.object_storer.get_store[-1]
-
-        # Assert
-        self.assertTrue(isinstance(result, OrderWorking))
-
     def test_can_send_submit_order_command_to_mock_exec_client(self):
         # Arrange
         strategy = TestStrategy1()
