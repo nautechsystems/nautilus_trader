@@ -151,9 +151,9 @@ class Logger:
             print(message)
 
 
-class LoggingAdapter:
+class LoggerAdapter:
     """
-    Provides an adapter for the trading clients logger.
+    Provides a logger adapter adapter for a components logger.
     """
 
     def __init__(
@@ -161,7 +161,7 @@ class LoggingAdapter:
             component_name: str = None,
             logger: Logger=Logger()):
         """
-        Initializes a new instance of the LoggingAdapter class.
+        Initializes a new instance of the LoggerAdapter class.
 
         :param logger: The logger for the component.
         :param component_name: The name of the component.

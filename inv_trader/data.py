@@ -17,7 +17,7 @@ from redis import StrictRedis, ConnectionError
 from typing import List, Dict, Callable, KeysView
 
 from inv_trader.core.precondition import Precondition
-from inv_trader.core.logger import Logger, LoggingAdapter
+from inv_trader.core.logger import Logger, LoggerAdapter
 
 from inv_trader.model.enums import Resolution, QuoteType, Venue
 from inv_trader.model.objects import Symbol, Tick, BarType, Bar, Instrument
@@ -51,9 +51,9 @@ class LiveDataClient:
         self._host = host
         self._port = port
         if logger is None:
-            self._log = LoggingAdapter(f"DataClient")
+            self._log = LoggerAdapter(f"DataClient")
         else:
-            self._log = LoggingAdapter(f"DataClient", logger)
+            self._log = LoggerAdapter(f"DataClient", logger)
         self._redis_client = None
         self._pubsub = None
         self._pubsub_thread = None

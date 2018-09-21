@@ -15,7 +15,7 @@ from threading import Thread
 from zmq import Context
 
 from inv_trader.core.precondition import Precondition
-from inv_trader.core.logger import Logger, LoggingAdapter
+from inv_trader.core.logger import Logger, LoggerAdapter
 
 UTF8 = 'utf-8'
 DELIMITER = b' '
@@ -61,9 +61,9 @@ class MQWorker(Thread):
         self._service_address = f'tcp://{host}:{port}'
         self._handler = handler
         if logger is None:
-            self._log = LoggingAdapter(name)
+            self._log = LoggerAdapter(name)
         else:
-            self._log = LoggingAdapter(name, logger)
+            self._log = LoggerAdapter(name, logger)
         self._socket = self._context.socket(socket_type)
         self._cycles = 0
 
