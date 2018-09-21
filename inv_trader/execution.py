@@ -237,7 +237,7 @@ class LiveExecClient(ExecutionClient):
 
     def connect(self):
         """
-        Connect to the execution service.
+        Connect to the execution service and send a collateral inquiry command.
         """
         self._events_worker.start()
         self._commands_worker.start()
@@ -265,7 +265,8 @@ class LiveExecClient(ExecutionClient):
             order: Order,
             strategy_id: UUID):
         """
-        Send a submit order command to the execution service.
+        Send a submit order command to the execution service with the given
+        order and strategy_id.
 
         :param order: The order to submit.
         :param strategy_id: The strategy identifier to register the order with.
@@ -286,7 +287,8 @@ class LiveExecClient(ExecutionClient):
             order: Order,
             cancel_reason: str):
         """
-        Send a cancel order command to the execution service.
+        Send a cancel order command to the execution service with the given
+        order and cancel_reason.
 
         :param order: The order identifier to cancel.
         :param cancel_reason: The reason for cancellation (will be logged).
@@ -309,11 +311,12 @@ class LiveExecClient(ExecutionClient):
             order: Order,
             new_price: Decimal):
         """
-        Send a modify order command to the execution service.
+        Send a modify order command to the execution service with the given
+        order and new_price.
 
         :param order: The order identifier to modify.
         :param new_price: The new modified price for the order.
-        :raises ValueError: If the new_price is not positive.
+        :raises ValueError: If the new_price is not positive (> 0).
         """
         Precondition.positive(new_price, 'new_price')
 
