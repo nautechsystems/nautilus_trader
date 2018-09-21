@@ -34,26 +34,31 @@ LOCAL_HOST = "127.0.0.1"
 
 class ExecutionClientTests(unittest.TestCase):
 
+    def setUp(self):
+        # Fixture Setup
+        self.strategy = TestStrategy1()
+        self.exec_client = MockExecClient()
+        self.exec_client.connect()
+
+    def tearDown(self):
+        # Tear Down
+        self.exec_client.disconnect()
+
     def test_can_register_strategy(self):
         # Arrange
-        strategy = TestStrategy1()
-        exec_client = ExecutionClient()
-        exec_client.register_strategy(strategy)
+        self.exec_client.register_strategy(self.strategy)
 
         # Act
-        result = strategy._exec_client
+        result = self.strategy._exec_client
 
         # Assert
-        self.assertEqual(exec_client, result)
+        self.assertEqual(self.exec_client, result)
 
     def test_can_send_submit_order_command_to_mock_exec_client(self):
         # Arrange
-        strategy = TestStrategy1()
-        exec_client = MockExecClient()
-        exec_client.register_strategy(strategy)
-        exec_client.connect()
+        self.exec_client.register_strategy(self.strategy)
 
-        order_id = strategy.generate_order_id(AUDUSD_FXCM)
+        order_id = self.strategy.generate_order_id(AUDUSD_FXCM)
 
         order = OrderFactory.market(
             AUDUSD_FXCM,
@@ -63,21 +68,18 @@ class ExecutionClientTests(unittest.TestCase):
             100000)
 
         # Act
-        strategy.submit_order(order, order.id)
+        self.strategy.submit_order(order, order.id)
 
         # Assert
-        self.assertEqual(order, strategy.order(order_id))
+        self.assertEqual(order, self.strategy.order(order_id))
         self.assertEqual(OrderStatus.WORKING, order.status)
-        exec_client.disconnect()
 
     def test_can_send_cancel_order_command_to_mock_exec_clint(self):
         # Arrange
-        strategy = TestStrategy1()
-        exec_client = MockExecClient()
-        exec_client.register_strategy(strategy)
-        exec_client.connect()
+        self.exec_client.register_strategy(self.strategy)
+        self.exec_client.connect()
 
-        order_id = strategy.generate_order_id(AUDUSD_FXCM)
+        order_id = self.strategy.generate_order_id(AUDUSD_FXCM)
 
         order = OrderFactory.market(
             AUDUSD_FXCM,
@@ -87,22 +89,19 @@ class ExecutionClientTests(unittest.TestCase):
             100000)
 
         # Act
-        strategy.submit_order(order, order.id)
-        strategy.cancel_order(order, 'ORDER_EXPIRED')
+        self.strategy.submit_order(order, order.id)
+        self.strategy.cancel_order(order, 'ORDER_EXPIRED')
 
         # Assert
-        self.assertEqual(order, strategy.order(order_id))
+        self.assertEqual(order, self.strategy.order(order_id))
         self.assertEqual(OrderStatus.CANCELLED, order.status)
-        exec_client.disconnect()
 
     def test_can_send_modify_order_command_to_mock_exec_client(self):
         # Arrange
-        strategy = TestStrategy1()
-        exec_client = MockExecClient()
-        exec_client.register_strategy(strategy)
-        exec_client.connect()
+        self.exec_client.register_strategy(self.strategy)
+        self.exec_client.connect()
 
-        order_id = strategy.generate_order_id(AUDUSD_FXCM)
+        order_id = self.strategy.generate_order_id(AUDUSD_FXCM)
 
         order = OrderFactory.limit(
             AUDUSD_FXCM,
@@ -114,14 +113,13 @@ class ExecutionClientTests(unittest.TestCase):
             TimeInForce.DAY)
 
         # Act
-        strategy.submit_order(order, order.id)
-        strategy.modify_order(order, Decimal('1.00001'))
+        self.strategy.submit_order(order, order.id)
+        self.strategy.modify_order(order, Price.create(1.00001, 5))
 
         # Assert
-        self.assertEqual(order, strategy.order(order_id))
+        self.assertEqual(order, self.strategy.order(order_id))
         self.assertEqual(OrderStatus.WORKING, order.status)
-        self.assertEqual(Decimal('1.00001'), order.price)
-        exec_client.disconnect()
+        self.assertEqual(Price.create(1.00001, 5), order.price)
 
 
 class LiveExecClientTests(unittest.TestCase):
@@ -130,7 +128,9 @@ class LiveExecClientTests(unittest.TestCase):
         # Fixture Setup
         print("\n")
 
+        self.strategy = TestStrategy1()
         self.exec_client = LiveExecClient()
+        self.exec_client.register_strategy(self.strategy)
 
         context = self.exec_client.zmq_context
 
@@ -149,6 +149,7 @@ class LiveExecClientTests(unittest.TestCase):
 
         self.server1.start()
         self.server2.start()
+        self.exec_client.connect()
 
     def tearDown(self):
         # Tear Down
@@ -158,11 +159,7 @@ class LiveExecClientTests(unittest.TestCase):
 
     def test_can_send_submit_order_command(self):
         # Arrange
-        strategy = TestStrategy1()
-        self.exec_client.register_strategy(strategy)
-        self.exec_client.connect()
-
-        order_id = strategy.generate_order_id(AUDUSD_FXCM)
+        order_id = self.strategy.generate_order_id(AUDUSD_FXCM)
 
         order = OrderFactory.market(
             AUDUSD_FXCM,
@@ -172,18 +169,15 @@ class LiveExecClientTests(unittest.TestCase):
             100000)
 
         # Act
-        strategy.submit_order(order, order.id)
+        self.strategy.submit_order(order, order.id)
 
         # Assert
-        self.assertEqual(order, strategy.order(order_id))
+        self.assertEqual(order, self.strategy.order(order_id))
+        self.assertEqual(2, len(self.response_list))
 
     def test_can_send_cancel_order_command(self):
         # Arrange
-        strategy = TestStrategy1()
-        self.exec_client.register_strategy(strategy)
-        self.exec_client.connect()
-
-        order_id = strategy.generate_order_id(AUDUSD_FXCM)
+        order_id = self.strategy.generate_order_id(AUDUSD_FXCM)
 
         order = OrderFactory.market(
             AUDUSD_FXCM,
@@ -193,19 +187,16 @@ class LiveExecClientTests(unittest.TestCase):
             100000)
 
         # Act
-        strategy.submit_order(order, 'some-position')
-        strategy.cancel_order(order, 'ORDER_EXPIRED')
+        self.strategy.submit_order(order, 'some-position')
+        self.strategy.cancel_order(order, 'ORDER_EXPIRED')
 
         # Assert
-        self.assertEqual(order, strategy.order(order_id))
+        self.assertEqual(order, self.strategy.order(order_id))
+        self.assertEqual(3, len(self.response_list))
 
     def test_can_send_modify_order_command(self):
         # Arrange
-        strategy = TestStrategy1()
-        self.exec_client.register_strategy(strategy)
-        self.exec_client.connect()
-
-        order_id = strategy.generate_order_id(AUDUSD_FXCM)
+        order_id = self.strategy.generate_order_id(AUDUSD_FXCM)
 
         order = OrderFactory.limit(
             AUDUSD_FXCM,
@@ -217,32 +208,17 @@ class LiveExecClientTests(unittest.TestCase):
             TimeInForce.DAY)
 
         # Act
-        strategy.submit_order(order, 'some-position')
-        strategy.modify_order(order, Price.create(1.00001, 5))
+        self.strategy.submit_order(order, 'some-position')
+        self.strategy.modify_order(order, Price.create(1.00001, 5))
 
         # Assert
-        self.assertEqual(order, strategy.order(order_id))
+        self.assertEqual(order, self.strategy.order(order_id))
+        self.assertEqual(3, len(self.response_list))
 
     def test_can_send_collateral_inquiry(self):
         # Arrange
-        strategy = TestStrategy1()
-        self.exec_client.register_strategy(strategy)
-        self.exec_client.connect()
-
-        order_id = strategy.generate_order_id(AUDUSD_FXCM)
-
-        order = OrderFactory.limit(
-            AUDUSD_FXCM,
-            order_id,
-            'S1_E',
-            OrderSide.BUY,
-            100000,
-            Price.create(1.00000, 5),
-            TimeInForce.DAY)
-
         # Act
-        strategy.submit_order(order, 'some-position')
-        strategy.modify_order(order, Price.create(1.00001, 5))
+        self.strategy.collateral_inquiry()
 
         # Assert
-        self.assertEqual(order, strategy.order(order_id))
+        self.assertEqual(2, len(self.response_list))

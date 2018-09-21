@@ -682,6 +682,16 @@ class TradeStrategy:
         else:
             raise ValueError("Cannot flatten a FLAT position.")
 
+    def collateral_inquiry(self):
+        """
+        Send a collateral inquiry command to the execution service.
+
+        :raises ValueError: If the strategy has not been registered with an execution client.
+        """
+        Precondition.not_none(self._exec_client, 'exec_client')
+
+        self._exec_client.collateral_inquiry()
+
     def submit_order(
             self,
             order: Order,
@@ -755,7 +765,7 @@ class TradeStrategy:
     def cancel_all_orders(self, cancel_reason: str='NONE'):
         """
         Send a cancel order command for all currently working orders in the
-        order book to the execution service.
+        order book - to the execution service.
 
         :param cancel_reason: The reason for cancellation (will be logged).
         :raises ValueError: If the strategy has not been registered with an execution client.
@@ -771,7 +781,7 @@ class TradeStrategy:
     def flatten_position(self, position_id: PositionId):
         """
         Flatten the position corresponding to the given identifier by generating
-        the required market order and sending it to the execution service.
+        the required market order, and sending it to the execution service.
 
         :param position_id: The position identifier to flatten.
         :raises ValueError: If the strategy has not been registered with an execution client.
