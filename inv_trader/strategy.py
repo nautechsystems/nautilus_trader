@@ -85,8 +85,6 @@ class TradeStrategy:
         self._order_book = {}            # type: Dict[OrderId, Order]
         self._order_position_index = {}  # type: Dict[OrderId, PositionId]
         self._position_book = {}         # type: Dict[PositionId, Position or None]
-        self._completed_orders = {}      # type: Dict[OrderId, Order]
-        self._completed_positions = {}   # type: Dict[PositionId, Position]
         self._data_client = None
         self._exec_client = None
         self._account = None  # Initialized when registered with execution client.
@@ -256,14 +254,16 @@ class TradeStrategy:
         """
         :return: The completed orders for the strategy.
         """
-        return self._completed_orders
+        return ({order.id: order for order in self._order_book.values()
+                 if order.is_complete})
 
     @property
     def completed_positions(self) -> Dict[PositionId, Position]:
         """
         :return: The completed positions for the strategy.
         """
-        return self._completed_positions
+        return ({position.id: position for position in self._position_book.values()
+                 if position.is_exited})
 
     @property
     def symbols(self) -> List[Symbol]:
@@ -338,8 +338,6 @@ class TradeStrategy:
         self._order_book = {}            # type: Dict[OrderId, Order]
         self._order_position_index = {}  # type: Dict[OrderId, PositionId]
         self._position_book = {}         # type: Dict[PositionId, Position or None]
-        self._completed_orders = {}      # type: Dict[OrderId, Order]
-        self._completed_positions = {}   # type: Dict[PositionId, Position]
 
         self.on_reset()
         self._log.info(f"Reset.")
@@ -908,8 +906,6 @@ class TradeStrategy:
             if order_id in self._order_book:
                 order = self._order_book[order_id]
                 order.apply(event)
-                if order.is_complete:
-                    self._copy_completed_order(order)
             else:
                 self._log.warning("The events order id was not found in the order book.")
 
@@ -931,7 +927,6 @@ class TradeStrategy:
                         position.apply(event)
 
                         if position.is_exited:
-                            self._copy_completed_position(position)
                             self._log.info(f"Closed {position}")
                         else:
                             self._log.info(f"Modified {self._position_book[position_id]}")
@@ -945,34 +940,6 @@ class TradeStrategy:
 
         if self._is_running:
             self.on_event(event)
-
-    def _copy_completed_order(self, order: Order):
-        """
-        Move the given completed order from the order book to the completed
-        orders dictionary.
-
-        :param order: The completed order to copy.
-        """
-        order_id = order.id
-        if order_id in self._completed_orders:
-            self._log.warning(f"Duplicate completed order detected {order.id}.")
-            order_id = order.id + '-duplicate'
-
-        self._completed_orders[order_id] = order
-
-    def _copy_completed_position(self, position: Position):
-        """
-        Move the given completed position from the position book to the
-        completed positions dictionary.
-
-        :param position: The completed position to copy.
-        """
-        position_id = position.id
-        if position_id in self._completed_positions:
-            self._log.warning(f"Duplicate completed position detected {position.id}.")
-            position_id = position.id + '-duplicate'
-
-        self._completed_positions[position_id] = position
 
     def _raise_time_event(
             self,
