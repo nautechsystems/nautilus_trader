@@ -34,6 +34,39 @@ class Symbol:
         self._code = code.upper()
         self._venue = venue
 
+    def __eq__(self, other) -> bool:
+        """
+        Override the default equality comparison.
+        """
+        if isinstance(other, self.__class__):
+            return self.__dict__ == other.__dict__
+        else:
+            return False
+
+    def __ne__(self, other) -> bool:
+        """
+        Override the default not-equals comparison.
+        """
+        return not self.__eq__(other)
+
+    def __hash__(self) -> int:
+        """"
+        Override the default hash implementation.
+        """
+        return hash((self._code, self._venue))
+
+    def __str__(self) -> str:
+        """
+        :return: The str() string representation of the symbol.
+        """
+        return f"{self._code}.{self._venue.name}"
+
+    def __repr__(self) -> str:
+        """
+        :return: The repr() string representation of the symbol.
+        """
+        return f"<{str(self)} object at {id(self)}>"
+
     @property
     def code(self) -> str:
         """
@@ -47,39 +80,6 @@ class Symbol:
         :return: The symbols venue.
         """
         return self._venue
-
-    def __eq__(self, other) -> bool:
-        """
-        Override the default equality comparison.
-        """
-        if isinstance(other, self.__class__):
-            return self.__dict__ == other.__dict__
-        else:
-            return False
-
-    def __ne__(self, other):
-        """
-        Override the default not-equals comparison.
-        """
-        return not self.__eq__(other)
-
-    def __hash__(self):
-        """"
-        Override the default hash implementation.
-        """
-        return hash((self.code, self.venue))
-
-    def __str__(self) -> str:
-        """
-        :return: The str() string representation of the symbol.
-        """
-        return f"{self._code}.{self._venue.name}"
-
-    def __repr__(self) -> str:
-        """
-        :return: The repr() string representation of the symbol.
-        """
-        return f"<{str(self)} object at {id(self)}>"
 
 
 class Price:
@@ -135,6 +135,40 @@ class Tick:
         self._ask = ask
         self._timestamp = timestamp
 
+    def __eq__(self, other) -> bool:
+        """
+        Override the default equality comparison.
+        """
+        if isinstance(other, self.__class__):
+            return self.__dict__ == other.__dict__
+        else:
+            return False
+
+    def __ne__(self, other) -> bool:
+        """
+        Override the default not-equals comparison.
+        """
+        return not self.__eq__(other)
+
+    def __hash__(self) -> int:
+        """"
+        Override the default hash implementation.
+        """
+        return hash(self._timestamp)
+
+    def __str__(self) -> str:
+        """
+        :return: The str() string representation of the tick.
+        """
+        return (f"Tick({self._symbol},{self._bid},{self._ask},"
+                f"{self._timestamp.isoformat()})")
+
+    def __repr__(self) -> str:
+        """
+        :return: The repr() string representation of the tick.
+        """
+        return f"<{str(self)} object at {id(self)}>"
+
     @property
     def symbol(self) -> Symbol:
         """
@@ -162,34 +196,6 @@ class Tick:
         :return: The ticks timestamp (UTC).
         """
         return self._timestamp
-
-    def __eq__(self, other) -> bool:
-        """
-        Override the default equality comparison.
-        """
-        if isinstance(other, self.__class__):
-            return self.__dict__ == other.__dict__
-        else:
-            return False
-
-    def __ne__(self, other):
-        """
-        Override the default not-equals comparison.
-        """
-        return not self.__eq__(other)
-
-    def __str__(self) -> str:
-        """
-        :return: The str() string representation of the tick.
-        """
-        return (f"Tick({self._symbol},{self._bid},{self._ask},"
-                f"{self._timestamp.isoformat()})")
-
-    def __repr__(self) -> str:
-        """
-        :return: The repr() string representation of the tick.
-        """
-        return f"<{str(self)} object at {id(self)}>"
 
 
 class BarType:
@@ -255,17 +261,17 @@ class BarType:
         else:
             return False
 
-    def __ne__(self, other):
+    def __ne__(self, other) -> bool:
         """
         Override the default not-equals comparison.
         """
         return not self.__eq__(other)
 
-    def __hash__(self):
+    def __hash__(self) -> int:
         """"
         Override the default hash implementation.
         """
-        return hash((self.symbol, self.period, self.resolution, self.quote_type))
+        return hash((self._symbol, self._period, self._resolution, self._quote_type))
 
     def __str__(self) -> str:
         """
@@ -278,8 +284,7 @@ class BarType:
         """
         :return: The repr() string representation of the bar type.
         """
-        return (f"<{str(self) }"
-                f"object at {id(self)}>")
+        return f"<{str(self)} object at {id(self)}>"
 
 
 class Bar:
@@ -322,6 +327,40 @@ class Bar:
         self._volume = volume
         self._timestamp = timestamp
 
+    def __eq__(self, other) -> bool:
+        """
+        Override the default equality comparison.
+        """
+        if isinstance(other, self.__class__):
+            return self.__dict__ == other.__dict__
+        else:
+            return False
+
+    def __ne__(self, other) -> bool:
+        """
+        Override the default not-equals comparison.
+        """
+        return not self.__eq__(other)
+
+    def __hash__(self) -> int:
+        """"
+        Override the default hash implementation.
+        """
+        return hash(str(self._timestamp))
+
+    def __str__(self) -> str:
+        """
+        :return: The str() string representation of the bar.
+        """
+        return (f"Bar({self._open},{self._high},{self._low},{self._close},"
+                f"{self._volume},{self._timestamp.isoformat()})")
+
+    def __repr__(self) -> str:
+        """
+        :return: The repr() string representation of the bar.
+        """
+        return f"<{str(self)} object at {id(self)}>"
+
     @property
     def open(self) -> Decimal:
         """
@@ -363,34 +402,6 @@ class Bar:
         :return: The bars timestamp (UTC).
         """
         return self._timestamp
-
-    def __eq__(self, other) -> bool:
-        """
-        Override the default equality comparison.
-        """
-        if isinstance(other, self.__class__):
-            return self.__dict__ == other.__dict__
-        else:
-            return False
-
-    def __ne__(self, other):
-        """
-        Override the default not-equals comparison.
-        """
-        return not self.__eq__(other)
-
-    def __str__(self) -> str:
-        """
-        :return: The str() string representation of the bar.
-        """
-        return (f"Bar({self._open},{self._high},{self._low},{self._close},"
-                f"{self._volume},{self._timestamp.isoformat()})")
-
-    def __repr__(self) -> str:
-        """
-        :return: The repr() string representation of the bar.
-        """
-        return f"<{str(self)} object at {id(self)}>"
 
 
 class Instrument:
@@ -475,6 +486,39 @@ class Instrument:
         self._rollover_interest_buy = rollover_interest_buy
         self._rollover_interest_sell = rollover_interest_sell
         self._timestamp = timestamp
+
+    def __eq__(self, other) -> bool:
+        """
+        Override the default equality comparison.
+        """
+        if isinstance(other, self.__class__):
+            return self.__dict__ == other.__dict__
+        else:
+            return False
+
+    def __ne__(self, other) -> bool:
+        """
+        Override the default not-equals comparison.
+        """
+        return not self.__eq__(other)
+
+    def __hash__(self) -> int:
+        """"
+        Override the default hash implementation.
+        """
+        return hash(str(self._symbol))
+
+    def __str__(self) -> str:
+        """
+        :return: The str() string representation of the instrument.
+        """
+        return f"Instrument({self._symbol.code}.{self._symbol.venue})"
+
+    def __repr__(self) -> str:
+        """
+        :return: The repr() string representation of the instrument.
+        """
+        return f"<{str(self)} object at {id(self)}>"
 
     @property
     def symbol(self) -> Symbol:
