@@ -56,12 +56,11 @@ class Logger:
         self._logger = logging.getLogger(name)
         self._logger.setLevel(level_file)
 
-        # Create directory if it does not exist.
-        if not os.path.exists(log_file_path):
-            os.makedirs(log_file_path)
-
         # Setup log file handling.
         if log_to_file:
+            # Create directory if it does not exist.
+            if not os.path.exists(log_file_path):
+                os.makedirs(log_file_path)
             self._log_file_handler = logging.FileHandler(self._log_file)
             self._logger.addHandler(self._log_file_handler)
 
