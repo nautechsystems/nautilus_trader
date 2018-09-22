@@ -324,7 +324,7 @@ class TradeStrategy:
 
     def start(self):
         """
-        Starts the trade strategy and calls the on_start() method.
+        Starts the trade strategy and calls on_start().
         """
         self._log.info(f"Starting...")
         self._is_running = True
@@ -333,7 +333,7 @@ class TradeStrategy:
 
     def stop(self):
         """
-        Stops the trade strategy and calls the on_stop() method.
+        Stops the trade strategy and calls on_stop().
         """
         self._log.info(f"Stopping...")
         self.on_stop()
@@ -347,6 +347,7 @@ class TradeStrategy:
         """
         Reset the trade strategy by clearing all stateful internal values and
         returning it to a fresh state (strategy must not be running).
+        Then calls on_reset().
         """
         if self._is_running:
             self._log.warning(f"Cannot reset a running strategy...")
@@ -855,7 +856,7 @@ class TradeStrategy:
 
     def _register_data_client(self, client):
         """
-        Register the strategy with the data client.
+        Register the strategy with the given data client.
 
         :param client: The data service client to register.
         :raises ValueError: If client is None.
@@ -870,7 +871,7 @@ class TradeStrategy:
 
     def _register_execution_client(self, client):
         """
-        Register the strategy with the execution client.
+        Register the strategy with the given execution client.
 
         :param client: The execution client to register.
         :raises ValueError: If client is None.
@@ -888,8 +889,8 @@ class TradeStrategy:
 
     def _update_ticks(self, tick: Tick):
         """"
-        Updates the last held tick with the given tick then calls the on_tick
-        method for the inheriting class.
+        Updates the last held tick with the given tick, then calls on_tick()
+        for the inheriting class.
 
         :param tick: The tick received.
         """
@@ -941,7 +942,8 @@ class TradeStrategy:
 
     def _update_events(self, event: Event):
         """
-        Updates the strategy with the given event.
+        Updates the strategy with the given event, then calls on_event() if the
+        strategy is running.
 
         :param event: The event received.
         """
@@ -993,7 +995,7 @@ class TradeStrategy:
             label: str,
             alert_time: datetime):
         """
-        Create a new TimeEvent and pass it into the _update_events() method.
+        Create a new TimeEvent and pass it into _update_events().
         """
         self._log.debug(f"Raising time event for {label}.")
         self._update_events(TimeEvent(label, uuid.uuid4(), alert_time))
@@ -1006,7 +1008,7 @@ class TradeStrategy:
             interval: timedelta,
             stop_time: datetime or None):
         """
-        Create a new TimeEvent and pass it into the _update_events() method.
+        Create a new TimeEvent and pass it into _update_events().
         Then start a timer for the next time event.
         """
         self._update_events(TimeEvent(label, uuid.uuid4(), alert_time))
