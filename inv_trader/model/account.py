@@ -10,8 +10,9 @@
 from datetime import datetime
 from decimal import Decimal
 
-from inv_trader.model.enums import Broker
+from inv_trader.model.enums import Broker, CurrencyCode
 from inv_trader.model.events import AccountEvent
+from inv_trader.model.identifiers import AccountId
 
 
 class Account:
@@ -24,14 +25,16 @@ class Account:
         Initializes a new instance of the Account class.
         """
         self._initialized = False
+        self._id = None
         self._broker = None
         self._account_number = None
-        self._cash_balance = Decimal('0')
-        self._cash_start_day = Decimal('0')
-        self._cash_activity_day = Decimal('0')
-        self._margin_used_liquidation = Decimal('0')
-        self._margin_used_maintenance = Decimal('0')
-        self._margin_ratio = Decimal('0')
+        self._currency = None
+        self._cash_balance = Decimal('0.00')
+        self._cash_start_day = Decimal('0.00')
+        self._cash_activity_day = Decimal('0.00')
+        self._margin_used_liquidation = Decimal('0.00')
+        self._margin_used_maintenance = Decimal('0.00')
+        self._margin_ratio = Decimal('0.00')
         self._margin_call_status = ""
         self._last_updated = datetime.utcnow()
         self._events = []
@@ -41,7 +44,7 @@ class Account:
         Override the default equality comparison.
         """
         if isinstance(other, self.__class__):
-            return self.__dict__ == other.__dict__
+            return self._id == other._id
         else:
             return False
 
@@ -84,11 +87,25 @@ class Account:
         return self._broker
 
     @property
-    def account_number(self) -> Broker or None:
+    def number(self) -> Broker or None:
         """
         :return: The account number of the account (returns None if not initialized).
         """
         return self._account_number
+
+    @property
+    def id(self) -> AccountId or None:
+        """
+        :return: The account identifier (returns None if not initialized).
+        """
+        return self._id
+
+    @property
+    def currency(self) -> CurrencyCode or None:
+        """
+        :return: The account currency (returns None if not initialized).
+        """
+        return self._currency
 
     @property
     def free_equity(self) -> Decimal:
@@ -116,7 +133,7 @@ class Account:
         """
         :return: The account activity for the day.
         """
-        return self._cash_start_day
+        return self._cash_activity_day
 
     @property
     def margin_used_liquidation(self) -> Decimal:
@@ -162,6 +179,8 @@ class Account:
         if not self._initialized:
             self._broker = event.broker
             self._account_number = event.account_number
+            self._id = event.account_id
+            self._currency = event.currency
             self._initialized = True
 
         self._cash_balance = event.cash_balance
