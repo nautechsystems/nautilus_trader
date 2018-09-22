@@ -162,7 +162,7 @@ class EMACrossLimitEntry(TradeStrategy):
                 entry_order = OrderFactory.limit(
                     self.symbol,
                     self.generate_order_id(self.symbol),
-                    'S1_E',
+                    Label('S1_E'),
                     OrderSide.BUY,
                     self.position_size,
                     Price.create(self.ticks[self.symbol].ask - self.entry_buffer_initial,
@@ -179,7 +179,7 @@ class EMACrossLimitEntry(TradeStrategy):
                 entry_order = OrderFactory.limit(
                     self.symbol,
                     self.generate_order_id(self.symbol),
-                    'S1_E',
+                    Label('S1_E'),
                     OrderSide.SELL,
                     self.position_size,
                     Price.create(self.ticks[self.symbol].bid + self.entry_buffer_initial,
@@ -215,7 +215,7 @@ class EMACrossLimitEntry(TradeStrategy):
                 stop_order = OrderFactory.stop(
                     self.symbol,
                     self.generate_order_id(self.symbol),
-                    'S1_SL',
+                    Label('S1_SL'),
                     stop_side,
                     event.filled_quantity,
                     stop_price,

@@ -40,20 +40,6 @@ class Event:
         self._event_id = identifier
         self._event_timestamp = timestamp
 
-    @property
-    def id(self) -> uuid:
-        """
-        :return: The events identifier.
-        """
-        return self._event_id
-
-    @property
-    def timestamp(self) -> datetime:
-        """
-        :return: The events timestamp (the time the event was created).
-        """
-        return self._event_timestamp
-
     def __eq__(self, other) -> bool:
         """
         Override the default equality comparison.
@@ -86,6 +72,20 @@ class Event:
         :return: The repr() string representation of the event.
         """
         return f"<{str(self)} object at {id(self)}>"
+
+    @property
+    def id(self) -> uuid:
+        """
+        :return: The events identifier.
+        """
+        return self._event_id
+
+    @property
+    def timestamp(self) -> datetime:
+        """
+        :return: The events timestamp (the time the event was created).
+        """
+        return self._event_timestamp
 
 
 class AccountEvent(Event):
@@ -142,6 +142,19 @@ class AccountEvent(Event):
         self._margin_used_maintenance = margin_used_maintenance
         self._margin_ratio = margin_ratio
         self._margin_call_status = margin_call_status
+
+    def __str__(self) -> str:
+        """
+        :return: The str() string representation of the event.
+        """
+        return (f"{self.__class__.__name__}"
+                f"(order_id={self._cash_balance}, margin_used={self._margin_used_maintenance})")
+
+    def __repr__(self) -> str:
+        """
+        :return: The repr() string representation of the event.
+        """
+        return f"<{str(self)} object at {id(self)}>"
 
     @property
     def broker(self) -> Broker:
@@ -206,19 +219,6 @@ class AccountEvent(Event):
         """
         return self._margin_call_status
 
-    def __str__(self) -> str:
-        """
-        :return: The str() string representation of the event.
-        """
-        return (f"{self.__class__.__name__}"
-                f"(order_id={self._cash_balance}, margin_used={self._margin_used_maintenance})")
-
-    def __repr__(self) -> str:
-        """
-        :return: The repr() string representation of the event.
-        """
-        return f"<{str(self)} object at {id(self)}>"
-
 
 class OrderEvent(Event):
     """
@@ -245,10 +245,22 @@ class OrderEvent(Event):
         self._symbol = order_symbol
         self._order_id = order_id
 
+    def __str__(self) -> str:
+        """
+        :return: The str() string representation of the event.
+        """
+        return f"{self.__class__.__name__}(id={self._order_id})"
+
+    def __repr__(self) -> str:
+        """
+        :return: The repr() string representation of the event.
+        """
+        return f"<{str(self)} object at {id(self)}>"
+
     @property
     def symbol(self) -> Symbol:
         """
-        :return: The events order symbol.
+        :return: The events symbol.
         """
         return self._symbol
 
@@ -258,19 +270,6 @@ class OrderEvent(Event):
         :return: The events order identifier.
         """
         return self._order_id
-
-    def __str__(self) -> str:
-        """
-        :return: The str() string representation of the event.
-        """
-        return (f"{self.__class__.__name__}"
-                f"(id={self._order_id})")
-
-    def __repr__(self) -> str:
-        """
-        :return: The repr() string representation of the event.
-        """
-        return f"<{str(self)} object at {id(self)}>"
 
 
 class OrderSubmitted(OrderEvent):
@@ -860,13 +859,6 @@ class TimeEvent(Event):
         super().__init__(event_id, event_timestamp)
         self._label = label
 
-    @property
-    def label(self) -> Label:
-        """
-        :return: The time events label.
-        """
-        return self._label
-
     def __str__(self) -> str:
         """
         :return: The str() string representation of the event.
@@ -878,3 +870,10 @@ class TimeEvent(Event):
         :return: The repr() string representation of the event.
         """
         return f"<{str(self)} object at {id(self)}>"
+
+    @property
+    def label(self) -> Label:
+        """
+        :return: The time events label.
+        """
+        return self._label
