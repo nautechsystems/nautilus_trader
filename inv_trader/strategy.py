@@ -838,9 +838,11 @@ class TradeStrategy:
         for position_id, position in self._position_book.items():
             if position is None:
                 self._log.warning(f"Cannot flatten position (the position {position_id} was None.")
+                continue
             if position.market_position == MarketPosition.FLAT:
                 self._log.warning(
                     f"Cannot flatten position (the position {position_id} was already FLAT).")
+                continue
 
             self.log.info(f"Flattening {position}.")
             order = OrderFactory.market(
