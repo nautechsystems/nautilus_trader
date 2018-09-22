@@ -9,16 +9,10 @@
 
 import unittest
 
-from datetime import datetime, timezone
-from decimal import Decimal
-
-from inv_trader.model.enums import Venue, OrderSide, OrderType, OrderStatus, TimeInForce
+from inv_trader.model.enums import Venue, OrderSide, OrderStatus, TimeInForce
+from inv_trader.model.identifiers import Label, PositionId
 from inv_trader.model.objects import Price, Symbol, Resolution, QuoteType, BarType, Bar
 from inv_trader.model.order import OrderIdGenerator, OrderFactory
-from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
-from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
-from inv_trader.model.events import OrderPartiallyFilled, OrderFilled
-from inv_trader.messaging import RequestWorker
 from inv_trader.execution import ExecutionClient, LiveExecClient
 from test_kit.stubs import TestStubs
 from test_kit.mocks import MockExecClient, MockServer, MockPublisher
@@ -63,12 +57,12 @@ class ExecutionClientTests(unittest.TestCase):
         order = OrderFactory.market(
             AUDUSD_FXCM,
             order_id,
-            'S1_E',
+            Label('S1_E'),
             OrderSide.BUY,
             100000)
 
         # Act
-        self.strategy.submit_order(order, order.id)
+        self.strategy.submit_order(order, PositionId(str(order.id)))
 
         # Assert
         self.assertEqual(order, self.strategy.order(order_id))
@@ -84,12 +78,12 @@ class ExecutionClientTests(unittest.TestCase):
         order = OrderFactory.market(
             AUDUSD_FXCM,
             order_id,
-            'S1_E',
+            Label('S1_E'),
             OrderSide.BUY,
             100000)
 
         # Act
-        self.strategy.submit_order(order, order.id)
+        self.strategy.submit_order(order, PositionId(str(order.id)))
         self.strategy.cancel_order(order, 'ORDER_EXPIRED')
 
         # Assert
@@ -106,14 +100,14 @@ class ExecutionClientTests(unittest.TestCase):
         order = OrderFactory.limit(
             AUDUSD_FXCM,
             order_id,
-            'S1_E',
+            Label('S1_E'),
             OrderSide.BUY,
             100000,
             Price.create(1.00000, 5),
             TimeInForce.DAY)
 
         # Act
-        self.strategy.submit_order(order, order.id)
+        self.strategy.submit_order(order, PositionId(str(order.id)))
         self.strategy.modify_order(order, Price.create(1.00001, 5))
 
         # Assert
@@ -164,12 +158,12 @@ class LiveExecClientTests(unittest.TestCase):
         order = OrderFactory.market(
             AUDUSD_FXCM,
             order_id,
-            'S1_E',
+            Label('S1_E'),
             OrderSide.BUY,
             100000)
 
         # Act
-        self.strategy.submit_order(order, order.id)
+        self.strategy.submit_order(order, PositionId(str(order.id)))
 
         # Assert
         self.assertEqual(order, self.strategy.order(order_id))
@@ -182,12 +176,12 @@ class LiveExecClientTests(unittest.TestCase):
         order = OrderFactory.market(
             AUDUSD_FXCM,
             order_id,
-            'S1_E',
+            Label('S1_E'),
             OrderSide.BUY,
             100000)
 
         # Act
-        self.strategy.submit_order(order, 'some-position')
+        self.strategy.submit_order(order, PositionId('some-position'))
         self.strategy.cancel_order(order, 'ORDER_EXPIRED')
 
         # Assert
@@ -201,14 +195,14 @@ class LiveExecClientTests(unittest.TestCase):
         order = OrderFactory.limit(
             AUDUSD_FXCM,
             order_id,
-            'S1_E',
+            Label('S1_E'),
             OrderSide.BUY,
             100000,
             Price.create(1.00000, 5),
             TimeInForce.DAY)
 
         # Act
-        self.strategy.submit_order(order, 'some-position')
+        self.strategy.submit_order(order, PositionId('some-position'))
         self.strategy.modify_order(order, Price.create(1.00001, 5))
 
         # Assert

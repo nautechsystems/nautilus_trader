@@ -18,8 +18,8 @@ from inv_trader.model.events import OrderEvent
 from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
 from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
 from inv_trader.model.events import OrderPartiallyFilled, OrderFilled
+from inv_trader.model.identifiers import Label, OrderId, ExecutionId, ExecutionTicket
 
-OrderId = str
 # Order types which require prices to be valid.
 PRICED_ORDER_TYPES = [
     OrderType.LIMIT,
@@ -36,7 +36,7 @@ class Order:
     def __init__(self,
                  symbol: Symbol,
                  order_id: OrderId,
-                 label: str,
+                 label: Label,
                  order_side: OrderSide,
                  order_type: OrderType,
                  quantity: int,
@@ -68,8 +68,6 @@ class Order:
         if time_in_force is None:
             time_in_force = TimeInForce.DAY
 
-        Precondition.valid_string(order_id, 'order_id')
-        Precondition.valid_string(label, 'label')
         Precondition.positive(quantity, 'quantity')
         # Orders without prices
         if order_type not in PRICED_ORDER_TYPES:
@@ -96,10 +94,10 @@ class Order:
         self._slippage = Decimal('0.0')
         self._status = OrderStatus.INITIALIZED
         self._events = []               # type: List[OrderEvent]
-        self._order_ids = [order_id]    # type: List[str]
-        self._order_ids_broker = []     # type: List[str]
-        self._execution_ids = []        # type: List[str]
-        self._execution_tickets = []    # type: List[str]
+        self._order_ids = [order_id]    # type: List[OrderId]
+        self._order_ids_broker = []     # type: List[OrderId]
+        self._execution_ids = []        # type: List[ExecutionId]
+        self._execution_tickets = []    # type: List[ExecutionTicket]
 
     @property
     def symbol(self) -> Symbol:
@@ -116,41 +114,41 @@ class Order:
         return self._id
 
     @property
-    def id_current(self) -> str:
+    def id_current(self) -> OrderId:
         """
         :return: The orders current identifier.
         """
         return self._order_ids[-1]
 
     @property
-    def broker_id(self) -> str:
+    def broker_id(self) -> OrderId or None:
         """
-        :return: The orders broker-side order identifier (could be an empty string).
+        :return: The orders broker-side order identifier (could be None).
         """
         if len(self._order_ids_broker) == 0:
-            return ''
+            return None
         return self._order_ids_broker[-1]
 
     @property
-    def execution_id(self) -> str:
+    def execution_id(self) -> ExecutionId or None:
         """
-        :return: The orders last execution (could be an empty string).
+        :return: The orders last execution (could be None).
         """
         if len(self._execution_ids) == 0:
-            return ''
+            return None
         return self._execution_ids[-1]
 
     @property
-    def execution_ticket(self) -> str:
+    def execution_ticket(self) -> ExecutionTicket or None:
         """
-        :return: The orders last execution ticket (could be an empty string).
+        :return: The orders last execution ticket (could be None).
         """
         if len(self._execution_tickets) == 0:
-            return ''
+            return None
         return self._execution_tickets[-1]
 
     @property
-    def label(self) -> str:
+    def label(self) -> Label:
         """
         :return: The orders label.
         """
@@ -399,11 +397,11 @@ class OrderIdGenerator:
         self._order_symbol_counts[order_symbol] += 1
         milliseconds = str(self._milliseconds_since_unix_epoch())
         order_count = str(self._order_symbol_counts[order_symbol])
-        order_id = (str(order_symbol.code)
-                    + SEPARATOR + str(order_symbol.venue.name)
-                    + SEPARATOR + order_count
-                    + SEPARATOR + self._order_id_tag
-                    + SEPARATOR + milliseconds)
+        order_id = OrderId(str(order_symbol.code)
+                           + SEPARATOR + str(order_symbol.venue.name)
+                           + SEPARATOR + order_count
+                           + SEPARATOR + self._order_id_tag
+                           + SEPARATOR + milliseconds)
 
         if order_id in self._order_ids:
             return self.generate(order_symbol)
@@ -429,7 +427,7 @@ class OrderFactory:
     def market(
             symbol: Symbol,
             order_id: OrderId,
-            label: str,
+            label: Label,
             order_side: OrderSide,
             quantity: int) -> Order:
         """
@@ -462,7 +460,7 @@ class OrderFactory:
     def limit(
             symbol: Symbol,
             order_id: OrderId,
-            label: str,
+            label: Label,
             order_side: OrderSide,
             quantity: int,
             price: Decimal,
@@ -504,7 +502,7 @@ class OrderFactory:
     def stop(
             symbol: Symbol,
             order_id: OrderId,
-            label: str,
+            label: Label,
             order_side: OrderSide,
             quantity: int,
             price: Decimal,
@@ -546,7 +544,7 @@ class OrderFactory:
     def stop_limit(
             symbol: Symbol,
             order_id: OrderId,
-            label: str,
+            label: Label,
             order_side: OrderSide,
             quantity: int,
             price: Decimal,
@@ -588,7 +586,7 @@ class OrderFactory:
     def market_if_touched(
             symbol: Symbol,
             order_id: OrderId,
-            label: str,
+            label: Label,
             order_side: OrderSide,
             quantity: int,
             price: Decimal,
@@ -630,7 +628,7 @@ class OrderFactory:
     def fill_or_kill(
             symbol: Symbol,
             order_id: OrderId,
-            label: str,
+            label: Label,
             order_side: OrderSide,
             quantity: int) -> Order:
         """
@@ -663,7 +661,7 @@ class OrderFactory:
     def immediate_or_cancel(
             symbol: Symbol,
             order_id: OrderId,
-            label: str,
+            label: Label,
             order_side: OrderSide,
             quantity: int) -> Order:
         """

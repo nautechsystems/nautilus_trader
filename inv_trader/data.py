@@ -14,7 +14,7 @@ import time
 from datetime import datetime, timezone
 from decimal import Decimal
 from redis import StrictRedis, ConnectionError
-from typing import List, Dict, Callable, KeysView
+from typing import List, Dict, Callable
 
 from inv_trader.core.precondition import Precondition
 from inv_trader.core.logger import Logger, LoggerAdapter

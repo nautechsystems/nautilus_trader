@@ -24,6 +24,7 @@ from inv_trader.model.order import OrderFactory
 from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
 from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
 from inv_trader.model.events import TimeEvent
+from inv_trader.model.identifiers import Label, OrderId, PositionId
 from inv_trader.model.position import Position
 from inv_trader.data import LiveDataClient
 from inv_trader.strategy import TradeStrategy
@@ -300,8 +301,8 @@ class TradeStrategyTests(unittest.TestCase):
 
         order = OrderFactory.market(
             AUDUSD_FXCM,
-            'AUDUSD|123456|1',
-            'SCALPER-01',
+            OrderId('AUDUSD-123456-1'),
+            Label('S1'),
             OrderSide.BUY,
             100000)
 
@@ -327,7 +328,7 @@ class TradeStrategyTests(unittest.TestCase):
 
         position = Position(
             AUDUSD_FXCM,
-            'AUDUSD-123456-1',
+            PositionId('AUDUSD-123456-1'),
             TestStubs.unix_epoch())
 
         strategy._position_book[position.id] = position
@@ -414,7 +415,7 @@ class TradeStrategyTests(unittest.TestCase):
         exec_client.register_strategy(strategy)
 
         alert_time = datetime.now(timezone.utc) + timedelta(milliseconds=300)
-        strategy.set_time_alert("test_alert1", alert_time)
+        strategy.set_time_alert(Label("test_alert1"), alert_time)
 
         # Act
         strategy.start()
@@ -432,12 +433,12 @@ class TradeStrategyTests(unittest.TestCase):
         exec_client.register_strategy(strategy)
 
         alert_time = datetime.now(timezone.utc) + timedelta(seconds=1)
-        strategy.set_time_alert("test_alert1", alert_time)
+        strategy.set_time_alert(Label("test_alert1"), alert_time)
 
         # Act
         strategy.start()
         time.sleep(0.5)
-        strategy.cancel_time_alert("test_alert1")
+        strategy.cancel_time_alert(Label("test_alert1"))
         strategy.stop()
 
         # Assert
@@ -450,7 +451,7 @@ class TradeStrategyTests(unittest.TestCase):
         exec_client.register_strategy(strategy)
 
         alert_time = datetime.now(timezone.utc) + timedelta(milliseconds=200)
-        strategy.set_time_alert("test_alert1", alert_time)
+        strategy.set_time_alert(Label("test_alert1"), alert_time)
 
         # Act
         strategy.start()
@@ -470,8 +471,8 @@ class TradeStrategyTests(unittest.TestCase):
         alert_time2 = datetime.now(timezone.utc) + timedelta(milliseconds=300)
 
         # Act
-        strategy.set_time_alert("test_alert1", alert_time1)
-        strategy.set_time_alert("test_alert2", alert_time2)
+        strategy.set_time_alert(Label("test_alert1"), alert_time1)
+        strategy.set_time_alert(Label("test_alert2"), alert_time2)
         strategy.start()
         time.sleep(0.5)
         strategy.stop()
@@ -487,7 +488,7 @@ class TradeStrategyTests(unittest.TestCase):
         exec_client.register_strategy(strategy)
 
         start_time = datetime.now(timezone.utc) + timedelta(milliseconds=100)
-        strategy.set_timer("test_timer1", timedelta(milliseconds=100), start_time)
+        strategy.set_timer(Label("test_timer1"), timedelta(milliseconds=100), start_time)
 
         # Act
         strategy.start()
@@ -504,12 +505,12 @@ class TradeStrategyTests(unittest.TestCase):
         exec_client.register_strategy(strategy)
 
         start_time = datetime.now(timezone.utc) + timedelta(milliseconds=100)
-        strategy.set_timer("test_timer1", timedelta(milliseconds=100), start_time)
+        strategy.set_timer(Label("test_timer1"), timedelta(milliseconds=100), start_time)
 
         # Act
         strategy.start()
         time.sleep(0.1)
-        strategy.cancel_timer("test_timer1")
+        strategy.cancel_timer(Label("test_timer1"))
         time.sleep(0.5)
         strategy.stop()
 
@@ -523,7 +524,7 @@ class TradeStrategyTests(unittest.TestCase):
         exec_client.register_strategy(strategy)
 
         start_time = datetime.now(timezone.utc) + timedelta(milliseconds=100)
-        strategy.set_timer("test_timer1", timedelta(milliseconds=100), start_time)
+        strategy.set_timer(Label("test_timer1"), timedelta(milliseconds=100), start_time)
 
         # Act
         strategy.start()
@@ -540,7 +541,7 @@ class TradeStrategyTests(unittest.TestCase):
         exec_client.register_strategy(strategy)
 
         start_time = datetime.now(timezone.utc) + timedelta(milliseconds=100)
-        strategy.set_timer("test_timer1", timedelta(milliseconds=100), start_time, None, repeat=True)
+        strategy.set_timer(Label("test_timer1"), timedelta(milliseconds=100), start_time, None, repeat=True)
 
         # Act
         strategy.start()
@@ -560,12 +561,12 @@ class TradeStrategyTests(unittest.TestCase):
 
         start_time = datetime.now(timezone.utc) + timedelta(milliseconds=100)
         stop_time = start_time + timedelta(seconds=1)
-        strategy.set_timer("test_timer1", timedelta(milliseconds=100), start_time, stop_time, repeat=True)
+        strategy.set_timer(Label("test_timer1"), timedelta(milliseconds=100), start_time, stop_time, repeat=True)
 
         # Act
         strategy.start()
         time.sleep(0.55)
-        strategy.cancel_timer("test_timer1")
+        strategy.cancel_timer(Label("test_timer1"))
         strategy.stop()
 
         # Assert
@@ -578,8 +579,8 @@ class TradeStrategyTests(unittest.TestCase):
         exec_client.register_strategy(strategy)
 
         start_time = datetime.now(timezone.utc) + timedelta(milliseconds=100)
-        strategy.set_timer("test_timer1", timedelta(milliseconds=100), start_time, repeat=True)
-        strategy.set_timer("test_timer2", timedelta(milliseconds=100), start_time, repeat=True)
+        strategy.set_timer(Label("test_timer1"), timedelta(milliseconds=100), start_time, repeat=True)
+        strategy.set_timer(Label("test_timer2"), timedelta(milliseconds=100), start_time, repeat=True)
 
         # Act
         strategy.start()
@@ -597,7 +598,7 @@ class TradeStrategyTests(unittest.TestCase):
         result = strategy.generate_order_id(AUDUSD_FXCM)
 
         # Assert
-        self.assertTrue(result.startswith('AUDUSD-FXCM-1-TS01-'))
+        self.assertTrue(result.value.startswith('AUDUSD-FXCM-1-TS01-'))
 
     def test_get_opposite_side_returns_expected_sides(self):
         # Arrange
@@ -639,12 +640,12 @@ class TradeStrategyTests(unittest.TestCase):
 
         order = OrderFactory.market(
             AUDUSD_FXCM,
-            'AUDUSD-123456-1',
-            'SCALPER-01',
+            OrderId('AUDUSD-123456-1'),
+            Label('S1'),
             OrderSide.BUY,
             100000)
 
-        strategy.submit_order(order, order.id)
+        strategy.submit_order(order, PositionId(str(order.id)))
 
         # Act
         # Assert
@@ -658,13 +659,13 @@ class TradeStrategyTests(unittest.TestCase):
 
         order = OrderFactory.market(
             AUDUSD_FXCM,
-            'AUDUSD-123456-1',
-            'SCALPER-01',
+            OrderId('AUDUSD-123456-1'),
+            Label('S1'),
             OrderSide.BUY,
             100000)
 
         # Act
-        strategy.submit_order(order, order.id)
+        strategy.submit_order(order, PositionId(str(order.id)))
 
         # Assert
         self.assertEqual(order, strategy.orders[order.id])
@@ -680,8 +681,8 @@ class TradeStrategyTests(unittest.TestCase):
 
         order = OrderFactory.market(
             AUDUSD_FXCM,
-            'AUDUSD-123456-1',
-            'SCALPER-01',
+            OrderId('AUDUSD-123456-1'),
+            Label('S1'),
             OrderSide.BUY,
             100000)
 
@@ -697,12 +698,12 @@ class TradeStrategyTests(unittest.TestCase):
 
         order = OrderFactory.market(
             AUDUSD_FXCM,
-            'AUDUSD-123456-1',
-            'SCALPER-01',
+            OrderId('AUDUSD-123456-1'),
+            Label('S1'),
             OrderSide.BUY,
             100000)
 
-        strategy.submit_order(order, order.id)
+        strategy.submit_order(order, PositionId(str(order.id)))
 
         # Act
         strategy.cancel_order(order)
@@ -721,8 +722,8 @@ class TradeStrategyTests(unittest.TestCase):
 
         order = OrderFactory.market(
             AUDUSD_FXCM,
-            'AUDUSD-123456-1',
-            'SCALPER-01',
+            OrderId('AUDUSD-123456-1'),
+            Label('S1'),
             OrderSide.BUY,
             100000)
 
@@ -738,13 +739,13 @@ class TradeStrategyTests(unittest.TestCase):
 
         order = OrderFactory.limit(
             AUDUSD_FXCM,
-            'AUDUSD-123456-1',
-            'SCALPER-01',
+            OrderId('AUDUSD-123456-1'),
+            Label('S1'),
             OrderSide.BUY,
             100000,
             Price.create(1.00000, 5))
 
-        strategy.submit_order(order, order.id)
+        strategy.submit_order(order, PositionId(str(order.id)))
 
         # Act
         strategy.modify_order(order, Price.create(1.00001, 5))
@@ -763,22 +764,22 @@ class TradeStrategyTests(unittest.TestCase):
 
         order1 = OrderFactory.stop(
             AUDUSD_FXCM,
-            'AUDUSD-123456-1',
-            'SCALPER-01',
+            OrderId('AUDUSD-123456-1'),
+            Label('S1'),
             OrderSide.BUY,
             100000,
             Price.create(1.00000, 5))
 
         order2 = OrderFactory.stop(
             AUDUSD_FXCM,
-            'AUDUSD-123456-2',
-            'SCALPER-01',
+            OrderId('AUDUSD-123456-2'),
+            Label('S1'),
             OrderSide.BUY,
             100000,
             Price.create(1.00010, 5))
 
-        strategy.submit_order(order1, 'some-position')
-        strategy.submit_order(order2, 'some-position')
+        strategy.submit_order(order1, PositionId('some-position'))
+        strategy.submit_order(order2, PositionId('some-position'))
 
         # Act
         strategy.cancel_all_orders(cancel_reason='TEST')
@@ -799,24 +800,24 @@ class TradeStrategyTests(unittest.TestCase):
 
         order = OrderFactory.market(
             AUDUSD_FXCM,
-            'AUDUSD-123456-1',
-            'SCALPER-01',
+            OrderId('AUDUSD-123456-1'),
+            Label('S1'),
             OrderSide.BUY,
             100000)
 
-        strategy.submit_order(order, 'some-position')
+        strategy.submit_order(order, PositionId('some-position'))
         exec_client.fill_last_order()
 
         # Act
-        strategy.flatten_position('some-position')
+        strategy.flatten_position(PositionId('some-position'))
         exec_client.fill_last_order()
 
         # Assert
         self.assertEqual(order, strategy.orders[order.id])
         self.assertEqual(OrderStatus.FILLED, strategy.orders[order.id].status)
-        self.assertEqual(MarketPosition.FLAT, strategy.position('some-position').market_position)
-        self.assertTrue(strategy.position('some-position').is_exited)
-        self.assertTrue('some-position' in strategy.completed_positions)
+        self.assertEqual(MarketPosition.FLAT, strategy.position(PositionId('some-position')).market_position)
+        self.assertTrue(strategy.position(PositionId('some-position')).is_exited)
+        self.assertTrue(PositionId('some-position') in strategy.completed_positions)
         self.assertTrue(strategy.is_flat)
 
     def test_flatten_position_which_does_not_exist_raises_exception(self):
@@ -837,20 +838,20 @@ class TradeStrategyTests(unittest.TestCase):
 
         order1 = OrderFactory.market(
             AUDUSD_FXCM,
-            'AUDUSD-123456-1',
-            'SCALPER-01',
+            OrderId('AUDUSD-123456-1'),
+            Label('S1'),
             OrderSide.BUY,
             100000)
 
         order2 = OrderFactory.market(
             AUDUSD_FXCM,
-            'AUDUSD-123456-2',
-            'SCALPER-01',
+            OrderId('AUDUSD-123456-2'),
+            Label('S1'),
             OrderSide.BUY,
             100000)
 
-        strategy.submit_order(order1, 'some-position1')
-        strategy.submit_order(order2, 'some-position2')
+        strategy.submit_order(order1, PositionId('some-position1'))
+        strategy.submit_order(order2, PositionId('some-position2'))
         exec_client.fill_last_order()
         exec_client.fill_last_order()
 
@@ -864,12 +865,12 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertEqual(order2, strategy.orders[order2.id])
         self.assertEqual(OrderStatus.FILLED, strategy.orders[order1.id].status)
         self.assertEqual(OrderStatus.FILLED, strategy.orders[order2.id].status)
-        self.assertEqual(MarketPosition.FLAT, strategy.position('some-position1').market_position)
-        self.assertEqual(MarketPosition.FLAT, strategy.position('some-position2').market_position)
-        self.assertTrue(strategy.position('some-position1').is_exited)
-        self.assertTrue(strategy.position('some-position2').is_exited)
-        self.assertTrue('some-position1' in strategy.completed_positions)
-        self.assertTrue('some-position2' in strategy.completed_positions)
+        self.assertEqual(MarketPosition.FLAT, strategy.position(PositionId('some-position1')).market_position)
+        self.assertEqual(MarketPosition.FLAT, strategy.position(PositionId('some-position2')).market_position)
+        self.assertTrue(strategy.position(PositionId('some-position1')).is_exited)
+        self.assertTrue(strategy.position(PositionId('some-position2')).is_exited)
+        self.assertTrue(PositionId('some-position1') in strategy.completed_positions)
+        self.assertTrue(PositionId('some-position2') in strategy.completed_positions)
         self.assertTrue(strategy.is_flat)
 
     def test_registering_execution_client_with_none_raises_exception(self):
@@ -920,8 +921,8 @@ class TradeStrategyTests(unittest.TestCase):
         strategy = TestStrategy1()
         order = OrderFactory.market(
             AUDUSD_FXCM,
-            'AUDUSD-123456-1',
-            'SCALPER-01',
+            OrderId('AUDUSD-123456-1'),
+            Label('S1'),
             OrderSide.BUY,
             100000)
 
@@ -948,22 +949,23 @@ class TradeStrategyTests(unittest.TestCase):
 
         order = OrderFactory.market(
             AUDUSD_FXCM,
-            'AUDUSD-123456-1',
-            'SCALPER-01',
+            OrderId('AUDUSD-123456-1'),
+            Label('S1'),
             OrderSide.BUY,
             100000)
 
-        strategy.submit_order(order, order.id)
+        strategy.submit_order(order, PositionId('AUDUSD-123456-1'))
         exec_client.fill_last_order()
 
         # Act
         # Assert
-        self.assertEqual('AUDUSD-123456-1', strategy._order_position_index[order.id])
-        self.assertTrue('AUDUSD-123456-1' in strategy._position_book)
+        self.assertTrue(OrderId('AUDUSD-123456-1') in strategy._order_position_index)
+        self.assertTrue(PositionId('AUDUSD-123456-1') in strategy._position_book)
         self.assertEqual(0, len(strategy.active_orders))
         self.assertEqual(order, strategy.completed_orders[order.id])
         self.assertEqual(0, len(strategy.completed_positions))
-        self.assertTrue('AUDUSD-123456-1' in strategy.active_positions)
+        self.assertTrue(OrderId('AUDUSD-123456-1') in strategy.completed_orders)
+        self.assertTrue(PositionId('AUDUSD-123456-1') in strategy.active_positions)
         self.assertFalse(strategy.is_flat)
 
     def test_can_track_orders_for_a_closing_position(self):
@@ -972,18 +974,18 @@ class TradeStrategyTests(unittest.TestCase):
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
-        position1 = "position1"
+        position1 = PositionId('position1')
         order1 = OrderFactory.market(
             AUDUSD_FXCM,
-            'AUDUSD-123456-1',
-            'SCALPER-01',
+            OrderId('AUDUSD-123456-1'),
+            Label('S1'),
             OrderSide.BUY,
             100000)
 
         order2 = OrderFactory.market(
             AUDUSD_FXCM,
-            'AUDUSD-123456-2',
-            'SCALPER-01',
+            OrderId('AUDUSD-123456-2'),
+            Label('S1'),
             OrderSide.SELL,
             100000)
 
@@ -1000,8 +1002,8 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertEqual(order1, strategy.completed_orders[order1.id])
         self.assertEqual(order2, strategy.completed_orders[order2.id])
         self.assertEqual(1, len(strategy.completed_positions))
-        self.assertFalse('position1' in strategy.active_positions)
-        self.assertTrue('position1' in strategy.completed_positions)
+        self.assertFalse(PositionId('position1') in strategy.active_positions)
+        self.assertTrue(PositionId('position1') in strategy.completed_positions)
         self.assertTrue(strategy.is_flat)
 
 

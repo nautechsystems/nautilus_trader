@@ -23,6 +23,7 @@ from inv_trader.commands import Command, OrderCommand, SubmitOrder, CancelOrder,
 from inv_trader.commands import CollateralInquiry
 from inv_trader.model.enums import Venue, OrderSide, OrderType, TimeInForce
 from inv_trader.model.enums import Broker, CurrencyCode, SecurityType
+from inv_trader.model.identifiers import Label, OrderId, ExecutionId, ExecutionTicket
 from inv_trader.model.objects import Symbol, Instrument
 from inv_trader.model.order import Order
 from inv_trader.model.events import Event, OrderEvent, AccountEvent
@@ -197,8 +198,8 @@ class MsgPackOrderSerializer(OrderSerializer):
         """
         return msgpack.packb({
             SYMBOL: str(order.symbol),
-            ORDER_ID: order.id,
-            LABEL: order.label,
+            ORDER_ID: str(order.id),
+            LABEL: str(order.label),
             ORDER_SIDE: order.side.name,
             ORDER_TYPE: order.type.name,
             QUANTITY: order.quantity,
@@ -222,8 +223,8 @@ class MsgPackOrderSerializer(OrderSerializer):
         unpacked = msgpack.unpackb(order_bytes, encoding=UTF8)
 
         return Order(symbol=_parse_symbol(unpacked[SYMBOL]),
-                     order_id=unpacked[ORDER_ID],
-                     label=unpacked[LABEL],
+                     order_id=OrderId(unpacked[ORDER_ID]),
+                     label=Label(unpacked[LABEL]),
                      order_side=OrderSide[unpacked[ORDER_SIDE]],
                      order_type=OrderType[unpacked[ORDER_TYPE]],
                      quantity=unpacked[QUANTITY],
@@ -507,7 +508,7 @@ class MsgPackEventSerializer(EventSerializer):
         package = {
             EVENT_TYPE: ORDER_EVENT,
             SYMBOL: str(order_event.symbol),
-            ORDER_ID: order_event.order_id,
+            ORDER_ID: str(order_event.order_id),
             EVENT_ID: str(order_event.id),
             EVENT_TIMESTAMP: _convert_datetime_to_string(order_event.timestamp)
         }
@@ -530,8 +531,8 @@ class MsgPackEventSerializer(EventSerializer):
 
         if isinstance(order_event, OrderWorking):
             package[ORDER_EVENT] = ORDER_WORKING
-            package[ORDER_ID_BROKER] = order_event.broker_order_id
-            package[LABEL] = order_event.label
+            package[ORDER_ID_BROKER] = str(order_event.broker_order_id)
+            package[LABEL] = str(order_event.label)
             package[ORDER_SIDE] = order_event.order_side.name
             package[ORDER_TYPE] = order_event.order_type.name
             package[QUANTITY] = order_event.quantity
@@ -555,7 +556,7 @@ class MsgPackEventSerializer(EventSerializer):
 
         if isinstance(order_event, OrderModified):
             package[ORDER_EVENT] = ORDER_MODIFIED
-            package[ORDER_ID_BROKER] = order_event.broker_order_id
+            package[ORDER_ID_BROKER] = str(order_event.broker_order_id)
             package[MODIFIED_TIME] = _convert_datetime_to_string(order_event.modified_time)
             package[MODIFIED_PRICE] = str(order_event.modified_price)
             return msgpack.packb(package)
@@ -567,8 +568,8 @@ class MsgPackEventSerializer(EventSerializer):
 
         if isinstance(order_event, OrderPartiallyFilled):
             package[ORDER_EVENT] = ORDER_PARTIALLY_FILLED
-            package[EXECUTION_ID] = order_event.execution_id
-            package[EXECUTION_TICKET] = order_event.execution_ticket
+            package[EXECUTION_ID] = str(order_event.execution_id)
+            package[EXECUTION_TICKET] = str(order_event.execution_ticket)
             package[ORDER_SIDE] = order_event.order_side.name
             package[FILLED_QUANTITY] = order_event.filled_quantity
             package[LEAVES_QUANTITY] = order_event.leaves_quantity
@@ -578,8 +579,8 @@ class MsgPackEventSerializer(EventSerializer):
 
         if isinstance(order_event, OrderFilled):
             package[ORDER_EVENT] = ORDER_FILLED
-            package[EXECUTION_ID] = order_event.execution_id
-            package[EXECUTION_TICKET] = order_event.execution_ticket
+            package[EXECUTION_ID] = str(order_event.execution_id)
+            package[EXECUTION_TICKET] = str(order_event.execution_ticket)
             package[ORDER_SIDE] = order_event.order_side.name
             package[FILLED_QUANTITY] = order_event.filled_quantity
             package[AVERAGE_PRICE] = str(order_event.average_price)
@@ -604,7 +605,7 @@ class MsgPackEventSerializer(EventSerializer):
         :raises ValueError: If the order event cannot be deserialized.
         """
         order_symbol = _parse_symbol(unpacked[SYMBOL])
-        order_id = unpacked[ORDER_ID]
+        order_id = OrderId(unpacked[ORDER_ID])
         order_event = unpacked[ORDER_EVENT]
 
         if order_event == ORDER_SUBMITTED:
@@ -636,8 +637,8 @@ class MsgPackEventSerializer(EventSerializer):
             return OrderWorking(
                 order_symbol,
                 order_id,
-                unpacked[ORDER_ID_BROKER],
-                unpacked[LABEL],
+                OrderId(unpacked[ORDER_ID_BROKER]),
+                Label(unpacked[LABEL]),
                 OrderSide[unpacked[ORDER_SIDE]],
                 OrderType[unpacked[ORDER_TYPE]],
                 unpacked[QUANTITY],
@@ -670,7 +671,7 @@ class MsgPackEventSerializer(EventSerializer):
             return OrderModified(
                 order_symbol,
                 order_id,
-                unpacked[ORDER_ID_BROKER],
+                OrderId(unpacked[ORDER_ID_BROKER]),
                 Decimal(unpacked[MODIFIED_PRICE]),
                 _convert_string_to_datetime(unpacked[MODIFIED_TIME]),
                 event_id,
@@ -688,8 +689,8 @@ class MsgPackEventSerializer(EventSerializer):
             return OrderPartiallyFilled(
                 order_symbol,
                 order_id,
-                unpacked[EXECUTION_ID],
-                unpacked[EXECUTION_TICKET],
+                ExecutionId(unpacked[EXECUTION_ID]),
+                ExecutionTicket(unpacked[EXECUTION_TICKET]),
                 OrderSide[unpacked[ORDER_SIDE]],
                 int(unpacked[FILLED_QUANTITY]),
                 int(unpacked[LEAVES_QUANTITY]),
@@ -702,8 +703,8 @@ class MsgPackEventSerializer(EventSerializer):
             return OrderFilled(
                 order_symbol,
                 order_id,
-                unpacked[EXECUTION_ID],
-                unpacked[EXECUTION_TICKET],
+                ExecutionId(unpacked[EXECUTION_ID]),
+                ExecutionTicket(unpacked[EXECUTION_TICKET]),
                 OrderSide[unpacked[ORDER_SIDE]],
                 int(unpacked[FILLED_QUANTITY]),
                 Decimal(unpacked[AVERAGE_PRICE]),

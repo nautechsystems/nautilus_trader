@@ -25,13 +25,11 @@ from inv_trader.model.enums import OrderSide, MarketPosition
 from inv_trader.model.events import Event, AccountEvent, OrderEvent
 from inv_trader.model.events import OrderFilled, OrderPartiallyFilled
 from inv_trader.model.events import TimeEvent
+from inv_trader.model.identifiers import Label, OrderId, PositionId
 from inv_trader.model.objects import Symbol, Tick, BarType, Bar, Instrument
 from inv_trader.model.order import Order, OrderIdGenerator, OrderFactory
 from inv_trader.model.position import Position
 
-OrderId = str
-PositionId = str
-Label = str
 Indicator = object
 
 
@@ -400,7 +398,7 @@ class TradeStrategy:
         :raises ValueError: If the label is not a valid string.
         :raises KeyError: If the strategies indicator dictionary does not contain the given label.
         """
-        Precondition.valid_string(label, 'label')
+        label = Label(label)
 
         if label not in self._indicator_index:
             raise KeyError(
@@ -463,8 +461,6 @@ class TradeStrategy:
         :raises ValueError: If the order_id is not a valid string.
         :raises KeyError: If the strategies order book does not contain the order with the given id.
         """
-        Precondition.valid_string(order_id, 'order_id')
-
         if order_id not in self._order_book:
             raise KeyError(
                 f"Cannot get order (the order book does not contain the order with id {order_id}).")
@@ -480,8 +476,6 @@ class TradeStrategy:
         :raises ValueError: If the position_id is not a valid string.
         :raises KeyError: If the strategies positions dictionary does not contain the given position_id.
         """
-        Precondition.valid_string(position_id, 'position_id')
-
         if position_id not in self._position_book:
             raise KeyError(
                 (f"Cannot get position "
@@ -494,7 +488,7 @@ class TradeStrategy:
             bar_type: BarType,
             indicator: Indicator,
             update_method: Callable,
-            label: str):
+            label: Label):
         """
         Add the given indicator to the strategy. The indicator must be from the
         inv_indicators package. Once added it will receive bars of the given
@@ -507,8 +501,6 @@ class TradeStrategy:
         :raises ValueError: If the label is not a valid string.
         :raises KeyError: If the given indicator label is not unique for this strategy.
         """
-        Precondition.valid_string(label, 'label')
-
         if label in self._indicator_index:
             raise KeyError(
                 (f"Cannot register indicator "
@@ -526,7 +518,7 @@ class TradeStrategy:
 
     def set_time_alert(
             self,
-            label: str,
+            label: Label,
             alert_time: datetime):
         """
         Set a time alert for the given time. When the time is reached and the
@@ -541,7 +533,6 @@ class TradeStrategy:
         :raises KeyError: If the label is not unique for this strategy.
         :raises ValueError: If the alert_time is not > than the current time (UTC).
         """
-        Precondition.valid_string(label, 'label')
         Precondition.true(alert_time > datetime.now(timezone.utc), 'alert_time > datetime.utcnow()')
 
         if label in self._timers:
@@ -557,7 +548,7 @@ class TradeStrategy:
         self._timers[label] = timer
         self._log.info(f"Set time alert for {label} at {alert_time}.")
 
-    def cancel_time_alert(self, label):
+    def cancel_time_alert(self, label: Label):
         """
         Cancel the time alert corresponding to the given label.
 
@@ -565,8 +556,6 @@ class TradeStrategy:
         :raises ValueError: If the label is not a valid string.
         :raises KeyError: If the label is not found in the internal timers.
         """
-        Precondition.valid_string(label, 'label')
-
         if label not in self._timers:
             raise KeyError(f"Cannot cancel time alert (the label {label} was not found).")
 
@@ -576,7 +565,7 @@ class TradeStrategy:
 
     def set_timer(
             self,
-            label: str,
+            label: Label,
             interval: timedelta,
             start_time: datetime or None=None,
             stop_time: datetime or None=None,
@@ -604,10 +593,9 @@ class TradeStrategy:
         :raises ValueError: If the stop_time is not None and start_time plus interval is greater
         than the stop_time.
         """
-        Precondition.valid_string(label, 'label')
-
         if start_time is not None:
-            Precondition.true(start_time >= datetime.now(timezone.utc), 'start_time >= datetime.utcnow()')
+            Precondition.true(start_time >= datetime.now(timezone.utc),
+                              'start_time >= datetime.utcnow()')
         else:
             start_time = datetime.now(timezone.utc)
         if stop_time is not None:
@@ -639,7 +627,7 @@ class TradeStrategy:
             (f"Set timer for {label} with interval {interval}, "
              f"starting at {start_time}, stopping at {stop_time}, repeat={repeat}."))
 
-    def cancel_timer(self, label):
+    def cancel_timer(self, label: Label):
         """
         Cancel the timer corresponding to the given unique label.
 
@@ -647,8 +635,6 @@ class TradeStrategy:
         :raises ValueError: If the label is not a valid string.
         :raises KeyError: If the label is not found in the internal timers.
         """
-        Precondition.valid_string(label, 'label')
-
         if label not in self._timers:
             raise KeyError(f"Cannot cancel timer (the label {label} was not found).")
 
@@ -715,7 +701,6 @@ class TradeStrategy:
         :raises KeyError: If the order_id is already contained in the order book (must be unique).
         """
         Precondition.not_none(self._exec_client, 'exec_client')
-        Precondition.valid_string(position_id, 'position_id')
 
         if order.id in self._order_book:
             raise KeyError(f"Cannot submit order (the order id {order.id} was not unique).")
@@ -800,7 +785,6 @@ class TradeStrategy:
         :raises KeyError: If the position_id is not found in the position book.
         """
         Precondition.not_none(self._exec_client, 'exec_client')
-        Precondition.valid_string(position_id, 'position_id')
 
         if position_id not in self._position_book.keys():
             raise KeyError(f"Cannot flatten position (the position {position_id} was not found).")
@@ -991,7 +975,7 @@ class TradeStrategy:
 
     def _raise_time_event(
             self,
-            label: str,
+            label: Label,
             alert_time: datetime):
         """
         Create a new TimeEvent and pass it into _update_events().
@@ -1002,7 +986,7 @@ class TradeStrategy:
 
     def _repeating_timer(
             self,
-            label: str,
+            label: Label,
             alert_time: datetime,
             interval: timedelta,
             stop_time: datetime or None):

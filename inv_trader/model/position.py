@@ -16,10 +16,7 @@ from inv_trader.model.enums import MarketPosition, OrderSide
 from inv_trader.model.objects import Symbol
 from inv_trader.model.events import OrderEvent
 from inv_trader.model.events import OrderPartiallyFilled, OrderFilled
-
-OrderId = str
-PositionId = str
-ExecutionId = str
+from inv_trader.model.identifiers import OrderId, PositionId, ExecutionId, ExecutionTicket
 
 
 class Position:
@@ -39,8 +36,6 @@ class Position:
         :param timestamp: The positions initialization timestamp.
         :raises ValueError: If the position_id is not a valid string.
         """
-        Precondition.valid_string(position_id, 'position_id')
-
         self._symbol = symbol
         self._id = position_id
         self._timestamp = timestamp
@@ -52,7 +47,7 @@ class Position:
         self._average_exit_price = None
         self._events = []               # type: List[OrderEvent]
         self._execution_ids = []        # type: List[ExecutionId]
-        self._execution_tickets = []    # type: List[ExecutionId]
+        self._execution_tickets = []    # type: List[ExecutionTicket]
 
     @property
     def symbol(self) -> Symbol:
@@ -62,28 +57,28 @@ class Position:
         return self._symbol
 
     @property
-    def id(self) -> str:
+    def id(self) -> PositionId:
         """
         :return: The positions identifier.
         """
         return self._id
 
     @property
-    def from_entry_order_id(self) -> str:
+    def from_entry_order_id(self) -> OrderId:
         """
         :return: The position from entry orders identifier.
         """
         return self.from_entry_order_id
 
     @property
-    def execution_ids(self) -> List[str]:
+    def execution_ids(self) -> List[ExecutionId]:
         """
         :return: The positions list of execution identifiers.
         """
         return self._execution_ids
 
     @property
-    def execution_tickets(self) -> List[str]:
+    def execution_tickets(self) -> List[ExecutionTicket]:
         """
         :return: The positions list of execution tickets.
         """

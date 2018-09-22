@@ -18,6 +18,7 @@ from inv_trader.commands import SubmitOrder, CancelOrder, ModifyOrder
 from inv_trader.commands import CollateralInquiry
 from inv_trader.model.enums import Venue, OrderSide, OrderType, TimeInForce
 from inv_trader.model.enums import CurrencyCode, SecurityType
+from inv_trader.model.identifiers import Label, OrderId, ExecutionId, ExecutionTicket
 from inv_trader.model.objects import Symbol, Price, Instrument
 from inv_trader.model.order import Order, OrderFactory
 from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
@@ -111,8 +112,8 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
 
         order = OrderFactory.market(
             AUDUSD_FXCM,
-            'O123456',
-            'SCALPER01_SL',
+            OrderId('O123456'),
+            Label('SCALPER01_SL'),
             OrderSide.BUY,
             100000)
 
@@ -130,8 +131,8 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
 
         order = OrderFactory.limit(
             AUDUSD_FXCM,
-            'O123456',
-            'SCALPER01_SL',
+            OrderId('O123456'),
+            Label('S1_SL'),
             OrderSide.BUY,
             100000,
             Price.create(1.00000, 5),
@@ -151,8 +152,8 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
 
         order = Order(
             AUDUSD_FXCM,
-            'O123456',
-            'SCALPER01_SL',
+            OrderId('O123456'),
+            Label('S1_SL'),
             OrderSide.BUY,
             OrderType.LIMIT,
             100000,
@@ -175,8 +176,8 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
 
         order = Order(
             AUDUSD_FXCM,
-            'O123456',
-            'SCALPER01_SL',
+            OrderId('O123456'),
+            Label('S1_SL'),
             OrderSide.BUY,
             OrderType.STOP_LIMIT,
             100000,
@@ -197,8 +198,8 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
 
         order = Order(
             AUDUSD_FXCM,
-            'O123456',
-            'SCALPER01_SL',
+            OrderId('O123456'),
+            Label('S1_SL'),
             OrderSide.BUY,
             OrderType.STOP_LIMIT,
             100000,
@@ -223,8 +224,8 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
 
         order = OrderFactory.market(
             AUDUSD_FXCM,
-            'O123456',
-            'SCALPER01_SL',
+            OrderId('O123456'),
+            Label('S1_SL'),
             OrderSide.BUY,
             100000)
 
@@ -248,8 +249,8 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
 
         order = Order(
             AUDUSD_FXCM,
-            'O123456',
-            'SCALPER01_SL',
+            OrderId('O123456'),
+            Label('S1_SL'),
             OrderSide.BUY,
             OrderType.LIMIT,
             100000,
@@ -278,8 +279,8 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
 
         order = Order(
             AUDUSD_FXCM,
-            'O123456',
-            'SCALPER01_SL',
+            OrderId('O123456'),
+            Label('S1_SL'),
             OrderSide.BUY,
             OrderType.LIMIT,
             100000,
@@ -324,7 +325,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         serializer = MsgPackEventSerializer()
 
         event = OrderSubmitted(AUDUSD_FXCM,
-                               'O123456',
+                               OrderId('O123456'),
                                UNIX_EPOCH,
                                uuid.uuid4(),
                                UNIX_EPOCH)
@@ -341,7 +342,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         serializer = MsgPackEventSerializer()
 
         event = OrderAccepted(AUDUSD_FXCM,
-                              'O123456',
+                              OrderId('O123456'),
                               UNIX_EPOCH,
                               uuid.uuid4(),
                               UNIX_EPOCH)
@@ -358,7 +359,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         serializer = MsgPackEventSerializer()
 
         event = OrderRejected(AUDUSD_FXCM,
-                              'O123456',
+                              OrderId('O123456'),
                               UNIX_EPOCH,
                               'ORDER_ID_INVALID',
                               uuid.uuid4(),
@@ -377,9 +378,9 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
         event = OrderWorking(
             AUDUSD_FXCM,
-            'O123456',
-            'B123456',
-            'SCALPER1_PT',
+            OrderId('O123456'),
+            OrderId('B123456'),
+            Label('S1_PT'),
             OrderSide.SELL,
             OrderType.STOP_LIMIT,
             100000,
@@ -403,9 +404,9 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
         event = OrderWorking(
             AUDUSD_FXCM,
-            'O123456',
-            'B123456',
-            'SCALPER1_PT',
+            OrderId('O123456'),
+            OrderId('B123456'),
+            Label('S1_PT'),
             OrderSide.SELL,
             OrderType.STOP_LIMIT,
             100000,
@@ -429,7 +430,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
         event = OrderCancelled(
             AUDUSD_FXCM,
-            'O123456',
+            OrderId('O123456'),
             UNIX_EPOCH,
             uuid.uuid4(),
             UNIX_EPOCH)
@@ -447,7 +448,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
         event = OrderCancelReject(
             AUDUSD_FXCM,
-            'O123456',
+            OrderId('O123456'),
             UNIX_EPOCH,
             'RESPONSE',
             'ORDER_DOES_NOT_EXIST',
@@ -467,8 +468,8 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
         event = OrderModified(
             AUDUSD_FXCM,
-            'O123456',
-            'B123456',
+            OrderId('O123456'),
+            OrderId('B123456'),
             Decimal('0.80010'),
             UNIX_EPOCH,
             uuid.uuid4(),
@@ -487,7 +488,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
         event = OrderExpired(
             AUDUSD_FXCM,
-            'O123456',
+            OrderId('O123456'),
             UNIX_EPOCH,
             uuid.uuid4(),
             UNIX_EPOCH)
@@ -505,9 +506,9 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
         event = OrderPartiallyFilled(
             AUDUSD_FXCM,
-            'O123456',
-            'E123456',
-            'T123456',
+            OrderId('O123456'),
+            ExecutionId('E123456'),
+            ExecutionTicket('T123456'),
             OrderSide.SELL,
             50000,
             50000,
@@ -529,9 +530,9 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
         event = OrderFilled(
             AUDUSD_FXCM,
-            'O123456',
-            'E123456',
-            'T123456',
+            OrderId('O123456'),
+            ExecutionId('E123456'),
+            ExecutionTicket('T123456'),
             OrderSide.SELL,
             100000,
             Decimal('1.00000'),
@@ -568,7 +569,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Assert - Warning can be ignored (PyCharm doesn't know the type).
         self.assertTrue(isinstance(result, OrderSubmitted))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
-        self.assertEqual('StubOrderId', result.order_id)
+        self.assertEqual(OrderId('StubOrderId'), result.order_id)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.submitted_time)
         self.assertTrue(isinstance(result.id, UUID))
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.timestamp)
@@ -595,7 +596,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Assert - Warnings can be ignored (PyCharm doesn't know the type).
         self.assertTrue(isinstance(result, OrderAccepted))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
-        self.assertEqual('StubOrderId', result.order_id)
+        self.assertEqual(OrderId('StubOrderId'), result.order_id)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.accepted_time)
         self.assertTrue(isinstance(result.id, UUID))
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.timestamp)
@@ -623,7 +624,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Assert - Warnings can be ignored (PyCharm doesn't know the type).
         self.assertTrue(isinstance(result, OrderRejected))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
-        self.assertEqual('StubOrderId', result.order_id)
+        self.assertEqual(OrderId('StubOrderId'), result.order_id)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.rejected_time)
         self.assertEqual('INVALID_ORDER', result.rejected_reason)
         self.assertTrue(isinstance(result.id, UUID))
@@ -656,9 +657,9 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Assert - Warnings can be ignored (PyCharm doesn't know the type).
         self.assertTrue(isinstance(result, OrderWorking))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
-        self.assertEqual('StubOrderId', result.order_id)
-        self.assertEqual('B123456', result.broker_order_id)
-        self.assertEqual('O123456_E', result.label)
+        self.assertEqual(OrderId('StubOrderId'), result.order_id)
+        self.assertEqual(OrderId('B123456'), result.broker_order_id)
+        self.assertEqual(Label('O123456_E'), result.label)
         self.assertEqual(OrderType.STOP_MARKET, result.order_type)
         self.assertEqual(1, result.quantity)
         self.assertEqual(Decimal('1'), result.price)
@@ -696,9 +697,9 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Assert - Warnings can be ignored (PyCharm doesn't know the type).
         self.assertTrue(isinstance(result, OrderWorking))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
-        self.assertEqual('StubOrderId', result.order_id)
-        self.assertEqual('B123456', result.broker_order_id)
-        self.assertEqual('O123456_E', result.label)
+        self.assertEqual(OrderId('StubOrderId'), result.order_id)
+        self.assertEqual(OrderId('B123456'), result.broker_order_id)
+        self.assertEqual(Label('O123456_E'), result.label)
         self.assertEqual(OrderType.STOP_MARKET, result.order_type)
         self.assertEqual(1, result.quantity)
         self.assertEqual(Decimal('1'), result.price)
@@ -730,7 +731,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Assert - Warning can be ignored (PyCharm doesn't know the type).
         self.assertTrue(isinstance(result, OrderCancelled))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
-        self.assertEqual('StubOrderId', result.order_id)
+        self.assertEqual(OrderId('StubOrderId'), result.order_id)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.cancelled_time)
         self.assertTrue(isinstance(result.id, UUID))
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.timestamp)
@@ -760,7 +761,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Assert - Warnings can be ignored (PyCharm doesn't know the type).
         self.assertTrue(isinstance(result, OrderCancelReject))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
-        self.assertEqual('StubOrderId', result.order_id)
+        self.assertEqual(OrderId('StubOrderId'), result.order_id)
         self.assertEqual('REJECT_RESPONSE?', result.cancel_reject_response)
         self.assertEqual('ORDER_NOT_FOUND', result.cancel_reject_reason)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.cancel_reject_time)
@@ -791,8 +792,8 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Assert - Warnings can be ignored (PyCharm doesn't know the type).
         self.assertTrue(isinstance(result, OrderModified))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
-        self.assertEqual('StubOrderId', result.order_id)
-        self.assertEqual('B123456', result.broker_order_id)
+        self.assertEqual(OrderId('StubOrderId'), result.order_id)
+        self.assertEqual(OrderId('B123456'), result.broker_order_id)
         self.assertEqual(Decimal('2'), result.modified_price)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.modified_time)
         self.assertTrue(isinstance(result.id, UUID))
@@ -820,7 +821,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Assert - Warning can be ignored (PyCharm doesn't know the type).
         self.assertTrue(isinstance(result, OrderExpired))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
-        self.assertEqual('StubOrderId', result.order_id)
+        self.assertEqual(OrderId('StubOrderId'), result.order_id)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.expired_time)
         self.assertTrue(isinstance(result.id, UUID))
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.timestamp)
@@ -852,9 +853,9 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Assert - Warnings can be ignored (PyCharm doesn't know the type).
         self.assertTrue(isinstance(result, OrderPartiallyFilled))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
-        self.assertEqual('StubOrderId', result.order_id)
-        self.assertEqual('E123456', result.execution_id)
-        self.assertEqual('P123456', result.execution_ticket)
+        self.assertEqual(OrderId('StubOrderId'), result.order_id)
+        self.assertEqual(ExecutionId('E123456'), result.execution_id)
+        self.assertEqual(ExecutionTicket('P123456'), result.execution_ticket)
         self.assertEqual(OrderSide.BUY, result.order_side)
         self.assertEqual(50000, result.filled_quantity)
         self.assertEqual(50000, result.leaves_quantity)
@@ -889,9 +890,9 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Assert - Warnings can be ignored (PyCharm doesn't know the type).
         self.assertTrue(isinstance(result, OrderFilled))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
-        self.assertEqual('StubOrderId', result.order_id)
-        self.assertEqual('E123456', result.execution_id)
-        self.assertEqual('P123456', result.execution_ticket)
+        self.assertEqual(OrderId('StubOrderId'), result.order_id)
+        self.assertEqual(ExecutionId('E123456'), result.execution_id)
+        self.assertEqual(ExecutionTicket('P123456'), result.execution_ticket)
         self.assertEqual(OrderSide.BUY, result.order_side)
         self.assertEqual(100000, result.filled_quantity)
         self.assertEqual(Decimal('2'), result.average_price)
