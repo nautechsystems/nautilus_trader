@@ -446,7 +446,7 @@ class TradeStrategy:
 
     def last_tick(self, symbol: Symbol) -> Tick:
         """
-        Get the last tick held for the given parameters.
+        Get the last tick held for the given symbol.
 
         :param symbol: The last ticks symbol.
         :return: The tick object.
