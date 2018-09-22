@@ -7,7 +7,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Dict
 
 from inv_trader.core.precondition import Precondition
@@ -97,6 +97,10 @@ class EMACrossLimitEntry(TradeStrategy):
         self.log.info(f"Bar[-2]={bars[-2]}")
         self.log.info(f"Bar[0]={bars[0]}")
 
+        time_now = self.time_now
+        self.set_time_alert(Label("test-alert1"), time_now + timedelta(seconds=10))
+        self.set_timer(Label("test-timer1"), interval=timedelta(seconds=30), repeat=True)
+
     def on_tick(self, tick: Tick):
         """
         This method is called whenever a Tick is received by the strategy, after
@@ -155,8 +159,6 @@ class EMACrossLimitEntry(TradeStrategy):
             if any(order.is_complete is False for order in self.entry_orders.values()):
                 return
 
-            expire_time = datetime.now(timezone.utc)
-
             # BUY LOGIC
             if self.ema1.value >= self.ema2.value:
                 entry_order = OrderFactory.limit(
@@ -168,7 +170,7 @@ class EMACrossLimitEntry(TradeStrategy):
                     Price.create(self.ticks[self.symbol].ask - self.entry_buffer_initial,
                                  self.tick_decimals),
                     time_in_force=TimeInForce.GTD,
-                    expire_time=expire_time + timedelta(seconds=10))
+                    expire_time=self.time_now + timedelta(seconds=10))
                 self.entry_orders[entry_order.id] = entry_order
                 self.position_id = entry_order.id
                 self.submit_order(entry_order, PositionId(str(self.position_id)))
@@ -185,7 +187,7 @@ class EMACrossLimitEntry(TradeStrategy):
                     Price.create(self.ticks[self.symbol].bid + self.entry_buffer_initial,
                                  self.tick_decimals),
                     time_in_force=TimeInForce.GTD,
-                    expire_time=expire_time + timedelta(seconds=10))
+                    expire_time=self.time_now + timedelta(seconds=10))
                 self.entry_orders[entry_order.id] = entry_order
                 self.position_id = entry_order.id
                 self.submit_order(entry_order, PositionId(str(self.position_id)))

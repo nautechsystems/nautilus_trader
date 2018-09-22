@@ -209,6 +209,15 @@ class TradeStrategy:
         return self._log
 
     @property
+    def time_now(self) -> datetime:
+        """
+        Get the current UTC time.
+
+        :return: The current UTC time (timezone and offset aware).
+        """
+        return datetime.now(timezone.utc)
+
+    @property
     def all_indicators(self) -> Dict[BarType, List[Indicator]]:
         """
         :return: The indicator dictionary for the strategy.
