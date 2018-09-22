@@ -63,13 +63,13 @@ class Event:
         else:
             return False
 
-    def __ne__(self, other):
+    def __ne__(self, other) -> bool:
         """
         Override the default not-equals comparison.
         """
         return not self.__eq__(other)
 
-    def __hash__(self):
+    def __hash__(self) -> int:
         """"
         Override the default hash implementation.
         """

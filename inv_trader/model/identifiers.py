@@ -55,7 +55,7 @@ class Identifier:
         """"
         Override the default hash implementation.
         """
-        return hash(self.value)
+        return hash(self._value)
 
     def __str__(self) -> str:
         """

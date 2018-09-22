@@ -10,6 +10,7 @@
 from datetime import datetime
 from decimal import Decimal
 
+from inv_trader.model.enums import Broker
 from inv_trader.model.events import AccountEvent
 
 
@@ -23,6 +24,8 @@ class Account:
         Initializes a new instance of the Account class.
         """
         self._initialized = False
+        self._broker = None
+        self._account_number = None
         self._cash_balance = Decimal('0')
         self._cash_start_day = Decimal('0')
         self._cash_activity_day = Decimal('0')
@@ -33,11 +36,59 @@ class Account:
         self._last_updated = datetime.utcnow()
         self._events = []
 
+    def __eq__(self, other) -> bool:
+        """
+        Override the default equality comparison.
+        """
+        if isinstance(other, self.__class__):
+            return self.__dict__ == other.__dict__
+        else:
+            return False
+
+    def __ne__(self, other) -> bool:
+        """
+        Override the default not-equals comparison.
+        """
+        return not self.__eq__(other)
+
+    def __hash__(self) -> int:
+        """"
+        Override the default hash implementation.
+        """
+        return hash((self._broker, self._account_number))
+
+    def __str__(self) -> str:
+        """
+        :return: The str() string representation of the acount.
+        """
+        return f"Account({str(self._broker)}-{str(self._account_number)})"
+
+    def __repr__(self) -> str:
+        """
+        :return: The repr() string representation of the bar type.
+        """
+        return f"<{str(self)} object at {id(self)}>"
+
+    @property
     def initialized(self) -> bool:
         """
-        :return: A value indicating whether the account is initialized (from an account report).
+        :return: A value indicating whether the account is initialized (from an account event).
         """
         return self._initialized
+
+    @property
+    def broker(self) -> Broker or None:
+        """
+        :return: The brokerage the account belongs to (returns None if not initialized).
+        """
+        return self._broker
+
+    @property
+    def account_number(self) -> Broker or None:
+        """
+        :return: The account number of the account (returns None if not initialized).
+        """
+        return self._account_number
 
     @property
     def free_equity(self) -> Decimal:
@@ -108,6 +159,11 @@ class Account:
 
         :param event: The account event.
         """
+        if not self._initialized:
+            self._broker = event.broker
+            self._account_number = event.account_number
+            self._initialized = True
+
         self._cash_balance = event.cash_balance
         self._cash_start_day = event.cash_start_day
         self._cash_activity_day = event.cash_activity_day
@@ -116,7 +172,6 @@ class Account:
         self._margin_ratio = event.margin_ratio
         self._margin_call_status = event.margin_call_status
 
-        self._initialized = True
         self._events.append(event)
         self._last_updated = event.timestamp
 

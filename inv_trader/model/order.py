@@ -99,6 +99,46 @@ class Order:
         self._execution_ids = []        # type: List[ExecutionId]
         self._execution_tickets = []    # type: List[ExecutionTicket]
 
+    def __eq__(self, other) -> bool:
+        """
+        Override the default equality comparison.
+        """
+        if isinstance(other, self.__class__):
+            return self.id == other.id
+        else:
+            return False
+
+    def __ne__(self, other) -> bool:
+        """
+        Override the default not-equals comparison.
+        """
+        return not self.__eq__(other)
+
+    def __hash__(self) -> int:
+        """"
+        Override the default hash implementation.
+        """
+        return hash(self._id)
+
+    def __str__(self) -> str:
+        """
+        :return: The str() string representation of the order.
+        """
+        quantity = '{:,}'.format(self._quantity)
+        price = '' if self._price is None else f' {self.price}'
+        expire_time = '' if self._expire_time is None else f' {self._expire_time}'
+        return (f"Order(id={self._id}, label={self._label}) "
+                f"{self._side.name} {quantity} {self._symbol} @ {self._type.name}{price} "
+                f"{self._time_in_force.name}{expire_time}")
+
+    def __repr__(self) -> str:
+        """
+        :return: The repr() string representation of the order.
+        """
+        attrs = vars(self)
+        props = ', '.join("%s=%s" % item for item in attrs.items()).replace(', _', ', ')
+        return f"<{self.__class__.__name__}({props[1:]}) object at {id(self)}>"
+
     @property
     def symbol(self) -> Symbol:
         """
@@ -247,40 +287,6 @@ class Order:
         :return: The count of events since the order was initialized.
         """
         return len(self._events)
-
-    def __eq__(self, other) -> bool:
-        """
-        Override the default equality comparison.
-        """
-        if isinstance(other, self.__class__):
-            return self.id == other.id
-        else:
-            return False
-
-    def __ne__(self, other):
-        """
-        Override the default not-equals comparison.
-        """
-        return not self.__eq__(other)
-
-    def __str__(self) -> str:
-        """
-        :return: The str() string representation of the order.
-        """
-        quantity = '{:,}'.format(self._quantity)
-        price = '' if self._price is None else f' {self.price}'
-        expire_time = '' if self._expire_time is None else f' {self._expire_time}'
-        return (f"Order(id={self._id}, label={self._label}) "
-                f"{self._side.name} {quantity} {self._symbol} @ {self._type.name}{price} "
-                f"{self._time_in_force.name}{expire_time}")
-
-    def __repr__(self) -> str:
-        """
-        :return: The repr() string representation of the order.
-        """
-        attrs = vars(self)
-        props = ', '.join("%s=%s" % item for item in attrs.items()).replace(', _', ', ')
-        return f"<{self.__class__.__name__}({props[1:]}) object at {id(self)}>"
 
     def apply(self, order_event: OrderEvent):
         """
