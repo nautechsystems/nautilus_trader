@@ -26,10 +26,9 @@ from inv_trader.model.events import Event, OrderEvent
 from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
 from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
 from inv_trader.model.events import OrderFilled, OrderPartiallyFilled
+from inv_trader.model.identifiers import OrderId, ExecutionId, ExecutionTicket
 
 UTF8 = 'utf-8'
-StrategyId = str
-OrderId = str
 
 
 class MockServer(Thread):
@@ -241,7 +240,7 @@ class MockExecClient(ExecutionClient):
         working = OrderWorking(
             order.symbol,
             order.id,
-            'B' + order.id,
+            OrderId('B' + str(order.id)),
             order.label,
             order.side,
             order.type,
@@ -280,7 +279,7 @@ class MockExecClient(ExecutionClient):
         modified = OrderModified(
             order.symbol,
             order.id,
-            'B' + order.id,
+            OrderId('B' + str(order.id)),
             new_price,
             datetime.utcnow(),
             uuid.uuid4(),
@@ -305,8 +304,8 @@ class MockExecClient(ExecutionClient):
         filled = OrderFilled(
             order.symbol,
             order.id,
-            'E' + order.id,
-            'ET' + order.id,
+            ExecutionId('E' + str(order.id)),
+            ExecutionTicket('ET' + str(order.id)),
             order.side,
             order.quantity,
             filled_price,

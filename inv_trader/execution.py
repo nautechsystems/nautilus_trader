@@ -25,6 +25,7 @@ from inv_trader.commands import SubmitOrder, CancelOrder, ModifyOrder
 from inv_trader.model.account import Account
 from inv_trader.model.order import Order
 from inv_trader.model.events import Event, OrderEvent, AccountEvent, OrderCancelReject
+from inv_trader.model.identifiers import OrderId
 from inv_trader.messaging import RequestWorker, SubscriberWorker
 from inv_trader.strategy import TradeStrategy
 from inv_trader.serialization import CommandSerializer, EventSerializer
@@ -32,7 +33,6 @@ from inv_trader.serialization import MsgPackCommandSerializer
 from inv_trader.serialization import MsgPackEventSerializer
 
 UTF8 = 'utf-8'
-OrderId = str
 
 
 class ExecutionClient:

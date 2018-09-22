@@ -11,6 +11,7 @@ from inv_trader.model.enums import Venue, Resolution, QuoteType, OrderSide
 from inv_trader.model.objects import Symbol, Tick, BarType, Bar
 from inv_trader.model.order import OrderFactory
 from inv_trader.model.events import Event
+from inv_trader.model.identifiers import Label, OrderId, PositionId
 from inv_trader.strategy import TradeStrategy
 from inv_indicators.average.ema import ExponentialMovingAverage
 from test_kit.objects import ObjectStorer
@@ -38,8 +39,8 @@ class TestStrategy1(TradeStrategy):
         self.ema1 = ExponentialMovingAverage(10)
         self.ema2 = ExponentialMovingAverage(20)
 
-        self.register_indicator(self.gbpusd_1sec_mid, self.ema1, self.ema1.update, 'ema1')
-        self.register_indicator(self.gbpusd_1sec_mid, self.ema2, self.ema2.update, 'ema2')
+        self.register_indicator(self.gbpusd_1sec_mid, self.ema1, self.ema1.update, Label('ema1'))
+        self.register_indicator(self.gbpusd_1sec_mid, self.ema2, self.ema2.update, Label('ema2'))
 
         self.position_id = None
 
@@ -60,23 +61,23 @@ class TestStrategy1(TradeStrategy):
             if self.ema1.value > self.ema2.value:
                 buy_order = OrderFactory.market(
                     Symbol('GBPUSD', Venue.FXCM),
-                    'O123456',
+                    OrderId('O123456'),
                     'TestStrategy1_E',
                     OrderSide.BUY,
                     100000)
 
-                self.submit_order(buy_order, buy_order.id)
+                self.submit_order(buy_order, PositionId(str(buy_order.id)))
                 self.position_id = buy_order.id
 
             elif self.ema1.value < self.ema2.value:
                 sell_order = OrderFactory.market(
                     Symbol('GBPUSD', Venue.FXCM),
-                    'O123456',
+                    OrderId('O123456'),
                     'TestStrategy1_E',
                     OrderSide.SELL,
                     100000)
 
-                self.submit_order(sell_order, sell_order.id)
+                self.submit_order(sell_order, PositionId(str(sell_order.id)))
                 self.position_id = sell_order.id
 
     def on_event(self, event: Event):

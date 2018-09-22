@@ -16,11 +16,9 @@ from inv_trader.model.enums import OrderSide, TimeInForce
 from inv_trader.model.objects import Price, Tick, BarType, Bar, Instrument
 from inv_trader.model.order import Order, OrderFactory
 from inv_trader.model.events import Event, OrderFilled
+from inv_trader.model.identifiers import Label, OrderId, PositionId
 from inv_trader.strategy import TradeStrategy
 from inv_indicators.average.ema import ExponentialMovingAverage
-
-# Note: A 'valid_string' is not None, not empty, not white-space only and less than 1024 chars.
-OrderId = str
 
 
 class EMACrossLimitEntry(TradeStrategy):
@@ -77,8 +75,8 @@ class EMACrossLimitEntry(TradeStrategy):
         self.ema2 = ExponentialMovingAverage(slow)
 
         # Register the indicators for updating
-        self.register_indicator(self.bar_type, self.ema1, self.ema1.update, 'ema1')
-        self.register_indicator(self.bar_type, self.ema2, self.ema2.update, 'ema2')
+        self.register_indicator(self.bar_type, self.ema1, self.ema1.update, Label('ema1'))
+        self.register_indicator(self.bar_type, self.ema2, self.ema2.update, Label('ema2'))
 
         # Users custom order management logic if you like...
         self.entry_orders = {}      # type: Dict[OrderId, Order]
@@ -173,7 +171,7 @@ class EMACrossLimitEntry(TradeStrategy):
                     expire_time=expire_time + timedelta(seconds=10))
                 self.entry_orders[entry_order.id] = entry_order
                 self.position_id = entry_order.id
-                self.submit_order(entry_order, self.position_id)
+                self.submit_order(entry_order, PositionId(str(self.position_id)))
                 self.log.info(f"Added {entry_order.id} to entry orders.")
 
             # SELL LOGIC
@@ -190,7 +188,7 @@ class EMACrossLimitEntry(TradeStrategy):
                     expire_time=expire_time + timedelta(seconds=10))
                 self.entry_orders[entry_order.id] = entry_order
                 self.position_id = entry_order.id
-                self.submit_order(entry_order, self.position_id)
+                self.submit_order(entry_order, PositionId(str(self.position_id)))
                 self.log.info(f"Added {entry_order.id} to entry orders.")
 
     def on_event(self, event: Event):

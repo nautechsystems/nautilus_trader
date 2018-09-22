@@ -17,6 +17,7 @@ from typing import Optional
 
 from inv_trader.core.precondition import Precondition
 from inv_trader.model.enums import CurrencyCode, OrderSide, OrderType, TimeInForce, Broker
+from inv_trader.model.identifiers import Label, OrderId, ExecutionId, ExecutionTicket
 from inv_trader.model.objects import Symbol
 
 
@@ -131,6 +132,8 @@ class AccountEvent(Event):
         # Precondition.valid_string(margin_call_status, 'margin_call_status')
 
         super().__init__(event_id, event_timestamp)
+        self._broker = broker
+        self._account_number = account_number
         self._currency = currency
         self._cash_balance = cash_balance
         self._cash_start_day = cash_start_day
@@ -139,6 +142,20 @@ class AccountEvent(Event):
         self._margin_used_maintenance = margin_used_maintenance
         self._margin_ratio = margin_ratio
         self._margin_call_status = margin_call_status
+
+    @property
+    def broker(self) -> Broker:
+        """
+        :return: The events broker.
+        """
+        return self._broker
+
+    @property
+    def account_number(self) -> str:
+        """
+        :return: The events account number.
+        """
+        return self._account_number
 
     @property
     def cash_balance(self) -> Decimal:
@@ -212,7 +229,7 @@ class OrderEvent(Event):
 
     def __init__(self,
                  order_symbol: Symbol,
-                 order_id: str,
+                 order_id: OrderId,
                  event_id: UUID,
                  event_timestamp: datetime):
         """
@@ -224,8 +241,6 @@ class OrderEvent(Event):
         :param event_timestamp: The order events timestamp.
         :raises ValueError: If the order_id is not a valid string.
         """
-        Precondition.valid_string(order_id, 'order_id')
-
         super().__init__(event_id, event_timestamp)
         self._symbol = order_symbol
         self._order_id = order_id
@@ -238,7 +253,7 @@ class OrderEvent(Event):
         return self._symbol
 
     @property
-    def order_id(self) -> str:
+    def order_id(self) -> OrderId:
         """
         :return: The events order identifier.
         """
@@ -265,7 +280,7 @@ class OrderSubmitted(OrderEvent):
 
     def __init__(self,
                  symbol: Symbol,
-                 order_id: str,
+                 order_id: OrderId,
                  submitted_time: datetime,
                  event_id: UUID,
                  event_timestamp: datetime):
@@ -278,8 +293,6 @@ class OrderSubmitted(OrderEvent):
         :param event_id: The events identifier.
         :param event_timestamp: The events timestamp.
         """
-        Precondition.valid_string(order_id, 'order_id')
-
         super().__init__(symbol, order_id, event_id, event_timestamp)
         self._submitted_time = submitted_time
 
@@ -298,7 +311,7 @@ class OrderAccepted(OrderEvent):
 
     def __init__(self,
                  symbol: Symbol,
-                 order_id: str,
+                 order_id: OrderId,
                  accepted_time: datetime,
                  event_id: UUID,
                  event_timestamp: datetime):
@@ -311,8 +324,6 @@ class OrderAccepted(OrderEvent):
         :param event_id: The events identifier.
         :param event_timestamp: The events timestamp.
         """
-        Precondition.valid_string(order_id, 'order_id')
-
         super().__init__(symbol, order_id, event_id, event_timestamp)
         self._accepted_time = accepted_time
 
@@ -331,7 +342,7 @@ class OrderRejected(OrderEvent):
 
     def __init__(self,
                  symbol: Symbol,
-                 order_id: str,
+                 order_id: OrderId,
                  rejected_time: datetime,
                  rejected_reason: str,
                  event_id: UUID,
@@ -346,7 +357,6 @@ class OrderRejected(OrderEvent):
         :param event_id: The events identifier.
         :param event_timestamp: The events timestamp.
         """
-        Precondition.valid_string(order_id, 'order_id')
         Precondition.valid_string(rejected_reason, 'rejected_reason')
 
         super().__init__(symbol, order_id, event_id, event_timestamp)
@@ -375,9 +385,9 @@ class OrderWorking(OrderEvent):
 
     def __init__(self,
                  symbol: Symbol,
-                 order_id: str,
-                 broker_order_id: str,
-                 label: str,
+                 order_id: OrderId,
+                 broker_order_id: OrderId,
+                 label: Label,
                  order_side: OrderSide,
                  order_type: OrderType,
                  quantity: int,
@@ -404,9 +414,6 @@ class OrderWorking(OrderEvent):
         :param event_timestamp: The events timestamp.
         :param expire_time: The events order expire time (optional can be None).
         """
-        Precondition.valid_string(order_id, 'order_id')
-        Precondition.valid_string(broker_order_id, 'broker_order_id')
-        Precondition.valid_string(label, 'label')
         Precondition.positive(quantity, 'quantity')
 
         super().__init__(symbol, order_id, event_id, event_timestamp)
@@ -421,14 +428,14 @@ class OrderWorking(OrderEvent):
         self._expire_time = expire_time
 
     @property
-    def broker_order_id(self) -> str:
+    def broker_order_id(self) -> OrderId:
         """
         :return: The events broker order identifier.
         """
         return self._broker_order_id
 
     @property
-    def label(self) -> str:
+    def label(self) -> Label:
         """
         :return: The events order label.
         """
@@ -491,7 +498,7 @@ class OrderCancelled(OrderEvent):
 
     def __init__(self,
                  symbol: Symbol,
-                 order_id: str,
+                 order_id: OrderId,
                  cancelled_time: datetime,
                  event_id: UUID,
                  event_timestamp: datetime):
@@ -504,8 +511,6 @@ class OrderCancelled(OrderEvent):
         :param event_id: The events identifier.
         :param event_timestamp: The events timestamp.
         """
-        Precondition.valid_string(order_id, 'order_id')
-
         super().__init__(symbol, order_id, event_id, event_timestamp)
         self._cancelled_time = cancelled_time
 
@@ -524,7 +529,7 @@ class OrderCancelReject(OrderEvent):
 
     def __init__(self,
                  order_symbol: Symbol,
-                 order_id: str,
+                 order_id: OrderId,
                  cancel_reject_time: datetime,
                  cancel_response: str,
                  cancel_reject_reason: str,
@@ -541,7 +546,6 @@ class OrderCancelReject(OrderEvent):
         :param event_id: The events identifier.
         :param event_timestamp: The events timestamp.
         """
-        Precondition.valid_string(order_id, 'order_id')
         Precondition.valid_string(cancel_response, 'cancel_response')
         Precondition.valid_string(cancel_reject_reason, 'cancel_reject_reason')
 
@@ -586,7 +590,7 @@ class OrderExpired(OrderEvent):
 
     def __init__(self,
                  symbol: Symbol,
-                 order_id: str,
+                 order_id: OrderId,
                  expired_time: datetime,
                  event_id: UUID,
                  event_timestamp: datetime):
@@ -599,8 +603,6 @@ class OrderExpired(OrderEvent):
         :param event_id: The events identifier.
         :param event_timestamp: The events timestamp.
         """
-        Precondition.valid_string(order_id, 'order_id')
-
         super().__init__(symbol, order_id, event_id, event_timestamp)
         self._expired_time = expired_time
 
@@ -619,8 +621,8 @@ class OrderModified(OrderEvent):
 
     def __init__(self,
                  symbol: Symbol,
-                 order_id: str,
-                 broker_order_id: str,
+                 order_id: OrderId,
+                 broker_order_id: OrderId,
                  modified_price: Decimal,
                  modified_time: datetime,
                  event_id: UUID,
@@ -636,16 +638,13 @@ class OrderModified(OrderEvent):
         :param event_id: The events identifier.
         :param event_timestamp: The events timestamp.
         """
-        Precondition.valid_string(order_id, 'order_id')
-        Precondition.valid_string(broker_order_id, 'broker_order_id')
-
         super().__init__(symbol, order_id, event_id, event_timestamp)
         self._broker_order_id = broker_order_id
         self._modified_price = modified_price
         self._modified_time = modified_time
 
     @property
-    def broker_order_id(self) -> str:
+    def broker_order_id(self) -> OrderId:
         """
         :return: The events broker order identifier.
         """
@@ -673,9 +672,9 @@ class OrderFilled(OrderEvent):
 
     def __init__(self,
                  symbol: Symbol,
-                 order_id: str,
-                 execution_id: str,
-                 execution_ticket: str,
+                 order_id: OrderId,
+                 execution_id: ExecutionId,
+                 execution_ticket: ExecutionTicket,
                  order_side: OrderSide,
                  filled_quantity: int,
                  average_price: Decimal,
@@ -696,9 +695,6 @@ class OrderFilled(OrderEvent):
         :param event_id: The events identifier.
         :param event_timestamp: The events timestamp.
         """
-        Precondition.valid_string(order_id, 'order_id')
-        Precondition.valid_string(execution_id, 'execution_id')
-        Precondition.valid_string(execution_ticket, 'execution_ticket')
         Precondition.positive(filled_quantity, 'filled_quantity')
 
         super().__init__(symbol, order_id, event_id, event_timestamp)
@@ -710,14 +706,14 @@ class OrderFilled(OrderEvent):
         self._execution_time = execution_time
 
     @property
-    def execution_id(self) -> str:
+    def execution_id(self) -> ExecutionId:
         """
         :return: The events order execution identifier.
         """
         return self._execution_id
 
     @property
-    def execution_ticket(self) -> str:
+    def execution_ticket(self) -> ExecutionTicket:
         """
         :return: The events order execution ticket.
         """
@@ -759,9 +755,9 @@ class OrderPartiallyFilled(OrderEvent):
 
     def __init__(self,
                  symbol: Symbol,
-                 order_id: str,
-                 execution_id: str,
-                 execution_ticket: str,
+                 order_id: OrderId,
+                 execution_id: ExecutionId,
+                 execution_ticket: ExecutionTicket,
                  order_side: OrderSide,
                  filled_quantity: int,
                  leaves_quantity: int,
@@ -784,9 +780,6 @@ class OrderPartiallyFilled(OrderEvent):
         :param event_id: The events identifier.
         :param event_timestamp: The events timestamp.
         """
-        Precondition.valid_string(order_id, 'order_id')
-        Precondition.valid_string(execution_id, 'execution_id')
-        Precondition.valid_string(execution_ticket, 'execution_ticket')
         Precondition.positive(filled_quantity, 'filled_quantity')
         Precondition.positive(leaves_quantity, 'leaves_quantity')
 
@@ -800,14 +793,14 @@ class OrderPartiallyFilled(OrderEvent):
         self._execution_time = execution_time
 
     @property
-    def execution_id(self) -> str:
+    def execution_id(self) -> ExecutionId:
         """
         :return: The events order execution identifier.
         """
         return self._execution_id
 
     @property
-    def execution_ticket(self) -> str:
+    def execution_ticket(self) -> ExecutionTicket:
         """
         :return: The events order execution ticket.
         """
@@ -855,7 +848,7 @@ class TimeEvent(Event):
     """
 
     def __init__(self,
-                 label: str,
+                 label: Label,
                  event_id: UUID,
                  event_timestamp: datetime):
         """
@@ -864,13 +857,11 @@ class TimeEvent(Event):
         :param event_id: The time events identifier.
         :param event_timestamp: The time events timestamp.
         """
-        Precondition.valid_string(label, 'label')
-
         super().__init__(event_id, event_timestamp)
         self._label = label
 
     @property
-    def label(self) -> str:
+    def label(self) -> Label:
         """
         :return: The time events label.
         """

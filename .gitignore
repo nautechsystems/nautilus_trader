@@ -6,6 +6,7 @@
 *.obj
 *.lib
 *.html
+*.log
 .cache
 .git
 .idea
