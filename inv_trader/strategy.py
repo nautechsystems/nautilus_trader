@@ -252,7 +252,7 @@ class TradeStrategy:
     @property
     def active_orders(self) -> Dict[OrderId, Order]:
         """
-        :return: The active orders for the strategy.
+        :return: All active orders for the strategy.
         """
         return ({order.id: order for order in self._order_book.values()
                  if not order.is_complete})
@@ -260,7 +260,7 @@ class TradeStrategy:
     @property
     def active_positions(self) -> Dict[PositionId, Position]:
         """
-        :return: The active positions for the strategy.
+        :return: All active positions for the strategy.
         """
         return ({position.id: position for position in self._position_book.values()
                  if not position.is_exited})
@@ -268,7 +268,7 @@ class TradeStrategy:
     @property
     def completed_orders(self) -> Dict[OrderId, Order]:
         """
-        :return: The completed orders for the strategy.
+        :return: All completed orders for the strategy.
         """
         return ({order.id: order for order in self._order_book.values()
                  if order.is_complete})
@@ -276,7 +276,7 @@ class TradeStrategy:
     @property
     def completed_positions(self) -> Dict[PositionId, Position]:
         """
-        :return: The completed positions for the strategy.
+        :return: All completed positions for the strategy.
         """
         return ({position.id: position for position in self._position_book.values()
                  if position.is_exited})
@@ -285,7 +285,7 @@ class TradeStrategy:
     def is_flat(self) -> bool:
         """
         :return: A value indicating whether this strategy is completely flat
-        (no positions other than FLAT).
+        (no positions other than FLAT) across all instruments.
         """
         return all(position.market_position == MarketPosition.FLAT
                    for position in self._position_book.values())
