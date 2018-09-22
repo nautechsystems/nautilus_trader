@@ -104,19 +104,17 @@ class TradeStrategyTests(unittest.TestCase):
     def test_can_get_strategy_label(self):
         # Arrange
         strategy1 = TradeStrategy()
-        strategy2 = TradeStrategy(None)  # Simulating user ignoring type hint.
-        strategy3 = TradeStrategy('EURUSD-Scalper')
+        strategy2 = TradeStrategy('EURUSD-Scalper')
 
         # Act
         result1 = strategy1.label
         result2 = strategy2.label
-        result3 = strategy3.label
 
         # Assert
         self.assertEqual('0', result1)
-        self.assertEqual('0', result2)
-        self.assertEqual('EURUSD-Scalper', result3)
-        self.assertEqual('TradeStrategy-EURUSD-Scalper', str(strategy3))
+        self.assertEqual('EURUSD-Scalper', result2)
+        self.assertEqual('TradeStrategy-0', str(strategy1))
+        self.assertEqual('TradeStrategy-EURUSD-Scalper', str(strategy2))
 
     def test_can_get_strategy_id(self):
         # Arrange
