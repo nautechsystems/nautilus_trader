@@ -678,7 +678,7 @@ class TradeStrategy:
     @staticmethod
     def get_flatten_side(market_position: MarketPosition) -> OrderSide:
         """
-        Get the order side needed to flatten the position from the given market position.
+        Get the order side needed to flatten a position from the given market position.
 
         :param market_position: The market position to flatten.
         :return: The order side to flatten.
@@ -754,7 +754,8 @@ class TradeStrategy:
             order: Order,
             cancel_reason: str='NONE'):
         """
-        Send a cancel order command for the given order to the execution service.
+        Send a cancel order command for the given order and cancel_reason to the
+        execution service.
 
         :param order: The order to cancel.
         :param cancel_reason: The reason for cancellation (will be logged).
@@ -774,7 +775,7 @@ class TradeStrategy:
     def cancel_all_orders(self, cancel_reason: str='NONE'):
         """
         Send a cancel order command for all currently working orders in the
-        order book - to the execution service.
+        order book with the given cancel_reason - to the execution service.
 
         :param cancel_reason: The reason for cancellation (will be logged).
         :raises ValueError: If the strategy has not been registered with an execution client.
@@ -791,6 +792,7 @@ class TradeStrategy:
         """
         Flatten the position corresponding to the given identifier by generating
         the required market order, and sending it to the execution service.
+        If the position is None or already FLAT will log a warning.
 
         :param position_id: The position identifier to flatten.
         :raises ValueError: If the strategy has not been registered with an execution client.
@@ -809,6 +811,11 @@ class TradeStrategy:
             self._log.warning(f"Cannot flatten position (the position {position_id} was None).")
             return
 
+        if position.market_position == MarketPosition.FLAT:
+            self._log.warning(
+                f"Cannot flatten position (the position {position_id} was already FLAT).")
+            return
+
         order = OrderFactory.market(
             position.symbol,
             self.generate_order_id(position.symbol),
@@ -824,13 +831,16 @@ class TradeStrategy:
         them to the execution service. If no positions found or a position is None
         then will log a warning.
         """
-        if len(self._position_book) == 0:
-            self._log.warning("Cannot flatten positions (no positions to flatten).")
+        if len(self.active_positions) == 0:
+            self._log.warning("Cannot flatten positions (no active positions to flatten).")
             return
 
         for position_id, position in self._position_book.items():
             if position is None:
                 self._log.warning(f"Cannot flatten position (the position {position_id} was None.")
+            if position.market_position == MarketPosition.FLAT:
+                self._log.warning(
+                    f"Cannot flatten position (the position {position_id} was already FLAT).")
 
             self.log.info(f"Flattening {position}.")
             order = OrderFactory.market(
