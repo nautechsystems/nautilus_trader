@@ -16,6 +16,7 @@ from inv_trader.model.enums import Broker, CurrencyCode
 from inv_trader.model.account import Account
 from inv_trader.model.events import AccountEvent
 from inv_trader.model.identifiers import AccountId, AccountNumber
+from inv_trader.model.objects import Money
 from test_kit.stubs import TestStubs
 
 UNIX_EPOCH = TestStubs.unix_epoch()
@@ -51,12 +52,12 @@ class AccountTests(unittest.TestCase):
         self.assertEqual(Broker.FXCM, account.broker)
         self.assertEqual(AccountNumber('D102412895'), account.number)
         self.assertEqual(CurrencyCode.AUD, account.currency)
-        self.assertEqual(Decimal('100000.00'), account.free_equity)
-        self.assertEqual(Decimal('100000.00'), account.cash_start_day)
-        self.assertEqual(Decimal('0.00'), account.cash_activity_day)
-        self.assertEqual(Decimal('0.00'), account.margin_used_liquidation)
-        self.assertEqual(Decimal('0.00'), account.margin_used_maintenance)
-        self.assertEqual(Decimal('0.00'), account.margin_ratio)
+        self.assertEqual(Money.create(100000), account.free_equity)
+        self.assertEqual(Money.create(100000), account.cash_start_day)
+        self.assertEqual(Money.zero(), account.cash_activity_day)
+        self.assertEqual(Money.zero(), account.margin_used_liquidation)
+        self.assertEqual(Money.zero(), account.margin_used_maintenance)
+        self.assertEqual(Money.zero(), account.margin_ratio)
         self.assertEqual("", account.margin_call_status)
         self.assertEqual(UNIX_EPOCH, account.last_updated)
 
@@ -69,12 +70,12 @@ class AccountTests(unittest.TestCase):
             Broker.FXCM,
             AccountNumber('D102412895'),
             CurrencyCode.AUD,
-            Decimal('100000.00'),
-            Decimal('100000.00'),
-            Decimal('0.00'),
-            Decimal('1000.00'),
-            Decimal('2000.00'),
-            Decimal('0.00'),
+            Money.create(100000),
+            Money.create(100000),
+            Money.zero(),
+            Money.create(1000),
+            Money.create(2000),
+            Money.zero(),
             "",
             uuid.uuid4(),
             UNIX_EPOCH)
@@ -88,11 +89,11 @@ class AccountTests(unittest.TestCase):
         self.assertEqual(Broker.FXCM, account.broker)
         self.assertEqual(AccountNumber('D102412895'), account.number)
         self.assertEqual(CurrencyCode.AUD, account.currency)
-        self.assertEqual(Decimal('97000.00'), account.free_equity)
-        self.assertEqual(Decimal('100000.00'), account.cash_start_day)
-        self.assertEqual(Decimal('0.00'), account.cash_activity_day)
-        self.assertEqual(Decimal('1000.00'), account.margin_used_liquidation)
-        self.assertEqual(Decimal('2000.00'), account.margin_used_maintenance)
-        self.assertEqual(Decimal('0.00'), account.margin_ratio)
+        self.assertEqual(Money.create(97000), account.free_equity)
+        self.assertEqual(Money.create(100000), account.cash_start_day)
+        self.assertEqual(Money.zero(), account.cash_activity_day)
+        self.assertEqual(Money.create(1000), account.margin_used_liquidation)
+        self.assertEqual(Money.create(2000), account.margin_used_maintenance)
+        self.assertEqual(Money.zero(), account.margin_ratio)
         self.assertEqual("", account.margin_call_status)
         self.assertEqual(UNIX_EPOCH, account.last_updated)
