@@ -43,25 +43,21 @@ class TradeStrategy:
     __metaclass__ = abc.ABCMeta
 
     def __init__(self,
-                 label: str=None,
-                 order_id_tag: str=None,
+                 label: str='0',
+                 order_id_tag: str='0',
                  bar_capacity=1000,
                  logger: Logger=None):
         """
         Initializes a new instance of the TradeStrategy abstract class.
 
-        :param label: The unique label for the strategy (can be None, becomes '0').
-        :param order_id_tag: The unique order identifier tag for the strategy (can be None, becomes '0').
+        :param label: The optional unique label for the strategy.
+        :param order_id_tag: The optional unique order identifier tag for the strategy.
         :param bar_capacity: The capacity for the internal bar deque(s).
         :param logger: The logger (can be None, and will print).
         :raises ValueError: If the label is not a valid string.
         :raises ValueError: If the order_id_tag is not a valid string.
         :raises ValueError: If the bar_capacity is not positive (> 0).
         """
-        if label is None:
-            label = '0'
-        if order_id_tag is None:
-            order_id_tag = '0'
         Precondition.valid_string(label, 'label')
         Precondition.valid_string(order_id_tag, 'order_id_tag')
         Precondition.positive(bar_capacity, 'bar_capacity')
