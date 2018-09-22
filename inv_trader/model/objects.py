@@ -224,34 +224,6 @@ class BarType:
         self._resolution = resolution
         self._quote_type = quote_type
 
-    @property
-    def symbol(self) -> Symbol:
-        """
-        :return: The bar types symbol.
-        """
-        return self._symbol
-
-    @property
-    def period(self) -> int:
-        """
-        :return: The bar types period.
-        """
-        return self._period
-
-    @property
-    def resolution(self) -> Resolution:
-        """
-        :return: The bar types resolution.
-        """
-        return self._resolution
-
-    @property
-    def quote_type(self) -> QuoteType:
-        """
-        :return: The bar types quote type.
-        """
-        return self._quote_type
-
     def __eq__(self, other) -> bool:
         """
         Override the default equality comparison.
@@ -285,6 +257,34 @@ class BarType:
         :return: The repr() string representation of the bar type.
         """
         return f"<{str(self)} object at {id(self)}>"
+
+    @property
+    def symbol(self) -> Symbol:
+        """
+        :return: The bar types symbol.
+        """
+        return self._symbol
+
+    @property
+    def period(self) -> int:
+        """
+        :return: The bar types period.
+        """
+        return self._period
+
+    @property
+    def resolution(self) -> Resolution:
+        """
+        :return: The bar types resolution.
+        """
+        return self._resolution
+
+    @property
+    def quote_type(self) -> QuoteType:
+        """
+        :return: The bar types quote type.
+        """
+        return self._quote_type
 
 
 class Bar:
