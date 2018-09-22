@@ -50,8 +50,8 @@ class TradeStrategy:
         """
         Initializes a new instance of the TradeStrategy abstract class.
 
-        :param label: The unique label for the strategy (can be None).
-        :param order_id_tag: The unique order identifier tag for the strategy (can be None).
+        :param label: The unique label for the strategy (can be None, becomes '0').
+        :param order_id_tag: The unique order identifier tag for the strategy (can be None, becomes '0').
         :param bar_capacity: The capacity for the internal bar deque(s).
         :param logger: The logger (can be None, and will print).
         :raises ValueError: If the label is not a valid string.
@@ -352,9 +352,9 @@ class TradeStrategy:
             self._log.warning(f"Cannot reset a running strategy...")
             return
 
-        self._timers = {}  # type: Dict[Label, Timer]
-        self._ticks = {}   # type: Dict[Symbol, Tick]
-        self._bars = {}    # type: Dict[BarType, List[Bar]]
+        self._timers = {}                # type: Dict[Label, Timer]
+        self._ticks = {}                 # type: Dict[Symbol, Tick]
+        self._bars = {}                  # type: Dict[BarType, Deque[Bar]]
 
         # Reset all indicators.
         for indicator_list in self._indicators.values():
