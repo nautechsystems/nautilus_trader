@@ -84,6 +84,34 @@ class Label(Identifier):
         super().__init__(value)
 
 
+class AccountId(Identifier):
+    """
+    Represents a valid account identifier (should be unique).
+    """
+
+    def __init__(self, value: str):
+        """
+        Initializes a new instance of the AccountId class.
+
+        :param value: The value of the account identifier.
+        """
+        super().__init__(value)
+
+
+class AccountNumber(Identifier):
+    """
+    Represents a valid account number (should be unique).
+    """
+
+    def __init__(self, value: str):
+        """
+        Initializes a new instance of the AccountNumber class.
+
+        :param value: The value of the account number.
+        """
+        super().__init__(value)
+
+
 class OrderId(Identifier):
     """
     Represents a valid order identifier (should be unique).

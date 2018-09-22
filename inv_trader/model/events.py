@@ -17,7 +17,8 @@ from typing import Optional
 
 from inv_trader.core.precondition import Precondition
 from inv_trader.model.enums import CurrencyCode, OrderSide, OrderType, TimeInForce, Broker
-from inv_trader.model.identifiers import Label, OrderId, ExecutionId, ExecutionTicket
+from inv_trader.model.identifiers import Label, AccountId, AccountNumber
+from inv_trader.model.identifiers import OrderId, ExecutionId, ExecutionTicket
 from inv_trader.model.objects import Symbol
 
 
@@ -94,9 +95,9 @@ class AccountEvent(Event):
     """
 
     def __init__(self,
-                 account_id: str,
+                 account_id: AccountId,
                  broker: Broker,
-                 account_number: str,
+                 account_number: AccountNumber,
                  currency: CurrencyCode,
                  cash_balance: Decimal,
                  cash_start_day: Decimal,
@@ -117,21 +118,19 @@ class AccountEvent(Event):
         :param margin_used_liquidation: The events margin used before liquidation.
         :param margin_used_maintenance: The events margin used for maintenance.
         :param margin_ratio: The events account margin ratio.
-        :param margin_ratio: The events margin call status.
+        :param margin_call_status: The events margin call status (can be empty).
         :param event_id: The events identifier.
         :param event_timestamp: The order events timestamp.
         """
-        Precondition.valid_string(account_id, 'account_id')
-        Precondition.valid_string(account_number, 'account_number')
         Precondition.not_negative(cash_balance, 'cash_balance')
         Precondition.not_negative(cash_start_day, 'cash_start_day')
         Precondition.not_negative(cash_activity_day, 'cash_activity_day')
         Precondition.not_negative(margin_used_liquidation, 'margin_used_liquidation')
         Precondition.not_negative(margin_used_maintenance, 'margin_used_maintenance')
         Precondition.not_negative(margin_ratio, 'margin_ratio')
-        # Precondition.valid_string(margin_call_status, 'margin_call_status')
 
         super().__init__(event_id, event_timestamp)
+        self._account_id = account_id
         self._broker = broker
         self._account_number = account_number
         self._currency = currency
@@ -157,6 +156,13 @@ class AccountEvent(Event):
         return f"<{str(self)} object at {id(self)}>"
 
     @property
+    def account_id(self) -> AccountId:
+        """
+        :return: The events account identifier.
+        """
+        return self._account_id
+
+    @property
     def broker(self) -> Broker:
         """
         :return: The events broker.
@@ -164,11 +170,18 @@ class AccountEvent(Event):
         return self._broker
 
     @property
-    def account_number(self) -> str:
+    def account_number(self) -> AccountNumber:
         """
         :return: The events account number.
         """
         return self._account_number
+
+    @property
+    def currency(self) -> CurrencyCode:
+        """
+        :return: The events account currency.
+        """
+        return self._currency
 
     @property
     def cash_balance(self) -> Decimal:
@@ -189,7 +202,7 @@ class AccountEvent(Event):
         """
         :return: The events account activity for the day.
         """
-        return self._cash_start_day
+        return self._cash_activity_day
 
     @property
     def margin_used_liquidation(self) -> Decimal:
