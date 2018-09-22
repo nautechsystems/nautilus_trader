@@ -10,8 +10,6 @@
 import unittest
 import uuid
 
-from decimal import Decimal
-
 from inv_trader.model.enums import Broker, CurrencyCode
 from inv_trader.model.account import Account
 from inv_trader.model.events import AccountEvent
@@ -33,8 +31,8 @@ class AccountTests(unittest.TestCase):
             Broker.FXCM,
             AccountNumber('D102412895'),
             CurrencyCode.AUD,
-            Money.create(100000),
-            Money.create(100000),
+            Money.create(100000.00),
+            Money.create(100000.00),
             Money.zero(),
             Money.zero(),
             Money.zero(),
@@ -70,11 +68,11 @@ class AccountTests(unittest.TestCase):
             Broker.FXCM,
             AccountNumber('D102412895'),
             CurrencyCode.AUD,
-            Money.create(100000),
-            Money.create(100000),
+            Money.create(100000.00),
+            Money.create(100000.00),
             Money.zero(),
-            Money.create(1000),
-            Money.create(2000),
+            Money.create(1000.00),
+            Money.create(2000.00),
             Money.zero(),
             "",
             uuid.uuid4(),
@@ -89,11 +87,11 @@ class AccountTests(unittest.TestCase):
         self.assertEqual(Broker.FXCM, account.broker)
         self.assertEqual(AccountNumber('D102412895'), account.number)
         self.assertEqual(CurrencyCode.AUD, account.currency)
-        self.assertEqual(Money.create(97000), account.free_equity)
-        self.assertEqual(Money.create(100000), account.cash_start_day)
+        self.assertEqual(Money.create(97000.00), account.free_equity)
+        self.assertEqual(Money.create(100000.00), account.cash_start_day)
         self.assertEqual(Money.zero(), account.cash_activity_day)
-        self.assertEqual(Money.create(1000), account.margin_used_liquidation)
-        self.assertEqual(Money.create(2000), account.margin_used_maintenance)
+        self.assertEqual(Money.create(1000.00), account.margin_used_liquidation)
+        self.assertEqual(Money.create(2000.00), account.margin_used_maintenance)
         self.assertEqual(Money.zero(), account.margin_ratio)
         self.assertEqual("", account.margin_call_status)
         self.assertEqual(UNIX_EPOCH, account.last_updated)
