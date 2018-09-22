@@ -13,6 +13,7 @@ from decimal import Decimal
 from inv_trader.model.enums import Broker, CurrencyCode
 from inv_trader.model.events import AccountEvent
 from inv_trader.model.identifiers import AccountId
+from inv_trader.model.objects import Money
 
 
 class Account:
@@ -29,12 +30,12 @@ class Account:
         self._broker = None
         self._account_number = None
         self._currency = None
-        self._cash_balance = Decimal('0.00')
-        self._cash_start_day = Decimal('0.00')
-        self._cash_activity_day = Decimal('0.00')
-        self._margin_used_liquidation = Decimal('0.00')
-        self._margin_used_maintenance = Decimal('0.00')
-        self._margin_ratio = Decimal('0.00')
+        self._cash_balance = Money.zero()
+        self._cash_start_day = Money.zero()
+        self._cash_activity_day = Money.zero()
+        self._margin_used_liquidation = Money.zero()
+        self._margin_used_maintenance = Money.zero()
+        self._margin_ratio = Money.zero()
         self._margin_call_status = ""
         self._last_updated = datetime.utcnow()
         self._events = []

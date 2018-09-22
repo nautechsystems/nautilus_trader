@@ -107,6 +107,35 @@ class Price:
         return Decimal(f'{round(price, decimals):.{decimals}f}')
 
 
+class Money:
+    """
+    Provides a factory for creating Decimal objects representing money.
+    """
+
+    @staticmethod
+    def zero() -> Decimal:
+        """
+        Creates and returns a new zero amount of money.
+
+        :return:
+        """
+        return Decimal('0.00')
+
+    @staticmethod
+    def create(amount: float) -> Decimal:
+        """
+        Creates and returns money from the given values.
+        The money is rounded to two decimal digits.
+
+        :param amount: The money amount.
+        :return: A Decimal representing the money.
+        :raises ValueError: If the amount is not positive (> 0).
+        """
+        Precondition.positive(amount, 'amount')
+
+        return Decimal(f'{round(amount, 2):.{2}f}')
+
+
 class Tick:
     """
     Represents a single tick in a financial market.
