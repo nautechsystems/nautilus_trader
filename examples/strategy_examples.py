@@ -231,7 +231,9 @@ class EMACrossLimitEntry(TradeStrategy):
         This method is called when self.stop() is called before internal
         stopping logic.
         """
-        self.flatten_all_positions()
+        if not self.is_flat:
+            self.flatten_all_positions()
+
         self.cancel_all_orders("STOPPING STRATEGY")
 
     def on_reset(self):

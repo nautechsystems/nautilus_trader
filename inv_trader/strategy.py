@@ -206,28 +206,28 @@ class TradeStrategy:
     @property
     def log(self) -> LoggerAdapter:
         """
-        :return: The logging adapter.
+        :return: The logger adapter.
         """
         return self._log
 
     @property
     def all_indicators(self) -> Dict[BarType, List[Indicator]]:
         """
-        :return: The indicators dictionary for the strategy.
+        :return: The indicator dictionary for the strategy.
         """
         return self._indicators
 
     @property
     def all_bars(self) -> Dict[BarType, Deque[Bar]]:
         """
-        :return: The bars dictionary for the strategy.
+        :return: The bar dictionary for the strategy.
         """
         return self._bars
 
     @property
     def ticks(self) -> Dict[Symbol, Tick]:
         """
-        :return: The ticks dictionary for the strategy
+        :return: The tick dictionary for the strategy
         """
         return self._ticks
 
@@ -419,7 +419,7 @@ class TradeStrategy:
         """
         if bar_type not in self._bars:
             raise KeyError(
-                f"Cannot get bars (the bars dictionary does not contain {bar_type}).")
+                f"Cannot get bars (the bar dictionary does not contain {bar_type}).")
 
         return self._bars[bar_type]
 
@@ -437,7 +437,7 @@ class TradeStrategy:
         :raises IndexError: If the strategies bars dictionary does not contain a bar at the given index.
         """
         if bar_type not in self._bars:
-            raise KeyError(f"Cannot get bar (the bars dictionary does not contain {bar_type}).")
+            raise KeyError(f"Cannot get bar (the bar dictionary does not contain {bar_type}).")
 
         return self._bars[bar_type][index]
 
@@ -450,7 +450,7 @@ class TradeStrategy:
         :raises KeyError: If the strategies tick dictionary does not contain a tick for the given symbol.
         """
         if symbol not in self._ticks:
-            raise KeyError(f"Cannot get last tick (the ticks dictionary does not contain {symbol}).")
+            raise KeyError(f"Cannot get last tick (the tick dictionary does not contain {symbol}).")
 
         return self._ticks[symbol]
 
@@ -485,7 +485,7 @@ class TradeStrategy:
         if position_id not in self._position_book:
             raise KeyError(
                 (f"Cannot get position "
-                 f"(the positions dictionary does not contain the position {position_id})."))
+                 f"(the position book does not contain the position {position_id})."))
 
         return self._position_book[position_id]
 
@@ -511,7 +511,8 @@ class TradeStrategy:
 
         if label in self._indicator_index:
             raise KeyError(
-                "Cannot register indicator (the indicator label must be unique for this strategy).")
+                (f"Cannot register indicator "
+                 f"(the indicator label {label} was not unique for this strategy)."))
 
         if bar_type not in self._indicators:
             self._indicators[bar_type] = []  # type: List[Indicator]
@@ -544,7 +545,8 @@ class TradeStrategy:
         Precondition.true(alert_time > datetime.now(timezone.utc), 'alert_time > datetime.utcnow()')
 
         if label in self._timers:
-            raise KeyError("Cannot set time alert (The label must be unique for this strategy).")
+            raise KeyError(
+                f"Cannot set time alert (the label {label} was not unique for this strategy).")
 
         timer = Timer(
             interval=(alert_time - datetime.now(timezone.utc)).total_seconds(),
@@ -566,7 +568,7 @@ class TradeStrategy:
         Precondition.valid_string(label, 'label')
 
         if label not in self._timers:
-            raise KeyError(f"Cannot cancel time alert (The label {label} was not found).")
+            raise KeyError(f"Cannot cancel time alert (the label {label} was not found).")
 
         self._timers[label].cancel()
         del self._timers[label]
@@ -615,7 +617,8 @@ class TradeStrategy:
                               'start_time + interval <= stop_time')
 
         if label in self._timers:
-            raise ValueError("Cannot set timer (the label must be unique for this strategy).")
+            raise KeyError(
+                f"Cannot set timer (the label {label} was not unique for this strategy).")
 
         alert_time = start_time + interval
         delay = (alert_time - datetime.now(timezone.utc)).total_seconds()
@@ -647,7 +650,7 @@ class TradeStrategy:
         Precondition.valid_string(label, 'label')
 
         if label not in self._timers:
-            raise KeyError(f"Cannot cancel timer (The label {label} was not found).")
+            raise KeyError(f"Cannot cancel timer (the label {label} was not found).")
 
         self._timers[label].cancel()
         del self._timers[label]
@@ -715,7 +718,7 @@ class TradeStrategy:
         Precondition.valid_string(position_id, 'position_id')
 
         if order.id in self._order_book:
-            raise KeyError(f"Cannot submit order (the order id {order.id} must be unique).")
+            raise KeyError(f"Cannot submit order (the order id {order.id} was not unique).")
 
         self._order_book[order.id] = order
         self._order_position_index[order.id] = position_id
@@ -764,7 +767,7 @@ class TradeStrategy:
         Precondition.valid_string(cancel_reason, 'cancel_reason')
 
         if order.id not in self._order_book:
-            raise KeyError("Cannot cancel order (the order id was not found).")
+            raise KeyError(f"Cannot cancel order (the order id {order.id} was not found).")
 
         self._log.info(f"Cancelling {order}")
         self._exec_client.cancel_order(order, cancel_reason)
