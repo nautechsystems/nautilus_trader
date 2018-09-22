@@ -59,13 +59,13 @@ class Account:
 
     def __str__(self) -> str:
         """
-        :return: The str() string representation of the acount.
+        :return: The str() string representation of the account.
         """
         return f"Account({str(self._broker)}-{str(self._account_number)})"
 
     def __repr__(self) -> str:
         """
-        :return: The repr() string representation of the bar type.
+        :return: The repr() string representation of the account.
         """
         return f"<{str(self)} object at {id(self)}>"
 
