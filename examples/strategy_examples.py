@@ -7,7 +7,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Dict
 
 from inv_trader.core.precondition import Precondition
@@ -15,7 +15,7 @@ from inv_trader.core.logger import Logger
 from inv_trader.model.enums import OrderSide, TimeInForce
 from inv_trader.model.objects import Price, Tick, BarType, Bar, Instrument
 from inv_trader.model.order import Order, OrderFactory
-from inv_trader.model.events import Event, OrderFilled
+from inv_trader.model.events import Event, OrderFilled, TimeEvent
 from inv_trader.model.identifiers import Label, OrderId, PositionId
 from inv_trader.strategy import TradeStrategy
 from inv_indicators.average.ema import ExponentialMovingAverage
@@ -90,18 +90,7 @@ class EMACrossLimitEntry(TradeStrategy):
         self.subscribe_bars(self.bar_type)
         self.subscribe_ticks(self.symbol)
 
-        self.log.info(f"Started at {datetime.utcnow()}")
-        self.log.info(f"EMA1 bar count={self.fast_ema.count}")
-        self.log.info(f"EMA2 bar count={self.slow_ema.count}")
-
-        bars = self.bars(self.bar_type)
-        self.log.info(f"Bar[-1]={bars[-1]}")
-        self.log.info(f"Bar[-2]={bars[-2]}")
-        self.log.info(f"Bar[0]={bars[0]}")
-
-        time_now = self.time_now
-        self.set_time_alert(Label("test-alert1"), time_now + timedelta(seconds=10))
-        self.set_timer(Label("test-timer1"), interval=timedelta(seconds=30), repeat=True)
+        self.set_time_alert(Label("test-alert1"), self.time_now + timedelta(seconds=10))
 
     def on_tick(self, tick: Tick):
         """
@@ -227,6 +216,10 @@ class EMACrossLimitEntry(TradeStrategy):
                 self.stop_loss_orders[stop_order.id] = stop_order
                 self.submit_order(stop_order, self.position_id)
                 self.log.info(f"Added {stop_order.id} to stop-loss orders.")
+
+        if isinstance(event, TimeEvent):
+            if event.label == 'test-alert1':
+                self.set_timer(Label("test-timer1"), interval=timedelta(seconds=30), repeat=True)
 
     def on_stop(self):
         """

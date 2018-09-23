@@ -215,7 +215,7 @@ class LiveDataClient:
         """
         if not (isinstance(strategy, TradeStrategy)):
             raise ValueError(
-                "Cannot register strategy (the strategy does not inherit from TradeStrategy).")
+                "Cannot register strategy (the strategy did not inherit from TradeStrategy).")
 
         strategy._register_data_client(self)
 
@@ -224,23 +224,22 @@ class LiveDataClient:
     def historical_bars(
             self,
             bar_type: BarType,
-            quantity: int,
+            quantity: int or None,
             handler: Callable):
         """
-        Download the historical bars for the given parameters from the data service.
-        Then pass them to all registered strategies.
+        Download the historical bars for the given parameters from the data
+        service, then pass them to the callable bar handler.
 
-        Note: Log warnings are given if the downloaded bars don't equal the
-        requested amount or from datetime range.
+        Note: A log warnings are given if the downloaded bars quantity does not
+        equal the requested quantity.
 
         :param bar_type: The historical bar type to download.
-        :param quantity: The number of historical bars to download.
-        :param handler: The handler to pass the bars to.
-        :raises ValueError: If the symbol is not a valid string.
-        :raises ValueError: If the period is not positive (> 0).
-        :raises ValueError: If the amount is not positive (> 0).
+        :param quantity: The number of historical bars to download (can be None, will download all).
+        :param handler: The bar handler to pass the bars to.
+        :raises ValueError: If the quantity is not None and not positive (> 0).
         """
-        Precondition.positive(quantity, 'quantity')
+        if quantity is not None:
+            Precondition.positive(quantity, 'quantity')
 
         self._check_connection()
 
@@ -285,11 +284,11 @@ class LiveDataClient:
             from_datetime: datetime,
             handler: Callable):
         """
-        Download the historical bars for the given parameters from the data service.
-        Then pass them to all registered strategies.
+        Download the historical bars for the given parameters from the data
+        service, then pass them to the callable bar handler.
 
-        Note: Log warnings are given if the downloaded bars don't equal the
-        requested amount or from datetime range.
+        Note: A log warning is given if the downloaded bars first timestamp is
+        greater than the requested datetime.
 
         :param bar_type: The historical bar type to download.
         :param from_datetime: The datetime from which the historical bars should be downloaded.
@@ -316,7 +315,6 @@ class LiveDataClient:
                 if bar.timestamp >= from_datetime:
                     bars.insert(0, self._parse_bar(bar_bytes.decode(UTF8)))
                 else:
-                    self._log.debug("His")
                     break  # Reached from_datetime.
 
         first_bar_timestamp = bars[0].timestamp
@@ -334,7 +332,7 @@ class LiveDataClient:
     def subscribe_bars(
             self,
             bar_type: BarType,
-            handler: Callable=None):
+            handler: Callable or None=None):
         """
         Subscribe to live bar data for the given bar parameters.
 
@@ -363,7 +361,7 @@ class LiveDataClient:
     def unsubscribe_bars(
             self,
             bar_type: BarType,
-            handler: Callable=None):
+            handler: Callable or None=None):
         """
         Unsubscribes from live bar data for the given symbol and venue.
 
@@ -396,7 +394,7 @@ class LiveDataClient:
     def subscribe_ticks(
             self,
             symbol: Symbol,
-            handler: Callable=None):
+            handler: Callable or None=None):
         """
         Subscribe to live tick data for the given symbol and venue.
 
@@ -425,7 +423,7 @@ class LiveDataClient:
     def unsubscribe_ticks(
             self,
             symbol: Symbol,
-            handler: Callable=None):
+            handler: Callable or None=None):
         """
         Unsubscribes from live tick data for the given symbol and venue.
 
@@ -457,9 +455,10 @@ class LiveDataClient:
 
             self._log.info(f"Unsubscribed from tick data for {tick_channel}.")
 
-    def _get_redis_bar_keys(self, bar_type:BarType):
+    def _get_redis_bar_keys(self, bar_type: BarType):
         """
-        Generate the bar key wildcard pattern and return the held Redis keys.
+        Generate the bar key wildcard pattern and return the held Redis keys
+        sorted.
         """
         keys = self._redis_client.keys(
             (f'bars'
