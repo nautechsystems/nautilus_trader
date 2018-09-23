@@ -206,6 +206,21 @@ class LiveDataClient:
 
         return self._instruments[symbol]
 
+    def register_strategy(self, strategy: TradeStrategy):
+        """
+        Registers the given trade strategy with the data client.
+
+        :param strategy: The strategy to register.
+        :raise ValueError: If the strategy does not inherit from TradeStrategy.
+        """
+        if not (isinstance(strategy, TradeStrategy)):
+            raise ValueError(
+                "Cannot register strategy (the strategy does not inherit from TradeStrategy).")
+
+        strategy._register_data_client(self)
+
+        self._log.info(f"Registered strategy {strategy} with the data client.")
+
     def historical_bars(
             self,
             bar_type: BarType,
@@ -446,25 +461,6 @@ class LiveDataClient:
              f':{bar_type.quote_type.name.lower()}*'))
         keys.sort()
         return keys
-
-    def register_strategy(self, strategy: TradeStrategy):
-        """
-        Registers the trade strategy to receive all ticks and bars from the
-        live data client.
-
-        :param strategy: The strategy inheriting from TradeStrategy.
-        """
-        strategy_tick_handler = strategy._update_ticks
-        if strategy_tick_handler not in self._tick_handlers:
-            self._tick_handlers.append(strategy_tick_handler)
-
-        strategy_bar_handler = strategy._update_bars
-        if strategy_bar_handler not in self._bar_handlers:
-            self._bar_handlers.append(strategy_bar_handler)
-
-        strategy._register_data_client(self)
-
-        self._log.info(f"Registered strategy {strategy} with the data client.")
 
     @staticmethod
     def _parse_tick_symbol(tick_channel: str) -> Symbol:
