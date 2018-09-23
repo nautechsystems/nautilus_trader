@@ -32,8 +32,8 @@ class EMACrossLimitEntry(TradeStrategy):
                  instrument: Instrument,
                  bar_type: BarType,
                  position_size: int,
-                 fast: int,
-                 slow: int,
+                 fast_ema: int,
+                 slow_ema: int,
                  bar_capacity: int=1000,
                  logger: Logger=None):
         """
@@ -44,12 +44,12 @@ class EMACrossLimitEntry(TradeStrategy):
         :param instrument: The trading instrument for the strategy (could also input any number of them).
         :param bar_type: The bar type for the strategy (could also input any number of them)
         :param position_size: The position unit size.
-        :param fast: The fast EMA period.
-        :param slow: The slow EMA period.
+        :param fast_ema: The fast EMA period.
+        :param slow_ema: The slow EMA period.
         :param bar_capacity: The historical bar capacity.
         :param logger: The logger for the strategy (can be None, will just print).
         """
-        Precondition.true(slow > fast, 'slow > fast')
+        Precondition.true(slow_ema > fast_ema, 'slow_ema > fast_ema')
 
         super().__init__(label,
                          order_id_tag=order_id_tag,
@@ -68,12 +68,12 @@ class EMACrossLimitEntry(TradeStrategy):
         self.SL_buffer = tick_size * 10
 
         # Create the indicators for the strategy
-        self.ema1 = ExponentialMovingAverage(fast)
-        self.ema2 = ExponentialMovingAverage(slow)
+        self.fast_ema = ExponentialMovingAverage(fast_ema)
+        self.slow_ema = ExponentialMovingAverage(slow_ema)
 
         # Register the indicators for updating
-        self.register_indicator(self.bar_type, self.ema1, self.ema1.update, Label('ema1'))
-        self.register_indicator(self.bar_type, self.ema2, self.ema2.update, Label('ema2'))
+        self.register_indicator(self.bar_type, self.fast_ema, self.fast_ema.update, Label('fast_ema'))
+        self.register_indicator(self.bar_type, self.slow_ema, self.slow_ema.update, Label('slow_ema'))
 
         # Users custom order management logic if you like...
         self.entry_orders = {}      # type: Dict[OrderId, Order]
@@ -91,8 +91,8 @@ class EMACrossLimitEntry(TradeStrategy):
         self.subscribe_ticks(self.symbol)
 
         self.log.info(f"Started at {datetime.utcnow()}")
-        self.log.info(f"EMA1 bar count={self.ema1.count}")
-        self.log.info(f"EMA2 bar count={self.ema2.count}")
+        self.log.info(f"EMA1 bar count={self.fast_ema.count}")
+        self.log.info(f"EMA2 bar count={self.slow_ema.count}")
 
         bars = self.bars(self.bar_type)
         self.log.info(f"Bar[-1]={bars[-1]}")
@@ -144,7 +144,7 @@ class EMACrossLimitEntry(TradeStrategy):
         :param bar_type: The received bar type.
         :param bar: The received bar.
         """
-        if not self.ema1.initialized and not self.ema2.initialized:
+        if not self.fast_ema.initialized and not self.slow_ema.initialized:
             return
 
         for order in self.entry_orders.values():
@@ -162,7 +162,7 @@ class EMACrossLimitEntry(TradeStrategy):
                 return
 
             # BUY LOGIC
-            if self.ema1.value >= self.ema2.value:
+            if self.fast_ema.value >= self.slow_ema.value:
                 entry_order = OrderFactory.limit(
                     self.symbol,
                     self.generate_order_id(self.symbol),
@@ -179,7 +179,7 @@ class EMACrossLimitEntry(TradeStrategy):
                 self.log.info(f"Added {entry_order.id} to entry orders.")
 
             # SELL LOGIC
-            elif self.ema1.value < self.ema2.value:
+            elif self.fast_ema.value < self.slow_ema.value:
                 entry_order = OrderFactory.limit(
                     self.symbol,
                     self.generate_order_id(self.symbol),
