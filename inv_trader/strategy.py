@@ -402,7 +402,7 @@ class TradeStrategy:
 
     def unsubscribe_bars(self, bar_type: BarType):
         """
-        Unsubscribes from live bar data for the given bar type.
+        Unsubscribe from live bar data for the given bar type.
 
         :param bar_type: The bar type to unsubscribe from.
         :raises ValueError: If strategy has not been registered with a data client.
