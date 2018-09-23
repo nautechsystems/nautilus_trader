@@ -397,12 +397,7 @@ class TradeStrategy:
         """
         Precondition.not_none(self._data_client, 'data_client')
 
-        self._data_client.subscribe_bars(
-            bar_type.symbol.code,
-            bar_type.symbol.venue,
-            bar_type.period,
-            bar_type.resolution,
-            bar_type.quote_type)
+        self._data_client.subscribe_bars(bar_type, self._update_bars)
         self._log.info(f"Subscribed to bar data for {bar_type}.")
 
     def unsubscribe_bars(self, bar_type: BarType):
@@ -414,12 +409,7 @@ class TradeStrategy:
         """
         Precondition.not_none(self._data_client, 'data_client')
 
-        self._data_client.unsubscribe_bars(
-            bar_type.symbol.code,
-            bar_type.symbol.venue,
-            bar_type.period,
-            bar_type.resolution,
-            bar_type.quote_type)
+        self._data_client.unsubscribe_bars(bar_type, self._update_bars)
         self._log.info(f"Unsubscribed from bar data for {bar_type}.")
 
     def subscribe_ticks(self, symbol: Symbol):
@@ -431,7 +421,7 @@ class TradeStrategy:
         """
         Precondition.not_none(self._data_client, 'data_client')
 
-        self._data_client.subscribe_ticks(symbol.code, symbol.venue)
+        self._data_client.subscribe_ticks(symbol, self._update_ticks)
         self._log.info(f"Subscribed to tick data for {symbol}.")
 
     def unsubscribe_ticks(self, symbol: Symbol):
@@ -443,7 +433,7 @@ class TradeStrategy:
         """
         Precondition.not_none(self._data_client, 'data_client')
 
-        self._data_client.unsubscribe_ticks(symbol.code, symbol.venue)
+        self._data_client.unsubscribe_ticks(symbol, self._update_ticks)
         self._log.info(f"Unsubscribed from tick data for {symbol}.")
 
     def start(self):
