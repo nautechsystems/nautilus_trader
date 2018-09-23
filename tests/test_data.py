@@ -73,8 +73,8 @@ class LiveDataClientTests(unittest.TestCase):
     def test_can_create_correct_tick_channel_name(self):
         # Arrange
         # Act
-        result1 = self.data_client._get_tick_channel_name('audusd', Venue.FXCM)
-        result2 = self.data_client._get_tick_channel_name('gbpusd', Venue.DUKASCOPY)
+        result1 = self.data_client._get_tick_channel_name(Symbol('AUDUSD', Venue.FXCM))
+        result2 = self.data_client._get_tick_channel_name(Symbol('GBPUSD', Venue.DUKASCOPY))
 
         # Assert
         self.assertEqual(result1, 'audusd.fxcm')
@@ -83,8 +83,8 @@ class LiveDataClientTests(unittest.TestCase):
     def test_can_create_correct_bar_channel_name(self):
         # Arrange
         # Act
-        result1 = self.data_client._get_bar_channel_name('audusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.BID)
-        result2 = self.data_client._get_bar_channel_name('gbpusd', Venue.DUKASCOPY, 5, Resolution.MINUTE, QuoteType.MID)
+        result1 = self.data_client._get_bar_channel_name(BarType(Symbol('AUDUSD', Venue.FXCM), 1, Resolution.SECOND, QuoteType.BID))
+        result2 = self.data_client._get_bar_channel_name(BarType(Symbol('GBPUSD', Venue.DUKASCOPY), 5, Resolution.MINUTE, QuoteType.MID))
 
         # Assert
         self.assertEqual(result1, 'audusd.fxcm-1-second[bid]')
@@ -95,7 +95,7 @@ class LiveDataClientTests(unittest.TestCase):
         self.data_client.connect()
 
         # Act
-        self.data_client.subscribe_ticks('audusd', Venue.FXCM)
+        self.data_client.subscribe_ticks(Symbol('AUDUSD', Venue.FXCM))
         tick_channels = self.data_client.subscriptions_ticks
         all_channels = self.data_client.subscriptions_all
 
@@ -106,10 +106,10 @@ class LiveDataClientTests(unittest.TestCase):
     def test_can_unsubscribe_from_tick_data(self):
         # Arrange
         self.data_client.connect()
-        self.data_client.subscribe_ticks('audusd', Venue.FXCM)
+        self.data_client.subscribe_ticks(Symbol('AUDUSD', Venue.FXCM))
 
         # Act
-        self.data_client.unsubscribe_ticks('audusd', Venue.FXCM)
+        self.data_client.unsubscribe_ticks(Symbol('AUDUSD', Venue.FXCM))
         tick_channels = self.data_client.subscriptions_ticks
 
         # Assert
@@ -120,7 +120,7 @@ class LiveDataClientTests(unittest.TestCase):
         self.data_client.connect()
 
         # Act
-        self.data_client.subscribe_bars('audusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.BID)
+        self.data_client.subscribe_bars(BarType(Symbol('AUDUSD', Venue.FXCM), 1, Resolution.SECOND, QuoteType.BID))
         bar_channels = self.data_client.subscriptions_bars
         all_channels = self.data_client.subscriptions_all
 
@@ -131,10 +131,10 @@ class LiveDataClientTests(unittest.TestCase):
     def test_can_unsubscribe_from_bar_data(self):
         # Arrange
         self.data_client.connect()
-        self.data_client.subscribe_bars('audusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.BID)
+        self.data_client.subscribe_bars(BarType(Symbol('AUDUSD', Venue.FXCM), 1, Resolution.SECOND, QuoteType.BID))
 
         # Act
-        self.data_client.unsubscribe_bars('audusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.BID)
+        self.data_client.unsubscribe_bars(BarType(Symbol('AUDUSD', Venue.FXCM), 1, Resolution.SECOND, QuoteType.BID))
         bar_channels = self.data_client.subscriptions_bars
         all_channels = self.data_client.subscriptions_all
 
@@ -145,10 +145,10 @@ class LiveDataClientTests(unittest.TestCase):
     def test_disconnecting_when_subscribed_to_multiple_channels_then_unsubscribes(self):
         # Arrange
         self.data_client.connect()
-        self.data_client.subscribe_ticks('audusd', Venue.FXCM)
-        self.data_client.subscribe_ticks('gbpusd', Venue.FXCM)
-        self.data_client.subscribe_ticks('eurjpy', Venue.FXCM)
-        self.data_client.subscribe_ticks('usdcad', Venue.FXCM)
+        self.data_client.subscribe_ticks(Symbol('AUDUSD', Venue.FXCM))
+        self.data_client.subscribe_ticks(Symbol('GBPUSD', Venue.FXCM))
+        self.data_client.subscribe_ticks(Symbol('EURJPY', Venue.FXCM))
+        self.data_client.subscribe_ticks(Symbol('USDCAD', Venue.FXCM))
 
         # Act
         self.data_client.disconnect()
@@ -157,17 +157,27 @@ class LiveDataClientTests(unittest.TestCase):
         # Assert
         self.assertEqual(0, len(result))
 
+    def test_can_parse_tick_symbol(self):
+        # Arrange
+        symbol = Symbol('AUDUSD', Venue.FXCM)
+
+        # Act
+        result = self.data_client._parse_tick_symbol('audusd.fxcm')
+
+        # Assert
+        self.assertEqual(symbol, result)
+        self.assertEqual('AUDUSD.FXCM', str(result))
+
     def test_can_parse_ticks(self):
         # Arrange
-        tick = Tick(Symbol('AUDUSD', Venue.FXCM),
+        symbol = Symbol('AUDUSD', Venue.FXCM)
+        tick = Tick(symbol,
                     Decimal('1.00000'),
                     Decimal('1.00001'),
                     datetime(2018, 1, 1, 19, 59, 1, 0, timezone.utc))
 
         # Act
-        result = self.data_client._parse_tick(
-            'audusd.fxcm',
-            '1.00000,1.00001,2018-01-01T19:59:01.000Z')
+        result = self.data_client._parse_tick(symbol, '1.00000,1.00001,2018-01-01T19:59:01.000Z')
 
         # Assert
         self.assertEqual(tick, result)
@@ -211,7 +221,7 @@ class LiveDataClientTests(unittest.TestCase):
                     datetime(2018, 1, 1, 19, 59, 1, 0, timezone.utc))
 
         # Act
-        self.data_client._tick_handler(
+        self.data_client._handle_tick(
             {'channel': b'audusd.fxcm', 'data': b'1.00000,1.00001,2018-01-01T19:59:01.000Z'})
 
         # Assert
@@ -227,7 +237,7 @@ class LiveDataClientTests(unittest.TestCase):
                   datetime(2018, 1, 1, 19, 59, 1, 0, timezone.utc))
 
         # Act
-        self.data_client._bar_handler(
+        self.data_client._handle_bar(
             {'channel': b'audusd.fxcm-1-second[bid]',
              'data': b'1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T19:59:01+00:00'})
 
@@ -237,10 +247,12 @@ class LiveDataClientTests(unittest.TestCase):
     def test_can_receive_one_tick(self):
         # Arrange
         storer = ObjectStorer()
-        self.data_client.connect()
-        self.data_client.subscribe_ticks('audusd', Venue.FXCM, storer.store)
+        symbol = Symbol('AUDUSD', Venue.FXCM)
 
-        tick = Tick(Symbol('AUDUSD', Venue.FXCM),
+        self.data_client.connect()
+        self.data_client.subscribe_ticks(symbol, storer.store)
+
+        tick = Tick(symbol,
                     Decimal('1.00000'),
                     Decimal('1.00001'),
                     datetime(2018, 1, 1, 19, 59, 1, 0, timezone.utc))
@@ -257,8 +269,10 @@ class LiveDataClientTests(unittest.TestCase):
     def test_can_receive_many_ticks(self):
         # Arrange
         storer = ObjectStorer()
+        symbol = Symbol('AUDUSD', Venue.FXCM)
+
         self.data_client.connect()
-        self.data_client.subscribe_ticks('audusd', Venue.FXCM, storer.store)
+        self.data_client.subscribe_ticks(symbol, storer.store)
 
         # Act
         self.redis_tester.publish('audusd.fxcm', '1.00000,1.00001,2018-01-01T19:59:01.000Z')
@@ -276,9 +290,9 @@ class LiveDataClientTests(unittest.TestCase):
         # Arrange
         storer = ObjectStorer()
         self.data_client.connect()
-        self.data_client.subscribe_ticks('audusd', Venue.FXCM, storer.store)
-        self.data_client.subscribe_ticks('gbpusd', Venue.FXCM, storer.store)
-        self.data_client.subscribe_ticks('eurusd', Venue.FXCM, storer.store)
+        self.data_client.subscribe_ticks(Symbol('AUDUSD', Venue.FXCM), storer.store)
+        self.data_client.subscribe_ticks(Symbol('GBPUSD', Venue.FXCM), storer.store)
+        self.data_client.subscribe_ticks(Symbol('EURUSD', Venue.FXCM), storer.store)
 
         # Act
         self.redis_tester.publish('audusd.fxcm', '1.00000,1.00001,2018-01-01T19:59:01.000Z')
@@ -306,7 +320,7 @@ class LiveDataClientTests(unittest.TestCase):
         # Arrange
         storer = ObjectStorer()
         self.data_client.connect()
-        self.data_client.subscribe_bars('audusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.BID, storer.store_both)
+        self.data_client.subscribe_bars(BarType(Symbol('AUDUSD', Venue.FXCM), 1, Resolution.SECOND, QuoteType.BID), storer.store_both)
 
         bar = Bar(
             Decimal('1.00001'),
@@ -329,7 +343,7 @@ class LiveDataClientTests(unittest.TestCase):
         # Arrange
         storer = ObjectStorer()
         self.data_client.connect()
-        self.data_client.subscribe_bars('audusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.BID, storer.store_both)
+        self.data_client.subscribe_bars(BarType(Symbol('AUDUSD', Venue.FXCM), 1, Resolution.SECOND, QuoteType.BID), storer.store_both)
 
         # Act
         self.redis_tester.publish('audusd.fxcm-1-second[bid]',
@@ -352,9 +366,9 @@ class LiveDataClientTests(unittest.TestCase):
         # Arrange
         storer = ObjectStorer()
         self.data_client.connect()
-        self.data_client.subscribe_bars('audusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.BID, storer.store_both)
-        self.data_client.subscribe_bars('gbpusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.BID, storer.store_both)
-        self.data_client.subscribe_bars('eurusd', Venue.FXCM, 1, Resolution.SECOND, QuoteType.BID, storer.store_both)
+        self.data_client.subscribe_bars(BarType(Symbol('AUDUSD', Venue.FXCM), 1, Resolution.SECOND, QuoteType.BID), storer.store_both)
+        self.data_client.subscribe_bars(BarType(Symbol('GBPUSD', Venue.FXCM), 1, Resolution.SECOND, QuoteType.BID), storer.store_both)
+        self.data_client.subscribe_bars(BarType(Symbol('EURUSD', Venue.FXCM), 1, Resolution.SECOND, QuoteType.BID), storer.store_both)
 
         # Act
         self.redis_tester.publish('audusd.fxcm-1-second[bid]',

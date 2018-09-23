@@ -88,6 +88,11 @@ class EMACrossLimitEntry(TradeStrategy):
         This method is called when self.start() is called, and after internal
         start logic.
         """
+        # Subscribe to the necessary data.
+        self.historical_bars(self.bar_type)
+        self.subscribe_bars(self.bar_type)
+        self.subscribe_ticks(self.symbol)
+
         self.log.info(f"Started at {datetime.utcnow()}")
         self.log.info(f"EMA1 bar count={self.ema1.count}")
         self.log.info(f"EMA2 bar count={self.ema2.count}")

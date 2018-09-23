@@ -22,7 +22,6 @@ if __name__ == "__main__":
     logger = Logger(log_to_file=True)
     data_client = LiveDataClient(logger=logger)
     data_client.connect()
-    data_client.update_all_instruments()
 
     exec_client = LiveExecClient(logger=logger)
     exec_client.connect()
@@ -40,10 +39,6 @@ if __name__ == "__main__":
 
     data_client.register_strategy(strategy)
     exec_client.register_strategy(strategy)
-
-    data_client.historical_bars('AUDUSD', Venue.FXCM, 1, Resolution.SECOND, QuoteType.MID, 1000)
-    data_client.subscribe_bars('AUDUSD', Venue.FXCM, 1, Resolution.SECOND, QuoteType.MID)
-    data_client.subscribe_ticks('AUDUSD', Venue.FXCM)
 
     input("Press Enter to start strategy...\n")
     strategy.start()
