@@ -49,9 +49,6 @@ class EMACrossLimitEntry(TradeStrategy):
         :param bar_capacity: The historical bar capacity.
         :param logger: The logger for the strategy (can be None, will just print).
         """
-        Precondition.valid_string(label, 'label')
-        Precondition.positive(fast, 'fast')
-        Precondition.positive(slow, 'slow')
         Precondition.true(slow > fast, 'slow > fast')
 
         super().__init__(label,
