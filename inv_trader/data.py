@@ -372,15 +372,19 @@ class LiveDataClient:
         """
         self._check_connection()
 
-        if handler is not None and handler in self._bar_handlers[bar_type]:
-            self._bar_handlers[bar_type].remove(handler)
-            self._log.debug(f"Removed handler {handler} from bar handlers.")
-        else:
-            self._log.warning(
-                f"Cannot unsubscribe bars (no matching handler for {handler}).")
+        if bar_type not in self._bar_handlers:
+            self._log.warning(f"Cannot unsubscribe bars (no handlers for {bar_type}).")
+            return
+
+        if handler is not None:
+            if handler in self._bar_handlers[bar_type]:
+                self._bar_handlers[bar_type].remove(handler)
+                self._log.debug(f"Removed handler {handler} from bar handlers.")
+            else:
+                self._log.warning(f"Cannot remove handler {handler} from bar handlers (not found).")
 
         # If no further subscribers for this bar type.
-        if bar_type not in self._bar_handlers or len(self._bar_handlers[bar_type]) == 0:
+        if len(self._bar_handlers[bar_type]) == 0:
             bar_channel = self._get_bar_channel_name(bar_type)
             self._pubsub.unsubscribe(bar_channel)
 
@@ -431,15 +435,19 @@ class LiveDataClient:
         """
         self._check_connection()
 
-        if handler is not None and handler in self._tick_handlers[symbol]:
-            self._tick_handlers[symbol].remove(handler)
-            self._log.debug(f"Removed handler {handler} from tick handlers.")
-        else:
-            self._log.warning(
-                f"Cannot unsubscribe ticks (no matching handler for {handler}).")
+        if symbol not in self._tick_handlers:
+            self._log.warning(f"Cannot unsubscribe ticks (no handlers for {symbol}).")
+            return
+
+        if handler is not None:
+            if handler in self._tick_handlers[symbol]:
+                self._tick_handlers[symbol].remove(handler)
+                self._log.debug(f"Removed handler {handler} from tick handlers.")
+            else:
+                self._log.warning(f"Cannot remove handler {handler} from tick handlers (not found).")
 
         # If no further subscribers for this bar type.
-        if symbol not in self._tick_handlers or len(self._tick_handlers[symbol]) == 0:
+        if len(self._tick_handlers[symbol]) == 0:
             tick_channel = self._get_tick_channel_name(symbol)
             self._pubsub.unsubscribe(tick_channel)
 

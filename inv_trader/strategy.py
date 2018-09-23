@@ -403,6 +403,7 @@ class TradeStrategy:
             bar_type.period,
             bar_type.resolution,
             bar_type.quote_type)
+        self._log.info(f"Subscribed to bar data for {bar_type}.")
 
     def unsubscribe_bars(self, bar_type: BarType):
         """
@@ -419,6 +420,7 @@ class TradeStrategy:
             bar_type.period,
             bar_type.resolution,
             bar_type.quote_type)
+        self._log.info(f"Unsubscribed from bar data for {bar_type}.")
 
     def subscribe_ticks(self, symbol: Symbol):
         """
@@ -430,6 +432,7 @@ class TradeStrategy:
         Precondition.not_none(self._data_client, 'data_client')
 
         self._data_client.subscribe_ticks(symbol.code, symbol.venue)
+        self._log.info(f"Subscribed to tick data for {symbol}.")
 
     def unsubscribe_ticks(self, symbol: Symbol):
         """
@@ -441,6 +444,7 @@ class TradeStrategy:
         Precondition.not_none(self._data_client, 'data_client')
 
         self._data_client.unsubscribe_ticks(symbol.code, symbol.venue)
+        self._log.info(f"Unsubscribed from tick data for {symbol}.")
 
     def start(self):
         """
