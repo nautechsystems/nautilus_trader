@@ -57,11 +57,11 @@ class LiveDataClient:
         self._redis_client = None
         self._pubsub = None
         self._pubsub_thread = None
-        self._subscriptions_ticks = []  # type: List[str]
         self._subscriptions_bars = []   # type: List[str]
-        self._tick_handlers = []        # type: List[Callable]
-        self._bar_handlers = []         # type: List[Callable]
+        self._subscriptions_ticks = []  # type: List[str]
         self._instruments = {}          # type: Dict[Symbol, Instrument]
+        self._bar_handlers = {}         # type: Dict[BarType, List[Callable]]
+        self._tick_handlers = {}        # type: Dict[Symbol, List[Callable]]
 
         self._log.info("Initialized.")
 
@@ -125,13 +125,15 @@ class LiveDataClient:
 
     def connect(self):
         """
-        Connect to the data service and create a pub/sub server.
+        Connect to the data service, create a pub/sub server and update all instruments.
         """
         self._redis_client = StrictRedis(host=self._host,
                                          port=self._port,
                                          db=0)
         self._pubsub = self._redis_client.pubsub()
         self._log.info(f"Connected to the live data service at {self._host}:{self._port}.")
+
+        self.update_all_instruments()
 
     def disconnect(self):
         """
@@ -161,279 +163,6 @@ class LiveDataClient:
         self._subscriptions_bars = []
         self._tick_handlers = []
         self._bar_handlers = []
-
-    def subscribe_ticks(
-            self,
-            symbol: str,
-            venue: Venue,
-            handler: Callable=None):
-        """
-        Subscribe to live tick data for the given symbol and venue.
-
-        :param symbol: The symbol for subscription.
-        :param venue: The venue for subscription.
-        :param handler: The callable handler for subscription (if None will just call print).
-        :raises ValueError: If the symbol is not a valid string.
-        """
-        Precondition.valid_string(symbol, 'symbol')
-
-        self._check_connection()
-
-        # If a handler is passed in, and doesn't already exist, then add to tick subscribers.
-        if handler is not None and handler not in self._tick_handlers:
-            self._tick_handlers.append(handler)
-
-        ticks_channel = self._get_tick_channel_name(symbol, venue)
-        self._pubsub.subscribe(**{ticks_channel: self._tick_handler})
-
-        if self._pubsub_thread is None:
-            self._pubsub_thread = self._pubsub.run_in_thread(0.001)
-
-        if ticks_channel not in self._subscriptions_ticks:
-            self._subscriptions_ticks.append(ticks_channel)
-            self._subscriptions_ticks.sort()
-
-        self._log.info(f"Subscribed to tick data for {ticks_channel}.")
-
-    def unsubscribe_ticks(
-            self,
-            symbol: str,
-            venue: Venue):
-        """
-        Unsubscribes from live tick data for the given symbol and venue.
-
-        :param symbol: The symbol to unsubscribe from.
-        :param venue: The venue to unsubscribe from.
-        :raises ValueError: If the symbol is not a valid string.
-        """
-        Precondition.valid_string(symbol, 'symbol')
-
-        self._check_connection()
-
-        tick_channel = self._get_tick_channel_name(symbol, venue)
-
-        self._pubsub.unsubscribe(tick_channel)
-
-        if tick_channel in self._subscriptions_ticks:
-            self._subscriptions_ticks.remove(tick_channel)
-            self._subscriptions_ticks.sort()
-
-        self._log.info(f"Unsubscribed from tick data for {tick_channel}.")
-
-    def subscribe_bars(
-            self,
-            symbol: str,
-            venue: Venue,
-            period: int,
-            resolution: Resolution,
-            quote_type: QuoteType,
-            handler: Callable=None):
-        """
-        Subscribe to live bar data for the given bar parameters.
-
-        :param symbol: The symbol for subscription.
-        :param venue: The venue for subscription.
-        :param period: The bar period for subscription (> 0).
-        :param resolution: The bar resolution for subscription.
-        :param quote_type: The bar quote type for subscription.
-        :param handler: The callable handler for subscription (if None will just call print).
-        :raises ValueError: If the symbol is not a valid string.
-        :raises ValueError: If the period is not positive (> 0).
-        """
-        Precondition.valid_string(symbol, 'symbol')
-        Precondition.positive(period, 'period')
-
-        self._check_connection()
-
-        # If a handler is passed in, and doesn't already exist, then add to bar subscribers.
-        if handler is not None and handler not in self._bar_handlers:
-            self._bar_handlers.append(handler)
-
-        bars_channel = self._get_bar_channel_name(
-            symbol,
-            venue,
-            period,
-            resolution,
-            quote_type)
-        self._pubsub.subscribe(**{bars_channel: self._bar_handler})
-
-        if self._pubsub_thread is None:
-            self._pubsub_thread = self._pubsub.run_in_thread(0.001)
-
-        if bars_channel not in self._subscriptions_bars:
-            self._subscriptions_bars.append(bars_channel)
-            self._subscriptions_bars.sort()
-
-        self._log.info(f"Subscribed to bar data for {bars_channel}.")
-
-    def unsubscribe_bars(
-            self,
-            symbol: str,
-            venue: Venue,
-            period: int,
-            resolution: Resolution,
-            quote_type: QuoteType):
-        """
-        Unsubscribes from live bar data for the given symbol and venue.
-
-        :param symbol: The symbol to unsubscribe from.
-        :param venue: The venue to unsubscribe from.
-        :param period: The bar period to unsubscribe from (> 0).
-        :param resolution: The bar resolution to unsubscribe from.
-        :param quote_type: The bar quote type to unsubscribe from.
-        :raises ValueError: If the symbol is not a valid string.
-        :raises ValueError: If the period is not positive (> 0).
-        """
-        Precondition.valid_string(symbol, 'symbol')
-        Precondition.positive(period, 'period')
-
-        self._check_connection()
-
-        bar_channel = self._get_bar_channel_name(
-            symbol,
-            venue,
-            period,
-            resolution,
-            quote_type)
-
-        self._pubsub.unsubscribe(bar_channel)
-
-        if bar_channel in self._subscriptions_bars:
-            self._subscriptions_bars.remove(bar_channel)
-            self._subscriptions_bars.sort()
-
-        self._log.info(f"Unsubscribed from bar data for {bar_channel}.")
-
-    def historical_bars(
-            self,
-            symbol: str,
-            venue: Venue,
-            period: int,
-            resolution: Resolution,
-            quote_type: QuoteType,
-            amount: int or None=None):
-        """
-        Download the historical bars for the given parameters from the data service.
-        Then pass them to all registered strategies.
-
-        Note: Log warnings are given if the downloaded bars don't equal the
-        requested amount or from datetime range.
-
-        :param symbol: The symbol for the historical bars.
-        :param venue: The venue for the historical bars.
-        :param period: The bar period for the historical bars (> 0).
-        :param resolution: The bar resolution for the historical bars.
-        :param quote_type: The bar quote type for the historical bars.
-        :param amount: The number of historical bars to download, if None then will download all.
-        :raises ValueError: If the symbol is not a valid string.
-        :raises ValueError: If the period is not positive (> 0).
-        :raises ValueError: If the amount is not positive (> 0).
-        """
-        Precondition.valid_string(symbol, 'symbol')
-        Precondition.positive(period, 'period')
-        if amount is not None:
-            Precondition.positive(amount, 'amount')
-
-        self._check_connection()
-
-        keys = self._get_redis_bar_keys(symbol, venue, resolution, quote_type)
-
-        if len(keys) == 0:
-            self._log.warning(
-                "Cannot get historical bars (No bar keys found for the given parameters).")
-            return
-
-        bars = []
-        if amount is None:
-            for key in keys:
-                bar_list = self._redis_client.lrange(key, 0, -1)
-                for bar_bytes in bar_list:
-                    bars.append(self._parse_bar(bar_bytes.decode(UTF8)))
-        else:
-            for key in keys[::-1]:
-                bar_list = self._redis_client.lrange(key, 0, -1)
-                for bar_bytes in bar_list[::-1]:
-                    bars.insert(0, self._parse_bar(bar_bytes.decode(UTF8)))
-                if len(bars) >= amount:
-                    break
-
-            bar_count = len(bars)
-            if bar_count >= amount:
-                last_index = bar_count - amount
-                bars = bars[last_index:]
-            else:
-                self._log.warning(
-                    f"Historical bars are < the requested amount ({len(bars)} vs {amount}).")
-
-        bar_type = BarType(Symbol(symbol, venue), period, resolution, quote_type)
-        self._log.info(f"Historical download of {len(bars)} bars for {bar_type} complete.")
-
-        for bar in bars:
-            [handler(bar_type, bar) for handler in self._bar_handlers]
-        self._log.info(f"Historical bars hydrated for all registered strategies.")
-
-    def historical_bars_from(
-            self,
-            symbol: str,
-            venue: Venue,
-            period: int,
-            resolution: Resolution,
-            quote_type: QuoteType,
-            from_datetime: datetime):
-        """
-        Download the historical bars for the given parameters from the data service.
-        Then pass them to all registered strategies.
-
-        Note: Log warnings are given if the downloaded bars don't equal the
-        requested amount or from datetime range.
-
-        :param symbol: The symbol for the historical bars.
-        :param venue: The venue for the historical bars.
-        :param period: The bar period for the historical bars (> 0).
-        :param resolution: The bar resolution for the historical bars.
-        :param quote_type: The bar quote type for the historical bars.
-        :param from_datetime: The datetime from which the historical bars should be downloaded.
-        :raises ValueError: If the symbol is not a valid string.
-        :raises ValueError: If the period is not positive (> 0).
-        :raises ValueError: If the from_datetime is not less than datetime.utcnow().
-        """
-        Precondition.valid_string(symbol, 'symbol')
-        Precondition.positive(period, 'period')
-        Precondition.true(from_datetime < datetime.now(timezone.utc),
-                          'from_datetime < datetime.now(timezone.utc)')
-
-        self._check_connection()
-
-        keys = self._get_redis_bar_keys(symbol, venue, resolution, quote_type)
-
-        if len(keys) == 0:
-            self._log.warning(
-                "Cannot get historical bars (No bar keys found for the given parameters).")
-            return
-
-        bars = []
-        for key in keys[::-1]:
-            bar_list = self._redis_client.lrange(key, 0, -1)
-            for bar_bytes in bar_list[::-1]:
-                bar = self._parse_bar(bar_bytes.decode(UTF8))
-                if bar.timestamp >= from_datetime:
-                    bars.insert(0, self._parse_bar(bar_bytes.decode(UTF8)))
-                else:
-                    self._log.debug("His")
-                    break  # Reached from_datetime.
-
-        first_bar_timestamp = bars[0].timestamp
-        if first_bar_timestamp > from_datetime:
-            self._log.warning(
-                (f"Historical bars first bar timestamp greater than requested from datetime "
-                 f"({first_bar_timestamp.isoformat()} vs {from_datetime.isoformat()})."))
-
-        bar_type = BarType(Symbol(symbol, venue), period, resolution, quote_type)
-        self._log.info(f"Historical download of {len(bars)} bars for {bar_type} complete.")
-
-        for bar in bars:
-            [handler(bar_type, bar) for handler in self._bar_handlers]
-        self._log.info(f"Historical bars hydrated for all registered strategies.")
 
     def update_all_instruments(self):
         """
@@ -477,21 +206,244 @@ class LiveDataClient:
 
         return self._instruments[symbol]
 
-    def _get_redis_bar_keys(
+    def historical_bars(
             self,
-            symbol: str,
-            venue: Venue,
-            resolution: Resolution,
-            quote_type: QuoteType,):
+            bar_type: BarType,
+            quantity: int,
+            handler: Callable):
+        """
+        Download the historical bars for the given parameters from the data service.
+        Then pass them to all registered strategies.
+
+        Note: Log warnings are given if the downloaded bars don't equal the
+        requested amount or from datetime range.
+
+        :param bar_type: The historical bar type to download.
+        :param quantity: The number of historical bars to download.
+        :param handler: The handler to pass the bars to.
+        :raises ValueError: If the symbol is not a valid string.
+        :raises ValueError: If the period is not positive (> 0).
+        :raises ValueError: If the amount is not positive (> 0).
+        """
+        Precondition.positive(quantity, 'quantity')
+
+        self._check_connection()
+
+        keys = self._get_redis_bar_keys(bar_type)
+
+        if len(keys) == 0:
+            self._log.warning(
+                "Cannot get historical bars (No bar keys found for the given parameters).")
+            return
+
+        bars = []
+        if quantity is None:
+            for key in keys:
+                bar_list = self._redis_client.lrange(key, 0, -1)
+                for bar_bytes in bar_list:
+                    bars.append(self._parse_bar(bar_bytes.decode(UTF8)))
+        else:
+            for key in keys[::-1]:
+                bar_list = self._redis_client.lrange(key, 0, -1)
+                for bar_bytes in bar_list[::-1]:
+                    bars.insert(0, self._parse_bar(bar_bytes.decode(UTF8)))
+                if len(bars) >= quantity:
+                    break
+
+            bar_count = len(bars)
+            if bar_count >= quantity:
+                last_index = bar_count - quantity
+                bars = bars[last_index:]
+            else:
+                self._log.warning(
+                    f"Historical bars are < the requested amount ({len(bars)} vs {quantity}).")
+
+        self._log.info(f"Historical download of {len(bars)} bars for {bar_type} complete.")
+
+        for bar in bars:
+            handler(bar_type, bar)
+        self._log.debug(f"Historical bars hydrated to handler {handler}.")
+
+    def historical_bars_from(
+            self,
+            bar_type: BarType,
+            from_datetime: datetime,
+            handler: Callable):
+        """
+        Download the historical bars for the given parameters from the data service.
+        Then pass them to all registered strategies.
+
+        Note: Log warnings are given if the downloaded bars don't equal the
+        requested amount or from datetime range.
+
+        :param bar_type: The historical bar type to download.
+        :param from_datetime: The datetime from which the historical bars should be downloaded.
+        :param handler: The handler to pass the bars to.
+        :raises ValueError: If the from_datetime is not less than datetime.utcnow().
+        """
+        Precondition.true(from_datetime < datetime.now(timezone.utc),
+                          'from_datetime < datetime.now(timezone.utc)')
+
+        self._check_connection()
+
+        keys = self._get_redis_bar_keys(bar_type)
+
+        if len(keys) == 0:
+            self._log.warning(
+                "Cannot get historical bars (No bar keys found for the given parameters).")
+            return
+
+        bars = []
+        for key in keys[::-1]:
+            bar_list = self._redis_client.lrange(key, 0, -1)
+            for bar_bytes in bar_list[::-1]:
+                bar = self._parse_bar(bar_bytes.decode(UTF8))
+                if bar.timestamp >= from_datetime:
+                    bars.insert(0, self._parse_bar(bar_bytes.decode(UTF8)))
+                else:
+                    self._log.debug("His")
+                    break  # Reached from_datetime.
+
+        first_bar_timestamp = bars[0].timestamp
+        if first_bar_timestamp > from_datetime:
+            self._log.warning(
+                (f"Historical bars first bar timestamp greater than requested from datetime "
+                 f"({first_bar_timestamp.isoformat()} vs {from_datetime.isoformat()})."))
+
+        self._log.info(f"Historical download of {len(bars)} bars for {bar_type} complete.")
+
+        for bar in bars:
+            handler(bar_type, bar)
+        self._log.debug(f"Historical bars hydrated to handler {handler}.")
+
+    def subscribe_bars(
+            self,
+            bar_type: BarType,
+            handler: Callable=None):
+        """
+        Subscribe to live bar data for the given bar parameters.
+
+        :param bar_type: The bar type to subscribe to.
+        :param handler: The callable handler for subscription (if None will just call print).
+        """
+        self._check_connection()
+
+        if bar_type not in self._bar_handlers:
+            self._bar_handlers[bar_type] = []  # type: List[Callable]
+
+        if handler is not None and handler not in self._bar_handlers[bar_type]:
+            self._bar_handlers[bar_type].append(handler)
+            self._log.debug(f"Added bar handler {handler}.")
+
+        bars_channel = self._get_bar_channel_name(bar_type)
+        if bars_channel not in self._subscriptions_bars:
+            self._pubsub.subscribe(**{bars_channel: self._handle_bar})
+
+            if self._pubsub_thread is None:
+                self._pubsub_thread = self._pubsub.run_in_thread(0.001)
+            self._subscriptions_bars.append(bars_channel)
+            self._subscriptions_bars.sort()
+            self._log.info(f"Subscribed to bar data for {bars_channel}.")
+
+    def unsubscribe_bars(
+            self,
+            bar_type: BarType,
+            handler: Callable=None):
+        """
+        Unsubscribes from live bar data for the given symbol and venue.
+
+        :param bar_type: The bar type to unsubscribe from.
+        :param handler: The callable handler which was subscribed (can be None).
+        """
+        self._check_connection()
+
+        if handler is not None and handler in self._bar_handlers[bar_type]:
+            self._bar_handlers[bar_type].remove(handler)
+            self._log.debug(f"Removed handler {handler} from bar handlers.")
+        else:
+            self._log.warning(
+                f"Cannot unsubscribe bars (no matching handler for {handler}).")
+
+        # If no further subscribers for this bar type.
+        if bar_type not in self._bar_handlers or len(self._bar_handlers[bar_type]) == 0:
+            bar_channel = self._get_bar_channel_name(bar_type)
+            self._pubsub.unsubscribe(bar_channel)
+
+            if bar_channel in self._subscriptions_bars:
+                self._subscriptions_bars.remove(bar_channel)
+                self._subscriptions_bars.sort()
+                self._log.info(f"Unsubscribed from bar data for {bar_channel}.")
+
+    def subscribe_ticks(
+            self,
+            symbol: Symbol,
+            handler: Callable=None):
+        """
+        Subscribe to live tick data for the given symbol and venue.
+
+        :param symbol: The tick symbol to subscribe to.
+        :param handler: The callable handler for subscription (if None will just call print).
+        """
+        self._check_connection()
+
+        if symbol not in self._tick_handlers:
+            self._tick_handlers[symbol] = []  # type: List[Callable]
+
+        if handler is not None and handler not in self._tick_handlers:
+            self._tick_handlers[symbol].append(handler)
+            self._log.debug(f"Added tick {handler}.")
+
+        ticks_channel = self._get_tick_channel_name(symbol)
+        if ticks_channel not in self._subscriptions_ticks:
+            self._pubsub.subscribe(**{ticks_channel: self._handle_tick})
+
+            if self._pubsub_thread is None:
+                self._pubsub_thread = self._pubsub.run_in_thread(0.001)
+            self._subscriptions_ticks.append(ticks_channel)
+            self._subscriptions_ticks.sort()
+            self._log.info(f"Subscribed to tick data for {ticks_channel}.")
+
+    def unsubscribe_ticks(
+            self,
+            symbol: Symbol,
+            handler: Callable=None):
+        """
+        Unsubscribes from live tick data for the given symbol and venue.
+
+        :param symbol: The tick symbol to unsubscribe from.
+        :param handler: The callable handler which was subscribed (can be None).
+        :raises ValueError: If the symbol is not a valid string.
+        """
+        self._check_connection()
+
+        if handler is not None and handler in self._tick_handlers[symbol]:
+            self._tick_handlers[symbol].remove(handler)
+            self._log.debug(f"Removed handler {handler} from tick handlers.")
+        else:
+            self._log.warning(
+                f"Cannot unsubscribe ticks (no matching handler for {handler}).")
+
+        # If no further subscribers for this bar type.
+        if symbol not in self._tick_handlers or len(self._tick_handlers[symbol]) == 0:
+            tick_channel = self._get_tick_channel_name(symbol)
+            self._pubsub.unsubscribe(tick_channel)
+
+            if tick_channel in self._subscriptions_ticks:
+                self._subscriptions_ticks.remove(tick_channel)
+                self._subscriptions_ticks.sort()
+
+            self._log.info(f"Unsubscribed from tick data for {tick_channel}.")
+
+    def _get_redis_bar_keys(self, bar_type:BarType):
         """
         Generate the bar key wildcard pattern and return the held Redis keys.
         """
         keys = self._redis_client.keys(
             (f'bars'
-             f':{venue.name.lower()}'
-             f':{symbol.lower()}'
-             f':{resolution.name.lower()}'
-             f':{quote_type.name.lower()}*'))
+             f':{bar_type.symbol.venue.name.lower()}'
+             f':{bar_type.symbol.code.lower()}'
+             f':{bar_type.resolution.name.lower()}'
+             f':{bar_type.quote_type.name.lower()}*'))
         keys.sort()
         return keys
 
@@ -515,20 +467,28 @@ class LiveDataClient:
         self._log.info(f"Registered strategy {strategy} with the data client.")
 
     @staticmethod
-    def _parse_tick(
-            tick_channel: str,
-            tick_string: str) -> Tick:
+    def _parse_tick_symbol(tick_channel: str) -> Symbol:
+        """
+        Parse a Symbol object from the given UTF-8 string.
+
+        :param tick_channel: The channel the tick was received on.
+        :return: The parsed Symbol object.
+        """
+        split_channel = tick_channel.split('.')
+
+        return Symbol(split_channel[0], Venue[str(split_channel[1].upper())])
+
+    @staticmethod
+    def _parse_tick(symbol: Symbol, tick_string: str) -> Tick:
         """
         Parse a Tick object from the given UTF-8 string.
 
-        :param tick_string: The channel the tick was received on.
         :param tick_string: The tick string.
         :return: The parsed Tick object.
         """
-        split_channel = tick_channel.split('.')
         split_tick = tick_string.split(',')
 
-        return Tick(Symbol(split_channel[0], Venue[str(split_channel[1].upper())]),
+        return Tick(symbol,
                     Decimal(split_tick[0]),
                     Decimal(split_tick[1]),
                     iso8601.parse_date(split_tick[2]))
@@ -568,26 +528,22 @@ class LiveDataClient:
                    iso8601.parse_date(split_bar[5]))
 
     @staticmethod
-    def _get_tick_channel_name(
-            symbol: str,
-            venue: Venue) -> str:
+    def _get_tick_channel_name(symbol: Symbol) -> str:
         """
         Return the tick channel name from the given parameters.
         """
-        return str(f'{symbol.lower()}.{venue.name.lower()}')
+        return str(f'{symbol.code.lower()}.{symbol.venue.name.lower()}')
 
     @staticmethod
-    def _get_bar_channel_name(
-            symbol: str,
-            venue: Venue,
-            period: int,
-            resolution: Resolution,
-            quote_type: QuoteType) -> str:
+    def _get_bar_channel_name(bar_type: BarType) -> str:
         """
         Return the bar channel name from the given parameters.
         """
-        return str(f'{symbol.lower()}.{venue.name.lower()}-{period}-'
-                   f'{resolution.name.lower()}[{quote_type.name.lower()}]')
+        return str(f'{bar_type.symbol.code.lower()}.'
+                   f'{bar_type.symbol.venue.name.lower()}-'
+                   f'{bar_type.period}-'
+                   f'{bar_type.resolution.name.lower()}['
+                   f'{bar_type.quote_type.name.lower()}]')
 
     def _check_connection(self):
         """
@@ -602,33 +558,36 @@ class LiveDataClient:
         if not self.is_connected:
             raise ConnectionError("No connection is established with the live database.")
 
-    def _tick_handler(self, message: Dict):
+    def _handle_tick(self, message: Dict):
         """"
         Handle the tick message by parsing to a Tick and sending to all subscribers.
 
         :param message: The tick message.
         """
-        # If no tick handlers then print message to console.
-        if len(self._tick_handlers) == 0:
-            print(f"Received message {message['channel'].decode(UTF8)} "
-                  f"{message['data'].decode(UTF8)}")
+        symbol = self._parse_tick_symbol(message['channel'].decode(UTF8))
+        tick = self._parse_tick(symbol, message['data'].decode(UTF8))
 
-        tick = self._parse_tick(
-            message['channel'].decode(UTF8),
-            message['data'].decode(UTF8))
-        [handler(tick) for handler in self._tick_handlers]
+        if symbol not in self._tick_handlers:
+            # If no tick handlers then print message to console.
+            print(f"Received {tick}")
+            return
 
-    def _bar_handler(self, message: Dict):
+        for handler in self._tick_handlers[symbol]:
+            handler(tick)
+
+    def _handle_bar(self, message: Dict):
         """"
         Handle the bar message by parsing to a Bar and sending to all subscribers.
 
         :param message: The bar message.
         """
-        # If no bar handlers then print message to console.
-        if len(self._bar_handlers) == 0:
-            print(f"Received message {message['channel'].decode(UTF8)} "
-                  f"{message['data'].decode(UTF8)}")
-
         bar_type = self._parse_bar_type(message['channel'].decode(UTF8))
         bar = self._parse_bar(message['data'].decode(UTF8))
-        [handler(bar_type, bar) for handler in self._bar_handlers]
+
+        if bar_type not in self._bar_handlers:
+            # If no bar handlers then print message to console.
+            print(f"Received {bar_type}, {bar}")
+            return
+
+        for handler in self._bar_handlers[bar_type]:
+            handler(bar_type, bar)

@@ -325,6 +325,123 @@ class TradeStrategy:
 
         return self._account
 
+    def get_instrument(self, symbol: Symbol) -> Instrument:
+        """
+        Get the instrument corresponding to the given symbol.
+
+        :param symbol: The symbol of the instrument to get.
+        :return: The instrument (if found)
+        :raises ValueError: If strategy has not been registered with a data client.
+        :raises KeyError: If the instrument is not found.
+        """
+        Precondition.not_none(self._data_client, 'data_client')
+
+        return self._data_client.get_instrument(symbol)
+
+    def historical_bars(
+            self,
+            bar_type: BarType,
+            quantity: int or None=None):
+        """
+        Download the historical bars for the given parameters from the data service.
+        Then pass them to all registered strategies.
+
+        Note: Logs warning if the downloaded bars does not equal the requested quantity.
+
+        :param bar_type: The historical bar type to download.
+        :param quantity: The number of historical bars to download
+        (if None then will download to bar_capacity).
+        :raises ValueError: If strategy has not been registered with a data client.
+        :raises ValueError: If the amount is not positive (> 0).
+        """
+        Precondition.not_none(self._data_client, 'data_client')
+
+        if quantity is None:
+            quantity = self._bar_capacity
+        Precondition.positive(quantity, 'quantity')
+
+        self._data_client.historical_bars(bar_type, quantity, self._update_bars)
+
+    def historical_bars_from(
+            self,
+            bar_type: BarType,
+            from_datetime: datetime):
+        """
+        Download the historical bars for the given parameters from the data service.
+
+        Note: Logs warning if the downloaded bars from datetime is greater than that given.
+
+        :param bar_type: The historical bar type to download.
+        :param from_datetime: The datetime from which the historical bars should be downloaded.
+        :raises ValueError: If strategy has not been registered with a data client.
+        :raises ValueError: If the from_datetime is not less than datetime.utcnow().
+        """
+        Precondition.not_none(self._data_client, 'data_client')
+        Precondition.true(from_datetime < datetime.now(timezone.utc),
+                          'from_datetime < datetime.now(timezone.utc)')
+
+        self._data_client.historical_bars_from(
+            bar_type.symbol.code,
+            bar_type.symbol.venue,
+            bar_type.period,
+            bar_type.resolution,
+            bar_type.quote_type,
+            from_datetime)
+
+    def subscribe_bars(self, bar_type: BarType):
+        """
+        Subscribe to live bar data for the given bar type.
+
+        :param bar_type: The bar type to subscribe to.
+        :raises ValueError: If strategy has not been registered with a data client.
+        """
+        Precondition.not_none(self._data_client, 'data_client')
+
+        self._data_client.subscribe_bars(
+            bar_type.symbol.code,
+            bar_type.symbol.venue,
+            bar_type.period,
+            bar_type.resolution,
+            bar_type.quote_type)
+
+    def unsubscribe_bars(self, bar_type: BarType):
+        """
+        Unsubscribes from live bar data for the given bar type.
+
+        :param bar_type: The bar type to unsubscribe from.
+        :raises ValueError: If strategy has not been registered with a data client.
+        """
+        Precondition.not_none(self._data_client, 'data_client')
+
+        self._data_client.unsubscribe_bars(
+            bar_type.symbol.code,
+            bar_type.symbol.venue,
+            bar_type.period,
+            bar_type.resolution,
+            bar_type.quote_type)
+
+    def subscribe_ticks(self, symbol: Symbol):
+        """
+        Subscribe to live tick data for the given symbol.
+
+        :param symbol: The tick symbol to subscribe to.
+        :raises ValueError: If strategy has not been registered with a data client.
+        """
+        Precondition.not_none(self._data_client, 'data_client')
+
+        self._data_client.subscribe_ticks(symbol.code, symbol.venue)
+
+    def unsubscribe_ticks(self, symbol: Symbol):
+        """
+        Unsubscribe from live tick data for the given symbol.
+
+        :param symbol: The tick symbol to unsubscribe from.
+        :raises ValueError: If strategy has not been registered with a data client.
+        """
+        Precondition.not_none(self._data_client, 'data_client')
+
+        self._data_client.unsubscribe_ticks(symbol.code, symbol.venue)
+
     def start(self):
         """
         Starts the trade strategy and calls on_start().
@@ -370,19 +487,6 @@ class TradeStrategy:
 
         self.on_reset()
         self._log.info(f"Reset.")
-
-    def get_instrument(self, symbol: Symbol) -> Instrument:
-        """
-        Get the instrument corresponding to the given symbol from the data client.
-
-        :param symbol: The symbol of the instrument to get.
-        :return: The instrument (if found)
-        :raises ValueError: If the strategy has not been registered with a data client.
-        :raises KeyError: If the instrument is not found.
-        """
-        Precondition.not_none(self._data_client, 'data_client')
-
-        return self._data_client.get_instrument(symbol)
 
     def indicators(self, bar_type: BarType) -> List[Indicator]:
         """

@@ -62,7 +62,7 @@ class TestStrategy1(TradeStrategy):
                 buy_order = OrderFactory.market(
                     Symbol('GBPUSD', Venue.FXCM),
                     OrderId('O123456'),
-                    'TestStrategy1_E',
+                    Label('TestStrategy1_E'),
                     OrderSide.BUY,
                     100000)
 
@@ -73,7 +73,7 @@ class TestStrategy1(TradeStrategy):
                 sell_order = OrderFactory.market(
                     Symbol('GBPUSD', Venue.FXCM),
                     OrderId('O123456'),
-                    'TestStrategy1_E',
+                    Label('TestStrategy1_E'),
                     OrderSide.SELL,
                     100000)
 
