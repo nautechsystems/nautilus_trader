@@ -246,6 +246,9 @@ class EMACrossLimitEntry(TradeStrategy):
 
         Put custom code to be run on a strategy reset here.
         """
+        self.unsubscribe_bars(self.bar_type)
+        self.unsubscribe_ticks(self.symbol)
+
         self.entry_orders = {}
         self.stop_loss_orders = {}
         self.position_id = None
