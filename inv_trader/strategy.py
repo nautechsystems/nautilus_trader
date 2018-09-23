@@ -920,7 +920,7 @@ class TradeStrategy:
         order = OrderFactory.market(
             position.symbol,
             self.generate_order_id(position.symbol),
-            "FLATTEN",
+            Label("FLATTEN"),
             self.get_flatten_side(position.market_position),
             position.quantity)
 
@@ -949,7 +949,7 @@ class TradeStrategy:
             order = OrderFactory.market(
                 position.symbol,
                 self.generate_order_id(position.symbol),
-                "FLATTEN",
+                Label("FLATTEN"),
                 self.get_flatten_side(position.market_position),
                 position.quantity)
             self.submit_order(order, position_id)
