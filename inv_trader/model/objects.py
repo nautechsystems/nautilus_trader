@@ -447,6 +447,7 @@ class Instrument:
                  tick_size: Decimal,
                  tick_value: Decimal,
                  target_direct_spread: Decimal,
+                 round_lot_size: int,
                  contract_size: int,
                  min_stop_distance_entry: int,
                  min_limit_distance_entry: int,
@@ -469,6 +470,7 @@ class Instrument:
         :param tick_size: The instruments tick size.
         :param tick_value: The instruments tick value.
         :param target_direct_spread: The instruments target direct spread (set by broker).
+        :param round_lot_size: The instruments rounded lot size.
         :param contract_size: The instruments contract size if applicable.
         :param min_stop_distance_entry: The instruments minimum distance for stop entry orders.
         :param min_limit_distance_entry: The instruments minimum distance for limit entry orders.
@@ -501,9 +503,10 @@ class Instrument:
         self._quote_currency = quote_currency
         self._security_type = security_type
         self._tick_decimals = tick_decimals
-        self._tick_size = tick_size * Decimal('0.1')  # TODO: Investigate tick_size error in db.
+        self._tick_size = tick_size
         self._tick_value = tick_value
         self._target_direct_spread = target_direct_spread
+        self._round_lot_size = round_lot_size
         self._contract_size = contract_size
         self._min_stop_distance_entry = min_stop_distance_entry
         self._min_limit_distance_entry = min_limit_distance_entry
@@ -604,6 +607,13 @@ class Instrument:
         :return: The instruments target direct spread (set by broker).
         """
         return self._target_direct_spread
+
+    @property
+    def round_lot_size(self) -> int:
+        """
+        :return: The instruments rounded lot size.
+        """
+        return self._round_lot_size
 
     @property
     def contract_size(self) -> int:

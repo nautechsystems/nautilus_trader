@@ -752,6 +752,7 @@ class InstrumentSerializer:
             Decimal(f'{tick_size}'),
             Decimal(f'{tick_value}'),
             Decimal(f'{target_direct_spread}'),
+            inst_dict['RoundLotSize'],
             inst_dict['ContractSize'],
             inst_dict['MinStopDistanceEntry'],
             inst_dict['MinLimitDistanceEntry'],
