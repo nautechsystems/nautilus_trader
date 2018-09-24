@@ -21,9 +21,8 @@ if __name__ == "__main__":
 
     logger = Logger(log_to_file=True)
     data_client = LiveDataClient(logger=logger)
-    data_client.connect()
-
     exec_client = LiveExecClient(logger=logger)
+    data_client.connect()
     exec_client.connect()
 
     instrument = data_client.get_instrument(AUDUSD_FXCM)
@@ -40,7 +39,6 @@ if __name__ == "__main__":
     data_client.register_strategy(strategy)
     exec_client.register_strategy(strategy)
 
-    input("Press Enter to start strategy...\n")
     strategy.start()
 
     input("Press Enter to stop strategy...\n")
