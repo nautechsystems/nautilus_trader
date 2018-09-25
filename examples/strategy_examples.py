@@ -133,7 +133,7 @@ class EMACrossLimitEntry(TradeStrategy):
         :param bar_type: The received bar type.
         :param bar: The received bar.
         """
-        if not self.fast_ema.initialized and not self.slow_ema.initialized:
+        if not self.fast_ema.initialized or not self.slow_ema.initialized:
             return
 
         for order in self.entry_orders.values():
@@ -143,11 +143,11 @@ class EMACrossLimitEntry(TradeStrategy):
                     self.cancel_order(order)
                     return
 
-        if bar_type == self.bar_type and self.symbol in self.ticks:
+        if self.symbol in self.ticks:
             # If any open positions or pending entry orders then return
-            if len(self.positions) > 0:
+            if not self.is_flat:
                 return
-            if any(order.is_complete is False for order in self.entry_orders.values()):
+            if len(self.active_orders) > 0:
                 return
 
             # BUY LOGIC
