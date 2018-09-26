@@ -12,7 +12,7 @@ from typing import Dict
 
 from inv_trader.core.precondition import Precondition
 from inv_trader.core.logger import Logger
-from inv_trader.model.enums import OrderSide, TimeInForce
+from inv_trader.model.enums import OrderSide, OrderStatus, TimeInForce
 from inv_trader.model.objects import Price, Tick, BarType, Bar, Instrument
 from inv_trader.model.order import Order, OrderFactory
 from inv_trader.model.events import Event, OrderFilled, TimeEvent
@@ -102,7 +102,7 @@ class EMACrossLimitEntry(TradeStrategy):
         :param tick: The received tick.
         """
         for order in self.entry_orders.values():
-            if not order.is_complete:
+            if order.status is OrderStatus.WORKING:
                 # Slide entry price with market
                 if order.side == OrderSide.BUY:
                     temp_entry_slide = Price.create(tick.ask - self.entry_buffer, self.tick_decimals)
