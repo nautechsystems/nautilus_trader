@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-# <copyright file="test_console.py" company="Invariance Pte">
+# <copyright file="console_tester_fxcm.py" company="Invariance Pte">
 #  Copyright (C) 2018 Invariance Pte. All rights reserved.
 #  The use of this source code is governed by the license as found in the LICENSE.md file.
 #  http://www.invariance.com
 # </copyright>
 # -------------------------------------------------------------------------------------------------
+
+from decimal import Decimal
 
 from inv_trader.core.logger import Logger
 from inv_trader.data import LiveDataClient
@@ -29,7 +31,9 @@ if __name__ == "__main__":
     strategy = EMACrossLimitEntry(
         'AUDUSD-01',
         '001',
-        instrument,
+        AUDUSD_FXCM,
+        5,
+        Decimal('0.00001'),
         AUDUSD_FXCM_1_SEC_MID,
         100000,
         10,
