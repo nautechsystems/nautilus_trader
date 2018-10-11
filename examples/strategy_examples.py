@@ -7,13 +7,14 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
 from datetime import timedelta
 from typing import Dict
 
 from inv_trader.core.precondition import Precondition
 from inv_trader.core.logger import Logger
 from inv_trader.model.enums import OrderSide, OrderStatus, TimeInForce
-from inv_trader.model.objects import Price, Tick, BarType, Bar, Instrument
+from inv_trader.model.objects import Price, Symbol, Tick, BarType, Bar, Instrument
 from inv_trader.model.order import Order, OrderFactory
 from inv_trader.model.events import Event, OrderFilled, TimeEvent
 from inv_trader.model.identifiers import Label, OrderId, PositionId
@@ -29,7 +30,9 @@ class EMACrossLimitEntry(TradeStrategy):
     def __init__(self,
                  label: str,
                  order_id_tag: str,
-                 instrument: Instrument,
+                 symbol: Symbol,
+                 tick_decimals: int,
+                 tick_size: Decimal,
                  bar_type: BarType,
                  position_size: int,
                  fast_ema: int,
@@ -41,7 +44,9 @@ class EMACrossLimitEntry(TradeStrategy):
 
         :param label: The unique label for this instance of the strategy.
         :param order_id_tag: The unique order id tag for this instance of the strategy.
-        :param instrument: The trading instrument for the strategy (could also input any number of them).
+        :param symbol: The trading symbol for the strategy.
+        :param tick_decimals: The tick decimal precision for the instrument.
+        :param tick_size: The tick size for the instrument.
         :param bar_type: The bar type for the strategy (could also input any number of them)
         :param position_size: The position unit size.
         :param fast_ema: The fast EMA period.
@@ -56,13 +61,10 @@ class EMACrossLimitEntry(TradeStrategy):
                          bar_capacity=bar_capacity,
                          logger=logger)
 
-        self.instrument = instrument
-        self.symbol = instrument.symbol
+        self.symbol = symbol
         self.bar_type = bar_type
         self.position_size = position_size
-        self.tick_decimals = instrument.tick_decimals
-
-        tick_size = instrument.tick_size
+        self.tick_decimals = tick_decimals
         self.entry_buffer_initial = tick_size * 5
         self.entry_buffer = tick_size * 3
         self.SL_buffer = tick_size * 10
