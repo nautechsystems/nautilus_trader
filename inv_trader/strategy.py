@@ -1027,8 +1027,8 @@ class TradeStrategy:
             # No indicators to update with this bar.
             return
 
-        # For each updater matching the given bar type -> update with the bar.
-        [updater.update(bar) for updater in self._indicator_updaters[bar_type]]
+        for updater in self._indicator_updaters[bar_type]:
+            updater.update(bar)
 
     def _update_events(self, event: Event):
         """
