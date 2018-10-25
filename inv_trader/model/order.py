@@ -365,7 +365,6 @@ class Order:
             self._status = OrderStatus.OVER_FILLED
 
 
-# Constants
 # Unix epoch is the UTC time at 00:00:00 on 1/1/1970
 UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc)
 SEPARATOR = '-'
