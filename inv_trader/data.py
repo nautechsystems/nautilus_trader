@@ -18,7 +18,6 @@ from typing import List, Dict, Callable
 
 from inv_trader.core.precondition import Precondition
 from inv_trader.core.logger import Logger, LoggerAdapter
-
 from inv_trader.model.enums import Resolution, QuoteType, Venue
 from inv_trader.model.objects import Symbol, Tick, BarType, Bar, Instrument
 from inv_trader.serialization import InstrumentSerializer
