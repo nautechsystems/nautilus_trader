@@ -11,6 +11,7 @@ import inspect
 
 from typing import Callable
 from pandas.core.series import Series
+from pandas.core.frame import DataFrame
 
 from inv_trader.model.objects import Bar
 
@@ -30,29 +31,35 @@ cdef class BarBuilder:
     Provides a means of building a bar from a given Pandas Series row of the
     correct specification.
     """
+    cdef object _data
     cdef int _volume_multiple
 
-    def __init__(self, volume_multiple: int):
+    def __init__(self, data: DataFrame, volume_multiple: int):
         """
         Initializes a new instance of the BarBuilder class.
 
         :param volume_multiple: The volume multiple for the builder.
         """
+        self._data = data
         self._volume_multiple = volume_multiple
 
-    cpdef object build_bar(self, object row: Series):
+    cpdef object build_bars(self):
         """
-        Build a bar from the given Pandas Series row.
+        Build a bar from the held Pandas DataFrame.
         
-        :param row: The row to build the bar from.
-        :return: The bar.
+        :return: The bars.
         """
-        return Bar(row[0],
-                   row[1],
-                   row[2],
-                   row[3],
-                   row[4] * self._volume_multiple,
-                   row.name)
+        bars = []
+
+        for index, row in self._data.iterrows():
+            bars.append(Bar(row[0],
+                            row[1],
+                            row[2],
+                            row[3],
+                            row[4] * self._volume_multiple,
+                            index))
+
+        return bars
 
 
 cdef class IndicatorUpdater:
