@@ -33,7 +33,7 @@ cdef class Precondition:
             raise ValueError(f"{PRE_FAILED} (the predicate {description} was false).")
 
     @staticmethod
-    def is_none(argument, str param_name):
+    def is_none(object argument, str param_name):
         """
         Check the preconditions argument is None.
 
@@ -45,7 +45,7 @@ cdef class Precondition:
             raise ValueError(f"{PRE_FAILED} (the {param_name} argument was NOT none).")
 
     @staticmethod
-    def not_none(argument, str param_name):
+    def not_none(object argument, str param_name):
         """
         Check the preconditions argument is not None.
 
@@ -75,7 +75,7 @@ cdef class Precondition:
             raise ValueError(f"{PRE_FAILED} (the {param_name} string argument exceeded 1024 chars).")
 
     @staticmethod
-    def equal(argument1, argument2):
+    def equal(object argument1, object argument2):
         """
         Check the preconditions arguments are equal.
 
@@ -107,7 +107,7 @@ cdef class Precondition:
                 f"(the lengths of {collection1_name} and {collection2_name} were not equal)."))
 
     @staticmethod
-    def positive(value: int or float or Decimal, param_name: str):
+    def positive(double value, param_name: str):
         """
         Check the preconditions value is positive (greater than zero.)
 
@@ -119,7 +119,7 @@ cdef class Precondition:
             raise ValueError(f"{PRE_FAILED} (the {param_name} was NOT positive = {value}).")
 
     @staticmethod
-    def not_negative(value: int or float or Decimal, param_name: str):
+    def not_negative(double value, param_name: str):
         """
         Check the preconditions value is positive, and not zero.
 
@@ -132,7 +132,7 @@ cdef class Precondition:
 
     @staticmethod
     def in_range(
-            value: int or float or Decimal,
+            double value,
             str param_name,
             start: int or float or Decimal,
             end: int or float or Decimal):
@@ -150,7 +150,7 @@ cdef class Precondition:
                 f"{PRE_FAILED} (the {param_name} was out of range [{start}-{end}] = {value}).")
 
     @staticmethod
-    def not_empty(argument, str param_name):
+    def not_empty(object argument, str param_name):
         """
         Check the preconditions iterable is not empty.
 
@@ -162,7 +162,7 @@ cdef class Precondition:
             raise ValueError(f"{PRE_FAILED} (the {param_name} was an empty collection).")
 
     @staticmethod
-    def empty(argument, str param_name):
+    def empty(object argument, str param_name):
         """
         Check the preconditions iterable is empty.
 
