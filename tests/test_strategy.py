@@ -28,7 +28,7 @@ from inv_trader.model.identifiers import Label, OrderId, PositionId
 from inv_trader.model.position import Position
 from inv_trader.data import LiveDataClient
 from inv_trader.strategy import TradeStrategy
-from inv_trader.strategy import IndicatorUpdater
+from inv_trader.tools import IndicatorUpdater
 from inv_indicators.average.ema import ExponentialMovingAverage
 from inv_indicators.intrinsic_network import IntrinsicNetwork
 from test_kit.stubs import TestStubs

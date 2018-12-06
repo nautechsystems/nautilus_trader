@@ -8,7 +8,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import abc
-import inspect
 import uuid
 
 from collections import deque
@@ -29,6 +28,7 @@ from inv_trader.model.identifiers import Label, OrderId, PositionId
 from inv_trader.model.objects import Symbol, Tick, BarType, Bar, Instrument
 from inv_trader.model.order import Order, OrderIdGenerator, OrderFactory
 from inv_trader.model.position import Position
+from inv_trader.tools import IndicatorUpdater
 
 Indicator = object
 
@@ -1120,53 +1120,7 @@ class TradeStrategy:
         self._log.debug(f"Continuing timer for {label}...")
 
 
-POINT = 'point'
-PRICE = 'price'
-MID = 'mid'
-OPEN = 'open'
-HIGH = 'high'
-LOW = 'low'
-CLOSE = 'close'
-VOLUME = 'volume'
-TIMESTAMP = 'timestamp'
 
 
-class IndicatorUpdater:
-    """
-    Provides an adapter for updating an indicator with a bar. When instantiated
-    with a live indicator update method, the updater will inspect the method and
-    construct the required parameter list for updates.
-    """
 
-    def __init__(self, update_method: Callable):
-        """
-        Initializes a new instance of the IndicatorUpdater class.
 
-        :param update_method: The indicators update method.
-        """
-        self._update_method = update_method
-        self._update_params = []
-
-        param_map = {
-            POINT: CLOSE,
-            PRICE: CLOSE,
-            MID: CLOSE,
-            OPEN: OPEN,
-            HIGH: HIGH,
-            LOW: LOW,
-            CLOSE: CLOSE,
-            TIMESTAMP: TIMESTAMP
-        }
-
-        for param in inspect.signature(update_method).parameters:
-            self._update_params.append(param_map[param])
-
-    def update(self, bar: Bar):
-        """
-        Passes the needed values from the given bar to the indicator update
-        method as a list of arguments.
-
-        :param bar: The update bar.
-        """
-        args = [bar.__getattribute__(param) for param in self._update_params]
-        self._update_method(*args)
