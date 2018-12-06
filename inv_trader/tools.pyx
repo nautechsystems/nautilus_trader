@@ -10,6 +10,7 @@
 import inspect
 
 from typing import Callable
+from pandas.core.series import Series
 
 from inv_trader.model.objects import Bar
 
@@ -23,6 +24,36 @@ LOW = 'low'
 CLOSE = 'close'
 VOLUME = 'volume'
 TIMESTAMP = 'timestamp'
+
+cdef class BarBuilder:
+    """
+    Provides a means of building a bar from a given Pandas Series row of the
+    correct specification.
+    """
+    cdef int _volume_multiple
+
+    def __init__(self, volume_multiple: int):
+        """
+        Initializes a new instance of the BarBuilder class.
+
+        :param volume_multiple: The volume multiple for the builder.
+        """
+        self._volume_multiple = volume_multiple
+
+    cpdef object build_bar(self, object row: Series):
+        """
+        Build a bar from the given Pandas Series row.
+        
+        :param row: The row to build the bar from.
+        :return: The bar.
+        """
+        return Bar(row[0],
+                   row[1],
+                   row[2],
+                   row[3],
+                   row[4] * self._volume_multiple,
+                   row.name)
+
 
 cdef class IndicatorUpdater:
     """
