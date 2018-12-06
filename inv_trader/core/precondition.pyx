@@ -13,7 +13,7 @@ from decimal import Decimal
 PRE_FAILED = "Precondition Failed"
 
 
-class Precondition:
+cdef class Precondition:
     """
     Provides static methods for the checking of function or method preconditions.
     A precondition is a condition or predicate that must always be true just prior
@@ -21,7 +21,7 @@ class Precondition:
     specification.
     """
     @staticmethod
-    def true(predicate: bool, description: str):
+    def true(bint predicate, str description):
         """
         Check the preconditions predicate is true.
 
@@ -33,7 +33,7 @@ class Precondition:
             raise ValueError(f"{PRE_FAILED} (the predicate {description} was false).")
 
     @staticmethod
-    def is_none(argument, param_name: str):
+    def is_none(argument, str param_name):
         """
         Check the preconditions argument is None.
 
@@ -45,7 +45,7 @@ class Precondition:
             raise ValueError(f"{PRE_FAILED} (the {param_name} argument was NOT none).")
 
     @staticmethod
-    def not_none(argument, param_name: str):
+    def not_none(argument, str param_name):
         """
         Check the preconditions argument is not None.
 
@@ -57,7 +57,7 @@ class Precondition:
             raise ValueError(f"{PRE_FAILED} (the {param_name} argument was none).")
 
     @staticmethod
-    def valid_string(argument: str, param_name: str):
+    def valid_string(str argument, str param_name):
         """
         Check the preconditions string argument is not None, empty or whitespace.
 
@@ -88,10 +88,10 @@ class Precondition:
 
     @staticmethod
     def equal_lengths(
-            collection1,
-            collection2,
-            collection1_name: str,
-            collection2_name: str):
+            object collection1,
+            object collection2,
+            str collection1_name,
+            str collection2_name):
         """
         Check the preconditions collections have equal lengths.
 
@@ -133,7 +133,7 @@ class Precondition:
     @staticmethod
     def in_range(
             value: int or float or Decimal,
-            param_name: str,
+            str param_name,
             start: int or float or Decimal,
             end: int or float or Decimal):
         """
@@ -150,7 +150,7 @@ class Precondition:
                 f"{PRE_FAILED} (the {param_name} was out of range [{start}-{end}] = {value}).")
 
     @staticmethod
-    def not_empty(argument, param_name: str):
+    def not_empty(argument, str param_name):
         """
         Check the preconditions iterable is not empty.
 
@@ -162,7 +162,7 @@ class Precondition:
             raise ValueError(f"{PRE_FAILED} (the {param_name} was an empty collection).")
 
     @staticmethod
-    def empty(argument, param_name: str):
+    def empty(argument, str param_name):
         """
         Check the preconditions iterable is empty.
 
