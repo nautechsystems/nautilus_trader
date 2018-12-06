@@ -14,10 +14,12 @@ from inv_trader.core.precondition import Precondition
 from inv_trader.model.enums import Venue, Resolution, QuoteType, SecurityType, CurrencyCode
 
 
-class Symbol:
+cdef class Symbol:
     """
     Represents the symbol for a financial market tradeable instrument.
     """
+    cdef str _code
+    cdef object _venue
 
     def __init__(self,
                  code: str,
@@ -39,7 +41,7 @@ class Symbol:
         Override the default equality comparison.
         """
         if isinstance(other, self.__class__):
-            return self.__dict__ == other.__dict__
+            return self.code == other.code and self.venue == other.venue
         else:
             return False
 
@@ -59,13 +61,13 @@ class Symbol:
         """
         :return: The str() string representation of the symbol.
         """
-        return f"{self._code}.{self._venue.name}"
+        return str(f"{self._code}.{self._venue.name}")
 
     def __repr__(self) -> str:
         """
         :return: The repr() string representation of the symbol.
         """
-        return f"<{str(self)} object at {id(self)}>"
+        return str(f"<{str(self)} object at {id(self)}>")
 
     @property
     def code(self) -> str:
@@ -82,15 +84,14 @@ class Symbol:
         return self._venue
 
 
-class Price:
+cdef class Price:
     """
     Provides a factory for creating Decimal objects representing price.
     """
 
     @staticmethod
-    def create(
-            price: float,
-            decimals: int) -> Decimal:
+    def create(double price,
+               int decimals):
         """
         Creates and returns a new price from the given values.
         The price is rounded to the given decimal digits.
@@ -107,7 +108,7 @@ class Price:
         return Decimal(f'{round(price, decimals):.{decimals}f}')
 
 
-class Money:
+cdef class Money:
     """
     Provides a factory for creating Decimal objects representing money.
     """
@@ -136,10 +137,14 @@ class Money:
         return Decimal(f'{round(amount, 2):.{2}f}')
 
 
-class Tick:
+cdef class Tick:
     """
     Represents a single tick in a financial market.
     """
+    cdef object _symbol
+    cdef object _bid
+    cdef object _ask
+    cdef object _timestamp
 
     def __init__(self,
                  symbol: Symbol,
@@ -169,7 +174,10 @@ class Tick:
         Override the default equality comparison.
         """
         if isinstance(other, self.__class__):
-            return self.__dict__ == other.__dict__
+            return (self._symbol == other.symbol
+                    and self._bid == other.bid
+                    and self._ask == other.ask
+                    and self._timestamp == other.timestamp)
         else:
             return False
 
@@ -189,14 +197,14 @@ class Tick:
         """
         :return: The str() string representation of the tick.
         """
-        return (f"Tick({self._symbol},{self._bid},{self._ask},"
+        return str(f"Tick({self._symbol},{self._bid},{self._ask},"
                 f"{self._timestamp.isoformat()})")
 
     def __repr__(self) -> str:
         """
         :return: The repr() string representation of the tick.
         """
-        return f"<{str(self)} object at {id(self)}>"
+        return str(f"<{str(self)} object at {id(self)}>")
 
     @property
     def symbol(self) -> Symbol:
@@ -278,14 +286,14 @@ class BarType:
         """
         :return: The str() string representation of the bar type.
         """
-        return (f"{str(self._symbol)}"
+        return str(f"{str(self._symbol)}"
                 f"-{self._period}-{self._resolution.name}[{self._quote_type.name}]")
 
     def __repr__(self) -> str:
         """
         :return: The repr() string representation of the bar type.
         """
-        return f"<{str(self)} object at {id(self)}>"
+        return str(f"<{str(self)} object at {id(self)}>")
 
     @property
     def symbol(self) -> Symbol:
@@ -316,17 +324,23 @@ class BarType:
         return self._quote_type
 
 
-class Bar:
+cdef class Bar:
     """
     Represents a financial market trade bar.
     """
+    cdef object _open
+    cdef object _high
+    cdef object _low
+    cdef object _close
+    cdef int _volume
+    cdef object _timestamp
 
     def __init__(self,
                  open_price: Decimal,
                  high_price: Decimal,
                  low_price: Decimal,
                  close_price: Decimal,
-                 volume: int,
+                 int volume,
                  timestamp: datetime):
         """
         Initializes a new instance of the Bar class.
@@ -361,7 +375,7 @@ class Bar:
         Override the default equality comparison.
         """
         if isinstance(other, self.__class__):
-            return self.__dict__ == other.__dict__
+            return self._open == other.open
         else:
             return False
 
@@ -381,14 +395,14 @@ class Bar:
         """
         :return: The str() string representation of the bar.
         """
-        return (f"Bar({self._open},{self._high},{self._low},{self._close},"
+        return str(f"Bar({self._open},{self._high},{self._low},{self._close},"
                 f"{self._volume},{self._timestamp.isoformat()})")
 
     def __repr__(self) -> str:
         """
         :return: The repr() string representation of the bar.
         """
-        return f"<{str(self)} object at {id(self)}>"
+        return str(f"<{str(self)} object at {id(self)}>")
 
     @property
     def open(self) -> Decimal:
@@ -544,13 +558,13 @@ class Instrument:
         """
         :return: The str() string representation of the instrument.
         """
-        return f"Instrument({self._symbol.code}.{self._symbol.venue})"
+        return str(f"Instrument({self._symbol.code}.{self._symbol.venue})")
 
     def __repr__(self) -> str:
         """
         :return: The repr() string representation of the instrument.
         """
-        return f"<{str(self)} object at {id(self)}>"
+        return str(f"<{str(self)} object at {id(self)}>")
 
     @property
     def symbol(self) -> Symbol:
