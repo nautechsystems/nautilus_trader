@@ -1118,9 +1118,3 @@ class TradeStrategy:
         timer.start()
         self._timers[label] = timer
         self._log.debug(f"Continuing timer for {label}...")
-
-
-
-
-
-
