@@ -375,7 +375,7 @@ cdef class Bar:
         Override the default equality comparison.
         """
         if isinstance(other, self.__class__):
-            return self._open == other.open
+            return self._timestamp == other.timestamp
         else:
             return False
 
@@ -480,19 +480,19 @@ cdef class DataBar:
         :raises ValueError: If the close_price is not positive (> 0).
         :raises ValueError: If the volume is negative.
         """
-        self._open = open_price
-        self._high = high_price
-        self._low = low_price
-        self._close = close_price
-        self._volume = volume
-        self._timestamp = timestamp
+        self.open = open_price
+        self.high = high_price
+        self.low = low_price
+        self.close = close_price
+        self.volume = volume
+        self.timestamp = timestamp
 
     def __eq__(self, other) -> bool:
         """
         Override the default equality comparison.
         """
         if isinstance(other, self.__class__):
-            return self._open == other.open
+            return self.open == other.open
         else:
             return False
 
@@ -506,14 +506,14 @@ cdef class DataBar:
         """"
         Override the default hash implementation.
         """
-        return hash(str(self._timestamp))
+        return hash(str(self.timestamp))
 
     def __str__(self) -> str:
         """
         :return: The str() string representation of the bar.
         """
-        return str(f"Bar({self._open},{self._high},{self._low},{self._close},"
-                f"{self._volume},{self._timestamp.isoformat()})")
+        return str(f"Bar({self.open},{self.high},{self.low},{self.close},"
+                f"{self.volume},{self.timestamp.isoformat()})")
 
     def __repr__(self) -> str:
         """
