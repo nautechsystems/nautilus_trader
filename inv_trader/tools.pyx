@@ -56,8 +56,7 @@ cdef class BarBuilder:
         
         :return: The bars.
         """
-        bars = self._data.apply(self.deconstruct_row, axis=1)
-        return bars
+        return self._data.apply(self.deconstruct_row, axis=1)
 
 
 cdef class IndicatorUpdater:
