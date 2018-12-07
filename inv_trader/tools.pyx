@@ -7,6 +7,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+import cython
 import inspect
 
 from typing import Callable
@@ -42,6 +43,9 @@ cdef class BarBuilder:
         self._data = data
         self._volume_multiple = volume_multiple
 
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    @cython.binding(True)
     cdef object deconstruct_row(self, object row):
         return DataBar(row[1][0],
                        row[1][1],
@@ -50,7 +54,7 @@ cdef class BarBuilder:
                        row[1][4] * self._volume_multiple,
                        row[0])
 
-    cpdef object build_bars(self):
+    cpdef object build_bars_apply(self):
         """
         Build a bar from the held Pandas DataFrame.
         
@@ -58,6 +62,9 @@ cdef class BarBuilder:
         """
         return self._data.apply(self.deconstruct_row, axis=1)
 
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    @cython.binding(True)
     cpdef object build_bars_iter(self):
         """
         Build a bar from the held Pandas DataFrame.
