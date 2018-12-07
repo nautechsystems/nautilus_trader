@@ -43,12 +43,12 @@ cdef class BarBuilder:
         self._volume_multiple = volume_multiple
 
     cdef object deconstruct_row(self, object row):
-        return Bar(row[0],
-                   row[1],
-                   row[2],
-                   row[3],
-                   row[4] * self._volume_multiple,
-                   row.name)
+        return Bar(row[1][0],
+                   row[1][1],
+                   row[1][2],
+                   row[1][3],
+                   row[1][4] * self._volume_multiple,
+                   row[0])
 
     cpdef object build_bars(self):
         """
