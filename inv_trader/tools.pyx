@@ -48,7 +48,7 @@ cdef class BarBuilder:
                    row[2],
                    row[3],
                    row[4] * self._volume_multiple,
-                   row.name)
+                   0)
 
     cpdef object build_bars(self):
         """
@@ -56,7 +56,8 @@ cdef class BarBuilder:
         
         :return: The bars.
         """
-        return self._data.apply(self.deconstruct_row, axis=1)
+        bars = self._data.apply(self.deconstruct_row, axis=1)
+        return bars
 
 
 cdef class IndicatorUpdater:
