@@ -12,7 +12,7 @@ import inspect
 from typing import Callable
 from pandas.core.frame import DataFrame
 
-from inv_trader.model.objects import Bar
+from inv_trader.model.objects import DataBar
 
 
 POINT = 'point'
@@ -43,12 +43,12 @@ cdef class BarBuilder:
         self._volume_multiple = volume_multiple
 
     cdef object deconstruct_row(self, object row):
-        return Bar(row[1][0],
-                   row[1][1],
-                   row[1][2],
-                   row[1][3],
-                   row[1][4] * self._volume_multiple,
-                   row[0])
+        return DataBar(row[1][0],
+                       row[1][1],
+                       row[1][2],
+                       row[1][3],
+                       row[1][4] * self._volume_multiple,
+                       row[0])
 
     cpdef object build_bars(self):
         """
@@ -103,7 +103,7 @@ cdef class IndicatorUpdater:
         for param in inspect.signature(update_method).parameters:
             self._update_params.append(param_map[param])
 
-    cpdef update(self, object bar: Bar):
+    cpdef update(self, object bar):
         """
         Passes the needed values from the given bar to the indicator update
         method as a list of arguments.

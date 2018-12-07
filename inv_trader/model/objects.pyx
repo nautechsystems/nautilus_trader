@@ -447,6 +447,81 @@ cdef class Bar:
         return self._timestamp
 
 
+cdef class DataBar:
+    """
+    Represents a financial market trade bar.
+    """
+    cdef readonly double open
+    cdef readonly double high
+    cdef readonly double low
+    cdef readonly double close
+    cdef readonly double volume
+    cdef readonly object timestamp
+
+    def __init__(self,
+                 double open_price,
+                 double high_price,
+                 double low_price,
+                 double close_price,
+                 double volume,
+                 object timestamp):
+        """
+        Initializes a new instance of the Bar class.
+
+        :param open_price: The bars open price.
+        :param high_price: The bars high price.
+        :param low_price: The bars low price.
+        :param close_price: The bars close price.
+        :param volume: The bars volume.
+        :param timestamp: The bars timestamp (UTC).
+        :raises ValueError: If the open_price is not positive (> 0).
+        :raises ValueError: If the high_price is not positive (> 0).
+        :raises ValueError: If the low_price is not positive (> 0).
+        :raises ValueError: If the close_price is not positive (> 0).
+        :raises ValueError: If the volume is negative.
+        """
+        self._open = open_price
+        self._high = high_price
+        self._low = low_price
+        self._close = close_price
+        self._volume = volume
+        self._timestamp = timestamp
+
+    def __eq__(self, other) -> bool:
+        """
+        Override the default equality comparison.
+        """
+        if isinstance(other, self.__class__):
+            return self._open == other.open
+        else:
+            return False
+
+    def __ne__(self, other) -> bool:
+        """
+        Override the default not-equals comparison.
+        """
+        return not self.__eq__(other)
+
+    def __hash__(self) -> int:
+        """"
+        Override the default hash implementation.
+        """
+        return hash(str(self._timestamp))
+
+    def __str__(self) -> str:
+        """
+        :return: The str() string representation of the bar.
+        """
+        return str(f"Bar({self._open},{self._high},{self._low},{self._close},"
+                f"{self._volume},{self._timestamp.isoformat()})")
+
+    def __repr__(self) -> str:
+        """
+        :return: The repr() string representation of the bar.
+        """
+        return str(f"<{str(self)} object at {id(self)}>")
+
+
 class Instrument:
     """
     Represents a tradeable financial market instrument.
