@@ -48,7 +48,7 @@ cdef class BarBuilder:
                    row[2],
                    row[3],
                    row[4] * self._volume_multiple,
-                   0)
+                   row.name)
 
     cpdef object build_bars(self):
         """
