@@ -10,7 +10,6 @@
 import inspect
 
 from typing import Callable
-from pandas.core.series import Series
 from pandas.core.frame import DataFrame
 
 from inv_trader.model.objects import Bar
@@ -43,23 +42,21 @@ cdef class BarBuilder:
         self._data = data
         self._volume_multiple = volume_multiple
 
+    cdef object deconstruct_row(self, object row):
+        return Bar(row[0],
+                   row[1],
+                   row[2],
+                   row[3],
+                   row[4] * self._volume_multiple,
+                   row.name)
+
     cpdef object build_bars(self):
         """
         Build a bar from the held Pandas DataFrame.
         
         :return: The bars.
         """
-        bars = []
-
-        for index, row in self._data.iterrows():
-            bars.append(Bar(row[0],
-                            row[1],
-                            row[2],
-                            row[3],
-                            row[4] * self._volume_multiple,
-                            index))
-
-        return bars
+        return self._data.apply(self.deconstruct_row, axis=1)
 
 
 cdef class IndicatorUpdater:
