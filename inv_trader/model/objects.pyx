@@ -458,7 +458,7 @@ cdef class DataBar:
     cdef readonly double volume
     cdef readonly object timestamp
 
-    def __init__(self,
+    def __cinit__(self,
                  double open_price,
                  double high_price,
                  double low_price,
