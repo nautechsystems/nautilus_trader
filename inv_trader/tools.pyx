@@ -58,6 +58,18 @@ cdef class BarBuilder:
         """
         return self._data.apply(self.deconstruct_row, axis=1)
 
+    cpdef object build_bars_iter(self):
+        """
+        Build a bar from the held Pandas DataFrame.
+        
+        :return: The bars.
+        """
+        bars = []
+        for row in self._data.iterrows():
+            bars.append(self.deconstruct_row(row))
+
+        return bars
+
 
 cdef class IndicatorUpdater:
     """
