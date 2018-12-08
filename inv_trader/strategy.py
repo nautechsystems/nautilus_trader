@@ -1028,7 +1028,7 @@ class TradeStrategy:
             return
 
         for updater in self._indicator_updaters[bar_type]:
-            updater.update(bar)
+            updater.update_bar(bar)
 
     def _update_events(self, event: Event):
         """

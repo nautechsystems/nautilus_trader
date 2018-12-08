@@ -1022,7 +1022,7 @@ class IndicatorUpdaterTests(unittest.TestCase):
             datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc))
 
         # Act
-        updater.update(bar)
+        updater.update_bar(bar)
         result = ema.value
 
         # Assert
@@ -1041,7 +1041,7 @@ class IndicatorUpdaterTests(unittest.TestCase):
             datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc))
 
         # Act
-        updater.update(bar)
+        updater.update_bar(bar)
         result = intrinsic.state
 
         # Assert

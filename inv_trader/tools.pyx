@@ -10,9 +10,8 @@
 import cython
 import inspect
 
-from typing import Callable
-from pandas.core.frame import DataFrame
-
+from typing import Callable, List
+from pandas.core.frame import Series, DataFrame
 from inv_trader.model.objects import DataBar
 
 
@@ -28,8 +27,8 @@ TIMESTAMP = 'timestamp'
 
 cdef class BarBuilder:
     """
-    Provides a means of building a bar from a given Pandas Series row of the
-    correct specification.
+    Provides a means of building lists of bars from a given Pandas DataFrame of
+    the correct specification.
     """
     cdef object _data
     cdef int _volume_multiple
@@ -84,17 +83,31 @@ cdef class IndicatorUpdater:
     with a live indicator update method, the updater will inspect the method and
     construct the required parameter list for updates.
     """
-    cdef object _update_method
-    cdef object _update_params
+    cdef object _indicator
+    cdef object _input_method
+    cdef list _input_params
+    cdef list _outputs
 
-    def __init__(self, update_method: Callable):
+    cdef readonly list _output_values
+
+    def __init__(self,
+                 indicator: object,
+                 input_method: Callable or None=None,
+                 outputs: List[str] or None=None):
         """
         Initializes a new instance of the IndicatorUpdater class.
 
-        :param update_method: The indicators update method.
+        :param indicator: The indicator for updating.
+        :param input_method: The indicators input method.
+        :param outputs: The list of the indicators output properties.
         """
-        self._update_method = update_method
-        self._update_params = []
+        self._indicator = indicator
+        if input_method is None:
+            self._input_method = indicator.input
+        else:
+            self._input_method = input_method
+
+        self._input_params = []
 
         param_map = {
             POINT: CLOSE,
@@ -107,15 +120,38 @@ cdef class IndicatorUpdater:
             TIMESTAMP: TIMESTAMP
         }
 
-        for param in inspect.signature(update_method).parameters:
-            self._update_params.append(param_map[param])
+        for param in inspect.signature(self._input_method).parameters:
+            self._input_params.append(param_map[param])
 
-    cpdef update(self, object bar):
+        if outputs is None or len(outputs) == 0:
+            self._outputs = ['value']
+        else:
+            self._outputs = outputs
+
+        self._output_values = self._get_outputs()
+
+    cpdef update_bar(self, object bar):
         """
-        Passes the needed values from the given bar to the indicator update
-        method as a list of arguments.
+        Update the indicator with the given Bar object.
 
         :param bar: The update bar.
         """
-        args = [bar.__getattribute__(param) for param in self._update_params]
-        self._update_method(*args)
+        self._input_method(*[bar.__getattribute__(param) for param in self._input_params])
+        self._output_values = self._get_outputs()
+
+    cpdef update_row(self, object row: Series):
+        """
+        Update the indicator with the given Pandas Series row.
+        
+        :param row: The update row.
+        """
+        self._input_method(*row[param] for param in self._input_params)
+        self._output_values = self._get_outputs()
+
+    cdef object _get_outputs(self):
+        """
+        Create a list of the current indicator outputs.
+        
+        :return: The list of indicator outputs.
+        """
+        return [self._indicator.__getattribute__(output) for output in self._outputs]
