@@ -145,7 +145,7 @@ cdef class IndicatorUpdater:
         
         :param row: The update row.
         """
-        self._input_method(*row[param] for param in self._input_params)
+        self._input_method(*[row[param] for param in self._input_params])
         self._output_values = self._get_outputs()
 
     cdef object _get_outputs(self):
