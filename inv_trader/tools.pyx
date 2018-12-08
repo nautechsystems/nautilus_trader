@@ -126,8 +126,6 @@ cdef class IndicatorUpdater:
         else:
             self._outputs = outputs
 
-        self._output_values = self.get_outputs()
-
     cpdef update_bar(self, object bar):
         """
         Update the indicator with the given Bar object.
