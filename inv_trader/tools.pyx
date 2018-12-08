@@ -103,7 +103,7 @@ cdef class IndicatorUpdater:
         """
         self._indicator = indicator
         if input_method is None:
-            self._input_method = indicator.input
+            self._input_method = indicator.update
         else:
             self._input_method = input_method
 
