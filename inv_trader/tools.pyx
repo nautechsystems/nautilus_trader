@@ -88,8 +88,6 @@ cdef class IndicatorUpdater:
     cdef list _input_params
     cdef list _outputs
 
-    cdef readonly list _output_values
-
     def __init__(self,
                  indicator: object,
                  input_method: Callable or None=None,
@@ -128,7 +126,7 @@ cdef class IndicatorUpdater:
         else:
             self._outputs = outputs
 
-        self._output_values = self._get_outputs()
+        self._output_values = self.get_outputs()
 
     cpdef update_bar(self, object bar):
         """
@@ -137,7 +135,6 @@ cdef class IndicatorUpdater:
         :param bar: The update bar.
         """
         self._input_method(*[bar.__getattribute__(param) for param in self._input_params])
-        self._output_values = self._get_outputs()
 
     cpdef update_row(self, object row: Series):
         """
@@ -146,9 +143,8 @@ cdef class IndicatorUpdater:
         :param row: The update row.
         """
         self._input_method(*[row[param] for param in self._input_params])
-        self._output_values = self._get_outputs()
 
-    cdef object _get_outputs(self):
+    cpdef list get_outputs(self):
         """
         Create a list of the current indicator outputs.
         
