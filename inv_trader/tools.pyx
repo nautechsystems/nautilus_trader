@@ -47,7 +47,7 @@ cdef class BarBuilder:
         self._data = data
         self._volume_multiple = volume_multiple
 
-    cpdef list build_bars(self):
+    def build_bars(self):
         """
         Build a list of bars from the held Pandas DataFrame.
         
@@ -55,7 +55,7 @@ cdef class BarBuilder:
         """
         return list(map(self._build_bar, self._data.index, self._data.values))
 
-    cdef object _build_bar(self, object timestamp, object values: ndarray):
+    def _build_bar(self, timestamp, values: ndarray):
         """
         Build a bar from the given index and values. The function expects the
         values to be an ndarray with 5 elements [open, high, low, close, volume].
