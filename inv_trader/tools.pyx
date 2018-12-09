@@ -12,7 +12,9 @@ import inspect
 
 from numpy import ndarray
 from typing import Callable, List
-from pandas.core.frame import Series, DataFrame
+from pandas.core.frame import DataFrame
+
+from inv_trader.core.precondition import Precondition
 from inv_trader.model.objects import DataBar
 
 
@@ -34,48 +36,40 @@ cdef class BarBuilder:
     cdef object _data
     cdef int _volume_multiple
 
-    def __init__(self, data: DataFrame, volume_multiple: int):
+    def __init__(self, data: DataFrame, volume_multiple: int=1):
         """
         Initializes a new instance of the BarBuilder class.
 
-        :param volume_multiple: The volume multiple for the builder.
+        :param volume_multiple: The volume multiple for the builder (> 0).
         """
+        Precondition.positive(volume_multiple)
+
         self._data = data
         self._volume_multiple = volume_multiple
 
-    @cython.boundscheck(False)
-    @cython.wraparound(False)
-    @cython.binding(True)
-    cdef object deconstruct_row(self, object row):
-        return DataBar(row[1][0],
-                       row[1][1],
-                       row[1][2],
-                       row[1][3],
-                       row[1][4] * self._volume_multiple,
-                       row[0])
-
-    cpdef object build_bars_apply(self):
+    cpdef list build_bars(self):
         """
-        Build a bar from the held Pandas DataFrame.
+        Build a list of bars from the held Pandas DataFrame.
         
         :return: The bars.
         """
-        return self._data.apply(self.deconstruct_row, axis=1)
+        return list(map(self._build_bar, self._data.index, self._data.values))
 
-    @cython.boundscheck(False)
-    @cython.wraparound(False)
-    @cython.binding(True)
-    cpdef object build_bars_iter(self):
+    cdef object _build_bar(self, object timestamp, object values: ndarray):
         """
-        Build a bar from the held Pandas DataFrame.
+        Build a bar from the given index and values. The function expects the
+        values to be an ndarray with 5 elements [open, high, low, close, volume].
         
-        :return: The bars.
+        :param timestamp: The timestamp for the bar.
+        :param values: The values for the bar. 
+        :return: 
         """
-        bars = []
-        for row in self._data.iterrows():
-            bars.append(self.deconstruct_row(row))
-
-        return bars
+        return DataBar(values[0],
+                       values[1],
+                       values[2],
+                       values[3],
+                       values[4] * self._volume_multiple,
+                       timestamp)
 
 
 cdef class IndicatorUpdater:
@@ -141,40 +135,6 @@ cdef class IndicatorUpdater:
         :param bar: The update bar.
         """
         self._input_method(*[bar.__getattribute__(param) for param in self._input_params])
-
-    @cython.boundscheck(False)
-    @cython.wraparound(False)
-    @cython.binding(True)
-    cpdef update_row(self, object row: Series):
-        """
-        Update the indicator with the given Pandas Series row.
-        
-        :param row: The row for indicator update.
-        """
-        self._input_method(*[row[param] for param in self._input_params])
-
-    @cython.boundscheck(False)
-    @cython.wraparound(False)
-    @cython.binding(True)
-    cpdef update_dataframe(self, object data: DataFrame):
-        """
-        Update the indicator with the given Pandas DataFrame row.
-        
-        :param data: The dataframe for indicator update.
-        """
-        rows = data.shape[0]
-        index = data.index
-        values = data.values
-
-        for i in range(rows):
-            self.update_bar(DataBar(values[i][0],
-                                    values[i][1],
-                                    values[i][2],
-                                    values[i][3],
-                                    values[i][4],
-                                    index[i]))
-
-        self.output.append(self.get_outputs)
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
