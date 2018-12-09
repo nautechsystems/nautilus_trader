@@ -10,6 +10,7 @@
 import cython
 import inspect
 
+from numpy import ndarray
 from typing import Callable, List
 from pandas.core.frame import Series, DataFrame
 from inv_trader.model.objects import DataBar
@@ -162,14 +163,16 @@ cdef class IndicatorUpdater:
         :param data: The dataframe for indicator update.
         """
         rows = data.shape[0]
+        index = data.index
+        values = data.values
 
         for i in range(rows):
-            self.update_bar(DataBar(data.values[i][0],
-                                    data.values[i][1],
-                                    data.values[i][2],
-                                    data.values[i][3],
-                                    data.values[i][4],
-                                    data.iloc[i].name))
+            self.update_bar(DataBar(values[i][0],
+                                    values[i][1],
+                                    values[i][2],
+                                    values[i][3],
+                                    values[i][4],
+                                    index[i]))
 
         self.output.append(self.get_outputs)
 
