@@ -81,6 +81,7 @@ cdef class IndicatorUpdater:
     cdef object _indicator
     cdef object _input_method
     cdef list _input_params
+    cdef bint _save_outputs
     cdef list _outputs
 
     cdef readonly list output
@@ -88,13 +89,16 @@ cdef class IndicatorUpdater:
     def __init__(self,
                  indicator: object,
                  input_method: Callable or None=None,
-                 outputs: List[str] or None=None):
+                 outputs: List[str] or None=None,
+                 save_output: bool=True):
         """
         Initializes a new instance of the IndicatorUpdater class.
 
         :param indicator: The indicator for updating.
         :param input_method: The indicators input method.
         :param outputs: The list of the indicators output properties.
+        :param save_output: A boolean flag indicating whether the updater should
+        save the indicators output on each update iteration.
         """
         self._indicator = indicator
         if input_method is None:
@@ -123,6 +127,7 @@ cdef class IndicatorUpdater:
         else:
             self._outputs = outputs
 
+        self._save_output = save_output
         self.output = []
 
     @cython.boundscheck(False)
@@ -135,6 +140,9 @@ cdef class IndicatorUpdater:
         :param bar: The update bar.
         """
         self._input_method(*[bar.__getattribute__(param) for param in self._input_params])
+
+        if self._save_outputs:
+            self.output.append(self.get_outputs)
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
