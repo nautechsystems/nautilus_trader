@@ -126,6 +126,9 @@ cdef class IndicatorUpdater:
         else:
             self._outputs = outputs
 
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    @cython.binding(True)
     cpdef update_bar(self, object bar):
         """
         Update the indicator with the given Bar object.
@@ -134,6 +137,9 @@ cdef class IndicatorUpdater:
         """
         self._input_method(*[bar.__getattribute__(param) for param in self._input_params])
 
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    @cython.binding(True)
     cpdef update_row(self, object row: Series):
         """
         Update the indicator with the given Pandas Series row.
@@ -142,6 +148,9 @@ cdef class IndicatorUpdater:
         """
         self._input_method(*[row[param] for param in self._input_params])
 
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    @cython.binding(True)
     cpdef list get_outputs(self):
         """
         Create a list of the current indicator outputs.
