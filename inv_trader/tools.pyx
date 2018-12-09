@@ -98,7 +98,7 @@ cdef class IndicatorUpdater:
     cdef object _indicator
     cdef object _input_method
     cdef list _input_params
-    cdef bint _save_outputs
+    cdef bint _save_output
     cdef list _outputs
 
     cdef readonly list output
@@ -158,7 +158,7 @@ cdef class IndicatorUpdater:
         """
         self._input_method(*[bar.__getattribute__(param) for param in self._input_params])
 
-        if self._save_outputs:
+        if self._save_output:
             self.output.append(self.get_outputs)
 
     @cython.boundscheck(False)
