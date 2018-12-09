@@ -159,7 +159,7 @@ cdef class IndicatorUpdater:
         self._input_method(*[bar.__getattribute__(param) for param in self._input_params])
 
         if self._save_output:
-            self.output.append(self.get_outputs)
+            self.output.append(self.get_outputs())
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
