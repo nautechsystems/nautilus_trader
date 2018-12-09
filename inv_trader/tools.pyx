@@ -88,6 +88,8 @@ cdef class IndicatorUpdater:
     cdef list _input_params
     cdef list _outputs
 
+    cdef readonly list output
+
     def __init__(self,
                  indicator: object,
                  input_method: Callable or None=None,
@@ -126,6 +128,8 @@ cdef class IndicatorUpdater:
         else:
             self._outputs = outputs
 
+        self.output = []
+
     @cython.boundscheck(False)
     @cython.wraparound(False)
     @cython.binding(True)
@@ -144,9 +148,25 @@ cdef class IndicatorUpdater:
         """
         Update the indicator with the given Pandas Series row.
         
-        :param row: The update row.
+        :param row: The row for indicator update.
         """
         self._input_method(*[row[param] for param in self._input_params])
+
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    @cython.binding(True)
+    cpdef update_dataframe(self, object data: DataFrame):
+        """
+        Update the indicator with the given Pandas DataFrame row.
+        
+        :param data: The dataframe for indicator update.
+        """
+        rows = data.shape[0]
+
+        for i in range(rows):
+            self.update_bar(self.deconstruct_row(data[i]))
+
+        self.output.append(self.get_outputs)
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
@@ -158,3 +178,14 @@ cdef class IndicatorUpdater:
         :return: The list of indicator outputs.
         """
         return [self._indicator.__getattribute__(output) for output in self._outputs]
+
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    @cython.binding(True)
+    cdef object deconstruct_row(self, object row):
+        return DataBar(row[1][0],
+                       row[1][1],
+                       row[1][2],
+                       row[1][3],
+                       row[1][4],
+                       row[0])
