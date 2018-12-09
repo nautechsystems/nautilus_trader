@@ -56,6 +56,14 @@ cdef class BarBuilder:
         """
         return list(map(self._build_bar, self._data.index, self._data.values))
 
+    def build_bars2(self):
+        """
+        Build a list of bars from the held Pandas DataFrame.
+
+        :return: The bars.
+        """
+        return list(map(self._build_bar2, self._data.index, self._data.values))
+
     def _build_bar(self, timestamp, values: ndarray):
         """
         Build a bar from the given index and values. The function expects the
