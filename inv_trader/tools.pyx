@@ -164,11 +164,11 @@ cdef class IndicatorUpdater:
         rows = data.shape[0]
 
         for i in range(rows):
-            self.update_bar(DataBar(data.iloc[i][0],
-                                    data.iloc[i][1],
-                                    data.iloc[i][2],
-                                    data.iloc[i][3],
-                                    data.iloc[i][4],
+            self.update_bar(DataBar(data.values[i][0],
+                                    data.values[i][1],
+                                    data.values[i][2],
+                                    data.values[i][3],
+                                    data.values[i][4],
                                     data.iloc[i].name))
 
         self.output.append(self.get_outputs)
