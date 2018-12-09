@@ -42,7 +42,7 @@ cdef class BarBuilder:
 
         :param volume_multiple: The volume multiple for the builder (> 0).
         """
-        Precondition.positive(volume_multiple)
+        Precondition.positive(volume_multiple, 'volume_multiple')
 
         self._data = data
         self._volume_multiple = volume_multiple
