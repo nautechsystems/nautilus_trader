@@ -47,23 +47,23 @@ cdef class BarBuilder:
         self._data = data
         self._volume_multiple = volume_multiple
 
-    def build_bars(self):
+    def build_data_bars(self):
         """
         Build a list of bars from the held Pandas DataFrame.
         
         :return: The bars.
         """
-        return list(map(self._build_bar, self._data.index, self._data.values))
+        return list(map(self._build_data_bar, self._data.index, self._data.values))
 
-    def build_bars2(self):
+    def build_bars(self):
         """
         Build a list of bars from the held Pandas DataFrame.
 
         :return: The bars.
         """
-        return list(map(self._build_bar2, self._data.index, self._data.values))
+        return list(map(self._build_bar, self._data.index, self._data.values))
 
-    def _build_bar(self, timestamp, values: ndarray):
+    def _build_data_bar(self, timestamp, values: ndarray):
         """
         Build a bar from the given index and values. The function expects the
         values to be an ndarray with 5 elements [open, high, low, close, volume].
@@ -79,7 +79,7 @@ cdef class BarBuilder:
                        values[4] * self._volume_multiple,
                        timestamp)
 
-    def _build_bar2(self, timestamp, values: ndarray):
+    def _build_bar(self, timestamp, values: ndarray):
         """
         Build a bar from the given index and values. The function expects the
         values to be an ndarray with 5 elements [open, high, low, close, volume].
@@ -108,21 +108,16 @@ cdef class IndicatorUpdater:
     cdef bint _save_output
     cdef list _outputs
 
-    cdef readonly list output
-
     def __init__(self,
                  indicator: object,
                  input_method: Callable or None=None,
-                 outputs: List[str] or None=None,
-                 save_output: bool=True):
+                 outputs: List[str] or None=None):
         """
         Initializes a new instance of the IndicatorUpdater class.
 
         :param indicator: The indicator for updating.
         :param input_method: The indicators input method.
         :param outputs: The list of the indicators output properties.
-        :param save_output: A boolean flag indicating whether the updater should
-        save the indicators output on each update iteration.
         """
         self._indicator = indicator
         if input_method is None:
@@ -151,9 +146,6 @@ cdef class IndicatorUpdater:
         else:
             self._outputs = outputs
 
-        self._save_output = save_output
-        self.output = []
-
     @cython.boundscheck(False)
     @cython.wraparound(False)
     @cython.binding(True)
@@ -164,9 +156,6 @@ cdef class IndicatorUpdater:
         :param bar: The update bar.
         """
         self._input_method(*[bar.__getattribute__(param) for param in self._input_params])
-
-        if self._save_output:
-            self.output.append(self.get_outputs())
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
