@@ -105,7 +105,6 @@ cdef class IndicatorUpdater:
     cdef object _indicator
     cdef object _input_method
     cdef list _input_params
-    cdef bint _save_output
     cdef list _outputs
 
     def __init__(self,
@@ -149,7 +148,7 @@ cdef class IndicatorUpdater:
     @cython.boundscheck(False)
     @cython.wraparound(False)
     @cython.binding(True)
-    cpdef update_bar(self, object bar):
+    cpdef void update_bar(self, object bar):
         """
         Update the indicator with the given Bar object.
 
@@ -160,10 +159,30 @@ cdef class IndicatorUpdater:
     @cython.boundscheck(False)
     @cython.wraparound(False)
     @cython.binding(True)
-    cpdef list get_outputs(self):
+    cdef list get_values(self):
         """
         Create a list of the current indicator outputs.
         
         :return: The list of indicator outputs.
         """
-        return [self._indicator.__getattribute__(output) for output in self._outputs]
+        return [(output, self._indicator.__getattribute__(output)) for output in self._outputs]
+
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    @cython.binding(True)
+    cpdef object build_features(self, bars):
+        """
+        Create a dictionary of output features from the given bars data.
+        
+        :return: The list of indicator output feature.
+        """
+        features = {}
+
+        for bar in bars:
+            self.update_bar(bar)
+            values = self.get_values()
+
+            for value in values:
+                features[value[0]] = value[1]
+
+        return features
