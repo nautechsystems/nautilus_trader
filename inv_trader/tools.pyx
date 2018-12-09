@@ -164,7 +164,12 @@ cdef class IndicatorUpdater:
         rows = data.shape[0]
 
         for i in range(rows):
-            self.update_bar(self.deconstruct_row(data[i]))
+            self.update_bar(DataBar(data.iloc[i][1][0],
+                                    data.iloc[i][1][1],
+                                    data.iloc[i][1][2],
+                                    data.iloc[i][1][3],
+                                    data.iloc[i][1][4],
+                                    data.iloc[i][0]))
 
         self.output.append(self.get_outputs)
 
@@ -178,14 +183,3 @@ cdef class IndicatorUpdater:
         :return: The list of indicator outputs.
         """
         return [self._indicator.__getattribute__(output) for output in self._outputs]
-
-    @cython.boundscheck(False)
-    @cython.wraparound(False)
-    @cython.binding(True)
-    cdef object deconstruct_row(self, object row):
-        return DataBar(row[1][0],
-                       row[1][1],
-                       row[1][2],
-                       row[1][3],
-                       row[1][4],
-                       row[0])
