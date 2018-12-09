@@ -177,6 +177,8 @@ cdef class IndicatorUpdater:
         :return: The list of indicator output feature.
         """
         features = {}
+        for output in self._outputs:
+            features[output] = []
 
         for bar in bars:
             self.update_bar(bar)
