@@ -183,6 +183,6 @@ cdef class IndicatorUpdater:
             values = self.get_values()
 
             for value in values:
-                features[value[0]] = value[1]
+                features[value[0]].append(value[1])
 
         return features
