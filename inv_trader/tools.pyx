@@ -10,12 +10,13 @@
 import cython
 import inspect
 
+from decimal import Decimal
 from numpy import ndarray
 from typing import Callable, List
 from pandas.core.frame import DataFrame
 
 from inv_trader.core.precondition import Precondition
-from inv_trader.model.objects import DataBar
+from inv_trader.model.objects import Price, Bar, DataBar
 
 
 POINT = 'point'
@@ -70,6 +71,22 @@ cdef class BarBuilder:
                        values[3],
                        values[4] * self._volume_multiple,
                        timestamp)
+
+    def _build_bar2(self, timestamp, values: ndarray):
+        """
+        Build a bar from the given index and values. The function expects the
+        values to be an ndarray with 5 elements [open, high, low, close, volume].
+
+        :param timestamp: The timestamp for the bar.
+        :param values: The values for the bar.
+        :return:
+        """
+        return Bar(Price(values[0], 5),
+                   Price(values[1], 5),
+                   Price(values[2], 5),
+                   Price(values[3], 5),
+                   int(values[4] * self._volume_multiple),
+                   timestamp)
 
 
 cdef class IndicatorUpdater:
