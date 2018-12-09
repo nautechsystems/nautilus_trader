@@ -10,7 +10,6 @@
 import cython
 import inspect
 
-from decimal import Decimal
 from numpy import ndarray
 from typing import Callable, List
 from pandas.core.frame import DataFrame
@@ -89,10 +88,10 @@ cdef class BarBuilder:
         :param values: The values for the bar.
         :return:
         """
-        return Bar(Price(values[0], 5),
-                   Price(values[1], 5),
-                   Price(values[2], 5),
-                   Price(values[3], 5),
+        return Bar(Price.create(values[0], 5),
+                   Price.create(values[1], 5),
+                   Price.create(values[2], 5),
+                   Price.create(values[3], 5),
                    int(values[4] * self._volume_multiple),
                    timestamp)
 
