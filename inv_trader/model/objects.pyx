@@ -335,7 +335,7 @@ cdef class Bar:
     cdef int _volume
     cdef object _timestamp
 
-    def __init__(self,
+    def c__init__(self,
                  open_price: Decimal,
                  high_price: Decimal,
                  low_price: Decimal,

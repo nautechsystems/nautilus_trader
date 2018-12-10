@@ -47,25 +47,25 @@ cdef class BarBuilder:
         self._data = data
         self._volume_multiple = volume_multiple
 
-    def build_data_bars(self):
+    def build_data_bars(self) -> List[DataBar]:
         """
-        Build a list of bars from the held Pandas DataFrame.
+        Build a list of DataBars from the held Pandas DataFrame.
         
-        :return: The bars.
+        :return: The list of bars.
         """
         return list(map(self._build_data_bar, self._data.index, self._data.values))
 
-    def build_bars(self):
+    def build_bars(self) -> List[Bar]:
         """
-        Build a list of bars from the held Pandas DataFrame.
+        Build a list of Bars from the held Pandas DataFrame.
 
-        :return: The bars.
+        :return: The list of bars.
         """
         return list(map(self._build_bar, self._data.index, self._data.values))
 
-    def _build_data_bar(self, timestamp, values: ndarray):
+    def _build_data_bar(self, timestamp, values: ndarray) -> DataBar:
         """
-        Build a bar from the given index and values. The function expects the
+        Build a DataBar from the given index and values. The function expects the
         values to be an ndarray with 5 elements [open, high, low, close, volume].
         
         :param timestamp: The timestamp for the bar.
@@ -79,9 +79,9 @@ cdef class BarBuilder:
                        values[4] * self._volume_multiple,
                        timestamp)
 
-    def _build_bar(self, timestamp, values: ndarray):
+    def _build_bar(self, timestamp, values: ndarray) -> Bar:
         """
-        Build a bar from the given index and values. The function expects the
+        Build a Bar from the given index and values. The function expects the
         values to be an ndarray with 5 elements [open, high, low, close, volume].
 
         :param timestamp: The timestamp for the bar.
