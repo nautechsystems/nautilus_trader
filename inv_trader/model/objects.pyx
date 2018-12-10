@@ -207,7 +207,7 @@ cdef class Tick:
         return str(f"<{str(self)} object at {id(self)}>")
 
     @property
-    def symbol(self) -> Symbol:
+    def symbol(self):
         """
         :return: The ticks symbol.
         """
@@ -335,7 +335,7 @@ cdef class Bar:
     cdef int _volume
     cdef object _timestamp
 
-    def c__init__(self,
+    def __init__(self,
                  open_price: Decimal,
                  high_price: Decimal,
                  low_price: Decimal,
@@ -458,7 +458,7 @@ cdef class DataBar:
     cdef readonly double volume
     cdef readonly object timestamp
 
-    def __cinit__(self,
+    def __init__(self,
                  double open_price,
                  double high_price,
                  double low_price,
