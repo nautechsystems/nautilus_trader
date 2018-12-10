@@ -619,7 +619,7 @@ class TradeStrategy:
 
         if bar_type not in self._indicator_updaters:
             self._indicator_updaters[bar_type] = []  # type: List[IndicatorUpdater]
-        self._indicator_updaters[bar_type].append(IndicatorUpdater(update_method))
+        self._indicator_updaters[bar_type].append(IndicatorUpdater(indicator, update_method))
 
         self._indicator_index[label] = indicator
 
