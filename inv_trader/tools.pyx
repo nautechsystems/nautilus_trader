@@ -35,14 +35,21 @@ cdef class BarBuilder:
     the correct specification.
     """
     cdef object _data
+    cdef int _decimal_precision
     cdef int _volume_multiple
 
-    def __init__(self, data: DataFrame, volume_multiple: int=1):
+    def __init__(self,
+                 data: DataFrame,
+                 decimal_precision: int=5,
+                 volume_multiple: int=1):
         """
         Initializes a new instance of the BarBuilder class.
 
+        :param data: The DataFrame containing the market data.
+        :param decimal_precision: The decimal precision for bar prices.
         :param volume_multiple: The volume multiple for the builder (> 0).
         """
+        Precondition.not_negative(decimal_precision, 'decimal_precision')
         Precondition.positive(volume_multiple, 'volume_multiple')
 
         self._data = data
@@ -55,33 +62,30 @@ cdef class BarBuilder:
         :return: The list of bars.
         """
         return list(map(self._build_data_bar,
-                        self._data.index,
-                        self._data.values))
+                        self._data.values,
+                        self._data.index))
 
-    def build_bars(self, decimal_precision: int) -> List[Bar]:
+    def build_bars(self) -> List[Bar]:
         """
         Build a list of Bars from the held Pandas DataFrame.
 
         :return: The list of bars.
         """
-        Precondition.not_negative(decimal_precision, 'decimal_precision')
-
         return list(map(self._build_bar,
-                        self._data.index,
                         self._data.values,
-                        decimal_precision))
+                        self._data.index))
 
     def _build_data_bar(
             self,
-            timestamp: datetime,
-            values: ndarray) -> DataBar:
+            values: ndarray,
+            timestamp: datetime) -> DataBar:
         """
         Build a DataBar from the given index and values. The function expects the
         values to be an ndarray with 5 elements [open, high, low, close, volume].
-        
+
+        :param values: The values for the bar.
         :param timestamp: The timestamp for the bar.
-        :param values: The values for the bar. 
-        :return: 
+        :return: The built bar.
         """
         return DataBar(values[0],
                        values[1],
@@ -92,21 +96,20 @@ cdef class BarBuilder:
 
     def _build_bar(
             self,
-            timestamp: datetime,
             values: ndarray,
-            decimal_precision: int) -> Bar:
+            timestamp: datetime) -> Bar:
         """
         Build a Bar from the given index and values. The function expects the
         values to be an ndarray with 5 elements [open, high, low, close, volume].
 
-        :param timestamp: The timestamp for the bar.
         :param values: The values for the bar.
-        :return:
+        :param timestamp: The timestamp for the bar.
+        :return: The built bar.
         """
-        return Bar(Price.create(values[0], decimal_precision),
-                   Price.create(values[1], decimal_precision),
-                   Price.create(values[2], decimal_precision),
-                   Price.create(values[3], decimal_precision),
+        return Bar(Price.create(values[0], self._decimal_precision),
+                   Price.create(values[1], self._decimal_precision),
+                   Price.create(values[2], self._decimal_precision),
+                   Price.create(values[3], self._decimal_precision),
                    int(values[4] * self._volume_multiple),
                    timestamp)
 
