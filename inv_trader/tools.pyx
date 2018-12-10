@@ -47,7 +47,7 @@ cdef class BarBuilder:
         self._data = data
         self._volume_multiple = volume_multiple
 
-    cpdef list build_data_bars(self):
+    def build_data_bars(self) -> List[DataBar]:
         """
         Build a list of DataBars from the held Pandas DataFrame.
         
@@ -55,7 +55,7 @@ cdef class BarBuilder:
         """
         return list(map(self._build_data_bar, self._data.index, self._data.values))
 
-    cpdef list build_bars(self):
+    def build_bars(self) -> List[Bar]:
         """
         Build a list of Bars from the held Pandas DataFrame.
 
