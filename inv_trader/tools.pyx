@@ -63,7 +63,7 @@ cdef class BarBuilder:
         """
         return list(map(self._build_bar, self._data.index, self._data.values))
 
-    cdef _build_data_bar(self, timestamp, values: ndarray):
+    def _build_data_bar(self, timestamp, values: ndarray) -> DataBar:
         """
         Build a DataBar from the given index and values. The function expects the
         values to be an ndarray with 5 elements [open, high, low, close, volume].
@@ -79,7 +79,7 @@ cdef class BarBuilder:
                        values[4] * self._volume_multiple,
                        timestamp)
 
-    cdef _build_bar(self, timestamp, values: ndarray):
+    def _build_bar(self, timestamp, values: ndarray) -> Bar:
         """
         Build a Bar from the given index and values. The function expects the
         values to be an ndarray with 5 elements [open, high, low, close, volume].
