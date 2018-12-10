@@ -10,6 +10,7 @@
 import cython
 import inspect
 
+from datetime import datetime
 from numpy import ndarray
 from typing import Callable, List
 from pandas.core.frame import DataFrame
@@ -53,17 +54,27 @@ cdef class BarBuilder:
         
         :return: The list of bars.
         """
-        return list(map(self._build_data_bar, self._data.index, self._data.values))
+        return list(map(self._build_data_bar,
+                        self._data.index,
+                        self._data.values))
 
-    def build_bars(self) -> List[Bar]:
+    def build_bars(self, decimal_precision: int) -> List[Bar]:
         """
         Build a list of Bars from the held Pandas DataFrame.
 
         :return: The list of bars.
         """
-        return list(map(self._build_bar, self._data.index, self._data.values))
+        Precondition.not_negative(decimal_precision, 'decimal_precision')
 
-    def _build_data_bar(self, timestamp, values: ndarray) -> DataBar:
+        return list(map(self._build_bar,
+                        self._data.index,
+                        self._data.values,
+                        decimal_precision))
+
+    def _build_data_bar(
+            self,
+            timestamp: datetime,
+            values: ndarray) -> DataBar:
         """
         Build a DataBar from the given index and values. The function expects the
         values to be an ndarray with 5 elements [open, high, low, close, volume].
@@ -79,7 +90,11 @@ cdef class BarBuilder:
                        values[4] * self._volume_multiple,
                        timestamp)
 
-    def _build_bar(self, timestamp, values: ndarray) -> Bar:
+    def _build_bar(
+            self,
+            timestamp: datetime,
+            values: ndarray,
+            decimal_precision: int) -> Bar:
         """
         Build a Bar from the given index and values. The function expects the
         values to be an ndarray with 5 elements [open, high, low, close, volume].
@@ -88,10 +103,10 @@ cdef class BarBuilder:
         :param values: The values for the bar.
         :return:
         """
-        return Bar(Price.create(values[0], 5),
-                   Price.create(values[1], 5),
-                   Price.create(values[2], 5),
-                   Price.create(values[3], 5),
+        return Bar(Price.create(values[0], decimal_precision),
+                   Price.create(values[1], decimal_precision),
+                   Price.create(values[2], decimal_precision),
+                   Price.create(values[3], decimal_precision),
                    int(values[4] * self._volume_multiple),
                    timestamp)
 
