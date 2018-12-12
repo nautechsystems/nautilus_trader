@@ -192,8 +192,8 @@ class TradeStrategyTests(unittest.TestCase):
         bar = Bar(
             Decimal('1.00001'),
             Decimal('1.00004'),
-            Decimal('1.00003'),
             Decimal('1.00002'),
+            Decimal('1.00003'),
             100000,
             datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc))
 
@@ -229,8 +229,8 @@ class TradeStrategyTests(unittest.TestCase):
         bar = Bar(
             Decimal('1.00001'),
             Decimal('1.00004'),
-            Decimal('1.00003'),
             Decimal('1.00002'),
+            Decimal('1.00003'),
             100000,
             datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc))
 
@@ -251,8 +251,8 @@ class TradeStrategyTests(unittest.TestCase):
         bar = Bar(
             Decimal('1.00001'),
             Decimal('1.00004'),
-            Decimal('1.00003'),
             Decimal('1.00002'),
+            Decimal('1.00003'),
             100000,
             datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc))
 
@@ -380,8 +380,8 @@ class TradeStrategyTests(unittest.TestCase):
         bar = Bar(
             Decimal('1.00001'),
             Decimal('1.00004'),
-            Decimal('1.00003'),
             Decimal('1.00002'),
+            Decimal('1.00003'),
             100000,
             datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc))
 
@@ -901,8 +901,8 @@ class TradeStrategyTests(unittest.TestCase):
         bar = Bar(
             Decimal('1.00001'),
             Decimal('1.00004'),
-            Decimal('1.00003'),
             Decimal('1.00002'),
+            Decimal('1.00003'),
             100000,
             datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc))
 
@@ -1016,8 +1016,8 @@ class IndicatorUpdaterTests(unittest.TestCase):
         bar = Bar(
             Decimal('1.00001'),
             Decimal('1.00004'),
-            Decimal('1.00003'),
             Decimal('1.00002'),
+            Decimal('1.00003'),
             1000,
             datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc))
 
@@ -1026,7 +1026,7 @@ class IndicatorUpdaterTests(unittest.TestCase):
         result = ema.value
 
         # Assert
-        self.assertEqual(1.00002, result)
+        self.assertEqual(1.00003, result)
 
     def test_can_update_intrinsic_networks_indicator(self):
         # Arrange
@@ -1035,8 +1035,8 @@ class IndicatorUpdaterTests(unittest.TestCase):
         bar = Bar(
             Decimal('1.00001'),
             Decimal('1.00004'),
-            Decimal('1.00003'),
             Decimal('1.00002'),
+            Decimal('1.00003'),
             1000,
             datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc))
 
