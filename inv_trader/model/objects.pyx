@@ -356,12 +356,18 @@ cdef class Bar:
         :raises ValueError: If the low_price is not positive (> 0).
         :raises ValueError: If the close_price is not positive (> 0).
         :raises ValueError: If the volume is negative.
+        :raises ValueError: If the high_price is not >= low_price.
+        :raises ValueError: If the high_price is not >= close_price.
+        :raises ValueError: If the low_price is not <= close_price.
         """
         Precondition.positive(open_price, 'open_price')
         Precondition.positive(high_price, 'high_price')
         Precondition.positive(low_price, 'low_price')
         Precondition.positive(close_price, 'close_price')
         Precondition.not_negative(volume, 'volume')
+        Precondition.true(high_price >= low_price, 'high_price >= low_price')
+        Precondition.true(high_price >= close_price, 'high_price >= close_price')
+        Precondition.true(low_price <= close_price, 'low_price <= close_price')
 
         self._open = open_price
         self._high = high_price

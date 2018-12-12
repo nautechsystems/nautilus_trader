@@ -187,19 +187,19 @@ class LiveDataClientTests(unittest.TestCase):
         # Arrange
         bar = Bar(Decimal('1.00001'),
                   Decimal('1.00004'),
-                  Decimal('1.00003'),
                   Decimal('1.00002'),
+                  Decimal('1.00003'),
                   100000,
                   datetime(2018, 1, 1, 19, 59, 1, 0, timezone.utc))
 
         # Act
         result = self.data_client._parse_bar(
-            '1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T19:59:01.000Z')
+            '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T19:59:01.000Z')
 
         # Assert
         self.assertEqual(bar, result)
         self.assertEqual(
-            'Bar(1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T19:59:01+00:00)', str(result))
+            'Bar(1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T19:59:01+00:00)', str(result))
 
     def test_can_parse_bar_type(self):
         # Arrange
@@ -215,11 +215,6 @@ class LiveDataClientTests(unittest.TestCase):
 
     def test_tick_handler_with_no_subscribers_prints(self):
         # Arrange
-        tick = Tick(Symbol('AUDUSD', Venue.FXCM),
-                    Decimal('1.00000'),
-                    Decimal('1.00001'),
-                    datetime(2018, 1, 1, 19, 59, 1, 0, timezone.utc))
-
         # Act
         self.data_client._handle_tick(
             {'channel': b'audusd.fxcm', 'data': b'1.00000,1.00001,2018-01-01T19:59:01.000Z'})
@@ -229,17 +224,10 @@ class LiveDataClientTests(unittest.TestCase):
 
     def test_bar_handler_with_no_subscribers_prints(self):
         # Arrange
-        bar = Bar(Decimal('1.00001'),
-                  Decimal('1.00004'),
-                  Decimal('1.00003'),
-                  Decimal('1.00002'),
-                  100000,
-                  datetime(2018, 1, 1, 19, 59, 1, 0, timezone.utc))
-
         # Act
         self.data_client._handle_bar(
             {'channel': b'audusd.fxcm-1-second[bid]',
-             'data': b'1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T19:59:01+00:00'})
+             'data': b'1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T19:59:01+00:00'})
 
         # Assert
         # Should print to console.
@@ -325,15 +313,15 @@ class LiveDataClientTests(unittest.TestCase):
         bar = Bar(
             Decimal('1.00001'),
             Decimal('1.00004'),
-            Decimal('1.00003'),
             Decimal('1.00002'),
+            Decimal('1.00003'),
             100000,
             datetime(2018, 1, 1, 19, 59, 1, 0, timezone.utc))
 
         # Act
         self.redis_tester.publish(
             'audusd.fxcm-1-second[bid]',
-            '1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T19:59:01+00:00')
+            '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T19:59:01+00:00')
 
         # Assert
         time.sleep(0.1)  # Allow threads to work.
@@ -347,20 +335,20 @@ class LiveDataClientTests(unittest.TestCase):
 
         # Act
         self.redis_tester.publish('audusd.fxcm-1-second[bid]',
-                                  '1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T12:00:00+00:00')
+                                  '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:00+00:00')
         self.redis_tester.publish('audusd.fxcm-1-second[bid]',
-                                  '1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T12:00:01+00:00')
+                                  '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:01+00:00')
         self.redis_tester.publish('audusd.fxcm-1-second[bid]',
-                                  '1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T12:00:02+00:00')
+                                  '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:02+00:00')
         self.redis_tester.publish('audusd.fxcm-1-second[bid]',
-                                  '1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T12:00:03+00:00')
+                                  '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:03+00:00')
         self.redis_tester.publish('audusd.fxcm-1-second[bid]',
-                                  '1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T12:00:04+00:00')
+                                  '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:04+00:00')
 
         # Assert
         time.sleep(0.1)  # Allow threads to work.
         self.assertEqual(10, storer.count)  # All bar types and bars.
-        self.assertEqual('Bar(1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T12:00:04+00:00)', str(storer.get_store[9]))
+        self.assertEqual('Bar(1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:04+00:00)', str(storer.get_store[9]))
 
     def test_can_receive_bars_from_multiple_subscribers(self):
         # Arrange
@@ -372,40 +360,40 @@ class LiveDataClientTests(unittest.TestCase):
 
         # Act
         self.redis_tester.publish('audusd.fxcm-1-second[bid]',
-                                  '1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T12:00:00+00:00')
+                                  '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:00+00:00')
         self.redis_tester.publish('audusd.fxcm-1-second[bid]',
-                                  '1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T12:00:01+00:00')
+                                  '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:01+00:00')
         self.redis_tester.publish('audusd.fxcm-1-second[bid]',
-                                  '1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T12:00:02+00:00')
+                                  '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:02+00:00')
         self.redis_tester.publish('audusd.fxcm-1-second[bid]',
-                                  '1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T12:00:03+00:00')
+                                  '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:03+00:00')
         self.redis_tester.publish('audusd.fxcm-1-second[bid]',
-                                  '1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T12:00:04+00:00')
+                                  '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:04+00:00')
         self.redis_tester.publish('eurusd.fxcm-1-second[bid]',
-                                  '1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T12:00:00+00:00')
+                                  '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:00+00:00')
         self.redis_tester.publish('eurusd.fxcm-1-second[bid]',
-                                  '1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T12:00:01+00:00')
+                                  '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:01+00:00')
         self.redis_tester.publish('eurusd.fxcm-1-second[bid]',
-                                  '1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T12:00:02+00:00')
+                                  '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:02+00:00')
         self.redis_tester.publish('eurusd.fxcm-1-second[bid]',
-                                  '1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T12:00:03+00:00')
+                                  '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:03+00:00')
         self.redis_tester.publish('eurusd.fxcm-1-second[bid]',
-                                  '1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T12:00:04+00:00')
+                                  '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:04+00:00')
         self.redis_tester.publish('gbpusd.fxcm-1-second[bid]',
-                                  '1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T12:00:00+00:00')
+                                  '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:00+00:00')
         self.redis_tester.publish('gbpusd.fxcm-1-second[bid]',
-                                  '1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T12:00:01+00:00')
+                                  '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:01+00:00')
         self.redis_tester.publish('gbpusd.fxcm-1-second[bid]',
-                                  '1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T12:00:02+00:00')
+                                  '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:02+00:00')
         self.redis_tester.publish('gbpusd.fxcm-1-second[bid]',
-                                  '1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T12:00:03+00:00')
+                                  '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:03+00:00')
         self.redis_tester.publish('gbpusd.fxcm-1-second[bid]',
-                                  '1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T12:00:04+00:00')
+                                  '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:04+00:00')
 
         # Assert
         time.sleep(0.1)  # Allow threads to work.
         self.assertEqual(30, storer.count)  # All bar types and bars.
-        self.assertEqual('Bar(1.00001,1.00004,1.00003,1.00002,100000,2018-01-01T12:00:04+00:00)', str(storer.get_store[29]))
+        self.assertEqual('Bar(1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:04+00:00)', str(storer.get_store[29]))
 
     def test_can_add_bartype_to_dict(self):
         # Arrange
@@ -417,8 +405,8 @@ class LiveDataClientTests(unittest.TestCase):
         bar = Bar(
             Decimal('1.00001'),
             Decimal('1.00004'),
-            Decimal('1.00003'),
             Decimal('1.00002'),
+            Decimal('1.00003'),
             100000,
             datetime(2018, 1, 1, 19, 59, 1, 0, timezone.utc))
 
