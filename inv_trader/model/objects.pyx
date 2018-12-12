@@ -464,7 +464,7 @@ cdef class DataBar:
     cdef readonly double volume
     cdef readonly object timestamp
 
-    def __init__(self,
+    def c__init__(self,
                  double open_price,
                  double high_price,
                  double low_price,
@@ -472,7 +472,7 @@ cdef class DataBar:
                  double volume,
                  object timestamp):
         """
-        Initializes a new instance of the Bar class.
+        Initializes a new instance of the DataBar class.
 
         :param open_price: The bars open price.
         :param high_price: The bars high price.
