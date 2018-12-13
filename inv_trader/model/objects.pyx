@@ -456,6 +456,9 @@ cdef class Bar:
 cdef class DataBar:
     """
     Represents a financial market trade bar.
+
+    Note: To properly instantiate this class use the cython fast init method
+    by calling DataBar.__new__().
     """
     cdef readonly double open
     cdef readonly double high
