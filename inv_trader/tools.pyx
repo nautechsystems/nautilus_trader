@@ -177,7 +177,7 @@ cdef class IndicatorUpdater:
     @cython.boundscheck(False)
     @cython.wraparound(False)
     @cython.binding(True)
-    cdef list get_values(self):
+    cdef double[:] get_values(self):
         """
         Create a list of the current indicator outputs.
         
