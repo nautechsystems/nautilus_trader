@@ -7,7 +7,12 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+import os
+import pandas as pd
+
 from datetime import datetime, timezone, timedelta
+from pandas import DataFrame
+
 
 # Unix epoch is the UTC time at 00:00:00 on 1/1/1970.
 UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc)
@@ -29,3 +34,11 @@ class TestStubs(object):
         :return: The unix epoch datetime plus any offset.
         """
         return UNIX_EPOCH + timedelta(minutes=offset_mins)
+
+
+class TestData(object):
+
+    @staticmethod
+    def get_gbpusd_1min_bid() -> DataFrame:
+        return pd.read_csv('GBPUSD_1 Min_Bid_2008.01.01_2008.12.31.csv',
+                           index_col='Time (UTC)')

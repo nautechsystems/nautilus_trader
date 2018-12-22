@@ -57,7 +57,7 @@ cdef class BarBuilder:
         self._data = data
         self._volume_multiple = volume_multiple
 
-    def build_data_bars(self) -> List[DataBar]:
+    cpdef list build_data_bars(self):
         """
         Build a list of DataBars from the held Pandas DataFrame.
         
@@ -67,7 +67,7 @@ cdef class BarBuilder:
                         self._data.values,
                         self._data.index))
 
-    def build_bars(self) -> List[Bar]:
+    cpdef list build_bars(self):
         """
         Build a list of Bars from the held Pandas DataFrame.
 
@@ -77,17 +77,17 @@ cdef class BarBuilder:
                         self._data.values,
                         self._data.index))
 
-    def _build_data_bar(
+    cpdef object _build_data_bar(
             self,
-            values: ndarray,
-            timestamp: datetime) -> DataBar:
+            double[:] values: ndarray,
+            timestamp: datetime):
         """
         Build a DataBar from the given index and values. The function expects the
         values to be an ndarray with 5 elements [open, high, low, close, volume].
 
         :param values: The values for the bar.
         :param timestamp: The timestamp for the bar.
-        :return: The built bar.
+        :return: The built DataBar.
         """
         return DataBar(values[0],
                        values[1],
@@ -96,17 +96,17 @@ cdef class BarBuilder:
                        values[4] * self._volume_multiple,
                        timestamp)
 
-    def _build_bar(
+    cpdef object _build_bar(
             self,
-            values: ndarray,
-            timestamp: datetime) -> Bar:
+            double[:] values: ndarray,
+            timestamp: datetime):
         """
         Build a Bar from the given index and values. The function expects the
         values to be an ndarray with 5 elements [open, high, low, close, volume].
 
         :param values: The values for the bar.
         :param timestamp: The timestamp for the bar.
-        :return: The built bar.
+        :return: The built Bar.
         """
         return Bar(Price.create(values[0], self._decimal_precision),
                    Price.create(values[1], self._decimal_precision),
@@ -173,14 +173,6 @@ cdef class IndicatorUpdater:
         """
         self._input_method(*[bar.__getattribute__(param) for param in self._input_params])
 
-    cdef double[:] get_values(self):
-        """
-        Create a list of the current indicator outputs.
-        
-        :return: The list of indicator outputs.
-        """
-        return [(output, self._indicator.__getattribute__(output)) for output in self._outputs]
-
     cpdef object build_features(self, list bars: List[Bar]):
         """
         Create a dictionary of output features from the given bars data.
@@ -194,7 +186,15 @@ cdef class IndicatorUpdater:
         for bar in bars:
             self.update_bar(bar)
 
-            for value in self.get_values():
+            for value in self._get_values():
                 features[value[0]].append(value[1])
 
         return features
+
+    cdef list _get_values(self):
+        """
+        Create a list of the current indicator outputs.
+        
+        :return: The list of indicator outputs.
+        """
+        return [(output, self._indicator.__getattribute__(output)) for output in self._outputs]
