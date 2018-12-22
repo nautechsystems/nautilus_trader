@@ -7,7 +7,8 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import cython
+# cython: language_level=3, boundscheck=False, wraparound=False
+
 import inspect
 
 from datetime import datetime
@@ -18,16 +19,17 @@ from pandas.core.frame import DataFrame
 from inv_trader.core.precondition import Precondition
 from inv_trader.model.objects import Price, Bar, DataBar
 
+# cython
 
-POINT = 'point'
-PRICE = 'price'
-MID = 'mid'
-OPEN = 'open'
-HIGH = 'high'
-LOW = 'low'
-CLOSE = 'close'
-VOLUME = 'volume'
-TIMESTAMP = 'timestamp'
+cdef str POINT = 'point'
+cdef str PRICE = 'price'
+cdef str MID = 'mid'
+cdef str OPEN = 'open'
+cdef str HIGH = 'high'
+cdef str LOW = 'low'
+cdef str CLOSE = 'close'
+cdef str VOLUME = 'volume'
+cdef str TIMESTAMP = 'timestamp'
 
 cdef class BarBuilder:
     """
@@ -163,9 +165,6 @@ cdef class IndicatorUpdater:
         else:
             self._outputs = outputs
 
-    @cython.boundscheck(False)
-    @cython.wraparound(False)
-    @cython.binding(True)
     cpdef void update_bar(self, object bar):
         """
         Update the indicator with the given Bar object.
@@ -174,9 +173,6 @@ cdef class IndicatorUpdater:
         """
         self._input_method(*[bar.__getattribute__(param) for param in self._input_params])
 
-    @cython.boundscheck(False)
-    @cython.wraparound(False)
-    @cython.binding(True)
     cdef double[:] get_values(self):
         """
         Create a list of the current indicator outputs.
@@ -185,9 +181,6 @@ cdef class IndicatorUpdater:
         """
         return [(output, self._indicator.__getattribute__(output)) for output in self._outputs]
 
-    @cython.boundscheck(False)
-    @cython.wraparound(False)
-    @cython.binding(True)
     cpdef object build_features(self, bars):
         """
         Create a dictionary of output features from the given bars data.

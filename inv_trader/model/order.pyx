@@ -7,6 +7,8 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+# cython: language_level=3, boundscheck=False
+
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Dict, List
@@ -21,29 +23,48 @@ from inv_trader.model.events import OrderPartiallyFilled, OrderFilled
 from inv_trader.model.identifiers import Label, OrderId, ExecutionId, ExecutionTicket
 
 # Order types which require prices to be valid.
-PRICED_ORDER_TYPES = [
+cdef list PRICED_ORDER_TYPES = [
     OrderType.LIMIT,
     OrderType.STOP_MARKET,
     OrderType.STOP_LIMIT,
     OrderType.MIT]
 
 
-class Order:
+cdef class Order:
     """
     Represents an order in a financial market.
     """
+    cdef object _symbol
+    cdef object _id
+    cdef object _label
+    cdef object _side
+    cdef object _type
+    cdef int _quantity
+    cdef object _timestamp
+    cdef object _price
+    cdef object _time_in_force
+    cdef object _expire_time
+    cdef int _filled_quantity
+    cdef object _average_price
+    cdef object _slippage
+    cdef object _status
+    cdef list _events
+    cdef list _order_ids
+    cdef list _order_ids_broker
+    cdef list _execution_ids
+    cdef list _execution_tickets
 
     def __init__(self,
-                 symbol: Symbol,
-                 order_id: OrderId,
-                 label: Label,
-                 order_side: OrderSide,
-                 order_type: OrderType,
-                 quantity: int,
-                 timestamp: datetime,
-                 price: Decimal or None=None,
-                 time_in_force: TimeInForce or None=None,
-                 expire_time: datetime or None=None):
+                 object symbol: Symbol,
+                 object order_id: OrderId,
+                 object label: Label,
+                 object order_side: OrderSide,
+                 object order_type: OrderType,
+                 int quantity,
+                 object timestamp: datetime,
+                 object price=None,
+                 object time_in_force=None,
+                 object expire_time=None):
         """
         Initializes a new instance of the Order class.
 
@@ -366,9 +387,9 @@ class Order:
 
 
 # Unix epoch is the UTC time at 00:00:00 on 1/1/1970
-UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc)
-SEPARATOR = '-'
-MILLISECONDS_PER_SECOND = 1000
+cdef object UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc)
+cdef str SEPARATOR = '-'
+cdef int MILLISECONDS_PER_SECOND = 1000
 
 
 class OrderIdGenerator:
@@ -469,8 +490,8 @@ class OrderFactory:
             order_side: OrderSide,
             quantity: int,
             price: Decimal,
-            time_in_force: TimeInForce or None=None,
-            expire_time: datetime or None=None) -> Order:
+            time_in_force=None,
+            expire_time=None) -> Order:
         """
         Creates and returns a new limit order with the given parameters.
         If the time in force is GTD then a valid expire time must be given.
@@ -511,8 +532,8 @@ class OrderFactory:
             order_side: OrderSide,
             quantity: int,
             price: Decimal,
-            time_in_force: TimeInForce or None=None,
-            expire_time: datetime or None=None) -> Order:
+            time_in_force=None,
+            expire_time=None) -> Order:
         """
         Creates and returns a new stop-market order with the given parameters.
         If the time in force is GTD then a valid expire time must be given.
@@ -553,8 +574,8 @@ class OrderFactory:
             order_side: OrderSide,
             quantity: int,
             price: Decimal,
-            time_in_force: TimeInForce or None=None,
-            expire_time: datetime or None=None) -> Order:
+            time_in_force=None,
+            expire_time=None) -> Order:
         """
         Creates and returns a new stop-limit order with the given parameters.
         If the time in force is GTD then a valid expire time must be given.
@@ -595,8 +616,8 @@ class OrderFactory:
             order_side: OrderSide,
             quantity: int,
             price: Decimal,
-            time_in_force: TimeInForce or None=None,
-            expire_time: datetime or None=None) -> Order:
+            time_in_force=None,
+            expire_time=None) -> Order:
         """
         Creates and returns a new market-if-touched order with the given parameters.
         If the time in force is GTD then a valid expire time must be given.

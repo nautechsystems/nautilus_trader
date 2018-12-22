@@ -46,7 +46,7 @@ extensions = [make_extension(name) for name in scan_dir(INV_TRADER)]
 
 setup(
     name=INV_TRADER,
-    version='0.64.3',
+    version='0.65.0',
     author='Invariance',
     description='The python trading client for Invariance.',
     packages=setuptools.find_packages(),
@@ -56,6 +56,6 @@ setup(
               'msgpack',
               'redis',
               'pyzmq'],
-    ext_modules=cythonize(extensions),
+    ext_modules=cythonize(extensions, compiler_directives={'embedsignature': True}),
     cmdclass={'build_ext': Cython.Build.build_ext},
     options={'build_ext': {'inplace': False, 'force': False}})
