@@ -7,19 +7,18 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import abc
+# cython: language_level=3, boundscheck=False, wraparound=False
 
 from inv_trader.core.precondition import Precondition
 
 
-class Identifier:
+cdef class Identifier:
     """
     The abstract base class for all identifiers.
     """
+    cdef readonly str _value
 
-    __metaclass__ = abc.ABCMeta
-
-    def __init__(self, value: str):
+    def __init__(self, str value):
         """
         Initializes a new instance of the Identifier abstract class.
 
@@ -70,12 +69,12 @@ class Identifier:
         return f"<{str(self.__class__.__name__)}({self._value}) object at {id(self)}>"
 
 
-class Label(Identifier):
+cdef class Label(Identifier):
     """
     Represents a valid label.
     """
 
-    def __init__(self, value: str):
+    def __init__(self, str value):
         """
         Initializes a new instance of the OrderId class.
 
@@ -84,12 +83,12 @@ class Label(Identifier):
         super().__init__(value)
 
 
-class AccountId(Identifier):
+cdef class AccountId(Identifier):
     """
     Represents a valid account identifier (should be unique).
     """
 
-    def __init__(self, value: str):
+    def __init__(self, str value):
         """
         Initializes a new instance of the AccountId class.
 
@@ -98,12 +97,12 @@ class AccountId(Identifier):
         super().__init__(value)
 
 
-class AccountNumber(Identifier):
+cdef class AccountNumber(Identifier):
     """
     Represents a valid account number (should be unique).
     """
 
-    def __init__(self, value: str):
+    def __init__(self, str value):
         """
         Initializes a new instance of the AccountNumber class.
 
@@ -112,12 +111,12 @@ class AccountNumber(Identifier):
         super().__init__(value)
 
 
-class OrderId(Identifier):
+cdef class OrderId(Identifier):
     """
     Represents a valid order identifier (should be unique).
     """
 
-    def __init__(self, value: str):
+    def __init__(self, str value):
         """
         Initializes a new instance of the OrderId class.
 
@@ -126,12 +125,12 @@ class OrderId(Identifier):
         super().__init__(value)
 
 
-class PositionId(Identifier):
+cdef class PositionId(Identifier):
     """
     Represents a valid position identifier (should be unique).
     """
 
-    def __init__(self, value: str):
+    def __init__(self, str value):
         """
         Initializes a new instance of the PositionId class.
 
@@ -140,12 +139,12 @@ class PositionId(Identifier):
         super().__init__(value)
 
 
-class ExecutionId(Identifier):
+cdef class ExecutionId(Identifier):
     """
     Represents a valid execution identifier (should be unique).
     """
 
-    def __init__(self, value: str):
+    def __init__(self, str value):
         """
         Initializes a new instance of the ExecutionId class.
 
@@ -154,12 +153,12 @@ class ExecutionId(Identifier):
         super().__init__(value)
 
 
-class ExecutionTicket(Identifier):
+cdef class ExecutionTicket(Identifier):
     """
     Represents a valid execution ticket (should be unique).
     """
 
-    def __init__(self, value: str):
+    def __init__(self, str value):
         """
         Initializes a new instance of the ExecutionTicket class.
 
