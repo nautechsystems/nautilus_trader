@@ -7,6 +7,8 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+# cython: language_level=3, boundscheck=False, wraparound=False
+
 import logging
 import os
 import threading
@@ -14,13 +16,19 @@ import threading
 from datetime import datetime
 from logging import INFO, DEBUG
 
-from inv_trader.core.precondition import Precondition
+from inv_trader.core.precondition cimport Precondition
 
 
-class Logger:
+cdef class Logger:
     """
     Provides a logger for the trader client which wraps the Python logging module.
     """
+    cdef object _log_level_console
+    cdef object _log_level_file
+    cdef bint _console_prints
+    cdef bint _log_to_file
+    cdef str _log_file
+    cdef object _logger
 
     def __init__(self,
                  name=None,
@@ -70,7 +78,7 @@ class Logger:
 
         :param message: The debug message to log.
         """
-        Precondition.valid_string(message, 'message')
+        Precondition.valid_string(message, u'message')
 
         log_message = self._format_message('DBG', message)
         self._console_print_handler(log_message, logging.DEBUG)
@@ -87,7 +95,7 @@ class Logger:
 
         :param message: The information message to log.
         """
-        Precondition.valid_string(message, 'message')
+        Precondition.valid_string(message, u'message')
 
         log_message = self._format_message('INF', message)
         self._console_print_handler(log_message, logging.INFO)
@@ -150,10 +158,12 @@ class Logger:
             print(message)
 
 
-class LoggerAdapter:
+cdef class LoggerAdapter:
     """
     Provides a logger adapter adapter for a components logger.
     """
+    cdef str _component_name
+    cdef object _logger
 
     def __init__(
             self,
@@ -166,12 +176,13 @@ class LoggerAdapter:
         :param component_name: The name of the component.
         """
         if component_name is not None:
-            Precondition.valid_string(component_name, 'component_name')
+            Precondition.valid_string(component_name, u'component_name')
         else:
             component_name = ''
 
-        self._logger = logger
         self._component_name = component_name
+        self._logger = logger
+
 
     def debug(self, message: str):
         """

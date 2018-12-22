@@ -7,7 +7,8 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import abc
+# cython: language_level=3, boundscheck=False, wraparound=False
+
 import uuid
 
 from datetime import datetime
@@ -22,12 +23,12 @@ from inv_trader.model.identifiers import OrderId, ExecutionId, ExecutionTicket
 from inv_trader.model.objects import Symbol
 
 
-class Event:
+cdef class Event:
     """
     The abstract base class for all events.
     """
-
-    __metaclass__ = abc.ABCMeta
+    cdef object _event_id
+    cdef object _event_timestamp
 
     def __init__(self,
                  identifier: uuid,
@@ -89,10 +90,21 @@ class Event:
         return self._event_timestamp
 
 
-class AccountEvent(Event):
+cdef class AccountEvent(Event):
     """
     Represents an account event produced from a collateral report.
     """
+    cdef object _account_id
+    cdef object _broker
+    cdef object _account_number
+    cdef object _currency
+    cdef object _cash_balance
+    cdef object _cash_start_day
+    cdef object _cash_activity_day
+    cdef object _margin_used_liquidation
+    cdef object _margin_used_maintenance
+    cdef object _margin_ratio
+    cdef str _margin_call_status
 
     def __init__(self,
                  account_id: AccountId,
@@ -233,18 +245,18 @@ class AccountEvent(Event):
         return self._margin_call_status
 
 
-class OrderEvent(Event):
+cdef class OrderEvent(Event):
     """
     The abstract base class for all order events.
     """
-
-    __metaclass__ = abc.ABCMeta
+    cdef object _symbol
+    cdef object _order_id
 
     def __init__(self,
-                 order_symbol: Symbol,
-                 order_id: OrderId,
-                 event_id: UUID,
-                 event_timestamp: datetime):
+                 object order_symbol: Symbol,
+                 object order_id: OrderId,
+                 object event_id: UUID,
+                 object event_timestamp: datetime):
         """
         Initializes a new instance of the OrderEvent abstract class.
 
@@ -285,17 +297,18 @@ class OrderEvent(Event):
         return self._order_id
 
 
-class OrderSubmitted(OrderEvent):
+cdef class OrderSubmitted(OrderEvent):
     """
     Represents an event where an order has been submitted to the execution system.
     """
+    cdef object _submitted_time
 
     def __init__(self,
-                 symbol: Symbol,
-                 order_id: OrderId,
-                 submitted_time: datetime,
-                 event_id: UUID,
-                 event_timestamp: datetime):
+                 object symbol: Symbol,
+                 object order_id: OrderId,
+                 object submitted_time: datetime,
+                 object event_id: UUID,
+                 object event_timestamp: datetime):
         """
         Initializes a new instance of the OrderSubmitted class.
 
@@ -316,17 +329,18 @@ class OrderSubmitted(OrderEvent):
         return self._submitted_time
 
 
-class OrderAccepted(OrderEvent):
+cdef class OrderAccepted(OrderEvent):
     """
     Represents an event where an order has been accepted by the broker.
     """
+    cdef object _accepted_time
 
     def __init__(self,
-                 symbol: Symbol,
-                 order_id: OrderId,
-                 accepted_time: datetime,
-                 event_id: UUID,
-                 event_timestamp: datetime):
+                 object symbol: Symbol,
+                 object order_id: OrderId,
+                 object accepted_time: datetime,
+                 object event_id: UUID,
+                 object event_timestamp: datetime):
         """
         Initializes a new instance of the OrderAccepted class.
 
@@ -347,18 +361,18 @@ class OrderAccepted(OrderEvent):
         return self._accepted_time
 
 
-class OrderRejected(OrderEvent):
+cdef class OrderRejected(OrderEvent):
     """
     Represents an event where an order has been rejected by the broker.
     """
 
     def __init__(self,
-                 symbol: Symbol,
-                 order_id: OrderId,
-                 rejected_time: datetime,
-                 rejected_reason: str,
-                 event_id: UUID,
-                 event_timestamp: datetime):
+                 object symbol: Symbol,
+                 object order_id: OrderId,
+                 object rejected_time: datetime,
+                 str rejected_reason,
+                 object event_id: UUID,
+                 object event_timestamp: datetime):
         """
         Initializes a new instance of the OrderRejected class.
 
@@ -390,25 +404,25 @@ class OrderRejected(OrderEvent):
         return self._rejected_reason
 
 
-class OrderWorking(OrderEvent):
+cdef class OrderWorking(OrderEvent):
     """
     Represents an event where an order is working with the broker.
     """
 
     def __init__(self,
-                 symbol: Symbol,
-                 order_id: OrderId,
-                 broker_order_id: OrderId,
-                 label: Label,
-                 order_side: OrderSide,
-                 order_type: OrderType,
-                 quantity: int,
-                 price: Decimal,
-                 time_in_force: TimeInForce,
-                 working_time: datetime,
-                 event_id: UUID,
-                 event_timestamp: datetime,
-                 expire_time: datetime=None):
+                 object symbol: Symbol,
+                 object order_id: OrderId,
+                 object broker_order_id: OrderId,
+                 object label: Label,
+                 object order_side: OrderSide,
+                 object order_type: OrderType,
+                 int quantity,
+                 object price: Decimal,
+                 object time_in_force: TimeInForce,
+                 object working_time: datetime,
+                 object event_id: UUID,
+                 object event_timestamp: datetime,
+                 object expire_time: datetime=None):
         """
         Initializes a new instance of the OrderWorking class.
 
@@ -503,17 +517,17 @@ class OrderWorking(OrderEvent):
         return self._expire_time
 
 
-class OrderCancelled(OrderEvent):
+cdef class OrderCancelled(OrderEvent):
     """
     Represents an event where an order has been cancelled with the broker.
     """
 
     def __init__(self,
-                 symbol: Symbol,
-                 order_id: OrderId,
-                 cancelled_time: datetime,
-                 event_id: UUID,
-                 event_timestamp: datetime):
+                 object symbol: Symbol,
+                 object order_id: OrderId,
+                 object cancelled_time: datetime,
+                 object event_id: UUID,
+                 object event_timestamp: datetime):
         """
         Initializes a new instance of the OrderCancelled class.
 
@@ -534,19 +548,19 @@ class OrderCancelled(OrderEvent):
         return self._cancelled_time
 
 
-class OrderCancelReject(OrderEvent):
+cdef class OrderCancelReject(OrderEvent):
     """
     Represents an event where an order cancel request has been rejected by the broker.
     """
 
     def __init__(self,
-                 order_symbol: Symbol,
-                 order_id: OrderId,
-                 cancel_reject_time: datetime,
-                 cancel_response: str,
-                 cancel_reject_reason: str,
-                 event_id: UUID,
-                 event_timestamp: datetime):
+                 object order_symbol: Symbol,
+                 object order_id: OrderId,
+                 object cancel_reject_time: datetime,
+                 object cancel_response: str,
+                 object cancel_reject_reason: str,
+                 object event_id: UUID,
+                 object event_timestamp: datetime):
         """
         Initializes a new instance of the OrderCancelReject class.
 
@@ -595,17 +609,17 @@ class OrderCancelReject(OrderEvent):
         return self._cancel_reject_reason
 
 
-class OrderExpired(OrderEvent):
+cdef class OrderExpired(OrderEvent):
     """
     Represents an event where an order has expired with the broker.
     """
 
     def __init__(self,
-                 symbol: Symbol,
-                 order_id: OrderId,
-                 expired_time: datetime,
-                 event_id: UUID,
-                 event_timestamp: datetime):
+                 object symbol: Symbol,
+                 object order_id: OrderId,
+                 object expired_time: datetime,
+                 object event_id: UUID,
+                 object event_timestamp: datetime):
         """
         Initializes a new instance of the OrderExpired class.
 
@@ -626,19 +640,19 @@ class OrderExpired(OrderEvent):
         return self._expired_time
 
 
-class OrderModified(OrderEvent):
+cdef class OrderModified(OrderEvent):
     """
     Represents an event where an order has been modified with the broker.
     """
 
     def __init__(self,
-                 symbol: Symbol,
-                 order_id: OrderId,
-                 broker_order_id: OrderId,
-                 modified_price: Decimal,
-                 modified_time: datetime,
-                 event_id: UUID,
-                 event_timestamp: datetime):
+                 object symbol: Symbol,
+                 object order_id: OrderId,
+                 object broker_order_id: OrderId,
+                 object modified_price: Decimal,
+                 object modified_time: datetime,
+                 object event_id: UUID,
+                 object event_timestamp: datetime):
         """
         Initializes a new instance of the OrderPartiallyFilled class.
 
@@ -677,22 +691,28 @@ class OrderModified(OrderEvent):
         return self._modified_time
 
 
-class OrderFilled(OrderEvent):
+cdef class OrderFilled(OrderEvent):
     """
     Represents an event where an order has been completely filled with the broker.
     """
+    cdef object _execution_id
+    cdef object _execution_ticket
+    cdef object _order_side
+    cdef object _filled_quantity
+    cdef object _average_price
+    cdef object _execution_time
 
     def __init__(self,
-                 symbol: Symbol,
-                 order_id: OrderId,
-                 execution_id: ExecutionId,
-                 execution_ticket: ExecutionTicket,
-                 order_side: OrderSide,
-                 filled_quantity: int,
-                 average_price: Decimal,
-                 execution_time: datetime,
-                 event_id: UUID,
-                 event_timestamp: datetime):
+                 object symbol: Symbol,
+                 object order_id: OrderId,
+                 object execution_id: ExecutionId,
+                 object execution_ticket: ExecutionTicket,
+                 object order_side: OrderSide,
+                 object filled_quantity: int,
+                 object average_price: Decimal,
+                 object execution_time: datetime,
+                 object event_id: UUID,
+                 object event_timestamp: datetime):
         """
         Initializes a new instance of the OrderFilled class.
 
@@ -760,23 +780,30 @@ class OrderFilled(OrderEvent):
         return self._execution_time
 
 
-class OrderPartiallyFilled(OrderEvent):
+cdef class OrderPartiallyFilled(OrderEvent):
     """
     Represents an event where an order has been partially filled with the broker.
     """
+    cdef object _execution_id
+    cdef object _execution_ticket
+    cdef object _order_side
+    cdef object _filled_quantity
+    cdef object _leaves_quantity
+    cdef object _average_price
+    cdef object _execution_time
 
     def __init__(self,
-                 symbol: Symbol,
-                 order_id: OrderId,
-                 execution_id: ExecutionId,
-                 execution_ticket: ExecutionTicket,
-                 order_side: OrderSide,
-                 filled_quantity: int,
-                 leaves_quantity: int,
-                 average_price: Decimal,
-                 execution_time: datetime,
-                 event_id: UUID,
-                 event_timestamp: datetime):
+                 object symbol: Symbol,
+                 object order_id: OrderId,
+                 object execution_id: ExecutionId,
+                 object execution_ticket: ExecutionTicket,
+                 object order_side: OrderSide,
+                 object filled_quantity: int,
+                 object leaves_quantity: int,
+                 object average_price: Decimal,
+                 object execution_time: datetime,
+                 object event_id: UUID,
+                 object event_timestamp: datetime):
         """
         Initializes a new instance of the OrderPartiallyFilled class.
 
@@ -854,15 +881,16 @@ class OrderPartiallyFilled(OrderEvent):
         return self._execution_time
 
 
-class TimeEvent(Event):
+cdef class TimeEvent(Event):
     """
     Represents a time event occurring at the event timestamp.
     """
+    cdef object _label
 
     def __init__(self,
-                 label: Label,
-                 event_id: UUID,
-                 event_timestamp: datetime):
+                 object label: Label,
+                 object event_id: UUID,
+                 object event_timestamp: datetime):
         """
         Initializes a new instance of the TimeEvent class.
 

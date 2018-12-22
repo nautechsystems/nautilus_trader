@@ -7,9 +7,10 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from enum import Enum
+from enum import Enum, unique
 
 
+@unique
 class Broker(Enum):
     """
     Represents a brokerage.
@@ -19,6 +20,7 @@ class Broker(Enum):
     INTERACTIVE_BROKERS = 2
 
 
+@unique
 class Venue(Enum):
     """
     Represents an execution venue.
@@ -30,6 +32,7 @@ class Venue(Enum):
     GLOBEX = 4
 
 
+@unique
 class Resolution(Enum):
     """
     Represents the granularity time period.
@@ -41,6 +44,7 @@ class Resolution(Enum):
     DAY = 4
 
 
+@unique
 class QuoteType(Enum):
     """
     The quote type a price is taken from.
@@ -51,6 +55,7 @@ class QuoteType(Enum):
     MID = 3
 
 
+@unique
 class OrderSide(Enum):
     """
     Represents the direction of an order.
@@ -59,6 +64,7 @@ class OrderSide(Enum):
     SELL = 1
 
 
+@unique
 class OrderType(Enum):
     """
     Represents an orders type.
@@ -70,6 +76,7 @@ class OrderType(Enum):
     MIT = 4
 
 
+@unique
 class TimeInForce(Enum):
     """
     Represents an orders time in force type.
@@ -81,6 +88,7 @@ class TimeInForce(Enum):
     GTD = 5
 
 
+@unique
 class OrderStatus(Enum):
     """
     Represents an orders status.
@@ -97,6 +105,7 @@ class OrderStatus(Enum):
     EXPIRED = 9
 
 
+@unique
 class MarketPosition(Enum):
     """
     Represents the relative market position.
@@ -106,6 +115,7 @@ class MarketPosition(Enum):
     SHORT = 2,
 
 
+@unique
 class SecurityType(Enum):
     """
     Represents a security type.
@@ -118,6 +128,7 @@ class SecurityType(Enum):
     Option = 5
 
 
+@unique
 class CurrencyCode(Enum):
     """
     Currency codes ISO 4217.

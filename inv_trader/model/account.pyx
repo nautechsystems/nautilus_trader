@@ -7,6 +7,8 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+# cython: language_level=3, boundscheck=False, wraparound=False
+
 from datetime import datetime
 from decimal import Decimal
 
@@ -16,10 +18,24 @@ from inv_trader.model.identifiers import AccountId
 from inv_trader.model.objects import Money
 
 
-class Account:
+cdef class Account:
     """
     Represents a brokerage account.
     """
+    cdef bint _initialized
+    cdef object _id
+    cdef object _broker
+    cdef str _account_number
+    cdef object _currency
+    cdef object _cash_balance
+    cdef object _cash_start_day
+    cdef object _cash_activity_day
+    cdef object _margin_used_liquidation
+    cdef object _margin_used_maintenance
+    cdef object _margin_ratio
+    cdef str _margin_call_status
+    cdef object _last_updated
+    cdef list _events
 
     def __init__(self):
         """
@@ -88,7 +104,7 @@ class Account:
         return self._broker
 
     @property
-    def number(self) -> Broker or None:
+    def number(self) -> str or None:
         """
         :return: The account number of the account (returns None if not initialized).
         """

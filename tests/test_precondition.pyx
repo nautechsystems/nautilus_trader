@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-# <copyright file="test_position.py" company="Invariance Pte">
+# <copyright file="test_preconditions.pyx" company="Invariance Pte">
 #  Copyright (C) 2018 Invariance Pte. All rights reserved.
 #  The use of this source code is governed by the license as found in the LICENSE.md file.
 #  http://www.invariance.com
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+# cython: language_level=3, boundscheck=False, wraparound=False
 # pylint: disable=C0111, C0103,
 
 import unittest
@@ -14,10 +15,10 @@ import unittest
 from collections import deque
 from decimal import Decimal
 
-from inv_trader.core.precondition import Precondition
+from inv_trader.core.precondition cimport Precondition
 
 
-class PreconditionsTests(unittest.TestCase):
+class PreconditionTests(unittest.TestCase):
 
     def test_precondition_true_when_predicate_false_raises_value_error(self):
         # arrange
@@ -194,3 +195,6 @@ class PreconditionsTests(unittest.TestCase):
         # assert
         Precondition.empty([], "some_collection")
         self.assertTrue(True)  # ValueError not raised.
+
+if __name__ == "__main__":
+    PreconditionTests.test_precondition_empty_when_collection_not_empty_raises_value_error()

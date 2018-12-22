@@ -41,9 +41,9 @@ cdef class BarBuilder:
     cdef int _volume_multiple
 
     def __init__(self,
-                 data: DataFrame,
-                 decimal_precision: int=5,
-                 volume_multiple: int=1):
+                 object data: DataFrame,
+                 int decimal_precision=5,
+                 int volume_multiple=1):
         """
         Initializes a new instance of the BarBuilder class.
 
@@ -128,9 +128,9 @@ cdef class IndicatorUpdater:
     cdef list _outputs
 
     def __init__(self,
-                 indicator: object,
-                 input_method: Callable or None=None,
-                 outputs: List[str] or None=None):
+                 object indicator,
+                 object input_method: Callable=None,
+                 list outputs: List[str]=None):
         """
         Initializes a new instance of the IndicatorUpdater class.
 
@@ -181,7 +181,7 @@ cdef class IndicatorUpdater:
         """
         return [(output, self._indicator.__getattribute__(output)) for output in self._outputs]
 
-    cpdef object build_features(self, bars):
+    cpdef object build_features(self, list bars):
         """
         Create a dictionary of output features from the given bars data.
         

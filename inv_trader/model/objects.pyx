@@ -12,7 +12,7 @@
 from datetime import datetime
 from decimal import Decimal
 
-from inv_trader.core.precondition import Precondition
+from inv_trader.core.precondition cimport Precondition
 from inv_trader.model.enums import Venue, Resolution, QuoteType, SecurityType, CurrencyCode
 
 
@@ -21,7 +21,7 @@ cdef class Symbol:
     Represents the symbol for a financial market tradeable instrument.
     """
     cdef str _code
-    cdef object _venue
+    cdef object _venue # type: Venue
 
     def __init__(self,
                  str code,

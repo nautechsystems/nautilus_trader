@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-# <copyright file="preconditions.pyx" company="Invariance Pte">
+# <copyright file="precondition.pyx" company="Invariance Pte">
 #  Copyright (C) 2018 Invariance Pte. All rights reserved.
 #  The use of this source code is governed by the license as found in the LICENSE.md file.
 #  http://www.invariance.com
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from decimal import Decimal
+# cython: language_level=3, boundscheck=False, wraparound=False
 
 
-PRE_FAILED = "Precondition Failed"
+cdef unicode PRE_FAILED = "Precondition Failed"
 
 
-cdef class Precondition:
+cdef class Precondition(object):
     """
     Provides static methods for the checking of function or method preconditions.
     A precondition is a condition or predicate that must always be true just prior
@@ -21,7 +21,7 @@ cdef class Precondition:
     specification.
     """
     @staticmethod
-    def true(bint predicate, str description):
+    cdef void true(bint predicate, unicode description):
         """
         Check the preconditions predicate is true.
 
@@ -30,10 +30,10 @@ cdef class Precondition:
         :raises ValueError: If the predicate is false.
         """
         if not predicate:
-            raise ValueError(f"{PRE_FAILED} (the predicate {description} was false).")
+            raise ValueError(f"{PRE_FAILED} (the predicate {description} was False).")
 
     @staticmethod
-    def is_none(object argument, str param_name):
+    cdef void is_none(object argument, unicode param_name):
         """
         Check the preconditions argument is None.
 
@@ -42,10 +42,10 @@ cdef class Precondition:
         :raises ValueError: The argument is not None.
         """
         if argument is not None:
-            raise ValueError(f"{PRE_FAILED} (the {param_name} argument was NOT none).")
+            raise ValueError(f"{PRE_FAILED} (the {param_name} argument was not None).")
 
     @staticmethod
-    def not_none(object argument, str param_name):
+    cdef void not_none(object argument, unicode param_name):
         """
         Check the preconditions argument is not None.
 
@@ -54,10 +54,10 @@ cdef class Precondition:
         :raises ValueError: If the argument is None.
         """
         if argument is None:
-            raise ValueError(f"{PRE_FAILED} (the {param_name} argument was none).")
+            raise ValueError(f"{PRE_FAILED} (the {param_name} argument was None).")
 
     @staticmethod
-    def valid_string(str argument, str param_name):
+    cdef void valid_string(unicode argument, unicode param_name):
         """
         Check the preconditions string argument is not None, empty or whitespace.
 
@@ -67,7 +67,7 @@ cdef class Precondition:
         """
         if argument is None:
             raise ValueError(f"{PRE_FAILED} (the {param_name} string argument was None).")
-        if argument is str(''):
+        if argument is unicode(''):
             raise ValueError(f"{PRE_FAILED} (the {param_name} string argument was empty).")
         if argument.isspace():
             raise ValueError(f"{PRE_FAILED} (the {param_name} string argument was whitespace).")
@@ -75,7 +75,7 @@ cdef class Precondition:
             raise ValueError(f"{PRE_FAILED} (the {param_name} string argument exceeded 1024 chars).")
 
     @staticmethod
-    def equal(object argument1, object argument2):
+    cdef void equal(object argument1, object argument2):
         """
         Check the preconditions arguments are equal.
 
@@ -84,14 +84,15 @@ cdef class Precondition:
         :raises ValueError: If the arguments are not equal.
         """
         if argument1 != argument2:
-            raise ValueError(f"{PRE_FAILED} (the arguments were NOT equal).")
+            raise ValueError(f"{PRE_FAILED} (the arguments were not equal). "
+                             f"values = {argument1} and {argument2}")
 
     @staticmethod
-    def equal_lengths(
-            object collection1,
-            object collection2,
-            str collection1_name,
-            str collection2_name):
+    cdef void equal_lengths(
+            list collection1,
+            list collection2,
+            unicode collection1_name,
+            unicode collection2_name):
         """
         Check the preconditions collections have equal lengths.
 
@@ -104,38 +105,39 @@ cdef class Precondition:
         if len(collection1) != len(collection2):
             raise ValueError((
                 f"{PRE_FAILED} "
-                f"(the lengths of {collection1_name} and {collection2_name} were not equal)."))
+                f"(the lengths of {collection1_name} and {collection2_name} were not equal)."
+                f"values = {len(collection1)} and {len(collection2)}"))
 
     @staticmethod
-    def positive(double value, param_name: str):
+    cdef void positive(double value, unicode param_name):
         """
-        Check the preconditions value is positive (greater than zero.)
+        Check the preconditions value is positive (> 0.)
 
         :param value: The value to check.
         :param param_name: The name of the value.
         :raises ValueError: If the value is not positive (> 0).
         """
         if value <= 0:
-            raise ValueError(f"{PRE_FAILED} (the {param_name} was NOT positive = {value}).")
+            raise ValueError(f"{PRE_FAILED} (the {param_name} was not positive). value = {value}")
 
     @staticmethod
-    def not_negative(double value, param_name: str):
+    cdef void not_negative(double value, unicode param_name):
         """
-        Check the preconditions value is positive, and not zero.
+        Check the preconditions value is not negative (>= 0).
 
         :param value: The value to check.
         :param param_name: The values name.
         :raises ValueError: If the value is negative (< 0).
         """
         if value < 0:
-            raise ValueError(f"{PRE_FAILED} (the {param_name} was negative = {value}).")
+            raise ValueError(f"{PRE_FAILED} (the {param_name} was negative). value = {value}")
 
     @staticmethod
-    def in_range(
+    cdef void in_range(
             double value,
             str param_name,
-            start: int or float or Decimal,
-            end: int or float or Decimal):
+            double start,
+            double end):
         """
         Check the preconditions value is within the specified range (inclusive).
 
@@ -147,10 +149,10 @@ cdef class Precondition:
         """
         if value < start or value > end:
             raise ValueError(
-                f"{PRE_FAILED} (the {param_name} was out of range [{start}-{end}] = {value}).")
+                f"{PRE_FAILED} (the {param_name} was out of range [{start}-{end}]). value = {value}")
 
     @staticmethod
-    def not_empty(object argument, str param_name):
+    cdef void not_empty(object argument, unicode param_name):
         """
         Check the preconditions iterable is not empty.
 
@@ -162,7 +164,7 @@ cdef class Precondition:
             raise ValueError(f"{PRE_FAILED} (the {param_name} was an empty collection).")
 
     @staticmethod
-    def empty(object argument, str param_name):
+    cdef void empty(object argument, unicode param_name):
         """
         Check the preconditions iterable is empty.
 
@@ -171,4 +173,4 @@ cdef class Precondition:
         :raises ValueError: If the iterable argument is not empty.
         """
         if len(argument) > 0:
-            raise ValueError(f"{PRE_FAILED} (the {param_name} was NOT an empty collection).")
+            raise ValueError(f"{PRE_FAILED} (the {param_name} was not an empty collection).")
