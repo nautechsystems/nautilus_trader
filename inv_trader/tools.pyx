@@ -16,7 +16,7 @@ from numpy import ndarray
 from typing import Callable, List
 from pandas.core.frame import DataFrame
 
-from inv_trader.core.precondition import Precondition
+from inv_trader.core.precondition cimport Precondition
 from inv_trader.model.objects import Price, Bar, DataBar
 
 
