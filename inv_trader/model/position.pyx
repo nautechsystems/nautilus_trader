@@ -39,9 +39,9 @@ cdef class Position:
     cdef _execution_tickets
 
     def __init__(self,
-                 object symbol: Symbol,
-                 object position_id: PositionId,
-                 object timestamp: datetime):
+                 symbol: Symbol,
+                 position_id: PositionId,
+                 timestamp: datetime):
         """
         Initializes a new instance of the Position class.
 
@@ -206,7 +206,7 @@ cdef class Position:
         props = ', '.join("%s=%s" % item for item in attrs.items()).replace(', _', ', ')
         return f"<{self.__class__.__name__}({props[1:]}) object at {id(self)}>"
 
-    cpdef void apply(self, object event: OrderEvent):
+    cpdef void apply(self, event: OrderEvent):
         """
         Applies the given order event to the position.
 

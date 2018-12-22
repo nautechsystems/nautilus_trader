@@ -110,7 +110,7 @@ cpdef object _parse_symbol(str symbol_string):
     return Symbol(split_symbol[0], Venue[split_symbol[1].upper()])
 
 
-cpdef str _convert_price_to_string(object price):
+cpdef str _convert_price_to_string(price: Decimal):
     """
     Convert the given object to a decimal or 'NONE' string.
 
@@ -130,7 +130,7 @@ cpdef object _convert_string_to_price(str price_string):
     return None if price_string == NONE else Decimal(price_string)
 
 
-cpdef str _convert_datetime_to_string(object expire_time: datetime):
+cpdef str _convert_datetime_to_string(expire_time: datetime):
     """
     Convert the given object to a valid ISO8601 string, or 'NONE'.
 
@@ -157,7 +157,7 @@ cdef class OrderSerializer:
     """
 
     @staticmethod
-    def serialize(object order: Order):
+    def serialize(order: Order):
         """
         Serialize the given order to bytes.
 
@@ -185,13 +185,14 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
     """
 
     @staticmethod
-    def serialize(object order: Order):
+    def serialize(order: Order):
         """
         Serialize the given Order to Message Pack specification bytes.
 
         :param order: The order to serialize.
         :return: The serialized order.
         """
+
         return msgpack.packb({
             SYMBOL: str(order.symbol),
             ORDER_ID: str(order.id),

@@ -48,7 +48,7 @@ cdef class LiveDataClient:
     def __init__(self,
                  str host='localhost',
                  int port=6379,
-                 object logger: Logger=None):
+                 logger: Logger=None):
         """
         Initializes a new instance of the DataClient class.
 

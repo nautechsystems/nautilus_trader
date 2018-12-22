@@ -30,12 +30,12 @@ class MQWorker(Thread):
     def __init__(
             self,
             str name,
-            object context: Context,
+            context: Context,
             int socket_type,
             str host,
             int port,
-            object handler: Callable,
-            object logger: Logger=None):
+            handler: Callable,
+            logger: Logger=None):
         """
         Initializes a new instance of the MQWorker class.
 
