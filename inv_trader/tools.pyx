@@ -19,7 +19,6 @@ from pandas.core.frame import DataFrame
 from inv_trader.core.precondition import Precondition
 from inv_trader.model.objects import Price, Bar, DataBar
 
-# cython
 
 cdef str POINT = 'point'
 cdef str PRICE = 'price'
@@ -30,6 +29,7 @@ cdef str LOW = 'low'
 cdef str CLOSE = 'close'
 cdef str VOLUME = 'volume'
 cdef str TIMESTAMP = 'timestamp'
+
 
 cdef class BarBuilder:
     """
