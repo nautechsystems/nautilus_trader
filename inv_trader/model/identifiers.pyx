@@ -9,7 +9,7 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False
 
-from inv_trader.core.precondition import Precondition
+from inv_trader.core.precondition cimport Precondition
 
 
 cdef class Identifier:

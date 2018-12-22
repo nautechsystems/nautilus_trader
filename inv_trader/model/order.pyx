@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Dict, List
 
-from inv_trader.core.precondition import Precondition
+from inv_trader.core.precondition cimport Precondition
 from inv_trader.model.enums import OrderSide, OrderType, TimeInForce, OrderStatus
 from inv_trader.model.objects import Symbol
 from inv_trader.model.events import OrderEvent
