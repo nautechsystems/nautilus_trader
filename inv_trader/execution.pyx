@@ -46,7 +46,7 @@ cdef class ExecutionClient:
 
     cdef readonly object _log
 
-    def __init__(self, object logger: Logger=None):
+    def __init__(self, logger: Logger=None):
         """
         Initializes a new instance of the ExecutionClient class.
 

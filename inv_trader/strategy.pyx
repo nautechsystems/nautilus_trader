@@ -63,7 +63,7 @@ cdef class TradeStrategy:
                  str label='0',
                  str order_id_tag='0',
                  int bar_capacity=1000,
-                 object logger: Logger=None):
+                 logger: Logger=None):
         """
         Initializes a new instance of the TradeStrategy abstract class.
 
@@ -360,7 +360,7 @@ cdef class TradeStrategy:
     def historical_bars(
             self,
             bar_type: BarType,
-            quantity: int or None=None):
+            int quantity=-1):
         """
         Download the historical bars for the given parameters from the data service.
         Then pass them to all registered strategies.
@@ -375,7 +375,7 @@ cdef class TradeStrategy:
         """
         Precondition.not_none(self._data_client, 'data_client')
 
-        if quantity is None:
+        if quantity == -1:
             quantity = self._bar_capacity
         Precondition.positive(quantity, 'quantity')
 
@@ -547,10 +547,9 @@ cdef class TradeStrategy:
 
         return self._bars[bar_type]
 
-    def bar(
-            self,
+    def bar(self,
             bar_type: BarType,
-            index: int) -> Bar:
+            int index) -> Bar:
         """
         Get the bar for the given bar type at the given index.
 
@@ -695,7 +694,7 @@ cdef class TradeStrategy:
             interval: timedelta,
             start_time: datetime or None=None,
             stop_time: datetime or None=None,
-            repeat: bool=False):
+            bint repeat=False):
         """
         Set a timer with the given interval (time delta). The timer will run from
         the start time (optionally until the stop time). When the interval is
@@ -734,8 +733,8 @@ cdef class TradeStrategy:
             raise KeyError(
                 f"Cannot set timer (the label {label} was not unique for this strategy).")
 
-        alert_time = start_time + interval
-        delay = (alert_time - datetime.now(timezone.utc)).total_seconds()
+        cdef object alert_time = start_time + interval
+        cdef object delay = (alert_time - datetime.now(timezone.utc)).total_seconds()
         if repeat:
             timer = Timer(
                 interval=delay,

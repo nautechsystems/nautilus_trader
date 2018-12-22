@@ -25,7 +25,7 @@ cdef class Symbol:
 
     def __init__(self,
                  str code,
-                 object venue: Venue):
+                 venue: Venue):
         """
         Initializes a new instance of the Symbol class.
 
@@ -149,10 +149,10 @@ cdef class Tick:
     cdef object _timestamp
 
     def __init__(self,
-                 object symbol: Symbol,
-                 object bid: Decimal,
-                 object ask: Decimal,
-                 object timestamp: datetime):
+                 symbol: Symbol,
+                 bid: Decimal,
+                 ask: Decimal,
+                 timestamp: datetime):
         """
         Initializes a new instance of the Tick class.
 
@@ -243,10 +243,10 @@ class BarType:
     """
 
     def __init__(self,
-                 object symbol: Symbol,
+                 symbol: Symbol,
                  int period,
-                 object resolution: Resolution,
-                 object quote_type: QuoteType):
+                 resolution: Resolution,
+                 quote_type: QuoteType):
         """
         Initializes a new instance of the BarType class.
 
@@ -338,12 +338,12 @@ cdef class Bar:
     cdef object _timestamp
 
     def __init__(self,
-                 object open_price: Decimal,
-                 object high_price: Decimal,
-                 object low_price: Decimal,
-                 object close_price: Decimal,
+                 open_price: Decimal,
+                 high_price: Decimal,
+                 low_price: Decimal,
+                 close_price: Decimal,
                  int volume,
-                 object timestamp: datetime):
+                 timestamp: datetime):
         """
         Initializes a new instance of the Bar class.
 
@@ -475,7 +475,7 @@ cdef class DataBar:
                  double low_price,
                  double close_price,
                  double volume,
-                 object timestamp: datetime):
+                 timestamp: datetime):
         """
         Initializes a new instance of the DataBar class.
 
@@ -559,14 +559,14 @@ cdef class Instrument:
     cdef object _timestamp
 
     def __init__(self,
-                 object symbol: Symbol,
+                 symbol: Symbol,
                  str broker_symbol,
-                 object quote_currency: CurrencyCode,
-                 object security_type: SecurityType,
+                 quote_currency: CurrencyCode,
+                 security_type: SecurityType,
                  int tick_decimals,
-                 object tick_size: Decimal,
-                 object tick_value: Decimal,
-                 object target_direct_spread: Decimal,
+                 tick_size: Decimal,
+                 tick_value: Decimal,
+                 target_direct_spread: Decimal,
                  int round_lot_size,
                  int contract_size,
                  int min_stop_distance_entry,
@@ -575,10 +575,10 @@ cdef class Instrument:
                  int min_limit_distance,
                  int min_trade_size,
                  int max_trade_size,
-                 object margin_requirement: Decimal,
-                 object rollover_interest_buy: Decimal,
-                 object rollover_interest_sell: Decimal,
-                 object timestamp: datetime):
+                 margin_requirement: Decimal,
+                 rollover_interest_buy: Decimal,
+                 rollover_interest_sell: Decimal,
+                 timestamp: datetime):
         """
         Initializes a new instance of the Instrument class.
 

@@ -34,9 +34,9 @@ cdef class Logger:
                  name=None,
                  level_console: logging=INFO,
                  level_file: logging=DEBUG,
-                 console_prints: bool=True,
-                 log_to_file: bool=False,
-                 log_file_path: str='log/'):
+                 bint console_prints=True,
+                 bint log_to_file=False,
+                 str log_file_path='log/'):
         """
         Initializes a new instance of the Logger class.
 
@@ -72,7 +72,7 @@ cdef class Logger:
             self._log_file_handler = logging.FileHandler(self._log_file)
             self._logger.addHandler(self._log_file_handler)
 
-    def debug(self, message: str):
+    cpdef void debug(self, str message):
         """
         Log the given debug message with the logger.
 
@@ -89,7 +89,7 @@ cdef class Logger:
             except IOError as ex:
                 self._console_print_handler(f"IOError: {ex}.", logging.CRITICAL)
 
-    def info(self, message: str):
+    cpdef void info(self, str message):
         """
         Log the given information message with the logger.
 
@@ -106,7 +106,7 @@ cdef class Logger:
             except IOError as ex:
                 self._console_print_handler(f"IOError: {ex}.", logging.CRITICAL)
 
-    def warning(self, message: str):
+    cpdef void warning(self, str message):
         """
         Log the given warning message with the logger.
 
@@ -123,7 +123,7 @@ cdef class Logger:
             except IOError as ex:
                 self._console_print_handler(f"IOError: {ex}.", logging.CRITICAL)
 
-    def critical(self, message: str):
+    cpdef void critical(self, message):
         """
         Log the given critical message with the logger.
 
@@ -140,18 +140,18 @@ cdef class Logger:
             except IOError as ex:
                 self._console_print_handler(f"IOError: {ex}.", logging.CRITICAL)
 
-    @staticmethod
-    def _format_message(
-            log_level: str,
-            message: str):
+    cdef str _format_message(
+            self,
+            str log_level,
+            str message):
 
         time = datetime.utcnow().isoformat(timespec='milliseconds') + 'Z'
         return (f'{time} [{threading.current_thread().ident}][{log_level}] '
                 f'{message}')
 
-    def _console_print_handler(
+    cdef void _console_print_handler(
             self,
-            message: str,
+            str message,
             log_level: logging):
 
         if self._console_prints and self._log_level_console <= log_level:
@@ -165,10 +165,9 @@ cdef class LoggerAdapter:
     cdef str _component_name
     cdef object _logger
 
-    def __init__(
-            self,
-            component_name: str = None,
-            logger: Logger=Logger()):
+    def __init__(self,
+                 str component_name=None,
+                 logger: Logger=Logger()):
         """
         Initializes a new instance of the LoggerAdapter class.
 
@@ -176,7 +175,7 @@ cdef class LoggerAdapter:
         :param component_name: The name of the component.
         """
         if component_name is not None:
-            Precondition.valid_string(component_name, u'component_name')
+            Precondition.valid_string(component_name, 'component_name')
         else:
             component_name = ''
 
@@ -184,7 +183,7 @@ cdef class LoggerAdapter:
         self._logger = logger
 
 
-    def debug(self, message: str):
+    cpdef void debug(self, str message):
         """
         Log the given debug message with the logger.
 
@@ -194,7 +193,7 @@ cdef class LoggerAdapter:
 
         self._logger.debug(self._format_message(message))
 
-    def info(self, message: str):
+    cpdef void info(self, str message):
         """
         Log the given information message with the logger.
 
@@ -204,7 +203,7 @@ cdef class LoggerAdapter:
 
         self._logger.info(self._format_message(message))
 
-    def warning(self, message: str):
+    cpdef void warning(self, str message):
         """
         Log the given warning message with the logger.
 
@@ -214,7 +213,7 @@ cdef class LoggerAdapter:
 
         self._logger.warning(self._format_message(message))
 
-    def critical(self, message: str):
+    cpdef void critical(self, str message):
         """
         Log the given critical message with the logger.
 
@@ -224,5 +223,5 @@ cdef class LoggerAdapter:
 
         self._logger.critical(self._format_message(message))
 
-    def _format_message(self, message: str):
+    cdef str _format_message(self, str message):
         return f"{self._component_name}: {message}"

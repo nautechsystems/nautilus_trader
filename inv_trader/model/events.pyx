@@ -117,7 +117,7 @@ cdef class AccountEvent(Event):
                  margin_used_liquidation: Decimal,
                  margin_used_maintenance: Decimal,
                  margin_ratio: Decimal,
-                 margin_call_status: str,
+                 str margin_call_status,
                  event_id: UUID,
                  event_timestamp: datetime):
         """
@@ -253,10 +253,10 @@ cdef class OrderEvent(Event):
     cdef object _order_id
 
     def __init__(self,
-                 object order_symbol: Symbol,
-                 object order_id: OrderId,
-                 object event_id: UUID,
-                 object event_timestamp: datetime):
+                 order_symbol: Symbol,
+                 order_id: OrderId,
+                 event_id: UUID,
+                 event_timestamp: datetime):
         """
         Initializes a new instance of the OrderEvent abstract class.
 
@@ -304,11 +304,11 @@ cdef class OrderSubmitted(OrderEvent):
     cdef object _submitted_time
 
     def __init__(self,
-                 object symbol: Symbol,
-                 object order_id: OrderId,
-                 object submitted_time: datetime,
-                 object event_id: UUID,
-                 object event_timestamp: datetime):
+                 symbol: Symbol,
+                 order_id: OrderId,
+                 submitted_time: datetime,
+                 event_id: UUID,
+                 event_timestamp: datetime):
         """
         Initializes a new instance of the OrderSubmitted class.
 
@@ -339,11 +339,11 @@ cdef class OrderAccepted(OrderEvent):
     cdef object _accepted_time
 
     def __init__(self,
-                 object symbol: Symbol,
-                 object order_id: OrderId,
-                 object accepted_time: datetime,
-                 object event_id: UUID,
-                 object event_timestamp: datetime):
+                 symbol: Symbol,
+                 order_id: OrderId,
+                 accepted_time: datetime,
+                 event_id: UUID,
+                 event_timestamp: datetime):
         """
         Initializes a new instance of the OrderAccepted class.
 
@@ -375,12 +375,12 @@ cdef class OrderRejected(OrderEvent):
     cdef object _rejected_reason
 
     def __init__(self,
-                 object symbol: Symbol,
-                 object order_id: OrderId,
-                 object rejected_time: datetime,
+                 symbol: Symbol,
+                 order_id: OrderId,
+                 rejected_time: datetime,
                  str rejected_reason,
-                 object event_id: UUID,
-                 object event_timestamp: datetime):
+                 event_id: UUID,
+                 event_timestamp: datetime):
         """
         Initializes a new instance of the OrderRejected class.
 
@@ -430,19 +430,19 @@ cdef class OrderWorking(OrderEvent):
     cdef object _expire_time
 
     def __init__(self,
-                 object symbol: Symbol,
-                 object order_id: OrderId,
-                 object broker_order_id: OrderId,
-                 object label: Label,
-                 object order_side: OrderSide,
-                 object order_type: OrderType,
+                 symbol: Symbol,
+                 order_id: OrderId,
+                 broker_order_id: OrderId,
+                 label: Label,
+                 order_side: OrderSide,
+                 order_type: OrderType,
                  int quantity,
-                 object price: Decimal,
-                 object time_in_force: TimeInForce,
-                 object working_time: datetime,
-                 object event_id: UUID,
-                 object event_timestamp: datetime,
-                 object expire_time: datetime=None):
+                 price: Decimal,
+                 time_in_force: TimeInForce,
+                 working_time: datetime,
+                 event_id: UUID,
+                 event_timestamp: datetime,
+                 expire_time: datetime=None):
         """
         Initializes a new instance of the OrderWorking class.
 
@@ -544,11 +544,11 @@ cdef class OrderCancelled(OrderEvent):
     cdef object _cancelled_time
 
     def __init__(self,
-                 object symbol: Symbol,
-                 object order_id: OrderId,
-                 object cancelled_time: datetime,
-                 object event_id: UUID,
-                 object event_timestamp: datetime):
+                 symbol: Symbol,
+                 order_id: OrderId,
+                 cancelled_time: datetime,
+                 event_id: UUID,
+                 event_timestamp: datetime):
         """
         Initializes a new instance of the OrderCancelled class.
 
@@ -558,7 +558,10 @@ cdef class OrderCancelled(OrderEvent):
         :param event_id: The events identifier.
         :param event_timestamp: The events timestamp.
         """
-        super().__init__(symbol, order_id, event_id, event_timestamp)
+        super().__init__(symbol,
+                         order_id,
+                         event_id,
+                         event_timestamp)
         self._cancelled_time = cancelled_time
 
     @property
@@ -578,13 +581,13 @@ cdef class OrderCancelReject(OrderEvent):
     cdef str _cancel_reject_reason
 
     def __init__(self,
-                 object order_symbol: Symbol,
-                 object order_id: OrderId,
-                 object cancel_reject_time: datetime,
+                 order_symbol: Symbol,
+                 order_id: OrderId,
+                 cancel_reject_time: datetime,
                  str cancel_response,
                  str cancel_reject_reason,
-                 object event_id: UUID,
-                 object event_timestamp: datetime):
+                 event_id: UUID,
+                 event_timestamp: datetime):
         """
         Initializes a new instance of the OrderCancelReject class.
 
@@ -599,7 +602,10 @@ cdef class OrderCancelReject(OrderEvent):
         Precondition.valid_string(cancel_response, 'cancel_response')
         Precondition.valid_string(cancel_reject_reason, 'cancel_reject_reason')
 
-        super().__init__(order_symbol, order_id, event_id, event_timestamp)
+        super().__init__(order_symbol,
+                         order_id,
+                         event_id,
+                         event_timestamp)
         self._cancel_reject_time = cancel_reject_time
         self._cancel_reject_response = cancel_response
         self._cancel_reject_reason = cancel_reject_reason
@@ -640,11 +646,11 @@ cdef class OrderExpired(OrderEvent):
     cdef object _expired_time
 
     def __init__(self,
-                 object symbol: Symbol,
-                 object order_id: OrderId,
-                 object expired_time: datetime,
-                 object event_id: UUID,
-                 object event_timestamp: datetime):
+                 symbol: Symbol,
+                 order_id: OrderId,
+                 expired_time: datetime,
+                 event_id: UUID,
+                 event_timestamp: datetime):
         """
         Initializes a new instance of the OrderExpired class.
 
@@ -674,13 +680,13 @@ cdef class OrderModified(OrderEvent):
     cdef object _modified_time
 
     def __init__(self,
-                 object symbol: Symbol,
-                 object order_id: OrderId,
-                 object broker_order_id: OrderId,
-                 object modified_price: Decimal,
-                 object modified_time: datetime,
-                 object event_id: UUID,
-                 object event_timestamp: datetime):
+                 symbol: Symbol,
+                 order_id: OrderId,
+                 broker_order_id: OrderId,
+                 modified_price: Decimal,
+                 modified_time: datetime,
+                 event_id: UUID,
+                 event_timestamp: datetime):
         """
         Initializes a new instance of the OrderPartiallyFilled class.
 
@@ -692,7 +698,10 @@ cdef class OrderModified(OrderEvent):
         :param event_id: The events identifier.
         :param event_timestamp: The events timestamp.
         """
-        super().__init__(symbol, order_id, event_id, event_timestamp)
+        super().__init__(symbol,
+                         order_id,
+                         event_id,
+                         event_timestamp)
         self._broker_order_id = broker_order_id
         self._modified_price = modified_price
         self._modified_time = modified_time
@@ -731,16 +740,16 @@ cdef class OrderFilled(OrderEvent):
     cdef object _execution_time
 
     def __init__(self,
-                 object symbol: Symbol,
-                 object order_id: OrderId,
-                 object execution_id: ExecutionId,
-                 object execution_ticket: ExecutionTicket,
-                 object order_side: OrderSide,
-                 object filled_quantity: int,
-                 object average_price: Decimal,
-                 object execution_time: datetime,
-                 object event_id: UUID,
-                 object event_timestamp: datetime):
+                 symbol: Symbol,
+                 order_id: OrderId,
+                 execution_id: ExecutionId,
+                 execution_ticket: ExecutionTicket,
+                 order_side: OrderSide,
+                 int filled_quantity,
+                 average_price: Decimal,
+                 execution_time: datetime,
+                 event_id: UUID,
+                 event_timestamp: datetime):
         """
         Initializes a new instance of the OrderFilled class.
 
@@ -757,7 +766,10 @@ cdef class OrderFilled(OrderEvent):
         """
         Precondition.positive(filled_quantity, 'filled_quantity')
 
-        super().__init__(symbol, order_id, event_id, event_timestamp)
+        super().__init__(symbol,
+                         order_id,
+                         event_id,
+                         event_timestamp)
         self._execution_id = execution_id
         self._execution_ticket = execution_ticket
         self._order_side = order_side
@@ -821,17 +833,17 @@ cdef class OrderPartiallyFilled(OrderEvent):
     cdef object _execution_time
 
     def __init__(self,
-                 object symbol: Symbol,
-                 object order_id: OrderId,
-                 object execution_id: ExecutionId,
-                 object execution_ticket: ExecutionTicket,
-                 object order_side: OrderSide,
-                 object filled_quantity: int,
-                 object leaves_quantity: int,
-                 object average_price: Decimal,
-                 object execution_time: datetime,
-                 object event_id: UUID,
-                 object event_timestamp: datetime):
+                 symbol: Symbol,
+                 order_id: OrderId,
+                 execution_id: ExecutionId,
+                 execution_ticket: ExecutionTicket,
+                 order_side: OrderSide,
+                 int filled_quantity,
+                 int leaves_quantity,
+                 average_price: Decimal,
+                 execution_time: datetime,
+                 event_id: UUID,
+                 event_timestamp: datetime):
         """
         Initializes a new instance of the OrderPartiallyFilled class.
 
@@ -850,7 +862,10 @@ cdef class OrderPartiallyFilled(OrderEvent):
         Precondition.positive(filled_quantity, 'filled_quantity')
         Precondition.positive(leaves_quantity, 'leaves_quantity')
 
-        super().__init__(symbol, order_id, event_id, event_timestamp)
+        super().__init__(symbol,
+                         order_id,
+                         event_id,
+                         event_timestamp)
         self._execution_id = execution_id
         self._execution_ticket = execution_ticket
         self._order_side = order_side
@@ -916,9 +931,9 @@ cdef class TimeEvent(Event):
     cdef object _label
 
     def __init__(self,
-                 object label: Label,
-                 object event_id: UUID,
-                 object event_timestamp: datetime):
+                 label: Label,
+                 event_id: UUID,
+                 event_timestamp: datetime):
         """
         Initializes a new instance of the TimeEvent class.
 

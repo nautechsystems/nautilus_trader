@@ -55,16 +55,16 @@ cdef class Order:
     cdef list _execution_tickets
 
     def __init__(self,
-                 object symbol: Symbol,
-                 object order_id: OrderId,
-                 object label: Label,
-                 object order_side: OrderSide,
-                 object order_type: OrderType,
+                 symbol: Symbol,
+                 order_id: OrderId,
+                 label: Label,
+                 order_side: OrderSide,
+                 order_type: OrderType,
                  int quantity,
-                 object timestamp: datetime,
-                 object price=None,
-                 object time_in_force=None,
-                 object expire_time=None):
+                 timestamp: datetime,
+                 price: Decimal or None=None,
+                 time_in_force: TimeInForce or None=None,
+                 expire_time: datetime or None=None):
         """
         Initializes a new instance of the Order class.
 
@@ -309,7 +309,7 @@ cdef class Order:
         """
         return len(self._events)
 
-    cpdef void apply(self, object order_event: OrderEvent):
+    cpdef void apply(self, order_event: OrderEvent):
         """
         Applies the given order event to the order.
 
