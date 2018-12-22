@@ -21,31 +21,31 @@ cdef class Precondition(object):
     specification.
     """
     @staticmethod
-    cdef void true(bint predicate, unicode description):
+    cdef true(bint predicate, unicode description):
         """
         Check the preconditions predicate is true.
 
         :param predicate: The predicate condition to check.
         :param description: The description of the predicate condition.
-        :raises ValueError: If the predicate is false.
+        :raises ValueError: If the predicate is False.
         """
         if not predicate:
             raise ValueError(f"{PRE_FAILED} (the predicate {description} was False).")
 
     @staticmethod
-    cdef void is_none(object argument, unicode param_name):
+    cdef is_none(object argument, unicode param_name):
         """
         Check the preconditions argument is None.
 
         :param argument: The argument to check.
         :param param_name: The parameter name.
-        :raises ValueError: The argument is not None.
+        :raises ValueError: If the argument is not None.
         """
         if argument is not None:
             raise ValueError(f"{PRE_FAILED} (the {param_name} argument was not None).")
 
     @staticmethod
-    cdef void not_none(object argument, unicode param_name):
+    cdef not_none(object argument, unicode param_name):
         """
         Check the preconditions argument is not None.
 
@@ -57,7 +57,7 @@ cdef class Precondition(object):
             raise ValueError(f"{PRE_FAILED} (the {param_name} argument was None).")
 
     @staticmethod
-    cdef void valid_string(unicode argument, unicode param_name):
+    cdef valid_string(unicode argument, unicode param_name):
         """
         Check the preconditions string argument is not None, empty or whitespace.
 
@@ -75,7 +75,7 @@ cdef class Precondition(object):
             raise ValueError(f"{PRE_FAILED} (the {param_name} string argument exceeded 1024 chars).")
 
     @staticmethod
-    cdef void equal(object argument1, object argument2):
+    cdef equal(object argument1, object argument2):
         """
         Check the preconditions arguments are equal.
 
@@ -88,7 +88,7 @@ cdef class Precondition(object):
                              f"values = {argument1} and {argument2}")
 
     @staticmethod
-    cdef void equal_lengths(
+    cdef equal_lengths(
             list collection1,
             list collection2,
             unicode collection1_name,
@@ -109,7 +109,7 @@ cdef class Precondition(object):
                 f"values = {len(collection1)} and {len(collection2)}"))
 
     @staticmethod
-    cdef void positive(double value, unicode param_name):
+    cdef positive(double value, unicode param_name):
         """
         Check the preconditions value is positive (> 0.)
 
@@ -121,7 +121,7 @@ cdef class Precondition(object):
             raise ValueError(f"{PRE_FAILED} (the {param_name} was not positive). value = {value}")
 
     @staticmethod
-    cdef void not_negative(double value, unicode param_name):
+    cdef not_negative(double value, unicode param_name):
         """
         Check the preconditions value is not negative (>= 0).
 
@@ -133,7 +133,7 @@ cdef class Precondition(object):
             raise ValueError(f"{PRE_FAILED} (the {param_name} was negative). value = {value}")
 
     @staticmethod
-    cdef void in_range(
+    cdef in_range(
             double value,
             str param_name,
             double start,
@@ -152,7 +152,7 @@ cdef class Precondition(object):
                 f"{PRE_FAILED} (the {param_name} was out of range [{start}-{end}]). value = {value}")
 
     @staticmethod
-    cdef void not_empty(object argument, unicode param_name):
+    cdef not_empty(object argument, unicode param_name):
         """
         Check the preconditions iterable is not empty.
 
@@ -164,7 +164,7 @@ cdef class Precondition(object):
             raise ValueError(f"{PRE_FAILED} (the {param_name} was an empty collection).")
 
     @staticmethod
-    cdef void empty(object argument, unicode param_name):
+    cdef empty(object argument, unicode param_name):
         """
         Check the preconditions iterable is empty.
 

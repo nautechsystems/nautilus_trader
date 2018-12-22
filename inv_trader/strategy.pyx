@@ -38,12 +38,12 @@ cdef class TradeStrategy:
     """
     The abstract base class for all trade strategies.
     """
+    cdef object _log
     cdef str _name
-    cdef object _label
+    cdef str _label
     cdef object _id
     cdef object _order_id_generator
     cdef int _bar_capacity
-    cdef object _log
     cdef bint _is_running
     cdef object _timers
     cdef object _ticks
@@ -79,15 +79,15 @@ cdef class TradeStrategy:
         Precondition.valid_string(order_id_tag, 'order_id_tag')
         Precondition.positive(bar_capacity, 'bar_capacity')
 
+        if logger is None:
+            self._log = LoggerAdapter(f"{self._name}-{self._label}")
+        else:
+            self._log = LoggerAdapter(f"{self._name}-{self._label}", logger)
         self._name = self.__class__.__name__
         self._label = label
         self._id = uuid.uuid4()
         self._order_id_generator = OrderIdGenerator(order_id_tag)
         self._bar_capacity = bar_capacity
-        if logger is None:
-            self._log = LoggerAdapter(f"{self._name}-{self._label}")
-        else:
-            self._log = LoggerAdapter(f"{self._name}-{self._label}", logger)
         self._is_running = False
         self._timers = {}                # type: Dict[Label, Timer]
         self._ticks = {}                 # type: Dict[Symbol, Tick]
@@ -515,7 +515,7 @@ cdef class TradeStrategy:
 
         return self._indicators[bar_type]
 
-    def indicator(self, label: str) -> Indicator:
+    def indicator(self, str label) -> Indicator:
         """
         Get the indicator for the given unique label.
 
@@ -524,12 +524,12 @@ cdef class TradeStrategy:
         :raises ValueError: If the label is not a valid string.
         :raises KeyError: If the strategies indicator dictionary does not contain the given label.
         """
-        label = Label(label)
+        cdef object label_obj = Label(label)
 
-        if label not in self._indicator_index:
+        if label_obj not in self._indicator_index:
             raise KeyError(
                 (f"Cannot get indicator "
-                 f"(the indicator dictionary does not contain the label {label})."))
+                 f"(the indicator dictionary does not contain the label {label_obj})."))
 
         return self._indicator_index[label]
 

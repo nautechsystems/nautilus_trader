@@ -11,32 +11,32 @@
 
 cdef class Precondition(object):
     @staticmethod
-    cdef void true(bint predicate, unicode description)
+    cdef true(bint predicate, unicode description)
     @staticmethod
-    cdef void is_none(object argument, unicode param_name)
+    cdef is_none(object argument, unicode param_name)
     @staticmethod
-    cdef void not_none(object argument, unicode param_name)
+    cdef not_none(object argument, unicode param_name)
     @staticmethod
-    cdef void valid_string(unicode argument, unicode param_name)
+    cdef valid_string(unicode argument, unicode param_name)
     @staticmethod
-    cdef void equal(object argument1, object argument2)
+    cdef equal(object argument1, object argument2)
     @staticmethod
-    cdef void equal_lengths(
+    cdef equal_lengths(
             list collection1,
             list collection2,
             str collection1_name,
             str collection2_name)
     @staticmethod
-    cdef void positive(double value, unicode param_name)
+    cdef positive(double value, unicode param_name)
     @staticmethod
-    cdef void not_negative(double value, unicode param_name)
+    cdef not_negative(double value, unicode param_name)
     @staticmethod
-    cdef void in_range(
+    cdef in_range(
             double value,
             str param_name,
             double start,
             double end)
     @staticmethod
-    cdef void not_empty(object argument, unicode param_name)
+    cdef not_empty(object argument, unicode param_name)
     @staticmethod
-    cdef void empty(object argument, unicode param_name)
+    cdef empty(object argument, unicode param_name)
