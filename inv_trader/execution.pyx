@@ -8,7 +8,8 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import abc
+# cython: language_level=3, boundscheck=False
+
 import uuid
 import zmq
 
@@ -18,7 +19,7 @@ from typing import Dict, Callable
 from uuid import UUID
 from zmq import Context
 
-from inv_trader.core.precondition import Precondition
+from inv_trader.core.precondition cimport Precondition
 from inv_trader.core.logger import Logger, LoggerAdapter
 from inv_trader.commands import CollateralInquiry
 from inv_trader.commands import SubmitOrder, CancelOrder, ModifyOrder
@@ -32,17 +33,20 @@ from inv_trader.serialization import CommandSerializer, EventSerializer
 from inv_trader.serialization import MsgPackCommandSerializer
 from inv_trader.serialization import MsgPackEventSerializer
 
-UTF8 = 'utf-8'
+cdef str UTF8 = 'utf-8'
 
 
-class ExecutionClient:
+cdef class ExecutionClient:
     """
     The abstract base class for all execution clients.
     """
+    cdef object _account
+    cdef object _registered_strategies
+    cdef object _order_index
 
-    __metaclass__ = abc.ABCMeta
+    cdef readonly object _log
 
-    def __init__(self, logger: Logger=None):
+    def __init__(self, object logger: Logger=None):
         """
         Initializes a new instance of the ExecutionClient class.
 
@@ -80,7 +84,6 @@ class ExecutionClient:
 
         self._log.info(f"Registered strategy {strategy} with the execution client.")
 
-    @abc.abstractmethod
     def connect(self):
         """
         Connect to the execution service.
@@ -88,7 +91,6 @@ class ExecutionClient:
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the execution client.")
 
-    @abc.abstractmethod
     def disconnect(self):
         """
         Disconnect from the execution service.
@@ -96,7 +98,6 @@ class ExecutionClient:
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the execution client.")
 
-    @abc.abstractmethod
     def collateral_inquiry(self):
         """
         Send a collateral inquiry command to the execution service.
@@ -104,7 +105,6 @@ class ExecutionClient:
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the execution client.")
 
-    @abc.abstractmethod
     def submit_order(
             self,
             order: Order,
@@ -115,7 +115,6 @@ class ExecutionClient:
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the execution client.")
 
-    @abc.abstractmethod
     def cancel_order(
             self, order: Order,
             cancel_reason: str):
@@ -125,7 +124,6 @@ class ExecutionClient:
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the execution client.")
 
-    @abc.abstractmethod
     def modify_order(
             self,
             order: Order,
@@ -174,19 +172,24 @@ class ExecutionClient:
             self._account.apply(event)
 
 
-class LiveExecClient(ExecutionClient):
+cdef class LiveExecClient(ExecutionClient):
     """
     Provides a client for the execution service utilizing a ZMQ transport.
     """
+    cdef object _command_serializer
+    cdef object _event_serializer
+    cdef object _context
+    cdef object _commands_worker
+    cdef object _events_worker
 
     def __init__(
             self,
-            host: str='localhost',
-            commands_port: int=5555,
-            events_port: int=5556,
-            command_serializer: CommandSerializer=MsgPackCommandSerializer,
-            event_serializer: EventSerializer=MsgPackEventSerializer,
-            logger: Logger=None):
+            str host='localhost',
+            int commands_port=5555,
+            int events_port=5556,
+            object command_serializer: CommandSerializer=MsgPackCommandSerializer,
+            object event_serializer: EventSerializer=MsgPackEventSerializer,
+            object logger: Logger=None):
         """
         Initializes a new instance of the LiveExecClient class.
 

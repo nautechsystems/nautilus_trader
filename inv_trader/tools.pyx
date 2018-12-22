@@ -193,9 +193,8 @@ cdef class IndicatorUpdater:
 
         for bar in bars:
             self.update_bar(bar)
-            values = self.get_values()
 
-            for value in values:
+            for value in self.get_values():
                 features[value[0]].append(value[1])
 
         return features

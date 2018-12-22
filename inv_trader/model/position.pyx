@@ -7,11 +7,13 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+# cython: language_level=3, boundscheck=False
+
 from datetime import datetime
 from decimal import Decimal
 from typing import List
 
-from inv_trader.core.precondition import Precondition
+from inv_trader.core.precondition cimport Precondition
 from inv_trader.model.enums import MarketPosition, OrderSide
 from inv_trader.model.objects import Symbol
 from inv_trader.model.events import OrderEvent
@@ -19,15 +21,27 @@ from inv_trader.model.events import OrderPartiallyFilled, OrderFilled
 from inv_trader.model.identifiers import OrderId, PositionId, ExecutionId, ExecutionTicket
 
 
-class Position:
+cdef class Position:
     """
     Represents a position in a financial market.
     """
+    cdef object _symbol
+    cdef object _id
+    cdef object _timestamp
+    cdef int _relative_quantity
+    cdef int _peak_quantity
+    cdef object _entry_time
+    cdef object _exit_time
+    cdef object _average_entry_price
+    cdef object _average_exit_price
+    cdef list _events
+    cdef list _execution_ids
+    cdef _execution_tickets
 
     def __init__(self,
-                 symbol: Symbol,
-                 position_id: PositionId,
-                 timestamp: datetime):
+                 object symbol: Symbol,
+                 object position_id: PositionId,
+                 object timestamp: datetime):
         """
         Initializes a new instance of the Position class.
 
@@ -192,7 +206,7 @@ class Position:
         props = ', '.join("%s=%s" % item for item in attrs.items()).replace(', _', ', ')
         return f"<{self.__class__.__name__}({props[1:]}) object at {id(self)}>"
 
-    def apply(self, event: OrderEvent):
+    cpdef void apply(self, object event: OrderEvent):
         """
         Applies the given order event to the position.
 
@@ -220,12 +234,12 @@ class Position:
         else:
             raise TypeError("Cannot apply event (unrecognized event).")
 
-    def _update_position(
+    cdef void _update_position(
             self,
-            order_side: OrderSide,
-            quantity: int,
-            average_price: Decimal,
-            event_time: datetime):
+            object order_side: OrderSide,
+            int quantity,
+            object average_price: Decimal,
+            object event_time: datetime):
         Precondition.positive(quantity, 'quantity')
         Precondition.positive(average_price, 'average_price')
 

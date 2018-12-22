@@ -7,22 +7,22 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import abc
+# cython: language_level=3, boundscheck=False, wraparound=False
 
 from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from inv_trader.core.precondition import Precondition
+from inv_trader.core.precondition cimport Precondition
 from inv_trader.model.order import Order
 
 
-class Command:
+cdef class Command:
     """
     The abstract base class for all commands.
     """
-
-    __metaclass__ = abc.ABCMeta
+    cdef object _command_id
+    cdef object _command_timestamp
 
     def __init__(self,
                  identifier: UUID,
@@ -84,12 +84,11 @@ class Command:
         return self._command_timestamp
 
 
-class OrderCommand(Command):
+cdef class OrderCommand(Command):
     """
     The abstract base class for all order commands.
     """
-
-    __metaclass__ = abc.ABCMeta
+    cdef object _order
 
     def __init__(self,
                  order: Order,
@@ -125,7 +124,7 @@ class OrderCommand(Command):
         return self._order
 
 
-class SubmitOrder(OrderCommand):
+cdef class SubmitOrder(OrderCommand):
     """
     Represents a command to submit the given order.
     """
@@ -147,10 +146,11 @@ class SubmitOrder(OrderCommand):
             command_timestamp)
 
 
-class CancelOrder(OrderCommand):
+cdef class CancelOrder(OrderCommand):
     """
     Represents a command to cancel the given order.
     """
+    cdef str _cancel_reason
 
     def __init__(self,
                  order: Order,
@@ -182,10 +182,11 @@ class CancelOrder(OrderCommand):
         return self._cancel_reason
 
 
-class ModifyOrder(OrderCommand):
+cdef class ModifyOrder(OrderCommand):
     """
     Represents a command to modify the given order with the given modified price.
     """
+    cdef object _modified_price
 
     def __init__(self,
                  order: Order,
@@ -217,7 +218,7 @@ class ModifyOrder(OrderCommand):
         return self._modified_price
 
 
-class CollateralInquiry(Command):
+cdef class CollateralInquiry(Command):
     """
     Represents a request for a FIX collateral inquiry of all connected accounts.
     """

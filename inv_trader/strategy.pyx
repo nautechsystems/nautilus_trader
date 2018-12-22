@@ -7,7 +7,8 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import abc
+# cython: language_level=3, boundscheck=False
+
 import uuid
 
 from collections import deque
@@ -17,7 +18,7 @@ from typing import Callable, Deque, Dict, List
 from threading import Timer
 from uuid import UUID
 
-from inv_trader.core.precondition import Precondition
+from inv_trader.core.precondition cimport Precondition
 from inv_trader.core.logger import Logger, LoggerAdapter
 from inv_trader.model.account import Account
 from inv_trader.model.enums import OrderSide, MarketPosition
@@ -33,18 +34,36 @@ from inv_trader.tools import IndicatorUpdater
 Indicator = object
 
 
-class TradeStrategy:
+cdef class TradeStrategy:
     """
     The abstract base class for all trade strategies.
     """
+    cdef str _name
+    cdef object _label
+    cdef object _id
+    cdef object _order_id_generator
+    cdef int _bar_capacity
+    cdef object _log
+    cdef bint _is_running
+    cdef object _timers
+    cdef object _ticks
+    cdef object _bars
+    cdef object _indicators
+    cdef object _indicator_updaters
+    cdef object _indicator_index
 
-    __metaclass__ = abc.ABCMeta
+    cdef readonly object _order_position_index
+    cdef readonly object _order_book
+    cdef readonly object _position_book
+    cdef readonly object _data_client
+    cdef readonly object _exec_client
+    cdef readonly object _account
 
     def __init__(self,
-                 label: str='0',
-                 order_id_tag: str='0',
-                 bar_capacity=1000,
-                 logger: Logger=None):
+                 str label='0',
+                 str order_id_tag='0',
+                 int bar_capacity=1000,
+                 object logger: Logger=None):
         """
         Initializes a new instance of the TradeStrategy abstract class.
 
@@ -118,7 +137,7 @@ class TradeStrategy:
         """
         return f"<{str(self)} object at {id(self)}>"
 
-    @abc.abstractmethod
+    # @abc.abstractmethod
     def on_start(self):
         """
         Called when the strategy is started.
@@ -126,7 +145,7 @@ class TradeStrategy:
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
 
-    @abc.abstractmethod
+    # @abc.abstractmethod
     def on_tick(self, tick: Tick):
         """
         Called when a tick is received by the strategy.
@@ -136,7 +155,7 @@ class TradeStrategy:
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
 
-    @abc.abstractmethod
+    # @abc.abstractmethod
     def on_bar(self, bar_type: BarType, bar: Bar):
         """
         Called when a bar is received by the strategy.
@@ -147,7 +166,7 @@ class TradeStrategy:
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
 
-    @abc.abstractmethod
+    # @abc.abstractmethod
     def on_event(self, event: Event):
         """
         Called when an event is received by the strategy.
@@ -157,7 +176,7 @@ class TradeStrategy:
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
 
-    @abc.abstractmethod
+    # @abc.abstractmethod
     def on_stop(self):
         """
         Called when the strategy is stopped.
@@ -165,7 +184,7 @@ class TradeStrategy:
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
 
-    @abc.abstractmethod
+    # @abc.abstractmethod
     def on_reset(self):
         """
         Called when the strategy is reset.
