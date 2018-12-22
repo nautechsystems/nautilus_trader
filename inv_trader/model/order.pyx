@@ -309,7 +309,7 @@ cdef class Order:
         """
         return len(self._events)
 
-    def apply(self, order_event: OrderEvent):
+    cpdef void apply(self, object order_event: OrderEvent):
         """
         Applies the given order event to the order.
 

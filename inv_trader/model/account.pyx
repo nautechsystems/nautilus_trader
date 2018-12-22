@@ -25,7 +25,7 @@ cdef class Account:
     cdef bint _initialized
     cdef object _id
     cdef object _broker
-    cdef str _account_number
+    cdef object _account_number
     cdef object _currency
     cdef object _cash_balance
     cdef object _cash_start_day
@@ -211,6 +211,6 @@ cdef class Account:
         self._events.append(event)
         self._last_updated = event.timestamp
 
-    def _calculate_free_equity(self) -> Decimal:
+    cdef object _calculate_free_equity(self):
         margin_used = self._margin_used_maintenance + self._margin_used_liquidation
         return Decimal(max(self._cash_balance - margin_used, 0))

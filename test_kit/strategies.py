@@ -7,6 +7,8 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+# cython: language_level=3, boundscheck=False
+
 from inv_trader.model.enums import Venue, Resolution, QuoteType, OrderSide
 from inv_trader.model.objects import Symbol, Tick, BarType, Bar
 from inv_trader.model.order import OrderFactory

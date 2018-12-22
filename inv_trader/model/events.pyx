@@ -318,7 +318,10 @@ cdef class OrderSubmitted(OrderEvent):
         :param event_id: The events identifier.
         :param event_timestamp: The events timestamp.
         """
-        super().__init__(symbol, order_id, event_id, event_timestamp)
+        super().__init__(symbol,
+                         order_id,
+                         event_id,
+                         event_timestamp)
         self._submitted_time = submitted_time
 
     @property
@@ -350,7 +353,10 @@ cdef class OrderAccepted(OrderEvent):
         :param event_id: The events identifier.
         :param event_timestamp: The events timestamp.
         """
-        super().__init__(symbol, order_id, event_id, event_timestamp)
+        super().__init__(symbol,
+                         order_id,
+                         event_id,
+                         event_timestamp)
         self._accepted_time = accepted_time
 
     @property
@@ -365,6 +371,8 @@ cdef class OrderRejected(OrderEvent):
     """
     Represents an event where an order has been rejected by the broker.
     """
+    cdef object _rejected_time
+    cdef object _rejected_reason
 
     def __init__(self,
                  object symbol: Symbol,
@@ -385,7 +393,10 @@ cdef class OrderRejected(OrderEvent):
         """
         Precondition.valid_string(rejected_reason, 'rejected_reason')
 
-        super().__init__(symbol, order_id, event_id, event_timestamp)
+        super().__init__(symbol,
+                         order_id,
+                         event_id,
+                         event_timestamp)
         self._rejected_time = rejected_time
         self._rejected_reason = rejected_reason
 
@@ -408,6 +419,15 @@ cdef class OrderWorking(OrderEvent):
     """
     Represents an event where an order is working with the broker.
     """
+    cdef object _broker_order_id
+    cdef object _label
+    cdef object _order_side
+    cdef object _order_type
+    cdef int _quantity
+    cdef object _price
+    cdef object _time_in_force
+    cdef object _working_time
+    cdef object _expire_time
 
     def __init__(self,
                  object symbol: Symbol,
@@ -521,6 +541,7 @@ cdef class OrderCancelled(OrderEvent):
     """
     Represents an event where an order has been cancelled with the broker.
     """
+    cdef object _cancelled_time
 
     def __init__(self,
                  object symbol: Symbol,
@@ -552,13 +573,16 @@ cdef class OrderCancelReject(OrderEvent):
     """
     Represents an event where an order cancel request has been rejected by the broker.
     """
+    cdef object _cancel_reject_time
+    cdef object _cancel_reject_response
+    cdef str _cancel_reject_reason
 
     def __init__(self,
                  object order_symbol: Symbol,
                  object order_id: OrderId,
                  object cancel_reject_time: datetime,
-                 object cancel_response: str,
-                 object cancel_reject_reason: str,
+                 str cancel_response,
+                 str cancel_reject_reason,
                  object event_id: UUID,
                  object event_timestamp: datetime):
         """
@@ -613,6 +637,7 @@ cdef class OrderExpired(OrderEvent):
     """
     Represents an event where an order has expired with the broker.
     """
+    cdef object _expired_time
 
     def __init__(self,
                  object symbol: Symbol,
@@ -644,6 +669,9 @@ cdef class OrderModified(OrderEvent):
     """
     Represents an event where an order has been modified with the broker.
     """
+    cdef object _broker_order_id
+    cdef object _modified_price
+    cdef object _modified_time
 
     def __init__(self,
                  object symbol: Symbol,

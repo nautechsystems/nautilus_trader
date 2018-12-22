@@ -7,7 +7,8 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import abc
+# cython: language_level=3, boundscheck=False
+
 import ast
 import msgpack
 import iso8601
@@ -18,7 +19,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Dict
 
-from inv_trader.core.precondition import Precondition
+from inv_trader.core.precondition cimport Precondition
 from inv_trader.commands import Command, OrderCommand, SubmitOrder, CancelOrder, ModifyOrder
 from inv_trader.commands import CollateralInquiry
 from inv_trader.model.enums import Venue, OrderSide, OrderType, TimeInForce
@@ -32,74 +33,73 @@ from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled,
 from inv_trader.model.events import OrderPartiallyFilled, OrderFilled
 
 
-UTF8 = 'utf-8'
-NONE = 'NONE'
-COMMAND_TYPE = 'command_type'
-COMMAND_ID = 'command_id'
-COMMAND_TIMESTAMP = 'command_timestamp'
-COLLATERAL_INQUIRY = 'collateral_inquiry'
-ORDER_COMMAND = 'order_command'
-SUBMIT_ORDER = 'submit_order'
-CANCEL_ORDER = 'cancel_order'
-MODIFY_ORDER = 'modify_order'
-CANCEL_REASON = 'cancel_reason'
-ORDER = 'order'
-TIMESTAMP = 'timestamp'
-EVENT_TYPE = 'event_type'
-ORDER_EVENT = 'order_event'
-ACCOUNT_EVENT = 'account_event'
-SYMBOL = 'symbol'
-ORDER_ID = 'order_id'
-ORDER_ID_BROKER = 'order_id_broker'
-EVENT_ID = 'event_id'
-EVENT_TIMESTAMP = 'event_timestamp'
-LABEL = 'label'
-ORDER_SUBMITTED = 'order_submitted'
-ORDER_ACCEPTED = 'order_accepted'
-ORDER_REJECTED = 'order_rejected'
-ORDER_WORKING = 'order_working'
-ORDER_CANCELLED = 'order_cancelled'
-ORDER_CANCEL_REJECT = 'order_cancel_reject'
-ORDER_MODIFIED = 'order_modified'
-ORDER_EXPIRED = 'order_expired'
-ORDER_PARTIALLY_FILLED = 'order_partially_filled'
-ORDER_FILLED = 'order_filled'
-SUBMITTED_TIME = 'submitted_time'
-ACCEPTED_TIME = 'accepted_time'
-REJECTED_TIME = 'rejected_time'
-REJECTED_RESPONSE = 'rejected_response'
-REJECTED_REASON = 'rejected_reason'
-WORKING_TIME = 'working_time'
-CANCELLED_TIME = 'cancelled_time'
-MODIFIED_TIME = 'modified_time'
-MODIFIED_PRICE = 'modified_price'
-EXPIRE_TIME = 'expire_time'
-EXPIRED_TIME = 'expired_time'
-EXECUTION_TIME = 'execution_time'
-EXECUTION_ID = 'execution_id'
-EXECUTION_TICKET = 'execution_ticket'
-ORDER_SIDE = 'order_side'
-ORDER_TYPE = 'order_type'
-FILLED_QUANTITY = 'filled_quantity'
-LEAVES_QUANTITY = 'leaves_quantity'
-QUANTITY = 'quantity'
-AVERAGE_PRICE = 'average_price'
-PRICE = 'price'
-TIME_IN_FORCE = 'time_in_force'
-ACCOUNT_ID = 'account_id'
-ACCOUNT_NUMBER = 'account_number'
-BROKER = 'broker'
-CURRENCY = 'currency'
-CASH_BALANCE = 'cash_balance'
-CASH_START_DAY = 'cash_start_day'
-CASH_ACTIVITY_DAY = 'cash_activity_day'
-MARGIN_USED_LIQUIDATION = 'margin_used_liquidation'
-MARGIN_USED_MAINTENANCE = 'margin_used_maintenance'
-MARGIN_RATIO = 'margin_ratio'
-MARGIN_CALL_STATUS = 'margin_call_status'
+cdef str UTF8 = 'utf-8'
+cdef str NONE = 'NONE'
+cdef str COMMAND_TYPE = 'command_type'
+cdef str COMMAND_ID = 'command_id'
+cdef str COMMAND_TIMESTAMP = 'command_timestamp'
+cdef str COLLATERAL_INQUIRY = 'collateral_inquiry'
+cdef str ORDER_COMMAND = 'order_command'
+cdef str SUBMIT_ORDER = 'submit_order'
+cdef str CANCEL_ORDER = 'cancel_order'
+cdef str MODIFY_ORDER = 'modify_order'
+cdef str CANCEL_REASON = 'cancel_reason'
+cdef str ORDER = 'order'
+cdef str TIMESTAMP = 'timestamp'
+cdef str EVENT_TYPE = 'event_type'
+cdef str ORDER_EVENT = 'order_event'
+cdef str ACCOUNT_EVENT = 'account_event'
+cdef str SYMBOL = 'symbol'
+cdef str ORDER_ID = 'order_id'
+cdef str ORDER_ID_BROKER = 'order_id_broker'
+cdef str EVENT_ID = 'event_id'
+cdef str EVENT_TIMESTAMP = 'event_timestamp'
+cdef str LABEL = 'label'
+cdef str ORDER_SUBMITTED = 'order_submitted'
+cdef str ORDER_ACCEPTED = 'order_accepted'
+cdef str ORDER_REJECTED = 'order_rejected'
+cdef str ORDER_WORKING = 'order_working'
+cdef str ORDER_CANCELLED = 'order_cancelled'
+cdef str ORDER_CANCEL_REJECT = 'order_cancel_reject'
+cdef str ORDER_MODIFIED = 'order_modified'
+cdef str ORDER_EXPIRED = 'order_expired'
+cdef str ORDER_PARTIALLY_FILLED = 'order_partially_filled'
+cdef str ORDER_FILLED = 'order_filled'
+cdef str SUBMITTED_TIME = 'submitted_time'
+cdef str ACCEPTED_TIME = 'accepted_time'
+cdef str REJECTED_TIME = 'rejected_time'
+cdef str REJECTED_RESPONSE = 'rejected_response'
+cdef str REJECTED_REASON = 'rejected_reason'
+cdef str WORKING_TIME = 'working_time'
+cdef str CANCELLED_TIME = 'cancelled_time'
+cdef str MODIFIED_TIME = 'modified_time'
+cdef str MODIFIED_PRICE = 'modified_price'
+cdef str EXPIRE_TIME = 'expire_time'
+cdef str EXPIRED_TIME = 'expired_time'
+cdef str EXECUTION_TIME = 'execution_time'
+cdef str EXECUTION_ID = 'execution_id'
+cdef str EXECUTION_TICKET = 'execution_ticket'
+cdef str ORDER_SIDE = 'order_side'
+cdef str ORDER_TYPE = 'order_type'
+cdef str FILLED_QUANTITY = 'filled_quantity'
+cdef str LEAVES_QUANTITY = 'leaves_quantity'
+cdef str QUANTITY = 'quantity'
+cdef str AVERAGE_PRICE = 'average_price'
+cdef str PRICE = 'price'
+cdef str TIME_IN_FORCE = 'time_in_force'
+cdef str ACCOUNT_ID = 'account_id'
+cdef str ACCOUNT_NUMBER = 'account_number'
+cdef str BROKER = 'broker'
+cdef str CURRENCY = 'currency'
+cdef str CASH_BALANCE = 'cash_balance'
+cdef str CASH_START_DAY = 'cash_start_day'
+cdef str CASH_ACTIVITY_DAY = 'cash_activity_day'
+cdef str MARGIN_USED_LIQUIDATION = 'margin_used_liquidation'
+cdef str MARGIN_USED_MAINTENANCE = 'margin_used_maintenance'
+cdef str MARGIN_RATIO = 'margin_ratio'
+cdef str MARGIN_CALL_STATUS = 'margin_call_status'
 
-
-def _parse_symbol(symbol_string: str) -> Symbol:
+cpdef object _parse_symbol(str symbol_string):
     """
     Parse the given string to a Symbol.
 
@@ -110,7 +110,7 @@ def _parse_symbol(symbol_string: str) -> Symbol:
     return Symbol(split_symbol[0], Venue[split_symbol[1].upper()])
 
 
-def _convert_price_to_string(price: Decimal or None) -> str:
+cpdef str _convert_price_to_string(object price):
     """
     Convert the given object to a decimal or 'NONE' string.
 
@@ -120,7 +120,7 @@ def _convert_price_to_string(price: Decimal or None) -> str:
     return NONE if price is None else str(price)
 
 
-def _convert_string_to_price(price_string: str) -> Decimal or None:
+cpdef object _convert_string_to_price(str price_string):
     """
     Convert the given price string to a Decimal or None.
 
@@ -130,7 +130,7 @@ def _convert_string_to_price(price_string: str) -> Decimal or None:
     return None if price_string == NONE else Decimal(price_string)
 
 
-def _convert_datetime_to_string(expire_time: datetime or None) -> str:
+cpdef str _convert_datetime_to_string(object expire_time: datetime):
     """
     Convert the given object to a valid ISO8601 string, or 'NONE'.
 
@@ -141,7 +141,7 @@ def _convert_datetime_to_string(expire_time: datetime or None) -> str:
             else expire_time.isoformat(timespec='milliseconds').replace('+00:00', 'Z'))
 
 
-def _convert_string_to_datetime(expire_time_string: str) -> datetime or None:
+cpdef object _convert_string_to_datetime(str expire_time_string):
     """
     Convert the given string to a datetime object, or None.
 
@@ -151,16 +151,13 @@ def _convert_string_to_datetime(expire_time_string: str) -> datetime or None:
     return None if expire_time_string == NONE else iso8601.parse_date(expire_time_string)
 
 
-class OrderSerializer:
+cdef class OrderSerializer:
     """
     The abstract base class for all order serializers.
     """
 
-    __metaclass__ = abc.ABCMeta
-
     @staticmethod
-    @abc.abstractmethod
-    def serialize(order: Order) -> bytes:
+    def serialize(object order: Order):
         """
         Serialize the given order to bytes.
 
@@ -171,8 +168,7 @@ class OrderSerializer:
         raise NotImplementedError("Method must be implemented.")
 
     @staticmethod
-    @abc.abstractmethod
-    def deserialize(order_bytes: bytes) -> Order:
+    def deserialize(bytes order_bytes):
         """
         Deserialize the given bytes to an Order.
 
@@ -183,13 +179,13 @@ class OrderSerializer:
         raise NotImplementedError("Method must be implemented.")
 
 
-class MsgPackOrderSerializer(OrderSerializer):
+cdef class MsgPackOrderSerializer(OrderSerializer):
     """
     Provides a command serializer for the Message Pack specification
     """
 
     @staticmethod
-    def serialize(order: Order) -> bytes:
+    def serialize(object order: Order):
         """
         Serialize the given Order to Message Pack specification bytes.
 
@@ -210,7 +206,7 @@ class MsgPackOrderSerializer(OrderSerializer):
             }, encoding=UTF8)
 
     @staticmethod
-    def deserialize(order_bytes: bytes) -> Order:
+    def deserialize(order_bytes: bytes):
         """
         Deserialize the given Message Pack specification bytes to an Order.
 
@@ -234,15 +230,12 @@ class MsgPackOrderSerializer(OrderSerializer):
                      expire_time=_convert_string_to_datetime(unpacked[EXPIRE_TIME]))
 
 
-class CommandSerializer:
+cdef class CommandSerializer:
     """
     The abstract base class for all command serializers.
     """
 
-    __metaclass__ = abc.ABCMeta
-
     @staticmethod
-    @abc.abstractmethod
     def serialize(command: Command) -> bytes:
         """
         Serialize the given command to bytes.
@@ -254,7 +247,6 @@ class CommandSerializer:
         raise NotImplementedError("Method must be implemented.")
 
     @staticmethod
-    @abc.abstractmethod
     def deserialize(command_bytes: bytes) -> Command:
         """
         Deserialize the given bytes to a Command.
@@ -266,7 +258,7 @@ class CommandSerializer:
         raise NotImplementedError("Method must be implemented.")
 
 
-class MsgPackCommandSerializer(CommandSerializer):
+cdef class MsgPackCommandSerializer(CommandSerializer):
     """
     Provides a command serializer for the Message Pack specification.
     """
@@ -401,15 +393,12 @@ class MsgPackCommandSerializer(CommandSerializer):
             raise ValueError("Cannot deserialize order command (unrecognized bytes pattern).")
 
 
-class EventSerializer:
+cdef class EventSerializer:
     """
     The abstract base class for all event serializers.
     """
 
-    __metaclass__ = abc.ABCMeta
-
     @staticmethod
-    @abc.abstractmethod
     def serialize(event: Event) -> bytes:
         """
         Serialize the given event to bytes.
@@ -421,7 +410,6 @@ class EventSerializer:
         raise NotImplementedError("Method must be implemented.")
 
     @staticmethod
-    @abc.abstractmethod
     def deserialize(event_bytes: bytes) -> Event:
         """
         Deserialize the given bytes to an event.
@@ -433,7 +421,7 @@ class EventSerializer:
         raise NotImplementedError("Method must be implemented.")
 
 
-class MsgPackEventSerializer(EventSerializer):
+cdef class MsgPackEventSerializer(EventSerializer):
     """
     Provides an event serializer for the Message Pack specification
     """
@@ -716,7 +704,7 @@ class MsgPackEventSerializer(EventSerializer):
             raise ValueError("Cannot deserialize event_bytes (unrecognized bytes pattern.")
 
 
-class InstrumentSerializer:
+cdef class InstrumentSerializer:
     """
     Provides an instrument deserializer.
     """

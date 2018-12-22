@@ -7,6 +7,8 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+# cython: language_level=3, boundscheck=False
+
 import re
 import iso8601
 import time
@@ -16,25 +18,37 @@ from decimal import Decimal
 from redis import StrictRedis, ConnectionError
 from typing import List, Dict, Callable
 
-from inv_trader.core.precondition import Precondition
+from inv_trader.core.precondition cimport Precondition
 from inv_trader.core.logger import Logger, LoggerAdapter
 from inv_trader.model.enums import Resolution, QuoteType, Venue
 from inv_trader.model.objects import Symbol, Tick, BarType, Bar, Instrument
 from inv_trader.serialization import InstrumentSerializer
 from inv_trader.strategy import TradeStrategy
 
-UTF8 = 'utf-8'
+cdef str UTF8 = 'utf-8'
 
 
-class LiveDataClient:
+cdef class LiveDataClient:
     """
     Provides a live data client for alpha models and trading strategies.
     """
+    cdef object _log
+    cdef str _host
+    cdef int _port
+    cdef object _logger
+    cdef object _redis_client
+    cdef object _pubsub
+    cdef object _pubsub_thread
+    cdef list _subscriptions_bars
+    cdef list _subscriptions_ticks
+    cdef object _instruments
+    cdef object _bar_handlers
+    cdef object _tick_handlers
 
     def __init__(self,
-                 host: str='localhost',
-                 port: int=6379,
-                 logger: Logger=None):
+                 str host='localhost',
+                 int port=6379,
+                 object logger: Logger=None):
         """
         Initializes a new instance of the DataClient class.
 

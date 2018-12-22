@@ -7,14 +7,15 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import abc
+# cython: language_level=3, boundscheck=False
+
 import zmq
 
 from typing import Callable
 from threading import Thread
 from zmq import Context
 
-from inv_trader.core.precondition import Precondition
+from inv_trader.core.precondition cimport Precondition
 from inv_trader.core.logger import Logger, LoggerAdapter
 
 UTF8 = 'utf-8'
@@ -26,17 +27,15 @@ class MQWorker(Thread):
     The abstract base class for all MQ workers.
     """
 
-    __metaclass__ = abc.ABCMeta
-
     def __init__(
             self,
-            name: str,
-            context: Context,
-            socket_type: int,
-            host: str,
-            port: int,
-            handler: Callable,
-            logger: Logger=None):
+            str name,
+            object context: Context,
+            int socket_type,
+            str host,
+            int port,
+            object handler: Callable,
+            object logger: Logger=None):
         """
         Initializes a new instance of the MQWorker class.
 
@@ -50,9 +49,9 @@ class MQWorker(Thread):
         :raises ValueError: If the host is not a valid string.
         :raises ValueError: If the port is not in range [0, 65535]
         """
-        Precondition.valid_string(name, 'name')
-        Precondition.valid_string(host, 'host')
-        Precondition.in_range(port, 'port', 0, 65535)
+        # Precondition.valid_string(name, 'name')
+        # Precondition.valid_string(host, 'host')
+        # Precondition.in_range(port, 'port', 0, 65535)
 
         super().__init__()
         self.daemon = True
@@ -98,7 +97,6 @@ class MQWorker(Thread):
         self._close_connection()
         self._log.debug(f"Stopped.")
 
-    @abc.abstractmethod
     def _open_connection(self):
         """
         Open a new connection to the service.
@@ -106,7 +104,6 @@ class MQWorker(Thread):
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    @abc.abstractmethod
     def _close_connection(self):
         """
         Close the connection with the service.
@@ -140,9 +137,9 @@ class RequestWorker(MQWorker):
         :raises ValueError: If the host is not a valid string.
         :raises ValueError: If the port is not in range [0, 65535]
         """
-        Precondition.valid_string(name, 'name')
-        Precondition.valid_string(host, 'host')
-        Precondition.in_range(port, 'port', 0, 65535)
+        # Precondition.valid_string(name, 'name')
+        # Precondition.valid_string(host, 'host')
+        # Precondition.in_range(port, 'port', 0, 65535)
 
         super().__init__(
             name,
@@ -196,10 +193,10 @@ class SubscriberWorker(MQWorker):
         :raises ValueError: If the port is not in range [0, 65535]
         :raises ValueError: If the topic is not a valid string.
         """
-        Precondition.valid_string(name, 'name')
-        Precondition.valid_string(host, 'host')
-        Precondition.in_range(port, 'port', 0, 65535)
-        Precondition.valid_string(topic, 'topic')
+        # Precondition.valid_string(name, 'name')
+        # Precondition.valid_string(host, 'host')
+        # Precondition.in_range(port, 'port', 0, 65535)
+        # Precondition.valid_string(topic, 'topic')
 
         super().__init__(
             name,
