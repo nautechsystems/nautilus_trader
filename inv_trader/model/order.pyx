@@ -86,6 +86,9 @@ cdef class Order:
         :raises ValueError: If the order type has a price and the price is not positive (> 0).
         :raises ValueError: If the time_in_force is GTD and the expire_time is None.
         """
+        Precondition.type(order_id, OrderId, 'order_id')
+        Precondition.type(label, Label, 'label')
+
         if time_in_force is None:
             time_in_force = TimeInForce.DAY
 
