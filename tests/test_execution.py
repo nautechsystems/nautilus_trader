@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
 # <copyright file="test_execution.py" company="Invariance Pte">
-#  Copyright (C) 2018 Invariance Pte. All rights reserved.
+#  Copyright (C) 2018-2019 Invariance Pte. All rights reserved.
 #  The use of this source code is governed by the license as found in the LICENSE.md file.
 #  http://www.invariance.com
 # </copyright>
@@ -83,7 +83,7 @@ class ExecutionClientTests(unittest.TestCase):
             100000)
 
         # Act
-        self.strategy.submit_order(order, PositionId(str(order.id)))
+        self.strategy.submit_order(order, PositionId(str(order_id)))
         self.strategy.cancel_order(order, 'ORDER_EXPIRED')
 
         # Assert

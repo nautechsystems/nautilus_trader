@@ -14,7 +14,7 @@ from typing import Dict
 from inv_trader.core.precondition import Precondition
 from inv_trader.core.logger import Logger
 from inv_trader.model.enums import OrderSide, OrderStatus, TimeInForce
-from inv_trader.model.objects import Price, Symbol, Tick, BarType, Bar, Instrument
+from inv_trader.model.objects import Price, Symbol, Tick, BarType, Bar
 from inv_trader.model.order import Order, OrderFactory
 from inv_trader.model.events import Event, OrderFilled, TimeEvent
 from inv_trader.model.identifiers import Label, OrderId, PositionId

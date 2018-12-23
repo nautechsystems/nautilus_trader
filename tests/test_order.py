@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
 # <copyright file="test_order.py" company="Invariance Pte">
-#  Copyright (C) 2018 Invariance Pte. All rights reserved.
+#  Copyright (C) 2018-2019 Invariance Pte. All rights reserved.
 #  The use of this source code is governed by the license as found in the LICENSE.md file.
 #  http://www.invariance.com
 # </copyright>
@@ -14,6 +14,7 @@ from decimal import Decimal
 
 from inv_trader.model.enums import Venue, OrderSide, OrderType, OrderStatus, TimeInForce
 from inv_trader.model.objects import Price, Symbol
+from inv_trader.model.identifiers import Label, OrderId, ExecutionId, ExecutionTicket
 from inv_trader.model.order import Order, OrderFactory
 from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
 from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
@@ -34,8 +35,8 @@ class OrderTests(unittest.TestCase):
             ValueError,
             Order,
             AUDUSD_FXCM,
-            'AUDUSD-123456-1',
-            'S1_E',
+            OrderId('AUDUSD-FXCM-123456-1'),
+            Label('S1_E'),
             OrderSide.BUY,
             OrderType.MARKET,
             0,
@@ -48,8 +49,8 @@ class OrderTests(unittest.TestCase):
             ValueError,
             Order,
             AUDUSD_FXCM,
-            'AUDUSD-123456-1',
-            'S1_E',
+            OrderId('AUDUSD-FXCM-123456-1'),
+            Label('S1_E'),
             OrderSide.BUY,
             OrderType.LIMIT,
             100000,
@@ -65,8 +66,8 @@ class OrderTests(unittest.TestCase):
             ValueError,
             Order,
             AUDUSD_FXCM,
-            'AUDUSD-123456-1',
-            'S1_E',
+            OrderId('AUDUSD-FXCM-123456-1'),
+            Label('S1_E'),
             OrderSide.BUY,
             OrderType.MARKET,
             100000,
@@ -107,32 +108,32 @@ class OrderTests(unittest.TestCase):
         # Act
         order1 = OrderFactory.limit(
             AUDUSD_FXCM,
-            'AUDUSD-123456-1',
-            'S1_E',
+            OrderId('AUDUSD-FXCM-123456-1'),
+            Label('S1_E'),
             OrderSide.BUY,
             100000,
             Price.create(1.00000, 5))
 
         order2 = OrderFactory.limit(
             AUDUSD_FXCM,
-            'AUDUSD-123456-1',
-            'S1_E',
+            OrderId('AUDUSD-FXCM-123456-1'),
+            Label('S1_E'),
             OrderSide.BUY,
             100000,
             Price.create(1.00000, 5))
 
         order3 = OrderFactory.limit(
             AUDUSD_FXCM,
-            'AUDUSD-123456-1',
-            'S1_E',
+            OrderId('AUDUSD-FXCM-123456-1'),
+            Label('S1_E'),
             OrderSide.BUY,
             100000,
             Price.create(1.000001, 5))
 
         order4 = OrderFactory.limit(
             AUDUSD_FXCM,
-            'AUDUSD-123456-1',
-            'S1_E',
+            OrderId('AUDUSD-FXCM-123456-1'),
+            Label('S1_E'),
             OrderSide.BUY,
             100000,
             Price.create(1.000005, 5))
@@ -148,8 +149,8 @@ class OrderTests(unittest.TestCase):
         # Act
         order = OrderFactory.market(
             AUDUSD_FXCM,
-            'AUDUSD-FXCM-123456-1',
-            'SCALPER-01',
+            OrderId('AUDUSD-FXCM-123456-1'),
+            Label('SCALPER-01'),
             OrderSide.BUY,
             100000)
 
@@ -164,8 +165,8 @@ class OrderTests(unittest.TestCase):
         # Act
         order = OrderFactory.limit(
             AUDUSD_FXCM,
-            'AUDUSD-FXCM-123456-1',
-            'SCALPER-01',
+            OrderId('AUDUSD-FXCM-123456-1'),
+            Label('SCALPER-01'),
             OrderSide.BUY,
             100000,
             Price.create(1.00000, 5))
@@ -182,8 +183,8 @@ class OrderTests(unittest.TestCase):
         # Act
         order = OrderFactory.limit(
             AUDUSD_FXCM,
-            'AUDUSD-FXCM-123456-1',
-            'SCALPER-01',
+            OrderId('AUDUSD-FXCM-123456-1'),
+            Label('SCALPER-01'),
             OrderSide.BUY,
             100000,
             Price.create(1.00000, 5),
@@ -205,8 +206,8 @@ class OrderTests(unittest.TestCase):
         # Act
         order = OrderFactory.stop(
             AUDUSD_FXCM,
-            'AUDUSD-FXCM-123456-1',
-            'SCALPER-01',
+            OrderId('AUDUSD-FXCM-123456-1'),
+            Label('SCALPER-01'),
             OrderSide.BUY,
             100000,
             Price.create(1.00000, 5))
@@ -221,8 +222,8 @@ class OrderTests(unittest.TestCase):
         # Act
         order = OrderFactory.stop_limit(
             AUDUSD_FXCM,
-            'AUDUSD-FXCM-123456-1',
-            'SCALPER-01',
+            OrderId('AUDUSD-FXCM-123456-1'),
+            Label('SCALPER-01'),
             OrderSide.BUY,
             100000,
             Price.create(1.00000, 5))
@@ -237,8 +238,8 @@ class OrderTests(unittest.TestCase):
         # Act
         order = OrderFactory.market_if_touched(
             AUDUSD_FXCM,
-            'AUDUSD-FXCM-123456-1',
-            'SCALPER-01',
+            OrderId('AUDUSD-FXCM-123456-1'),
+            Label('SCALPER-01'),
             OrderSide.BUY,
             100000,
             Price.create(1.00000, 5))
@@ -253,8 +254,8 @@ class OrderTests(unittest.TestCase):
         # Act
         order = OrderFactory.fill_or_kill(
             AUDUSD_FXCM,
-            'AUDUSD-FXCM-123456-1',
-            'SCALPER-01',
+            OrderId('AUDUSD-FXCM-123456-1'),
+            Label('SCALPER-01'),
             OrderSide.BUY,
             100000)
 
@@ -269,8 +270,8 @@ class OrderTests(unittest.TestCase):
         # Act
         order = OrderFactory.immediate_or_cancel(
             AUDUSD_FXCM,
-            'AUDUSD-FXCM-123456-1',
-            'SCALPER-01',
+            OrderId('AUDUSD-FXCM-123456-1'),
+            Label('SCALPER-01'),
             OrderSide.BUY,
             100000)
 
@@ -284,8 +285,8 @@ class OrderTests(unittest.TestCase):
         # Arrange
         order = OrderFactory.market(
             AUDUSD_FXCM,
-            'AUDUSD-FXCM-123456-1',
-            'SCALPER-01',
+            OrderId('AUDUSD-FXCM-123456-1'),
+            Label('SCALPER-01'),
             OrderSide.BUY,
             100000)
 
@@ -309,8 +310,8 @@ class OrderTests(unittest.TestCase):
         # Arrange
         order = OrderFactory.market(
             AUDUSD_FXCM,
-            'AUDUSD-FXCM-123456-1',
-            'SCALPER-01',
+            OrderId('AUDUSD-FXCM-123456-1'),
+            Label('SCALPER-01'),
             OrderSide.BUY,
             100000)
 
@@ -332,8 +333,8 @@ class OrderTests(unittest.TestCase):
         # Arrange
         order = OrderFactory.market(
             AUDUSD_FXCM,
-            'AUDUSD-FXCM-123456-1',
-            'SCALPER-01',
+            OrderId('AUDUSD-FXCM-123456-1'),
+            Label('SCALPER-01'),
             OrderSide.BUY,
             100000)
 
@@ -356,15 +357,15 @@ class OrderTests(unittest.TestCase):
         # Arrange
         order = OrderFactory.market(
             AUDUSD_FXCM,
-            'AUDUSD-FXCM-123456-1',
-            'SCALPER-01',
+            OrderId('AUDUSD-FXCM-123456-1'),
+            Label('SCALPER-01'),
             OrderSide.BUY,
             100000)
 
         event = OrderWorking(
             order.symbol,
             order.id,
-            'SOME_BROKER_ID',
+            OrderId('SOME_BROKER_ID'),
             order.label,
             order.side,
             order.type,
@@ -382,15 +383,15 @@ class OrderTests(unittest.TestCase):
         # Assert
         print(order)
         self.assertEqual(OrderStatus.WORKING, order.status)
-        self.assertEqual('SOME_BROKER_ID', order.broker_id)
+        self.assertEqual(OrderId('SOME_BROKER_ID'), order.broker_id)
         self.assertFalse(order.is_complete)
 
     def test_can_apply_order_expired_event_to_order(self):
         # Arrange
         order = OrderFactory.market(
             AUDUSD_FXCM,
-            'AUDUSD-FXCM-123456-1',
-            'SCALPER-01',
+            OrderId('AUDUSD-FXCM-123456-1'),
+            Label('SCALPER-01'),
             OrderSide.BUY,
             100000)
 
@@ -412,8 +413,8 @@ class OrderTests(unittest.TestCase):
         # Arrange
         order = OrderFactory.market(
             AUDUSD_FXCM,
-            'AUDUSD-FXCM-123456-1',
-            'SCALPER-01',
+            OrderId('AUDUSD-FXCM-123456-1'),
+            Label('SCALPER-01'),
             OrderSide.BUY,
             100000)
 
@@ -435,8 +436,8 @@ class OrderTests(unittest.TestCase):
         # Arrange
         order = OrderFactory.market(
             AUDUSD_FXCM,
-            'AUDUSD-FXCM-123456-1',
-            'SCALPER-01',
+            OrderId('AUDUSD-FXCM-123456-1'),
+            Label('SCALPER-01'),
             OrderSide.BUY,
             100000)
 
@@ -459,15 +460,15 @@ class OrderTests(unittest.TestCase):
         # Arrange
         order = OrderFactory.market(
             AUDUSD_FXCM,
-            'AUDUSD-FXCM-123456-1',
-            'SCALPER-01',
+            OrderId('AUDUSD-FXCM-123456-1'),
+            Label('SCALPER-01'),
             OrderSide.BUY,
             100000)
 
         order_working = OrderWorking(
             order.symbol,
             order.id,
-            'SOME_BROKER_ID_1',
+            OrderId('SOME_BROKER_ID_1'),
             order.label,
             order.side,
             order.type,
@@ -482,7 +483,7 @@ class OrderTests(unittest.TestCase):
         order_modified = OrderModified(
             order.symbol,
             order.id,
-            'SOME_BROKER_ID_2',
+            OrderId('SOME_BROKER_ID_2'),
             Decimal('1.00001'),
             UNIX_EPOCH,
             uuid.uuid4(),
@@ -495,7 +496,7 @@ class OrderTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(OrderStatus.WORKING, order.status)
-        self.assertEqual('SOME_BROKER_ID_2', order.broker_id)
+        self.assertEqual(OrderId('SOME_BROKER_ID_2'), order.broker_id)
         self.assertEqual(Decimal('1.00001'), order.price)
         self.assertFalse(order.is_complete)
 
@@ -503,16 +504,16 @@ class OrderTests(unittest.TestCase):
         # Arrange
         order = OrderFactory.market(
             AUDUSD_FXCM,
-            'AUDUSD-FXCM-123456-1',
-            'SCALPER-01',
+            OrderId('AUDUSD-FXCM-123456-1'),
+            Label('SCALPER-01'),
             OrderSide.BUY,
             100000)
 
         event = OrderFilled(
             order.symbol,
             order.id,
-            'SOME_EXEC_ID_1',
-            'SOME_EXEC_TICKET_1',
+            ExecutionId('SOME_EXEC_ID_1'),
+            ExecutionTicket('SOME_EXEC_TICKET_1'),
             order.side,
             order.quantity,
             Decimal('1.00001'),
@@ -533,8 +534,8 @@ class OrderTests(unittest.TestCase):
         # Arrange
         order = OrderFactory.limit(
             AUDUSD_FXCM,
-            'AUDUSD-FXCM-123456-1',
-            'SCALPER-01',
+            OrderId('AUDUSD-FXCM-123456-1'),
+            Label('SCALPER-01'),
             OrderSide.BUY,
             100000,
             Price.create(1.00000, 5))
@@ -542,8 +543,8 @@ class OrderTests(unittest.TestCase):
         event = OrderFilled(
             order.symbol,
             order.id,
-            'SOME_EXEC_ID_1',
-            'SOME_EXEC_TICKET_1',
+            ExecutionId('SOME_EXEC_ID_1'),
+            ExecutionTicket('SOME_EXEC_TICKET_1'),
             order.side,
             order.quantity,
             Decimal('1.00001'),
@@ -567,8 +568,8 @@ class OrderTests(unittest.TestCase):
         # Arrange
         order = OrderFactory.limit(
             AUDUSD_FXCM,
-            'AUDUSD-FXCM-123456-1',
-            'SCALPER-01',
+            OrderId('AUDUSD-FXCM-123456-1'),
+            Label('SCALPER-01'),
             OrderSide.BUY,
             100000,
             Price.create(1.00000, 5))
@@ -576,8 +577,8 @@ class OrderTests(unittest.TestCase):
         event = OrderPartiallyFilled(
             order.symbol,
             order.id,
-            'SOME_EXEC_ID_1',
-            'SOME_EXEC_TICKET_1',
+            ExecutionId('SOME_EXEC_ID_1'),
+            ExecutionTicket('SOME_EXEC_TICKET_1'),
             order.side,
             50000,
             50000,
@@ -601,8 +602,8 @@ class OrderTests(unittest.TestCase):
         # Arrange
         order = OrderFactory.limit(
             AUDUSD_FXCM,
-            'AUDUSD-FXCM-123456-1',
-            'SCALPER-01',
+            OrderId('AUDUSD-FXCM-123456-1'),
+            Label('SCALPER-01'),
             OrderSide.BUY,
             100000,
             Price.create(1.00000, 5))
@@ -610,8 +611,8 @@ class OrderTests(unittest.TestCase):
         event = OrderFilled(
             order.symbol,
             order.id,
-            'SOME_EXEC_ID_1',
-            'SOME_EXEC_TICKET_1',
+            ExecutionId('SOME_EXEC_ID_1'),
+            ExecutionTicket('SOME_EXEC_TICKET_1'),
             order.side,
             150000,
             Decimal('0.99999'),

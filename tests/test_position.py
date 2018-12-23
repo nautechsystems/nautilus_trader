@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
 # <copyright file="test_position.py" company="Invariance Pte">
-#  Copyright (C) 2018 Invariance Pte. All rights reserved.
+#  Copyright (C) 2018-2019 Invariance Pte. All rights reserved.
 #  The use of this source code is governed by the license as found in the LICENSE.md file.
 #  http://www.invariance.com
 # </copyright>
@@ -14,6 +14,7 @@ from decimal import Decimal
 
 from inv_trader.model.enums import Venue, OrderSide, MarketPosition
 from inv_trader.model.objects import Symbol
+from inv_trader.model.identifiers import Label, OrderId, PositionId, ExecutionId, ExecutionTicket
 from inv_trader.model.order import OrderFactory
 from inv_trader.model.position import Position
 from inv_trader.model.events import OrderPartiallyFilled, OrderFilled
@@ -30,15 +31,15 @@ class PositionTests(unittest.TestCase):
         # Arrange
         order = OrderFactory.market(
             AUDUSD_FXCM,
-            'AUDUSD|123456|1',
-            'SCALPER-01',
+            OrderId('AUDUSD-123456-1'),
+            Label('SCALPER-01'),
             OrderSide.BUY,
             100000)
 
         # Act
         position = Position(
             order.symbol,
-            'P123456',
+            PositionId('P123456'),
             UNIX_EPOCH)
 
         # Assert
@@ -54,21 +55,21 @@ class PositionTests(unittest.TestCase):
         # Arrange
         order = OrderFactory.market(
             AUDUSD_FXCM,
-            'AUDUSD|123456|1',
-            'SCALPER-01',
+            OrderId('AUDUSD-123456-1'),
+            Label('SCALPER-01'),
             OrderSide.BUY,
             100000)
 
         position = Position(
             order.symbol,
-            'P123456',
+            PositionId('P123456'),
             UNIX_EPOCH)
 
         order_filled = OrderFilled(
             order.symbol,
             order.id,
-            'E123456',
-            'T123456',
+            ExecutionId('E123456'),
+            ExecutionTicket('T123456'),
             order.side,
             order.quantity,
             Decimal('1.00001'),
@@ -94,21 +95,21 @@ class PositionTests(unittest.TestCase):
         # Arrange
         order = OrderFactory.market(
             AUDUSD_FXCM,
-            'AUDUSD|123456|1',
-            'SCALPER-01',
+            OrderId('AUDUSD-123456-1'),
+            Label('SCALPER-01'),
             OrderSide.SELL,
             100000)
 
         position = Position(
             order.symbol,
-            'P123456',
+            PositionId('P123456'),
             UNIX_EPOCH)
 
         order_filled = OrderFilled(
             order.symbol,
             order.id,
-            'E123456',
-            'T123456',
+            ExecutionId('E123456'),
+            ExecutionTicket('T123456'),
             order.side,
             order.quantity,
             Decimal('1.00001'),
@@ -134,21 +135,21 @@ class PositionTests(unittest.TestCase):
         # Arrange
         order = OrderFactory.market(
             AUDUSD_FXCM,
-            'AUDUSD|123456|1',
-            'SCALPER-01',
+            OrderId('AUDUSD-123456-1'),
+            Label('SCALPER-01'),
             OrderSide.BUY,
             100000)
 
         position = Position(
             order.symbol,
-            'P123456',
+            PositionId('P123456'),
             UNIX_EPOCH)
 
         order_partially_filled = OrderPartiallyFilled(
             order.symbol,
             order.id,
-            'E123456',
-            'T123456',
+            ExecutionId('E123456'),
+            ExecutionTicket('T123456'),
             order.side,
             50000,
             50000,
@@ -176,21 +177,21 @@ class PositionTests(unittest.TestCase):
         # Arrange
         order = OrderFactory.market(
             AUDUSD_FXCM,
-            'AUDUSD|123456|1',
-            'SCALPER-01',
+            OrderId('AUDUSD-123456-1'),
+            Label('SCALPER-01'),
             OrderSide.SELL,
             100000)
 
         position = Position(
             order.symbol,
-            'P123456',
+            PositionId('P123456'),
             UNIX_EPOCH)
 
         order_partially_filled = OrderPartiallyFilled(
             order.symbol,
             order.id,
-            'E123456',
-            'T123456',
+            ExecutionId('E123456'),
+            ExecutionTicket('T123456'),
             order.side,
             50000,
             50000,
@@ -218,21 +219,21 @@ class PositionTests(unittest.TestCase):
         # Arrange
         order = OrderFactory.market(
             AUDUSD_FXCM,
-            'AUDUSD|123456|1',
-            'SCALPER-01',
+            OrderId('AUDUSD-123456-1'),
+            Label('SCALPER-01'),
             OrderSide.BUY,
             100000)
 
         position = Position(
             order.symbol,
-            'P123456',
+            PositionId('P123456'),
             UNIX_EPOCH)
 
         order_filled1 = OrderFilled(
             order.symbol,
             order.id,
-            'E123456',
-            'T123456',
+            ExecutionId('E123456'),
+            ExecutionTicket('T123456'),
             OrderSide.BUY,
             order.quantity,
             Decimal('1.00001'),
@@ -243,8 +244,8 @@ class PositionTests(unittest.TestCase):
         order_filled2 = OrderFilled(
             order.symbol,
             order.id,
-            'E123456',
-            'T123456',
+            ExecutionId('E123456'),
+            ExecutionTicket('T123456'),
             OrderSide.SELL,
             order.quantity,
             Decimal('1.00001'),
@@ -273,21 +274,21 @@ class PositionTests(unittest.TestCase):
         # Arrange
         order = OrderFactory.market(
             AUDUSD_FXCM,
-            'AUDUSD|123456|1',
-            'SCALPER-01',
+            OrderId('AUDUSD-123456-1'),
+            Label('SCALPER-01'),
             OrderSide.SELL,
             100000)
 
         position = Position(
             order.symbol,
-            'P123456',
+            PositionId('P123456'),
             UNIX_EPOCH)
 
         order_filled1 = OrderFilled(
             order.symbol,
             order.id,
-            'E123456',
-            'T123456',
+            ExecutionId('E123456'),
+            ExecutionTicket('T123456'),
             OrderSide.SELL,
             order.quantity,
             Decimal('1.00001'),
@@ -298,8 +299,8 @@ class PositionTests(unittest.TestCase):
         order_filled2 = OrderFilled(
             order.symbol,
             order.id,
-            'E123456',
-            'T123456',
+            ExecutionId('E123456'),
+            ExecutionTicket('T123456'),
             OrderSide.BUY,
             order.quantity,
             Decimal('1.00001'),
