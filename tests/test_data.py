@@ -416,32 +416,32 @@ class LiveDataClientTests(unittest.TestCase):
         # Assert
         self.assertEqual(bar_dictionary[bar_type], bar)
 
-    def test_can_update_all_instruments(self):
-        # Arrange
-        self.data_client.connect()
-
-        # Act
-        self.data_client.update_all_instruments()
-        audusd = self.data_client.get_instrument(Symbol('AUDUSD', Venue.FXCM))
-
-        # Assert
-        self.assertTrue(len(self.data_client.instruments) >= 1)
-        print(audusd.quote_currency)
-        print(audusd.security_type)
-        print(audusd.tick_decimals)
-        print(audusd.tick_size)
-        print(audusd.tick_value)
-        print(audusd.target_direct_spread)
-        print(audusd.rollover_interest_buy)
-        print(audusd.rollover_interest_sell)
-
-    def test_can_update_instrument(self):
-        # Arrange
-        self.data_client.connect()
-        symbol = Symbol('AUDUSD', Venue.FXCM)
-
-        # Act
-        self.data_client.update_instrument(symbol)
-
-        # Assert
-        self.assertTrue(symbol in self.data_client._instruments)
+    # def test_can_update_all_instruments(self):
+    #     # Arrange
+    #     self.data_client.connect()
+    #
+    #     # Act
+    #     self.data_client.update_all_instruments()
+    #     audusd = self.data_client.get_instrument(Symbol('AUDUSD', Venue.FXCM))
+    #
+    #     # Assert
+    #     self.assertTrue(len(self.data_client.instruments) >= 1)
+    #     print(audusd.quote_currency)
+    #     print(audusd.security_type)
+    #     print(audusd.tick_decimals)
+    #     print(audusd.tick_size)
+    #     print(audusd.tick_value)
+    #     print(audusd.target_direct_spread)
+    #     print(audusd.rollover_interest_buy)
+    #     print(audusd.rollover_interest_sell)
+    #
+    # def test_can_update_instrument(self):
+    #     # Arrange
+    #     self.data_client.connect()
+    #     symbol = Symbol('AUDUSD', Venue.FXCM)
+    #
+    #     # Act
+    #     self.data_client.update_instrument(symbol)
+    #
+    #     # Assert
+    #     self.assertTrue(symbol in self.data_client._instruments)
