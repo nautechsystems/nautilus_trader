@@ -11,14 +11,14 @@ import unittest
 
 from inv_indicators.average.ema import ExponentialMovingAverage
 from inv_trader.tools import BarBuilder, IndicatorUpdater
-from test_kit.stubs import TestData
+from test_kit.data import TestDataProvider
 
 
 class BarBuilderTests(unittest.TestCase):
 
     def test_can_build_data_bars(self):
         # arrange
-        data = TestData.get_gbpusd_1min_bid()
+        data = TestDataProvider.get_gbpusd_1min_bid()
         bar_builder = BarBuilder(data, 5, 1)
 
         # act
@@ -29,7 +29,7 @@ class BarBuilderTests(unittest.TestCase):
 
     def test_can_build_bars(self):
         # arrange
-        data = TestData.get_gbpusd_1min_bid()
+        data = TestDataProvider.get_gbpusd_1min_bid()
         bar_builder = BarBuilder(data, 5, 1)
 
         # act
@@ -43,7 +43,7 @@ class IndicatorUpdaterTests(unittest.TestCase):
 
     def test_can_update_indicator(self):
         # arrange
-        data = TestData.get_gbpusd_1min_bid()
+        data = TestDataProvider.get_gbpusd_1min_bid()
         bar_builder = BarBuilder(data, 5, 1)
         bars = bar_builder.build_data_bars()
         ema = ExponentialMovingAverage(10)
@@ -59,7 +59,7 @@ class IndicatorUpdaterTests(unittest.TestCase):
 
     def test_can_build_features(self):
         # arrange
-        data = TestData.get_gbpusd_1min_bid()
+        data = TestDataProvider.get_gbpusd_1min_bid()
         bar_builder = BarBuilder(data, 5, 1)
         bars = bar_builder.build_data_bars()
         ema = ExponentialMovingAverage(10)
