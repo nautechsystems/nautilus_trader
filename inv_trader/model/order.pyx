@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-# <copyright file="order.py" company="Invariance Pte">
-#  Copyright (C) 2018 Invariance Pte. All rights reserved.
+# <copyright file="order.pyx" company="Invariance Pte">
+#  Copyright (C) 2018-2019 Invariance Pte. All rights reserved.
 #  The use of this source code is governed by the license as found in the LICENSE.md file.
 #  http://www.invariance.com
 # </copyright>
@@ -145,9 +145,9 @@ cdef class Order:
         """
         :return: The str() string representation of the order.
         """
-        quantity = '{:,}'.format(self._quantity)
-        price = '' if self._price is None else f' {self.price}'
-        expire_time = '' if self._expire_time is None else f' {self._expire_time}'
+        cdef str quantity = '{:,}'.format(self._quantity)
+        cdef str price = '' if self._price is None else f' {self.price}'
+        cdef str expire_time = '' if self._expire_time is None else f' {self._expire_time}'
         return (f"Order(id={self._id}, label={self._label}) "
                 f"{self._side.name} {quantity} {self._symbol} @ {self._type.name}{price} "
                 f"{self._time_in_force.name}{expire_time}")
@@ -156,8 +156,8 @@ cdef class Order:
         """
         :return: The repr() string representation of the order.
         """
-        attrs = vars(self)
-        props = ', '.join("%s=%s" % item for item in attrs.items()).replace(', _', ', ')
+        cdef str attrs = vars(self)
+        cdef str props = ', '.join("%s=%s" % item for item in attrs.items()).replace(', _', ', ')
         return f"<{self.__class__.__name__}({props[1:]}) object at {id(self)}>"
 
     @property
@@ -392,12 +392,15 @@ cdef str SEPARATOR = '-'
 cdef int MILLISECONDS_PER_SECOND = 1000
 
 
-class OrderIdGenerator:
+cdef class OrderIdGenerator:
     """
     Provides a generator for unique order identifiers.
     """
+    cdef str _order_id_tag
+    cdef object _order_symbol_counts
+    cdef list _order_ids
 
-    def __init__(self, order_id_tag: str):
+    def __init__(self, str order_id_tag):
         """
         Initializes a new instance of the OrderIdentifierFactory class.
 
@@ -410,24 +413,24 @@ class OrderIdGenerator:
         self._order_symbol_counts = {}  # type: Dict[Symbol, int]
         self._order_ids = []            # type: List[OrderId]
 
-    def generate(self, order_symbol: Symbol) -> OrderId:
+    cpdef object generate(self, order_symbol: Symbol):
         """
         Create a unique order identifier for the strategy using the given symbol.
 
         :param order_symbol: The order symbol for the unique identifier.
-        :return: The unique order identifier.
+        :return: The unique OrderIdentifier.
         """
         if order_symbol not in self._order_symbol_counts:
             self._order_symbol_counts[order_symbol] = 0
 
         self._order_symbol_counts[order_symbol] += 1
-        milliseconds = str(self._milliseconds_since_unix_epoch())
-        order_count = str(self._order_symbol_counts[order_symbol])
-        order_id = OrderId(str(order_symbol.code)
-                           + SEPARATOR + str(order_symbol.venue.name)
-                           + SEPARATOR + order_count
-                           + SEPARATOR + self._order_id_tag
-                           + SEPARATOR + milliseconds)
+        cdef str milliseconds = str(OrderIdGenerator._milliseconds_since_unix_epoch())
+        cdef str order_count = str(self._order_symbol_counts[order_symbol])
+        cdef object order_id = OrderId(str(order_symbol.code)
+                                       + SEPARATOR + str(order_symbol.venue.name)
+                                       + SEPARATOR + order_count
+                                       + SEPARATOR + self._order_id_tag
+                                       + SEPARATOR + milliseconds)
 
         if order_id in self._order_ids:
             return self.generate(order_symbol)
@@ -435,13 +438,13 @@ class OrderIdGenerator:
         return order_id
 
     @staticmethod
-    def _milliseconds_since_unix_epoch() -> int:
+    cdef long _milliseconds_since_unix_epoch():
         """
         Returns the number of ticks of the given time now since the Unix Epoch.
 
         :return: The milliseconds since the Unix Epoch.
         """
-        return int((datetime.now(timezone.utc) - UNIX_EPOCH).total_seconds() * MILLISECONDS_PER_SECOND)
+        return (datetime.now(timezone.utc) - UNIX_EPOCH).total_seconds() * MILLISECONDS_PER_SECOND
 
 
 class OrderFactory:
@@ -530,7 +533,7 @@ class OrderFactory:
             order_id: OrderId,
             label: Label,
             order_side: OrderSide,
-            quantity: int,
+            int quantity,
             price: Decimal,
             time_in_force=None,
             expire_time=None) -> Order:
