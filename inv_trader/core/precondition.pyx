@@ -33,6 +33,20 @@ cdef class Precondition(object):
             raise ValueError(f"{PRE_FAILED} (the predicate {description} was False).")
 
     @staticmethod
+    cdef type(object argument, object is_type, str param_name):
+        """
+        Check the preconditions predicate is true.
+
+        :param argument: The argument to check.
+        :param is_type: The expected argument type.
+        :param param_name: The parameter name.
+        :raises ValueError: If the object is not of the expected type.
+        """
+        if not isinstance(argument, is_type):
+            raise ValueError(f"{PRE_FAILED} (the {param_name} argument was not of type {is_type}). "
+                             f"type = {type(argument)}")
+
+    @staticmethod
     cdef is_none(object argument, str param_name):
         """
         Check the preconditions argument is None.

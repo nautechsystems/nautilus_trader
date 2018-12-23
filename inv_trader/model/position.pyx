@@ -50,6 +50,8 @@ cdef class Position:
         :param timestamp: The positions initialization timestamp.
         :raises ValueError: If the position_id is not a valid string.
         """
+        Precondition.type(position_id, PositionId, 'position_id')
+
         self._symbol = symbol
         self._id = position_id
         self._timestamp = timestamp

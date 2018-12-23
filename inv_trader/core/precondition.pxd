@@ -11,13 +11,15 @@
 
 cdef class Precondition(object):
     @staticmethod
-    cdef true(bint predicate, unicode description)
+    cdef true(bint predicate, str description)
     @staticmethod
-    cdef is_none(object argument, unicode param_name)
+    cdef type(object argument, object is_type, str param_name)
     @staticmethod
-    cdef not_none(object argument, unicode param_name)
+    cdef is_none(object argument, str param_name)
     @staticmethod
-    cdef valid_string(unicode argument, unicode param_name)
+    cdef not_none(object argument, str param_name)
+    @staticmethod
+    cdef valid_string(unicode argument, str param_name)
     @staticmethod
     cdef equal(object argument1, object argument2)
     @staticmethod
@@ -27,9 +29,9 @@ cdef class Precondition(object):
             str collection1_name,
             str collection2_name)
     @staticmethod
-    cdef positive(double value, unicode param_name)
+    cdef positive(double value, str param_name)
     @staticmethod
-    cdef not_negative(double value, unicode param_name)
+    cdef not_negative(double value, str param_name)
     @staticmethod
     cdef in_range(
             double value,
@@ -37,6 +39,6 @@ cdef class Precondition(object):
             double start,
             double end)
     @staticmethod
-    cdef not_empty(object argument, unicode param_name)
+    cdef not_empty(object argument, str param_name)
     @staticmethod
-    cdef empty(object argument, unicode param_name)
+    cdef empty(object argument, str param_name)
