@@ -10,7 +10,7 @@
 # cython: language_level=3, boundscheck=False, wraparound=False
 
 
-cdef unicode PRE_FAILED = "Precondition Failed"
+cdef str PRE_FAILED = "Precondition Failed"
 
 
 cdef class Precondition(object):
@@ -21,7 +21,7 @@ cdef class Precondition(object):
     specification.
     """
     @staticmethod
-    cdef true(bint predicate, unicode description):
+    cdef true(bint predicate, str description):
         """
         Check the preconditions predicate is true.
 
@@ -33,7 +33,7 @@ cdef class Precondition(object):
             raise ValueError(f"{PRE_FAILED} (the predicate {description} was False).")
 
     @staticmethod
-    cdef is_none(object argument, unicode param_name):
+    cdef is_none(object argument, str param_name):
         """
         Check the preconditions argument is None.
 
@@ -45,7 +45,7 @@ cdef class Precondition(object):
             raise ValueError(f"{PRE_FAILED} (the {param_name} argument was not None).")
 
     @staticmethod
-    cdef not_none(object argument, unicode param_name):
+    cdef not_none(object argument, str param_name):
         """
         Check the preconditions argument is not None.
 
@@ -57,7 +57,7 @@ cdef class Precondition(object):
             raise ValueError(f"{PRE_FAILED} (the {param_name} argument was None).")
 
     @staticmethod
-    cdef valid_string(unicode argument, unicode param_name):
+    cdef valid_string(unicode argument, str param_name):
         """
         Check the preconditions string argument is not None, empty or whitespace.
 
@@ -67,7 +67,7 @@ cdef class Precondition(object):
         """
         if argument is None:
             raise ValueError(f"{PRE_FAILED} (the {param_name} string argument was None).")
-        if argument is unicode(''):
+        if argument is '':
             raise ValueError(f"{PRE_FAILED} (the {param_name} string argument was empty).")
         if argument.isspace():
             raise ValueError(f"{PRE_FAILED} (the {param_name} string argument was whitespace).")
@@ -91,8 +91,8 @@ cdef class Precondition(object):
     cdef equal_lengths(
             list collection1,
             list collection2,
-            unicode collection1_name,
-            unicode collection2_name):
+            str collection1_name,
+            str collection2_name):
         """
         Check the preconditions collections have equal lengths.
 
@@ -109,7 +109,7 @@ cdef class Precondition(object):
                 f"values = {len(collection1)} and {len(collection2)}"))
 
     @staticmethod
-    cdef positive(double value, unicode param_name):
+    cdef positive(double value, str param_name):
         """
         Check the preconditions value is positive (> 0.)
 
@@ -121,7 +121,7 @@ cdef class Precondition(object):
             raise ValueError(f"{PRE_FAILED} (the {param_name} was not positive). value = {value}")
 
     @staticmethod
-    cdef not_negative(double value, unicode param_name):
+    cdef not_negative(double value, str param_name):
         """
         Check the preconditions value is not negative (>= 0).
 
@@ -152,7 +152,7 @@ cdef class Precondition(object):
                 f"{PRE_FAILED} (the {param_name} was out of range [{start}-{end}]). value = {value}")
 
     @staticmethod
-    cdef not_empty(object argument, unicode param_name):
+    cdef not_empty(object argument, str param_name):
         """
         Check the preconditions iterable is not empty.
 
@@ -164,7 +164,7 @@ cdef class Precondition(object):
             raise ValueError(f"{PRE_FAILED} (the {param_name} was an empty collection).")
 
     @staticmethod
-    cdef empty(object argument, unicode param_name):
+    cdef empty(object argument, str param_name):
         """
         Check the preconditions iterable is empty.
 
