@@ -18,8 +18,8 @@ from zmq import Context
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.core.logger import Logger, LoggerAdapter
 
-UTF8 = 'utf-8'
-DELIMITER = b' '
+cdef str UTF8 = 'utf-8'
+cdef bytes DELIMITER = b' '
 
 
 class MQWorker(Thread):
