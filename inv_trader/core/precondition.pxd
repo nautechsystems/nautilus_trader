@@ -9,6 +9,7 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False
 
+
 cdef class Precondition:
     @staticmethod
     cdef true(bint predicate, str description)
