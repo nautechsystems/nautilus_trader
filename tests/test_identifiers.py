@@ -75,9 +75,7 @@ class IdentifierTests(unittest.TestCase):
         id2 = PositionId(identifier_string)
 
         # Act
-        result1 = id1 == id1
-        result2 = id1 == id2
-
         # Assert
-        self.assertTrue(result1)
-        self.assertFalse(result2)
+        self.assertTrue(id1 == id1)
+        self.assertTrue(id1 != id2)
+
