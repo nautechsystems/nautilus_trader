@@ -7,6 +7,9 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+# cython: language_level=3, boundscheck=False
+
+
 import uuid
 import zmq
 
@@ -19,7 +22,7 @@ from zmq import Context
 
 from inv_trader.model.enums import Venue, Resolution, QuoteType, OrderSide, OrderType, OrderStatus
 from inv_trader.model.objects import Symbol, BarType, Bar
-from inv_trader.execution import ExecutionClient
+from inv_trader.common.execution cimport ExecutionClient
 from inv_trader.model.objects import Price
 from inv_trader.model.order import Order
 from inv_trader.model.events import Event, OrderEvent
@@ -188,10 +191,11 @@ class MockPublisher(Thread):
         print(f"MockServer: {message}")
 
 
-class MockExecClient(ExecutionClient):
+cdef class MockExecClient(ExecutionClient):
     """
     Provides a mock execution client for trading strategies.
     """
+    cdef list _working_orders
 
     def __init__(self):
         """
@@ -204,13 +208,13 @@ class MockExecClient(ExecutionClient):
         """
         Connect to the execution service.
         """
-        self._log.info("MockExecClient connected.")
+        self.log.info("MockExecClient connected.")
 
     def disconnect(self):
         """
         Disconnect from the execution service.
         """
-        self._log.info("MockExecClient disconnected.")
+        self.log.info("MockExecClient disconnected.")
 
     def submit_order(
             self,

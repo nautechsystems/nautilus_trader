@@ -20,6 +20,7 @@ from uuid import UUID
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.core.logger import Logger, LoggerAdapter
+from inv_trader.common.execution cimport ExecutionClient
 from inv_trader.model.account import Account
 from inv_trader.model.enums import OrderSide, MarketPosition
 from inv_trader.model.events import Event, AccountEvent, OrderEvent
