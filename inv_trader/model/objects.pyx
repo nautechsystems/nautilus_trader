@@ -21,7 +21,7 @@ cdef class Symbol:
     Represents the symbol for a financial market tradeable instrument.
     """
     cdef str _code
-    cdef object _venue # type: Venue
+    cdef object _venue
 
     def __init__(self,
                  str code,
@@ -34,6 +34,7 @@ cdef class Symbol:
         :raises ValueError: If the code is not a valid string.
         """
         Precondition.valid_string(code, 'code')
+        Precondition.type(venue, Venue, 'venue')
 
         self._code = code.upper()
         self._venue = venue
@@ -102,7 +103,7 @@ cdef class Price:
         :param decimals: The decimal precision of the price.
         :return: A Decimal representing the price.
         :raises ValueError: If the price is not positive (> 0).
-        :raises ValueError: If the decimals is negative.
+        :raises ValueError: If the decimals is negative (< 0).
         """
         Precondition.positive(price, 'price')
         Precondition.not_negative(decimals, 'decimals')

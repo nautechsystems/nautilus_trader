@@ -45,9 +45,23 @@ class PriceTests(unittest.TestCase):
         self.assertEqual(Decimal('1.0'), result4)
         self.assertEqual(Decimal('1.0'), result5)
 
-    def test_symbol_with_invalid_strings_raises_exception(self):
+    def test_symbol_equality(self):
         # Arrange
+        symbol1 = Symbol("AUDUSD", Venue.FXCM)
+        symbol2 = Symbol("AUDUSD", Venue.IDEAL_PRO)
+        symbol3 = Symbol("GBPUSD", Venue.FXCM)
+
         # Act
         # Assert
-        self.assertRaises(ValueError, Symbol, "", Venue.FXCM)
-        self.assertRaises(ValueError, Symbol, " ", Venue.FXCM)
+        self.assertTrue(symbol1 == symbol1)
+        self.assertTrue(symbol1 != symbol2)
+        self.assertTrue(symbol1 != symbol3)
+
+    def test_symbol_str_and_repr(self):
+        # Arrange
+        symbol = Symbol("AUDUSD", Venue.FXCM)
+
+        # Act
+        # Assert
+        self.assertEqual("AUDUSD.FXCM", str(symbol))
+        self.assertTrue(repr(symbol).startswith("<AUDUSD.FXCM object at"))

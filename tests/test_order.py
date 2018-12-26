@@ -22,8 +22,8 @@ from inv_trader.model.events import OrderPartiallyFilled, OrderFilled
 from test_kit.stubs import TestStubs
 
 UNIX_EPOCH = TestStubs.unix_epoch()
-AUDUSD_FXCM = Symbol('audusd', Venue.FXCM)
-GBPUSD_FXCM = Symbol('gbpusd', Venue.FXCM)
+AUDUSD_FXCM = Symbol('AUDUSD', Venue.FXCM)
+GBPUSD_FXCM = Symbol('GBPUSD', Venue.FXCM)
 
 
 class OrderTests(unittest.TestCase):

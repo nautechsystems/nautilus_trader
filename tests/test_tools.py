@@ -9,7 +9,11 @@
 
 import unittest
 
+from datetime import datetime, timezone
+
 from inv_indicators.average.ema import ExponentialMovingAverage
+from inv_indicators.intrinsic_network import IntrinsicNetwork
+from inv_trader.model.objects import Bar, Decimal
 from inv_trader.tools import BarBuilder, IndicatorUpdater
 from test_kit.data import TestDataProvider
 
@@ -72,3 +76,42 @@ class IndicatorUpdaterTests(unittest.TestCase):
         self.assertTrue('value' in result)
         self.assertEqual(377280, len(result['value']))
         self.assertEqual(1.4640214397333984, ema.value)
+
+    def test_can_update_ema_indicator(self):
+        # Arrange
+        ema = ExponentialMovingAverage(20)
+        updater = IndicatorUpdater(ema)
+        bar = Bar(
+            Decimal('1.00001'),
+            Decimal('1.00004'),
+            Decimal('1.00002'),
+            Decimal('1.00003'),
+            1000,
+            datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc))
+
+        # Act
+        updater.update_bar(bar)
+        result = ema.value
+
+        # Assert
+        self.assertEqual(1.00003, result)
+
+    def test_can_update_intrinsic_networks_indicator(self):
+        # Arrange
+        intrinsic = IntrinsicNetwork(0.2, 0.2)
+        updater = IndicatorUpdater(intrinsic, input_method=intrinsic.update_mid)
+        bar = Bar(
+            Decimal('1.00001'),
+            Decimal('1.00004'),
+            Decimal('1.00002'),
+            Decimal('1.00003'),
+            1000,
+            datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc))
+
+        # Act
+        updater.update_bar(bar)
+        result = intrinsic.state
+
+        # Assert
+        self.assertTrue(intrinsic.initialized)
+        self.assertEqual(0, result)
