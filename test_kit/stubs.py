@@ -7,8 +7,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from datetime import datetime, timezone, timedelta
-
+from datetime import datetime, timedelta, timezone
 
 # Unix epoch is the UTC time at 00:00:00 on 1/1/1970.
 UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc)

@@ -26,3 +26,4 @@ from inv_trader.serialization import InstrumentSerializer
 from inv_trader.strategy import TradeStrategy
 
 cdef str UTF8 = 'utf-8'
+

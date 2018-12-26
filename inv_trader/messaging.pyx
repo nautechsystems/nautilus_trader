@@ -15,7 +15,7 @@ from typing import Callable
 from threading import Thread
 from zmq import Context
 
-from inv_trader.core.precondition cimport Precondition
+from inv_trader.core.precondition import PyPrecondition
 from inv_trader.core.logger import Logger, LoggerAdapter
 
 cdef str UTF8 = 'utf-8'
@@ -49,9 +49,9 @@ class MQWorker(Thread):
         :raises ValueError: If the host is not a valid string.
         :raises ValueError: If the port is not in range [0, 65535]
         """
-        # Precondition.valid_string(name, 'name')
-        # Precondition.valid_string(host, 'host')
-        # Precondition.in_range(port, 'port', 0, 65535)
+        PyPrecondition.valid_string(name, 'name')
+        PyPrecondition.valid_string(host, 'host')
+        PyPrecondition.in_range(port, 'port', 0, 65535)
 
         super().__init__()
         self.daemon = True
@@ -81,7 +81,7 @@ class MQWorker(Thread):
 
         :param message: The message bytes to send.
         """
-        Precondition.not_empty(message, 'message')
+        PyPrecondition.not_empty(message, 'message')
 
         self._socket.send(message)
         self._cycles += 1
@@ -137,9 +137,9 @@ class RequestWorker(MQWorker):
         :raises ValueError: If the host is not a valid string.
         :raises ValueError: If the port is not in range [0, 65535]
         """
-        # Precondition.valid_string(name, 'name')
-        # Precondition.valid_string(host, 'host')
-        # Precondition.in_range(port, 'port', 0, 65535)
+        PyPrecondition.valid_string(name, 'name')
+        PyPrecondition.valid_string(host, 'host')
+        PyPrecondition.in_range(port, 'port', 0, 65535)
 
         super().__init__(
             name,
@@ -193,10 +193,10 @@ class SubscriberWorker(MQWorker):
         :raises ValueError: If the port is not in range [0, 65535]
         :raises ValueError: If the topic is not a valid string.
         """
-        # Precondition.valid_string(name, 'name')
-        # Precondition.valid_string(host, 'host')
-        # Precondition.in_range(port, 'port', 0, 65535)
-        # Precondition.valid_string(topic, 'topic')
+        PyPrecondition.valid_string(name, 'name')
+        PyPrecondition.valid_string(host, 'host')
+        PyPrecondition.in_range(port, 'port', 0, 65535)
+        PyPrecondition.valid_string(topic, 'topic')
 
         super().__init__(
             name,
