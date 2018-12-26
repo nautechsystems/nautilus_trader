@@ -13,7 +13,7 @@
 cdef str PRE_FAILED = "Precondition Failed"
 
 
-cdef class Precondition(object):
+cdef class Precondition:
     """
     Provides static methods for the checking of function or method preconditions.
     A precondition is a condition or predicate that must always be true just prior
@@ -71,7 +71,7 @@ cdef class Precondition(object):
             raise ValueError(f"{PRE_FAILED} (the {param_name} argument was None).")
 
     @staticmethod
-    cdef valid_string(unicode argument, str param_name):
+    cdef valid_string(str argument, str param_name):
         """
         Check the preconditions string argument is not None, empty or whitespace.
 
@@ -188,3 +188,65 @@ cdef class Precondition(object):
         """
         if len(argument) > 0:
             raise ValueError(f"{PRE_FAILED} (the {param_name} was not an empty collection).")
+
+
+class PyPrecondition:
+
+    @staticmethod
+    def true(predicate, description):
+        Precondition.true(predicate, description)
+
+    @staticmethod
+    def type(argument, is_type, param_name):
+        Precondition.type(argument, is_type, param_name)
+
+    @staticmethod
+    def is_none(argument, param_name):
+        Precondition.is_none(argument, param_name)
+
+    @staticmethod
+    def not_none(argument, param_name):
+        Precondition.not_none(argument, param_name)
+
+    @staticmethod
+    def valid_string(argument, param_name):
+        Precondition.valid_string(argument, param_name)
+
+    @staticmethod
+    def equal(argument1, argument2):
+        Precondition.equal(argument1, argument2)
+
+    @staticmethod
+    def equal_lengths(
+            collection1,
+            collection2,
+            collection1_name,
+            collection2_name):
+        Precondition.equal_lengths(collection1,
+                                   collection2,
+                                   collection1_name,
+                                   collection2_name)
+
+    @staticmethod
+    def positive(value, param_name):
+        Precondition.positive(value, param_name)
+
+    @staticmethod
+    def not_negative(value, param_name):
+        Precondition.not_negative(value, param_name)
+
+    @staticmethod
+    def in_range(
+            value,
+            param_name,
+            start,
+            end):
+        Precondition.in_range(value, param_name, start, end)
+
+    @staticmethod
+    def not_empty(argument, param_name):
+        Precondition.not_empty(argument, param_name)
+
+    @staticmethod
+    def empty(argument, param_name):
+        Precondition.empty(argument, param_name)
