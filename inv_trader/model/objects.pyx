@@ -20,8 +20,8 @@ cdef class Symbol:
     """
     Represents the symbol for a financial market tradeable instrument.
     """
-    cdef str _code
-    cdef object _venue
+    cdef readonly str code
+    cdef readonly object venue
 
     def __init__(self,
                  str code,
@@ -36,8 +36,8 @@ cdef class Symbol:
         Precondition.valid_string(code, 'code')
         Precondition.type(venue, Venue, 'venue')
 
-        self._code = code.upper()
-        self._venue = venue
+        self.code = code.upper()
+        self.venue = venue
 
     def __eq__(self, other) -> bool:
         """
@@ -58,33 +58,19 @@ cdef class Symbol:
         """"
         Override the default hash implementation.
         """
-        return hash((self._code, self._venue))
+        return hash((self.code, self.venue))
 
     def __str__(self) -> str:
         """
         :return: The str() string representation of the symbol.
         """
-        return str(f"{self._code}.{self._venue.name}")
+        return str(f"{self.code}.{self.venue.name}")
 
     def __repr__(self) -> str:
         """
         :return: The repr() string representation of the symbol.
         """
         return str(f"<{str(self)} object at {id(self)}>")
-
-    @property
-    def code(self) -> str:
-        """
-        :return: The symbols code.
-        """
-        return self._code
-
-    @property
-    def venue(self) -> Venue:
-        """
-        :return: The symbols venue.
-        """
-        return self._venue
 
 
 cdef class Price:
@@ -144,10 +130,10 @@ cdef class Tick:
     """
     Represents a single tick in a financial market.
     """
-    cdef object _symbol
-    cdef object _bid
-    cdef object _ask
-    cdef object _timestamp
+    cdef readonly object symbol
+    cdef readonly object bid
+    cdef readonly object ask
+    cdef readonly object timestamp
 
     def __init__(self,
                  symbol: Symbol,
@@ -171,20 +157,20 @@ cdef class Tick:
         Precondition.positive(bid, 'bid')
         Precondition.positive(ask, 'ask')
 
-        self._symbol = symbol
-        self._bid = bid
-        self._ask = ask
-        self._timestamp = timestamp
+        self.symbol = symbol
+        self.bid = bid
+        self.ask = ask
+        self.timestamp = timestamp
 
     def __eq__(self, other) -> bool:
         """
         Override the default equality comparison.
         """
         if isinstance(other, self.__class__):
-            return (self._symbol == other.symbol
-                    and self._bid == other.bid
-                    and self._ask == other.ask
-                    and self._timestamp == other.timestamp)
+            return (self.symbol == other.symbol
+                    and self.bid == other.bid
+                    and self.ask == other.ask
+                    and self.timestamp == other.timestamp)
         else:
             return False
 
@@ -198,14 +184,14 @@ cdef class Tick:
         """"
         Override the default hash implementation.
         """
-        return hash(self._timestamp)
+        return hash(self.timestamp)
 
     def __str__(self) -> str:
         """
         :return: The str() string representation of the tick.
         """
-        return str(f"Tick({self._symbol},{self._bid},{self._ask},"
-                f"{self._timestamp.isoformat()})")
+        return str(f"Tick({self.symbol},{self.bid},{self.ask},"
+                f"{self.timestamp.isoformat()})")
 
     def __repr__(self) -> str:
         """
@@ -213,39 +199,15 @@ cdef class Tick:
         """
         return str(f"<{str(self)} object at {id(self)}>")
 
-    @property
-    def symbol(self):
-        """
-        :return: The ticks symbol.
-        """
-        return self._symbol
 
-    @property
-    def bid(self) -> Decimal:
-        """
-        :return: The ticks bid price.
-        """
-        return self._bid
-
-    @property
-    def ask(self) -> Decimal:
-        """
-        :return: The ticks ask price.
-        """
-        return self._ask
-
-    @property
-    def timestamp(self) -> datetime:
-        """
-        :return: The ticks timestamp (UTC).
-        """
-        return self._timestamp
-
-
-class BarType:
+cdef class BarType:
     """
     Represents a financial market symbol and bar specification.
     """
+    cdef readonly object symbol
+    cdef readonly int period
+    cdef readonly object resolution
+    cdef readonly object quote_type
 
     def __init__(self,
                  symbol: Symbol,
@@ -266,17 +228,20 @@ class BarType:
         Precondition.type(quote_type, QuoteType, 'quote_type')
         Precondition.positive(period, 'period')
 
-        self._symbol = symbol
-        self._period = period
-        self._resolution = resolution
-        self._quote_type = quote_type
+        self.symbol = symbol
+        self.period = period
+        self.resolution = resolution
+        self.quote_type = quote_type
 
     def __eq__(self, other) -> bool:
         """
         Override the default equality comparison.
         """
         if isinstance(other, self.__class__):
-            return self.__dict__ == other.__dict__
+            return (self.symbol == other.symbol
+                    and self.period == other.period
+                    and self.resolution == other.resolution
+                    and self.quote_type == other.quote_type)
         else:
             return False
 
@@ -290,14 +255,14 @@ class BarType:
         """"
         Override the default hash implementation.
         """
-        return hash((self._symbol, self._period, self._resolution, self._quote_type))
+        return hash((self.symbol, self.period, self.resolution, self.quote_type))
 
     def __str__(self) -> str:
         """
         :return: The str() string representation of the bar type.
         """
-        return str(f"{str(self._symbol)}"
-                f"-{self._period}-{self._resolution.name}[{self._quote_type.name}]")
+        return str(f"{str(self.symbol)}"
+                f"-{self.period}-{self.resolution.name}[{self.quote_type.name}]")
 
     def __repr__(self) -> str:
         """
@@ -305,45 +270,17 @@ class BarType:
         """
         return str(f"<{str(self)} object at {id(self)}>")
 
-    @property
-    def symbol(self) -> Symbol:
-        """
-        :return: The bar types symbol.
-        """
-        return self._symbol
-
-    @property
-    def period(self) -> int:
-        """
-        :return: The bar types period.
-        """
-        return self._period
-
-    @property
-    def resolution(self) -> Resolution:
-        """
-        :return: The bar types resolution.
-        """
-        return self._resolution
-
-    @property
-    def quote_type(self) -> QuoteType:
-        """
-        :return: The bar types quote type.
-        """
-        return self._quote_type
-
 
 cdef class Bar:
     """
     Represents a financial market trade bar.
     """
-    cdef object _open
-    cdef object _high
-    cdef object _low
-    cdef object _close
-    cdef int _volume
-    cdef object _timestamp
+    cdef readonly object open
+    cdef readonly object high
+    cdef readonly object low
+    cdef readonly object close
+    cdef readonly int volume
+    cdef readonly object timestamp
 
     def __init__(self,
                  open_price: Decimal,
@@ -384,19 +321,19 @@ cdef class Bar:
         Precondition.true(high_price >= close_price, 'high_price >= close_price')
         Precondition.true(low_price <= close_price, 'low_price <= close_price')
 
-        self._open = open_price
-        self._high = high_price
-        self._low = low_price
-        self._close = close_price
-        self._volume = volume
-        self._timestamp = timestamp
+        self.open = open_price
+        self.high = high_price
+        self.low = low_price
+        self.close = close_price
+        self.volume = volume
+        self.timestamp = timestamp
 
     def __eq__(self, other) -> bool:
         """
         Override the default equality comparison.
         """
         if isinstance(other, self.__class__):
-            return self._timestamp == other.timestamp
+            return self.timestamp == other.timestamp
         else:
             return False
 
@@ -410,62 +347,20 @@ cdef class Bar:
         """"
         Override the default hash implementation.
         """
-        return hash(str(self._timestamp))
+        return hash(str(self.timestamp))
 
     def __str__(self) -> str:
         """
         :return: The str() string representation of the bar.
         """
-        return str(f"Bar({self._open},{self._high},{self._low},{self._close},"
-                f"{self._volume},{self._timestamp.isoformat()})")
+        return str(f"Bar({self.open},{self.high},{self.low},{self.close},"
+                f"{self.volume},{self.timestamp.isoformat()})")
 
     def __repr__(self) -> str:
         """
         :return: The repr() string representation of the bar.
         """
         return str(f"<{str(self)} object at {id(self)}>")
-
-    @property
-    def open(self) -> Decimal:
-        """
-        :return: The bars open price.
-        """
-        return self._open
-
-    @property
-    def high(self) -> Decimal:
-        """
-        :return: The bars high price.
-        """
-        return self._high
-
-    @property
-    def low(self) -> Decimal:
-        """
-        :return: The bars low price.
-        """
-        return self._low
-
-    @property
-    def close(self) -> Decimal:
-        """
-        :return: The bars close price.
-        """
-        return self._close
-
-    @property
-    def volume(self) -> int:
-        """
-        :return: The bars volume (tick volume).
-        """
-        return self._volume
-
-    @property
-    def timestamp(self) -> datetime:
-        """
-        :return: The bars timestamp (UTC).
-        """
-        return self._timestamp
 
 
 cdef class DataBar:
@@ -552,26 +447,26 @@ cdef class Instrument:
     """
     Represents a tradeable financial market instrument.
     """
-    cdef object _symbol
-    cdef str _broker_symbol
-    cdef object _quote_currency
-    cdef object _security_type
-    cdef int _tick_decimals
-    cdef object _tick_size
-    cdef object _tick_value
-    cdef object _target_direct_spread
-    cdef int _round_lot_size
-    cdef int _contract_size
-    cdef int _min_stop_distance_entry
-    cdef int _min_limit_distance_entry
-    cdef int _min_stop_distance
-    cdef int _min_limit_distance
-    cdef int _min_trade_size
-    cdef int _max_trade_size
-    cdef object _margin_requirement
-    cdef object _rollover_interest_buy
-    cdef object _rollover_interest_sell
-    cdef object _timestamp
+    cdef readonly object symbol
+    cdef readonly str broker_symbol
+    cdef readonly object quote_currency
+    cdef readonly object security_type
+    cdef readonly int tick_decimals
+    cdef readonly object tick_size
+    cdef readonly object tick_value
+    cdef readonly object target_direct_spread
+    cdef readonly int round_lot_size
+    cdef readonly int contract_size
+    cdef readonly int min_stop_distance_entry
+    cdef readonly int min_limit_distance_entry
+    cdef readonly int min_stop_distance
+    cdef readonly int min_limit_distance
+    cdef readonly int min_trade_size
+    cdef readonly int max_trade_size
+    cdef readonly object margin_requirement
+    cdef readonly object rollover_interest_buy
+    cdef readonly object rollover_interest_sell
+    cdef readonly object timestamp
 
     def __init__(self,
                  symbol: Symbol,
@@ -643,33 +538,33 @@ cdef class Instrument:
         Precondition.positive(max_trade_size, 'max_trade_size')
         Precondition.not_negative(margin_requirement, 'margin_requirement')
 
-        self._symbol = symbol
-        self._broker_symbol = broker_symbol
-        self._quote_currency = quote_currency
-        self._security_type = security_type
-        self._tick_decimals = tick_decimals
-        self._tick_size = tick_size
-        self._tick_value = tick_value
-        self._target_direct_spread = target_direct_spread
-        self._round_lot_size = round_lot_size
-        self._contract_size = contract_size
-        self._min_stop_distance_entry = min_stop_distance_entry
-        self._min_limit_distance_entry = min_limit_distance_entry
-        self._min_stop_distance = min_stop_distance
-        self._min_limit_distance = min_limit_distance
-        self._min_trade_size = min_trade_size
-        self._max_trade_size = max_trade_size
-        self._margin_requirement = margin_requirement
-        self._rollover_interest_buy = rollover_interest_buy
-        self._rollover_interest_sell = rollover_interest_sell
-        self._timestamp = timestamp
+        self.symbol = symbol
+        self.broker_symbol = broker_symbol
+        self.quote_currency = quote_currency
+        self.security_type = security_type
+        self.tick_decimals = tick_decimals
+        self.tick_size = tick_size
+        self.tick_value = tick_value
+        self.target_direct_spread = target_direct_spread
+        self.round_lot_size = round_lot_size
+        self.contract_size = contract_size
+        self.min_stop_distance_entry = min_stop_distance_entry
+        self.min_limit_distance_entry = min_limit_distance_entry
+        self.min_stop_distance = min_stop_distance
+        self.min_limit_distance = min_limit_distance
+        self.min_trade_size = min_trade_size
+        self.max_trade_size = max_trade_size
+        self.margin_requirement = margin_requirement
+        self.rollover_interest_buy = rollover_interest_buy
+        self.rollover_interest_sell = rollover_interest_sell
+        self.timestamp = timestamp
 
     def __eq__(self, other) -> bool:
         """
         Override the default equality comparison.
         """
         if isinstance(other, self.__class__):
-            return self.__dict__ == other.__dict__
+            return self.symbol == other.symbol
         else:
             return False
 
@@ -683,156 +578,16 @@ cdef class Instrument:
         """"
         Override the default hash implementation.
         """
-        return hash(str(self._symbol))
+        return hash(str(self.symbol))
 
     def __str__(self) -> str:
         """
         :return: The str() string representation of the instrument.
         """
-        return str(f"Instrument({self._symbol.code}.{self._symbol.venue})")
+        return str(f"Instrument({self.symbol.code}.{self.symbol.venue})")
 
     def __repr__(self) -> str:
         """
         :return: The repr() string representation of the instrument.
         """
         return str(f"<{str(self)} object at {id(self)}>")
-
-    @property
-    def symbol(self) -> Symbol:
-        """
-        :return: The instruments symbol.
-        """
-        return self._symbol
-
-    @property
-    def broker_symbol(self) -> str:
-        """
-        :return: The instruments broker symbol.
-        """
-        return self._broker_symbol
-
-    @property
-    def quote_currency(self) -> str:
-        """
-        :return: The instruments quote currency.
-        """
-        return self._quote_currency.name
-
-    @property
-    def security_type(self) -> str:
-        """
-        :return: The instruments security type.
-        """
-        return self._security_type.name
-
-    @property
-    def tick_decimals(self) -> int:
-        """
-        :return: The instruments tick decimal digits precision.
-        """
-        return self._tick_decimals
-
-    @property
-    def tick_size(self) -> Decimal:
-        """
-        :return: The instruments tick size.
-        """
-        return self._tick_size
-
-    @property
-    def tick_value(self) -> Decimal:
-        """
-        :return: The instruments tick value.
-        """
-        return self._tick_value
-
-    @property
-    def target_direct_spread(self) -> Decimal:
-        """
-        :return: The instruments target direct spread (set by broker).
-        """
-        return self._target_direct_spread
-
-    @property
-    def round_lot_size(self) -> int:
-        """
-        :return: The instruments rounded lot size.
-        """
-        return self._round_lot_size
-
-    @property
-    def contract_size(self) -> int:
-        """
-        :return: The instruments contract size.
-        """
-        return self._contract_size
-
-    @property
-    def min_stop_distance_entry(self) -> int:
-        """
-        :return: The instruments minimum tick distance for stop entry orders.
-        """
-        return self._min_stop_distance_entry
-
-    @property
-    def min_limit_distance_entry(self) -> int:
-        """
-        :return: The instruments minimum tick distance for limit entry orders.
-        """
-        return self._min_limit_distance_entry
-
-    @property
-    def min_stop_distance(self) -> int:
-        """
-        :return: The instruments minimum tick distance for stop orders.
-        """
-        return self._min_stop_distance
-
-    @property
-    def min_limit_distance(self) -> int:
-        """
-        :return: The instruments minimum tick distance for limit orders.
-        """
-        return self._min_limit_distance
-
-    @property
-    def min_trade_size(self) -> int:
-        """
-        :return: The instruments minimum trade size.
-        """
-        return self._min_trade_size
-
-    @property
-    def max_trade_size(self) -> int:
-        """
-        :return: The instruments maximum trade size.
-        """
-        return self._max_trade_size
-
-    @property
-    def margin_requirement(self) -> Decimal:
-        """
-        :return: The instruments margin requirement.
-        """
-        return self._margin_requirement
-
-    @property
-    def rollover_interest_buy(self) -> Decimal:
-        """
-        :return: The instruments rollover interest for long positions.
-        """
-        return self._rollover_interest_buy
-
-    @property
-    def rollover_interest_sell(self) -> Decimal:
-        """
-        :return: The instruments rollover interest for short positions.
-        """
-        return self._rollover_interest_sell
-
-    @property
-    def timestamp(self) -> datetime:
-        """
-        :return: The timestamp the instrument was created/updated at.
-        """
-        return self._timestamp

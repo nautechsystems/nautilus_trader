@@ -34,25 +34,26 @@ cdef class Order:
     """
     Represents an order in a financial market.
     """
-    cdef object _symbol
-    cdef object _id
-    cdef object _label
-    cdef object _side
-    cdef object _type
-    cdef int _quantity
-    cdef object _timestamp
-    cdef object _price
-    cdef object _time_in_force
-    cdef object _expire_time
-    cdef int _filled_quantity
-    cdef object _average_price
-    cdef object _slippage
-    cdef object _status
     cdef list _events
     cdef list _order_ids
     cdef list _order_ids_broker
     cdef list _execution_ids
     cdef list _execution_tickets
+
+    cdef readonly object symbol
+    cdef readonly object id
+    cdef readonly object label
+    cdef readonly object side
+    cdef readonly object type
+    cdef readonly int quantity
+    cdef readonly object timestamp
+    cdef readonly object price
+    cdef readonly object time_in_force
+    cdef readonly object expire_time
+    cdef readonly int filled_quantity
+    cdef readonly object average_price
+    cdef readonly object slippage
+    cdef readonly object status
 
     def __init__(self,
                  symbol: Symbol,
@@ -110,20 +111,20 @@ cdef class Order:
         if time_in_force is TimeInForce.GTD:
             Precondition.not_none(expire_time, 'expire_time')
 
-        self._symbol = symbol
-        self._id = order_id
-        self._label = label
-        self._side = order_side
-        self._type = order_type
-        self._quantity = quantity
-        self._timestamp = timestamp
-        self._price = price                  # Can be None
-        self._time_in_force = time_in_force  # Can be None
-        self._expire_time = expire_time      # Can be None
-        self._filled_quantity = 0
-        self._average_price = Decimal('0.0')
-        self._slippage = Decimal('0.0')
-        self._status = OrderStatus.INITIALIZED
+        self.symbol = symbol
+        self.id = order_id
+        self.label = label
+        self.side = order_side
+        self.type = order_type
+        self.quantity = quantity
+        self.timestamp = timestamp
+        self.price = price                  # Can be None
+        self.time_in_force = time_in_force  # Can be None
+        self.expire_time = expire_time      # Can be None
+        self.filled_quantity = 0
+        self.average_price = Decimal('0.0')
+        self.slippage = Decimal('0.0')
+        self.status = OrderStatus.INITIALIZED
         self._events = []               # type: List[OrderEvent]
         self._order_ids = [order_id]    # type: List[OrderId]
         self._order_ids_broker = []     # type: List[OrderId]
@@ -149,173 +150,69 @@ cdef class Order:
         """"
         Override the default hash implementation.
         """
-        return hash(self._id)
+        return hash(self.id)
 
     def __str__(self) -> str:
         """
         :return: The str() string representation of the order.
         """
-        cdef str quantity = '{:,}'.format(self._quantity)
-        cdef str price = '' if self._price is None else f' {self.price}'
-        cdef str expire_time = '' if self._expire_time is None else f' {self._expire_time}'
-        return (f"Order(id={self._id}, label={self._label}) "
-                f"{self._side.name} {quantity} {self._symbol} @ {self._type.name}{price} "
-                f"{self._time_in_force.name}{expire_time}")
+        cdef str quantity = '{:,}'.format(self.quantity)
+        cdef str price = '' if self.price is None else f' {self.price}'
+        cdef str expire_time = '' if self.expire_time is None else f' {self.expire_time}'
+        return (f"Order(id={self.id}, label={self.label}) "
+                f"{self.side.name} {quantity} {self.symbol} @ {self.type.name}{price} "
+                f"{self.time_in_force.name}{expire_time}")
 
     def __repr__(self) -> str:
         """
         :return: The repr() string representation of the order.
         """
-        cdef str attrs = vars(self)
+        cdef object attrs = vars(self)
         cdef str props = ', '.join("%s=%s" % item for item in attrs.items()).replace(', _', ', ')
         return f"<{self.__class__.__name__}({props[1:]}) object at {id(self)}>"
 
-    @property
-    def symbol(self) -> Symbol:
+    cpdef object id_current(self):
         """
-        :return: The orders symbol.
-        """
-        return self._symbol
-
-    @property
-    def id(self) -> OrderId:
-        """
-        :return: The orders identifier.
-        """
-        return self._id
-
-    @property
-    def id_current(self) -> OrderId:
-        """
-        :return: The orders current identifier.
+        :return: The orders current identifier (OrderId).
         """
         return self._order_ids[-1]
 
-    @property
-    def broker_id(self) -> OrderId or None:
+    cpdef object broker_id(self):
         """
-        :return: The orders broker-side order identifier (could be None).
+        :return: The orders broker-side order identifier (OrderId or None).
         """
         if len(self._order_ids_broker) == 0:
             return None
         return self._order_ids_broker[-1]
 
-    @property
-    def execution_id(self) -> ExecutionId or None:
+    cpdef object execution_id(self):
         """
-        :return: The orders last execution (could be None).
+        :return: The orders last execution (ExecutionId or None).
         """
         if len(self._execution_ids) == 0:
             return None
         return self._execution_ids[-1]
 
-    @property
-    def execution_ticket(self) -> ExecutionTicket or None:
+    cpdef object execution_ticket(self):
         """
-        :return: The orders last execution ticket (could be None).
+        :return: The orders last execution ticket (ExecutionTicket or None).
         """
         if len(self._execution_tickets) == 0:
             return None
         return self._execution_tickets[-1]
 
-    @property
-    def label(self) -> Label:
+    cpdef bint is_complete(self):
         """
-        :return: The orders label.
+        :return: A value indicating whether the order is complete (bool).
         """
-        return self._label
+        return (self.status is OrderStatus.CANCELLED
+                or self.status is OrderStatus.EXPIRED
+                or self.status is OrderStatus.FILLED
+                or self.status is OrderStatus.REJECTED)
 
-    @property
-    def side(self) -> OrderSide:
+    cpdef int event_count(self):
         """
-        :return: The orders side.
-        """
-        return self._side
-
-    @property
-    def type(self) -> OrderType:
-        """
-        :return: The orders type.
-        """
-        return self._type
-
-    @property
-    def quantity(self) -> int:
-        """
-        :return: The orders quantity.
-        """
-        return self._quantity
-
-    @property
-    def filled_quantity(self) -> int:
-        """
-        :return: The orders filled quantity.
-        """
-        return self._filled_quantity
-
-    @property
-    def timestamp(self) -> datetime:
-        """
-        :return: The orders initialization timestamp.
-        """
-        return self._timestamp
-
-    @property
-    def time_in_force(self) -> TimeInForce:
-        """
-        :return: The orders time in force.
-        """
-        return self._time_in_force
-
-    @property
-    def expire_time(self) -> datetime or None:
-        """
-        :return: The orders expire time (optional could be None).
-        """
-        return self._expire_time
-
-    @property
-    def price(self) -> Decimal or None:
-        """
-        :return: The orders price (optional could be None).
-        """
-        return self._price
-
-    @property
-    def average_price(self) -> Decimal or None:
-        """
-        :return: The orders average filled price (optional could be None).
-        """
-        return self._average_price
-
-    @property
-    def slippage(self) -> Decimal:
-        """
-        :return: The orders filled slippage (zero if not filled).
-        """
-        return self._slippage
-
-    @property
-    def status(self) -> OrderStatus:
-        """
-        :return: The orders status.
-        """
-        return self._status
-
-    @property
-    def is_complete(self) -> bool:
-        """
-        :return: A value indicating whether the order is complete.
-        """
-        return (self._status is OrderStatus.CANCELLED
-                or self._status is OrderStatus.EXPIRED
-                or self._status is OrderStatus.FILLED
-                or self._status is OrderStatus.REJECTED)
-
-    @property
-    def event_count(self) -> int:
-        """
-        :return: The count of events since the order was initialized.
+        :return: The count of events since the order was initialized (int).
         """
         return len(self._events)
 
@@ -327,74 +224,74 @@ cdef class Order:
         :raises ValueError: If the order_events order_id is not equal to the id.
         """
         Precondition.type(order_event, OrderEvent, 'order_event')
-        Precondition.equal(order_event.order_id, self._id)
+        Precondition.equal(order_event.order_id, self.id)
 
         self._events.append(order_event)
 
         # Handle event
         if isinstance(order_event, OrderSubmitted):
-            self._status = OrderStatus.SUBMITTED
+            self.status = OrderStatus.SUBMITTED
 
         elif isinstance(order_event, OrderAccepted):
-            self._status = OrderStatus.ACCEPTED
+            self.status = OrderStatus.ACCEPTED
 
         elif isinstance(order_event, OrderRejected):
-            self._status = OrderStatus.REJECTED
+            self.status = OrderStatus.REJECTED
 
         elif isinstance(order_event, OrderWorking):
-            self._status = OrderStatus.WORKING
+            self.status = OrderStatus.WORKING
             self._order_ids_broker.append(order_event.broker_order_id)
 
         elif isinstance(order_event, OrderCancelled):
-            self._status = OrderStatus.CANCELLED
+            self.status = OrderStatus.CANCELLED
 
         elif isinstance(order_event, OrderCancelReject):
             pass
 
         elif isinstance(order_event, OrderExpired):
-            self._status = OrderStatus.EXPIRED
+            self.status = OrderStatus.EXPIRED
 
         elif isinstance(order_event, OrderModified):
             self._order_ids_broker.append(order_event.broker_order_id)
-            self._price = order_event.modified_price
+            self.price = order_event.modified_price
 
         elif isinstance(order_event, OrderFilled):
-            self._status = OrderStatus.FILLED
+            self.status = OrderStatus.FILLED
             self._execution_ids.append(order_event.execution_id)
             self._execution_tickets.append(order_event.execution_ticket)
-            self._filled_quantity = order_event.filled_quantity
-            self._average_price = order_event.average_price
+            self.filled_quantity = order_event.filled_quantity
+            self.average_price = order_event.average_price
             self._set_slippage()
             self._check_overfill()
 
         elif isinstance(order_event, OrderPartiallyFilled):
-            self._status = OrderStatus.PARTIALLY_FILLED
+            self.status = OrderStatus.PARTIALLY_FILLED
             self._execution_ids.append(order_event.execution_id)
             self._execution_tickets.append(order_event.execution_ticket)
-            self._filled_quantity = order_event.filled_quantity
-            self._average_price = order_event.average_price
+            self.filled_quantity = order_event.filled_quantity
+            self.average_price = order_event.average_price
             self._set_slippage()
             self._check_overfill()
 
-    def get_events(self) -> List[OrderEvent]:
+    cpdef list get_events(self):
         """
-        :return: The orders internal events list.
+        :return: The orders internal events list (List[OrderEvent]).
         """
         return self._events
 
-    def _set_slippage(self):
-        if self._type not in PRICED_ORDER_TYPES:
+    cdef object _set_slippage(self):
+        if self.type not in PRICED_ORDER_TYPES:
             # Slippage not applicable to orders with entry prices.
             return
 
         if self.side is OrderSide.BUY:
-            self._slippage = self._average_price - self._price
+            self.slippage = self.average_price - self.price
         else:  # side is OrderSide.SELL:
-            self._slippage = (self._price - self._average_price)
+            self.slippage = (self.price - self.average_price)
 
-    def _check_overfill(self):
-        if self._filled_quantity > self._quantity:
-            self._status = OrderStatus.OVER_FILLED
+    cdef object _check_overfill(self):
+        if self.filled_quantity > self.quantity:
+            self.status = OrderStatus.OVER_FILLED
 
 
 # Unix epoch is the UTC time at 00:00:00 on 1/1/1970

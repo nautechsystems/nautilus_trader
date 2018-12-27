@@ -300,7 +300,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         """
         Precondition.not_empty(command_bytes, 'command_bytes')
 
-        unpacked = msgpack.unpackb(command_bytes, encoding=UTF8)
+        unpacked = msgpack.unpackb(command_bytes, raw=False)
 
         command_type = unpacked[COMMAND_TYPE]
         command_id = UUID(unpacked[COMMAND_ID])
@@ -454,7 +454,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
         """
         Precondition.not_empty(event_bytes, 'event_bytes')
 
-        unpacked = msgpack.unpackb(event_bytes, encoding=UTF8)
+        unpacked = msgpack.unpackb(event_bytes, raw=False)
 
         event_type = unpacked[EVENT_TYPE]
         event_id = UUID(unpacked[EVENT_ID])

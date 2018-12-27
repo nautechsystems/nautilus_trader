@@ -9,8 +9,6 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False
 
-import uuid
-
 from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
@@ -27,8 +25,8 @@ cdef class Event:
     """
     The abstract base class for all events.
     """
-    cdef object _event_id
-    cdef object _event_timestamp
+    cdef readonly object id
+    cdef readonly object timestamp
 
     def __init__(self,
                  identifier: UUID,
@@ -42,8 +40,8 @@ cdef class Event:
         Precondition.type(identifier, UUID, 'identifier')
         Precondition.type(timestamp, datetime, 'timestamp')
 
-        self._event_id = identifier
-        self._event_timestamp = timestamp
+        self.id = identifier
+        self.timestamp = timestamp
 
     def __eq__(self, other) -> bool:
         """
@@ -78,36 +76,22 @@ cdef class Event:
         """
         return f"<{str(self)} object at {id(self)}>"
 
-    @property
-    def id(self) -> uuid:
-        """
-        :return: The events identifier.
-        """
-        return self._event_id
-
-    @property
-    def timestamp(self) -> datetime:
-        """
-        :return: The events timestamp (the time the event was created).
-        """
-        return self._event_timestamp
-
 
 cdef class AccountEvent(Event):
     """
     Represents an account event produced from a collateral report.
     """
-    cdef object _account_id
-    cdef object _broker
-    cdef object _account_number
-    cdef object _currency
-    cdef object _cash_balance
-    cdef object _cash_start_day
-    cdef object _cash_activity_day
-    cdef object _margin_used_liquidation
-    cdef object _margin_used_maintenance
-    cdef object _margin_ratio
-    cdef str _margin_call_status
+    cdef readonly object account_id
+    cdef readonly object broker
+    cdef readonly object account_number
+    cdef readonly object currency
+    cdef readonly object cash_balance
+    cdef readonly object cash_start_day
+    cdef readonly object cash_activity_day
+    cdef readonly object margin_used_liquidation
+    cdef readonly object margin_used_maintenance
+    cdef readonly object margin_ratio
+    cdef readonly str margin_call_status
 
     def __init__(self,
                  account_id: AccountId,
@@ -148,24 +132,24 @@ cdef class AccountEvent(Event):
         Precondition.not_negative(margin_ratio, 'margin_ratio')
 
         super().__init__(event_id, event_timestamp)
-        self._account_id = account_id
-        self._broker = broker
-        self._account_number = account_number
-        self._currency = currency
-        self._cash_balance = cash_balance
-        self._cash_start_day = cash_start_day
-        self._cash_activity_day = cash_activity_day
-        self._margin_used_liquidation = margin_used_liquidation
-        self._margin_used_maintenance = margin_used_maintenance
-        self._margin_ratio = margin_ratio
-        self._margin_call_status = margin_call_status
+        self.account_id = account_id
+        self.broker = broker
+        self.account_number = account_number
+        self.currency = currency
+        self.cash_balance = cash_balance
+        self.cash_start_day = cash_start_day
+        self.cash_activity_day = cash_activity_day
+        self.margin_used_liquidation = margin_used_liquidation
+        self.margin_used_maintenance = margin_used_maintenance
+        self.margin_ratio = margin_ratio
+        self.margin_call_status = margin_call_status
 
     def __str__(self) -> str:
         """
         :return: The str() string representation of the event.
         """
         return (f"{self.__class__.__name__}"
-                f"(order_id={self._cash_balance}, margin_used={self._margin_used_maintenance})")
+                f"(order_id={self.cash_balance}, margin_used={self.margin_used_maintenance})")
 
     def __repr__(self) -> str:
         """
@@ -173,90 +157,13 @@ cdef class AccountEvent(Event):
         """
         return f"<{str(self)} object at {id(self)}>"
 
-    @property
-    def account_id(self) -> AccountId:
-        """
-        :return: The events account identifier.
-        """
-        return self._account_id
-
-    @property
-    def broker(self) -> Broker:
-        """
-        :return: The events broker.
-        """
-        return self._broker
-
-    @property
-    def account_number(self) -> AccountNumber:
-        """
-        :return: The events account number.
-        """
-        return self._account_number
-
-    @property
-    def currency(self) -> CurrencyCode:
-        """
-        :return: The events account currency.
-        """
-        return self._currency
-
-    @property
-    def cash_balance(self) -> Decimal:
-        """
-        :return: The events account cash balance.
-        """
-        return self._cash_balance
-
-    @property
-    def cash_start_day(self) -> Decimal:
-        """
-        :return: The events account balance at the start of the trading day.
-        """
-        return self._cash_start_day
-
-    @property
-    def cash_activity_day(self) -> Decimal:
-        """
-        :return: The events account activity for the day.
-        """
-        return self._cash_activity_day
-
-    @property
-    def margin_used_liquidation(self) -> Decimal:
-        """
-        :return: The events account liquidation margin used.
-        """
-        return self._margin_used_liquidation
-
-    @property
-    def margin_used_maintenance(self) -> Decimal:
-        """
-        :return: The events account maintenance margin used.
-        """
-        return self._margin_used_maintenance
-
-    @property
-    def margin_ratio(self) -> Decimal:
-        """
-        :return: The events account margin ratio.
-        """
-        return self._margin_ratio
-
-    @property
-    def margin_call_status(self) -> str:
-        """
-        :return: The events account margin call status.
-        """
-        return self._margin_call_status
-
 
 cdef class OrderEvent(Event):
     """
     The abstract base class for all order events.
     """
-    cdef object _symbol
-    cdef object _order_id
+    cdef readonly object symbol
+    cdef readonly object order_id
 
     def __init__(self,
                  order_symbol: Symbol,
@@ -273,14 +180,14 @@ cdef class OrderEvent(Event):
         :raises ValueError: If the order_id is not a valid string.
         """
         super().__init__(event_id, event_timestamp)
-        self._symbol = order_symbol
-        self._order_id = order_id
+        self.symbol = order_symbol
+        self.order_id = order_id
 
     def __str__(self) -> str:
         """
         :return: The str() string representation of the event.
         """
-        return f"{self.__class__.__name__}(id={self._order_id})"
+        return f"{self.__class__.__name__}(id={self.order_id})"
 
     def __repr__(self) -> str:
         """
@@ -288,26 +195,12 @@ cdef class OrderEvent(Event):
         """
         return f"<{str(self)} object at {id(self)}>"
 
-    @property
-    def symbol(self) -> Symbol:
-        """
-        :return: The events symbol.
-        """
-        return self._symbol
-
-    @property
-    def order_id(self) -> OrderId:
-        """
-        :return: The events order identifier.
-        """
-        return self._order_id
-
 
 cdef class OrderSubmitted(OrderEvent):
     """
     Represents an event where an order has been submitted to the execution system.
     """
-    cdef object _submitted_time
+    cdef readonly object submitted_time
 
     def __init__(self,
                  symbol: Symbol,
@@ -328,21 +221,14 @@ cdef class OrderSubmitted(OrderEvent):
                          order_id,
                          event_id,
                          event_timestamp)
-        self._submitted_time = submitted_time
-
-    @property
-    def submitted_time(self) -> datetime:
-        """
-        :return: The events order submitted time.
-        """
-        return self._submitted_time
+        self.submitted_time = submitted_time
 
 
 cdef class OrderAccepted(OrderEvent):
     """
     Represents an event where an order has been accepted by the broker.
     """
-    cdef object _accepted_time
+    cdef readonly object accepted_time
 
     def __init__(self,
                  symbol: Symbol,
@@ -363,22 +249,15 @@ cdef class OrderAccepted(OrderEvent):
                          order_id,
                          event_id,
                          event_timestamp)
-        self._accepted_time = accepted_time
-
-    @property
-    def accepted_time(self) -> datetime:
-        """
-        :return: The events order accepted time.
-        """
-        return self._accepted_time
+        self.accepted_time = accepted_time
 
 
 cdef class OrderRejected(OrderEvent):
     """
     Represents an event where an order has been rejected by the broker.
     """
-    cdef object _rejected_time
-    cdef object _rejected_reason
+    cdef readonly object rejected_time
+    cdef readonly str rejected_reason
 
     def __init__(self,
                  symbol: Symbol,
@@ -403,37 +282,23 @@ cdef class OrderRejected(OrderEvent):
                          order_id,
                          event_id,
                          event_timestamp)
-        self._rejected_time = rejected_time
-        self._rejected_reason = rejected_reason
-
-    @property
-    def rejected_time(self) -> datetime:
-        """
-        :return: The events order rejected time.
-        """
-        return self._rejected_time
-
-    @property
-    def rejected_reason(self) -> str:
-        """
-        :return: The events order rejected reason.
-        """
-        return self._rejected_reason
+        self.rejected_time = rejected_time
+        self.rejected_reason = rejected_reason
 
 
 cdef class OrderWorking(OrderEvent):
     """
     Represents an event where an order is working with the broker.
     """
-    cdef object _broker_order_id
-    cdef object _label
-    cdef object _order_side
-    cdef object _order_type
-    cdef int _quantity
-    cdef object _price
-    cdef object _time_in_force
-    cdef object _working_time
-    cdef object _expire_time
+    cdef readonly object broker_order_id
+    cdef readonly object label
+    cdef readonly object order_side
+    cdef readonly object order_type
+    cdef readonly int quantity
+    cdef readonly object price
+    cdef readonly object time_in_force
+    cdef readonly object working_time
+    cdef readonly object expire_time
 
     def __init__(self,
                  symbol: Symbol,
@@ -469,85 +334,22 @@ cdef class OrderWorking(OrderEvent):
         Precondition.positive(quantity, 'quantity')
 
         super().__init__(symbol, order_id, event_id, event_timestamp)
-        self._broker_order_id = broker_order_id
-        self._label = label
-        self._order_side = order_side
-        self._order_type = order_type
-        self._quantity = quantity
-        self._price = price
-        self._time_in_force = time_in_force
-        self._working_time = working_time
-        self._expire_time = expire_time
-
-    @property
-    def broker_order_id(self) -> OrderId:
-        """
-        :return: The events broker order identifier.
-        """
-        return self._broker_order_id
-
-    @property
-    def label(self) -> Label:
-        """
-        :return: The events order label.
-        """
-        return self._label
-
-    @property
-    def order_side(self) -> OrderSide:
-        """
-        :return: The events order side.
-        """
-        return self._order_side
-
-    @property
-    def order_type(self) -> OrderType:
-        """
-        :return: The events order type.
-        """
-        return self._order_type
-
-    @property
-    def quantity(self) -> int:
-        """
-        :return: The events order quantity.
-        """
-        return self._quantity
-
-    @property
-    def price(self) -> Decimal:
-        """
-        :return: The events order price.
-        """
-        return self._price
-
-    @property
-    def time_in_force(self) -> TimeInForce:
-        """
-        :return: The events order time in force.
-        """
-        return self._time_in_force
-
-    @property
-    def working_time(self) -> datetime:
-        """
-        :return: The events order working time.
-        """
-        return self._working_time
-
-    @property
-    def expire_time(self) -> Optional[datetime]:
-        """
-        :return: The events order expire time (optional could be None).
-        """
-        return self._expire_time
+        self.broker_order_id = broker_order_id
+        self.label = label
+        self.order_side = order_side
+        self.order_type = order_type
+        self.quantity = quantity
+        self.price = price
+        self.time_in_force = time_in_force
+        self.working_time = working_time
+        self.expire_time = expire_time
 
 
 cdef class OrderCancelled(OrderEvent):
     """
     Represents an event where an order has been cancelled with the broker.
     """
-    cdef object _cancelled_time
+    cdef readonly object cancelled_time
 
     def __init__(self,
                  symbol: Symbol,
@@ -568,23 +370,16 @@ cdef class OrderCancelled(OrderEvent):
                          order_id,
                          event_id,
                          event_timestamp)
-        self._cancelled_time = cancelled_time
-
-    @property
-    def cancelled_time(self) -> datetime:
-        """
-        :return: The events order cancelled time.
-        """
-        return self._cancelled_time
+        self.cancelled_time = cancelled_time
 
 
 cdef class OrderCancelReject(OrderEvent):
     """
     Represents an event where an order cancel request has been rejected by the broker.
     """
-    cdef object _cancel_reject_time
-    cdef object _cancel_reject_response
-    cdef str _cancel_reject_reason
+    cdef readonly object cancel_reject_time
+    cdef readonly object cancel_reject_response
+    cdef readonly str cancel_reject_reason
 
     def __init__(self,
                  order_symbol: Symbol,
@@ -612,44 +407,23 @@ cdef class OrderCancelReject(OrderEvent):
                          order_id,
                          event_id,
                          event_timestamp)
-        self._cancel_reject_time = cancel_reject_time
-        self._cancel_reject_response = cancel_response
-        self._cancel_reject_reason = cancel_reject_reason
+        self.cancel_reject_time = cancel_reject_time
+        self.cancel_reject_response = cancel_response
+        self.cancel_reject_reason = cancel_reject_reason
 
     def __str__(self) -> str:
         """
         :return: The str() string representation of the event.
         """
         return (f"{self.__class__.__name__}"
-                f"(id={self._order_id}, reason={self._cancel_reject_reason})")
-
-    @property
-    def cancel_reject_time(self) -> datetime:
-        """
-        :return: The events order cancel reject time.
-        """
-        return self._cancel_reject_time
-
-    @property
-    def cancel_reject_response(self) -> str:
-        """
-        :return: The events order cancel reject response to.
-        """
-        return self._cancel_reject_response
-
-    @property
-    def cancel_reject_reason(self) -> str:
-        """
-        :return: The events order cancel reject reason.
-        """
-        return self._cancel_reject_reason
+                f"(id={self.order_id}, reason={self.cancel_reject_reason})")
 
 
 cdef class OrderExpired(OrderEvent):
     """
     Represents an event where an order has expired with the broker.
     """
-    cdef object _expired_time
+    cdef readonly object expired_time
 
     def __init__(self,
                  symbol: Symbol,
@@ -666,24 +440,20 @@ cdef class OrderExpired(OrderEvent):
         :param event_id: The events identifier.
         :param event_timestamp: The events timestamp.
         """
-        super().__init__(symbol, order_id, event_id, event_timestamp)
-        self._expired_time = expired_time
-
-    @property
-    def expired_time(self) -> datetime:
-        """
-        :return: The events order expired time.
-        """
-        return self._expired_time
+        super().__init__(symbol,
+                         order_id,
+                         event_id,
+                         event_timestamp)
+        self.expired_time = expired_time
 
 
 cdef class OrderModified(OrderEvent):
     """
     Represents an event where an order has been modified with the broker.
     """
-    cdef object _broker_order_id
-    cdef object _modified_price
-    cdef object _modified_time
+    cdef readonly object broker_order_id
+    cdef readonly object modified_price
+    cdef readonly object modified_time
 
     def __init__(self,
                  symbol: Symbol,
@@ -708,42 +478,21 @@ cdef class OrderModified(OrderEvent):
                          order_id,
                          event_id,
                          event_timestamp)
-        self._broker_order_id = broker_order_id
-        self._modified_price = modified_price
-        self._modified_time = modified_time
-
-    @property
-    def broker_order_id(self) -> OrderId:
-        """
-        :return: The events broker order identifier.
-        """
-        return self._broker_order_id
-
-    @property
-    def modified_price(self) -> Decimal:
-        """
-        :return: The events modified order price.
-        """
-        return self._modified_price
-
-    @property
-    def modified_time(self) -> datetime:
-        """
-        :return: The events order modified time.
-        """
-        return self._modified_time
+        self.broker_order_id = broker_order_id
+        self.modified_price = modified_price
+        self.modified_time = modified_time
 
 
 cdef class OrderFilled(OrderEvent):
     """
     Represents an event where an order has been completely filled with the broker.
     """
-    cdef object _execution_id
-    cdef object _execution_ticket
-    cdef object _order_side
-    cdef object _filled_quantity
-    cdef object _average_price
-    cdef object _execution_time
+    cdef readonly object execution_id
+    cdef readonly object execution_ticket
+    cdef readonly object order_side
+    cdef readonly object filled_quantity
+    cdef readonly object average_price
+    cdef readonly object execution_time
 
     def __init__(self,
                  symbol: Symbol,
@@ -776,67 +525,25 @@ cdef class OrderFilled(OrderEvent):
                          order_id,
                          event_id,
                          event_timestamp)
-        self._execution_id = execution_id
-        self._execution_ticket = execution_ticket
-        self._order_side = order_side
-        self._filled_quantity = filled_quantity
-        self._average_price = average_price
-        self._execution_time = execution_time
-
-    @property
-    def execution_id(self) -> ExecutionId:
-        """
-        :return: The events order execution identifier.
-        """
-        return self._execution_id
-
-    @property
-    def execution_ticket(self) -> ExecutionTicket:
-        """
-        :return: The events order execution ticket.
-        """
-        return self._execution_ticket
-
-    @property
-    def order_side(self) -> OrderSide:
-        """
-        :return: The events execution order side.
-        """
-        return self._order_side
-
-    @property
-    def filled_quantity(self) -> int:
-        """
-        :return: The events execution filled quantity.
-        """
-        return self._filled_quantity
-
-    @property
-    def average_price(self) -> Decimal:
-        """
-        :return: The events execution average price.
-        """
-        return self._average_price
-
-    @property
-    def execution_time(self) -> datetime:
-        """
-        :return: The events execution time.
-        """
-        return self._execution_time
+        self.execution_id = execution_id
+        self.execution_ticket = execution_ticket
+        self.order_side = order_side
+        self.filled_quantity = filled_quantity
+        self.average_price = average_price
+        self.execution_time = execution_time
 
 
 cdef class OrderPartiallyFilled(OrderEvent):
     """
     Represents an event where an order has been partially filled with the broker.
     """
-    cdef object _execution_id
-    cdef object _execution_ticket
-    cdef object _order_side
-    cdef object _filled_quantity
-    cdef object _leaves_quantity
-    cdef object _average_price
-    cdef object _execution_time
+    cdef readonly object execution_id
+    cdef readonly object execution_ticket
+    cdef readonly object order_side
+    cdef readonly object filled_quantity
+    cdef readonly object leaves_quantity
+    cdef readonly object average_price
+    cdef readonly object execution_time
 
     def __init__(self,
                  symbol: Symbol,
@@ -872,69 +579,20 @@ cdef class OrderPartiallyFilled(OrderEvent):
                          order_id,
                          event_id,
                          event_timestamp)
-        self._execution_id = execution_id
-        self._execution_ticket = execution_ticket
-        self._order_side = order_side
-        self._filled_quantity = filled_quantity
-        self._leaves_quantity = leaves_quantity
-        self._average_price = average_price
-        self._execution_time = execution_time
-
-    @property
-    def execution_id(self) -> ExecutionId:
-        """
-        :return: The events order execution identifier.
-        """
-        return self._execution_id
-
-    @property
-    def execution_ticket(self) -> ExecutionTicket:
-        """
-        :return: The events order execution ticket.
-        """
-        return self._execution_ticket
-
-    @property
-    def order_side(self) -> OrderSide:
-        """
-        :return: The events execution order side.
-        """
-        return self._order_side
-
-    @property
-    def filled_quantity(self) -> int:
-        """
-        :return: The events execution filled quantity.
-        """
-        return self._filled_quantity
-
-    @property
-    def leaves_quantity(self) -> int:
-        """
-        :return: The events execution leaves quantity.
-        """
-        return self._leaves_quantity
-
-    @property
-    def average_price(self) -> Decimal:
-        """
-        :return: The events execution average price.
-        """
-        return self._average_price
-
-    @property
-    def execution_time(self) -> datetime:
-        """
-        :return: The events execution time.
-        """
-        return self._execution_time
+        self.execution_id = execution_id
+        self.execution_ticket = execution_ticket
+        self.order_side = order_side
+        self.filled_quantity = filled_quantity
+        self.leaves_quantity = leaves_quantity
+        self.average_price = average_price
+        self.execution_time = execution_time
 
 
 cdef class TimeEvent(Event):
     """
     Represents a time event occurring at the event timestamp.
     """
-    cdef object _label
+    cdef readonly object label
 
     def __init__(self,
                  label: Label,
@@ -947,23 +605,16 @@ cdef class TimeEvent(Event):
         :param event_timestamp: The time events timestamp.
         """
         super().__init__(event_id, event_timestamp)
-        self._label = label
+        self.label = label
 
     def __str__(self) -> str:
         """
         :return: The str() string representation of the event.
         """
-        return f"{self.__class__.__name__}(label={self._label}, timestamp={self._event_timestamp})"
+        return f"{self.__class__.__name__}(label={self.label}, timestamp={self.timestamp})"
 
     def __repr__(self) -> str:
         """
         :return: The repr() string representation of the event.
         """
         return f"<{str(self)} object at {id(self)}>"
-
-    @property
-    def label(self) -> Label:
-        """
-        :return: The time events label.
-        """
-        return self._label
