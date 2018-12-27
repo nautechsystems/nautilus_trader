@@ -20,6 +20,7 @@ from typing import List, Dict, Callable
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.core.logger import Logger, LoggerAdapter
+from inv_trader.common.data cimport DataClient
 from inv_trader.model.enums import Resolution, QuoteType, Venue
 from inv_trader.model.objects import Symbol, Tick, BarType, Bar, Instrument
 from inv_trader.serialization import InstrumentSerializer
@@ -28,7 +29,7 @@ from inv_trader.strategy import TradeStrategy
 cdef str UTF8 = 'utf-8'
 
 
-cdef class LiveDataClient:
+cdef class LiveDataClient(DataClient):
     """
     Provides a live data client for alpha models and trading strategies.
     """
@@ -39,11 +40,6 @@ cdef class LiveDataClient:
     cdef object _redis_client
     cdef object _pubsub
     cdef object _pubsub_thread
-    cdef list _subscriptions_bars
-    cdef list _subscriptions_ticks
-    cdef object _instruments
-    cdef object _bar_handlers
-    cdef object _tick_handlers
 
     def __init__(self,
                  str host='localhost',
@@ -61,6 +57,7 @@ cdef class LiveDataClient:
         Precondition.valid_string(host, 'host')
         Precondition.in_range(port, 'port', 0, 65535)
 
+        super().__init__(logger)
         self._host = host
         self._port = port
         if logger is None:
@@ -70,8 +67,6 @@ cdef class LiveDataClient:
         self._redis_client = None
         self._pubsub = None
         self._pubsub_thread = None
-        self._subscriptions_bars = []   # type: List[str]
-        self._subscriptions_ticks = []  # type: List[str]
         self._instruments = {}          # type: Dict[Symbol, Instrument]
         self._bar_handlers = {}         # type: Dict[BarType, List[Callable]]
         self._tick_handlers = {}        # type: Dict[Symbol, List[Callable]]
@@ -234,10 +229,10 @@ cdef class LiveDataClient:
 
         self._log.info(f"Registered strategy {strategy} with the data client.")
 
-    def historical_bars(
+    cpdef void historical_bars(
             self,
             bar_type: BarType,
-            quantity: int or None,
+            int quantity,
             handler: Callable):
         """
         Download the historical bars for the given parameters from the data
@@ -291,7 +286,7 @@ cdef class LiveDataClient:
             handler(bar_type, bar)
         self._log.debug(f"Historical bars hydrated to handler {handler}.")
 
-    def historical_bars_from(
+    cpdef void historical_bars_from(
             self,
             bar_type: BarType,
             from_datetime: datetime,
@@ -342,10 +337,10 @@ cdef class LiveDataClient:
             handler(bar_type, bar)
         self._log.debug(f"Historical bars hydrated to handler {handler}.")
 
-    def subscribe_bars(
+    cpdef void subscribe_bars(
             self,
             bar_type: BarType,
-            handler: Callable or None=None):
+            handler: Callable=None):
         """
         Subscribe to live bar data for the given bar parameters.
 
@@ -354,12 +349,13 @@ cdef class LiveDataClient:
         """
         self._check_connection()
 
-        if bar_type not in self._bar_handlers:
-            self._bar_handlers[bar_type] = []  # type: List[Callable]
-
-        if handler is not None and handler not in self._bar_handlers[bar_type]:
-            self._bar_handlers[bar_type].append(handler)
-            self._log.debug(f"Added bar handler {handler}.")
+        self._subscribe_bars(bar_type, handler)
+        # if bar_type not in self._bar_handlers:
+        #     self._bar_handlers[bar_type] = []  # type: List[Callable]
+        #
+        # if handler is not None and handler not in self._bar_handlers[bar_type]:
+        #     self._bar_handlers[bar_type].append(handler)
+        #     self._log.debug(f"Added bar handler {handler}.")
 
         bars_channel = self._get_bar_channel_name(bar_type)
         if bars_channel not in self._subscriptions_bars:
@@ -371,10 +367,10 @@ cdef class LiveDataClient:
             self._subscriptions_bars.sort()
             self._log.info(f"Subscribed to bar data for {bars_channel}.")
 
-    def unsubscribe_bars(
+    cpdef void unsubscribe_bars(
             self,
             bar_type: BarType,
-            handler: Callable or None=None):
+            handler: Callable=None):
         """
         Unsubscribes from live bar data for the given symbol and venue.
 
@@ -383,16 +379,17 @@ cdef class LiveDataClient:
         """
         self._check_connection()
 
-        if bar_type not in self._bar_handlers:
-            self._log.warning(f"Cannot unsubscribe bars (no handlers for {bar_type}).")
-            return
-
-        if handler is not None:
-            if handler in self._bar_handlers[bar_type]:
-                self._bar_handlers[bar_type].remove(handler)
-                self._log.debug(f"Removed handler {handler} from bar handlers.")
-            else:
-                self._log.warning(f"Cannot remove handler {handler} from bar handlers (not found).")
+        self._unsubscribe_bars(bar_type, handler)
+        # if bar_type not in self._bar_handlers:
+        #     self._log.warning(f"Cannot unsubscribe bars (no handlers for {bar_type}).")
+        #     return
+        #
+        # if handler is not None:
+        #     if handler in self._bar_handlers[bar_type]:
+        #         self._bar_handlers[bar_type].remove(handler)
+        #         self._log.debug(f"Removed handler {handler} from bar handlers.")
+        #     else:
+        #         self._log.warning(f"Cannot remove handler {handler} from bar handlers (not found).")
 
         # If no further subscribers for this bar type.
         if len(self._bar_handlers[bar_type]) == 0:
@@ -404,10 +401,10 @@ cdef class LiveDataClient:
                 self._subscriptions_bars.sort()
                 self._log.info(f"Unsubscribed from bar data for {bar_channel}.")
 
-    def subscribe_ticks(
+    cpdef void subscribe_ticks(
             self,
             symbol: Symbol,
-            handler: Callable or None=None):
+            handler: Callable=None):
         """
         Subscribe to live tick data for the given symbol and venue.
 
@@ -416,12 +413,13 @@ cdef class LiveDataClient:
         """
         self._check_connection()
 
-        if symbol not in self._tick_handlers:
-            self._tick_handlers[symbol] = []  # type: List[Callable]
-
-        if handler is not None and handler not in self._tick_handlers:
-            self._tick_handlers[symbol].append(handler)
-            self._log.debug(f"Added tick {handler}.")
+        self._subscribe_ticks(symbol, handler)
+        # if symbol not in self._tick_handlers:
+        #     self._tick_handlers[symbol] = []  # type: List[Callable]
+        #
+        # if handler is not None and handler not in self._tick_handlers:
+        #     self._tick_handlers[symbol].append(handler)
+        #     self._log.debug(f"Added tick {handler}.")
 
         ticks_channel = self._get_tick_channel_name(symbol)
         if ticks_channel not in self._subscriptions_ticks:
@@ -433,10 +431,10 @@ cdef class LiveDataClient:
             self._subscriptions_ticks.sort()
             self._log.info(f"Subscribed to tick data for {ticks_channel}.")
 
-    def unsubscribe_ticks(
+    cpdef void unsubscribe_ticks(
             self,
             symbol: Symbol,
-            handler: Callable or None=None):
+            handler: Callable=None):
         """
         Unsubscribes from live tick data for the given symbol and venue.
 
@@ -446,16 +444,17 @@ cdef class LiveDataClient:
         """
         self._check_connection()
 
-        if symbol not in self._tick_handlers:
-            self._log.warning(f"Cannot unsubscribe ticks (no handlers for {symbol}).")
-            return
-
-        if handler is not None:
-            if handler in self._tick_handlers[symbol]:
-                self._tick_handlers[symbol].remove(handler)
-                self._log.debug(f"Removed handler {handler} from tick handlers.")
-            else:
-                self._log.warning(f"Cannot remove handler {handler} from tick handlers (not found).")
+        self._unsubscribe_ticks(symbol, handler)
+        # if symbol not in self._tick_handlers:
+        #     self._log.warning(f"Cannot unsubscribe ticks (no handlers for {symbol}).")
+        #     return
+        #
+        # if handler is not None:
+        #     if handler in self._tick_handlers[symbol]:
+        #         self._tick_handlers[symbol].remove(handler)
+        #         self._log.debug(f"Removed handler {handler} from tick handlers.")
+        #     else:
+        #         self._log.warning(f"Cannot remove handler {handler} from tick handlers (not found).")
 
         # If no further subscribers for this bar type.
         if len(self._tick_handlers[symbol]) == 0:
