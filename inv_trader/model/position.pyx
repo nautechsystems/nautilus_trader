@@ -90,7 +90,12 @@ cdef class Position:
         """
         :return: The positions current market position (MarketPosition).
         """
-        return self._calculate_market_position()
+        if self._relative_quantity > 0:
+            return MarketPosition.LONG
+        elif self._relative_quantity < 0:
+            return MarketPosition.SHORT
+        else:
+            return MarketPosition.FLAT
 
     cpdef int event_count(self):
         """
@@ -178,7 +183,7 @@ cdef class Position:
 
         # Update the peak quantity
         if abs(self._relative_quantity) > self._peak_quantity:
-            self._peak_quantity = self._relative_quantity
+            self._peak_quantity = abs(self._relative_quantity)
 
         # Capture the first time of entry
         if self.entry_time is None:
@@ -190,11 +195,3 @@ cdef class Position:
         if self.is_entered() and self._relative_quantity == 0:
             self.exit_time = event_time
             self.average_exit_price = average_price
-
-    cdef object _calculate_market_position(self):
-        if self._relative_quantity > 0:
-            return MarketPosition.LONG
-        elif self._relative_quantity < 0:
-            return MarketPosition.SHORT
-        else:
-            return MarketPosition.FLAT
