@@ -43,13 +43,13 @@ class PositionTests(unittest.TestCase):
             UNIX_EPOCH)
 
         # Assert
-        self.assertEqual(0, position.quantity())
-        self.assertEqual(MarketPosition.FLAT, position.market_position())
-        self.assertEqual(0, position.event_count())
+        self.assertEqual(0, position.quantity)
+        self.assertEqual(MarketPosition.FLAT, position.market_position)
+        self.assertEqual(0, position.event_count)
         self.assertEqual(0, len(position.execution_ids))
         self.assertEqual(0, len(position.execution_tickets))
-        self.assertFalse(position.is_entered())
-        self.assertFalse(position.is_exited())
+        self.assertFalse(position.is_entered)
+        self.assertFalse(position.is_exited)
 
     def test_position_filled_with_buy_order_returns_expected_attributes(self):
         # Arrange
@@ -81,15 +81,15 @@ class PositionTests(unittest.TestCase):
         position.apply(order_filled)
 
         # Assert
-        self.assertEqual(100000, position.quantity())
-        self.assertEqual(MarketPosition.LONG, position.market_position())
+        self.assertEqual(100000, position.quantity)
+        self.assertEqual(MarketPosition.LONG, position.market_position)
         self.assertEqual(UNIX_EPOCH, position.entry_time)
         self.assertEqual(Decimal('1.00001'), position.average_entry_price)
-        self.assertEqual(1, position.event_count())
+        self.assertEqual(1, position.event_count)
         self.assertEqual(1, len(position.execution_ids))
         self.assertEqual(1, len(position.execution_tickets))
-        self.assertTrue(position.is_entered())
-        self.assertFalse(position.is_exited())
+        self.assertTrue(position.is_entered)
+        self.assertFalse(position.is_exited)
 
     def test_position_filled_with_sell_order_returns_expected_attributes(self):
         # Arrange
@@ -121,15 +121,15 @@ class PositionTests(unittest.TestCase):
         position.apply(order_filled)
 
         # Assert
-        self.assertEqual(100000, position.quantity())
-        self.assertEqual(MarketPosition.SHORT, position.market_position())
+        self.assertEqual(100000, position.quantity)
+        self.assertEqual(MarketPosition.SHORT, position.market_position)
         self.assertEqual(UNIX_EPOCH, position.entry_time)
         self.assertEqual(Decimal('1.00001'), position.average_entry_price)
-        self.assertEqual(1, position.event_count())
+        self.assertEqual(1, position.event_count)
         self.assertEqual(1, len(position.execution_ids))
         self.assertEqual(1, len(position.execution_tickets))
-        self.assertTrue(position.is_entered())
-        self.assertFalse(position.is_exited())
+        self.assertTrue(position.is_entered)
+        self.assertFalse(position.is_exited)
 
     def test_position_partial_fills_with_buy_order_returns_expected_attributes(self):
         # Arrange
@@ -163,15 +163,15 @@ class PositionTests(unittest.TestCase):
         position.apply(order_partially_filled)
 
         # Assert
-        self.assertEqual(100000, position.quantity())
-        self.assertEqual(MarketPosition.LONG, position.market_position())
+        self.assertEqual(100000, position.quantity)
+        self.assertEqual(MarketPosition.LONG, position.market_position)
         self.assertEqual(UNIX_EPOCH, position.entry_time)
         self.assertEqual(Decimal('1.00001'), position.average_entry_price)
-        self.assertEqual(2, position.event_count())
+        self.assertEqual(2, position.event_count)
         self.assertEqual(2, len(position.execution_ids))
         self.assertEqual(2, len(position.execution_tickets))
-        self.assertTrue(position.is_entered())
-        self.assertFalse(position.is_exited())
+        self.assertTrue(position.is_entered)
+        self.assertFalse(position.is_exited)
 
     def test_position_partial_fills_with_sell_order_returns_expected_attributes(self):
         # Arrange
@@ -205,15 +205,15 @@ class PositionTests(unittest.TestCase):
         position.apply(order_partially_filled)
 
         # Assert
-        self.assertEqual(100000, position.quantity())
-        self.assertEqual(MarketPosition.SHORT, position.market_position())
+        self.assertEqual(100000, position.quantity)
+        self.assertEqual(MarketPosition.SHORT, position.market_position)
         self.assertEqual(UNIX_EPOCH, position.entry_time)
         self.assertEqual(Decimal('1.00001'), position.average_entry_price)
-        self.assertEqual(2, position.event_count())
+        self.assertEqual(2, position.event_count)
         self.assertEqual(2, len(position.execution_ids))
         self.assertEqual(2, len(position.execution_tickets))
-        self.assertTrue(position.is_entered())
-        self.assertFalse(position.is_exited())
+        self.assertTrue(position.is_entered)
+        self.assertFalse(position.is_exited)
 
     def test_position_filled_with_buy_order_then_sell_order_returns_expected_attributes(self):
         # Arrange
@@ -258,17 +258,17 @@ class PositionTests(unittest.TestCase):
         position.apply(order_filled2)
 
         # Assert
-        self.assertEqual(0, position.quantity())
-        self.assertEqual(MarketPosition.FLAT, position.market_position())
+        self.assertEqual(0, position.quantity)
+        self.assertEqual(MarketPosition.FLAT, position.market_position)
         self.assertEqual(UNIX_EPOCH, position.entry_time)
         self.assertEqual(Decimal('1.00001'), position.average_entry_price)
-        self.assertEqual(2, position.event_count())
+        self.assertEqual(2, position.event_count)
         self.assertEqual(2, len(position.execution_ids))
         self.assertEqual(2, len(position.execution_tickets))
         self.assertEqual(UNIX_EPOCH, position.exit_time)
         self.assertEqual(Decimal('1.00001'), position.average_exit_price)
-        self.assertTrue(position.is_entered())
-        self.assertTrue(position.is_exited())
+        self.assertTrue(position.is_entered)
+        self.assertTrue(position.is_exited)
 
     def test_position_filled_with_sell_order_then_buy_order_returns_expected_attributes(self):
         # Arrange
@@ -313,14 +313,14 @@ class PositionTests(unittest.TestCase):
         position.apply(order_filled2)
 
         # Assert
-        self.assertEqual(0, position.quantity())
-        self.assertEqual(MarketPosition.FLAT, position.market_position())
+        self.assertEqual(0, position.quantity)
+        self.assertEqual(MarketPosition.FLAT, position.market_position)
         self.assertEqual(UNIX_EPOCH, position.entry_time)
         self.assertEqual(Decimal('1.00001'), position.average_entry_price)
-        self.assertEqual(2, position.event_count())
+        self.assertEqual(2, position.event_count)
         self.assertEqual(2, len(position.execution_ids))
         self.assertEqual(2, len(position.execution_tickets))
         self.assertEqual(UNIX_EPOCH, position.exit_time)
         self.assertEqual(Decimal('1.00001'), position.average_exit_price)
-        self.assertTrue(position.is_entered())
-        self.assertTrue(position.is_exited())
+        self.assertTrue(position.is_entered)
+        self.assertTrue(position.is_exited)

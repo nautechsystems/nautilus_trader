@@ -68,25 +68,29 @@ cdef class Position:
         self.execution_ids = []        # type: List[ExecutionId]
         self.execution_tickets = []    # type: List[ExecutionTicket]
 
-    cpdef int quantity(self):
+    @property
+    def quantity(self) -> int:
         """
         :return: The positions quantity.
         """
         return abs(self._relative_quantity)
 
-    cpdef bint is_entered(self):
+    @property
+    def is_entered(self) -> bool:
         """
         :return: A value indicating whether the position has entered into the market (bool).
         """
         return self.entry_time is not None
 
-    cpdef bint is_exited(self):
+    @property
+    def is_exited(self) -> bool:
         """
         :return: A value indicating whether the position has exited from the market (bool).
         """
         return self.exit_time is not None
 
-    cpdef object market_position(self):
+    @property
+    def market_position(self) -> MarketPosition:
         """
         :return: The positions current market position (MarketPosition).
         """
@@ -97,7 +101,8 @@ cdef class Position:
         else:
             return MarketPosition.FLAT
 
-    cpdef int event_count(self):
+    @property
+    def event_count(self) -> int:
         """
         :return: The count of events since the position was initialized.
         """
@@ -122,9 +127,9 @@ cdef class Position:
         """
         :return: The str() string representation of the position.
         """
-        cdef str quantity = '{:,}'.format(self.quantity())
+        cdef str quantity = '{:,}'.format(self.quantity)
         return (f"Position(id={self.id}) "
-                f"{self.symbol} {self.market_position().name} {quantity}")
+                f"{self.symbol} {self.market_position.name} {quantity}")
 
     def __repr__(self) -> str:
         """
@@ -192,6 +197,6 @@ cdef class Position:
         self.average_entry_price = average_price
 
         # Position was exited
-        if self.is_entered() and self._relative_quantity == 0:
+        if self.is_entered and self._relative_quantity == 0:
             self.exit_time = event_time
             self.average_exit_price = average_price
