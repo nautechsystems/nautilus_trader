@@ -171,46 +171,52 @@ cdef class Order:
         cdef str props = ', '.join("%s=%s" % item for item in attrs.items()).replace(', _', ', ')
         return f"<{self.__class__.__name__}({props[1:]}) object at {id(self)}>"
 
-    cpdef object id_current(self):
+    @property
+    def id_current(self) -> OrderId:
         """
-        :return: The orders current identifier (OrderId).
+        :return: The orders current identifier.
         """
         return self._order_ids[-1]
 
-    cpdef object broker_id(self):
+    @property
+    def broker_id(self) -> OrderId or None:
         """
-        :return: The orders broker-side order identifier (OrderId or None).
+        :return: The orders broker-side order identifier.
         """
         if len(self._order_ids_broker) == 0:
             return None
         return self._order_ids_broker[-1]
 
-    cpdef object execution_id(self):
+    @property
+    def execution_id(self) -> ExecutionId or None:
         """
-        :return: The orders last execution (ExecutionId or None).
+        :return: The orders last execution.
         """
         if len(self._execution_ids) == 0:
             return None
         return self._execution_ids[-1]
 
-    cpdef object execution_ticket(self):
+    @property
+    def execution_ticket(self) -> ExecutionTicket or None:
         """
-        :return: The orders last execution ticket (ExecutionTicket or None).
+        :return: The orders last execution ticket.
         """
         if len(self._execution_tickets) == 0:
             return None
         return self._execution_tickets[-1]
 
-    cpdef bint is_complete(self):
+    @property
+    def is_complete(self) -> bool:
         """
-        :return: A value indicating whether the order is complete (bool).
+        :return: A value indicating whether the order is complete.
         """
         return (self.status is OrderStatus.CANCELLED
                 or self.status is OrderStatus.EXPIRED
                 or self.status is OrderStatus.FILLED
                 or self.status is OrderStatus.REJECTED)
 
-    cpdef int event_count(self):
+    @property
+    def event_count(self) -> int:
         """
         :return: The count of events since the order was initialized (int).
         """
