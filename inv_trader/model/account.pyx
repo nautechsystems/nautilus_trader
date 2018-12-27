@@ -12,6 +12,7 @@
 from datetime import datetime
 from decimal import Decimal
 
+from inv_trader.core.precondition cimport Precondition
 from inv_trader.model.enums import Broker, CurrencyCode
 from inv_trader.model.events import AccountEvent
 from inv_trader.model.identifiers import AccountId
@@ -187,12 +188,14 @@ cdef class Account:
         """
         return self._last_updated
 
-    def apply(self, event: AccountEvent):
+    cpdef void apply(self, event: AccountEvent):
         """
         Applies the given account event to the account.
 
         :param event: The account event.
         """
+        Precondition.type(event, AccountEvent, 'event')
+
         if not self._initialized:
             self._broker = event.broker
             self._account_number = event.account_number
@@ -212,5 +215,10 @@ cdef class Account:
         self._last_updated = event.timestamp
 
     cdef object _calculate_free_equity(self):
+        """
+        Calculate the free equity for this account.
+        
+        :return: The free equity (Decimal).
+        """
         margin_used = self._margin_used_maintenance + self._margin_used_liquidation
         return Decimal(max(self._cash_balance - margin_used, 0))

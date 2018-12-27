@@ -16,7 +16,9 @@ cdef class Precondition:
     @staticmethod
     cdef type(object argument, object is_type, str param_name)
     @staticmethod
-    cdef is_none(object argument, str param_name: str)
+    cdef type_or_none(object argument, object is_type, str param_name)
+    @staticmethod
+    cdef none(object argument, str param_name: str)
     @staticmethod
     cdef not_none(object argument, str param_name)
     @staticmethod

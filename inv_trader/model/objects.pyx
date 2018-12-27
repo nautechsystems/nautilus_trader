@@ -126,7 +126,7 @@ cdef class Money:
         return Decimal('0.00')
 
     @staticmethod
-    def create(amount: float) -> Decimal:
+    def create(double amount) -> Decimal:
         """
         Creates and returns money from the given values.
         The money is rounded to two decimal digits.
@@ -164,6 +164,10 @@ cdef class Tick:
         :raises ValueError: If the bid is not positive (> 0).
         :raises ValueError: If the ask is not positive (> 0).
         """
+        Precondition.type(symbol, Symbol, 'symbol')
+        Precondition.type(bid, Decimal, 'bid')
+        Precondition.type(ask, Decimal, 'ask')
+        Precondition.type(timestamp, datetime, 'timestamp')
         Precondition.positive(bid, 'bid')
         Precondition.positive(ask, 'ask')
 
@@ -257,6 +261,9 @@ class BarType:
         :param quote_type: The bar quote type.
         :raises ValueError: If the period is not positive (> 0).
         """
+        Precondition.type(symbol, Symbol, 'symbol')
+        Precondition.type(resolution, Resolution, 'resolution')
+        Precondition.type(quote_type, QuoteType, 'quote_type')
         Precondition.positive(period, 'period')
 
         self._symbol = symbol
@@ -363,6 +370,11 @@ cdef class Bar:
         :raises ValueError: If the high_price is not >= close_price.
         :raises ValueError: If the low_price is not <= close_price.
         """
+        Precondition.type(open_price, Decimal, 'open_price')
+        Precondition.type(high_price, Decimal, 'high_price')
+        Precondition.type(low_price, Decimal, 'low_price')
+        Precondition.type(close_price, Decimal, 'close_price')
+        Precondition.type(timestamp, datetime, 'timestamp')
         Precondition.positive(open_price, 'open_price')
         Precondition.positive(high_price, 'high_price')
         Precondition.positive(low_price, 'low_price')
@@ -492,6 +504,8 @@ cdef class DataBar:
         :raises ValueError: If the close_price is not positive (> 0).
         :raises ValueError: If the volume is negative.
         """
+        Precondition.type(timestamp, datetime, 'timestamp')
+
         self.open = open_price
         self.high = high_price
         self.low = low_price
@@ -604,6 +618,16 @@ cdef class Instrument:
         :param rollover_interest_sell: The instruments rollover interest for short positions.
         :param timestamp: The timestamp the instrument was created/updated at.
         """
+        Precondition.type(symbol, Symbol, 'symbol')
+        Precondition.type(quote_currency, CurrencyCode, 'quote_currency')
+        Precondition.type(security_type, SecurityType, 'security_type')
+        Precondition.type(tick_size, Decimal, 'tick_size')
+        Precondition.type(tick_value, Decimal, 'tick_value')
+        Precondition.type(target_direct_spread, Decimal, 'target_direct_spread')
+        Precondition.type(margin_requirement, Decimal, 'margin_requirement')
+        Precondition.type(rollover_interest_buy, Decimal, 'rollover_interest_buy')
+        Precondition.type(rollover_interest_sell, Decimal, 'rollover_interest_sell')
+        Precondition.type(timestamp, datetime, 'timestamp')
         Precondition.valid_string(broker_symbol, 'broker_symbol')
         Precondition.not_negative(tick_decimals, 'tick_decimals')
         Precondition.positive(tick_size, 'tick_size')

@@ -43,17 +43,32 @@ class PreconditionTests(unittest.TestCase):
         PyPrecondition.type("a string", str, "param_name")
         self.assertTrue(True)  # ValueError not raised.
 
+    def test_precondition_type_or_none_when_type_is_incorrect_raises_value_error(self):
+        # arrange
+        # act
+        # assert
+        PyPrecondition.type("a string", str, "param_name")
+        self.assertRaises(ValueError, PyPrecondition.type, "a string", int, "param_name")
+
+    def test_precondition_type_or_none_when_type_is_correct_or_none_does_nothing(self):
+        # arrange
+        # act
+        # assert
+        PyPrecondition.type_or_none("a string", str, "param_name")
+        PyPrecondition.type_or_none(None, str, "param_name")
+        self.assertTrue(True)  # ValueError not raised.
+
     def test_precondition_is_none_when_arg_not_none_raises_value_error(self):
         # arrange
         # act
         # assert
-        self.assertRaises(ValueError, PyPrecondition.is_none, "something", "param_name")
+        self.assertRaises(ValueError, PyPrecondition.none, "something", "param_name")
 
     def test_precondition_is_none_when_arg_is_none_does_nothing(self):
         # arrange
         # act
         # assert
-        PyPrecondition.is_none(None, "param_name")
+        PyPrecondition.none(None, "param_name")
         self.assertTrue(True)  # ValueError not raised.
 
     def test_precondition_not_none_when_arg_none_raises_value_error(self):

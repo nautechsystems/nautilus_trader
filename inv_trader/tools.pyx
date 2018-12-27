@@ -10,6 +10,7 @@
 # cython: language_level=3, boundscheck=False, wraparound=False
 
 import inspect
+import pandas as pd
 
 from datetime import datetime
 from numpy import ndarray
@@ -51,6 +52,7 @@ cdef class BarBuilder:
         :param decimal_precision: The decimal precision for bar prices.
         :param volume_multiple: The volume multiple for the builder (> 0).
         """
+        Precondition.type(data, DataFrame, 'data')
         Precondition.not_negative(decimal_precision, 'decimal_precision')
         Precondition.positive(volume_multiple, 'volume_multiple')
 
@@ -65,7 +67,7 @@ cdef class BarBuilder:
         """
         return list(map(self._build_data_bar,
                         self._data.values,
-                        self._data.index))
+                        pd.to_datetime(self._data.index)))
 
     cpdef list build_bars(self):
         """
@@ -75,7 +77,7 @@ cdef class BarBuilder:
         """
         return list(map(self._build_bar,
                         self._data.values,
-                        self._data.index))
+                        pd.to_datetime(self._data.index)))
 
     cpdef object _build_data_bar(
             self,

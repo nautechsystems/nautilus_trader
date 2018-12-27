@@ -21,6 +21,7 @@ from uuid import UUID
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.core.logger import Logger, LoggerAdapter
 from inv_trader.common.execution cimport ExecutionClient
+from inv_trader.common.data cimport DataClient
 from inv_trader.model.account import Account
 from inv_trader.model.enums import OrderSide, MarketPosition
 from inv_trader.model.events import Event, AccountEvent, OrderEvent
@@ -76,6 +77,7 @@ cdef class TradeStrategy:
         :raises ValueError: If the order_id_tag is not a valid string.
         :raises ValueError: If the bar_capacity is not positive (> 0).
         """
+        Precondition.type_or_none(logger, Logger, 'logger')
         Precondition.valid_string(label, 'label')
         Precondition.valid_string(order_id_tag, 'order_id_tag')
         Precondition.positive(bar_capacity, 'bar_capacity')
@@ -354,6 +356,7 @@ cdef class TradeStrategy:
         :raises ValueError: If strategy has not been registered with a data client.
         :raises KeyError: If the instrument is not found.
         """
+        Precondition.type(symbol, Symbol, 'symbol')
         Precondition.not_none(self._data_client, 'data_client')
 
         return self._data_client.get_instrument(symbol)
@@ -374,6 +377,7 @@ cdef class TradeStrategy:
         :raises ValueError: If strategy has not been registered with a data client.
         :raises ValueError: If the amount is not positive (> 0).
         """
+        Precondition.type(bar_type, BarType, 'bar_type')
         Precondition.not_none(self._data_client, 'data_client')
 
         if quantity == -1:
@@ -396,6 +400,8 @@ cdef class TradeStrategy:
         :raises ValueError: If strategy has not been registered with a data client.
         :raises ValueError: If the from_datetime is not less than datetime.utcnow().
         """
+        Precondition.type(bar_type, BarType, 'bar_type')
+        Precondition.type(from_datetime, datetime, 'from_datetime')
         Precondition.not_none(self._data_client, 'data_client')
         Precondition.true(from_datetime < datetime.now(timezone.utc),
                           'from_datetime < datetime.now(timezone.utc)')
@@ -415,6 +421,7 @@ cdef class TradeStrategy:
         :param bar_type: The bar type to subscribe to.
         :raises ValueError: If strategy has not been registered with a data client.
         """
+        Precondition.type(bar_type, BarType, 'bar_type')
         Precondition.not_none(self._data_client, 'data_client')
 
         self._data_client.subscribe_bars(bar_type, self._update_bars)
@@ -427,6 +434,7 @@ cdef class TradeStrategy:
         :param bar_type: The bar type to unsubscribe from.
         :raises ValueError: If strategy has not been registered with a data client.
         """
+        Precondition.type(bar_type, BarType, 'bar_type')
         Precondition.not_none(self._data_client, 'data_client')
 
         self._data_client.unsubscribe_bars(bar_type, self._update_bars)
@@ -439,6 +447,7 @@ cdef class TradeStrategy:
         :param symbol: The tick symbol to subscribe to.
         :raises ValueError: If strategy has not been registered with a data client.
         """
+        Precondition.type(symbol, Symbol, 'symbol')
         Precondition.not_none(self._data_client, 'data_client')
 
         self._data_client.subscribe_ticks(symbol, self._update_ticks)
@@ -451,6 +460,7 @@ cdef class TradeStrategy:
         :param symbol: The tick symbol to unsubscribe from.
         :raises ValueError: If strategy has not been registered with a data client.
         """
+        Precondition.type(symbol, Symbol, 'symbol')
         Precondition.not_none(self._data_client, 'data_client')
 
         self._data_client.unsubscribe_ticks(symbol, self._update_ticks)
@@ -510,6 +520,8 @@ cdef class TradeStrategy:
         :return: The internally held indicators for the given bar type.
         :raises KeyError: If the strategies indicators dictionary does not contain the given bar_type.
         """
+        Precondition.type(bar_type, BarType, 'bar_type')
+
         if bar_type not in self._indicators:
             raise KeyError(
                 f"Cannot get indicators (the indicators dictionary does not contain {bar_type}).")
@@ -542,6 +554,8 @@ cdef class TradeStrategy:
         :return: The list of bars.
         :raises KeyError: If the strategies bars dictionary does not contain the bar type.
         """
+        Precondition.type(bar_type, BarType, 'bar_type')
+
         if bar_type not in self._bars:
             raise KeyError(
                 f"Cannot get bars (the bar dictionary does not contain {bar_type}).")
@@ -560,6 +574,8 @@ cdef class TradeStrategy:
         :raises KeyError: If the strategies bars dictionary does not contain the bar type.
         :raises IndexError: If the strategies bars dictionary does not contain a bar at the given index.
         """
+        Precondition.type(bar_type, BarType, 'bar_type')
+
         if bar_type not in self._bars:
             raise KeyError(f"Cannot get bar (the bar dictionary does not contain {bar_type}).")
 
@@ -573,6 +589,8 @@ cdef class TradeStrategy:
         :return: The tick object.
         :raises KeyError: If the strategies tick dictionary does not contain a tick for the given symbol.
         """
+        Precondition.type(symbol, Symbol, 'symbol')
+
         if symbol not in self._ticks:
             raise KeyError(f"Cannot get last tick (the tick dictionary does not contain {symbol}).")
 
@@ -587,6 +605,8 @@ cdef class TradeStrategy:
         :raises ValueError: If the order_id is not a valid string.
         :raises KeyError: If the strategies order book does not contain the order with the given id.
         """
+        Precondition.type(order_id, OrderId, 'order_id')
+
         if order_id not in self._order_book:
             raise KeyError(
                 f"Cannot get order (the order book does not contain the order with id {order_id}).")
@@ -602,6 +622,8 @@ cdef class TradeStrategy:
         :raises ValueError: If the position_id is not a valid string.
         :raises KeyError: If the strategies positions dictionary does not contain the given position_id.
         """
+        Precondition.type(position_id, PositionId, 'position_id')
+
         if position_id not in self._position_book:
             raise KeyError(
                 (f"Cannot get position "
@@ -627,6 +649,11 @@ cdef class TradeStrategy:
         :raises ValueError: If the label is not a valid string.
         :raises KeyError: If the given indicator label is not unique for this strategy.
         """
+        Precondition.type(bar_type, BarType, 'bar_type')
+        Precondition.type(indicator, Indicator, 'indicator')
+        Precondition.type(update_method, Callable, 'update_method')
+        Precondition.type(label, Label, 'label')
+
         if label in self._indicator_index:
             raise KeyError(
                 (f"Cannot register indicator "
@@ -659,6 +686,8 @@ cdef class TradeStrategy:
         :raises KeyError: If the label is not unique for this strategy.
         :raises ValueError: If the alert_time is not > than the current time (UTC).
         """
+        Precondition.type(label, Label, 'label')
+        Precondition.type(alert_time, datetime, 'alert_time')
         Precondition.true(alert_time > datetime.now(timezone.utc), 'alert_time > datetime.utcnow()')
 
         if label in self._timers:
@@ -682,6 +711,8 @@ cdef class TradeStrategy:
         :raises ValueError: If the label is not a valid string.
         :raises KeyError: If the label is not found in the internal timers.
         """
+        Precondition.type(label, Label, 'label')
+
         if label not in self._timers:
             raise KeyError(f"Cannot cancel time alert (the label {label} was not found).")
 
@@ -719,6 +750,11 @@ cdef class TradeStrategy:
         :raises ValueError: If the stop_time is not None and start_time plus interval is greater
         than the stop_time.
         """
+        Precondition.type(label, Label, 'label')
+        Precondition.type(interval, timedelta, 'interval')
+        Precondition.type_or_none(start_time, datetime, 'start_time')
+        Precondition.type_or_none(stop_time, datetime, 'stop_time')
+
         if start_time is not None:
             Precondition.true(start_time >= datetime.now(timezone.utc),
                               'start_time >= datetime.utcnow()')
@@ -761,6 +797,8 @@ cdef class TradeStrategy:
         :raises ValueError: If the label is not a valid string.
         :raises KeyError: If the label is not found in the internal timers.
         """
+        Precondition.type(label, Label, 'label')
+
         if label not in self._timers:
             raise KeyError(f"Cannot cancel timer (the label {label} was not found).")
 
@@ -775,6 +813,8 @@ cdef class TradeStrategy:
         :param symbol: The order symbol.
         :return: The unique order identifier.
         """
+        Precondition.type(symbol, Symbol, 'symbol')
+
         return self._order_id_generator.generate(symbol)
 
     @staticmethod
@@ -785,6 +825,8 @@ cdef class TradeStrategy:
         :param side: The original order side.
         :return: The opposite order side.
         """
+        Precondition.type(side, OrderSide, 'side')
+
         return OrderSide.BUY if side is OrderSide.SELL else OrderSide.SELL
 
     @staticmethod
@@ -796,6 +838,8 @@ cdef class TradeStrategy:
         :return: The order side to flatten.
         :raises KeyError: If the given market position is flat.
         """
+        Precondition.type(market_position, MarketPosition, 'market_position')
+
         if market_position is MarketPosition.LONG:
             return OrderSide.SELL
         elif market_position is MarketPosition.SHORT:
@@ -826,6 +870,8 @@ cdef class TradeStrategy:
         :raises ValueError: If the position_id is not a valid string.
         :raises KeyError: If the order_id is already contained in the order book (must be unique).
         """
+        Precondition.type(order, Order, 'order')
+        Precondition.type(position_id, PositionId, 'position_id')
         Precondition.not_none(self._exec_client, 'exec_client')
 
         if order.id in self._order_book:
@@ -851,6 +897,8 @@ cdef class TradeStrategy:
         :raises ValueError: If the new_price is not positive (> 0).
         :raises KeyError: If order_id is not found in the order book.
         """
+        Precondition.type(order, Order, 'order')
+        Precondition.type(new_price, Decimal, 'new_price')
         Precondition.not_none(self._exec_client, 'exec_client')
         Precondition.positive(new_price, 'new_price')
 
@@ -863,7 +911,7 @@ cdef class TradeStrategy:
     def cancel_order(
             self,
             order: Order,
-            cancel_reason: str='NONE'):
+            str cancel_reason='NONE'):
         """
         Send a cancel order command for the given order and cancel_reason to the
         execution service.
@@ -874,6 +922,7 @@ cdef class TradeStrategy:
         :raises ValueError: If the cancel_reason is not a valid string.
         :raises KeyError: If the order_id is not found in the order book.
         """
+        Precondition.type(order, Order, 'order')
         Precondition.not_none(self._exec_client, 'exec_client')
         Precondition.valid_string(cancel_reason, 'cancel_reason')
 
@@ -883,7 +932,7 @@ cdef class TradeStrategy:
         self._log.info(f"Cancelling {order}")
         self._exec_client.cancel_order(order, cancel_reason)
 
-    def cancel_all_orders(self, cancel_reason: str='NONE'):
+    def cancel_all_orders(self, str cancel_reason='NONE'):
         """
         Send a cancel order command for all currently working orders in the
         order book with the given cancel_reason - to the execution service.
@@ -910,6 +959,7 @@ cdef class TradeStrategy:
         :raises ValueError: If the position_id is not a valid string.
         :raises KeyError: If the position_id is not found in the position book.
         """
+        Precondition.type(position_id, PositionId, 'position_id')
         Precondition.not_none(self._exec_client, 'exec_client')
 
         if position_id not in self._position_book.keys():
@@ -963,7 +1013,7 @@ cdef class TradeStrategy:
                 position.quantity)
             self.submit_order(order, position_id)
 
-    def _register_data_client(self, client):
+    def _register_data_client(self, client: DataClient):
         """
         Register the strategy with the given data client.
 
@@ -971,14 +1021,15 @@ cdef class TradeStrategy:
         :raises ValueError: If client is None.
         :raises TypeError: If client does not inherit from DataClient.
         """
-        if client is None:
-            raise ValueError("Cannot register data client (the client cannot be None).")
-        if not client.__class__.__name__.endswith('DataClient'):
-            raise TypeError("Cannot register data client (the client was not of type DataClient).")
+        Precondition.type(client, DataClient, 'client')
+        # if client is None:
+        #     raise ValueError("Cannot register data client (the client cannot be None).")
+        # if not client.__class__.__name__.endswith('DataClient'):
+        #     raise TypeError("Cannot register data client (the client was not of type DataClient).")
 
         self._data_client = client
 
-    def _register_execution_client(self, client):
+    def _register_execution_client(self, client: ExecutionClient):
         """
         Register the strategy with the given execution client.
 
@@ -986,12 +1037,13 @@ cdef class TradeStrategy:
         :raises ValueError: If client is None.
         :raises TypeError: If client does not inherit from ExecutionClient.
         """
-        if client is None:
-            raise ValueError("Cannot register execution client (the client cannot be None).")
-        if client.__class__.__mro__[-2].__name__ != 'ExecutionClient':
-            raise TypeError(
-                ("Cannot register execution client "
-                 "(the given client does not inherit from the ExecutionClient base class)."))
+        Precondition.type(client, ExecutionClient, 'client')
+        # if client is None:
+        #     raise ValueError("Cannot register execution client (the client cannot be None).")
+        # if client.__class__.__mro__[-2].__name__ != 'ExecutionClient':
+        #     raise TypeError(
+        #         ("Cannot register execution client "
+        #          "(the given client does not inherit from the ExecutionClient base class)."))
 
         self._exec_client = client
         self._account = client.account
@@ -1003,6 +1055,8 @@ cdef class TradeStrategy:
 
         :param tick: The tick received.
         """
+        Precondition.type(tick, Tick, 'tick')
+
         # Update the internal ticks.
         self._ticks[tick.symbol] = tick
 
@@ -1020,6 +1074,9 @@ cdef class TradeStrategy:
         :param bar_type: The bar type received.
         :param bar: The bar received.
         """
+        Precondition.type(bar_type, BarType, 'bar_type')
+        Precondition.type(bar, Bar, 'bar')
+
         # Update the bars.
         if bar_type not in self._bars:
             self._bars[bar_type] = deque(maxlen=self._bar_capacity)  # type: Deque[Bar]
@@ -1042,6 +1099,9 @@ cdef class TradeStrategy:
         :param bar_type: The bar type to update.
         :param bar: The bar for update.
         """
+        Precondition.type(bar_type, BarType, 'bar_type')
+        Precondition.type(bar, Bar, 'bar')
+
         if bar_type not in self._indicators:
             # No indicators to update with this bar.
             return
@@ -1056,6 +1116,8 @@ cdef class TradeStrategy:
 
         :param event: The event received.
         """
+        Precondition.type(event, Event, 'event')
+
         self._log.info(str(event))
 
         # Order events.
@@ -1106,6 +1168,9 @@ cdef class TradeStrategy:
         """
         Create a new TimeEvent and pass it into _update_events().
         """
+        Precondition.type(label, Label, 'label')
+        Precondition.type(alert_time, datetime, 'alert_time')
+
         self._log.debug(f"Raising time event for {label}.")
         self._update_events(TimeEvent(label, uuid.uuid4(), alert_time))
         del self._timers[label]
@@ -1120,6 +1185,11 @@ cdef class TradeStrategy:
         Create a new TimeEvent and pass it into _update_events().
         Then start a timer for the next time event.
         """
+        Precondition.type(label, Label, 'label')
+        Precondition.type(alert_time, datetime, 'alert_time')
+        Precondition.type(interval, timedelta, 'interval')
+        Precondition.type_or_none(stop_time, datetime, 'stop_time')
+
         self._update_events(TimeEvent(label, uuid.uuid4(), alert_time))
 
         if stop_time is not None and alert_time + interval >= stop_time:

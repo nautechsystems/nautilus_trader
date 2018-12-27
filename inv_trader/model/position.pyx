@@ -50,7 +50,9 @@ cdef class Position:
         :param timestamp: The positions initialization timestamp.
         :raises ValueError: If the position_id is not a valid string.
         """
+        Precondition.type(symbol, Symbol, 'symbol')
         Precondition.type(position_id, PositionId, 'position_id')
+        Precondition.type(timestamp, datetime, 'timestamp')
 
         self._symbol = symbol
         self._id = position_id
@@ -214,6 +216,8 @@ cdef class Position:
 
         :param event: The order event to apply.
         """
+        Precondition.type(event, OrderEvent, 'event')
+
         self._events.append(event)
 
         # Handle event
@@ -238,10 +242,13 @@ cdef class Position:
 
     cdef void _update_position(
             self,
-            object order_side: OrderSide,
+            order_side: OrderSide,
             int quantity,
-            object average_price: Decimal,
-            object event_time: datetime):
+            average_price: Decimal,
+            event_time: datetime):
+        Precondition.type(order_side, OrderSide, 'order_side')
+        Precondition.type(average_price, Decimal, 'average_price')
+        Precondition.type(event_time, datetime, 'event_time')
         Precondition.positive(quantity, 'quantity')
         Precondition.positive(average_price, 'average_price')
 

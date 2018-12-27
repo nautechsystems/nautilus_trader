@@ -24,7 +24,7 @@ from inv_trader.commands import Command, OrderCommand, SubmitOrder, CancelOrder,
 from inv_trader.commands import CollateralInquiry
 from inv_trader.model.enums import Venue, OrderSide, OrderType, TimeInForce
 from inv_trader.model.enums import Broker, CurrencyCode, SecurityType
-from inv_trader.model.identifiers import Label, OrderId, ExecutionId, ExecutionTicket
+from inv_trader.model.identifiers import Label, OrderId, ExecutionId, ExecutionTicket, AccountId, AccountNumber
 from inv_trader.model.objects import Symbol, Instrument
 from inv_trader.model.order import Order
 from inv_trader.model.events import Event, OrderEvent, AccountEvent
@@ -468,9 +468,9 @@ cdef class MsgPackEventSerializer(EventSerializer):
 
         if event_type == ACCOUNT_EVENT:
             return AccountEvent(
-                unpacked[ACCOUNT_ID],
+                AccountId(unpacked[ACCOUNT_ID]),
                 Broker[unpacked[BROKER]],
-                unpacked[ACCOUNT_NUMBER],
+                AccountNumber(unpacked[ACCOUNT_NUMBER]),
                 CurrencyCode[unpacked[CURRENCY]],
                 Decimal(unpacked[CASH_BALANCE]),
                 Decimal(unpacked[CASH_START_DAY]),

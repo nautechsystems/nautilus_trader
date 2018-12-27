@@ -28,6 +28,7 @@ cdef class DataClient:
         """
         Initializes a new instance of the DataClient class.
         """
+        Precondition.type_or_none(logger, Logger, 'logger')
 
         if logger is None:
             self.log = LoggerAdapter(f"DataClient")
@@ -116,9 +117,7 @@ cdef class DataClient:
         :param strategy: The strategy to register.
         :raise ValueError: If the strategy does not inherit from TradeStrategy.
         """
-        if not (isinstance(strategy, TradeStrategy)):
-            raise ValueError(
-                "Cannot register strategy (the strategy did not inherit from TradeStrategy).")
+        Precondition.type(strategy, TradeStrategy, 'strategy')
 
         strategy._register_data_client(self)
 
@@ -174,6 +173,9 @@ cdef class DataClient:
         :param bar_type: The bar type to subscribe to.
         :param handler: The callable handler for subscription (if None will just call print).
         """
+        Precondition.type(bar_type, BarType, 'bar_type')
+        Precondition.type_or_none(handler, Callable, 'handler')
+
         if bar_type not in self._bar_handlers:
             self._bar_handlers[bar_type] = []  # type: List[Callable]
 
@@ -191,6 +193,9 @@ cdef class DataClient:
         :param bar_type: The bar type to unsubscribe from.
         :param handler: The callable handler which was subscribed (can be None).
         """
+        Precondition.type(bar_type, BarType, 'bar_type')
+        Precondition.type_or_none(handler, Callable, 'handler')
+
         if bar_type not in self._bar_handlers:
             self.log.warning(f"Cannot unsubscribe bars (no handlers for {bar_type}).")
             return
@@ -212,6 +217,9 @@ cdef class DataClient:
         :param symbol: The tick symbol to subscribe to.
         :param handler: The callable handler for subscription (if None will just call print).
         """
+        Precondition.type(symbol, Symbol, 'symbol')
+        Precondition.type_or_none(handler, Callable, 'handler')
+
         if symbol not in self._tick_handlers:
             self._tick_handlers[symbol] = []  # type: List[Callable]
 
@@ -230,6 +238,9 @@ cdef class DataClient:
         :param handler: The callable handler which was subscribed (can be None).
         :raises ValueError: If the symbol is not a valid string.
         """
+        Precondition.type(symbol, Symbol, 'symbol')
+        Precondition.type_or_none(handler, Callable, 'handler')
+
         if symbol not in self._tick_handlers:
             self.log.warning(f"Cannot unsubscribe ticks (no handlers for {symbol}).")
             return

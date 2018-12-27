@@ -36,6 +36,8 @@ cdef class ExecutionClient(object):
 
         :param logger: The logging adapter for the component.
         """
+        Precondition.type_or_none(logger, Logger, 'logger')
+
         if logger is None:
             self.log = LoggerAdapter(f"ExecClient")
         else:
@@ -131,6 +133,8 @@ cdef class ExecutionClient(object):
         """
         Handle events received from the execution service.
         """
+        Precondition.type(event, Event, 'event')
+
         self.log.debug(f"Received {event}")
 
         if isinstance(event, OrderEvent):

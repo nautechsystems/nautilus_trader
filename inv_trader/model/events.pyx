@@ -31,7 +31,7 @@ cdef class Event:
     cdef object _event_timestamp
 
     def __init__(self,
-                 identifier: uuid,
+                 identifier: UUID,
                  timestamp: datetime):
         """
         Initializes a new instance of the Event abstract class.
@@ -39,6 +39,9 @@ cdef class Event:
         :param identifier: The events identifier.
         :param timestamp: The events timestamp.
         """
+        Precondition.type(identifier, UUID, 'identifier')
+        Precondition.type(timestamp, datetime, 'timestamp')
+
         self._event_id = identifier
         self._event_timestamp = timestamp
 
@@ -134,6 +137,9 @@ cdef class AccountEvent(Event):
         :param event_id: The events identifier.
         :param event_timestamp: The order events timestamp.
         """
+        Precondition.type(account_id, AccountId, 'account_id')
+        Precondition.type(broker, Broker, 'broker')
+        Precondition.type(account_number, AccountNumber, 'account_number')
         Precondition.not_negative(cash_balance, 'cash_balance')
         Precondition.not_negative(cash_start_day, 'cash_start_day')
         Precondition.not_negative(cash_activity_day, 'cash_activity_day')
