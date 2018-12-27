@@ -67,9 +67,6 @@ cdef class LiveDataClient(DataClient):
         self._redis_client = None
         self._pubsub = None
         self._pubsub_thread = None
-        self._instruments = {}          # type: Dict[Symbol, Instrument]
-        self._bar_handlers = {}         # type: Dict[BarType, List[Callable]]
-        self._tick_handlers = {}        # type: Dict[Symbol, List[Callable]]
 
         self._log.info("Initialized.")
 
@@ -167,10 +164,7 @@ cdef class LiveDataClient(DataClient):
         self._redis_client = None
         self._pubsub = None
         self._pubsub_thread = None
-        self._subscriptions_ticks = []
-        self._subscriptions_bars = []
-        self._tick_handlers = []
-        self._bar_handlers = []
+        self._reset()
 
     def update_all_instruments(self):
         """
@@ -350,12 +344,6 @@ cdef class LiveDataClient(DataClient):
         self._check_connection()
 
         self._subscribe_bars(bar_type, handler)
-        # if bar_type not in self._bar_handlers:
-        #     self._bar_handlers[bar_type] = []  # type: List[Callable]
-        #
-        # if handler is not None and handler not in self._bar_handlers[bar_type]:
-        #     self._bar_handlers[bar_type].append(handler)
-        #     self._log.debug(f"Added bar handler {handler}.")
 
         bars_channel = self._get_bar_channel_name(bar_type)
         if bars_channel not in self._subscriptions_bars:
@@ -380,16 +368,6 @@ cdef class LiveDataClient(DataClient):
         self._check_connection()
 
         self._unsubscribe_bars(bar_type, handler)
-        # if bar_type not in self._bar_handlers:
-        #     self._log.warning(f"Cannot unsubscribe bars (no handlers for {bar_type}).")
-        #     return
-        #
-        # if handler is not None:
-        #     if handler in self._bar_handlers[bar_type]:
-        #         self._bar_handlers[bar_type].remove(handler)
-        #         self._log.debug(f"Removed handler {handler} from bar handlers.")
-        #     else:
-        #         self._log.warning(f"Cannot remove handler {handler} from bar handlers (not found).")
 
         # If no further subscribers for this bar type.
         if len(self._bar_handlers[bar_type]) == 0:
@@ -414,12 +392,6 @@ cdef class LiveDataClient(DataClient):
         self._check_connection()
 
         self._subscribe_ticks(symbol, handler)
-        # if symbol not in self._tick_handlers:
-        #     self._tick_handlers[symbol] = []  # type: List[Callable]
-        #
-        # if handler is not None and handler not in self._tick_handlers:
-        #     self._tick_handlers[symbol].append(handler)
-        #     self._log.debug(f"Added tick {handler}.")
 
         ticks_channel = self._get_tick_channel_name(symbol)
         if ticks_channel not in self._subscriptions_ticks:
@@ -445,16 +417,6 @@ cdef class LiveDataClient(DataClient):
         self._check_connection()
 
         self._unsubscribe_ticks(symbol, handler)
-        # if symbol not in self._tick_handlers:
-        #     self._log.warning(f"Cannot unsubscribe ticks (no handlers for {symbol}).")
-        #     return
-        #
-        # if handler is not None:
-        #     if handler in self._tick_handlers[symbol]:
-        #         self._tick_handlers[symbol].remove(handler)
-        #         self._log.debug(f"Removed handler {handler} from tick handlers.")
-        #     else:
-        #         self._log.warning(f"Cannot remove handler {handler} from tick handlers (not found).")
 
         # If no further subscribers for this bar type.
         if len(self._tick_handlers[symbol]) == 0:

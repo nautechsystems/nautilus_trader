@@ -49,3 +49,5 @@ cdef class DataClient:
     cdef void _subscribe_ticks(self, symbol, handler)
 
     cdef void _unsubscribe_ticks(self, symbol, handler)
+
+    cdef void _reset(self)

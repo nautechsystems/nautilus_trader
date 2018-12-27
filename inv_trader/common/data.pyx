@@ -240,3 +240,15 @@ cdef class DataClient:
                 self.log.debug(f"Removed handler {handler} from tick handlers.")
             else:
                 self.log.warning(f"Cannot remove handler {handler} from tick handlers (not found).")
+
+    cdef void _reset(self):
+        """
+        Resets the DataClient by clearing all stateful internal values. 
+        """
+        self._subscriptions_bars = []   # type: List[str]
+        self._subscriptions_ticks = []  # type: List[str]
+        self._instruments = {}          # type: Dict[Symbol, Instrument]
+        self._bar_handlers = {}         # type: Dict[BarType, List[Callable]]
+        self._tick_handlers = {}        # type: Dict[Symbol, List[Callable]]
+
+        self.log.info("Initialized.")
