@@ -12,6 +12,7 @@ import os
 import setuptools
 
 from Cython.Build import cythonize
+from Cython.Compiler import Options
 from typing import List
 from setuptools import setup, Extension
 
@@ -19,6 +20,9 @@ from setuptools import setup, Extension
 # python setup.py build_ext --inplace
 
 INV_TRADER = 'inv_trader'
+
+# Embed docstrings in extensions
+Options.embed_pos_in_docstring = True
 
 
 # Recursively scan root directory for all files to cythonize
@@ -46,7 +50,7 @@ extensions = [make_extension(name) for name in scan_dir(INV_TRADER)]
 
 setup(
     name=INV_TRADER,
-    version='0.68.0',
+    version='0.68.1',
     author='Invariance',
     description='The python trading client for Invariance.',
     packages=setuptools.find_packages(),
