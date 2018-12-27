@@ -33,6 +33,9 @@ cdef class Command:
         :param identifier: The commands identifier.
         :param timestamp: The commands timestamp.
         """
+        Precondition.type(identifier, UUID, 'identifier')
+        Precondition.type(timestamp, datetime, 'timestamp')
+
         self._command_id = identifier
         self._command_timestamp = timestamp
 
@@ -101,6 +104,10 @@ cdef class OrderCommand(Command):
         :param command_id: The commands identifier.
         :param command_timestamp: The order commands timestamp.
         """
+        Precondition.type(order, Order, 'order')
+        Precondition.type(command_id, UUID, 'command_id')
+        Precondition.type(command_timestamp, datetime, 'command_timestamp')
+
         super().__init__(command_id, command_timestamp)
         self._order = order
 
@@ -140,6 +147,10 @@ cdef class SubmitOrder(OrderCommand):
         :param command_id: The commands identifier.
         :param command_timestamp: The commands timestamp.
         """
+        Precondition.type(order, Order, 'order')
+        Precondition.type(command_id, UUID, 'command_id')
+        Precondition.type(command_timestamp, datetime, 'command_timestamp')
+
         super().__init__(
             order,
             command_id,
@@ -165,6 +176,9 @@ cdef class CancelOrder(OrderCommand):
         :param command_id: The commands identifier.
         :param command_timestamp: The commands timestamp.
         """
+        Precondition.type(order, Order, 'order')
+        Precondition.type(command_id, UUID, 'command_id')
+        Precondition.type(command_timestamp, datetime, 'command_timestamp')
         Precondition.valid_string(cancel_reason, 'cancel_reason')
 
         super().__init__(
@@ -201,6 +215,10 @@ cdef class ModifyOrder(OrderCommand):
         :param command_id: The commands identifier.
         :param command_timestamp: The commands timestamp.
         """
+        Precondition.type(order, Order, 'order')
+        Precondition.type(modified_price, Decimal, 'modified_price')
+        Precondition.type(command_id, UUID, 'command_id')
+        Precondition.type(command_timestamp, datetime, 'command_timestamp')
         Precondition.positive(modified_price, 'modified_price')
 
         super().__init__(
@@ -232,4 +250,7 @@ cdef class CollateralInquiry(Command):
         :param command_id: The commands identifier.
         :param command_timestamp: The order commands timestamp.
         """
+        Precondition.type(command_id, UUID, 'command_id')
+        Precondition.type(command_timestamp, datetime, 'command_timestamp')
+
         super().__init__(command_id, command_timestamp)

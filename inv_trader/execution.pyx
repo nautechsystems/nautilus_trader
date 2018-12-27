@@ -67,6 +67,9 @@ cdef class LiveExecClient(ExecutionClient):
         :raises ValueError: If the commands_port is not in range [0, 65535]
         :raises ValueError: If the events_port is not in range [0, 65535]
         """
+        # Precondition.type(command_serializer, CommandSerializer, 'command_serializer')
+        # Precondition.type(event_serializer, EventSerializer, 'event_serializer')
+        Precondition.type_or_none(logger, Logger, 'logger')
         Precondition.valid_string(host, 'host')
         Precondition.in_range(commands_port, 'commands_port', 0, 65535)
         Precondition.in_range(events_port, 'events_port', 0, 65535)
@@ -131,6 +134,9 @@ cdef class LiveExecClient(ExecutionClient):
         :param order: The order to submit.
         :param strategy_id: The strategy identifier to register the order with.
         """
+        Precondition.type(order, Order, 'order')
+        Precondition.type(strategy_id, UUID, 'strategy_id')
+
         self._register_order(order, strategy_id)
 
         command = SubmitOrder(
@@ -145,7 +151,7 @@ cdef class LiveExecClient(ExecutionClient):
     cpdef void cancel_order(
             self,
             order: Order,
-            cancel_reason: str):
+            str cancel_reason):
         """
         Send a cancel order command to the execution service with the given
         order and cancel_reason.
@@ -154,6 +160,7 @@ cdef class LiveExecClient(ExecutionClient):
         :param cancel_reason: The reason for cancellation (will be logged).
         :raises ValueError: If the cancel_reason is not a valid string.
         """
+        Precondition.type(order, Order, 'order')
         Precondition.valid_string(cancel_reason, 'cancel_reason')
 
         command = CancelOrder(
@@ -178,6 +185,8 @@ cdef class LiveExecClient(ExecutionClient):
         :param new_price: The new modified price for the order.
         :raises ValueError: If the new_price is not positive (> 0).
         """
+        Precondition.type(order, Order, 'order')
+        Precondition.type(new_price, Decimal, 'new_price')
         Precondition.positive(new_price, 'new_price')
 
         command = ModifyOrder(
@@ -197,7 +206,7 @@ cdef class LiveExecClient(ExecutionClient):
 
         :param body: The order event message body.
         """
-        event = self._event_serializer.deserialize(body)
+        cdef object event = self._event_serializer.deserialize(body)
 
         # If no registered strategies then print message to console.
         if len(self._registered_strategies) == 0:
@@ -211,5 +220,5 @@ cdef class LiveExecClient(ExecutionClient):
 
         :param body: The order command acknowledgement message body.
         """
-        command = self._command_serializer.deserialize(body)
+        cdef object command = self._command_serializer.deserialize(body)
         self.log.debug(f"Received order command ack for command_id {command.id}.")

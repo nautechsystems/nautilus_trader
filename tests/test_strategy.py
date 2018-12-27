@@ -293,7 +293,7 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(KeyError, strategy.order, 'unknown_order_id')
+        self.assertRaises(KeyError, strategy.order, OrderId('unknown_order_id'))
 
     def test_can_get_order(self):
         # Arrange
@@ -320,7 +320,7 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(KeyError, strategy.position, 'unknown_position_id')
+        self.assertRaises(KeyError, strategy.position, PositionId('unknown_position_id'))
 
     def test_can_get_position(self):
         # Arrange
@@ -645,11 +645,12 @@ class TradeStrategyTests(unittest.TestCase):
             OrderSide.BUY,
             100000)
 
-        strategy.submit_order(order, PositionId(str(order.id)))
+        position_id = PositionId(str(order.id))
+        strategy.submit_order(order, position_id)
 
         # Act
         # Assert
-        self.assertRaises(KeyError, strategy.submit_order, order, order.id)
+        self.assertRaises(KeyError, strategy.submit_order, order, position_id)
 
     def test_strategy_can_submit_order(self):
         # Arrange
@@ -828,7 +829,7 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(KeyError, strategy.flatten_position, 'some-position')
+        self.assertRaises(KeyError, strategy.flatten_position, PositionId('some-position'))
 
     def test_can_flatten_all_positions(self):
         # Arrange

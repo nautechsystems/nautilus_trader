@@ -54,6 +54,7 @@ cdef class LiveDataClient(DataClient):
         :raises ValueError: If the host is not a valid string.
         :raises ValueError: If the port is not in range [0, 65535]
         """
+        Precondition.type_or_none(logger, Logger, 'logger')
         Precondition.valid_string(host, 'host')
         Precondition.in_range(port, 'port', 0, 65535)
 
@@ -184,6 +185,8 @@ cdef class LiveDataClient(DataClient):
 
         :param symbol: The symbol to update.
         """
+        Precondition.type(symbol, Symbol, 'symbol')
+
         key = f'instruments:{symbol.code.lower()}.{symbol.venue.name.lower()}'
 
         if key is None:
@@ -203,6 +206,8 @@ cdef class LiveDataClient(DataClient):
         :return: The instrument (if found)
         :raises KeyError: If the instrument is not found.
         """
+        Precondition.type(symbol, Symbol, 'symbol')
+
         if symbol not in self._instruments:
             raise KeyError(f"Cannot find instrument for {symbol}.")
 
@@ -215,6 +220,8 @@ cdef class LiveDataClient(DataClient):
         :param strategy: The strategy to register.
         :raise ValueError: If the strategy does not inherit from TradeStrategy.
         """
+        Precondition.type(strategy, TradeStrategy, 'strategy')
+
         if not (isinstance(strategy, TradeStrategy)):
             raise ValueError(
                 "Cannot register strategy (the strategy did not inherit from TradeStrategy).")
@@ -240,6 +247,8 @@ cdef class LiveDataClient(DataClient):
         :param handler: The bar handler to pass the bars to.
         :raises ValueError: If the quantity is not None and not positive (> 0).
         """
+        Precondition.type(bar_type, BarType, 'bar_type')
+        Precondition.type(handler, Callable, 'handler')
         if quantity is not None:
             Precondition.positive(quantity, 'quantity')
 
@@ -297,6 +306,8 @@ cdef class LiveDataClient(DataClient):
         :param handler: The handler to pass the bars to.
         :raises ValueError: If the from_datetime is not less than datetime.utcnow().
         """
+        Precondition.type(bar_type, BarType, 'bar_type')
+        Precondition.type(handler, Callable, 'handler')
         Precondition.true(from_datetime < datetime.now(timezone.utc),
                           'from_datetime < datetime.now(timezone.utc)')
 
@@ -341,6 +352,9 @@ cdef class LiveDataClient(DataClient):
         :param bar_type: The bar type to subscribe to.
         :param handler: The callable handler for subscription (if None will just call print).
         """
+        Precondition.type(bar_type, BarType, 'bar_type')
+        Precondition.type_or_none(handler, Callable, 'handler')
+
         self._check_connection()
 
         self._subscribe_bars(bar_type, handler)
@@ -365,6 +379,9 @@ cdef class LiveDataClient(DataClient):
         :param bar_type: The bar type to unsubscribe from.
         :param handler: The callable handler which was subscribed (can be None).
         """
+        Precondition.type(bar_type, BarType, 'bar_type')
+        Precondition.type_or_none(handler, Callable, 'handler')
+
         self._check_connection()
 
         self._unsubscribe_bars(bar_type, handler)
@@ -389,6 +406,9 @@ cdef class LiveDataClient(DataClient):
         :param symbol: The tick symbol to subscribe to.
         :param handler: The callable handler for subscription (if None will just call print).
         """
+        Precondition.type(symbol, Symbol, 'symbol')
+        Precondition.type_or_none(handler, Callable, 'handler')
+
         self._check_connection()
 
         self._subscribe_ticks(symbol, handler)
@@ -414,6 +434,9 @@ cdef class LiveDataClient(DataClient):
         :param handler: The callable handler which was subscribed (can be None).
         :raises ValueError: If the symbol is not a valid string.
         """
+        Precondition.type(symbol, Symbol, 'symbol')
+        Precondition.type_or_none(handler, Callable, 'handler')
+
         self._check_connection()
 
         self._unsubscribe_ticks(symbol, handler)
@@ -429,73 +452,71 @@ cdef class LiveDataClient(DataClient):
 
             self._log.info(f"Unsubscribed from tick data for {tick_channel}.")
 
-    def _get_redis_bar_keys(self, bar_type: BarType):
+    cdef list _get_redis_bar_keys(self, bar_type: BarType):
         """
         Generate the bar key wildcard pattern and return the held Redis keys
         sorted.
         """
-        keys = self._redis_client.keys(
+        Precondition.type(bar_type, BarType, 'bar_type')
+
+        return self._redis_client.keys(
             (f'bars'
              f':{bar_type.symbol.venue.name.lower()}'
              f':{bar_type.symbol.code.lower()}'
              f':{bar_type.resolution.name.lower()}'
-             f':{bar_type.quote_type.name.lower()}*'))
-        keys.sort()
-        return keys
+             f':{bar_type.quote_type.name.lower()}*')).sort()
 
-    @staticmethod
-    def _parse_tick_symbol(tick_channel: str) -> Symbol:
+    cpdef object _parse_tick_symbol(self, str tick_channel):
         """
         Parse a Symbol object from the given UTF-8 string.
 
         :param tick_channel: The channel the tick was received on.
         :return: The parsed Symbol object.
         """
-        split_channel = tick_channel.split('.')
+        cdef list split_channel = tick_channel.split('.')
 
         return Symbol(split_channel[0], Venue[str(split_channel[1].upper())])
 
-    @staticmethod
-    def _parse_tick(symbol: Symbol, tick_string: str) -> Tick:
+    cpdef object _parse_tick(self, symbol: Symbol, str tick_string):
         """
         Parse a Tick object from the given UTF-8 string.
 
         :param tick_string: The tick string.
         :return: The parsed Tick object.
         """
-        split_tick = tick_string.split(',')
+        Precondition.type(symbol, Symbol, 'symbol')
+
+        cdef list split_tick = tick_string.split(',')
 
         return Tick(symbol,
                     Decimal(split_tick[0]),
                     Decimal(split_tick[1]),
                     iso8601.parse_date(split_tick[2]))
 
-    @staticmethod
-    def _parse_bar_type(bar_type_string: str) -> BarType:
+    cpdef object _parse_bar_type(self, str bar_type_string):
         """
         Parse a BarType object from the given UTF-8 string.
 
         :param bar_type_string: The bar type string to parse.
         :return: The parsed Bar object.
         """
-        split_string = re.split(r'[.-]+', bar_type_string)
-        resolution = split_string[3].split('[')[0]
-        quote_type = split_string[3].split('[')[1].strip(']')
+        cdef list split_string = re.split(r'[.-]+', bar_type_string)
+        cdef str resolution = split_string[3].split('[')[0]
+        cdef str quote_type = split_string[3].split('[')[1].strip(']')
 
         return BarType(Symbol(split_string[0], Venue[split_string[1].upper()]),
                        int(split_string[2]),
                        Resolution[resolution.upper()],
                        QuoteType[quote_type.upper()])
 
-    @staticmethod
-    def _parse_bar(bar_string: str) -> Bar:
+    cpdef object _parse_bar(self, str bar_string):
         """
         Parse a Bar object from the given UTF-8 string.
 
         :param bar_string: The bar string to parse.
         :return: The parsed bar object.
         """
-        split_bar = bar_string.split(',')
+        cdef list split_bar = bar_string.split(',')
 
         return Bar(Decimal(split_bar[0]),
                    Decimal(split_bar[1]),
@@ -504,15 +525,13 @@ cdef class LiveDataClient(DataClient):
                    int(split_bar[4]),
                    iso8601.parse_date(split_bar[5]))
 
-    @staticmethod
-    def _get_tick_channel_name(symbol: Symbol) -> str:
+    cpdef str _get_tick_channel_name(self, symbol: Symbol):
         """
         Return the tick channel name from the given parameters.
         """
         return str(f'{symbol.code.lower()}.{symbol.venue.name.lower()}')
 
-    @staticmethod
-    def _get_bar_channel_name(bar_type: BarType) -> str:
+    cpdef str _get_bar_channel_name(self, bar_type: BarType):
         """
         Return the bar channel name from the given parameters.
         """
@@ -522,7 +541,7 @@ cdef class LiveDataClient(DataClient):
                    f'{bar_type.resolution.name.lower()}['
                    f'{bar_type.quote_type.name.lower()}]')
 
-    def _check_connection(self):
+    cdef void _check_connection(self):
         """
         Check the connection with the live database.
 
@@ -535,7 +554,7 @@ cdef class LiveDataClient(DataClient):
         if not self.is_connected:
             raise ConnectionError("No connection is established with the live database.")
 
-    def _handle_tick(self, message: Dict):
+    cpdef void _handle_tick(self, message: Dict):
         """"
         Handle the tick message by parsing to a Tick and sending to all subscribers.
 
@@ -552,14 +571,14 @@ cdef class LiveDataClient(DataClient):
         for handler in self._tick_handlers[symbol]:
             handler(tick)
 
-    def _handle_bar(self, message: Dict):
+    cpdef void _handle_bar(self, message: Dict):
         """"
         Handle the bar message by parsing to a Bar and sending to all subscribers.
 
         :param message: The bar message.
         """
-        bar_type = self._parse_bar_type(message['channel'].decode(UTF8))
-        bar = self._parse_bar(message['data'].decode(UTF8))
+        cdef object bar_type = self._parse_bar_type(message['channel'].decode(UTF8))
+        cdef object bar = self._parse_bar(message['data'].decode(UTF8))
 
         if bar_type not in self._bar_handlers:
             # If no bar handlers then print message to console.

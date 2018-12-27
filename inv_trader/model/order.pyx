@@ -86,8 +86,15 @@ cdef class Order:
         :raises ValueError: If the order type has a price and the price is not positive (> 0).
         :raises ValueError: If the time_in_force is GTD and the expire_time is None.
         """
+        Precondition.type(symbol, Symbol, 'symbol')
         Precondition.type(order_id, OrderId, 'order_id')
         Precondition.type(label, Label, 'label')
+        Precondition.type(order_side, OrderSide, 'order_side')
+        Precondition.type(order_type, OrderType, 'order_type')
+        Precondition.type(timestamp, datetime, 'timestamp')
+        Precondition.type_or_none(price, Decimal, 'price')
+        Precondition.type_or_none(time_in_force, TimeInForce, 'time_in_force')
+        Precondition.type_or_none(expire_time, datetime, 'expire_time')
 
         if time_in_force is None:
             time_in_force = TimeInForce.DAY
@@ -95,7 +102,7 @@ cdef class Order:
         Precondition.positive(quantity, 'quantity')
         # Orders without prices
         if order_type not in PRICED_ORDER_TYPES:
-            Precondition.is_none(price, 'price')
+            Precondition.none(price, 'price')
         # Orders with prices
         if order_type in PRICED_ORDER_TYPES:
             Precondition.not_none(price, 'price')
@@ -319,6 +326,7 @@ cdef class Order:
         :param order_event: The order event to apply.
         :raises ValueError: If the order_events order_id is not equal to the id.
         """
+        Precondition.type(order_event, OrderEvent, 'order_event')
         Precondition.equal(order_event.order_id, self._id)
 
         self._events.append(order_event)
@@ -423,6 +431,8 @@ cdef class OrderIdGenerator:
         :param order_symbol: The order symbol for the unique identifier.
         :return: The unique OrderIdentifier.
         """
+        Precondition.type(order_symbol, Symbol, 'order_symbol')
+
         if order_symbol not in self._order_symbol_counts:
             self._order_symbol_counts[order_symbol] = 0
 
@@ -461,7 +471,7 @@ class OrderFactory:
             order_id: OrderId,
             label: Label,
             order_side: OrderSide,
-            quantity: int) -> Order:
+            int quantity) -> Order:
         """
         Creates and returns a new market order with the given parameters.
 
@@ -494,7 +504,7 @@ class OrderFactory:
             order_id: OrderId,
             label: Label,
             order_side: OrderSide,
-            quantity: int,
+            int quantity,
             price: Decimal,
             time_in_force=None,
             expire_time=None) -> Order:
@@ -578,7 +588,7 @@ class OrderFactory:
             order_id: OrderId,
             label: Label,
             order_side: OrderSide,
-            quantity: int,
+            int quantity,
             price: Decimal,
             time_in_force=None,
             expire_time=None) -> Order:
@@ -620,7 +630,7 @@ class OrderFactory:
             order_id: OrderId,
             label: Label,
             order_side: OrderSide,
-            quantity: int,
+            int quantity,
             price: Decimal,
             time_in_force=None,
             expire_time=None) -> Order:
@@ -662,7 +672,7 @@ class OrderFactory:
             order_id: OrderId,
             label: Label,
             order_side: OrderSide,
-            quantity: int) -> Order:
+            int quantity) -> Order:
         """
         Creates and returns a new fill-or-kill order with the given parameters.
 
@@ -695,7 +705,7 @@ class OrderFactory:
             order_id: OrderId,
             label: Label,
             order_side: OrderSide,
-            quantity: int) -> Order:
+            int quantity) -> Order:
         """
         Creates and returns a new immediate-or-cancel order with the given parameters.
 

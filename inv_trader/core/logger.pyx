@@ -50,7 +50,7 @@ cdef class Logger:
         :raises ValueError: If the log_file_path is not a valid string.
         """
         if name is not None:
-            Precondition.valid_string(name, 'log_name')
+            Precondition.valid_string(name, 'name')
         else:
             name = 'tmp'
 
@@ -78,7 +78,7 @@ cdef class Logger:
 
         :param message: The debug message to log.
         """
-        Precondition.valid_string(message, u'message')
+        Precondition.valid_string(message, 'message')
 
         log_message = self._format_message('DBG', message)
         self._console_print_handler(log_message, logging.DEBUG)
@@ -95,7 +95,7 @@ cdef class Logger:
 
         :param message: The information message to log.
         """
-        Precondition.valid_string(message, u'message')
+        Precondition.valid_string(message, 'message')
 
         log_message = self._format_message('INF', message)
         self._console_print_handler(log_message, logging.INFO)

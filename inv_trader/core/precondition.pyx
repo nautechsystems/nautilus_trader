@@ -35,7 +35,7 @@ cdef class Precondition:
     @staticmethod
     cdef type(object argument, object is_type, str param_name):
         """
-        Check the preconditions predicate is true.
+        Check the preconditions argument is of the specified type.
 
         :param argument: The argument to check.
         :param is_type: The expected argument type.
@@ -47,7 +47,24 @@ cdef class Precondition:
                              f"type = {type(argument)}")
 
     @staticmethod
-    cdef is_none(object argument, str param_name):
+    cdef type_or_none(object argument, object is_type, str param_name):
+        """
+        Check the preconditions argument is of the specified type, or None.
+
+        :param argument: The argument to check.
+        :param is_type: The expected argument type if not None.
+        :param param_name: The parameter name.
+        :raises ValueError: If the object is not of the expected type, and is not None.
+        """
+        if argument is None:
+            return
+
+        if not isinstance(argument, is_type):
+            raise ValueError(f"{PRE_FAILED} (the {param_name} argument was not of type {is_type}). "
+                             f"type = {type(argument)}")
+
+    @staticmethod
+    cdef none(object argument, str param_name):
         """
         Check the preconditions argument is None.
 
@@ -201,8 +218,12 @@ class PyPrecondition:
         Precondition.type(argument, is_type, param_name)
 
     @staticmethod
-    def is_none(argument, param_name):
-        Precondition.is_none(argument, param_name)
+    def type_or_none(argument, is_type, param_name):
+        Precondition.type_or_none(argument, is_type, param_name)
+
+    @staticmethod
+    def none(argument, param_name):
+        Precondition.none(argument, param_name)
 
     @staticmethod
     def not_none(argument, param_name):
