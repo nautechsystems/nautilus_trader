@@ -16,7 +16,7 @@ cdef class Identifier:
     """
     The abstract base class for all identifiers.
     """
-    cdef readonly str _value
+    cdef readonly str value
 
     def __init__(self, str value):
         """
@@ -26,21 +26,14 @@ cdef class Identifier:
         """
         Precondition.valid_string(value, 'value')
 
-        self._value = value
-
-    @property
-    def value(self) -> str:
-        """
-        :return: The identifiers value.
-        """
-        return self._value
+        self.value = value
 
     def __eq__(self, other) -> bool:
         """
         Override the default equality comparison.
         """
         if isinstance(other, self.__class__):
-            return self._value == other._value
+            return self.value == other.value
         else:
             return False
 
@@ -54,19 +47,19 @@ cdef class Identifier:
         """"
         Override the default hash implementation.
         """
-        return hash(self._value)
+        return hash(self.value)
 
     def __str__(self) -> str:
         """
         :return: The str() string representation of the event.
         """
-        return f"{self._value}"
+        return f"{self.value}"
 
     def __repr__(self) -> str:
         """
         :return: The repr() string representation of the event.
         """
-        return f"<{str(self.__class__.__name__)}({self._value}) object at {id(self)}>"
+        return f"<{str(self.__class__.__name__)}({self.value}) object at {id(self)}>"
 
 
 cdef class Label(Identifier):

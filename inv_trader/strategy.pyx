@@ -280,7 +280,7 @@ cdef class TradeStrategy:
         :return: All active orders for the strategy.
         """
         return ({order.id: order for order in self._order_book.values()
-                 if not order.is_complete})
+                 if not order.is_complete()})
 
     @property
     def active_positions(self) -> Dict[PositionId, Position]:
@@ -288,7 +288,7 @@ cdef class TradeStrategy:
         :return: All active positions for the strategy.
         """
         return ({position.id: position for position in self._position_book.values()
-                 if not position.is_exited})
+                 if not position.is_exited()})
 
     @property
     def completed_orders(self) -> Dict[OrderId, Order]:
@@ -296,7 +296,7 @@ cdef class TradeStrategy:
         :return: All completed orders for the strategy.
         """
         return ({order.id: order for order in self._order_book.values()
-                 if order.is_complete})
+                 if order.is_complete()})
 
     @property
     def completed_positions(self) -> Dict[PositionId, Position]:
@@ -304,7 +304,7 @@ cdef class TradeStrategy:
         :return: All completed positions for the strategy.
         """
         return ({position.id: position for position in self._position_book.values()
-                 if position.is_exited})
+                 if position.is_exited()})
 
     @property
     def is_flat(self) -> bool:
@@ -312,7 +312,7 @@ cdef class TradeStrategy:
         :return: A value indicating whether this strategy is completely flat
         (no positions other than FLAT) across all instruments.
         """
-        return all(position.market_position == MarketPosition.FLAT
+        return all(position.market_position() == MarketPosition.FLAT
                    for position in self._position_book.values())
 
     @property
@@ -945,7 +945,7 @@ cdef class TradeStrategy:
         Precondition.valid_string(cancel_reason, 'cancel_reason')
 
         for order in self._order_book.values():
-            if not order.is_complete:
+            if not order.is_complete():
                 self.cancel_order(order, cancel_reason)
 
     def flatten_position(self, position_id: PositionId):
@@ -980,8 +980,8 @@ cdef class TradeStrategy:
             position.symbol,
             self.generate_order_id(position.symbol),
             Label("FLATTEN"),
-            self.get_flatten_side(position.market_position),
-            position.quantity)
+            self.get_flatten_side(position.market_position()),
+            position.quantity())
 
         self.submit_order(order, position_id)
 
@@ -999,7 +999,7 @@ cdef class TradeStrategy:
             if position is None:
                 self._log.warning(f"Cannot flatten position (the position {position_id} was None.")
                 continue
-            if position.market_position == MarketPosition.FLAT:
+            if position.market_position() == MarketPosition.FLAT:
                 self._log.warning(
                     f"Cannot flatten position (the position {position_id} was already FLAT).")
                 continue
@@ -1009,8 +1009,8 @@ cdef class TradeStrategy:
                 position.symbol,
                 self.generate_order_id(position.symbol),
                 Label("FLATTEN"),
-                self.get_flatten_side(position.market_position),
-                position.quantity)
+                self.get_flatten_side(position.market_position()),
+                position.quantity())
             self.submit_order(order, position_id)
 
     def _register_data_client(self, client: DataClient):
@@ -1022,10 +1022,6 @@ cdef class TradeStrategy:
         :raises TypeError: If client does not inherit from DataClient.
         """
         Precondition.type(client, DataClient, 'client')
-        # if client is None:
-        #     raise ValueError("Cannot register data client (the client cannot be None).")
-        # if not client.__class__.__name__.endswith('DataClient'):
-        #     raise TypeError("Cannot register data client (the client was not of type DataClient).")
 
         self._data_client = client
 
@@ -1038,12 +1034,6 @@ cdef class TradeStrategy:
         :raises TypeError: If client does not inherit from ExecutionClient.
         """
         Precondition.type(client, ExecutionClient, 'client')
-        # if client is None:
-        #     raise ValueError("Cannot register execution client (the client cannot be None).")
-        # if client.__class__.__mro__[-2].__name__ != 'ExecutionClient':
-        #     raise TypeError(
-        #         ("Cannot register execution client "
-        #          "(the given client does not inherit from the ExecutionClient base class)."))
 
         self._exec_client = client
         self._account = client.account
