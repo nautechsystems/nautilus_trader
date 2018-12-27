@@ -9,21 +9,234 @@
 
 # cython: language_level=3, boundscheck=False
 
-import re
-import iso8601
-import time
-
 from datetime import datetime, timezone
-from decimal import Decimal
-from redis import StrictRedis, ConnectionError
 from typing import List, Dict, Callable
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.core.logger import Logger, LoggerAdapter
-from inv_trader.model.enums import Resolution, QuoteType, Venue
-from inv_trader.model.objects import Symbol, Tick, BarType, Bar, Instrument
-from inv_trader.serialization import InstrumentSerializer
+from inv_trader.model.objects import Symbol, BarType, Instrument
 from inv_trader.strategy import TradeStrategy
 
 cdef str UTF8 = 'utf-8'
 
+cdef class DataClient:
+    """
+    Provides a data client for alpha models and trading strategies.
+    """
+
+    def __init__(self, logger: Logger=None):
+        """
+        Initializes a new instance of the DataClient class.
+        """
+
+        if logger is None:
+            self.log = LoggerAdapter(f"DataClient")
+        else:
+            self.log = LoggerAdapter(f"DataClient", logger)
+
+        self._subscriptions_bars = []   # type: List[str]
+        self._subscriptions_ticks = []  # type: List[str]
+        self._instruments = {}          # type: Dict[Symbol, Instrument]
+        self._bar_handlers = {}         # type: Dict[BarType, List[Callable]]
+        self._tick_handlers = {}        # type: Dict[Symbol, List[Callable]]
+
+        self.log.info("Initialized.")
+
+    cpdef list symbols(self):
+        """
+        :return: All instrument symbols held by the data client.
+        """
+        symbols = []
+        for symbol in self._instruments:
+            symbols.append(symbol)
+
+        return symbols
+
+    cpdef list instruments(self):
+        """
+        :return: All instruments held by the data client.
+        """
+        instruments = []
+        for instrument in self._instruments.values():
+            instruments.append(instrument)
+
+        return instruments
+
+    cpdef list subscriptions_ticks(self):
+        """
+        :return: The list of tick channels subscribed to.
+        """
+        return self._subscriptions_ticks
+
+    cpdef list subscriptions_bars(self):
+        """
+        :return: The list of bar channels subscribed to.
+        """
+        return self._subscriptions_bars
+
+    cpdef void connect(self):
+        """
+        Connect to the data service.
+        """
+        # Raise exception if not overridden in implementation.
+        raise NotImplementedError("Method must be implemented in the data client.")
+
+    cpdef void disconnect(self):
+        """
+        Disconnect from the execution service.
+        """
+        # Raise exception if not overridden in implementation.
+        raise NotImplementedError("Method must be implemented in the data client.")
+
+    cpdef void update_all_instruments(self):
+        # Raise exception if not overridden in implementation.
+        raise NotImplementedError("Method must be implemented in the data client.")
+
+    cpdef void update_instrument(self, symbol: Symbol):
+        # Raise exception if not overridden in implementation.
+        raise NotImplementedError("Method must be implemented in the data client.")
+
+    cpdef object get_instrument(self, symbol: Symbol):
+        """
+        Get the instrument corresponding to the given symbol.
+
+        :param symbol: The symbol of the instrument to get.
+        :return: The instrument (if found)
+        :raises KeyError: If the instrument is not found.
+        """
+        if symbol not in self._instruments:
+            raise KeyError(f"Cannot find instrument for {symbol}.")
+
+        return self._instruments[symbol]
+
+    cpdef void register_strategy(self, strategy: TradeStrategy):
+        """
+        Registers the given trade strategy with the data client.
+
+        :param strategy: The strategy to register.
+        :raise ValueError: If the strategy does not inherit from TradeStrategy.
+        """
+        if not (isinstance(strategy, TradeStrategy)):
+            raise ValueError(
+                "Cannot register strategy (the strategy did not inherit from TradeStrategy).")
+
+        strategy._register_data_client(self)
+
+        self.log.info(f"Registered strategy {strategy} with the data client.")
+
+    cpdef void historical_bars(
+            self,
+            bar_type: BarType,
+            int quantity,
+            handler: Callable):
+        """
+        Download the historical bars for the given parameters from the data
+        service, then pass them to the callable bar handler.
+
+        Note: A log warnings are given if the downloaded bars quantity does not
+        equal the requested quantity.
+
+        :param bar_type: The historical bar type to download.
+        :param quantity: The number of historical bars to download (can be None, will download all).
+        :param handler: The bar handler to pass the bars to.
+        :raises ValueError: If the quantity is not None and not positive (> 0).
+        """
+        # Raise exception if not overridden in implementation.
+        raise NotImplementedError("Method must be implemented in the data client.")
+
+    cpdef void historical_bars_from(
+            self,
+            bar_type: BarType,
+            from_datetime: datetime,
+            handler: Callable):
+        """
+        Download the historical bars for the given parameters from the data
+        service, then pass them to the callable bar handler.
+
+        Note: A log warning is given if the downloaded bars first timestamp is
+        greater than the requested datetime.
+
+        :param bar_type: The historical bar type to download.
+        :param from_datetime: The datetime from which the historical bars should be downloaded.
+        :param handler: The handler to pass the bars to.
+        :raises ValueError: If the from_datetime is not less than datetime.utcnow().
+        """
+        # Raise exception if not overridden in implementation.
+        raise NotImplementedError("Method must be implemented in the data client.")
+
+    cdef void _subscribe_bars(
+            self,
+            bar_type: BarType,
+            handler: Callable):
+        """
+        Subscribe to live bar data for the given bar parameters.
+
+        :param bar_type: The bar type to subscribe to.
+        :param handler: The callable handler for subscription (if None will just call print).
+        """
+        if bar_type not in self._bar_handlers:
+            self._bar_handlers[bar_type] = []  # type: List[Callable]
+
+        if handler is not None and handler not in self._bar_handlers[bar_type]:
+            self._bar_handlers[bar_type].append(handler)
+            self.log.debug(f"Added bar handler {handler}.")
+
+    cdef void _unsubscribe_bars(
+            self,
+            bar_type: BarType,
+            handler: Callable):
+        """
+        Unsubscribes from live bar data for the given symbol and venue.
+
+        :param bar_type: The bar type to unsubscribe from.
+        :param handler: The callable handler which was subscribed (can be None).
+        """
+        if bar_type not in self._bar_handlers:
+            self.log.warning(f"Cannot unsubscribe bars (no handlers for {bar_type}).")
+            return
+
+        if handler is not None:
+            if handler in self._bar_handlers[bar_type]:
+                self._bar_handlers[bar_type].remove(handler)
+                self.log.debug(f"Removed handler {handler} from bar handlers.")
+            else:
+                self.log.warning(f"Cannot remove handler {handler} from bar handlers (not found).")
+
+    cdef void _subscribe_ticks(
+            self,
+            symbol: Symbol,
+            handler: Callable):
+        """
+        Subscribe to live tick data for the given symbol and venue.
+
+        :param symbol: The tick symbol to subscribe to.
+        :param handler: The callable handler for subscription (if None will just call print).
+        """
+        if symbol not in self._tick_handlers:
+            self._tick_handlers[symbol] = []  # type: List[Callable]
+
+        if handler is not None and handler not in self._tick_handlers:
+            self._tick_handlers[symbol].append(handler)
+            self.log.debug(f"Added tick {handler}.")
+
+    cdef void _unsubscribe_ticks(
+            self,
+            symbol: Symbol,
+            handler: Callable):
+        """
+        Unsubscribes from live tick data for the given symbol and venue.
+
+        :param symbol: The tick symbol to unsubscribe from.
+        :param handler: The callable handler which was subscribed (can be None).
+        :raises ValueError: If the symbol is not a valid string.
+        """
+        if symbol not in self._tick_handlers:
+            self.log.warning(f"Cannot unsubscribe ticks (no handlers for {symbol}).")
+            return
+
+        if handler is not None:
+            if handler in self._tick_handlers[symbol]:
+                self._tick_handlers[symbol].remove(handler)
+                self.log.debug(f"Removed handler {handler} from tick handlers.")
+            else:
+                self.log.warning(f"Cannot remove handler {handler} from tick handlers (not found).")
