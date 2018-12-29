@@ -33,8 +33,8 @@ cdef class Symbol:
         :param venue: The symbols venue.
         :raises ValueError: If the code is not a valid string.
         """
-        Precondition.valid_string(code, 'code')
         Precondition.type(venue, Venue, 'venue')
+        Precondition.valid_string(code, 'code')
 
         self.code = code.upper()
         self.venue = venue
