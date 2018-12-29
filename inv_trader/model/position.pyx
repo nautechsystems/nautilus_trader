@@ -9,16 +9,15 @@
 
 # cython: language_level=3, boundscheck=False
 
-from datetime import datetime
+from cpython.datetime cimport datetime
 from decimal import Decimal
 from typing import List
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.model.enums import MarketPosition, OrderSide
-from inv_trader.model.objects import Symbol
-from inv_trader.model.events import OrderEvent
-from inv_trader.model.events import OrderPartiallyFilled, OrderFilled
-from inv_trader.model.identifiers import PositionId, ExecutionId, ExecutionTicket
+from inv_trader.model.objects cimport Symbol
+from inv_trader.model.events cimport OrderEvent, OrderPartiallyFilled, OrderFilled
+from inv_trader.model.identifiers cimport PositionId, ExecutionId, ExecutionTicket
 
 
 cdef class Position:
@@ -29,32 +28,27 @@ cdef class Position:
     cdef int _peak_quantity
     cdef list _events
 
-    cdef readonly object symbol
-    cdef readonly object id
-    cdef readonly object timestamp
-    cdef readonly object entry_time
-    cdef readonly object exit_time
+    cdef readonly Symbol symbol
+    cdef readonly PositionId id
+    cdef readonly datetime timestamp
+    cdef readonly datetime entry_time
+    cdef readonly datetime exit_time
     cdef readonly object average_entry_price
     cdef readonly object average_exit_price
     cdef readonly list execution_ids
     cdef readonly list execution_tickets
 
     def __init__(self,
-                 symbol: Symbol,
-                 position_id: PositionId,
-                 timestamp: datetime):
+                 Symbol symbol,
+                 PositionId position_id,
+                 datetime timestamp):
         """
         Initializes a new instance of the Position class.
 
         :param symbol: The orders symbol.
         :param position_id: The positions identifier.
         :param timestamp: The positions initialization timestamp.
-        :raises ValueError: If the position_id is not a valid string.
         """
-        Precondition.type(symbol, Symbol, 'symbol')
-        Precondition.type(position_id, PositionId, 'position_id')
-        Precondition.type(timestamp, datetime, 'timestamp')
-
         self.symbol = symbol
         self.id = position_id
         self.timestamp = timestamp
@@ -139,14 +133,12 @@ cdef class Position:
         cdef str props = ', '.join("%s=%s" % item for item in attrs.items()).replace(', _', ', ')
         return f"<{self.__class__.__name__}({props[1:]}) object at {id(self)}>"
 
-    cpdef void apply(self, event: OrderEvent):
+    cpdef void apply(self, OrderEvent event):
         """
         Applies the given order event to the position.
 
         :param event: The order event to apply.
         """
-        Precondition.type(event, OrderEvent, 'event')
-
         self._events.append(event)
 
         # Handle event
@@ -174,7 +166,7 @@ cdef class Position:
             order_side: OrderSide,
             int quantity,
             average_price: Decimal,
-            event_time: datetime):
+            datetime event_time):
         Precondition.type(order_side, OrderSide, 'order_side')
         Precondition.type(average_price, Decimal, 'average_price')
         Precondition.type(event_time, datetime, 'event_time')

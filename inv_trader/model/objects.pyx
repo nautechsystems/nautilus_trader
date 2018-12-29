@@ -128,10 +128,6 @@ cdef class Tick:
     """
     Represents a single tick in a financial market.
     """
-    cdef readonly Symbol symbol
-    cdef readonly object bid
-    cdef readonly object ask
-    cdef readonly datetime timestamp
 
     def __init__(self,
                  Symbol symbol,
@@ -200,10 +196,6 @@ cdef class BarType:
     """
     Represents a financial market symbol and bar specification.
     """
-    cdef readonly Symbol symbol
-    cdef readonly int period
-    cdef readonly object resolution
-    cdef readonly object quote_type
 
     def __init__(self,
                  Symbol symbol,
@@ -270,12 +262,6 @@ cdef class Bar:
     """
     Represents a financial market trade bar.
     """
-    cdef readonly object open
-    cdef readonly object high
-    cdef readonly object low
-    cdef readonly object close
-    cdef readonly int volume
-    cdef readonly datetime timestamp
 
     def __init__(self,
                  open_price: Decimal,
@@ -360,16 +346,7 @@ cdef class Bar:
 cdef class DataBar:
     """
     Represents a financial market trade bar.
-
-    Note: To properly instantiate this class use the cython fast init method
-    by calling DataBar.__new__().
     """
-    cdef readonly double open
-    cdef readonly double high
-    cdef readonly double low
-    cdef readonly double close
-    cdef readonly double volume
-    cdef readonly datetime timestamp
 
     def __init__(self,
                  double open_price,
@@ -439,26 +416,6 @@ cdef class Instrument:
     """
     Represents a tradeable financial market instrument.
     """
-    cdef readonly Symbol symbol
-    cdef readonly str broker_symbol
-    cdef readonly object quote_currency
-    cdef readonly object security_type
-    cdef readonly int tick_decimals
-    cdef readonly object tick_size
-    cdef readonly object tick_value
-    cdef readonly object target_direct_spread
-    cdef readonly int round_lot_size
-    cdef readonly int contract_size
-    cdef readonly int min_stop_distance_entry
-    cdef readonly int min_limit_distance_entry
-    cdef readonly int min_stop_distance
-    cdef readonly int min_limit_distance
-    cdef readonly int min_trade_size
-    cdef readonly int max_trade_size
-    cdef readonly object margin_requirement
-    cdef readonly object rollover_interest_buy
-    cdef readonly object rollover_interest_sell
-    cdef readonly datetime timestamp
 
     def __init__(self,
                  Symbol symbol,

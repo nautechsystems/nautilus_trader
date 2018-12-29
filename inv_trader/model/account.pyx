@@ -15,9 +15,8 @@ from cpython.datetime cimport datetime
 from decimal import Decimal
 
 from inv_trader.core.precondition cimport Precondition
-from inv_trader.model.enums import Broker, CurrencyCode
-from inv_trader.model.events import AccountEvent
-from inv_trader.model.identifiers import AccountId
+from inv_trader.model.events cimport AccountEvent
+from inv_trader.model.identifiers cimport AccountId
 from inv_trader.model.objects import Money
 
 
@@ -99,14 +98,12 @@ cdef class Account:
         """
         return self._calculate_free_equity()
 
-    cpdef void apply(self, event: AccountEvent):
+    cpdef void apply(self, AccountEvent event):
         """
         Applies the given account event to the account.
 
         :param event: The account event.
         """
-        Precondition.type(event, AccountEvent, 'event')
-
         if not self.initialized:
             self.broker = event.broker
             self.account_number = event.account_number

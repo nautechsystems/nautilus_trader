@@ -9,18 +9,21 @@
 
 # cython: language_level=3, boundscheck=False
 
-from datetime import datetime, timezone
+import datetime as dt
+
+from cpython.datetime cimport datetime
+from datetime import timezone
 from decimal import Decimal
 from typing import Dict, List
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.model.enums import OrderSide, OrderType, TimeInForce, OrderStatus
-from inv_trader.model.objects import Symbol
-from inv_trader.model.events import OrderEvent
-from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
-from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
-from inv_trader.model.events import OrderPartiallyFilled, OrderFilled
-from inv_trader.model.identifiers import Label, OrderId, ExecutionId, ExecutionTicket
+from inv_trader.model.objects cimport Symbol
+from inv_trader.model.events cimport OrderEvent
+from inv_trader.model.events cimport OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
+from inv_trader.model.events cimport OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
+from inv_trader.model.events cimport OrderPartiallyFilled, OrderFilled
+from inv_trader.model.identifiers cimport Label, OrderId, ExecutionId, ExecutionTicket
 
 # Order types which require prices to be valid.
 cdef list PRICED_ORDER_TYPES = [
@@ -56,16 +59,16 @@ cdef class Order:
     cdef readonly object status
 
     def __init__(self,
-                 symbol: Symbol,
-                 order_id: OrderId,
-                 label: Label,
+                 Symbol symbol,
+                 OrderId order_id,
+                 Label label,
                  order_side: OrderSide,
                  order_type: OrderType,
                  int quantity,
-                 timestamp: datetime,
+                 datetime timestamp,
                  price: Decimal or None=None,
                  time_in_force: TimeInForce or None=None,
-                 expire_time: datetime or None=None):
+                 datetime expire_time=None):
         """
         Initializes a new instance of the Order class.
 
@@ -87,15 +90,10 @@ cdef class Order:
         :raises ValueError: If the order type has a price and the price is not positive (> 0).
         :raises ValueError: If the time_in_force is GTD and the expire_time is None.
         """
-        Precondition.type(symbol, Symbol, 'symbol')
-        Precondition.type(order_id, OrderId, 'order_id')
-        Precondition.type(label, Label, 'label')
         Precondition.type(order_side, OrderSide, 'order_side')
         Precondition.type(order_type, OrderType, 'order_type')
-        Precondition.type(timestamp, datetime, 'timestamp')
         Precondition.type_or_none(price, Decimal, 'price')
         Precondition.type_or_none(time_in_force, TimeInForce, 'time_in_force')
-        Precondition.type_or_none(expire_time, datetime, 'expire_time')
 
         if time_in_force is None:
             time_in_force = TimeInForce.DAY
@@ -222,14 +220,13 @@ cdef class Order:
         """
         return len(self._events)
 
-    cpdef void apply(self, order_event: OrderEvent):
+    cpdef void apply(self, OrderEvent order_event):
         """
         Applies the given order event to the order.
 
         :param order_event: The order event to apply.
         :raises ValueError: If the order_events order_id is not equal to the id.
         """
-        Precondition.type(order_event, OrderEvent, 'order_event')
         Precondition.equal(order_event.order_id, self.id)
 
         self._events.append(order_event)
@@ -327,15 +324,13 @@ cdef class OrderIdGenerator:
         self._order_symbol_counts = {}  # type: Dict[Symbol, int]
         self._order_ids = []            # type: List[OrderId]
 
-    cpdef object generate(self, order_symbol: Symbol):
+    cpdef object generate(self, Symbol order_symbol):
         """
         Create a unique order identifier for the strategy using the given symbol.
 
         :param order_symbol: The order symbol for the unique identifier.
         :return: The unique OrderIdentifier.
         """
-        Precondition.type(order_symbol, Symbol, 'order_symbol')
-
         if order_symbol not in self._order_symbol_counts:
             self._order_symbol_counts[order_symbol] = 0
 
@@ -360,19 +355,19 @@ cdef class OrderIdGenerator:
 
         :return: The milliseconds since the Unix Epoch.
         """
-        return (datetime.now(timezone.utc) - UNIX_EPOCH).total_seconds() * MILLISECONDS_PER_SECOND
+        return (dt.datetime.now(timezone.utc) - UNIX_EPOCH).total_seconds() * MILLISECONDS_PER_SECOND
 
 
-class OrderFactory:
+cdef class OrderFactory:
     """
     A static factory class which provides different order types.
     """
 
     @staticmethod
     def market(
-            symbol: Symbol,
-            order_id: OrderId,
-            label: Label,
+            Symbol symbol,
+            OrderId order_id,
+            Label label,
             order_side: OrderSide,
             int quantity) -> Order:
         """
@@ -384,33 +379,29 @@ class OrderFactory:
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
         :return: The market order.
-        :raises ValueError: If the order_id is not a valid string.
-        :raises ValueError: If the label is not a valid string.
         :raises ValueError: If the quantity is not positive (> 0).
         """
-        # Preconditions checked inside Order.
-
         return Order(symbol,
                      order_id,
                      label,
                      order_side,
                      OrderType.MARKET,
                      quantity,
-                     datetime.now(timezone.utc),
+                     dt.datetime.now(timezone.utc),
                      price=None,
                      time_in_force=None,
                      expire_time=None)
 
     @staticmethod
     def limit(
-            symbol: Symbol,
-            order_id: OrderId,
-            label: Label,
+            Symbol symbol,
+            OrderId order_id,
+            Label label,
             order_side: OrderSide,
             int quantity,
             price: Decimal,
             time_in_force=None,
-            expire_time=None) -> Order:
+            datetime expire_time=None) -> Order:
         """
         Creates and returns a new limit order with the given parameters.
         If the time in force is GTD then a valid expire time must be given.
@@ -424,35 +415,31 @@ class OrderFactory:
         :param time_in_force: The orders time in force (can be None).
         :param expire_time: The orders expire time (can be None unless time_in_force is GTD).
         :return: The limit order.
-        :raises ValueError: If the order_id is not a valid string.
-        :raises ValueError: If the label is not a valid string.
         :raises ValueError: If the quantity is not positive (> 0).
         :raises ValueError: If the price is not positive (> 0).
         :raises ValueError: If the time_in_force is GTD and the expire_time is None.
         """
-        # Preconditions checked inside Order.
-
         return Order(symbol,
                      order_id,
                      label,
                      order_side,
                      OrderType.LIMIT,
                      quantity,
-                     datetime.now(timezone.utc),
+                     dt.datetime.now(timezone.utc),
                      price,
                      time_in_force,
                      expire_time)
 
     @staticmethod
     def stop(
-            symbol: Symbol,
-            order_id: OrderId,
-            label: Label,
+            Symbol symbol,
+            OrderId order_id,
+            Label label,
             order_side: OrderSide,
             int quantity,
             price: Decimal,
             time_in_force=None,
-            expire_time=None) -> Order:
+            datetime expire_time=None) -> Order:
         """
         Creates and returns a new stop-market order with the given parameters.
         If the time in force is GTD then a valid expire time must be given.
@@ -466,35 +453,31 @@ class OrderFactory:
         :param time_in_force: The orders time in force (can be None).
         :param expire_time: The orders expire time (can be None unless time_in_force is GTD).
         :return: The stop-market order.
-        :raises ValueError: If the order_id is not a valid string.
-        :raises ValueError: If the label is not a valid string.
         :raises ValueError: If the quantity is not positive (> 0).
         :raises ValueError: If the price is not positive (> 0).
         :raises ValueError: If the time_in_force is GTD and the expire_time is None.
         """
-        # Preconditions checked inside Order.
-
         return Order(symbol,
                      order_id,
                      label,
                      order_side,
                      OrderType.STOP_MARKET,
                      quantity,
-                     datetime.now(timezone.utc),
+                     dt.datetime.now(timezone.utc),
                      price,
                      time_in_force,
                      expire_time)
 
     @staticmethod
     def stop_limit(
-            symbol: Symbol,
-            order_id: OrderId,
-            label: Label,
+            Symbol symbol,
+            OrderId order_id,
+            Label label,
             order_side: OrderSide,
             int quantity,
             price: Decimal,
             time_in_force=None,
-            expire_time=None) -> Order:
+            datetime expire_time=None) -> Order:
         """
         Creates and returns a new stop-limit order with the given parameters.
         If the time in force is GTD then a valid expire time must be given.
@@ -508,35 +491,31 @@ class OrderFactory:
         :param time_in_force: The orders time in force (can be None).
         :param expire_time: The orders expire time (can be None unless time_in_force is GTD).
         :return: The stop-limit order.
-        :raises ValueError: If the order_id is not a valid string.
-        :raises ValueError: If the label is not a valid string.
         :raises ValueError: If the quantity is not positive (> 0).
         :raises ValueError: If the price is not positive (> 0).
         :raises ValueError: If the time_in_force is GTD and the expire_time is None.
         """
-        # Preconditions checked inside Order.
-
         return Order(symbol,
                      order_id,
                      label,
                      order_side,
                      OrderType.STOP_LIMIT,
                      quantity,
-                     datetime.now(timezone.utc),
+                     dt.datetime.now(timezone.utc),
                      price,
                      time_in_force,
                      expire_time)
 
     @staticmethod
     def market_if_touched(
-            symbol: Symbol,
-            order_id: OrderId,
-            label: Label,
+            Symbol symbol,
+            OrderId order_id,
+            Label label,
             order_side: OrderSide,
             int quantity,
             price: Decimal,
             time_in_force=None,
-            expire_time=None) -> Order:
+            datetime expire_time=None) -> Order:
         """
         Creates and returns a new market-if-touched order with the given parameters.
         If the time in force is GTD then a valid expire time must be given.
@@ -550,30 +529,26 @@ class OrderFactory:
         :param time_in_force: The orders time in force (can be None).
         :param expire_time: The orders expire time (can be None unless time_in_force is GTD).
         :return: The market-if-touched order.
-        :raises ValueError: If the order_id is not a valid string.
-        :raises ValueError: If the label is not a valid string.
         :raises ValueError: If the quantity is not positive (> 0).
         :raises ValueError: If the price is not positive (> 0).
         :raises ValueError: If the time_in_force is GTD and the expire_time is None.
         """
-        # Preconditions checked inside Order.
-
         return Order(symbol,
                      order_id,
                      label,
                      order_side,
                      OrderType.MIT,
                      quantity,
-                     datetime.now(timezone.utc),
+                     dt.datetime.now(timezone.utc),
                      price,
                      time_in_force,
                      expire_time)
 
     @staticmethod
     def fill_or_kill(
-            symbol: Symbol,
-            order_id: OrderId,
-            label: Label,
+            Symbol symbol,
+            OrderId order_id,
+            Label label,
             order_side: OrderSide,
             int quantity) -> Order:
         """
@@ -585,28 +560,24 @@ class OrderFactory:
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
         :return: The fill or kill order.
-        :raises ValueError: If the order_id is not a valid string.
-        :raises ValueError: If the label is not a valid string.
         :raises ValueError: If the quantity is not positive (> 0).
         """
-        # Preconditions checked inside Order.
-
         return Order(symbol,
                      order_id,
                      label,
                      order_side,
                      OrderType.MARKET,
                      quantity,
-                     datetime.now(timezone.utc),
+                     dt.datetime.now(timezone.utc),
                      price=None,
                      time_in_force=TimeInForce.FOC,
                      expire_time=None)
 
     @staticmethod
     def immediate_or_cancel(
-            symbol: Symbol,
-            order_id: OrderId,
-            label: Label,
+            Symbol symbol,
+            OrderId order_id,
+            Label label,
             order_side: OrderSide,
             int quantity) -> Order:
         """
@@ -618,19 +589,15 @@ class OrderFactory:
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
         :return: The immediate or cancel order.
-        :raises ValueError: If the order_id is not a valid string.
-        :raises ValueError: If the label is not a valid string.
         :raises ValueError: If the quantity is not positive (> 0).
         """
-        # Preconditions checked inside Order.
-
         return Order(symbol,
                      order_id,
                      label,
                      order_side,
                      OrderType.MARKET,
                      quantity,
-                     datetime.now(timezone.utc),
+                     dt.datetime.now(timezone.utc),
                      price=None,
                      time_in_force=TimeInForce.IOC,
                      expire_time=None)
