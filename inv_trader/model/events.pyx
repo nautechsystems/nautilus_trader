@@ -12,7 +12,6 @@
 from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
-from typing import Optional
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.model.enums import CurrencyCode, OrderSide, OrderType, TimeInForce, Broker
@@ -121,9 +120,18 @@ cdef class AccountEvent(Event):
         :param event_id: The events identifier.
         :param event_timestamp: The order events timestamp.
         """
+        # Type for event_id checked in base class
+        # Type for event_timestamp checked in base class
         Precondition.type(account_id, AccountId, 'account_id')
         Precondition.type(broker, Broker, 'broker')
         Precondition.type(account_number, AccountNumber, 'account_number')
+        Precondition.type(currency, CurrencyCode, 'account_number')
+        Precondition.type(cash_balance, Decimal, 'cash_balance')
+        Precondition.type(cash_start_day, Decimal, 'cash_start_day')
+        Precondition.type(cash_activity_day, Decimal, 'cash_activity_day')
+        Precondition.type(margin_used_liquidation, Decimal, 'margin_used_liquidation')
+        Precondition.type(margin_used_maintenance, Decimal, 'margin_used_maintenance')
+        Precondition.type(margin_ratio, Decimal, 'margin_ratio')
         Precondition.not_negative(cash_balance, 'cash_balance')
         Precondition.not_negative(cash_start_day, 'cash_start_day')
         Precondition.not_negative(cash_activity_day, 'cash_activity_day')
@@ -166,21 +174,26 @@ cdef class OrderEvent(Event):
     cdef readonly object order_id
 
     def __init__(self,
-                 order_symbol: Symbol,
+                 symbol: Symbol,
                  order_id: OrderId,
                  event_id: UUID,
                  event_timestamp: datetime):
         """
         Initializes a new instance of the OrderEvent abstract class.
 
-        :param order_symbol: The events order symbol.
+        :param symbol: The events order symbol.
         :param order_id: The events order identifier.
         :param event_id: The events identifier.
         :param event_timestamp: The order events timestamp.
         :raises ValueError: If the order_id is not a valid string.
         """
+        # Type for event_id checked in base class
+        # Type for event_timestamp checked in base class
+        Precondition.type(symbol, Symbol, 'symbol')
+        Precondition.type(order_id, OrderId, 'order_id')
+
         super().__init__(event_id, event_timestamp)
-        self.symbol = order_symbol
+        self.symbol = symbol
         self.order_id = order_id
 
     def __str__(self) -> str:
@@ -217,6 +230,12 @@ cdef class OrderSubmitted(OrderEvent):
         :param event_id: The events identifier.
         :param event_timestamp: The events timestamp.
         """
+        # Type for symbol checked in base class
+        # Type for order_id checked in base class
+        # Type for event_id checked in base class
+        # Type for event_timestamp checked in base class
+        Precondition.type(submitted_time, datetime, 'submitted_time')
+
         super().__init__(symbol,
                          order_id,
                          event_id,
@@ -245,6 +264,12 @@ cdef class OrderAccepted(OrderEvent):
         :param event_id: The events identifier.
         :param event_timestamp: The events timestamp.
         """
+        # Type for symbol checked in base class
+        # Type for order_id checked in base class
+        # Type for event_id checked in base class
+        # Type for event_timestamp checked in base class
+        Precondition.type(accepted_time, datetime, 'accepted_time')
+
         super().__init__(symbol,
                          order_id,
                          event_id,
@@ -276,6 +301,11 @@ cdef class OrderRejected(OrderEvent):
         :param event_id: The events identifier.
         :param event_timestamp: The events timestamp.
         """
+        # Type for symbol checked in base class
+        # Type for order_id checked in base class
+        # Type for event_id checked in base class
+        # Type for event_timestamp checked in base class
+        Precondition.type(rejected_time, datetime, 'rejected_time')
         Precondition.valid_string(rejected_reason, 'rejected_reason')
 
         super().__init__(symbol,
@@ -331,6 +361,18 @@ cdef class OrderWorking(OrderEvent):
         :param event_timestamp: The events timestamp.
         :param expire_time: The events order expire time (optional can be None).
         """
+        # Type for symbol checked in base class
+        # Type for order_id checked in base class
+        # Type for event_id checked in base class
+        # Type for event_timestamp checked in base class
+        Precondition.type(broker_order_id, OrderId, 'broker_order_id')
+        Precondition.type(label, Label, 'label')
+        Precondition.type(order_side, OrderSide, 'order_side')
+        Precondition.type(order_type, OrderType, 'order_type')
+        Precondition.type(price, Decimal, 'price')
+        Precondition.type(time_in_force, TimeInForce, 'time_in_force')
+        Precondition.type(working_time, datetime, 'working_time')
+        Precondition.type_or_none(expire_time, datetime, 'expire_time')
         Precondition.positive(quantity, 'quantity')
 
         super().__init__(symbol, order_id, event_id, event_timestamp)
@@ -366,6 +408,12 @@ cdef class OrderCancelled(OrderEvent):
         :param event_id: The events identifier.
         :param event_timestamp: The events timestamp.
         """
+        # Type for symbol checked in base class
+        # Type for order_id checked in base class
+        # Type for event_id checked in base class
+        # Type for event_timestamp checked in base class
+        Precondition.type(cancelled_time, datetime, 'cancelled_time')
+
         super().__init__(symbol,
                          order_id,
                          event_id,
@@ -382,7 +430,7 @@ cdef class OrderCancelReject(OrderEvent):
     cdef readonly str cancel_reject_reason
 
     def __init__(self,
-                 order_symbol: Symbol,
+                 symbol: Symbol,
                  order_id: OrderId,
                  cancel_reject_time: datetime,
                  str cancel_response,
@@ -392,7 +440,7 @@ cdef class OrderCancelReject(OrderEvent):
         """
         Initializes a new instance of the OrderCancelReject class.
 
-        :param order_symbol: The events order symbol.
+        :param symbol: The events order symbol.
         :param order_id: The events order identifier.
         :param cancel_reject_time: The events order cancel reject time.
         :param cancel_response: The events order cancel reject response.
@@ -400,10 +448,15 @@ cdef class OrderCancelReject(OrderEvent):
         :param event_id: The events identifier.
         :param event_timestamp: The events timestamp.
         """
+        # Type for symbol checked in base class
+        # Type for order_id checked in base class
+        # Type for event_id checked in base class
+        # Type for event_timestamp checked in base class
+        Precondition.type(cancel_reject_time, datetime, 'cancel_reject_time')
         Precondition.valid_string(cancel_response, 'cancel_response')
         Precondition.valid_string(cancel_reject_reason, 'cancel_reject_reason')
 
-        super().__init__(order_symbol,
+        super().__init__(symbol,
                          order_id,
                          event_id,
                          event_timestamp)
@@ -440,6 +493,12 @@ cdef class OrderExpired(OrderEvent):
         :param event_id: The events identifier.
         :param event_timestamp: The events timestamp.
         """
+        # Type for symbol checked in base class
+        # Type for order_id checked in base class
+        # Type for event_id checked in base class
+        # Type for event_timestamp checked in base class
+        Precondition.type(expired_time, datetime, 'expired_time')
+
         super().__init__(symbol,
                          order_id,
                          event_id,
@@ -474,6 +533,14 @@ cdef class OrderModified(OrderEvent):
         :param event_id: The events identifier.
         :param event_timestamp: The events timestamp.
         """
+        # Type for symbol checked in base class
+        # Type for order_id checked in base class
+        # Type for event_id checked in base class
+        # Type for event_timestamp checked in base class
+        Precondition.type(broker_order_id, OrderId, 'broker_order_id')
+        Precondition.type(modified_price, Decimal, 'modified_price')
+        Precondition.type(modified_time, datetime, 'modified_time')
+
         super().__init__(symbol,
                          order_id,
                          event_id,
@@ -519,6 +586,15 @@ cdef class OrderFilled(OrderEvent):
         :param event_id: The events identifier.
         :param event_timestamp: The events timestamp.
         """
+        # Type for symbol checked in base class
+        # Type for order_id checked in base class
+        # Type for event_id checked in base class
+        # Type for event_timestamp checked in base class
+        Precondition.type(execution_id, ExecutionId, 'execution_id')
+        Precondition.type(execution_ticket, ExecutionTicket, 'execution_ticket')
+        Precondition.type(order_side, OrderSide, 'order_side')
+        Precondition.type(average_price, Decimal, 'average_price')
+        Precondition.type(execution_time, datetime, 'execution_time')
         Precondition.positive(filled_quantity, 'filled_quantity')
 
         super().__init__(symbol,
@@ -572,6 +648,15 @@ cdef class OrderPartiallyFilled(OrderEvent):
         :param event_id: The events identifier.
         :param event_timestamp: The events timestamp.
         """
+        # Type for symbol checked in base class
+        # Type for order_id checked in base class
+        # Type for event_id checked in base class
+        # Type for event_timestamp checked in base class
+        Precondition.type(execution_id, ExecutionId, 'execution_id')
+        Precondition.type(execution_ticket, ExecutionTicket, 'execution_ticket')
+        Precondition.type(order_side, OrderSide, 'order_side')
+        Precondition.type(average_price, Decimal, 'average_price')
+        Precondition.type(execution_time, datetime, 'execution_time')
         Precondition.positive(filled_quantity, 'filled_quantity')
         Precondition.positive(leaves_quantity, 'leaves_quantity')
 
@@ -604,6 +689,10 @@ cdef class TimeEvent(Event):
         :param event_id: The time events identifier.
         :param event_timestamp: The time events timestamp.
         """
+        # Type for event_id checked in base class
+        # Type for event_timestamp checked in base class
+        Precondition.type(label, Label, 'label')
+
         super().__init__(event_id, event_timestamp)
         self.label = label
 
