@@ -20,8 +20,6 @@ cdef class Symbol:
     """
     Represents the symbol for a financial market tradeable instrument.
     """
-    cdef readonly str code
-    cdef readonly object venue
 
     def __init__(self,
                  str code,

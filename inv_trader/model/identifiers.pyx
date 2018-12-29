@@ -16,7 +16,6 @@ cdef class Identifier:
     """
     The abstract base class for all identifiers.
     """
-    cdef readonly str value
 
     def __init__(self, str value):
         """
