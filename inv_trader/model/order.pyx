@@ -43,16 +43,16 @@ cdef class Order:
     cdef list _execution_ids
     cdef list _execution_tickets
 
-    cdef readonly object symbol
-    cdef readonly object id
-    cdef readonly object label
+    cdef readonly Symbol symbol
+    cdef readonly OrderId id
+    cdef readonly Label label
     cdef readonly object side
     cdef readonly object type
     cdef readonly int quantity
-    cdef readonly object timestamp
+    cdef readonly datetime timestamp
     cdef readonly object price
     cdef readonly object time_in_force
-    cdef readonly object expire_time
+    cdef readonly datetime expire_time
     cdef readonly int filled_quantity
     cdef readonly object average_price
     cdef readonly object slippage

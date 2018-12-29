@@ -12,13 +12,14 @@
 import inspect
 import pandas as pd
 
-from datetime import datetime
-from numpy import ndarray
+from cpython.datetime cimport datetime
+from numpy import array, ndarray
 from typing import Callable, List
 from pandas.core.frame import DataFrame
 
 from inv_trader.core.precondition cimport Precondition
-from inv_trader.model.objects import Price, Bar, DataBar
+from inv_trader.model.objects import Price
+from inv_trader.model.objects cimport Bar, DataBar
 
 
 cdef str POINT = 'point'
@@ -57,6 +58,7 @@ cdef class BarBuilder:
         Precondition.positive(volume_multiple, 'volume_multiple')
 
         self._data = data
+        self._decimal_precision = decimal_precision
         self._volume_multiple = volume_multiple
 
     cpdef list build_data_bars(self):
@@ -79,10 +81,10 @@ cdef class BarBuilder:
                         self._data.values,
                         pd.to_datetime(self._data.index)))
 
-    cpdef object _build_data_bar(
+    cpdef DataBar _build_data_bar(
             self,
             double[:] values: ndarray,
-            timestamp: datetime):
+            datetime timestamp):
         """
         Build a DataBar from the given index and values. The function expects the
         values to be an ndarray with 5 elements [open, high, low, close, volume].
@@ -98,10 +100,10 @@ cdef class BarBuilder:
                        values[4] * self._volume_multiple,
                        timestamp)
 
-    cpdef object _build_bar(
+    cpdef Bar _build_bar(
             self,
             double[:] values: ndarray,
-            timestamp: datetime):
+            datetime timestamp):
         """
         Build a Bar from the given index and values. The function expects the
         values to be an ndarray with 5 elements [open, high, low, close, volume].
@@ -140,6 +142,8 @@ cdef class IndicatorUpdater:
         :param input_method: The indicators input method.
         :param outputs: The list of the indicators output properties.
         """
+        Precondition.type_or_none(input_method, Callable, 'input_method')
+
         self._indicator = indicator
         if input_method is None:
             self._input_method = indicator.update
@@ -167,7 +171,7 @@ cdef class IndicatorUpdater:
         else:
             self._outputs = outputs
 
-    cpdef void update_bar(self, bar: Bar):
+    cpdef void update_bar(self, Bar bar):
         """
         Update the indicator with the given Bar object.
 
@@ -175,7 +179,15 @@ cdef class IndicatorUpdater:
         """
         self._input_method(*[bar.__getattribute__(param) for param in self._input_params])
 
-    cpdef object build_features(self, list bars: List[Bar]):
+    cpdef void update_data_bar(self, DataBar bar):
+        """
+        Update the indicator with the given Bar object.
+
+        :param bar: The update bar.
+        """
+        self._input_method(*[bar.__getattribute__(param) for param in self._input_params])
+
+    cpdef object build_features(self, list bars):
         """
         Create a dictionary of output features from the given bars data.
         
@@ -187,6 +199,24 @@ cdef class IndicatorUpdater:
 
         for bar in bars:
             self.update_bar(bar)
+
+            for value in self._get_values():
+                features[value[0]].append(value[1])
+
+        return features
+
+    cpdef object build_features_data_bars(self, list bars):
+        """
+        Create a dictionary of output features from the given bars data.
+        
+        :return: The list of indicator output feature.
+        """
+        features = {}
+        for output in self._outputs:
+            features[output] = []
+
+        for bar in bars:
+            self.update_data_bar(bar)
 
             for value in self._get_values():
                 features[value[0]].append(value[1])

@@ -402,7 +402,7 @@ cdef class DataBar:
         """
         :return: The str() string representation of the bar.
         """
-        return str(f"Bar({self.open},{self.high},{self.low},{self.close},"
+        return str(f"DataBar({self.open},{self.high},{self.low},{self.close},"
                 f"{self.volume},{self.timestamp.isoformat()})")
 
     def __repr__(self) -> str:
