@@ -9,7 +9,7 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False
 
-from datetime import datetime
+from cpython.datetime cimport datetime
 from decimal import Decimal
 
 from inv_trader.core.precondition cimport Precondition
@@ -130,16 +130,16 @@ cdef class Tick:
     """
     Represents a single tick in a financial market.
     """
-    cdef readonly object symbol
+    cdef readonly Symbol symbol
     cdef readonly object bid
     cdef readonly object ask
     cdef readonly object timestamp
 
     def __init__(self,
-                 symbol: Symbol,
+                 Symbol symbol,
                  bid: Decimal,
                  ask: Decimal,
-                 timestamp: datetime):
+                 datetime timestamp):
         """
         Initializes a new instance of the Tick class.
 
@@ -150,10 +150,8 @@ cdef class Tick:
         :raises ValueError: If the bid is not positive (> 0).
         :raises ValueError: If the ask is not positive (> 0).
         """
-        Precondition.type(symbol, Symbol, 'symbol')
         Precondition.type(bid, Decimal, 'bid')
         Precondition.type(ask, Decimal, 'ask')
-        Precondition.type(timestamp, datetime, 'timestamp')
         Precondition.positive(bid, 'bid')
         Precondition.positive(ask, 'ask')
 
@@ -204,13 +202,13 @@ cdef class BarType:
     """
     Represents a financial market symbol and bar specification.
     """
-    cdef readonly object symbol
+    cdef readonly Symbol symbol
     cdef readonly int period
     cdef readonly object resolution
     cdef readonly object quote_type
 
     def __init__(self,
-                 symbol: Symbol,
+                 Symbol symbol,
                  int period,
                  resolution: Resolution,
                  quote_type: QuoteType):
@@ -280,7 +278,7 @@ cdef class Bar:
     cdef readonly object low
     cdef readonly object close
     cdef readonly int volume
-    cdef readonly object timestamp
+    cdef readonly datetime timestamp
 
     def __init__(self,
                  open_price: Decimal,
@@ -288,7 +286,7 @@ cdef class Bar:
                  low_price: Decimal,
                  close_price: Decimal,
                  int volume,
-                 timestamp: datetime):
+                 datetime timestamp):
         """
         Initializes a new instance of the Bar class.
 
@@ -311,7 +309,6 @@ cdef class Bar:
         Precondition.type(high_price, Decimal, 'high_price')
         Precondition.type(low_price, Decimal, 'low_price')
         Precondition.type(close_price, Decimal, 'close_price')
-        Precondition.type(timestamp, datetime, 'timestamp')
         Precondition.positive(open_price, 'open_price')
         Precondition.positive(high_price, 'high_price')
         Precondition.positive(low_price, 'low_price')
@@ -375,7 +372,7 @@ cdef class DataBar:
     cdef readonly double low
     cdef readonly double close
     cdef readonly double volume
-    cdef readonly object timestamp
+    cdef readonly datetime timestamp
 
     def __init__(self,
                  double open_price,
@@ -383,7 +380,7 @@ cdef class DataBar:
                  double low_price,
                  double close_price,
                  double volume,
-                 timestamp: datetime):
+                 datetime timestamp):
         """
         Initializes a new instance of the DataBar class.
 
@@ -399,8 +396,6 @@ cdef class DataBar:
         :raises ValueError: If the close_price is not positive (> 0).
         :raises ValueError: If the volume is negative.
         """
-        Precondition.type(timestamp, datetime, 'timestamp')
-
         self.open = open_price
         self.high = high_price
         self.low = low_price
@@ -447,7 +442,7 @@ cdef class Instrument:
     """
     Represents a tradeable financial market instrument.
     """
-    cdef readonly object symbol
+    cdef readonly Symbol symbol
     cdef readonly str broker_symbol
     cdef readonly object quote_currency
     cdef readonly object security_type
@@ -466,7 +461,7 @@ cdef class Instrument:
     cdef readonly object margin_requirement
     cdef readonly object rollover_interest_buy
     cdef readonly object rollover_interest_sell
-    cdef readonly object timestamp
+    cdef readonly datetime timestamp
 
     def __init__(self,
                  symbol: Symbol,
@@ -488,7 +483,7 @@ cdef class Instrument:
                  margin_requirement: Decimal,
                  rollover_interest_buy: Decimal,
                  rollover_interest_sell: Decimal,
-                 timestamp: datetime):
+                 datetime timestamp):
         """
         Initializes a new instance of the Instrument class.
 
@@ -522,7 +517,6 @@ cdef class Instrument:
         Precondition.type(margin_requirement, Decimal, 'margin_requirement')
         Precondition.type(rollover_interest_buy, Decimal, 'rollover_interest_buy')
         Precondition.type(rollover_interest_sell, Decimal, 'rollover_interest_sell')
-        Precondition.type(timestamp, datetime, 'timestamp')
         Precondition.valid_string(broker_symbol, 'broker_symbol')
         Precondition.not_negative(tick_decimals, 'tick_decimals')
         Precondition.positive(tick_size, 'tick_size')
