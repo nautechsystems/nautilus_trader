@@ -9,6 +9,11 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False
 
+from cpython.datetime cimport datetime
+
+from inv_trader.model.objects cimport Symbol, BarType, Instrument
+
+
 cdef class DataClient:
     cdef list _subscriptions_bars
     cdef list _subscriptions_ticks
@@ -32,22 +37,22 @@ cdef class DataClient:
 
     cpdef void update_all_instruments(self)
 
-    cpdef void update_instrument(self, symbol)
+    cpdef void update_instrument(self, Symbol symbol)
 
-    cpdef object get_instrument(self, symbol)
+    cpdef Instrument get_instrument(self, Symbol symbol)
 
     cpdef void register_strategy(self, strategy)
 
-    cpdef void historical_bars(self, bar_type, int quantity, handler)
+    cpdef void historical_bars(self, BarType bar_type, int quantity, handler)
 
-    cpdef void historical_bars_from(self, bar_type, from_datetime, handler)
+    cpdef void historical_bars_from(self, BarType bar_type, datetime from_datetime, handler)
 
-    cdef void _subscribe_bars(self, bar_type, handler)
+    cdef void _subscribe_bars(self, BarType bar_type, handler)
 
-    cdef void _unsubscribe_bars(self, bar_type, handler)
+    cdef void _unsubscribe_bars(self, BarType bar_type, handler)
 
-    cdef void _subscribe_ticks(self, symbol, handler)
+    cdef void _subscribe_ticks(self, Symbol symbol, handler)
 
-    cdef void _unsubscribe_ticks(self, symbol, handler)
+    cdef void _unsubscribe_ticks(self, Symbol symbol, handler)
 
     cdef void _reset(self)

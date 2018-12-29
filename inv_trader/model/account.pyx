@@ -56,16 +56,13 @@ cdef class Account:
         self.last_updated = dt.datetime.utcnow()
         self.events = []
 
-    def __eq__(self, other) -> bool:
+    def __eq__(self, Account other) -> bool:
         """
         Override the default equality comparison.
         """
-        if isinstance(other, self.__class__):
-            return self.id == other.id
-        else:
-            return False
+        return self.id == other.id
 
-    def __ne__(self, other) -> bool:
+    def __ne__(self, Account other) -> bool:
         """
         Override the default not-equals comparison.
         """

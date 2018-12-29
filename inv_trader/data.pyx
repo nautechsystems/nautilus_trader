@@ -12,8 +12,10 @@
 import re
 import iso8601
 import time
+import datetime as dt
 
-from datetime import datetime, timezone
+from cpython.datetime cimport datetime
+from datetime import timezone
 from decimal import Decimal
 from redis import StrictRedis, ConnectionError
 from typing import List, Dict, Callable
@@ -22,7 +24,7 @@ from inv_trader.core.precondition cimport Precondition
 from inv_trader.core.logger import Logger, LoggerAdapter
 from inv_trader.common.data cimport DataClient
 from inv_trader.model.enums import Resolution, QuoteType, Venue
-from inv_trader.model.objects import Symbol, Tick, BarType, Bar, Instrument
+from inv_trader.model.objects cimport Symbol, Tick, BarType, Bar, Instrument
 from inv_trader.serialization import InstrumentSerializer
 from inv_trader.strategy import TradeStrategy
 
@@ -129,7 +131,7 @@ cdef class LiveDataClient(DataClient):
         """
         return self._subscriptions_bars
 
-    def connect(self):
+    cpdef void connect(self):
         """
         Connect to the data service, create a pub/sub server and update all instruments.
         """
@@ -141,7 +143,7 @@ cdef class LiveDataClient(DataClient):
 
         self.update_all_instruments()
 
-    def disconnect(self):
+    cpdef void disconnect(self):
         """
         Disconnect from the local pub/sub server and the data service.
         """
@@ -167,7 +169,7 @@ cdef class LiveDataClient(DataClient):
         self._pubsub_thread = None
         self._reset()
 
-    def update_all_instruments(self):
+    cpdef void update_all_instruments(self):
         """
         Update all held instruments from the live database.
         """
@@ -178,15 +180,13 @@ cdef class LiveDataClient(DataClient):
             self._instruments[instrument.symbol] = instrument
             self._log.info(f"Updated instrument for {instrument.symbol}.")
 
-    def update_instrument(self, symbol: Symbol):
+    cpdef void update_instrument(self, Symbol symbol):
         """
         Update the instrument corresponding to the given symbol (if found).
         Will log a warning is symbol is not found.
 
         :param symbol: The symbol to update.
         """
-        Precondition.type(symbol, Symbol, 'symbol')
-
         key = f'instruments:{symbol.code.lower()}.{symbol.venue.name.lower()}'
 
         if key is None:
@@ -198,7 +198,7 @@ cdef class LiveDataClient(DataClient):
         self._instruments[symbol] = instrument
         self._log.info(f"Updated instrument for {symbol}.")
 
-    def get_instrument(self, symbol: Symbol) -> Instrument:
+    cpdef Instrument get_instrument(self, Symbol symbol):
         """
         Get the instrument corresponding to the given symbol.
 
@@ -206,14 +206,12 @@ cdef class LiveDataClient(DataClient):
         :return: The instrument (if found)
         :raises KeyError: If the instrument is not found.
         """
-        Precondition.type(symbol, Symbol, 'symbol')
-
         if symbol not in self._instruments:
             raise KeyError(f"Cannot find instrument for {symbol}.")
 
         return self._instruments[symbol]
 
-    def register_strategy(self, strategy: TradeStrategy):
+    cpdef void register_strategy(self, strategy: TradeStrategy):
         """
         Registers the given trade strategy with the data client.
 
@@ -232,7 +230,7 @@ cdef class LiveDataClient(DataClient):
 
     cpdef void historical_bars(
             self,
-            bar_type: BarType,
+            BarType bar_type,
             int quantity,
             handler: Callable):
         """
@@ -247,7 +245,6 @@ cdef class LiveDataClient(DataClient):
         :param handler: The bar handler to pass the bars to.
         :raises ValueError: If the quantity is not None and not positive (> 0).
         """
-        Precondition.type(bar_type, BarType, 'bar_type')
         Precondition.type(handler, Callable, 'handler')
         if quantity is not None:
             Precondition.positive(quantity, 'quantity')
@@ -291,8 +288,8 @@ cdef class LiveDataClient(DataClient):
 
     cpdef void historical_bars_from(
             self,
-            bar_type: BarType,
-            from_datetime: datetime,
+            BarType bar_type,
+            datetime from_datetime,
             handler: Callable):
         """
         Download the historical bars for the given parameters from the data
@@ -306,9 +303,8 @@ cdef class LiveDataClient(DataClient):
         :param handler: The handler to pass the bars to.
         :raises ValueError: If the from_datetime is not less than datetime.utcnow().
         """
-        Precondition.type(bar_type, BarType, 'bar_type')
         Precondition.type(handler, Callable, 'handler')
-        Precondition.true(from_datetime < datetime.now(timezone.utc),
+        Precondition.true(from_datetime < dt.datetime.now(timezone.utc),
                           'from_datetime < datetime.now(timezone.utc)')
 
         self._check_connection()
@@ -344,7 +340,7 @@ cdef class LiveDataClient(DataClient):
 
     cpdef void subscribe_bars(
             self,
-            bar_type: BarType,
+            BarType bar_type,
             handler: Callable=None):
         """
         Subscribe to live bar data for the given bar parameters.
@@ -352,7 +348,6 @@ cdef class LiveDataClient(DataClient):
         :param bar_type: The bar type to subscribe to.
         :param handler: The callable handler for subscription (if None will just call print).
         """
-        Precondition.type(bar_type, BarType, 'bar_type')
         Precondition.type_or_none(handler, Callable, 'handler')
 
         self._check_connection()
@@ -371,7 +366,7 @@ cdef class LiveDataClient(DataClient):
 
     cpdef void unsubscribe_bars(
             self,
-            bar_type: BarType,
+            BarType bar_type,
             handler: Callable=None):
         """
         Unsubscribes from live bar data for the given symbol and venue.
@@ -379,7 +374,6 @@ cdef class LiveDataClient(DataClient):
         :param bar_type: The bar type to unsubscribe from.
         :param handler: The callable handler which was subscribed (can be None).
         """
-        Precondition.type(bar_type, BarType, 'bar_type')
         Precondition.type_or_none(handler, Callable, 'handler')
 
         self._check_connection()
@@ -398,7 +392,7 @@ cdef class LiveDataClient(DataClient):
 
     cpdef void subscribe_ticks(
             self,
-            symbol: Symbol,
+            Symbol symbol,
             handler: Callable=None):
         """
         Subscribe to live tick data for the given symbol and venue.
@@ -406,7 +400,6 @@ cdef class LiveDataClient(DataClient):
         :param symbol: The tick symbol to subscribe to.
         :param handler: The callable handler for subscription (if None will just call print).
         """
-        Precondition.type(symbol, Symbol, 'symbol')
         Precondition.type_or_none(handler, Callable, 'handler')
 
         self._check_connection()
@@ -425,7 +418,7 @@ cdef class LiveDataClient(DataClient):
 
     cpdef void unsubscribe_ticks(
             self,
-            symbol: Symbol,
+            Symbol symbol,
             handler: Callable=None):
         """
         Unsubscribes from live tick data for the given symbol and venue.
@@ -452,13 +445,11 @@ cdef class LiveDataClient(DataClient):
 
             self._log.info(f"Unsubscribed from tick data for {tick_channel}.")
 
-    cdef list _get_redis_bar_keys(self, bar_type: BarType):
+    cdef list _get_redis_bar_keys(self, BarType bar_type):
         """
         Generate the bar key wildcard pattern and return the held Redis keys
         sorted.
         """
-        Precondition.type(bar_type, BarType, 'bar_type')
-
         return self._redis_client.keys(
             (f'bars'
              f':{bar_type.symbol.venue.name.lower()}'
@@ -477,7 +468,7 @@ cdef class LiveDataClient(DataClient):
 
         return Symbol(split_channel[0], Venue[str(split_channel[1].upper())])
 
-    cpdef object _parse_tick(self, symbol: Symbol, str tick_string):
+    cpdef Tick _parse_tick(self, Symbol symbol, str tick_string):
         """
         Parse a Tick object from the given UTF-8 string.
 
@@ -493,7 +484,7 @@ cdef class LiveDataClient(DataClient):
                     Decimal(split_tick[1]),
                     iso8601.parse_date(split_tick[2]))
 
-    cpdef object _parse_bar_type(self, str bar_type_string):
+    cpdef BarType _parse_bar_type(self, str bar_type_string):
         """
         Parse a BarType object from the given UTF-8 string.
 
@@ -509,7 +500,7 @@ cdef class LiveDataClient(DataClient):
                        Resolution[resolution.upper()],
                        QuoteType[quote_type.upper()])
 
-    cpdef object _parse_bar(self, str bar_string):
+    cpdef Bar _parse_bar(self, str bar_string):
         """
         Parse a Bar object from the given UTF-8 string.
 
@@ -525,13 +516,13 @@ cdef class LiveDataClient(DataClient):
                    int(split_bar[4]),
                    iso8601.parse_date(split_bar[5]))
 
-    cpdef str _get_tick_channel_name(self, symbol: Symbol):
+    cpdef str _get_tick_channel_name(self, Symbol symbol):
         """
         Return the tick channel name from the given parameters.
         """
         return str(f'{symbol.code.lower()}.{symbol.venue.name.lower()}')
 
-    cpdef str _get_bar_channel_name(self, bar_type: BarType):
+    cpdef str _get_bar_channel_name(self, BarType bar_type):
         """
         Return the bar channel name from the given parameters.
         """
