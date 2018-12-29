@@ -45,14 +45,15 @@ class BarBuilderTests(unittest.TestCase):
 
 class IndicatorUpdaterTests(unittest.TestCase):
 
-    def test_can_update_indicator(self):
+    def test_can_update_indicator_with_bars(self):
         # arrange
         data = TestDataProvider.get_gbpusd_1min_bid()
         bar_builder = BarBuilder(data, 5, 1)
-        bars = bar_builder.build_data_bars()
+        bars = bar_builder.build_bars()
         ema = ExponentialMovingAverage(10)
         updater = IndicatorUpdater(ema)
 
+        print(bars)
         # act
         for bar in bars:
             updater.update_bar(bar)
@@ -61,7 +62,40 @@ class IndicatorUpdaterTests(unittest.TestCase):
         self.assertEqual(377280, ema.count)
         self.assertEqual(1.4640214397333984, ema.value)
 
-    def test_can_build_features(self):
+    def test_can_update_indicator_with_data_bars(self):
+        # arrange
+        data = TestDataProvider.get_gbpusd_1min_bid()
+        bar_builder = BarBuilder(data, 5, 1)
+        bars = bar_builder.build_data_bars()
+        ema = ExponentialMovingAverage(10)
+        updater = IndicatorUpdater(ema)
+
+        print(bars)
+        # act
+        for bar in bars:
+            updater.update_data_bar(bar)
+
+        # assert
+        self.assertEqual(377280, ema.count)
+        self.assertEqual(1.4640214397333984, ema.value)
+
+    def test_can_build_features_from_bars(self):
+        # arrange
+        data = TestDataProvider.get_gbpusd_1min_bid()
+        bar_builder = BarBuilder(data, 5, 1)
+        bars = bar_builder.build_bars()
+        ema = ExponentialMovingAverage(10)
+        updater = IndicatorUpdater(ema)
+
+        # act
+        result = updater.build_features(bars)
+
+        # assert
+        self.assertTrue('value' in result)
+        self.assertEqual(377280, len(result['value']))
+        self.assertEqual(1.4640214397333984, ema.value)
+
+    def test_can_build_features_from_data_bars(self):
         # arrange
         data = TestDataProvider.get_gbpusd_1min_bid()
         bar_builder = BarBuilder(data, 5, 1)
@@ -70,7 +104,7 @@ class IndicatorUpdaterTests(unittest.TestCase):
         updater = IndicatorUpdater(ema)
 
         # act
-        result = updater.build_features(bars)
+        result = updater.build_features_data_bars(bars)
 
         # assert
         self.assertTrue('value' in result)
