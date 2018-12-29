@@ -9,6 +9,7 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False
 
+from uuid import UUID
 from inv_trader.core.precondition cimport Precondition
 
 
@@ -27,7 +28,7 @@ cdef class Identifier:
 
         self.value = value
 
-    def __eq__(self, other) -> bool:
+    def __eq__(self, Identifier other) -> bool:
         """
         Override the default equality comparison.
         """
@@ -36,7 +37,7 @@ cdef class Identifier:
         else:
             return False
 
-    def __ne__(self, other) -> bool:
+    def __ne__(self, Identifier other) -> bool:
         """
         Override the default not-equals comparison.
         """
@@ -61,6 +62,22 @@ cdef class Identifier:
         return f"<{str(self.__class__.__name__)}({self.value}) object at {id(self)}>"
 
 
+cdef class GUID(Identifier):
+    """
+    Represents a globally unique identifier.
+    """
+
+    def __init__(self, value: UUID):
+        """
+        Initializes a new instance of the GUID class.
+
+        :param value: The value of the GUID.
+        """
+        Precondition.type(value, UUID, 'value')
+
+        super().__init__(str(value))
+
+
 cdef class Label(Identifier):
     """
     Represents a valid label.
@@ -68,9 +85,9 @@ cdef class Label(Identifier):
 
     def __init__(self, str value):
         """
-        Initializes a new instance of the OrderId class.
+        Initializes a new instance of the Label class.
 
-        :param value: The value of the order identifier.
+        :param value: The value of the label.
         """
         super().__init__(value)
 

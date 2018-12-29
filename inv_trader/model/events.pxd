@@ -12,7 +12,7 @@
 from cpython.datetime cimport datetime
 
 from inv_trader.model.objects cimport Symbol
-from inv_trader.model.identifiers cimport Label, AccountId, AccountNumber
+from inv_trader.model.identifiers cimport GUID, Label, AccountId, AccountNumber
 from inv_trader.model.identifiers cimport OrderId, ExecutionId, ExecutionTicket
 
 
@@ -20,7 +20,7 @@ cdef class Event:
     """
     The abstract base class for all events.
     """
-    cdef readonly object id
+    cdef readonly GUID id
     cdef readonly datetime timestamp
 
 

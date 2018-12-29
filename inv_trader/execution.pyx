@@ -24,8 +24,8 @@ from inv_trader.commands import CollateralInquiry
 from inv_trader.commands import SubmitOrder, CancelOrder, ModifyOrder
 from inv_trader.model.account import Account
 from inv_trader.model.order import Order
-from inv_trader.model.events import Event, OrderEvent, AccountEvent, OrderCancelReject
-from inv_trader.model.identifiers import OrderId
+from inv_trader.model.events cimport Event, OrderEvent, AccountEvent, OrderCancelReject
+from inv_trader.model.identifiers cimport GUID, OrderId
 from inv_trader.messaging import RequestWorker, SubscriberWorker
 from inv_trader.strategy import TradeStrategy
 from inv_trader.serialization import CommandSerializer, EventSerializer
@@ -117,7 +117,7 @@ cdef class LiveExecClient(ExecutionClient):
         """
         Send a collateral inquiry command to the execution service.
         """
-        command = CollateralInquiry(uuid.uuid4(), datetime.utcnow())
+        command = CollateralInquiry(GUID(uuid.uuid4()), datetime.utcnow())
         message = self._command_serializer.serialize(command)
 
         self._commands_worker.send(message)
@@ -126,7 +126,7 @@ cdef class LiveExecClient(ExecutionClient):
     cpdef void submit_order(
             self,
             order: Order,
-            strategy_id: UUID):
+            GUID strategy_id):
         """
         Send a submit order command to the execution service with the given
         order and strategy_id.
@@ -135,13 +135,12 @@ cdef class LiveExecClient(ExecutionClient):
         :param strategy_id: The strategy identifier to register the order with.
         """
         Precondition.type(order, Order, 'order')
-        Precondition.type(strategy_id, UUID, 'strategy_id')
 
         self._register_order(order, strategy_id)
 
         command = SubmitOrder(
             order,
-            uuid.uuid4(),
+            GUID(uuid.uuid4()),
             datetime.utcnow())
         message = self._command_serializer.serialize(command)
 
@@ -166,7 +165,7 @@ cdef class LiveExecClient(ExecutionClient):
         command = CancelOrder(
             order,
             cancel_reason,
-            uuid.uuid4(),
+            GUID(uuid.uuid4()),
             datetime.utcnow())
         message = self._command_serializer.serialize(command)
 
@@ -192,7 +191,7 @@ cdef class LiveExecClient(ExecutionClient):
         command = ModifyOrder(
             order,
             new_price,
-            uuid.uuid4(),
+            GUID(uuid.uuid4()),
             datetime.utcnow())
         message = self._command_serializer.serialize(command)
 

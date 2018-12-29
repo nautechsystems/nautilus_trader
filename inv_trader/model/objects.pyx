@@ -37,16 +37,13 @@ cdef class Symbol:
         self.code = code.upper()
         self.venue = venue
 
-    def __eq__(self, other) -> bool:
+    def __eq__(self, Symbol other) -> bool:
         """
         Override the default equality comparison.
         """
-        if isinstance(other, self.__class__):
-            return self.code == other.code and self.venue == other.venue
-        else:
-            return False
+        return self.code == other.code and self.venue == other.venue
 
-    def __ne__(self, other) -> bool:
+    def __ne__(self, Symbol other) -> bool:
         """
         Override the default not-equals comparison.
         """

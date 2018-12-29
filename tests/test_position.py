@@ -14,7 +14,7 @@ from decimal import Decimal
 
 from inv_trader.model.enums import Venue, OrderSide, MarketPosition
 from inv_trader.model.objects import Symbol
-from inv_trader.model.identifiers import Label, OrderId, PositionId, ExecutionId, ExecutionTicket
+from inv_trader.model.identifiers import GUID, Label, OrderId, PositionId, ExecutionId, ExecutionTicket
 from inv_trader.model.order import OrderFactory
 from inv_trader.model.position import Position
 from inv_trader.model.events import OrderPartiallyFilled, OrderFilled
@@ -74,7 +74,7 @@ class PositionTests(unittest.TestCase):
             order.quantity,
             Decimal('1.00001'),
             UNIX_EPOCH,
-            uuid.uuid4(),
+            GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
         # Act
@@ -114,7 +114,7 @@ class PositionTests(unittest.TestCase):
             order.quantity,
             Decimal('1.00001'),
             UNIX_EPOCH,
-            uuid.uuid4(),
+            GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
         # Act
@@ -155,7 +155,7 @@ class PositionTests(unittest.TestCase):
             50000,
             Decimal('1.00001'),
             UNIX_EPOCH,
-            uuid.uuid4(),
+            GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
         # Act
@@ -197,7 +197,7 @@ class PositionTests(unittest.TestCase):
             50000,
             Decimal('1.00001'),
             UNIX_EPOCH,
-            uuid.uuid4(),
+            GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
         # Act
@@ -238,7 +238,7 @@ class PositionTests(unittest.TestCase):
             order.quantity,
             Decimal('1.00001'),
             UNIX_EPOCH,
-            uuid.uuid4(),
+            GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
         order_filled2 = OrderFilled(
@@ -250,7 +250,7 @@ class PositionTests(unittest.TestCase):
             order.quantity,
             Decimal('1.00001'),
             UNIX_EPOCH,
-            uuid.uuid4(),
+            GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
         # Act
@@ -293,7 +293,7 @@ class PositionTests(unittest.TestCase):
             order.quantity,
             Decimal('1.00001'),
             UNIX_EPOCH,
-            uuid.uuid4(),
+            GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
         order_filled2 = OrderFilled(
@@ -305,7 +305,7 @@ class PositionTests(unittest.TestCase):
             order.quantity,
             Decimal('1.00001'),
             UNIX_EPOCH,
-            uuid.uuid4(),
+            GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
         # Act

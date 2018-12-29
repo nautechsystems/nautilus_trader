@@ -13,7 +13,7 @@ import uuid
 from inv_trader.model.enums import Broker, CurrencyCode
 from inv_trader.model.account import Account
 from inv_trader.model.events import AccountEvent
-from inv_trader.model.identifiers import AccountId, AccountNumber
+from inv_trader.model.identifiers import GUID, AccountId, AccountNumber
 from inv_trader.model.objects import Money
 from test_kit.stubs import TestStubs
 
@@ -38,7 +38,7 @@ class AccountTests(unittest.TestCase):
             Money.zero(),
             Money.zero(),
             "",
-            uuid.uuid4(),
+            GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
         # Act
@@ -75,7 +75,7 @@ class AccountTests(unittest.TestCase):
             Money.create(2000.00),
             Money.zero(),
             "",
-            uuid.uuid4(),
+            GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
         # Act
