@@ -18,8 +18,8 @@ from inv_trader.core.precondition cimport Precondition
 from inv_trader.core.logger import Logger, LoggerAdapter
 from inv_trader.model.account import Account
 from inv_trader.model.order import Order
-from inv_trader.model.events import Event, OrderEvent, AccountEvent, OrderCancelReject
-from inv_trader.model.identifiers import OrderId
+from inv_trader.model.events cimport Event, OrderEvent, AccountEvent, OrderCancelReject
+from inv_trader.model.identifiers cimport GUID, OrderId
 from inv_trader.strategy import TradeStrategy
 
 cdef str UTF8 = 'utf-8'
@@ -88,7 +88,7 @@ cdef class ExecutionClient(object):
     cpdef void submit_order(
             self,
             order: Order,
-            strategy_id: UUID):
+            GUID strategy_id):
         """
         Send a submit order request to the execution service.
         """
@@ -117,7 +117,7 @@ cdef class ExecutionClient(object):
     cpdef void _register_order(
             self,
             order: Order,
-            strategy_id: UUID):
+            GUID strategy_id):
         """
         Register the given order with the execution client.
 
@@ -129,7 +129,7 @@ cdef class ExecutionClient(object):
 
         self._order_index[order.id] = strategy_id
 
-    cpdef void _on_event(self, event: Event):
+    cpdef void _on_event(self, Event event):
         """
         Handle events received from the execution service.
         """

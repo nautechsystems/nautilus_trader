@@ -8,11 +8,38 @@
 # -------------------------------------------------------------------------------------------------
 
 import unittest
+import uuid
 
-from inv_trader.model.identifiers import Label, OrderId, PositionId, ExecutionId, ExecutionTicket
+from inv_trader.model.identifiers import GUID, Label, OrderId, PositionId, ExecutionId, ExecutionTicket
 
 
 class IdentifierTests(unittest.TestCase):
+
+    def test_GUID_passed_str_raises_exceptions(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertRaises(ValueError, GUID, 'a_fake_uuid')
+
+    def test_GUIDS_passed_different_UUID_are_not_equal(self):
+        # Arrange
+        # Act
+        guid1 = GUID(uuid.uuid4())
+        guid2 = GUID(uuid.uuid4())
+
+        # Assert
+        self.assertNotEqual(guid1, guid2)
+
+    def test_GUID_passed_UUID_are_equal(self):
+        # Arrange
+        value = uuid.uuid4()
+
+        # Act
+        guid1 = GUID(value)
+        guid2 = GUID(value)
+
+        # Assert
+        self.assertEqual(guid1, guid2)
 
     def test_label_equality(self):
         # Arrange

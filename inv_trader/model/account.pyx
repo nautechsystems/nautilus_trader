@@ -14,9 +14,7 @@ import datetime as dt
 from cpython.datetime cimport datetime
 from decimal import Decimal
 
-from inv_trader.core.precondition cimport Precondition
 from inv_trader.model.events cimport AccountEvent
-from inv_trader.model.identifiers cimport AccountId
 from inv_trader.model.objects import Money
 
 

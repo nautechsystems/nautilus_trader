@@ -14,6 +14,7 @@ import msgpack
 import iso8601
 import json
 
+from cpython.datetime cimport datetime
 from uuid import UUID
 from datetime import datetime
 from decimal import Decimal
@@ -24,7 +25,7 @@ from inv_trader.commands import Command, OrderCommand, SubmitOrder, CancelOrder,
 from inv_trader.commands import CollateralInquiry
 from inv_trader.model.enums import Venue, OrderSide, OrderType, TimeInForce
 from inv_trader.model.enums import Broker, CurrencyCode, SecurityType
-from inv_trader.model.identifiers import Label, OrderId, ExecutionId, ExecutionTicket, AccountId, AccountNumber
+from inv_trader.model.identifiers cimport GUID, Label, OrderId, ExecutionId, ExecutionTicket, AccountId, AccountNumber
 from inv_trader.model.objects import Symbol, Instrument
 from inv_trader.model.order import Order
 from inv_trader.model.events import Event, OrderEvent, AccountEvent
@@ -303,7 +304,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         unpacked = msgpack.unpackb(command_bytes, raw=False)
 
         command_type = unpacked[COMMAND_TYPE]
-        command_id = UUID(unpacked[COMMAND_ID])
+        command_id = GUID(UUID(unpacked[COMMAND_ID]))
         command_timestamp = _convert_string_to_datetime(unpacked[COMMAND_TIMESTAMP])
 
         if command_type == ORDER_COMMAND:
@@ -457,7 +458,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
         unpacked = msgpack.unpackb(event_bytes, raw=False)
 
         event_type = unpacked[EVENT_TYPE]
-        event_id = UUID(unpacked[EVENT_ID])
+        event_id = GUID(UUID(unpacked[EVENT_ID]))
         event_timestamp = _convert_string_to_datetime(unpacked[EVENT_TIMESTAMP])
 
         if event_type == ORDER_EVENT:
@@ -580,10 +581,10 @@ cdef class MsgPackEventSerializer(EventSerializer):
             raise ValueError("Cannot serialize event (unrecognized event.")
 
     @staticmethod
-    def _deserialize_order_event(
-            event_id: UUID,
-            event_timestamp: datetime,
-            unpacked: Dict) -> OrderEvent:
+    cdef object _deserialize_order_event(
+            GUID event_id,
+            datetime event_timestamp,
+            unpacked: Dict):
         """
         Deserialize the given parameters to an order event.
 

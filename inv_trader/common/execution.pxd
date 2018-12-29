@@ -9,6 +9,9 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False
 
+from inv_trader.model.events cimport Event
+from inv_trader.model.identifiers cimport GUID
+
 
 cdef class ExecutionClient(object):
     cdef object _registered_strategies
@@ -25,12 +28,12 @@ cdef class ExecutionClient(object):
 
     cpdef void collateral_inquiry(self)
 
-    cpdef void submit_order(self, order, strategy_id)
+    cpdef void submit_order(self, order, GUID strategy_id)
 
     cpdef void cancel_order(self, order, str cancel_reason)
 
     cpdef void modify_order(self, order, new_price)
 
-    cpdef void _register_order(self, order, strategy_id)
+    cpdef void _register_order(self, order, GUID strategy_id)
 
-    cpdef void _on_event(self, event)
+    cpdef void _on_event(self, Event event)

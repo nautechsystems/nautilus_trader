@@ -29,7 +29,7 @@ from inv_trader.model.events import Event, OrderEvent
 from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
 from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
 from inv_trader.model.events import OrderFilled, OrderPartiallyFilled
-from inv_trader.model.identifiers import OrderId, ExecutionId, ExecutionTicket
+from inv_trader.model.identifiers import GUID, OrderId, ExecutionId, ExecutionTicket
 
 UTF8 = 'utf-8'
 
@@ -229,14 +229,14 @@ cdef class MockExecClient(ExecutionClient):
             order.symbol,
             order.id,
             datetime.utcnow(),
-            uuid.uuid4(),
+            GUID(uuid.uuid4()),
             datetime.utcnow())
 
         accepted = OrderAccepted(
             order.symbol,
             order.id,
             datetime.utcnow(),
-            uuid.uuid4(),
+            GUID(uuid.uuid4()),
             datetime.utcnow())
 
         self._working_orders.append(order)
@@ -252,7 +252,7 @@ cdef class MockExecClient(ExecutionClient):
             Decimal('1'),
             order.time_in_force,
             datetime.utcnow(),
-            uuid.uuid4(),
+            GUID(uuid.uuid4()),
             datetime.utcnow(),
             order.expire_time)
 
@@ -271,7 +271,7 @@ cdef class MockExecClient(ExecutionClient):
             order.symbol,
             order.id,
             datetime.utcnow(),
-            uuid.uuid4(),
+            GUID(uuid.uuid4()),
             datetime.utcnow())
 
         super()._on_event(cancelled)
@@ -286,7 +286,7 @@ cdef class MockExecClient(ExecutionClient):
             OrderId('B' + str(order.id)),
             new_price,
             datetime.utcnow(),
-            uuid.uuid4(),
+            GUID(uuid.uuid4()),
             datetime.utcnow())
 
         super()._on_event(modified)
@@ -314,7 +314,7 @@ cdef class MockExecClient(ExecutionClient):
             order.quantity,
             filled_price,
             datetime.utcnow(),
-            uuid.uuid4(),
+            GUID(uuid.uuid4()),
             datetime.utcnow())
 
         super()._on_event(filled)

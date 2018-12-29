@@ -11,11 +11,10 @@
 
 from cpython.datetime cimport datetime
 from decimal import Decimal
-from uuid import UUID
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.model.enums import CurrencyCode, OrderSide, OrderType, TimeInForce, Broker
-from inv_trader.model.identifiers cimport Label, AccountNumber, AccountId
+from inv_trader.model.identifiers cimport GUID, Label, AccountNumber, AccountId
 from inv_trader.model.identifiers cimport OrderId, ExecutionId, ExecutionTicket
 from inv_trader.model.objects cimport Symbol
 
@@ -26,7 +25,7 @@ cdef class Event:
     """
 
     def __init__(self,
-                 object identifier: UUID,
+                 GUID identifier,
                  datetime timestamp):
         """
         Initializes a new instance of the Event abstract class.
@@ -88,7 +87,7 @@ cdef class AccountEvent(Event):
                  margin_used_maintenance: Decimal,
                  margin_ratio: Decimal,
                  str margin_call_status,
-                 event_id: UUID,
+                 GUID event_id,
                  datetime event_timestamp):
         """
         Initializes a new instance of the Bar class.
@@ -154,7 +153,7 @@ cdef class OrderEvent(Event):
     def __init__(self,
                  Symbol symbol,
                  OrderId order_id,
-                 event_id: UUID,
+                 GUID event_id,
                  datetime event_timestamp):
         """
         Initializes a new instance of the OrderEvent abstract class.
@@ -191,7 +190,7 @@ cdef class OrderSubmitted(OrderEvent):
                  Symbol symbol,
                  OrderId order_id,
                  datetime submitted_time,
-                 event_id: UUID,
+                 GUID event_id,
                  datetime event_timestamp):
         """
         Initializes a new instance of the OrderSubmitted class.
@@ -218,7 +217,7 @@ cdef class OrderAccepted(OrderEvent):
                  Symbol symbol,
                  OrderId order_id,
                  datetime accepted_time,
-                 event_id: UUID,
+                 GUID event_id,
                  datetime event_timestamp):
         """
         Initializes a new instance of the OrderAccepted class.
@@ -246,7 +245,7 @@ cdef class OrderRejected(OrderEvent):
                  OrderId order_id,
                  datetime rejected_time,
                  str rejected_reason,
-                 event_id: UUID,
+                 GUID event_id,
                  datetime event_timestamp):
         """
         Initializes a new instance of the OrderRejected class.
@@ -284,7 +283,7 @@ cdef class OrderWorking(OrderEvent):
                  price: Decimal,
                  time_in_force: TimeInForce,
                  datetime working_time,
-                 event_id: UUID,
+                 GUID event_id,
                  datetime event_timestamp,
                  datetime expire_time: datetime=None):
         """
@@ -333,7 +332,7 @@ cdef class OrderCancelled(OrderEvent):
                  Symbol symbol,
                  OrderId order_id,
                  datetime cancelled_time,
-                 event_id: UUID,
+                 GUID event_id,
                  datetime event_timestamp):
         """
         Initializes a new instance of the OrderCancelled class.
@@ -362,7 +361,7 @@ cdef class OrderCancelReject(OrderEvent):
                  datetime cancel_reject_time,
                  str cancel_response,
                  str cancel_reject_reason,
-                 event_id: UUID,
+                 GUID event_id,
                  datetime event_timestamp):
         """
         Initializes a new instance of the OrderCancelReject class.
@@ -403,7 +402,7 @@ cdef class OrderExpired(OrderEvent):
                  Symbol symbol,
                  OrderId order_id,
                  datetime expired_time,
-                 event_id: UUID,
+                 GUID event_id,
                  datetime event_timestamp):
         """
         Initializes a new instance of the OrderExpired class.
@@ -432,7 +431,7 @@ cdef class OrderModified(OrderEvent):
                  OrderId broker_order_id,
                  modified_price: Decimal,
                  datetime modified_time,
-                 event_id: UUID,
+                 GUID event_id,
                  datetime event_timestamp):
         """
         Initializes a new instance of the OrderPartiallyFilled class.
@@ -470,7 +469,7 @@ cdef class OrderFilled(OrderEvent):
                  int filled_quantity,
                  average_price: Decimal,
                  datetime execution_time,
-                 event_id: UUID,
+                 GUID event_id,
                  datetime event_timestamp):
         """
         Initializes a new instance of the OrderFilled class.
@@ -517,7 +516,7 @@ cdef class OrderPartiallyFilled(OrderEvent):
                  int leaves_quantity,
                  average_price: Decimal,
                  execution_time: datetime,
-                 event_id: UUID,
+                 GUID event_id,
                  datetime event_timestamp):
         """
         Initializes a new instance of the OrderPartiallyFilled class.
@@ -559,7 +558,7 @@ cdef class TimeEvent(Event):
 
     def __init__(self,
                  Label label,
-                 event_id: UUID,
+                 GUID event_id,
                  datetime event_timestamp):
         """
         Initializes a new instance of the TimeEvent class.

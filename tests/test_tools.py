@@ -53,7 +53,6 @@ class IndicatorUpdaterTests(unittest.TestCase):
         ema = ExponentialMovingAverage(10)
         updater = IndicatorUpdater(ema)
 
-        print(bars)
         # act
         for bar in bars:
             updater.update_bar(bar)
@@ -70,7 +69,6 @@ class IndicatorUpdaterTests(unittest.TestCase):
         ema = ExponentialMovingAverage(10)
         updater = IndicatorUpdater(ema)
 
-        print(bars)
         # act
         for bar in bars:
             updater.update_data_bar(bar)

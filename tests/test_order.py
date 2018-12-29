@@ -14,7 +14,7 @@ from decimal import Decimal
 
 from inv_trader.model.enums import Venue, OrderSide, OrderType, OrderStatus, TimeInForce
 from inv_trader.model.objects import Price, Symbol
-from inv_trader.model.identifiers import Label, OrderId, ExecutionId, ExecutionTicket
+from inv_trader.model.identifiers import GUID, Label, OrderId, ExecutionId, ExecutionTicket
 from inv_trader.model.order import Order, OrderFactory
 from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
 from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
@@ -294,7 +294,7 @@ class OrderTests(unittest.TestCase):
             order.symbol,
             order.id,
             UNIX_EPOCH,
-            uuid.uuid4(),
+            GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
         # Act
@@ -319,7 +319,7 @@ class OrderTests(unittest.TestCase):
             order.symbol,
             order.id,
             UNIX_EPOCH,
-            uuid.uuid4(),
+            GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
         # Act
@@ -343,7 +343,7 @@ class OrderTests(unittest.TestCase):
             order.id,
             UNIX_EPOCH,
             'ORDER ID INVALID',
-            uuid.uuid4(),
+            GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
         # Act
@@ -373,7 +373,7 @@ class OrderTests(unittest.TestCase):
             Decimal('1'),
             order.time_in_force,
             UNIX_EPOCH,
-            uuid.uuid4(),
+            GUID(uuid.uuid4()),
             UNIX_EPOCH,
             order.expire_time)
 
@@ -399,7 +399,7 @@ class OrderTests(unittest.TestCase):
             order.symbol,
             order.id,
             UNIX_EPOCH,
-            uuid.uuid4(),
+            GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
         # Act
@@ -422,7 +422,7 @@ class OrderTests(unittest.TestCase):
             order.symbol,
             order.id,
             UNIX_EPOCH,
-            uuid.uuid4(),
+            GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
         # Act
@@ -447,7 +447,7 @@ class OrderTests(unittest.TestCase):
             UNIX_EPOCH,
             'REJECT_RESPONSE',
             'ORDER DOES NOT EXIST',
-            uuid.uuid4(),
+            GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
         # Act
@@ -476,7 +476,7 @@ class OrderTests(unittest.TestCase):
             Decimal('1.00000'),
             order.time_in_force,
             UNIX_EPOCH,
-            uuid.uuid4(),
+            GUID(uuid.uuid4()),
             UNIX_EPOCH,
             order.expire_time)
 
@@ -486,7 +486,7 @@ class OrderTests(unittest.TestCase):
             OrderId('SOME_BROKER_ID_2'),
             Decimal('1.00001'),
             UNIX_EPOCH,
-            uuid.uuid4(),
+            GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
         order.apply(order_working)
@@ -518,7 +518,7 @@ class OrderTests(unittest.TestCase):
             order.quantity,
             Decimal('1.00001'),
             UNIX_EPOCH,
-            uuid.uuid4(),
+            GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
         # Act
@@ -549,7 +549,7 @@ class OrderTests(unittest.TestCase):
             order.quantity,
             Decimal('1.00001'),
             UNIX_EPOCH,
-            uuid.uuid4(),
+            GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
         # Act
@@ -583,7 +583,7 @@ class OrderTests(unittest.TestCase):
             50000,
             Decimal('0.99999'),
             UNIX_EPOCH,
-            uuid.uuid4(),
+            GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
         # Act
@@ -616,7 +616,7 @@ class OrderTests(unittest.TestCase):
             150000,
             Decimal('0.99999'),
             UNIX_EPOCH,
-            uuid.uuid4(),
+            GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
         # Act

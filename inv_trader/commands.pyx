@@ -13,7 +13,10 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
+from cpython.datetime cimport datetime
+
 from inv_trader.core.precondition cimport Precondition
+from inv_trader.model.identifiers cimport GUID
 from inv_trader.model.order import Order
 
 
@@ -21,25 +24,22 @@ cdef class Command:
     """
     The abstract base class for all commands.
     """
-    cdef object _command_id
-    cdef object _command_timestamp
+    cdef GUID _command_id
+    cdef datetime _command_timestamp
 
     def __init__(self,
-                 identifier: UUID,
-                 timestamp: datetime):
+                 GUID identifier,
+                 datetime timestamp):
         """
         Initializes a new instance of the Command abstract class.
 
         :param identifier: The commands identifier.
         :param timestamp: The commands timestamp.
         """
-        Precondition.type(identifier, UUID, 'identifier')
-        Precondition.type(timestamp, datetime, 'timestamp')
-
         self._command_id = identifier
         self._command_timestamp = timestamp
 
-    def __eq__(self, other) -> bool:
+    def __eq__(self, Command other) -> bool:
         """
         Override the default equality comparison.
         """
@@ -48,7 +48,7 @@ cdef class Command:
         else:
             return False
 
-    def __ne__(self, other):
+    def __ne__(self, Command other):
         """
         Override the default not-equals comparison.
         """
@@ -95,8 +95,8 @@ cdef class OrderCommand(Command):
 
     def __init__(self,
                  order: Order,
-                 command_id: UUID,
-                 command_timestamp: datetime):
+                 GUID command_id,
+                 datetime command_timestamp):
         """
         Initializes a new instance of the OrderCommand abstract class.
 
@@ -105,8 +105,6 @@ cdef class OrderCommand(Command):
         :param command_timestamp: The order commands timestamp.
         """
         Precondition.type(order, Order, 'order')
-        Precondition.type(command_id, UUID, 'command_id')
-        Precondition.type(command_timestamp, datetime, 'command_timestamp')
 
         super().__init__(command_id, command_timestamp)
         self._order = order
@@ -138,8 +136,8 @@ cdef class SubmitOrder(OrderCommand):
 
     def __init__(self,
                  order: Order,
-                 command_id: UUID,
-                 command_timestamp: datetime):
+                 GUID command_id,
+                 datetime command_timestamp):
         """
         Initializes a new instance of the SubmitOrder class.
 
@@ -148,13 +146,10 @@ cdef class SubmitOrder(OrderCommand):
         :param command_timestamp: The commands timestamp.
         """
         Precondition.type(order, Order, 'order')
-        Precondition.type(command_id, UUID, 'command_id')
-        Precondition.type(command_timestamp, datetime, 'command_timestamp')
 
-        super().__init__(
-            order,
-            command_id,
-            command_timestamp)
+        super().__init__(order,
+                         command_id,
+                         command_timestamp)
 
 
 cdef class CancelOrder(OrderCommand):
@@ -165,9 +160,9 @@ cdef class CancelOrder(OrderCommand):
 
     def __init__(self,
                  order: Order,
-                 cancel_reason: str,
-                 command_id: UUID,
-                 command_timestamp: datetime):
+                 str cancel_reason,
+                 GUID command_id,
+                 datetime command_timestamp):
         """
         Initializes a new instance of the CancelOrder class.
 
@@ -177,8 +172,6 @@ cdef class CancelOrder(OrderCommand):
         :param command_timestamp: The commands timestamp.
         """
         Precondition.type(order, Order, 'order')
-        Precondition.type(command_id, UUID, 'command_id')
-        Precondition.type(command_timestamp, datetime, 'command_timestamp')
         Precondition.valid_string(cancel_reason, 'cancel_reason')
 
         super().__init__(
@@ -205,8 +198,8 @@ cdef class ModifyOrder(OrderCommand):
     def __init__(self,
                  order: Order,
                  modified_price: Decimal,
-                 command_id: UUID,
-                 command_timestamp: datetime):
+                 GUID command_id,
+                 datetime command_timestamp):
         """
         Initializes a new instance of the ModifyOrder class.
 
@@ -217,14 +210,11 @@ cdef class ModifyOrder(OrderCommand):
         """
         Precondition.type(order, Order, 'order')
         Precondition.type(modified_price, Decimal, 'modified_price')
-        Precondition.type(command_id, UUID, 'command_id')
-        Precondition.type(command_timestamp, datetime, 'command_timestamp')
         Precondition.positive(modified_price, 'modified_price')
 
-        super().__init__(
-            order,
-            command_id,
-            command_timestamp)
+        super().__init__(order,
+                         command_id,
+                         command_timestamp)
 
         self._modified_price = modified_price
 
@@ -242,15 +232,12 @@ cdef class CollateralInquiry(Command):
     """
 
     def __init__(self,
-                 command_id: UUID,
-                 command_timestamp: datetime):
+                 GUID command_id,
+                 datetime command_timestamp):
         """
         Initializes a new instance of the CollateralInquiry class.
 
         :param command_id: The commands identifier.
         :param command_timestamp: The order commands timestamp.
         """
-        Precondition.type(command_id, UUID, 'command_id')
-        Precondition.type(command_timestamp, datetime, 'command_timestamp')
-
         super().__init__(command_id, command_timestamp)
