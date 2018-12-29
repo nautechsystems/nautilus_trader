@@ -123,7 +123,7 @@ cdef class Logger:
             except IOError as ex:
                 self._console_print_handler(f"IOError: {ex}.", logging.CRITICAL)
 
-    cpdef void critical(self, message):
+    cpdef void critical(self, str message):
         """
         Log the given critical message with the logger.
 

@@ -151,19 +151,16 @@ cdef class Tick:
         self.ask = ask
         self.timestamp = timestamp
 
-    def __eq__(self, other) -> bool:
+    def __eq__(self, Tick other) -> bool:
         """
         Override the default equality comparison.
         """
-        if isinstance(other, self.__class__):
-            return (self.symbol == other.symbol
+        return (self.symbol == other.symbol
                     and self.bid == other.bid
                     and self.ask == other.ask
                     and self.timestamp == other.timestamp)
-        else:
-            return False
 
-    def __ne__(self, other) -> bool:
+    def __ne__(self, Tick other) -> bool:
         """
         Override the default not-equals comparison.
         """
@@ -217,19 +214,16 @@ cdef class BarType:
         self.resolution = resolution
         self.quote_type = quote_type
 
-    def __eq__(self, other) -> bool:
+    def __eq__(self, BarType other) -> bool:
         """
         Override the default equality comparison.
         """
-        if isinstance(other, self.__class__):
-            return (self.symbol == other.symbol
-                    and self.period == other.period
-                    and self.resolution == other.resolution
-                    and self.quote_type == other.quote_type)
-        else:
-            return False
+        return (self.symbol == other.symbol
+                and self.period == other.period
+                and self.resolution == other.resolution
+                and self.quote_type == other.quote_type)
 
-    def __ne__(self, other) -> bool:
+    def __ne__(self, BarType other) -> bool:
         """
         Override the default not-equals comparison.
         """
@@ -305,16 +299,13 @@ cdef class Bar:
         self.volume = volume
         self.timestamp = timestamp
 
-    def __eq__(self, other) -> bool:
+    def __eq__(self, Bar other) -> bool:
         """
         Override the default equality comparison.
         """
-        if isinstance(other, self.__class__):
-            return self.timestamp == other.timestamp
-        else:
-            return False
+        return self.timestamp == other.timestamp
 
-    def __ne__(self, other) -> bool:
+    def __ne__(self, Bar other) -> bool:
         """
         Override the default not-equals comparison.
         """
@@ -374,16 +365,13 @@ cdef class DataBar:
         self.volume = volume
         self.timestamp = timestamp
 
-    def __eq__(self, other) -> bool:
+    def __eq__(self, DataBar other) -> bool:
         """
         Override the default equality comparison.
         """
-        if isinstance(other, self.__class__):
-            return self.open == other.open
-        else:
-            return False
+        return self.open == other.open
 
-    def __ne__(self, other) -> bool:
+    def __ne__(self, DataBar other) -> bool:
         """
         Override the default not-equals comparison.
         """
@@ -503,16 +491,13 @@ cdef class Instrument:
         self.rollover_interest_sell = rollover_interest_sell
         self.timestamp = timestamp
 
-    def __eq__(self, other) -> bool:
+    def __eq__(self, Instrument other) -> bool:
         """
         Override the default equality comparison.
         """
-        if isinstance(other, self.__class__):
-            return self.symbol == other.symbol
-        else:
-            return False
+        return self.symbol == other.symbol
 
-    def __ne__(self, other) -> bool:
+    def __ne__(self, Instrument other) -> bool:
         """
         Override the default not-equals comparison.
         """

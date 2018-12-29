@@ -9,12 +9,12 @@
 
 # cython: language_level=3, boundscheck=False
 
-from datetime import datetime, timezone
+from cpython.datetime cimport datetime
 from typing import List, Dict, Callable
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.core.logger import Logger, LoggerAdapter
-from inv_trader.model.objects import Symbol, BarType, Instrument
+from inv_trader.model.objects cimport Symbol, BarType, Instrument
 from inv_trader.strategy import TradeStrategy
 
 cdef str UTF8 = 'utf-8'
@@ -97,7 +97,7 @@ cdef class DataClient:
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the data client.")
 
-    cpdef object get_instrument(self, symbol: Symbol):
+    cpdef Instrument get_instrument(self, Symbol symbol):
         """
         Get the instrument corresponding to the given symbol.
 
@@ -125,7 +125,7 @@ cdef class DataClient:
 
     cpdef void historical_bars(
             self,
-            bar_type: BarType,
+            BarType bar_type,
             int quantity,
             handler: Callable):
         """
@@ -145,8 +145,8 @@ cdef class DataClient:
 
     cpdef void historical_bars_from(
             self,
-            bar_type: BarType,
-            from_datetime: datetime,
+            BarType bar_type,
+            datetime from_datetime,
             handler: Callable):
         """
         Download the historical bars for the given parameters from the data
@@ -165,7 +165,7 @@ cdef class DataClient:
 
     cdef void _subscribe_bars(
             self,
-            bar_type: BarType,
+            BarType bar_type,
             handler: Callable):
         """
         Subscribe to live bar data for the given bar parameters.
@@ -173,7 +173,6 @@ cdef class DataClient:
         :param bar_type: The bar type to subscribe to.
         :param handler: The callable handler for subscription (if None will just call print).
         """
-        Precondition.type(bar_type, BarType, 'bar_type')
         Precondition.type_or_none(handler, Callable, 'handler')
 
         if bar_type not in self._bar_handlers:
@@ -185,7 +184,7 @@ cdef class DataClient:
 
     cdef void _unsubscribe_bars(
             self,
-            bar_type: BarType,
+            BarType bar_type,
             handler: Callable):
         """
         Unsubscribes from live bar data for the given symbol and venue.
@@ -193,7 +192,6 @@ cdef class DataClient:
         :param bar_type: The bar type to unsubscribe from.
         :param handler: The callable handler which was subscribed (can be None).
         """
-        Precondition.type(bar_type, BarType, 'bar_type')
         Precondition.type_or_none(handler, Callable, 'handler')
 
         if bar_type not in self._bar_handlers:
@@ -209,7 +207,7 @@ cdef class DataClient:
 
     cdef void _subscribe_ticks(
             self,
-            symbol: Symbol,
+            Symbol symbol,
             handler: Callable):
         """
         Subscribe to live tick data for the given symbol and venue.
@@ -217,7 +215,6 @@ cdef class DataClient:
         :param symbol: The tick symbol to subscribe to.
         :param handler: The callable handler for subscription (if None will just call print).
         """
-        Precondition.type(symbol, Symbol, 'symbol')
         Precondition.type_or_none(handler, Callable, 'handler')
 
         if symbol not in self._tick_handlers:
@@ -229,7 +226,7 @@ cdef class DataClient:
 
     cdef void _unsubscribe_ticks(
             self,
-            symbol: Symbol,
+            Symbol symbol,
             handler: Callable):
         """
         Unsubscribes from live tick data for the given symbol and venue.
@@ -238,7 +235,6 @@ cdef class DataClient:
         :param handler: The callable handler which was subscribed (can be None).
         :raises ValueError: If the symbol is not a valid string.
         """
-        Precondition.type(symbol, Symbol, 'symbol')
         Precondition.type_or_none(handler, Callable, 'handler')
 
         if symbol not in self._tick_handlers:
