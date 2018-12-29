@@ -133,7 +133,7 @@ cdef class Tick:
     cdef readonly Symbol symbol
     cdef readonly object bid
     cdef readonly object ask
-    cdef readonly object timestamp
+    cdef readonly datetime timestamp
 
     def __init__(self,
                  Symbol symbol,
@@ -221,7 +221,6 @@ cdef class BarType:
         :param quote_type: The bar quote type.
         :raises ValueError: If the period is not positive (> 0).
         """
-        Precondition.type(symbol, Symbol, 'symbol')
         Precondition.type(resolution, Resolution, 'resolution')
         Precondition.type(quote_type, QuoteType, 'quote_type')
         Precondition.positive(period, 'period')
@@ -464,7 +463,7 @@ cdef class Instrument:
     cdef readonly datetime timestamp
 
     def __init__(self,
-                 symbol: Symbol,
+                 Symbol symbol,
                  str broker_symbol,
                  quote_currency: CurrencyCode,
                  security_type: SecurityType,
@@ -508,7 +507,6 @@ cdef class Instrument:
         :param rollover_interest_sell: The instruments rollover interest for short positions.
         :param timestamp: The timestamp the instrument was created/updated at.
         """
-        Precondition.type(symbol, Symbol, 'symbol')
         Precondition.type(quote_currency, CurrencyCode, 'quote_currency')
         Precondition.type(security_type, SecurityType, 'security_type')
         Precondition.type(tick_size, Decimal, 'tick_size')
