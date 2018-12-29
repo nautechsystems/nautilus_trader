@@ -80,7 +80,7 @@ cdef class Price:
 
     @staticmethod
     def create(double price,
-               int decimals):
+               int decimals) -> Decimal:
         """
         Creates and returns a new price from the given values.
         The price is rounded to the given decimal digits.
