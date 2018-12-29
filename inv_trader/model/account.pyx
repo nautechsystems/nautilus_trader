@@ -9,7 +9,9 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False
 
-from datetime import datetime
+import datetime as dt
+
+from cpython.datetime cimport datetime
 from decimal import Decimal
 
 from inv_trader.core.precondition cimport Precondition
@@ -23,46 +25,46 @@ cdef class Account:
     """
     Represents a brokerage account.
     """
-    cdef bint _initialized
-    cdef object _id
-    cdef object _broker
-    cdef object _account_number
-    cdef object _currency
-    cdef object _cash_balance
-    cdef object _cash_start_day
-    cdef object _cash_activity_day
-    cdef object _margin_used_liquidation
-    cdef object _margin_used_maintenance
-    cdef object _margin_ratio
-    cdef str _margin_call_status
-    cdef object _last_updated
-    cdef list _events
+    cdef readonly bint initialized
+    cdef readonly object id
+    cdef readonly object broker
+    cdef readonly object account_number
+    cdef readonly object currency
+    cdef readonly object cash_balance
+    cdef readonly object cash_start_day
+    cdef readonly object cash_activity_day
+    cdef readonly object margin_used_liquidation
+    cdef readonly object margin_used_maintenance
+    cdef readonly object margin_ratio
+    cdef readonly str margin_call_status
+    cdef readonly datetime last_updated
+    cdef readonly list events
 
     def __init__(self):
         """
         Initializes a new instance of the Account class.
         """
-        self._initialized = False
-        self._id = None
-        self._broker = None
-        self._account_number = None
-        self._currency = None
-        self._cash_balance = Money.zero()
-        self._cash_start_day = Money.zero()
-        self._cash_activity_day = Money.zero()
-        self._margin_used_liquidation = Money.zero()
-        self._margin_used_maintenance = Money.zero()
-        self._margin_ratio = Money.zero()
-        self._margin_call_status = ""
-        self._last_updated = datetime.utcnow()
-        self._events = []
+        self.initialized = False
+        self.id = None
+        self.broker = None
+        self.account_number = None
+        self.currency = None
+        self.cash_balance = Money.zero()
+        self.cash_start_day = Money.zero()
+        self.cash_activity_day = Money.zero()
+        self.margin_used_liquidation = Money.zero()
+        self.margin_used_maintenance = Money.zero()
+        self.margin_ratio = Money.zero()
+        self.margin_call_status = ""
+        self.last_updated = dt.datetime.utcnow()
+        self.events = []
 
     def __eq__(self, other) -> bool:
         """
         Override the default equality comparison.
         """
         if isinstance(other, self.__class__):
-            return self._id == other._id
+            return self.id == other.id
         else:
             return False
 
@@ -76,13 +78,13 @@ cdef class Account:
         """"
         Override the default hash implementation.
         """
-        return hash((self._broker, self._account_number))
+        return hash((self.broker, self.account_number))
 
     def __str__(self) -> str:
         """
         :return: The str() string representation of the account.
         """
-        return f"Account({str(self._broker)}-{str(self._account_number)})"
+        return f"Account({str(self.broker)}-{str(self.account_number)})"
 
     def __repr__(self) -> str:
         """
@@ -91,102 +93,11 @@ cdef class Account:
         return f"<{str(self)} object at {id(self)}>"
 
     @property
-    def initialized(self) -> bool:
-        """
-        :return: A value indicating whether the account is initialized (from an account event).
-        """
-        return self._initialized
-
-    @property
-    def broker(self) -> Broker or None:
-        """
-        :return: The brokerage the account belongs to (returns None if not initialized).
-        """
-        return self._broker
-
-    @property
-    def number(self) -> str or None:
-        """
-        :return: The account number of the account (returns None if not initialized).
-        """
-        return self._account_number
-
-    @property
-    def id(self) -> AccountId or None:
-        """
-        :return: The account identifier (returns None if not initialized).
-        """
-        return self._id
-
-    @property
-    def currency(self) -> CurrencyCode or None:
-        """
-        :return: The account currency (returns None if not initialized).
-        """
-        return self._currency
-
-    @property
     def free_equity(self) -> Decimal:
         """
         :return: The accounts free equity after used margin.
         """
         return self._calculate_free_equity()
-
-    @property
-    def cash_balance(self) -> Decimal:
-        """
-        :return: The accounts cash balance.
-        """
-        return self._cash_balance
-
-    @property
-    def cash_start_day(self) -> Decimal:
-        """
-        :return: The accounts cash balance at the start of the trading day.
-        """
-        return self._cash_start_day
-
-    @property
-    def cash_activity_day(self) -> Decimal:
-        """
-        :return: The account activity for the day.
-        """
-        return self._cash_activity_day
-
-    @property
-    def margin_used_liquidation(self) -> Decimal:
-        """
-        :return: The accounts liquidation margin used.
-        """
-        return self._margin_used_liquidation
-
-    @property
-    def margin_used_maintenance(self) -> Decimal:
-        """
-        :return: The accounts maintenance margin used.
-        """
-        return self._margin_used_maintenance
-
-    @property
-    def margin_ratio(self) -> Decimal:
-        """
-        :return: The accounts margin ratio.
-        """
-        return self._margin_ratio
-
-    @property
-    def margin_call_status(self) -> str:
-        """
-        :return: The accounts margin call status.
-        """
-        return self._margin_call_status
-
-    @property
-    def last_updated(self) -> datetime:
-        """
-        :return: The time the account was last updated.
-        """
-        return self._last_updated
 
     cpdef void apply(self, event: AccountEvent):
         """
@@ -196,23 +107,23 @@ cdef class Account:
         """
         Precondition.type(event, AccountEvent, 'event')
 
-        if not self._initialized:
-            self._broker = event.broker
-            self._account_number = event.account_number
-            self._id = event.account_id
-            self._currency = event.currency
-            self._initialized = True
+        if not self.initialized:
+            self.broker = event.broker
+            self.account_number = event.account_number
+            self.id = event.account_id
+            self.currency = event.currency
+            self.initialized = True
 
-        self._cash_balance = event.cash_balance
-        self._cash_start_day = event.cash_start_day
-        self._cash_activity_day = event.cash_activity_day
-        self._margin_used_liquidation = event.margin_used_liquidation
-        self._margin_used_maintenance = event.margin_used_maintenance
-        self._margin_ratio = event.margin_ratio
-        self._margin_call_status = event.margin_call_status
+        self.cash_balance = event.cash_balance
+        self.cash_start_day = event.cash_start_day
+        self.cash_activity_day = event.cash_activity_day
+        self.margin_used_liquidation = event.margin_used_liquidation
+        self.margin_used_maintenance = event.margin_used_maintenance
+        self.margin_ratio = event.margin_ratio
+        self.margin_call_status = event.margin_call_status
 
-        self._events.append(event)
-        self._last_updated = event.timestamp
+        self.events.append(event)
+        self.last_updated = event.timestamp
 
     cdef object _calculate_free_equity(self):
         """
@@ -220,5 +131,5 @@ cdef class Account:
         
         :return: The free equity (Decimal).
         """
-        margin_used = self._margin_used_maintenance + self._margin_used_liquidation
-        return Decimal(max(self._cash_balance - margin_used, 0))
+        margin_used = self.margin_used_maintenance + self.margin_used_liquidation
+        return Decimal(max(self.cash_balance - margin_used, 0))
