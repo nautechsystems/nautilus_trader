@@ -11,7 +11,6 @@
 
 from datetime import datetime
 from decimal import Decimal
-from uuid import UUID
 
 from cpython.datetime cimport datetime
 
@@ -24,8 +23,6 @@ cdef class Command:
     """
     The abstract base class for all commands.
     """
-    cdef GUID _command_id
-    cdef datetime _command_timestamp
 
     def __init__(self,
                  GUID identifier,
@@ -36,8 +33,8 @@ cdef class Command:
         :param identifier: The commands identifier.
         :param timestamp: The commands timestamp.
         """
-        self._command_id = identifier
-        self._command_timestamp = timestamp
+        self.id = identifier
+        self.timestamp = timestamp
 
     def __eq__(self, Command other) -> bool:
         """
@@ -58,7 +55,7 @@ cdef class Command:
         """"
         Override the default hash implementation.
         """
-        return hash(self._command_id)
+        return hash(self.id)
 
     def __str__(self) -> str:
         """
@@ -72,26 +69,11 @@ cdef class Command:
         """
         return f"<{str(self)} object at {id(self)}>"
 
-    @property
-    def id(self) -> UUID:
-        """
-        :return: The commands identifier.
-        """
-        return self._command_id
-
-    @property
-    def timestamp(self) -> datetime:
-        """
-        :return: The commands timestamp (the time the command was created).
-        """
-        return self._command_timestamp
-
 
 cdef class OrderCommand(Command):
     """
     The abstract base class for all order commands.
     """
-    cdef object _order
 
     def __init__(self,
                  order: Order,
@@ -107,26 +89,19 @@ cdef class OrderCommand(Command):
         Precondition.type(order, Order, 'order')
 
         super().__init__(command_id, command_timestamp)
-        self._order = order
+        self.order = order
 
     def __str__(self) -> str:
         """
         :return: The str() string representation of the command.
         """
-        return f"{self.__class__.__name__}({self._order})"
+        return f"{self.__class__.__name__}({self.order})"
 
     def __repr__(self) -> str:
         """
         :return: The repr() string representation of the command.
         """
         return f"<{str(self)} object at {id(self)}>"
-
-    @property
-    def order(self) -> Order:
-        """
-        :return: The commands order.
-        """
-        return self._order
 
 
 cdef class SubmitOrder(OrderCommand):
@@ -156,7 +131,6 @@ cdef class CancelOrder(OrderCommand):
     """
     Represents a command to cancel the given order.
     """
-    cdef str _cancel_reason
 
     def __init__(self,
                  order: Order,
@@ -179,21 +153,13 @@ cdef class CancelOrder(OrderCommand):
             command_id,
             command_timestamp)
 
-        self._cancel_reason = cancel_reason
-
-    @property
-    def cancel_reason(self) -> str:
-        """
-        :return: The commands order cancel reason.
-        """
-        return self._cancel_reason
+        self.cancel_reason = cancel_reason
 
 
 cdef class ModifyOrder(OrderCommand):
     """
     Represents a command to modify the given order with the given modified price.
     """
-    cdef object _modified_price
 
     def __init__(self,
                  order: Order,
@@ -216,14 +182,8 @@ cdef class ModifyOrder(OrderCommand):
                          command_id,
                          command_timestamp)
 
-        self._modified_price = modified_price
+        self.modified_price = modified_price
 
-    @property
-    def modified_price(self) -> Decimal:
-        """
-        :return: The commands modified price for the order.
-        """
-        return self._modified_price
 
 
 cdef class CollateralInquiry(Command):
