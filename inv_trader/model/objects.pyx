@@ -13,7 +13,9 @@ from cpython.datetime cimport datetime
 from decimal import Decimal
 
 from inv_trader.core.precondition cimport Precondition
-from inv_trader.model.enums import Venue, Resolution, QuoteType, SecurityType, CurrencyCode
+from inv_trader.model.enums cimport Venue, venue_string, Resolution, resolution_string
+from inv_trader.model.enums cimport QuoteType, quote_type_string
+from inv_trader.model.enums import SecurityType, CurrencyCode
 
 
 cdef class Symbol:
@@ -23,7 +25,7 @@ cdef class Symbol:
 
     def __init__(self,
                  str code,
-                 venue: Venue):
+                 Venue venue):
         """
         Initializes a new instance of the Symbol class.
 
@@ -31,7 +33,6 @@ cdef class Symbol:
         :param venue: The symbols venue.
         :raises ValueError: If the code is not a valid string.
         """
-        Precondition.type(venue, Venue, 'venue')
         Precondition.valid_string(code, 'code')
 
         self.code = code.upper()
@@ -59,7 +60,7 @@ cdef class Symbol:
         """
         :return: The str() string representation of the symbol.
         """
-        return str(f"{self.code}.{self.venue.name}")
+        return str(f"{self.code}.{venue_string(self.venue)}")
 
     def __repr__(self) -> str:
         """
@@ -194,8 +195,8 @@ cdef class BarType:
     def __init__(self,
                  Symbol symbol,
                  int period,
-                 resolution: Resolution,
-                 quote_type: QuoteType):
+                 Resolution resolution,
+                 QuoteType quote_type):
         """
         Initializes a new instance of the BarType class.
 
@@ -205,8 +206,6 @@ cdef class BarType:
         :param quote_type: The bar quote type.
         :raises ValueError: If the period is not positive (> 0).
         """
-        Precondition.type(resolution, Resolution, 'resolution')
-        Precondition.type(quote_type, QuoteType, 'quote_type')
         Precondition.positive(period, 'period')
 
         self.symbol = symbol
@@ -240,7 +239,7 @@ cdef class BarType:
         :return: The str() string representation of the bar type.
         """
         return str(f"{str(self.symbol)}"
-                f"-{self.period}-{self.resolution.name}[{self.quote_type.name}]")
+                f"-{self.period}-{resolution_string(self.resolution)}[{quote_type_string(self.quote_type)}]")
 
     def __repr__(self) -> str:
         """

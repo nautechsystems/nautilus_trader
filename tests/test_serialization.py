@@ -12,7 +12,6 @@ import uuid
 
 from datetime import datetime, timezone
 from decimal import Decimal
-from uuid import UUID
 
 from inv_trader.commands import SubmitOrder, CancelOrder, ModifyOrder
 from inv_trader.commands import CollateralInquiry
