@@ -14,7 +14,6 @@ import time
 
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
-from uuid import UUID
 
 from inv_trader.core.logger import LoggerAdapter
 from inv_trader.model.enums import Venue, Resolution, QuoteType, OrderSide, OrderType, OrderStatus

@@ -187,7 +187,7 @@ cdef class LiveDataClient(DataClient):
 
         :param symbol: The symbol to update.
         """
-        key = f'instruments:{symbol.code.lower()}.{symbol.venue.name.lower()}'
+        key = f'instruments:{symbol.code.lower()}.{symbol.venue_string().lower()}'
 
         if key is None:
             self._log.warning(
@@ -452,10 +452,10 @@ cdef class LiveDataClient(DataClient):
         """
         return self._redis_client.keys(
             (f'bars'
-             f':{bar_type.symbol.venue.name.lower()}'
+             f':{bar_type.symbol.venue_string().lower()}'
              f':{bar_type.symbol.code.lower()}'
-             f':{bar_type.resolution.name.lower()}'
-             f':{bar_type.quote_type.name.lower()}*')).sort()
+             f':{bar_type.resolution_string().lower()}'
+             f':{bar_type.quote_type_string().lower()}*')).sort()
 
     cpdef object _parse_tick_symbol(self, str tick_channel):
         """
@@ -520,17 +520,17 @@ cdef class LiveDataClient(DataClient):
         """
         Return the tick channel name from the given parameters.
         """
-        return str(f'{symbol.code.lower()}.{symbol.venue.name.lower()}')
+        return str(f'{symbol.code.lower()}.{symbol.venue_string().lower()}')
 
     cpdef str _get_bar_channel_name(self, BarType bar_type):
         """
         Return the bar channel name from the given parameters.
         """
         return str(f'{bar_type.symbol.code.lower()}.'
-                   f'{bar_type.symbol.venue.name.lower()}-'
+                   f'{bar_type.symbol.venue_string().lower()}-'
                    f'{bar_type.period}-'
-                   f'{bar_type.resolution.name.lower()}['
-                   f'{bar_type.quote_type.name.lower()}]')
+                   f'{bar_type.resolution_string().lower()}['
+                   f'{bar_type.quote_type_string().lower()}]')
 
     cdef void _check_connection(self):
         """

@@ -28,7 +28,7 @@ class AccountTests(unittest.TestCase):
 
         event = AccountEvent(
             AccountId('FXCM-D102412895'),
-            Broker.FXCM,
+            Broker.FXCM_,
             AccountNumber('D102412895'),
             CurrencyCode.AUD,
             Money.create(100000.00),
@@ -47,7 +47,7 @@ class AccountTests(unittest.TestCase):
         # Assert
         self.assertTrue(account.initialized)
         self.assertEqual(AccountId('FXCM-D102412895'), account.id)
-        self.assertEqual(Broker.FXCM, account.broker)
+        self.assertEqual(Broker.FXCM_, account.broker)
         self.assertEqual(AccountNumber('D102412895'), account.account_number)
         self.assertEqual(CurrencyCode.AUD, account.currency)
         self.assertEqual(Money.create(100000), account.free_equity)
@@ -65,7 +65,7 @@ class AccountTests(unittest.TestCase):
 
         event = AccountEvent(
             AccountId('FXCM-D102412895'),
-            Broker.FXCM,
+            Broker.FXCM_,
             AccountNumber('D102412895'),
             CurrencyCode.AUD,
             Money.create(100000.00),
@@ -84,7 +84,7 @@ class AccountTests(unittest.TestCase):
         # Assert
         self.assertTrue(account.initialized)
         self.assertEqual(AccountId('FXCM-D102412895'), account.id)
-        self.assertEqual(Broker.FXCM, account.broker)
+        self.assertEqual(Broker.FXCM_, account.broker)
         self.assertEqual(AccountNumber('D102412895'), account.account_number)
         self.assertEqual(CurrencyCode.AUD, account.currency)
         self.assertEqual(Money.create(97000.00), account.free_equity)

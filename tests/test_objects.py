@@ -47,9 +47,9 @@ class PriceTests(unittest.TestCase):
 
     def test_symbol_equality(self):
         # Arrange
-        symbol1 = Symbol("AUDUSD", Venue.FXCM_V)
+        symbol1 = Symbol("AUDUSD", Venue.FXCM)
         symbol2 = Symbol("AUDUSD", Venue.IDEAL_PRO)
-        symbol3 = Symbol("GBPUSD", Venue.FXCM_V)
+        symbol3 = Symbol("GBPUSD", Venue.FXCM)
 
         # Act
         # Assert

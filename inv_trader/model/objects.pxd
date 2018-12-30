@@ -11,7 +11,7 @@
 
 from cpython.datetime cimport datetime
 
-from inv_trader.model.enums cimport Venue
+from inv_trader.model.enums cimport Venue, Resolution, QuoteType
 
 cdef class Symbol:
     """
@@ -19,7 +19,7 @@ cdef class Symbol:
     """
     cdef readonly str code
     cdef readonly Venue venue
-
+    cdef str venue_string(self)
 
 cdef class Tick:
     """
@@ -37,9 +37,10 @@ cdef class BarType:
     """
     cdef readonly Symbol symbol
     cdef readonly int period
-    cdef readonly object resolution
-    cdef readonly object quote_type
-
+    cdef readonly Resolution resolution
+    cdef readonly QuoteType quote_type
+    cdef str resolution_string(self)
+    cdef str quote_type_string(self)
 
 cdef class Bar:
     """

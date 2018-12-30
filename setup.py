@@ -62,7 +62,7 @@ extensions = [make_extension(name) for name in scan_directories([INV_TRADER,
 
 setup(
     name=INV_TRADER,
-    version='0.70.1',
+    version='0.70.2',
     author='Invariance',
     description='The python trading client for Invariance.',
     packages=setuptools.find_packages(),

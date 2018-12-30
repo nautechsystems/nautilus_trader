@@ -13,7 +13,6 @@ from cpython.datetime cimport datetime
 from decimal import Decimal
 
 from inv_trader.core.precondition cimport Precondition
-from inv_trader.model.enums import Venue, Resolution
 from inv_trader.model.enums cimport Venue, venue_string, Resolution, resolution_string
 from inv_trader.model.enums cimport QuoteType, quote_type_string
 from inv_trader.model.enums import SecurityType, CurrencyCode
@@ -39,6 +38,12 @@ cdef class Symbol:
         self.code = code.upper()
         self.venue = venue
 
+    cdef str venue_string(self):
+        """
+        :return: The venue string. 
+        """
+        return venue_string(self.venue)
+
     def __eq__(self, Symbol other) -> bool:
         """
         Override the default equality comparison.
@@ -61,7 +66,7 @@ cdef class Symbol:
         """
         :return: The str() string representation of the symbol.
         """
-        return str(f"{self.code}.{self.venue}")
+        return str(f"{self.code}.{venue_string(self.venue)}")
 
     def __repr__(self) -> str:
         """
@@ -213,6 +218,18 @@ cdef class BarType:
         self.period = period
         self.resolution = resolution
         self.quote_type = quote_type
+
+    cdef str resolution_string(self):
+        """
+        :return: The resolution string. 
+        """
+        return resolution_string(self.resolution)
+
+    cdef str quote_type_string(self):
+        """
+        :return: The quote type string. 
+        """
+        return quote_type_string(self.quote_type)
 
     def __eq__(self, BarType other) -> bool:
         """
