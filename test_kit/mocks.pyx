@@ -31,7 +31,7 @@ from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled,
 from inv_trader.model.events import OrderFilled, OrderPartiallyFilled
 from inv_trader.model.identifiers import GUID, OrderId, ExecutionId, ExecutionTicket
 
-UTF8 = 'utf-8'
+cdef str UTF8 = 'utf-8'
 
 
 class MockServer(Thread):
