@@ -11,12 +11,14 @@
 
 from cpython.datetime cimport datetime
 
+from inv_trader.model.enums cimport Venue
+
 cdef class Symbol:
     """
     Represents the symbol for a financial market tradeable instrument.
     """
     cdef readonly str code
-    cdef readonly object venue
+    cdef readonly Venue venue
 
 
 cdef class Tick:

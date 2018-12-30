@@ -59,7 +59,7 @@ class PriceTests(unittest.TestCase):
 
     def test_symbol_str_and_repr(self):
         # Arrange
-        symbol = Symbol("AUDUSD", Venue.FXCM_V)
+        symbol = Symbol("AUDUSD", Venue.FXCM)
 
         # Act
         # Assert
