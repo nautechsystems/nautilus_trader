@@ -23,8 +23,9 @@ from typing import Dict
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.commands import Command, OrderCommand, SubmitOrder, CancelOrder, ModifyOrder
 from inv_trader.commands import CollateralInquiry
-from inv_trader.model.enums import Venue, OrderSide, OrderType, TimeInForce
-from inv_trader.model.enums import Broker, CurrencyCode, SecurityType
+from inv_trader.model.enums import Broker, Venue, OrderSide, OrderType, TimeInForce
+from inv_trader.model.enums cimport Broker, Venue, OrderSide, OrderType, TimeInForce
+from inv_trader.model.enums import CurrencyCode, SecurityType
 from inv_trader.model.identifiers cimport GUID, Label, OrderId, ExecutionId, ExecutionTicket, AccountId, AccountNumber
 from inv_trader.model.objects import Symbol, Instrument
 from inv_trader.model.order import Order
@@ -218,7 +219,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
         """
         Precondition.not_empty(order_bytes, 'order_bytes')
 
-        unpacked = msgpack.unpackb(order_bytes, encoding=UTF8)
+        unpacked = msgpack.unpackb(order_bytes, raw=False)
 
         return Order(symbol=_parse_symbol(unpacked[SYMBOL]),
                      order_id=OrderId(unpacked[ORDER_ID]),
