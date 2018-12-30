@@ -11,8 +11,8 @@ import unittest
 
 from inv_trader.model.enums import Venue, OrderSide, OrderStatus, TimeInForce
 from inv_trader.model.identifiers import Label, PositionId
-from inv_trader.model.objects import Price, Symbol, Resolution, QuoteType, BarType, Bar
-from inv_trader.model.order import OrderIdGenerator, OrderFactory
+from inv_trader.model.objects import Price, Symbol
+from inv_trader.model.order import OrderFactory
 from inv_trader.execution import LiveExecClient
 from test_kit.stubs import TestStubs
 from test_kit.mocks import MockExecClient, MockServer, MockPublisher

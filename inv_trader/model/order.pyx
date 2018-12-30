@@ -338,7 +338,7 @@ cdef class OrderIdGenerator:
         cdef str milliseconds = str(OrderIdGenerator._milliseconds_since_unix_epoch())
         cdef str order_count = str(self._order_symbol_counts[order_symbol])
         cdef OrderId order_id = OrderId(str(order_symbol.code)
-                                       + SEPARATOR + str(order_symbol.venue.name)
+                                       + SEPARATOR + order_symbol.venue_string()
                                        + SEPARATOR + order_count
                                        + SEPARATOR + self._order_id_tag
                                        + SEPARATOR + milliseconds)

@@ -163,7 +163,7 @@ cdef class LoggerAdapter:
     Provides a logger adapter adapter for a components logger.
     """
     cdef str _component_name
-    cdef object _logger
+    cdef Logger _logger
 
     def __init__(self,
                  str component_name=None,
