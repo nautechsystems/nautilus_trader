@@ -13,6 +13,7 @@ from cpython.datetime cimport datetime
 from decimal import Decimal
 
 from inv_trader.core.precondition cimport Precondition
+from inv_trader.model.enums import Venue, Resolution
 from inv_trader.model.enums cimport Venue, venue_string, Resolution, resolution_string
 from inv_trader.model.enums cimport QuoteType, quote_type_string
 from inv_trader.model.enums import SecurityType, CurrencyCode
@@ -60,7 +61,7 @@ cdef class Symbol:
         """
         :return: The str() string representation of the symbol.
         """
-        return str(f"{self.code}.{venue_string(self.venue)}")
+        return str(f"{self.code}.{self.venue}")
 
     def __repr__(self) -> str:
         """
