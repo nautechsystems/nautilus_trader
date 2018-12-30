@@ -29,6 +29,12 @@ cdef class OrderCommand(Command):
     cdef readonly object order
 
 
+cdef class SubmitOrder(OrderCommand):
+    """
+    Represents a command to submit the given order.
+    """
+
+
 cdef class CancelOrder(OrderCommand):
     """
     Represents a command to cancel the given order.
