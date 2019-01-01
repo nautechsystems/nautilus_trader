@@ -24,19 +24,6 @@ cdef class Position:
     """
     Represents a position in a financial market.
     """
-    cdef int _relative_quantity
-    cdef int _peak_quantity
-    cdef list _events
-
-    cdef readonly Symbol symbol
-    cdef readonly PositionId id
-    cdef readonly datetime timestamp
-    cdef readonly datetime entry_time
-    cdef readonly datetime exit_time
-    cdef readonly object average_entry_price
-    cdef readonly object average_exit_price
-    cdef readonly list execution_ids
-    cdef readonly list execution_tickets
 
     def __init__(self,
                  Symbol symbol,
@@ -49,6 +36,9 @@ cdef class Position:
         :param position_id: The positions identifier.
         :param timestamp: The positions initialization timestamp.
         """
+        self._relative_quantity = 0
+        self._peak_quantity = 0
+
         self.symbol = symbol
         self.id = position_id
         self.timestamp = timestamp
@@ -56,9 +46,7 @@ cdef class Position:
         self.exit_time = None
         self.average_entry_price = None
         self.average_exit_price = None
-        self._relative_quantity = 0
-        self._peak_quantity = 0
-        self._events = []              # type: List[OrderEvent]
+        self.events = []               # type: List[OrderEvent]
         self.execution_ids = []        # type: List[ExecutionId]
         self.execution_tickets = []    # type: List[ExecutionTicket]
 
@@ -100,7 +88,7 @@ cdef class Position:
         """
         :return: The count of events since the position was initialized.
         """
-        return len(self._events)
+        return len(self.events)
 
     def __eq__(self, other) -> bool:
         """
@@ -139,7 +127,7 @@ cdef class Position:
 
         :param event: The order event to apply.
         """
-        self._events.append(event)
+        self.events.append(event)
 
         # Handle event
         if isinstance(event, OrderFilled):
