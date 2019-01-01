@@ -16,8 +16,8 @@ from uuid import UUID
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.core.logger import Logger, LoggerAdapter
-from inv_trader.model.account import Account
-from inv_trader.model.order import Order
+from inv_trader.model.account cimport Account
+from inv_trader.model.order cimport Order
 from inv_trader.model.events cimport Event, OrderEvent, AccountEvent, OrderCancelReject
 from inv_trader.model.identifiers cimport GUID, OrderId
 from inv_trader.strategy import TradeStrategy
@@ -96,7 +96,7 @@ cdef class ExecutionClient(object):
         raise NotImplementedError("Method must be implemented in the execution client.")
 
     cpdef void cancel_order(
-            self, order: Order,
+            self, Order order,
             str cancel_reason):
         """
         Send a cancel order request to the execution service.
@@ -106,7 +106,7 @@ cdef class ExecutionClient(object):
 
     cpdef void modify_order(
             self,
-            order: Order,
+            Order order,
             new_price: Decimal):
         """
         Send a modify order request to the execution service.
@@ -116,7 +116,7 @@ cdef class ExecutionClient(object):
 
     cpdef void _register_order(
             self,
-            order: Order,
+            Order order,
             GUID strategy_id):
         """
         Register the given order with the execution client.
@@ -133,8 +133,6 @@ cdef class ExecutionClient(object):
         """
         Handle events received from the execution service.
         """
-        Precondition.type(event, Event, 'event')
-
         self.log.debug(f"Received {event}")
 
         if isinstance(event, OrderEvent):

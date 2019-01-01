@@ -11,7 +11,11 @@
 
 from cpython.datetime cimport datetime
 
-from inv_trader.model.enums cimport Venue, Resolution, QuoteType
+from inv_trader.enums.currency_code cimport CurrencyCode
+from inv_trader.enums.security_type cimport SecurityType
+from inv_trader.enums.venue cimport Venue
+from inv_trader.enums.resolution cimport Resolution
+from inv_trader.enums.quote_type cimport QuoteType
 
 cdef class Symbol:
     """
@@ -72,8 +76,8 @@ cdef class Instrument:
     """
     cdef readonly Symbol symbol
     cdef readonly str broker_symbol
-    cdef readonly object quote_currency
-    cdef readonly object security_type
+    cdef readonly CurrencyCode quote_currency
+    cdef readonly SecurityType security_type
     cdef readonly int tick_decimals
     cdef readonly object tick_size
     cdef readonly object tick_value

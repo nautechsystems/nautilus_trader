@@ -15,7 +15,7 @@ from inv_trader.model.objects import Price, Symbol
 from inv_trader.model.order import OrderFactory
 from inv_trader.execution import LiveExecClient
 from test_kit.stubs import TestStubs
-from test_kit.mocks import MockExecClient, MockServer, MockPublisher
+from test_kit.mocks import MockExecClient, MockServer
 from test_kit.strategies import TestStrategy1
 
 UNIX_EPOCH = TestStubs.unix_epoch()

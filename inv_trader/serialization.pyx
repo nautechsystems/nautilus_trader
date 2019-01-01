@@ -21,18 +21,23 @@ from decimal import Decimal
 from typing import Dict
 
 from inv_trader.core.precondition cimport Precondition
-from inv_trader.commands import Command, OrderCommand, SubmitOrder, CancelOrder, ModifyOrder
-from inv_trader.commands import CollateralInquiry
-from inv_trader.model.enums import Broker, Venue, OrderSide, OrderType, TimeInForce
-from inv_trader.model.enums cimport Broker, Venue, OrderSide, OrderType, TimeInForce
-from inv_trader.model.enums import CurrencyCode, SecurityType
+from inv_trader.commands cimport Command, OrderCommand, SubmitOrder, CancelOrder, ModifyOrder
+from inv_trader.commands cimport CollateralInquiry
+from inv_trader.model.enums import Broker, Venue, OrderSide, OrderType, TimeInForce, CurrencyCode
+from inv_trader.enums.brokerage cimport Broker, broker_string
+from inv_trader.enums.time_in_force cimport TimeInForce, time_in_force_string
+from inv_trader.enums.order_side cimport OrderSide, order_side_string
+from inv_trader.enums.order_type cimport OrderType, order_type_string
+from inv_trader.enums.venue cimport Venue, venue_string
+from inv_trader.enums.security_type cimport SecurityType
+from inv_trader.enums.currency_code cimport CurrencyCode
 from inv_trader.model.identifiers cimport GUID, Label, OrderId, ExecutionId, ExecutionTicket, AccountId, AccountNumber
-from inv_trader.model.objects import Symbol, Instrument
-from inv_trader.model.order import Order
-from inv_trader.model.events import Event, OrderEvent, AccountEvent
-from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
-from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
-from inv_trader.model.events import OrderPartiallyFilled, OrderFilled
+from inv_trader.model.objects cimport Symbol, Instrument
+from inv_trader.model.order cimport Order
+from inv_trader.model.events cimport Event, OrderEvent, AccountEvent
+from inv_trader.model.events cimport OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
+from inv_trader.model.events cimport OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
+from inv_trader.model.events cimport OrderPartiallyFilled, OrderFilled
 
 
 cdef str UTF8 = 'utf-8'
@@ -187,7 +192,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
     """
 
     @staticmethod
-    def serialize(order: Order):
+    def serialize(Order order):
         """
         Serialize the given Order to Message Pack specification bytes.
 
@@ -199,12 +204,12 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
             SYMBOL: str(order.symbol),
             ORDER_ID: str(order.id),
             LABEL: str(order.label),
-            ORDER_SIDE: order.side.name,
-            ORDER_TYPE: order.type.name,
+            ORDER_SIDE: order_side_string(order.side),
+            ORDER_TYPE: order_type_string(order.type),
             QUANTITY: order.quantity,
             TIMESTAMP: _convert_datetime_to_string(order.timestamp),
             PRICE: _convert_price_to_string(order.price),
-            TIME_IN_FORCE: order.time_in_force.name,
+            TIME_IN_FORCE: time_in_force_string(order.time_in_force),
             EXPIRE_TIME: _convert_datetime_to_string(order.expire_time)
             }, encoding=UTF8)
 
@@ -267,7 +272,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
     """
 
     @staticmethod
-    def serialize(command: Command) -> bytes:
+    def serialize(Command command) -> bytes:
         """
         Serialize the given command to Message Pack specification bytes.
 
@@ -291,7 +296,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
             raise ValueError("Cannot serialize command (unrecognized command).")
 
     @staticmethod
-    def deserialize(command_bytes: bytes) -> Command:
+    def deserialize(bytes command_bytes) -> Command:
         """
         Deserialize the given Message Pack specification bytes to a command.
 
@@ -323,7 +328,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
             raise ValueError("Cannot deserialize command (unrecognized command).")
 
     @staticmethod
-    def _serialize_order_command(order_command: OrderCommand) -> bytes:
+    def _serialize_order_command(OrderCommand order_command) -> bytes:
         """
         Serialize the given order command to Message Pack specification bytes.
 
@@ -357,8 +362,8 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
 
     @staticmethod
     def _deserialize_order_command(
-            command_id: UUID,
-            command_timestamp: datetime,
+            GUID command_id,
+            datetime command_timestamp,
             unpacked: Dict) -> OrderCommand:
         """
         Deserialize the given parameters to an order command.
@@ -402,7 +407,7 @@ cdef class EventSerializer:
     """
 
     @staticmethod
-    def serialize(event: Event) -> bytes:
+    def serialize(Event event) -> bytes:
         """
         Serialize the given event to bytes.
 
@@ -413,7 +418,7 @@ cdef class EventSerializer:
         raise NotImplementedError("Method must be implemented.")
 
     @staticmethod
-    def deserialize(event_bytes: bytes) -> Event:
+    def deserialize(bytes event_bytes) -> Event:
         """
         Deserialize the given bytes to an event.
 
@@ -430,7 +435,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
     """
 
     @staticmethod
-    def serialize(event: Event) -> bytes:
+    def serialize(Event event) -> bytes:
         """
         Serialize the event to Message Pack specification bytes.
 
@@ -445,7 +450,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             raise ValueError("Cannot serialize event (unrecognized event).")
 
     @staticmethod
-    def deserialize(event_bytes: bytes) -> Event:
+    def deserialize(bytes event_bytes) -> Event:
         """
         Deserialize the given Message Pack specification bytes to an event.
 
@@ -488,7 +493,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             raise ValueError("Cannot deserialize event (unrecognized event).")
 
     @staticmethod
-    def _serialize_order_event(order_event: OrderEvent) -> bytes:
+    def _serialize_order_event(OrderEvent order_event) -> bytes:
         """
         Serialize the given order event to Message Pack specification bytes.
 
@@ -524,11 +529,11 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[ORDER_EVENT] = ORDER_WORKING
             package[ORDER_ID_BROKER] = str(order_event.broker_order_id)
             package[LABEL] = str(order_event.label)
-            package[ORDER_SIDE] = order_event.order_side.name
-            package[ORDER_TYPE] = order_event.order_type.name
+            package[ORDER_SIDE] = order_side_string(order_event.order_side)
+            package[ORDER_TYPE] = order_type_string(order_event.order_type)
             package[QUANTITY] = order_event.quantity
             package[PRICE] = str(order_event.price)
-            package[TIME_IN_FORCE] = order_event.time_in_force.name
+            package[TIME_IN_FORCE] = time_in_force_string(order_event.time_in_force)
             package[WORKING_TIME] = _convert_datetime_to_string(order_event.working_time)
             package[EXPIRE_TIME] = _convert_datetime_to_string(order_event.expire_time)
             return msgpack.packb(package)
@@ -561,7 +566,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[ORDER_EVENT] = ORDER_PARTIALLY_FILLED
             package[EXECUTION_ID] = str(order_event.execution_id)
             package[EXECUTION_TICKET] = str(order_event.execution_ticket)
-            package[ORDER_SIDE] = order_event.order_side.name
+            package[ORDER_SIDE] = order_side_string(order_event.order_side)
             package[FILLED_QUANTITY] = order_event.filled_quantity
             package[LEAVES_QUANTITY] = order_event.leaves_quantity
             package[AVERAGE_PRICE] = str(order_event.average_price)
@@ -572,7 +577,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[ORDER_EVENT] = ORDER_FILLED
             package[EXECUTION_ID] = str(order_event.execution_id)
             package[EXECUTION_TICKET] = str(order_event.execution_ticket)
-            package[ORDER_SIDE] = order_event.order_side.name
+            package[ORDER_SIDE] = order_side_string(order_event.order_side)
             package[FILLED_QUANTITY] = order_event.filled_quantity
             package[AVERAGE_PRICE] = str(order_event.average_price)
             package[EXECUTION_TIME] = _convert_datetime_to_string(order_event.execution_time)
@@ -713,7 +718,7 @@ cdef class InstrumentSerializer:
     """
 
     @staticmethod
-    def deserialize(instrument_bytes: bytes) -> Instrument:
+    def deserialize(bytes instrument_bytes) -> Instrument:
         """
         Deserialize the given instrument bytes to an instrument.
 

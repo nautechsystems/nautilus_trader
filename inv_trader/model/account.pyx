@@ -11,7 +11,6 @@
 
 import datetime as dt
 
-from cpython.datetime cimport datetime
 from decimal import Decimal
 
 from inv_trader.model.events cimport AccountEvent
@@ -22,20 +21,6 @@ cdef class Account:
     """
     Represents a brokerage account.
     """
-    cdef readonly bint initialized
-    cdef readonly object id
-    cdef readonly object broker
-    cdef readonly object account_number
-    cdef readonly object currency
-    cdef readonly object cash_balance
-    cdef readonly object cash_start_day
-    cdef readonly object cash_activity_day
-    cdef readonly object margin_used_liquidation
-    cdef readonly object margin_used_maintenance
-    cdef readonly object margin_ratio
-    cdef readonly str margin_call_status
-    cdef readonly datetime last_updated
-    cdef readonly list events
 
     def __init__(self):
         """
@@ -43,9 +28,7 @@ cdef class Account:
         """
         self.initialized = False
         self.id = None
-        self.broker = None
         self.account_number = None
-        self.currency = None
         self.cash_balance = Money.zero()
         self.cash_start_day = Money.zero()
         self.cash_activity_day = Money.zero()

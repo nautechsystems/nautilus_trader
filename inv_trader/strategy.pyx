@@ -24,15 +24,17 @@ from inv_trader.core.precondition cimport Precondition
 from inv_trader.core.logger import Logger, LoggerAdapter
 from inv_trader.common.execution cimport ExecutionClient
 from inv_trader.common.data cimport DataClient
-from inv_trader.model.account import Account
-from inv_trader.model.enums import OrderSide, MarketPosition
+from inv_trader.model.account cimport Account
+from inv_trader.enums.order_side cimport OrderSide
+from inv_trader.enums.market_position cimport MarketPosition
 from inv_trader.model.events cimport Event, AccountEvent, OrderEvent
-from inv_trader.model.events import OrderFilled, OrderPartiallyFilled
-from inv_trader.model.events import TimeEvent
+from inv_trader.model.events cimport OrderFilled, OrderPartiallyFilled
+from inv_trader.model.events cimport TimeEvent
 from inv_trader.model.identifiers cimport GUID, Label, OrderId, PositionId
 from inv_trader.model.objects cimport Symbol, Tick, BarType, Bar, Instrument
-from inv_trader.model.order import Order, OrderIdGenerator, OrderFactory
-from inv_trader.model.position import Position
+from inv_trader.model.order cimport Order
+from inv_trader.model.order import OrderIdGenerator, OrderFactory
+from inv_trader.model.position cimport Position
 from inv_trader.tools import IndicatorUpdater
 
 Indicator = object
@@ -785,19 +787,17 @@ cdef class TradeStrategy:
         return self._order_id_generator.generate(symbol)
 
     @staticmethod
-    def get_opposite_side(side: OrderSide) -> OrderSide:
+    def get_opposite_side(OrderSide side) -> OrderSide:
         """
         Get the opposite order side from the original side given.
 
         :param side: The original order side.
         :return: The opposite order side.
         """
-        Precondition.type(side, OrderSide, 'side')
-
         return OrderSide.BUY if side is OrderSide.SELL else OrderSide.SELL
 
     @staticmethod
-    def get_flatten_side(market_position: MarketPosition) -> OrderSide:
+    def get_flatten_side(MarketPosition market_position) -> OrderSide:
         """
         Get the order side needed to flatten a position from the given market position.
 
@@ -805,8 +805,6 @@ cdef class TradeStrategy:
         :return: The order side to flatten.
         :raises KeyError: If the given market position is flat.
         """
-        Precondition.type(market_position, MarketPosition, 'market_position')
-
         if market_position is MarketPosition.LONG:
             return OrderSide.SELL
         elif market_position is MarketPosition.SHORT:
@@ -826,7 +824,7 @@ cdef class TradeStrategy:
 
     def submit_order(
             self,
-            order: Order,
+            Order order,
             PositionId position_id):
         """
         Send a submit order command with the given order to the execution service.
@@ -837,7 +835,6 @@ cdef class TradeStrategy:
         :raises ValueError: If the position_id is not a valid string.
         :raises KeyError: If the order_id is already contained in the order book (must be unique).
         """
-        Precondition.type(order, Order, 'order')
         Precondition.not_none(self._exec_client, 'exec_client')
 
         if order.id in self._order_book:
@@ -851,7 +848,7 @@ cdef class TradeStrategy:
 
     def modify_order(
             self,
-            order: Order,
+            Order order,
             new_price: Decimal):
         """
         Send a modify order command for the given order with the given new price
@@ -863,7 +860,6 @@ cdef class TradeStrategy:
         :raises ValueError: If the new_price is not positive (> 0).
         :raises KeyError: If order_id is not found in the order book.
         """
-        Precondition.type(order, Order, 'order')
         Precondition.type(new_price, Decimal, 'new_price')
         Precondition.not_none(self._exec_client, 'exec_client')
         Precondition.positive(new_price, 'new_price')
@@ -876,7 +872,7 @@ cdef class TradeStrategy:
 
     def cancel_order(
             self,
-            order: Order,
+            Order order,
             str cancel_reason='NONE'):
         """
         Send a cancel order command for the given order and cancel_reason to the
@@ -888,7 +884,6 @@ cdef class TradeStrategy:
         :raises ValueError: If the cancel_reason is not a valid string.
         :raises KeyError: If the order_id is not found in the order book.
         """
-        Precondition.type(order, Order, 'order')
         Precondition.not_none(self._exec_client, 'exec_client')
         Precondition.valid_string(cancel_reason, 'cancel_reason')
 

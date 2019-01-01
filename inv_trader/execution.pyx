@@ -20,10 +20,10 @@ from zmq import Context
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.core.logger import Logger, LoggerAdapter
 from inv_trader.common.execution cimport ExecutionClient
-from inv_trader.commands import CollateralInquiry
-from inv_trader.commands import SubmitOrder, CancelOrder, ModifyOrder
-from inv_trader.model.account import Account
-from inv_trader.model.order import Order
+from inv_trader.commands cimport CollateralInquiry
+from inv_trader.commands cimport SubmitOrder, CancelOrder, ModifyOrder
+from inv_trader.model.account cimport Account
+from inv_trader.model.order cimport Order
 from inv_trader.model.events cimport Event, OrderEvent, AccountEvent, OrderCancelReject
 from inv_trader.model.identifiers cimport GUID, OrderId
 from inv_trader.messaging import RequestWorker, SubscriberWorker
@@ -125,7 +125,7 @@ cdef class LiveExecClient(ExecutionClient):
 
     cpdef void submit_order(
             self,
-            order: Order,
+            Order order,
             GUID strategy_id):
         """
         Send a submit order command to the execution service with the given
@@ -134,8 +134,6 @@ cdef class LiveExecClient(ExecutionClient):
         :param order: The order to submit.
         :param strategy_id: The strategy identifier to register the order with.
         """
-        Precondition.type(order, Order, 'order')
-
         self._register_order(order, strategy_id)
 
         command = SubmitOrder(
@@ -149,7 +147,7 @@ cdef class LiveExecClient(ExecutionClient):
 
     cpdef void cancel_order(
             self,
-            order: Order,
+            Order order,
             str cancel_reason):
         """
         Send a cancel order command to the execution service with the given
@@ -159,7 +157,6 @@ cdef class LiveExecClient(ExecutionClient):
         :param cancel_reason: The reason for cancellation (will be logged).
         :raises ValueError: If the cancel_reason is not a valid string.
         """
-        Precondition.type(order, Order, 'order')
         Precondition.valid_string(cancel_reason, 'cancel_reason')
 
         command = CancelOrder(
@@ -174,7 +171,7 @@ cdef class LiveExecClient(ExecutionClient):
 
     cpdef void modify_order(
             self,
-            order: Order,
+            Order order,
             new_price: Decimal):
         """
         Send a modify order command to the execution service with the given
@@ -184,7 +181,6 @@ cdef class LiveExecClient(ExecutionClient):
         :param new_price: The new modified price for the order.
         :raises ValueError: If the new_price is not positive (> 0).
         """
-        Precondition.type(order, Order, 'order')
         Precondition.type(new_price, Decimal, 'new_price')
         Precondition.positive(new_price, 'new_price')
 

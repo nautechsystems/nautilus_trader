@@ -13,7 +13,11 @@ from cpython.datetime cimport datetime
 from decimal import Decimal
 
 from inv_trader.core.precondition cimport Precondition
-from inv_trader.model.enums import CurrencyCode, OrderSide, OrderType, TimeInForce, Broker
+from inv_trader.enums.brokerage cimport Broker
+from inv_trader.enums.currency_code cimport CurrencyCode
+from inv_trader.enums.order_side cimport OrderSide
+from inv_trader.enums.order_type cimport OrderType
+from inv_trader.enums.time_in_force cimport TimeInForce
 from inv_trader.model.identifiers cimport GUID, Label, AccountNumber, AccountId
 from inv_trader.model.identifiers cimport OrderId, ExecutionId, ExecutionTicket
 from inv_trader.model.objects cimport Symbol
@@ -77,9 +81,9 @@ cdef class AccountEvent(Event):
 
     def __init__(self,
                  AccountId account_id,
-                 broker: Broker,
+                 Broker broker,
                  AccountNumber account_number,
-                 currency: CurrencyCode,
+                 CurrencyCode currency,
                  cash_balance: Decimal,
                  cash_start_day: Decimal,
                  cash_activity_day: Decimal,
@@ -103,8 +107,6 @@ cdef class AccountEvent(Event):
         :param event_id: The events identifier.
         :param event_timestamp: The order events timestamp.
         """
-        Precondition.type(broker, Broker, 'broker')
-        Precondition.type(currency, CurrencyCode, 'account_number')
         Precondition.type(cash_balance, Decimal, 'cash_balance')
         Precondition.type(cash_start_day, Decimal, 'cash_start_day')
         Precondition.type(cash_activity_day, Decimal, 'cash_activity_day')
@@ -277,11 +279,11 @@ cdef class OrderWorking(OrderEvent):
                  OrderId order_id,
                  OrderId broker_order_id,
                  Label label,
-                 order_side: OrderSide,
-                 order_type: OrderType,
+                 OrderSide order_side,
+                 OrderType order_type,
                  int quantity,
                  price: Decimal,
-                 time_in_force: TimeInForce,
+                 TimeInForce time_in_force,
                  datetime working_time,
                  GUID event_id,
                  datetime event_timestamp,
@@ -303,15 +305,15 @@ cdef class OrderWorking(OrderEvent):
         :param event_timestamp: The events timestamp.
         :param expire_time: The events order expire time (optional can be None).
         """
-        Precondition.type(order_side, OrderSide, 'order_side')
-        Precondition.type(order_type, OrderType, 'order_type')
         Precondition.type(price, Decimal, 'price')
-        Precondition.type(time_in_force, TimeInForce, 'time_in_force')
         Precondition.type(working_time, datetime, 'working_time')
         Precondition.type_or_none(expire_time, datetime, 'expire_time')
         Precondition.positive(quantity, 'quantity')
 
-        super().__init__(symbol, order_id, event_id, event_timestamp)
+        super().__init__(symbol,
+                         order_id,
+                         event_id,
+                         event_timestamp)
         self.broker_order_id = broker_order_id
         self.label = label
         self.order_side = order_side
@@ -465,7 +467,7 @@ cdef class OrderFilled(OrderEvent):
                  OrderId order_id,
                  ExecutionId execution_id,
                  ExecutionTicket execution_ticket,
-                 order_side: OrderSide,
+                 OrderSide order_side,
                  int filled_quantity,
                  average_price: Decimal,
                  datetime execution_time,
@@ -485,7 +487,6 @@ cdef class OrderFilled(OrderEvent):
         :param event_id: The events identifier.
         :param event_timestamp: The events timestamp.
         """
-        Precondition.type(order_side, OrderSide, 'order_side')
         Precondition.type(average_price, Decimal, 'average_price')
         Precondition.positive(filled_quantity, 'filled_quantity')
 
@@ -511,7 +512,7 @@ cdef class OrderPartiallyFilled(OrderEvent):
                  OrderId order_id,
                  ExecutionId execution_id,
                  ExecutionTicket execution_ticket,
-                 order_side: OrderSide,
+                 OrderSide order_side,
                  int filled_quantity,
                  int leaves_quantity,
                  average_price: Decimal,
@@ -533,7 +534,6 @@ cdef class OrderPartiallyFilled(OrderEvent):
         :param event_id: The events identifier.
         :param event_timestamp: The events timestamp.
         """
-        Precondition.type(order_side, OrderSide, 'order_side')
         Precondition.type(average_price, Decimal, 'average_price')
         Precondition.positive(filled_quantity, 'filled_quantity')
         Precondition.positive(leaves_quantity, 'leaves_quantity')
