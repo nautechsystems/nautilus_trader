@@ -37,26 +37,6 @@ cdef class Order:
     """
     Represents an order in a financial market.
     """
-    cdef list _events
-    cdef list _order_ids
-    cdef list _order_ids_broker
-    cdef list _execution_ids
-    cdef list _execution_tickets
-
-    cdef readonly Symbol symbol
-    cdef readonly OrderId id
-    cdef readonly Label label
-    cdef readonly object side
-    cdef readonly object type
-    cdef readonly int quantity
-    cdef readonly datetime timestamp
-    cdef readonly object price
-    cdef readonly object time_in_force
-    cdef readonly datetime expire_time
-    cdef readonly int filled_quantity
-    cdef readonly object average_price
-    cdef readonly object slippage
-    cdef readonly object status
 
     def __init__(self,
                  Symbol symbol,
@@ -123,7 +103,7 @@ cdef class Order:
         self.average_price = Decimal('0.0')
         self.slippage = Decimal('0.0')
         self.status = OrderStatus.INITIALIZED
-        self._events = []               # type: List[OrderEvent]
+        self.events = []                # type: List[OrderEvent]
         self._order_ids = [order_id]    # type: List[OrderId]
         self._order_ids_broker = []     # type: List[OrderId]
         self._execution_ids = []        # type: List[ExecutionId]
@@ -218,7 +198,7 @@ cdef class Order:
         """
         :return: The count of events since the order was initialized (int).
         """
-        return len(self._events)
+        return len(self.events)
 
     cpdef void apply(self, OrderEvent order_event):
         """
@@ -229,7 +209,7 @@ cdef class Order:
         """
         Precondition.equal(order_event.order_id, self.id)
 
-        self._events.append(order_event)
+        self.events.append(order_event)
 
         # Handle event
         if isinstance(order_event, OrderSubmitted):
@@ -275,12 +255,6 @@ cdef class Order:
             self.average_price = order_event.average_price
             self._set_slippage()
             self._check_overfill()
-
-    cpdef list get_events(self):
-        """
-        :return: The orders internal events list (List[OrderEvent]).
-        """
-        return self._events
 
     cdef object _set_slippage(self):
         if self.type not in PRICED_ORDER_TYPES:
