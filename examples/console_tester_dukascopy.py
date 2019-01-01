@@ -12,7 +12,7 @@ from decimal import Decimal
 from inv_trader.core.logger import Logger
 from inv_trader.data import LiveDataClient
 from inv_trader.execution import LiveExecClient
-from inv_trader.model.enums import Venue, Resolution, QuoteType
+from inv_trader.enums import Venue, Resolution, QuoteType
 from inv_trader.model.objects import Symbol, BarType
 from examples.strategy_examples import EMACrossLimitEntry
 

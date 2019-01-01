@@ -13,9 +13,11 @@ from cpython.datetime cimport datetime
 from decimal import Decimal
 
 from inv_trader.core.precondition cimport Precondition
-from inv_trader.model.enums cimport Venue, venue_string, Resolution, resolution_string
-from inv_trader.model.enums cimport QuoteType, quote_type_string
-from inv_trader.model.enums import SecurityType, CurrencyCode
+from inv_trader.enums.venue cimport Venue, venue_string
+from inv_trader.enums.resolution cimport Resolution, resolution_string
+from inv_trader.enums.quote_type cimport QuoteType, quote_type_string
+from inv_trader.enums.security_type cimport SecurityType
+from inv_trader.enums.currency_code cimport CurrencyCode
 
 
 cdef class Symbol:
@@ -422,8 +424,8 @@ cdef class Instrument:
     def __init__(self,
                  Symbol symbol,
                  str broker_symbol,
-                 quote_currency: CurrencyCode,
-                 security_type: SecurityType,
+                 CurrencyCode quote_currency,
+                 SecurityType security_type,
                  int tick_decimals,
                  tick_size: Decimal,
                  tick_value: Decimal,
@@ -464,8 +466,6 @@ cdef class Instrument:
         :param rollover_interest_sell: The instruments rollover interest for short positions.
         :param timestamp: The timestamp the instrument was created/updated at.
         """
-        Precondition.type(quote_currency, CurrencyCode, 'quote_currency')
-        Precondition.type(security_type, SecurityType, 'security_type')
         Precondition.type(tick_size, Decimal, 'tick_size')
         Precondition.type(tick_value, Decimal, 'tick_value')
         Precondition.type(target_direct_spread, Decimal, 'target_direct_spread')

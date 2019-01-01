@@ -17,7 +17,10 @@ from decimal import Decimal
 from typing import Dict, List
 
 from inv_trader.core.precondition cimport Precondition
-from inv_trader.model.enums import OrderSide, OrderType, TimeInForce, OrderStatus
+from inv_trader.enums.order_side cimport OrderSide, order_side_string
+from inv_trader.enums.order_type cimport OrderType, order_type_string
+from inv_trader.enums.order_status cimport OrderStatus
+from inv_trader.enums.time_in_force cimport TimeInForce, time_in_force_string
 from inv_trader.model.objects cimport Symbol
 from inv_trader.model.events cimport OrderEvent
 from inv_trader.model.events cimport OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
@@ -42,12 +45,12 @@ cdef class Order:
                  Symbol symbol,
                  OrderId order_id,
                  Label label,
-                 order_side: OrderSide,
-                 order_type: OrderType,
+                 OrderSide order_side,
+                 OrderType order_type,
                  int quantity,
                  datetime timestamp,
                  price: Decimal or None=None,
-                 time_in_force: TimeInForce or None=None,
+                 TimeInForce time_in_force=TimeInForce.NONE,
                  datetime expire_time=None):
         """
         Initializes a new instance of the Order class.
@@ -70,12 +73,9 @@ cdef class Order:
         :raises ValueError: If the order type has a price and the price is not positive (> 0).
         :raises ValueError: If the time_in_force is GTD and the expire_time is None.
         """
-        Precondition.type(order_side, OrderSide, 'order_side')
-        Precondition.type(order_type, OrderType, 'order_type')
         Precondition.type_or_none(price, Decimal, 'price')
-        Precondition.type_or_none(time_in_force, TimeInForce, 'time_in_force')
 
-        if time_in_force is None:
+        if time_in_force == TimeInForce.NONE:
             time_in_force = TimeInForce.DAY
 
         Precondition.positive(quantity, 'quantity')
@@ -138,8 +138,8 @@ cdef class Order:
         cdef str price = '' if self.price is None else f' {self.price}'
         cdef str expire_time = '' if self.expire_time is None else f' {self.expire_time}'
         return (f"Order(id={self.id}, label={self.label}) "
-                f"{self.side.name} {quantity} {self.symbol} @ {self.type.name}{price} "
-                f"{self.time_in_force.name}{expire_time}")
+                f"{order_side_string(self.side)} {quantity} {self.symbol} @ {order_type_string(self.type)}{price} "
+                f"{time_in_force_string(self.time_in_force)}{expire_time}")
 
     def __repr__(self) -> str:
         """
@@ -342,7 +342,7 @@ cdef class OrderFactory:
             Symbol symbol,
             OrderId order_id,
             Label label,
-            order_side: OrderSide,
+            OrderSide order_side,
             int quantity) -> Order:
         """
         Creates and returns a new market order with the given parameters.
@@ -363,7 +363,7 @@ cdef class OrderFactory:
                      quantity,
                      dt.datetime.now(timezone.utc),
                      price=None,
-                     time_in_force=None,
+                     time_in_force=TimeInForce.NONE,
                      expire_time=None)
 
     @staticmethod
@@ -371,10 +371,10 @@ cdef class OrderFactory:
             Symbol symbol,
             OrderId order_id,
             Label label,
-            order_side: OrderSide,
+            OrderSide order_side,
             int quantity,
             price: Decimal,
-            time_in_force=None,
+            TimeInForce time_in_force=TimeInForce.NONE,
             datetime expire_time=None) -> Order:
         """
         Creates and returns a new limit order with the given parameters.
@@ -409,10 +409,10 @@ cdef class OrderFactory:
             Symbol symbol,
             OrderId order_id,
             Label label,
-            order_side: OrderSide,
+            OrderSide order_side,
             int quantity,
             price: Decimal,
-            time_in_force=None,
+            TimeInForce time_in_force=TimeInForce.NONE,
             datetime expire_time=None) -> Order:
         """
         Creates and returns a new stop-market order with the given parameters.
@@ -447,10 +447,10 @@ cdef class OrderFactory:
             Symbol symbol,
             OrderId order_id,
             Label label,
-            order_side: OrderSide,
+            OrderSide order_side,
             int quantity,
             price: Decimal,
-            time_in_force=None,
+            TimeInForce time_in_force=TimeInForce.NONE,
             datetime expire_time=None) -> Order:
         """
         Creates and returns a new stop-limit order with the given parameters.
@@ -485,10 +485,10 @@ cdef class OrderFactory:
             Symbol symbol,
             OrderId order_id,
             Label label,
-            order_side: OrderSide,
+            OrderSide order_side,
             int quantity,
             price: Decimal,
-            time_in_force=None,
+            TimeInForce time_in_force=TimeInForce.NONE,
             datetime expire_time=None) -> Order:
         """
         Creates and returns a new market-if-touched order with the given parameters.
@@ -523,7 +523,7 @@ cdef class OrderFactory:
             Symbol symbol,
             OrderId order_id,
             Label label,
-            order_side: OrderSide,
+            OrderSide order_side,
             int quantity) -> Order:
         """
         Creates and returns a new fill-or-kill order with the given parameters.
@@ -552,7 +552,7 @@ cdef class OrderFactory:
             Symbol symbol,
             OrderId order_id,
             Label label,
-            order_side: OrderSide,
+            OrderSide order_side,
             int quantity) -> Order:
         """
         Creates and returns a new immediate-or-cancel order with the given parameters.

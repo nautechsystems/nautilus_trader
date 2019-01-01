@@ -48,4 +48,7 @@ cdef class ModifyOrder(OrderCommand):
     """
     cdef readonly object modified_price
 
-
+cdef class CollateralInquiry(Command):
+    """
+    Represents a request for a FIX collateral inquiry of all connected accounts.
+    """

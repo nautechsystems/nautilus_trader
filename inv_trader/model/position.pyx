@@ -14,7 +14,8 @@ from decimal import Decimal
 from typing import List
 
 from inv_trader.core.precondition cimport Precondition
-from inv_trader.model.enums import MarketPosition, OrderSide
+from inv_trader.enums.market_position cimport MarketPosition, market_position_string
+from inv_trader.enums.order_side cimport OrderSide
 from inv_trader.model.objects cimport Symbol
 from inv_trader.model.events cimport OrderEvent, OrderPartiallyFilled, OrderFilled
 from inv_trader.model.identifiers cimport PositionId, ExecutionId, ExecutionTicket
@@ -111,7 +112,7 @@ cdef class Position:
         """
         cdef str quantity = '{:,}'.format(self.quantity)
         return (f"Position(id={self.id}) "
-                f"{self.symbol} {self.market_position.name} {quantity}")
+                f"{self.symbol} {market_position_string(self.market_position)} {quantity}")
 
     def __repr__(self) -> str:
         """
@@ -151,11 +152,10 @@ cdef class Position:
 
     cdef void _update_position(
             self,
-            order_side: OrderSide,
+            OrderSide order_side,
             int quantity,
             average_price: Decimal,
             datetime event_time):
-        Precondition.type(order_side, OrderSide, 'order_side')
         Precondition.type(average_price, Decimal, 'average_price')
         Precondition.type(event_time, datetime, 'event_time')
         Precondition.positive(quantity, 'quantity')

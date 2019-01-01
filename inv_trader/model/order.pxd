@@ -13,7 +13,10 @@ from cpython.datetime cimport datetime
 from inv_trader.model.objects cimport Symbol
 from inv_trader.model.events cimport OrderEvent
 from inv_trader.model.identifiers cimport Label, OrderId
-from inv_trader.model.enums import OrderSide, OrderType, TimeInForce, OrderStatus
+from inv_trader.enums.order_side cimport OrderSide
+from inv_trader.enums.order_type cimport OrderType
+from inv_trader.enums.order_status cimport OrderStatus
+from inv_trader.enums.time_in_force cimport TimeInForce
 
 
 cdef class Order:
@@ -28,17 +31,17 @@ cdef class Order:
     cdef readonly Symbol symbol
     cdef readonly OrderId id
     cdef readonly Label label
-    cdef readonly object side
-    cdef readonly object type
+    cdef readonly OrderSide side
+    cdef readonly OrderType type
     cdef readonly int quantity
     cdef readonly datetime timestamp
     cdef readonly object price
-    cdef readonly object time_in_force
+    cdef readonly TimeInForce time_in_force
     cdef readonly datetime expire_time
     cdef readonly int filled_quantity
     cdef readonly object average_price
     cdef readonly object slippage
-    cdef readonly object status
+    cdef readonly OrderStatus status
     cdef readonly list events
 
     cpdef void apply(self, OrderEvent order_event)

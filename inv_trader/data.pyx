@@ -24,6 +24,9 @@ from inv_trader.core.precondition cimport Precondition
 from inv_trader.core.logger import Logger, LoggerAdapter
 from inv_trader.common.data cimport DataClient
 from inv_trader.model.enums import Resolution, QuoteType, Venue
+from inv_trader.enums.resolution cimport Resolution
+from inv_trader.enums.quote_type cimport QuoteType
+from inv_trader.enums.venue cimport Venue
 from inv_trader.model.objects cimport Symbol, Tick, BarType, Bar, Instrument
 from inv_trader.serialization import InstrumentSerializer
 from inv_trader.strategy import TradeStrategy

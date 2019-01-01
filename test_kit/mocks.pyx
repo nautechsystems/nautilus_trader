@@ -20,16 +20,13 @@ from typing import Callable
 from uuid import UUID
 from zmq import Context
 
-from inv_trader.model.enums import Venue, Resolution, QuoteType, OrderSide, OrderType, OrderStatus
-from inv_trader.model.objects import Symbol, BarType, Bar
 from inv_trader.common.execution cimport ExecutionClient
 from inv_trader.model.objects import Price
-from inv_trader.model.order import Order
-from inv_trader.model.events import Event, OrderEvent
-from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
-from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
-from inv_trader.model.events import OrderFilled, OrderPartiallyFilled
-from inv_trader.model.identifiers import GUID, OrderId, ExecutionId, ExecutionTicket
+from inv_trader.model.order cimport Order
+from inv_trader.model.events cimport OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
+from inv_trader.model.events cimport OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
+from inv_trader.model.events cimport OrderFilled, OrderPartiallyFilled
+from inv_trader.model.identifiers cimport GUID, OrderId, ExecutionId, ExecutionTicket
 
 cdef str UTF8 = 'utf-8'
 
@@ -150,8 +147,8 @@ class MockPublisher(Thread):
 
     def publish(
             self,
-            topic: str,
-            message: bytes):
+            str topic,
+            bytes message):
         """
         Publish the message to the subscribers.
 
@@ -182,7 +179,7 @@ class MockPublisher(Thread):
         self._log(f"Disconnecting from {self._service_address}...")
         self._socket.disconnect(self._service_address)
 
-    def _log(self, message: str):
+    def _log(self, str message):
         """
         Log the given message (if no logger then prints).
 
@@ -218,7 +215,7 @@ cdef class MockExecClient(ExecutionClient):
 
     def submit_order(
             self,
-            order: Order,
+            Order order,
             strategy_id: UUID):
         """
         Send a submit order command to the mock execution service.
@@ -263,7 +260,7 @@ cdef class MockExecClient(ExecutionClient):
     def cancel_order(
             self,
             order: Order,
-            cancel_reason: str):
+            str cancel_reason):
         """
         Send a cancel order command to the mock execution service.
         """
@@ -276,7 +273,10 @@ cdef class MockExecClient(ExecutionClient):
 
         super()._on_event(cancelled)
 
-    def modify_order(self, order: Order, new_price: Decimal):
+    def modify_order(
+            self,
+            Order order,
+            new_price: Decimal):
         """
         Send a modify order command to the mock execution service.
         """

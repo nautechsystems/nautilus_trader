@@ -13,7 +13,7 @@ from cpython.datetime cimport datetime
 from inv_trader.model.objects cimport Symbol
 from inv_trader.model.events cimport OrderEvent
 from inv_trader.model.identifiers cimport PositionId
-from inv_trader.model.enums import OrderSide
+from inv_trader.enums.order_side cimport OrderSide
 
 
 cdef class Position:
@@ -38,7 +38,7 @@ cdef class Position:
     cpdef void apply(self, OrderEvent event)
     cdef void _update_position(
             self,
-            order_side: OrderSide,
+            OrderSide order_side,
             int quantity,
             average_price,
             datetime event_time)

@@ -11,6 +11,10 @@
 
 from cpython.datetime cimport datetime
 
+from inv_trader.enums.brokerage cimport Broker
+from inv_trader.enums.order_side cimport OrderSide
+from inv_trader.enums.order_type cimport OrderType
+from inv_trader.enums.time_in_force cimport TimeInForce
 from inv_trader.model.objects cimport Symbol
 from inv_trader.model.identifiers cimport GUID, Label, AccountId, AccountNumber
 from inv_trader.model.identifiers cimport OrderId, ExecutionId, ExecutionTicket
@@ -29,7 +33,7 @@ cdef class AccountEvent(Event):
     Represents an account event produced from a collateral report.
     """
     cdef readonly AccountId account_id
-    cdef readonly object broker
+    cdef readonly Broker broker
     cdef readonly AccountNumber account_number
     cdef readonly object currency
     cdef readonly object cash_balance
@@ -77,11 +81,11 @@ cdef class OrderWorking(OrderEvent):
     """
     cdef readonly OrderId broker_order_id
     cdef readonly Label label
-    cdef readonly object order_side
-    cdef readonly object order_type
+    cdef readonly OrderSide order_side
+    cdef readonly OrderType order_type
     cdef readonly int quantity
     cdef readonly object price
-    cdef readonly object time_in_force
+    cdef readonly TimeInForce time_in_force
     cdef readonly datetime working_time
     cdef readonly datetime expire_time
 
@@ -124,7 +128,7 @@ cdef class OrderFilled(OrderEvent):
     """
     cdef readonly ExecutionId execution_id
     cdef readonly ExecutionTicket execution_ticket
-    cdef readonly object order_side
+    cdef readonly OrderSide order_side
     cdef readonly object filled_quantity
     cdef readonly object average_price
     cdef readonly datetime execution_time
@@ -136,7 +140,7 @@ cdef class OrderPartiallyFilled(OrderEvent):
     """
     cdef readonly ExecutionId execution_id
     cdef readonly ExecutionTicket execution_ticket
-    cdef readonly object order_side
+    cdef readonly OrderSide order_side
     cdef readonly object filled_quantity
     cdef readonly object leaves_quantity
     cdef readonly object average_price
