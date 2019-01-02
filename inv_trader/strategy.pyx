@@ -58,12 +58,12 @@ cdef class TradeStrategy:
     cdef object _indicator_updaters
     cdef object _indicator_index
 
-    cdef readonly object _order_position_index
-    cdef readonly object _order_book
-    cdef readonly object _position_book
-    cdef readonly object _data_client
-    cdef readonly object _exec_client
-    cdef readonly object _account
+    cdef readonly dict _order_position_index
+    cdef readonly dict _order_book
+    cdef readonly dict _position_book
+    cdef readonly DataClient _data_client
+    cdef readonly ExecutionClient _exec_client
+    cdef readonly Account _account
 
     def __init__(self,
                  str label='0',
@@ -153,7 +153,7 @@ cdef class TradeStrategy:
         raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
 
     # @abc.abstractmethod
-    def on_tick(self, tick: Tick):
+    cpdef void on_tick(self, Tick tick):
         """
         Called when a tick is received by the strategy.
 
@@ -163,7 +163,7 @@ cdef class TradeStrategy:
         raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
 
     # @abc.abstractmethod
-    def on_bar(self, bar_type: BarType, bar: Bar):
+    cpdef void on_bar(self, BarType bar_type, Bar bar):
         """
         Called when a bar is received by the strategy.
 
@@ -174,7 +174,7 @@ cdef class TradeStrategy:
         raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
 
     # @abc.abstractmethod
-    def on_event(self, event: Event):
+    cpdef void on_event(self, Event event):
         """
         Called when an event is received by the strategy.
 
@@ -405,13 +405,7 @@ cdef class TradeStrategy:
         Precondition.true(from_datetime < dt.datetime.now(timezone.utc),
                           'from_datetime < datetime.now(timezone.utc)')
 
-        self._data_client.historical_bars_from(
-            bar_type.symbol.code,
-            bar_type.symbol.venue,
-            bar_type.period,
-            bar_type.resolution,
-            bar_type.quote_type,
-            from_datetime)
+        self._data_client.historical_bars_from(bar_type, from_datetime, self._update_bars)
 
     cpdef void subscribe_bars(self, BarType bar_type):
         """
@@ -583,7 +577,7 @@ cdef class TradeStrategy:
 
         return self._ticks[symbol]
 
-    cpdef object order(self, OrderId order_id):
+    cpdef Order order(self, OrderId order_id):
         """
         Get the order from the order book with the given order_id.
 
@@ -598,7 +592,7 @@ cdef class TradeStrategy:
 
         return self._order_book[order_id]
 
-    cpdef object position(self, PositionId position_id):
+    cpdef Position position(self, PositionId position_id):
         """
         Get the position from the positions dictionary for the given position id.
 
@@ -925,7 +919,7 @@ cdef class TradeStrategy:
         if position_id not in self._position_book.keys():
             raise KeyError(f"Cannot flatten position (the position {position_id} was not found).")
 
-        position = self._position_book[position_id]
+        cdef Position position = self._position_book[position_id]
 
         if position is None:
             self._log.warning(f"Cannot flatten position (the position {position_id} was None).")
@@ -936,7 +930,7 @@ cdef class TradeStrategy:
                 f"Cannot flatten position (the position {position_id} was already FLAT).")
             return
 
-        order = OrderFactory.market(
+        cdef Order order = OrderFactory.market(
             position.symbol,
             self.generate_order_id(position.symbol),
             Label("FLATTEN"),

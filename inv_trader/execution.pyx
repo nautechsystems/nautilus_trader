@@ -20,7 +20,7 @@ from zmq import Context
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.core.logger import Logger, LoggerAdapter
 from inv_trader.common.execution cimport ExecutionClient
-from inv_trader.commands cimport CollateralInquiry
+from inv_trader.commands cimport Command, OrderCommand, CollateralInquiry
 from inv_trader.commands cimport SubmitOrder, CancelOrder, ModifyOrder
 from inv_trader.model.account cimport Account
 from inv_trader.model.order cimport Order
@@ -67,8 +67,6 @@ cdef class LiveExecClient(ExecutionClient):
         :raises ValueError: If the commands_port is not in range [0, 65535]
         :raises ValueError: If the events_port is not in range [0, 65535]
         """
-        # Precondition.type(command_serializer, CommandSerializer, 'command_serializer')
-        # Precondition.type(event_serializer, EventSerializer, 'event_serializer')
         Precondition.type_or_none(logger, Logger, 'logger')
         Precondition.valid_string(host, 'host')
         Precondition.in_range(commands_port, 'commands_port', 0, 65535)
@@ -117,16 +115,13 @@ cdef class LiveExecClient(ExecutionClient):
         """
         Send a collateral inquiry command to the execution service.
         """
-        command = CollateralInquiry(GUID(uuid.uuid4()), datetime.utcnow())
-        message = self._command_serializer.serialize(command)
+        cdef Command command = CollateralInquiry(GUID(uuid.uuid4()), datetime.utcnow())
+        cdef bytes message = self._command_serializer.serialize(command)
 
         self._commands_worker.send(message)
         self.log.debug(f"Sent {command}")
 
-    cpdef void submit_order(
-            self,
-            Order order,
-            GUID strategy_id):
+    cpdef void submit_order(self, Order order, GUID strategy_id):
         """
         Send a submit order command to the execution service with the given
         order and strategy_id.
@@ -136,19 +131,16 @@ cdef class LiveExecClient(ExecutionClient):
         """
         self._register_order(order, strategy_id)
 
-        command = SubmitOrder(
+        cdef OrderCommand command = SubmitOrder(
             order,
             GUID(uuid.uuid4()),
             datetime.utcnow())
-        message = self._command_serializer.serialize(command)
+        cdef bytes message = self._command_serializer.serialize(command)
 
         self._commands_worker.send(message)
         self.log.debug(f"Sent {command}")
 
-    cpdef void cancel_order(
-            self,
-            Order order,
-            str cancel_reason):
+    cpdef void cancel_order(self, Order order, str cancel_reason):
         """
         Send a cancel order command to the execution service with the given
         order and cancel_reason.
@@ -159,20 +151,17 @@ cdef class LiveExecClient(ExecutionClient):
         """
         Precondition.valid_string(cancel_reason, 'cancel_reason')
 
-        command = CancelOrder(
+        cdef OrderCommand command = CancelOrder(
             order,
             cancel_reason,
             GUID(uuid.uuid4()),
             datetime.utcnow())
-        message = self._command_serializer.serialize(command)
+        cdef bytes message = self._command_serializer.serialize(command)
 
         self._commands_worker.send(message)
         self.log.debug(f"Sent {command}")
 
-    cpdef void modify_order(
-            self,
-            Order order,
-            new_price: Decimal):
+    cpdef void modify_order(self, Order order, new_price: Decimal):
         """
         Send a modify order command to the execution service with the given
         order and new_price.
@@ -184,12 +173,12 @@ cdef class LiveExecClient(ExecutionClient):
         Precondition.type(new_price, Decimal, 'new_price')
         Precondition.positive(new_price, 'new_price')
 
-        command = ModifyOrder(
+        cdef OrderCommand command = ModifyOrder(
             order,
             new_price,
             GUID(uuid.uuid4()),
             datetime.utcnow())
-        message = self._command_serializer.serialize(command)
+        cdef bytes message = self._command_serializer.serialize(command)
 
         self._commands_worker.send(message)
         self.log.debug(f"Sent {command}")
@@ -201,7 +190,7 @@ cdef class LiveExecClient(ExecutionClient):
 
         :param body: The order event message body.
         """
-        cdef object event = self._event_serializer.deserialize(body)
+        cdef Event event = self._event_serializer.deserialize(body)
 
         # If no registered strategies then print message to console.
         if len(self._registered_strategies) == 0:
@@ -215,5 +204,5 @@ cdef class LiveExecClient(ExecutionClient):
 
         :param body: The order command acknowledgement message body.
         """
-        cdef object command = self._command_serializer.deserialize(body)
+        cdef Command command = self._command_serializer.deserialize(body)
         self.log.debug(f"Received order command ack for command_id {command.id}.")

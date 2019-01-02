@@ -85,39 +85,28 @@ cdef class ExecutionClient(object):
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the execution client.")
 
-    cpdef void submit_order(
-            self,
-            order: Order,
-            GUID strategy_id):
+    cpdef void submit_order(self, Order order, GUID strategy_id):
         """
         Send a submit order request to the execution service.
         """
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the execution client.")
 
-    cpdef void cancel_order(
-            self, Order order,
-            str cancel_reason):
+    cpdef void cancel_order(self, Order order, str cancel_reason):
         """
         Send a cancel order request to the execution service.
         """
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the execution client.")
 
-    cpdef void modify_order(
-            self,
-            Order order,
-            new_price: Decimal):
+    cpdef void modify_order(self, Order order, new_price: Decimal):
         """
         Send a modify order request to the execution service.
         """
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the execution client.")
 
-    cpdef void _register_order(
-            self,
-            Order order,
-            GUID strategy_id):
+    cpdef void _register_order(self, Order order, GUID strategy_id):
         """
         Register the given order with the execution client.
 
