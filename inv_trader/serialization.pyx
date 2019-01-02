@@ -137,7 +137,7 @@ cpdef object _convert_string_to_price(str price_string):
     return None if price_string == NONE else Decimal(price_string)
 
 
-cpdef str _convert_datetime_to_string(expire_time: datetime):
+cpdef str _convert_datetime_to_string(datetime expire_time):
     """
     Convert the given object to a valid ISO8601 string, or 'NONE'.
 
@@ -164,7 +164,7 @@ cdef class OrderSerializer:
     """
 
     @staticmethod
-    def serialize(order: Order):
+    def serialize(Order order):
         """
         Serialize the given order to bytes.
 
@@ -214,7 +214,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
             }, encoding=UTF8)
 
     @staticmethod
-    def deserialize(order_bytes: bytes):
+    def deserialize(bytes order_bytes):
         """
         Deserialize the given Message Pack specification bytes to an Order.
 
@@ -224,7 +224,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
         """
         Precondition.not_empty(order_bytes, 'order_bytes')
 
-        unpacked = msgpack.unpackb(order_bytes, raw=False)
+        cdef dict unpacked = msgpack.unpackb(order_bytes, raw=False)
 
         return Order(symbol=_parse_symbol(unpacked[SYMBOL]),
                      order_id=OrderId(unpacked[ORDER_ID]),

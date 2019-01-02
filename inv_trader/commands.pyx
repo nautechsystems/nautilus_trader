@@ -16,7 +16,7 @@ from cpython.datetime cimport datetime
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.model.identifiers cimport GUID
-from inv_trader.model.order import Order
+from inv_trader.model.order cimport Order
 
 
 cdef class Command:
@@ -76,7 +76,7 @@ cdef class OrderCommand(Command):
     """
 
     def __init__(self,
-                 order: Order,
+                 Order order,
                  GUID command_id,
                  datetime command_timestamp):
         """
@@ -84,10 +84,8 @@ cdef class OrderCommand(Command):
 
         :param order: The commands order.
         :param command_id: The commands identifier.
-        :param command_timestamp: The order commands timestamp.
+        :param command_timestamp: The commands timestamp.
         """
-        Precondition.type(order, Order, 'order')
-
         super().__init__(command_id, command_timestamp)
         self.order = order
 
@@ -110,7 +108,7 @@ cdef class SubmitOrder(OrderCommand):
     """
 
     def __init__(self,
-                 order: Order,
+                 Order order,
                  GUID command_id,
                  datetime command_timestamp):
         """
@@ -120,8 +118,6 @@ cdef class SubmitOrder(OrderCommand):
         :param command_id: The commands identifier.
         :param command_timestamp: The commands timestamp.
         """
-        Precondition.type(order, Order, 'order')
-
         super().__init__(order,
                          command_id,
                          command_timestamp)
@@ -133,7 +129,7 @@ cdef class CancelOrder(OrderCommand):
     """
 
     def __init__(self,
-                 order: Order,
+                 Order order,
                  str cancel_reason,
                  GUID command_id,
                  datetime command_timestamp):
@@ -145,14 +141,12 @@ cdef class CancelOrder(OrderCommand):
         :param command_id: The commands identifier.
         :param command_timestamp: The commands timestamp.
         """
-        Precondition.type(order, Order, 'order')
         Precondition.valid_string(cancel_reason, 'cancel_reason')
 
         super().__init__(
             order,
             command_id,
             command_timestamp)
-
         self.cancel_reason = cancel_reason
 
 
@@ -162,7 +156,7 @@ cdef class ModifyOrder(OrderCommand):
     """
 
     def __init__(self,
-                 order: Order,
+                 Order order,
                  modified_price: Decimal,
                  GUID command_id,
                  datetime command_timestamp):
@@ -174,14 +168,12 @@ cdef class ModifyOrder(OrderCommand):
         :param command_id: The commands identifier.
         :param command_timestamp: The commands timestamp.
         """
-        Precondition.type(order, Order, 'order')
         Precondition.type(modified_price, Decimal, 'modified_price')
         Precondition.positive(modified_price, 'modified_price')
 
         super().__init__(order,
                          command_id,
                          command_timestamp)
-
         self.modified_price = modified_price
 
 

@@ -213,14 +213,11 @@ cdef class MockExecClient(ExecutionClient):
         """
         self.log.info("MockExecClient disconnected.")
 
-    def submit_order(
-            self,
-            Order order,
-            strategy_id: UUID):
+    cpdef void submit_order(self, Order order, GUID strategy_id):
         """
         Send a submit order command to the mock execution service.
         """
-        super()._register_order(order, strategy_id)
+        self._register_order(order, strategy_id)
 
         submitted = OrderSubmitted(
             order.symbol,
@@ -253,14 +250,11 @@ cdef class MockExecClient(ExecutionClient):
             datetime.utcnow(),
             order.expire_time)
 
-        super()._on_event(submitted)
-        super()._on_event(accepted)
-        super()._on_event(working)
+        self._on_event(submitted)
+        self._on_event(accepted)
+        self._on_event(working)
 
-    def cancel_order(
-            self,
-            order: Order,
-            str cancel_reason):
+    cpdef void cancel_order(self, Order order, str cancel_reason):
         """
         Send a cancel order command to the mock execution service.
         """
@@ -271,12 +265,9 @@ cdef class MockExecClient(ExecutionClient):
             GUID(uuid.uuid4()),
             datetime.utcnow())
 
-        super()._on_event(cancelled)
+        self._on_event(cancelled)
 
-    def modify_order(
-            self,
-            Order order,
-            new_price: Decimal):
+    cpdef void modify_order(self, Order order, new_price: Decimal):
         """
         Send a modify order command to the mock execution service.
         """
@@ -289,15 +280,15 @@ cdef class MockExecClient(ExecutionClient):
             GUID(uuid.uuid4()),
             datetime.utcnow())
 
-        super()._on_event(modified)
+        self._on_event(modified)
 
-    def collateral_inquiry(self):
+    cpdef void collateral_inquiry(self):
         """
         Send a collateral inquiry command to the mock execution service.
         """
         # Does nothing.
 
-    def fill_last_order(self):
+    cpdef void fill_last_order(self):
         """
         Fills the last order held by the execution service.
         """
@@ -317,4 +308,4 @@ cdef class MockExecClient(ExecutionClient):
             GUID(uuid.uuid4()),
             datetime.utcnow())
 
-        super()._on_event(filled)
+        self._on_event(filled)
