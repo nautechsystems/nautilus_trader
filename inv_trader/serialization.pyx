@@ -202,7 +202,6 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         Precondition.not_empty(command_bytes, 'command_bytes')
 
         cdef dict unpacked = msgpack.unpackb(command_bytes, raw=False)
-
         cdef str command_type = unpacked[COMMAND_TYPE]
         cdef GUID command_id = GUID(UUID(unpacked[COMMAND_ID]))
         cdef datetime command_timestamp = _convert_string_to_datetime(unpacked[COMMAND_TIMESTAMP])
@@ -224,15 +223,17 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         Serialize the given order command to Message Pack specification bytes.
 
         :param order_command: The order command to serialize.
+        :param package: The dictionary to pack.
         :return: The serialized order command.
         :raises ValueError: If the order command cannot be serialized.
         """
         cdef dict package = {
-            COMMAND_TYPE: ORDER_COMMAND,
-            ORDER: self.order_serializer.serialize(order_command.order).hex(),
             COMMAND_ID: str(order_command.id),
             COMMAND_TIMESTAMP: _convert_datetime_to_string(order_command.timestamp)
         }
+
+        package[COMMAND_TYPE] = ORDER_COMMAND
+        package[ORDER] = self.order_serializer.serialize(order_command.order).hex()
 
         if isinstance(order_command, SubmitOrder):
             package[ORDER_COMMAND] = SUBMIT_ORDER
