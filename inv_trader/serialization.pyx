@@ -19,16 +19,14 @@ from decimal import Decimal
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.commands cimport Command, OrderCommand, SubmitOrder, CancelOrder, ModifyOrder
 from inv_trader.commands cimport CollateralInquiry
-from inv_trader.model.enums import Broker, Venue, OrderSide, OrderType, TimeInForce, CurrencyCode
-from inv_trader.enums.brokerage cimport Broker, broker_string
+from inv_trader.model.enums import Broker, OrderSide, OrderType, TimeInForce, CurrencyCode
+from inv_trader.enums.brokerage cimport Broker
 from inv_trader.enums.time_in_force cimport TimeInForce, time_in_force_string
 from inv_trader.enums.order_side cimport OrderSide, order_side_string
 from inv_trader.enums.order_type cimport OrderType, order_type_string
-from inv_trader.enums.venue cimport Venue, venue_string
-from inv_trader.enums.security_type cimport SecurityType
 from inv_trader.enums.currency_code cimport CurrencyCode
 from inv_trader.model.identifiers cimport GUID, Label, OrderId, ExecutionId, ExecutionTicket, AccountId, AccountNumber
-from inv_trader.model.objects cimport Symbol, Instrument
+from inv_trader.model.objects cimport Symbol
 from inv_trader.model.order cimport Order
 from inv_trader.model.events cimport Event, OrderEvent, AccountEvent
 from inv_trader.model.events cimport OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
@@ -160,7 +158,6 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
     """
     Provides a command serializer for the Message Pack specification.
     """
-    cpdef OrderSerializer order_serializer
 
     def __init__(self):
         """
@@ -223,7 +220,6 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         Serialize the given order command to Message Pack specification bytes.
 
         :param order_command: The order command to serialize.
-        :param package: The dictionary to pack.
         :return: The serialized order command.
         :raises ValueError: If the order command cannot be serialized.
         """
@@ -301,7 +297,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
         :raises: ValueError: If the event cannot be serialized.
         """
         if isinstance(event, OrderEvent):
-            return MsgPackEventSerializer._serialize_order_event(event)
+            return self._serialize_order_event(event)
         else:
             raise ValueError("Cannot serialize event (unrecognized event).")
 
@@ -323,7 +319,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
         cdef datetime event_timestamp = _convert_string_to_datetime(unpacked[EVENT_TIMESTAMP])
 
         if event_type == ORDER_EVENT:
-            return MsgPackEventSerializer._deserialize_order_event(
+            return self._deserialize_order_event(
                 event_id,
                 event_timestamp,
                 unpacked)
@@ -345,8 +341,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
         else:
             raise ValueError("Cannot deserialize event (unrecognized event).")
 
-    @staticmethod
-    cdef bytes _serialize_order_event(OrderEvent order_event):
+    cdef bytes _serialize_order_event(self, OrderEvent order_event):
         """
         Serialize the given order event to Message Pack specification bytes.
 
@@ -439,8 +434,8 @@ cdef class MsgPackEventSerializer(EventSerializer):
         else:
             raise ValueError("Cannot serialize event (unrecognized event.")
 
-    @staticmethod
     cdef OrderEvent _deserialize_order_event(
+            self,
             GUID event_id,
             datetime event_timestamp,
             dict unpacked):

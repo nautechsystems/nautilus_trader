@@ -17,7 +17,6 @@ from datetime import datetime
 from decimal import Decimal
 from threading import Thread
 from typing import Callable
-from uuid import UUID
 from zmq import Context
 
 from inv_trader.common.execution cimport ExecutionClient
