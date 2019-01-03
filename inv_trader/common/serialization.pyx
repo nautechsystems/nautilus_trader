@@ -17,21 +17,14 @@ from cpython.datetime cimport datetime
 from decimal import Decimal
 
 from inv_trader.commands cimport Command
-from inv_trader.model.enums import Broker, Venue, OrderSide, OrderType, TimeInForce, CurrencyCode
-from inv_trader.enums.brokerage cimport Broker, broker_string
-from inv_trader.enums.time_in_force cimport TimeInForce, time_in_force_string
-from inv_trader.enums.order_side cimport OrderSide, order_side_string
-from inv_trader.enums.order_type cimport OrderType, order_type_string
-from inv_trader.enums.venue cimport Venue, venue_string
+from inv_trader.model.enums import Venue, CurrencyCode
+from inv_trader.enums.venue cimport Venue
 from inv_trader.enums.security_type cimport SecurityType
 from inv_trader.enums.currency_code cimport CurrencyCode
-from inv_trader.model.identifiers cimport GUID, Label, OrderId, ExecutionId, ExecutionTicket, AccountId, AccountNumber
+from inv_trader.model.identifiers cimport GUID
 from inv_trader.model.objects cimport Symbol, Instrument
 from inv_trader.model.order cimport Order
 from inv_trader.model.events cimport Event
-from inv_trader.model.events cimport OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
-from inv_trader.model.events cimport OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
-from inv_trader.model.events cimport OrderPartiallyFilled, OrderFilled
 
 
 cdef str UTF8 = 'utf-8'
@@ -203,7 +196,16 @@ cdef class CommandSerializer:
         """
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented.")
-
+    cdef bytes _serialize_order_command(self, OrderCommand order_command):
+        # Raise exception if not overridden in implementation.
+        raise NotImplementedError("Method must be implemented.")
+    cdef OrderCommand _deserialize_order_command(
+            self,
+            GUID command_id,
+            datetime command_timestamp,
+            dict unpacked):
+        # Raise exception if not overridden in implementation.
+        raise NotImplementedError("Method must be implemented.")
 
 cdef class EventSerializer:
     """

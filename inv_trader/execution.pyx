@@ -29,8 +29,8 @@ from inv_trader.model.identifiers cimport GUID, OrderId
 from inv_trader.messaging import RequestWorker, SubscriberWorker
 from inv_trader.strategy import TradeStrategy
 from inv_trader.common.serialization cimport CommandSerializer, EventSerializer
-from inv_trader.serialization import MsgPackCommandSerializer
-from inv_trader.serialization import MsgPackEventSerializer
+from inv_trader.serialization cimport MsgPackCommandSerializer
+from inv_trader.serialization cimport MsgPackEventSerializer
 
 cdef str UTF8 = 'utf-8'
 
@@ -39,8 +39,8 @@ cdef class LiveExecClient(ExecutionClient):
     """
     Provides a client for the execution service utilizing a ZMQ transport.
     """
-    cdef object _command_serializer
-    cdef object _event_serializer
+    cdef CommandSerializer _command_serializer
+    cdef EventSerializer _event_serializer
     cdef object _commands_worker
     cdef object _events_worker
 
@@ -51,8 +51,8 @@ cdef class LiveExecClient(ExecutionClient):
             str host='localhost',
             int commands_port=5555,
             int events_port=5556,
-            command_serializer=MsgPackCommandSerializer,
-            event_serializer=MsgPackEventSerializer,
+            CommandSerializer command_serializer=MsgPackCommandSerializer,
+            EventSerializer event_serializer=MsgPackEventSerializer,
             logger: Logger=None):
         """
         Initializes a new instance of the LiveExecClient class.
