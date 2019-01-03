@@ -19,8 +19,21 @@ from setuptools import setup, Extension
 # Command to compile c extensions
 # python setup.py build_ext --inplace
 
+VERSION = '0.71.0'
+AUTHOR = 'Invariance'
 INV_TRADER = 'inv_trader'
+DESCRIPTION = 'The python trading client for Invariance.'
 TEST_KIT = 'test_kit'
+LICENSE = 'Invariance Software License, April 2018'
+REQUIREMENTS = ['numpy',
+                'pandas',
+                'cython',
+                'iso8601',
+                'inv_indicators',
+                'msgpack',
+                'redis',
+                'pyfolio',
+                'pyzmq']
 
 # Embed docstrings in extensions
 Options.embed_pos_in_docstring = True
@@ -62,20 +75,12 @@ extensions = [make_extension(name) for name in scan_directories([INV_TRADER,
 
 setup(
     name=INV_TRADER,
-    version='0.71.0',
-    author='Invariance',
-    description='The python trading client for Invariance.',
+    version=VERSION,
+    author=AUTHOR,
+    description=DESCRIPTION,
     packages=setuptools.find_packages(),
-    license='Invariance Software License',
-    requires=['numpy',
-              'pandas',
-              'cython',
-              'iso8601',
-              'inv_indicators',
-              'msgpack',
-              'redis',
-              'pyfolio',
-              'pyzmq'],
+    license=LICENSE,
+    requires=REQUIREMENTS,
     ext_modules=cythonize(extensions, compiler_directives={'embedsignature': True}),
     cmdclass={'build_ext': Cython.Build.build_ext},
     options={'build_ext': {'inplace': False, 'force': False}})
