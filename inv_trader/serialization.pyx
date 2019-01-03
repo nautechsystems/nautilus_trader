@@ -9,16 +9,12 @@
 
 # cython: language_level=3, boundscheck=False
 
-import ast
 import msgpack
-import iso8601
-import json
 
 from cpython.datetime cimport datetime
 from uuid import UUID
 from datetime import datetime
 from decimal import Decimal
-from typing import Dict
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.commands cimport Command, OrderCommand, SubmitOrder, CancelOrder, ModifyOrder
@@ -38,6 +34,10 @@ from inv_trader.model.events cimport Event, OrderEvent, AccountEvent
 from inv_trader.model.events cimport OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
 from inv_trader.model.events cimport OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
 from inv_trader.model.events cimport OrderPartiallyFilled, OrderFilled
+from inv_trader.common.serialization import (
+    _parse_symbol, _convert_price_to_string, _convert_string_to_price,
+    _convert_datetime_to_string, _convert_string_to_datetime)
+from inv_trader.common.serialization cimport OrderSerializer, EventSerializer, CommandSerializer
 
 
 cdef str UTF8 = 'utf-8'
@@ -106,100 +106,19 @@ cdef str MARGIN_USED_MAINTENANCE = 'margin_used_maintenance'
 cdef str MARGIN_RATIO = 'margin_ratio'
 cdef str MARGIN_CALL_STATUS = 'margin_call_status'
 
-cpdef object _parse_symbol(str symbol_string):
-    """
-    Parse the given string to a Symbol.
-
-    :param symbol_string: The symbol string to parse.
-    :return: The parsed symbol.
-    """
-    split_symbol = symbol_string.split('.')
-    return Symbol(split_symbol[0], Venue[split_symbol[1].upper()])
-
-
-cpdef str _convert_price_to_string(price: Decimal):
-    """
-    Convert the given object to a decimal or 'NONE' string.
-
-    :param price: The price to convert.
-    :return: The converted string.
-    """
-    return NONE if price is None else str(price)
-
-
-cpdef object _convert_string_to_price(str price_string):
-    """
-    Convert the given price string to a Decimal or None.
-
-    :param price_string: The price string to convert.
-    :return: The converted price, or None.
-    """
-    return None if price_string == NONE else Decimal(price_string)
-
-
-cpdef str _convert_datetime_to_string(datetime expire_time):
-    """
-    Convert the given object to a valid ISO8601 string, or 'NONE'.
-
-    :param expire_time: The datetime string to convert
-    :return: The converted string.
-    """
-    return (NONE if expire_time is None
-            else expire_time.isoformat(timespec='milliseconds').replace('+00:00', 'Z'))
-
-
-cpdef object _convert_string_to_datetime(str expire_time_string):
-    """
-    Convert the given string to a datetime object, or None.
-
-    :param expire_time_string: The string to convert.
-    :return: The converted datetime, or None.
-    """
-    return None if expire_time_string == NONE else iso8601.parse_date(expire_time_string)
-
-
-cdef class OrderSerializer:
-    """
-    The abstract base class for all order serializers.
-    """
-
-    @staticmethod
-    def serialize(Order order):
-        """
-        Serialize the given order to bytes.
-
-        :param order: The order to serialize.
-        :return: The serialized order.
-        """
-        # Raise exception if not overridden in implementation.
-        raise NotImplementedError("Method must be implemented.")
-
-    @staticmethod
-    def deserialize(bytes order_bytes):
-        """
-        Deserialize the given bytes to an Order.
-
-        :param order_bytes: The bytes to deserialize.
-        :return: The deserialized order.
-        """
-        # Raise exception if not overridden in implementation.
-        raise NotImplementedError("Method must be implemented.")
-
 
 cdef class MsgPackOrderSerializer(OrderSerializer):
     """
     Provides a command serializer for the Message Pack specification
     """
 
-    @staticmethod
-    def serialize(Order order):
+    cpdef bytes serialize(self, Order order):
         """
         Serialize the given Order to Message Pack specification bytes.
 
         :param order: The order to serialize.
         :return: The serialized order.
         """
-
         return msgpack.packb({
             SYMBOL: str(order.symbol),
             ORDER_ID: str(order.id),
@@ -213,8 +132,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
             EXPIRE_TIME: _convert_datetime_to_string(order.expire_time)
             }, encoding=UTF8)
 
-    @staticmethod
-    def deserialize(bytes order_bytes):
+    cpdef Order deserialize(self, bytes order_bytes):
         """
         Deserialize the given Message Pack specification bytes to an Order.
 
@@ -238,41 +156,19 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
                      expire_time=_convert_string_to_datetime(unpacked[EXPIRE_TIME]))
 
 
-cdef class CommandSerializer:
-    """
-    The abstract base class for all command serializers.
-    """
-
-    @staticmethod
-    def serialize(command: Command) -> bytes:
-        """
-        Serialize the given command to bytes.
-
-        :param: command: The command to serialize.
-        :return: The serialized command.
-        """
-        # Raise exception if not overridden in implementation.
-        raise NotImplementedError("Method must be implemented.")
-
-    @staticmethod
-    def deserialize(command_bytes: bytes) -> Command:
-        """
-        Deserialize the given bytes to a Command.
-
-        :param: command_bytes: The command bytes to deserialize.
-        :return: The deserialized command.
-        """
-        # Raise exception if not overridden in implementation.
-        raise NotImplementedError("Method must be implemented.")
-
-
 cdef class MsgPackCommandSerializer(CommandSerializer):
     """
     Provides a command serializer for the Message Pack specification.
     """
+    cpdef OrderSerializer order_serializer
 
-    @staticmethod
-    def serialize(Command command) -> bytes:
+    def __init__(self):
+        """
+        Initializes a new instance of the MsgPackCommandSerializer class.
+        """
+        self.order_serializer = MsgPackOrderSerializer()
+
+    cpdef bytes serialize(self, Command command):
         """
         Serialize the given command to Message Pack specification bytes.
 
@@ -281,9 +177,9 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         :raises: ValueError: If the command cannot be serialized.
         """
         if isinstance(command, OrderCommand):
-            return MsgPackCommandSerializer._serialize_order_command(command)
+            return self._serialize_order_command(command)
 
-        package = {
+        cdef dict package = {
             COMMAND_ID: str(command.id),
             COMMAND_TIMESTAMP: _convert_datetime_to_string(command.timestamp)
         }
@@ -291,12 +187,10 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         if isinstance(command, CollateralInquiry):
             package[COMMAND_TYPE] = COLLATERAL_INQUIRY
             return msgpack.packb(package)
-
         else:
             raise ValueError("Cannot serialize command (unrecognized command).")
 
-    @staticmethod
-    def deserialize(bytes command_bytes) -> Command:
+    cpdef Command deserialize(self, bytes command_bytes):
         """
         Deserialize the given Message Pack specification bytes to a command.
 
@@ -307,28 +201,25 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         """
         Precondition.not_empty(command_bytes, 'command_bytes')
 
-        unpacked = msgpack.unpackb(command_bytes, raw=False)
+        cdef dict unpacked = msgpack.unpackb(command_bytes, raw=False)
 
-        command_type = unpacked[COMMAND_TYPE]
-        command_id = GUID(UUID(unpacked[COMMAND_ID]))
-        command_timestamp = _convert_string_to_datetime(unpacked[COMMAND_TIMESTAMP])
+        cdef str command_type = unpacked[COMMAND_TYPE]
+        cdef GUID command_id = GUID(UUID(unpacked[COMMAND_ID]))
+        cdef datetime command_timestamp = _convert_string_to_datetime(unpacked[COMMAND_TIMESTAMP])
 
         if command_type == ORDER_COMMAND:
-            return MsgPackCommandSerializer._deserialize_order_command(
+            return self._deserialize_order_command(
                 command_id,
                 command_timestamp,
                 unpacked)
-
-        if command_type == COLLATERAL_INQUIRY:
+        elif command_type == COLLATERAL_INQUIRY:
             return CollateralInquiry(
                 command_id,
                 command_timestamp)
-
         else:
             raise ValueError("Cannot deserialize command (unrecognized command).")
 
-    @staticmethod
-    def _serialize_order_command(OrderCommand order_command) -> bytes:
+    cdef bytes _serialize_order_command(self, OrderCommand order_command):
         """
         Serialize the given order command to Message Pack specification bytes.
 
@@ -336,9 +227,9 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         :return: The serialized order command.
         :raises ValueError: If the order command cannot be serialized.
         """
-        package = {
+        cdef dict package = {
             COMMAND_TYPE: ORDER_COMMAND,
-            ORDER: MsgPackOrderSerializer.serialize(order_command.order).hex(),
+            ORDER: self.order_serializer.serialize(order_command.order).hex(),
             COMMAND_ID: str(order_command.id),
             COMMAND_TIMESTAMP: _convert_datetime_to_string(order_command.timestamp)
         }
@@ -346,25 +237,22 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         if isinstance(order_command, SubmitOrder):
             package[ORDER_COMMAND] = SUBMIT_ORDER
             return msgpack.packb(package)
-
-        if isinstance(order_command, CancelOrder):
+        elif isinstance(order_command, CancelOrder):
             package[ORDER_COMMAND] = CANCEL_ORDER
             package[CANCEL_REASON] = order_command.cancel_reason
             return msgpack.packb(package)
-
-        if isinstance(order_command, ModifyOrder):
+        elif isinstance(order_command, ModifyOrder):
             package[ORDER_COMMAND] = MODIFY_ORDER
             package[MODIFIED_PRICE] = str(order_command.modified_price)
             return msgpack.packb(package)
-
         else:
             raise ValueError("Cannot serialize order command (unrecognized command).")
 
-    @staticmethod
-    def _deserialize_order_command(
+    cdef OrderCommand _deserialize_order_command(
+            self,
             GUID command_id,
             datetime command_timestamp,
-            unpacked: Dict) -> OrderCommand:
+            dict unpacked):
         """
         Deserialize the given parameters to an order command.
 
@@ -374,59 +262,28 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         :return: The deserialized order command.
         :raises ValueError: If the order command cannot be deserialized.
         """
-        order_command = unpacked[ORDER_COMMAND]
-        order = MsgPackOrderSerializer.deserialize(bytes.fromhex(unpacked[ORDER]))
+        cdef str order_command = unpacked[ORDER_COMMAND]
+        cdef Order order = self.order_serializer.deserialize(bytes.fromhex(unpacked[ORDER]))
 
         if order_command == SUBMIT_ORDER:
             return SubmitOrder(
                 order,
                 command_id,
                 command_timestamp)
-
-        if order_command == CANCEL_ORDER:
+        elif order_command == CANCEL_ORDER:
             return CancelOrder(
                 order,
                 unpacked[CANCEL_REASON],
                 command_id,
                 command_timestamp)
-
-        if order_command == MODIFY_ORDER:
+        elif order_command == MODIFY_ORDER:
             return ModifyOrder(
                 order,
                 Decimal(unpacked[MODIFIED_PRICE]),
                 command_id,
                 command_timestamp)
-
         else:
             raise ValueError("Cannot deserialize order command (unrecognized bytes pattern).")
-
-
-cdef class EventSerializer:
-    """
-    The abstract base class for all event serializers.
-    """
-
-    @staticmethod
-    def serialize(Event event) -> bytes:
-        """
-        Serialize the given event to bytes.
-
-        :param event: The event to serialize.
-        :return: The serialized event.
-        """
-        # Raise exception if not overridden in implementation.
-        raise NotImplementedError("Method must be implemented.")
-
-    @staticmethod
-    def deserialize(bytes event_bytes) -> Event:
-        """
-        Deserialize the given bytes to an event.
-
-        :param event_bytes: The bytes to deserialize.
-        :return: The deserialized event.
-        """
-        # Raise exception if not overridden in implementation.
-        raise NotImplementedError("Method must be implemented.")
 
 
 cdef class MsgPackEventSerializer(EventSerializer):
@@ -434,8 +291,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
     Provides an event serializer for the Message Pack specification
     """
 
-    @staticmethod
-    def serialize(Event event) -> bytes:
+    cpdef bytes serialize(self, Event event):
         """
         Serialize the event to Message Pack specification bytes.
 
@@ -445,12 +301,10 @@ cdef class MsgPackEventSerializer(EventSerializer):
         """
         if isinstance(event, OrderEvent):
             return MsgPackEventSerializer._serialize_order_event(event)
-
         else:
             raise ValueError("Cannot serialize event (unrecognized event).")
 
-    @staticmethod
-    def deserialize(bytes event_bytes) -> Event:
+    cpdef Event deserialize(self, bytes event_bytes):
         """
         Deserialize the given Message Pack specification bytes to an event.
 
@@ -461,19 +315,18 @@ cdef class MsgPackEventSerializer(EventSerializer):
         """
         Precondition.not_empty(event_bytes, 'event_bytes')
 
-        unpacked = msgpack.unpackb(event_bytes, raw=False)
+        cdef dict unpacked = msgpack.unpackb(event_bytes, raw=False)
 
-        event_type = unpacked[EVENT_TYPE]
-        event_id = GUID(UUID(unpacked[EVENT_ID]))
-        event_timestamp = _convert_string_to_datetime(unpacked[EVENT_TIMESTAMP])
+        cdef str event_type = unpacked[EVENT_TYPE]
+        cdef GUID event_id = GUID(UUID(unpacked[EVENT_ID]))
+        cdef datetime event_timestamp = _convert_string_to_datetime(unpacked[EVENT_TIMESTAMP])
 
         if event_type == ORDER_EVENT:
             return MsgPackEventSerializer._deserialize_order_event(
                 event_id,
                 event_timestamp,
                 unpacked)
-
-        if event_type == ACCOUNT_EVENT:
+        elif event_type == ACCOUNT_EVENT:
             return AccountEvent(
                 AccountId(unpacked[ACCOUNT_ID]),
                 Broker[unpacked[BROKER]],
@@ -488,12 +341,11 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 unpacked[MARGIN_CALL_STATUS],
                 event_id,
                 event_timestamp)
-
         else:
             raise ValueError("Cannot deserialize event (unrecognized event).")
 
     @staticmethod
-    def _serialize_order_event(OrderEvent order_event) -> bytes:
+    cdef bytes _serialize_order_event(OrderEvent order_event):
         """
         Serialize the given order event to Message Pack specification bytes.
 
@@ -501,7 +353,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
         :return: The serialized order event.
         :raises ValueError: If the order event cannot be serialized.
         """
-        package = {
+        cdef dict package = {
             EVENT_TYPE: ORDER_EVENT,
             SYMBOL: str(order_event.symbol),
             ORDER_ID: str(order_event.order_id),
@@ -587,10 +439,10 @@ cdef class MsgPackEventSerializer(EventSerializer):
             raise ValueError("Cannot serialize event (unrecognized event.")
 
     @staticmethod
-    cdef object _deserialize_order_event(
+    cdef OrderEvent _deserialize_order_event(
             GUID event_id,
             datetime event_timestamp,
-            unpacked: Dict):
+            dict unpacked):
         """
         Deserialize the given parameters to an order event.
 
@@ -600,9 +452,9 @@ cdef class MsgPackEventSerializer(EventSerializer):
         :return: The deserialized order event.
         :raises ValueError: If the order event cannot be deserialized.
         """
-        order_symbol = _parse_symbol(unpacked[SYMBOL])
-        order_id = OrderId(unpacked[ORDER_ID])
-        order_event = unpacked[ORDER_EVENT]
+        cdef Symbol order_symbol = _parse_symbol(unpacked[SYMBOL])
+        cdef OrderId order_id = OrderId(unpacked[ORDER_ID])
+        cdef str order_event = unpacked[ORDER_EVENT]
 
         if order_event == ORDER_SUBMITTED:
             return OrderSubmitted(
@@ -611,16 +463,14 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 _convert_string_to_datetime(unpacked[SUBMITTED_TIME]),
                 event_id,
                 event_timestamp)
-
-        if order_event == ORDER_ACCEPTED:
+        elif order_event == ORDER_ACCEPTED:
             return OrderAccepted(
                 order_symbol,
                 order_id,
                 _convert_string_to_datetime(unpacked[ACCEPTED_TIME]),
                 event_id,
                 event_timestamp)
-
-        if order_event == ORDER_REJECTED:
+        elif order_event == ORDER_REJECTED:
             return OrderRejected(
                 order_symbol,
                 order_id,
@@ -628,8 +478,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 unpacked[REJECTED_REASON],
                 event_id,
                 event_timestamp)
-
-        if order_event == ORDER_WORKING:
+        elif order_event == ORDER_WORKING:
             return OrderWorking(
                 order_symbol,
                 order_id,
@@ -644,16 +493,14 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 event_id,
                 event_timestamp,
                 _convert_string_to_datetime(unpacked[EXPIRE_TIME]))
-
-        if order_event == ORDER_CANCELLED:
+        elif order_event == ORDER_CANCELLED:
             return OrderCancelled(
                 order_symbol,
                 order_id,
                 _convert_string_to_datetime(unpacked[CANCELLED_TIME]),
                 event_id,
                 event_timestamp)
-
-        if order_event == ORDER_CANCEL_REJECT:
+        elif order_event == ORDER_CANCEL_REJECT:
             return OrderCancelReject(
                 order_symbol,
                 order_id,
@@ -662,8 +509,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 unpacked[REJECTED_REASON],
                 event_id,
                 event_timestamp)
-
-        if order_event == ORDER_MODIFIED:
+        elif order_event == ORDER_MODIFIED:
             return OrderModified(
                 order_symbol,
                 order_id,
@@ -672,16 +518,14 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 _convert_string_to_datetime(unpacked[MODIFIED_TIME]),
                 event_id,
                 event_timestamp)
-
-        if order_event == ORDER_EXPIRED:
+        elif order_event == ORDER_EXPIRED:
             return OrderExpired(
                 order_symbol,
                 order_id,
                 _convert_string_to_datetime(unpacked[EXPIRED_TIME]),
                 event_id,
                 event_timestamp)
-
-        if order_event == ORDER_PARTIALLY_FILLED:
+        elif order_event == ORDER_PARTIALLY_FILLED:
             return OrderPartiallyFilled(
                 order_symbol,
                 order_id,
@@ -694,8 +538,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 _convert_string_to_datetime(unpacked[EXECUTION_TIME]),
                 event_id,
                 event_timestamp)
-
-        if order_event == ORDER_FILLED:
+        elif order_event == ORDER_FILLED:
             return OrderFilled(
                 order_symbol,
                 order_id,
@@ -707,56 +550,5 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 _convert_string_to_datetime(unpacked[EXECUTION_TIME]),
                 event_id,
                 event_timestamp)
-
         else:
             raise ValueError("Cannot deserialize event_bytes (unrecognized bytes pattern.")
-
-
-cdef class InstrumentSerializer:
-    """
-    Provides an instrument deserializer.
-    """
-
-    @staticmethod
-    def deserialize(bytes instrument_bytes) -> Instrument:
-        """
-        Deserialize the given instrument bytes to an instrument.
-
-        :param instrument_bytes: The string to deserialize.
-        :return: The deserialized instrument.
-        :raises ValueError: If the instrument_bytes is empty.
-        :raises ValueError: If the instrument cannot be deserialized.
-        """
-        inst_json = (json.loads(instrument_bytes)
-                     .replace("\"", "\'")
-                     .replace("\'Timestamp\':", "\'Timestamp\':\'")[:-1] + "\'}")
-        inst_dict = ast.literal_eval(inst_json)
-
-        tick_size = inst_dict['TickSize']
-        tick_value = inst_dict['TickValue']
-        target_direct_spread = inst_dict['TargetDirectSpread']
-        margin_requirement = inst_dict['MarginRequirement']
-        rollover_interest_buy = inst_dict['RolloverInterestBuy']
-        rollover_interest_sell = inst_dict['RolloverInterestSell']
-
-        return Instrument(
-            Symbol(inst_dict['Symbol']['Code'], Venue[inst_dict['Symbol']['Venue'].upper()]),
-            inst_dict['BrokerSymbol']['Value'],
-            CurrencyCode[inst_dict['QuoteCurrency'].upper()],
-            SecurityType[inst_dict['SecurityType'].upper()],
-            inst_dict['TickDecimals'],
-            Decimal(f'{tick_size}'),
-            Decimal(f'{tick_value}'),
-            Decimal(f'{target_direct_spread}'),
-            inst_dict['RoundLotSize'],
-            inst_dict['ContractSize'],
-            inst_dict['MinStopDistanceEntry'],
-            inst_dict['MinLimitDistanceEntry'],
-            inst_dict['MinStopDistance'],
-            inst_dict['MinLimitDistance'],
-            inst_dict['MinTradeSize'],
-            inst_dict['MaxTradeSize'],
-            Decimal(f'{margin_requirement}'),
-            Decimal(f'{rollover_interest_buy}'),
-            Decimal(f'{rollover_interest_sell}'),
-            iso8601.parse_date(inst_dict['Timestamp']))

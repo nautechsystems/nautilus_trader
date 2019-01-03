@@ -51,12 +51,12 @@ cdef class TradeStrategy:
     cdef object _order_id_generator
     cdef int _bar_capacity
     cdef bint _is_running
-    cdef object _timers
-    cdef object _ticks
-    cdef object _bars
-    cdef object _indicators
-    cdef object _indicator_updaters
-    cdef object _indicator_index
+    cdef dict _timers
+    cdef dict _ticks
+    cdef dict _bars
+    cdef dict _indicators
+    cdef dict _indicator_updaters
+    cdef dict _indicator_index
 
     cdef readonly dict _order_position_index
     cdef readonly dict _order_book

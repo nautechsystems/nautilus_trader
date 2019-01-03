@@ -12,7 +12,6 @@
 
 from decimal import Decimal
 from typing import Dict, Callable
-from uuid import UUID
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.core.logger import Logger, LoggerAdapter
@@ -25,7 +24,7 @@ from inv_trader.strategy import TradeStrategy
 cdef str UTF8 = 'utf-8'
 
 
-cdef class ExecutionClient(object):
+cdef class ExecutionClient:
     """
     The abstract base class for all execution clients.
     """
@@ -44,8 +43,8 @@ cdef class ExecutionClient(object):
             self.log = LoggerAdapter(f"ExecClient", logger)
         self.log.info("Initialized.")
         self.account = Account()
-        self._registered_strategies = {}  # type: Dict[UUID, Callable]
-        self._order_index = {}            # type: Dict[OrderId, UUID]
+        self._registered_strategies = {}  # type: Dict[GUID, Callable]
+        self._order_index = {}            # type: Dict[OrderId, GUID]
 
     cpdef void register_strategy(self, strategy: TradeStrategy):
         """

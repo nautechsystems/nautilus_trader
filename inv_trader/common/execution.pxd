@@ -9,17 +9,18 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False
 
+from inv_trader.model.account cimport Account
 from inv_trader.model.events cimport Event
 from inv_trader.model.identifiers cimport GUID
 from inv_trader.model.order cimport Order
 
 
-cdef class ExecutionClient(object):
-    cdef object _registered_strategies
-    cdef object _order_index
+cdef class ExecutionClient:
+    cdef dict _registered_strategies
+    cdef dict _order_index
 
     cdef readonly object log
-    cdef readonly object account
+    cdef readonly Account account
 
     cpdef void register_strategy(self, strategy)
 
