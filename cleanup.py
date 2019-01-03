@@ -26,3 +26,8 @@ if __name__ == "__main__":
         path = os.path.join('inv_trader/model', file)
         if os.path.isfile(path) and path.endswith(cython_extension):
             os.remove(path)
+
+    for file in os.listdir('test_kit'):
+        path = os.path.join('test_kit', file)
+        if os.path.isfile(path) and path.endswith(cython_extension):
+            os.remove(path)

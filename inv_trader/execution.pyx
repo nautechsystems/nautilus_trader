@@ -14,8 +14,6 @@ import zmq
 
 from datetime import datetime
 from decimal import Decimal
-from uuid import UUID
-from zmq import Context
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.core.logger import Logger, LoggerAdapter

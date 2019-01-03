@@ -231,7 +231,16 @@ cdef class EventSerializer:
         """
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented.")
-
+    cdef bytes _serialize_order_event(self, OrderEvent order_event):
+        # Raise exception if not overridden in implementation.
+        raise NotImplementedError("Method must be implemented.")
+    cdef OrderEvent _deserialize_order_event(
+            self,
+            GUID event_id,
+            datetime event_timestamp,
+            dict unpacked):
+        # Raise exception if not overridden in implementation.
+        raise NotImplementedError("Method must be implemented.")
 
 cdef class InstrumentSerializer:
     """
