@@ -13,6 +13,7 @@ import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 
+from inv_trader.common.serialization import InstrumentSerializer
 from inv_trader.commands import SubmitOrder, CancelOrder, ModifyOrder
 from inv_trader.commands import CollateralInquiry
 from inv_trader.model.enums import Venue, OrderSide, OrderType, TimeInForce
@@ -26,7 +27,6 @@ from inv_trader.model.events import OrderPartiallyFilled, OrderFilled, AccountEv
 from inv_trader.serialization import MsgPackOrderSerializer
 from inv_trader.serialization import MsgPackCommandSerializer
 from inv_trader.serialization import MsgPackEventSerializer
-from inv_trader.serialization import InstrumentSerializer
 from inv_trader.serialization import _convert_price_to_string, _convert_datetime_to_string
 from inv_trader.serialization import _convert_string_to_price, _convert_string_to_datetime
 from test_kit.stubs import TestStubs

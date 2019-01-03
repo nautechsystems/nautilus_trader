@@ -75,7 +75,7 @@ class MQWorker(Thread):
         """
         self._open_connection()
 
-    def send(self, message: bytes):
+    def send(self, bytes message):
         """
         Send the message to the service socket.
 
@@ -119,10 +119,10 @@ class RequestWorker(MQWorker):
 
     def __init__(
             self,
-            name: str,
+            str name,
             context: Context,
-            host: str,
-            port: int,
+            str host,
+            int port,
             handler: Callable,
             logger: Logger=None):
         """
@@ -172,11 +172,11 @@ class SubscriberWorker(MQWorker):
 
     def __init__(
             self,
-            name: str,
+            str name,
             context: Context,
-            host: str,
-            port: int,
-            topic: str,
+            str host,
+            int port,
+            str topic,
             handler: Callable,
             logger: Logger=None):
         """

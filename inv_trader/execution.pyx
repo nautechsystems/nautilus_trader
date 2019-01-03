@@ -28,7 +28,7 @@ from inv_trader.model.events cimport Event, OrderEvent, AccountEvent, OrderCance
 from inv_trader.model.identifiers cimport GUID, OrderId
 from inv_trader.messaging import RequestWorker, SubscriberWorker
 from inv_trader.strategy import TradeStrategy
-from inv_trader.serialization import CommandSerializer, EventSerializer
+from inv_trader.common.serialization cimport CommandSerializer, EventSerializer
 from inv_trader.serialization import MsgPackCommandSerializer
 from inv_trader.serialization import MsgPackEventSerializer
 
@@ -51,8 +51,8 @@ cdef class LiveExecClient(ExecutionClient):
             str host='localhost',
             int commands_port=5555,
             int events_port=5556,
-            command_serializer: CommandSerializer=MsgPackCommandSerializer,
-            event_serializer: EventSerializer=MsgPackEventSerializer,
+            command_serializer=MsgPackCommandSerializer,
+            event_serializer=MsgPackEventSerializer,
             logger: Logger=None):
         """
         Initializes a new instance of the LiveExecClient class.

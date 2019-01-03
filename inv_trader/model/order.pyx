@@ -282,7 +282,7 @@ cdef class OrderIdGenerator:
     Provides a generator for unique order identifiers.
     """
     cdef str _order_id_tag
-    cdef object _order_symbol_counts
+    cdef dict _order_symbol_counts
     cdef list _order_ids
 
     def __init__(self, str order_id_tag):
@@ -318,6 +318,7 @@ cdef class OrderIdGenerator:
                                        + SEPARATOR + milliseconds)
 
         if order_id in self._order_ids:
+            # TODO: Consider re-try counter
             return self.generate(order_symbol)
         self._order_ids.append(order_id)
         return order_id
