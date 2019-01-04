@@ -10,6 +10,8 @@
 # cython: language_level=3, boundscheck=False
 
 from cpython.datetime cimport datetime
+
+from inv_trader.core.decimal cimport Decimal
 from inv_trader.model.objects cimport Symbol
 from inv_trader.model.events cimport OrderEvent
 from inv_trader.model.identifiers cimport Label, OrderId
@@ -35,12 +37,12 @@ cdef class Order:
     cdef readonly OrderType type
     cdef readonly int quantity
     cdef readonly datetime timestamp
-    cdef readonly object price
+    cdef readonly Decimal price
     cdef readonly TimeInForce time_in_force
     cdef readonly datetime expire_time
     cdef readonly int filled_quantity
-    cdef readonly object average_price
-    cdef readonly object slippage
+    cdef readonly Decimal average_price
+    cdef readonly Decimal slippage
     cdef readonly OrderStatus status
     cdef readonly list events
 

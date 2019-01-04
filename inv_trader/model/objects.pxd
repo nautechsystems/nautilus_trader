@@ -11,6 +11,7 @@
 
 from cpython.datetime cimport datetime
 
+from inv_trader.core.decimal cimport Decimal
 from inv_trader.enums.currency_code cimport CurrencyCode
 from inv_trader.enums.security_type cimport SecurityType
 from inv_trader.enums.venue cimport Venue
@@ -30,8 +31,8 @@ cdef class Tick:
     Represents a single tick in a financial market.
     """
     cdef readonly Symbol symbol
-    cdef readonly object bid
-    cdef readonly object ask
+    cdef readonly Decimal bid
+    cdef readonly Decimal ask
     cdef readonly datetime timestamp
 
 
@@ -50,10 +51,10 @@ cdef class Bar:
     """
     Represents a financial market trade bar.
     """
-    cdef readonly object open
-    cdef readonly object high
-    cdef readonly object low
-    cdef readonly object close
+    cdef readonly Decimal open
+    cdef readonly Decimal high
+    cdef readonly Decimal low
+    cdef readonly Decimal close
     cdef readonly long volume
     cdef readonly datetime timestamp
 
@@ -79,9 +80,9 @@ cdef class Instrument:
     cdef readonly CurrencyCode quote_currency
     cdef readonly SecurityType security_type
     cdef readonly int tick_decimals
-    cdef readonly object tick_size
-    cdef readonly object tick_value
-    cdef readonly object target_direct_spread
+    cdef readonly Decimal tick_size
+    cdef readonly Decimal tick_value
+    cdef readonly Decimal target_direct_spread
     cdef readonly int round_lot_size
     cdef readonly int contract_size
     cdef readonly int min_stop_distance_entry
@@ -90,7 +91,7 @@ cdef class Instrument:
     cdef readonly int min_limit_distance
     cdef readonly int min_trade_size
     cdef readonly int max_trade_size
-    cdef readonly object margin_requirement
-    cdef readonly object rollover_interest_buy
-    cdef readonly object rollover_interest_sell
+    cdef readonly Decimal margin_requirement
+    cdef readonly Decimal rollover_interest_buy
+    cdef readonly Decimal rollover_interest_sell
     cdef readonly datetime timestamp

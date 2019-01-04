@@ -9,8 +9,7 @@
 
 import unittest
 
-from decimal import Decimal
-
+from inv_trader.core.decimal import Decimal
 from inv_trader.core.precondition import PyPrecondition
 
 

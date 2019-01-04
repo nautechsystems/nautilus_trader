@@ -13,9 +13,9 @@ import datetime
 import time
 
 from datetime import datetime, timezone, timedelta
-from decimal import Decimal
 
-from inv_trader.core.logger import LoggerAdapter
+from inv_trader.core.decimal import Decimal
+from inv_trader.common.logger import LoggerAdapter
 from inv_trader.model.enums import Venue, Resolution, QuoteType, OrderSide, OrderType, OrderStatus
 from inv_trader.model.enums import MarketPosition
 from inv_trader.model.objects import Price, Symbol, Tick, BarType, Bar

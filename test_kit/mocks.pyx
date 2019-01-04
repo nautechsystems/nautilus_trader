@@ -14,11 +14,11 @@ import uuid
 import zmq
 
 from datetime import datetime
-from decimal import Decimal
 from threading import Thread
 from typing import Callable
 from zmq import Context
 
+from inv_trader.core.decimal cimport Decimal
 from inv_trader.common.execution cimport ExecutionClient
 from inv_trader.model.objects import Price
 from inv_trader.model.order cimport Order
@@ -59,7 +59,7 @@ class MockServer(Thread):
         """
         self._open_connection()
 
-    def send(self, message: bytes):
+    def send(self, bytes message):
         """
         Send the given message to the connected requesters.
 
@@ -120,7 +120,7 @@ class MockPublisher(Thread):
     def __init__(
             self,
             context: Context,
-            port: int,
+            int port,
             handler: Callable):
         """
         Initializes a new instance of the MockServer class.

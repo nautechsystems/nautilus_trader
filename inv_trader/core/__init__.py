@@ -7,5 +7,4 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from inv_trader.core import logger
 from inv_trader.core import precondition

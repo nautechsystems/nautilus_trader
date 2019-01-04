@@ -10,8 +10,8 @@
 # cython: language_level=3, boundscheck=False, wraparound=False
 
 from cpython.datetime cimport datetime
-from decimal import Decimal
 
+from inv_trader.core.decimal cimport Decimal
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.enums.venue cimport Venue, venue_string
 from inv_trader.enums.resolution cimport Resolution, resolution_string
@@ -84,21 +84,22 @@ cdef class Price:
 
     @staticmethod
     def create(float price,
-               int decimals) -> Decimal:
+               int precision) -> Decimal:
         """
         Creates and returns a new price from the given values.
         The price is rounded to the given decimal digits.
 
         :param price: The price value.
-        :param decimals: The decimal precision of the price.
+        :param precision: The decimal precision of the price.
         :return: A Decimal representing the price.
         :raises ValueError: If the price is not positive (> 0).
         :raises ValueError: If the decimals is negative (< 0).
         """
         Precondition.positive(price, 'price')
-        Precondition.not_negative(decimals, 'decimals')
+        Precondition.not_negative(precision, 'precision')
 
-        return Decimal(f'{round(price, decimals):.{decimals}f}')
+        return Decimal(price, precision)
+        #return Decimal(f'{round(price, decimals):.{decimals}f}')
 
 
 cdef class Money:
@@ -127,7 +128,8 @@ cdef class Money:
         """
         Precondition.positive(amount, 'amount')
 
-        return Decimal(f'{round(amount, 2):.{2}f}')
+        return Decimal(amount, 2)
+        #return Decimal(f'{round(amount, 2):.{2}f}')
 
 
 cdef class Tick:
@@ -137,8 +139,8 @@ cdef class Tick:
 
     def __init__(self,
                  Symbol symbol,
-                 bid: Decimal,
-                 ask: Decimal,
+                 Decimal bid,
+                 Decimal ask,
                  datetime timestamp):
         """
         Initializes a new instance of the Tick class.
@@ -150,8 +152,6 @@ cdef class Tick:
         :raises ValueError: If the bid is not positive (> 0).
         :raises ValueError: If the ask is not positive (> 0).
         """
-        Precondition.type(bid, Decimal, 'bid')
-        Precondition.type(ask, Decimal, 'ask')
         Precondition.positive(bid, 'bid')
         Precondition.positive(ask, 'ask')
 
@@ -274,10 +274,10 @@ cdef class Bar:
     """
 
     def __init__(self,
-                 open_price: Decimal,
-                 high_price: Decimal,
-                 low_price: Decimal,
-                 close_price: Decimal,
+                 Decimal open_price,
+                 Decimal high_price,
+                 Decimal low_price,
+                 Decimal close_price,
                  long volume,
                  datetime timestamp):
         """
@@ -298,10 +298,6 @@ cdef class Bar:
         :raises ValueError: If the high_price is not >= close_price.
         :raises ValueError: If the low_price is not <= close_price.
         """
-        Precondition.type(open_price, Decimal, 'open_price')
-        Precondition.type(high_price, Decimal, 'high_price')
-        Precondition.type(low_price, Decimal, 'low_price')
-        Precondition.type(close_price, Decimal, 'close_price')
         Precondition.positive(open_price, 'open_price')
         Precondition.positive(high_price, 'high_price')
         Precondition.positive(low_price, 'low_price')
@@ -427,9 +423,9 @@ cdef class Instrument:
                  CurrencyCode quote_currency,
                  SecurityType security_type,
                  int tick_decimals,
-                 tick_size: Decimal,
-                 tick_value: Decimal,
-                 target_direct_spread: Decimal,
+                 Decimal tick_size,
+                 Decimal tick_value,
+                 Decimal target_direct_spread,
                  int round_lot_size,
                  int contract_size,
                  int min_stop_distance_entry,
@@ -438,9 +434,9 @@ cdef class Instrument:
                  int min_limit_distance,
                  int min_trade_size,
                  int max_trade_size,
-                 margin_requirement: Decimal,
-                 rollover_interest_buy: Decimal,
-                 rollover_interest_sell: Decimal,
+                 Decimal margin_requirement,
+                 Decimal rollover_interest_buy,
+                 Decimal rollover_interest_sell,
                  datetime timestamp):
         """
         Initializes a new instance of the Instrument class.
@@ -466,12 +462,6 @@ cdef class Instrument:
         :param rollover_interest_sell: The instruments rollover interest for short positions.
         :param timestamp: The timestamp the instrument was created/updated at.
         """
-        Precondition.type(tick_size, Decimal, 'tick_size')
-        Precondition.type(tick_value, Decimal, 'tick_value')
-        Precondition.type(target_direct_spread, Decimal, 'target_direct_spread')
-        Precondition.type(margin_requirement, Decimal, 'margin_requirement')
-        Precondition.type(rollover_interest_buy, Decimal, 'rollover_interest_buy')
-        Precondition.type(rollover_interest_sell, Decimal, 'rollover_interest_sell')
         Precondition.valid_string(broker_symbol, 'broker_symbol')
         Precondition.not_negative(tick_decimals, 'tick_decimals')
         Precondition.positive(tick_size, 'tick_size')

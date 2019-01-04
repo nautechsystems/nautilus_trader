@@ -13,7 +13,7 @@ from cpython.datetime cimport datetime
 from typing import List, Dict, Callable
 
 from inv_trader.core.precondition cimport Precondition
-from inv_trader.core.logger import Logger, LoggerAdapter
+from inv_trader.common.logger import Logger, LoggerAdapter
 from inv_trader.model.objects cimport Symbol, BarType, Instrument
 from inv_trader.strategy import TradeStrategy
 
