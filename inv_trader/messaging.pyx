@@ -16,7 +16,7 @@ from threading import Thread
 from zmq import Context
 
 from inv_trader.core.precondition import PyPrecondition
-from inv_trader.core.logger import Logger, LoggerAdapter
+from inv_trader.common.logger import Logger, LoggerAdapter
 
 cdef str UTF8 = 'utf-8'
 cdef bytes DELIMITER = b' '

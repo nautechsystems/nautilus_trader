@@ -11,6 +11,7 @@
 
 from cpython.datetime cimport datetime
 
+from inv_trader.core.decimal cimport Decimal
 from inv_trader.enums.brokerage cimport Broker
 from inv_trader.enums.currency_code cimport CurrencyCode
 from inv_trader.model.events cimport AccountEvent
@@ -27,12 +28,12 @@ cdef class Account:
     cdef readonly Broker broker
     cdef readonly AccountNumber account_number
     cdef readonly CurrencyCode currency
-    cdef readonly object cash_balance
-    cdef readonly object cash_start_day
-    cdef readonly object cash_activity_day
-    cdef readonly object margin_used_liquidation
-    cdef readonly object margin_used_maintenance
-    cdef readonly object margin_ratio
+    cdef readonly Decimal cash_balance
+    cdef readonly Decimal cash_start_day
+    cdef readonly Decimal cash_activity_day
+    cdef readonly Decimal margin_used_liquidation
+    cdef readonly Decimal margin_used_maintenance
+    cdef readonly Decimal margin_ratio
     cdef readonly str margin_call_status
     cdef readonly datetime last_updated
     cdef readonly list events

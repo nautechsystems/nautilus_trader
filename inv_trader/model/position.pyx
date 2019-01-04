@@ -10,10 +10,10 @@
 # cython: language_level=3, boundscheck=False
 
 from cpython.datetime cimport datetime
-from decimal import Decimal
 from typing import List
 
 from inv_trader.core.precondition cimport Precondition
+from inv_trader.core.decimal cimport Decimal
 from inv_trader.enums.market_position cimport MarketPosition, market_position_string
 from inv_trader.enums.order_side cimport OrderSide
 from inv_trader.model.objects cimport Symbol
@@ -154,10 +154,8 @@ cdef class Position:
             self,
             OrderSide order_side,
             int quantity,
-            average_price: Decimal,
+            Decimal average_price,
             datetime event_time):
-        Precondition.type(average_price, Decimal, 'average_price')
-        Precondition.type(event_time, datetime, 'event_time')
         Precondition.positive(quantity, 'quantity')
         Precondition.positive(average_price, 'average_price')
 

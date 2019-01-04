@@ -11,8 +11,7 @@
 
 import datetime as dt
 
-from decimal import Decimal
-
+from inv_trader.core.decimal cimport Decimal
 from inv_trader.model.events cimport AccountEvent
 from inv_trader.model.objects import Money
 
@@ -106,5 +105,5 @@ cdef class Account:
         
         :return: The free equity (Decimal).
         """
-        margin_used = self.margin_used_maintenance + self.margin_used_liquidation
+        cdef Decimal margin_used = self.margin_used_maintenance + self.margin_used_liquidation
         return Decimal(max(self.cash_balance - margin_used, 0))

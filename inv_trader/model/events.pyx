@@ -10,9 +10,9 @@
 # cython: language_level=3, boundscheck=False, wraparound=False
 
 from cpython.datetime cimport datetime
-from decimal import Decimal
 
 from inv_trader.core.precondition cimport Precondition
+from inv_trader.core.decimal cimport Decimal
 from inv_trader.enums.brokerage cimport Broker
 from inv_trader.enums.currency_code cimport CurrencyCode
 from inv_trader.enums.order_side cimport OrderSide
@@ -84,12 +84,12 @@ cdef class AccountEvent(Event):
                  Broker broker,
                  AccountNumber account_number,
                  CurrencyCode currency,
-                 cash_balance: Decimal,
-                 cash_start_day: Decimal,
-                 cash_activity_day: Decimal,
-                 margin_used_liquidation: Decimal,
-                 margin_used_maintenance: Decimal,
-                 margin_ratio: Decimal,
+                 Decimal cash_balance,
+                 Decimal cash_start_day,
+                 Decimal cash_activity_day,
+                 Decimal margin_used_liquidation,
+                 Decimal margin_used_maintenance,
+                 Decimal margin_ratio,
                  str margin_call_status,
                  GUID event_id,
                  datetime event_timestamp):
@@ -107,12 +107,6 @@ cdef class AccountEvent(Event):
         :param event_id: The events identifier.
         :param event_timestamp: The order events timestamp.
         """
-        Precondition.type(cash_balance, Decimal, 'cash_balance')
-        Precondition.type(cash_start_day, Decimal, 'cash_start_day')
-        Precondition.type(cash_activity_day, Decimal, 'cash_activity_day')
-        Precondition.type(margin_used_liquidation, Decimal, 'margin_used_liquidation')
-        Precondition.type(margin_used_maintenance, Decimal, 'margin_used_maintenance')
-        Precondition.type(margin_ratio, Decimal, 'margin_ratio')
         Precondition.not_negative(cash_balance, 'cash_balance')
         Precondition.not_negative(cash_start_day, 'cash_start_day')
         Precondition.not_negative(cash_activity_day, 'cash_activity_day')
@@ -282,12 +276,12 @@ cdef class OrderWorking(OrderEvent):
                  OrderSide order_side,
                  OrderType order_type,
                  int quantity,
-                 price: Decimal,
+                 Decimal price,
                  TimeInForce time_in_force,
                  datetime working_time,
                  GUID event_id,
                  datetime event_timestamp,
-                 datetime expire_time: datetime=None):
+                 datetime expire_time=None):
         """
         Initializes a new instance of the OrderWorking class.
 
@@ -305,8 +299,6 @@ cdef class OrderWorking(OrderEvent):
         :param event_timestamp: The events timestamp.
         :param expire_time: The events order expire time (optional can be None).
         """
-        Precondition.type(price, Decimal, 'price')
-        Precondition.type(working_time, datetime, 'working_time')
         Precondition.type_or_none(expire_time, datetime, 'expire_time')
         Precondition.positive(quantity, 'quantity')
 
@@ -431,7 +423,7 @@ cdef class OrderModified(OrderEvent):
                  Symbol symbol,
                  OrderId order_id,
                  OrderId broker_order_id,
-                 modified_price: Decimal,
+                 Decimal modified_price,
                  datetime modified_time,
                  GUID event_id,
                  datetime event_timestamp):
@@ -446,8 +438,6 @@ cdef class OrderModified(OrderEvent):
         :param event_id: The events identifier.
         :param event_timestamp: The events timestamp.
         """
-        Precondition.type(modified_price, Decimal, 'modified_price')
-
         super().__init__(symbol,
                          order_id,
                          event_id,
@@ -469,7 +459,7 @@ cdef class OrderFilled(OrderEvent):
                  ExecutionTicket execution_ticket,
                  OrderSide order_side,
                  int filled_quantity,
-                 average_price: Decimal,
+                 Decimal average_price,
                  datetime execution_time,
                  GUID event_id,
                  datetime event_timestamp):
@@ -487,7 +477,6 @@ cdef class OrderFilled(OrderEvent):
         :param event_id: The events identifier.
         :param event_timestamp: The events timestamp.
         """
-        Precondition.type(average_price, Decimal, 'average_price')
         Precondition.positive(filled_quantity, 'filled_quantity')
 
         super().__init__(symbol,
@@ -515,7 +504,7 @@ cdef class OrderPartiallyFilled(OrderEvent):
                  OrderSide order_side,
                  int filled_quantity,
                  int leaves_quantity,
-                 average_price: Decimal,
+                 Decimal average_price,
                  execution_time: datetime,
                  GUID event_id,
                  datetime event_timestamp):
@@ -534,7 +523,6 @@ cdef class OrderPartiallyFilled(OrderEvent):
         :param event_id: The events identifier.
         :param event_timestamp: The events timestamp.
         """
-        Precondition.type(average_price, Decimal, 'average_price')
         Precondition.positive(filled_quantity, 'filled_quantity')
         Precondition.positive(leaves_quantity, 'leaves_quantity')
 

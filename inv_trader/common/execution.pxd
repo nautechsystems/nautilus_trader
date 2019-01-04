@@ -9,6 +9,7 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False
 
+from inv_trader.core.decimal cimport Decimal
 from inv_trader.model.account cimport Account
 from inv_trader.model.events cimport Event
 from inv_trader.model.identifiers cimport GUID
@@ -34,7 +35,7 @@ cdef class ExecutionClient:
 
     cpdef void cancel_order(self, Order order, str cancel_reason)
 
-    cpdef void modify_order(self, Order order, new_price)
+    cpdef void modify_order(self, Order order, Decimal new_price)
 
     cpdef void _register_order(self, Order order, GUID strategy_id)
 

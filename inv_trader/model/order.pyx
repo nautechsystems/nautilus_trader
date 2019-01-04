@@ -13,10 +13,10 @@ import datetime as dt
 
 from cpython.datetime cimport datetime
 from datetime import timezone
-from decimal import Decimal
 from typing import Dict, List
 
 from inv_trader.core.precondition cimport Precondition
+from inv_trader.core.decimal cimport Decimal
 from inv_trader.enums.order_side cimport OrderSide, order_side_string
 from inv_trader.enums.order_type cimport OrderType, order_type_string
 from inv_trader.enums.order_status cimport OrderStatus
@@ -49,7 +49,7 @@ cdef class Order:
                  OrderType order_type,
                  int quantity,
                  datetime timestamp,
-                 price: Decimal or None=None,
+                 Decimal price=None,
                  TimeInForce time_in_force=TimeInForce.NONE,
                  datetime expire_time=None):
         """
@@ -73,8 +73,6 @@ cdef class Order:
         :raises ValueError: If the order type has a price and the price is not positive (> 0).
         :raises ValueError: If the time_in_force is GTD and the expire_time is None.
         """
-        Precondition.type_or_none(price, Decimal, 'price')
-
         if time_in_force == TimeInForce.NONE:
             time_in_force = TimeInForce.DAY
 
@@ -374,7 +372,7 @@ cdef class OrderFactory:
             Label label,
             OrderSide order_side,
             int quantity,
-            price: Decimal,
+            Decimal price,
             TimeInForce time_in_force=TimeInForce.NONE,
             datetime expire_time=None) -> Order:
         """
@@ -412,7 +410,7 @@ cdef class OrderFactory:
             Label label,
             OrderSide order_side,
             int quantity,
-            price: Decimal,
+            Decimal price,
             TimeInForce time_in_force=TimeInForce.NONE,
             datetime expire_time=None) -> Order:
         """
@@ -450,7 +448,7 @@ cdef class OrderFactory:
             Label label,
             OrderSide order_side,
             int quantity,
-            price: Decimal,
+            Decimal price,
             TimeInForce time_in_force=TimeInForce.NONE,
             datetime expire_time=None) -> Order:
         """
@@ -488,7 +486,7 @@ cdef class OrderFactory:
             Label label,
             OrderSide order_side,
             int quantity,
-            price: Decimal,
+            Decimal price,
             TimeInForce time_in_force=TimeInForce.NONE,
             datetime expire_time=None) -> Order:
         """

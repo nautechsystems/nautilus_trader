@@ -15,13 +15,13 @@ import datetime as dt
 from cpython.datetime cimport datetime, timedelta
 from collections import deque
 from datetime import timezone
-from decimal import Decimal
 from typing import Callable, Deque, Dict, List
 from threading import Timer
 from uuid import UUID
 
 from inv_trader.core.precondition cimport Precondition
-from inv_trader.core.logger import Logger, LoggerAdapter
+from inv_trader.core.decimal cimport Decimal
+from inv_trader.common.logger import Logger, LoggerAdapter
 from inv_trader.common.execution cimport ExecutionClient
 from inv_trader.common.data cimport DataClient
 from inv_trader.model.account cimport Account
@@ -601,8 +601,6 @@ cdef class TradeStrategy:
         :raises ValueError: If the position_id is not a valid string.
         :raises KeyError: If the strategies positions dictionary does not contain the given position_id.
         """
-        Precondition.type(position_id, PositionId, 'position_id')
-
         if position_id not in self._position_book:
             raise KeyError(
                 (f"Cannot get position "
@@ -843,7 +841,7 @@ cdef class TradeStrategy:
     def modify_order(
             self,
             Order order,
-            new_price: Decimal):
+            Decimal new_price):
         """
         Send a modify order command for the given order with the given new price
         to the execution service.
@@ -854,7 +852,6 @@ cdef class TradeStrategy:
         :raises ValueError: If the new_price is not positive (> 0).
         :raises KeyError: If order_id is not found in the order book.
         """
-        Precondition.type(new_price, Decimal, 'new_price')
         Precondition.not_none(self._exec_client, 'exec_client')
         Precondition.positive(new_price, 'new_price')
 

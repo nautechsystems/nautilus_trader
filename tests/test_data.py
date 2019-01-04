@@ -12,8 +12,8 @@ import redis
 import time
 
 from datetime import datetime, timezone
-from decimal import Decimal
 
+from inv_trader.core.decimal import Decimal
 from inv_trader.data import LiveDataClient
 from inv_trader.model.objects import Symbol, Tick, BarType, Bar
 from inv_trader.model.enums import Venue, Resolution, QuoteType

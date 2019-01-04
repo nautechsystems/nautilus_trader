@@ -9,12 +9,11 @@
 
 # cython: language_level=3, boundscheck=False
 
-
-from decimal import Decimal
 from typing import Dict, Callable
 
 from inv_trader.core.precondition cimport Precondition
-from inv_trader.core.logger import Logger, LoggerAdapter
+from inv_trader.core.decimal cimport Decimal
+from inv_trader.common.logger import Logger, LoggerAdapter
 from inv_trader.model.account cimport Account
 from inv_trader.model.order cimport Order
 from inv_trader.model.events cimport Event, OrderEvent, AccountEvent, OrderCancelReject
@@ -98,7 +97,7 @@ cdef class ExecutionClient:
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the execution client.")
 
-    cpdef void modify_order(self, Order order, new_price: Decimal):
+    cpdef void modify_order(self, Order order, Decimal new_price):
         """
         Send a modify order request to the execution service.
         """
