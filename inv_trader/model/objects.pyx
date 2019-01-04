@@ -123,9 +123,9 @@ cdef class Money:
 
         :param amount: The money amount.
         :return: A Decimal representing the money.
-        :raises ValueError: If the amount is not positive (> 0).
+        :raises ValueError: If the amount is negative (< 0).
         """
-        Precondition.positive(amount, 'amount')
+        Precondition.not_negative(amount, 'amount')
 
         return Decimal(amount, 2)
 
