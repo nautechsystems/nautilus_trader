@@ -54,7 +54,7 @@ cdef class Bar:
     cdef readonly object high
     cdef readonly object low
     cdef readonly object close
-    cdef readonly int volume
+    cdef readonly long volume
     cdef readonly datetime timestamp
 
 
@@ -62,11 +62,11 @@ cdef class DataBar:
     """
     Represents a financial market trade bar.
     """
-    cdef readonly double open
-    cdef readonly double high
-    cdef readonly double low
-    cdef readonly double close
-    cdef readonly double volume
+    cdef readonly float open
+    cdef readonly float high
+    cdef readonly float low
+    cdef readonly float close
+    cdef readonly float volume
     cdef readonly datetime timestamp
 
 

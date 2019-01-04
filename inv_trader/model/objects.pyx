@@ -83,7 +83,7 @@ cdef class Price:
     """
 
     @staticmethod
-    def create(double price,
+    def create(float price,
                int decimals) -> Decimal:
         """
         Creates and returns a new price from the given values.
@@ -116,7 +116,7 @@ cdef class Money:
         return Decimal('0.00')
 
     @staticmethod
-    def create(double amount) -> Decimal:
+    def create(float amount) -> Decimal:
         """
         Creates and returns money from the given values.
         The money is rounded to two decimal digits.
@@ -278,7 +278,7 @@ cdef class Bar:
                  high_price: Decimal,
                  low_price: Decimal,
                  close_price: Decimal,
-                 int volume,
+                 long volume,
                  datetime timestamp):
         """
         Initializes a new instance of the Bar class.
@@ -356,11 +356,11 @@ cdef class DataBar:
     """
 
     def __init__(self,
-                 double open_price,
-                 double high_price,
-                 double low_price,
-                 double close_price,
-                 double volume,
+                 float open_price,
+                 float high_price,
+                 float low_price,
+                 float close_price,
+                 float volume,
                  datetime timestamp):
         """
         Initializes a new instance of the DataBar class.
