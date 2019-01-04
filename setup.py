@@ -19,7 +19,7 @@ from setuptools import setup, Extension
 # Command to compile c extensions
 # python setup.py build_ext --inplace
 
-VERSION = '0.71.0'
+VERSION = '0.72.0'
 AUTHOR = 'Invariance'
 INV_TRADER = 'inv_trader'
 DESCRIPTION = 'The python trading client for Invariance.'
@@ -34,6 +34,7 @@ REQUIREMENTS = ['numpy',
                 'redis',
                 'pyfolio',
                 'pyzmq']
+
 
 # Embed docstrings in extensions
 Options.embed_pos_in_docstring = True
