@@ -14,8 +14,8 @@ import iso8601
 import json
 
 from cpython.datetime cimport datetime
-from decimal import Decimal
 
+from inv_trader.core.decimal cimport Decimal
 from inv_trader.commands cimport Command
 from inv_trader.model.enums import Venue, CurrencyCode
 from inv_trader.enums.venue cimport Venue

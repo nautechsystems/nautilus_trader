@@ -11,8 +11,8 @@ import unittest
 import uuid
 
 from datetime import datetime, timezone
-from decimal import Decimal
 
+from inv_trader.core.decimal import Decimal
 from inv_trader.common.serialization import InstrumentSerializer
 from inv_trader.commands import SubmitOrder, CancelOrder, ModifyOrder
 from inv_trader.commands import CollateralInquiry

@@ -168,7 +168,6 @@ cdef class ModifyOrder(OrderCommand):
         :param command_id: The commands identifier.
         :param command_timestamp: The commands timestamp.
         """
-        Precondition.type(modified_price, Decimal, 'modified_price')
         Precondition.positive(modified_price, 'modified_price')
 
         super().__init__(order,
