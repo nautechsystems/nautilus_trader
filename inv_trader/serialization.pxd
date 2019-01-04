@@ -9,12 +9,9 @@
 
 # cython: language_level=3, boundscheck=False
 
-from cpython.datetime cimport datetime
-
-from inv_trader.commands cimport Command, OrderCommand
-from inv_trader.model.identifiers cimport GUID
+from inv_trader.commands cimport Command
 from inv_trader.model.order cimport Order
-from inv_trader.model.events cimport Event, OrderEvent
+from inv_trader.model.events cimport Event
 from inv_trader.common.serialization cimport OrderSerializer, EventSerializer, CommandSerializer
 
 
@@ -34,12 +31,6 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
 
     cpdef bytes serialize(self, Command command)
     cpdef Command deserialize(self, bytes command_bytes)
-    cdef bytes _serialize_order_command(self, OrderCommand order_command)
-    cdef OrderCommand _deserialize_order_command(
-            self,
-            GUID command_id,
-            datetime command_timestamp,
-            dict unpacked)
 
 
 cdef class MsgPackEventSerializer(EventSerializer):
@@ -48,10 +39,3 @@ cdef class MsgPackEventSerializer(EventSerializer):
     """
     cpdef bytes serialize(self, Event event)
     cpdef Event deserialize(self, bytes event_bytes)
-    cdef bytes _serialize_order_event(self, OrderEvent order_event)
-    cdef OrderEvent _deserialize_order_event(
-            self,
-            GUID event_id,
-            datetime event_timestamp,
-            dict unpacked)
-
