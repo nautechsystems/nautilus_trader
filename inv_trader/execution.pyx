@@ -49,8 +49,8 @@ cdef class LiveExecClient(ExecutionClient):
             str host='localhost',
             int commands_port=5555,
             int events_port=5556,
-            CommandSerializer command_serializer=MsgPackCommandSerializer,
-            EventSerializer event_serializer=MsgPackEventSerializer,
+            CommandSerializer command_serializer=MsgPackCommandSerializer(),
+            EventSerializer event_serializer=MsgPackEventSerializer(),
             logger: Logger=None):
         """
         Initializes a new instance of the LiveExecClient class.

@@ -11,10 +11,11 @@ import unittest
 
 from datetime import datetime, timezone
 
+from inv_trader.core.decimal import Decimal
+from inv_trader.model.objects import Bar
+from inv_trader.tools import BarBuilder, IndicatorUpdater
 from inv_indicators.average.ema import ExponentialMovingAverage
 from inv_indicators.intrinsic_network import IntrinsicNetwork
-from inv_trader.model.objects import Bar, Decimal
-from inv_trader.tools import BarBuilder, IndicatorUpdater
 from test_kit.data import TestDataProvider
 
 
@@ -133,7 +134,7 @@ class IndicatorUpdaterTests(unittest.TestCase):
         intrinsic = IntrinsicNetwork(0.2, 0.2)
         updater = IndicatorUpdater(intrinsic, input_method=intrinsic.update_mid)
         bar = Bar(
-            Decimal('1.00001'),
+            Decimal(1.00001, 5),
             Decimal('1.00004'),
             Decimal('1.00002'),
             Decimal('1.00003'),
