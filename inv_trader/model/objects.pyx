@@ -99,7 +99,6 @@ cdef class Price:
         Precondition.not_negative(precision, 'precision')
 
         return Decimal(price, precision)
-        #return Decimal(f'{round(price, decimals):.{decimals}f}')
 
 
 cdef class Money:
@@ -114,7 +113,7 @@ cdef class Money:
 
         :return:
         """
-        return Decimal('0.00')
+        return Decimal(0, 2)
 
     @staticmethod
     def create(float amount) -> Decimal:
@@ -129,7 +128,6 @@ cdef class Money:
         Precondition.positive(amount, 'amount')
 
         return Decimal(amount, 2)
-        #return Decimal(f'{round(amount, 2):.{2}f}')
 
 
 cdef class Tick:
