@@ -17,9 +17,9 @@ from inv_trader.model.objects cimport Symbol, BarType, Instrument
 cdef class DataClient:
     cdef list _subscriptions_bars
     cdef list _subscriptions_ticks
-    cdef object _instruments
-    cdef object _bar_handlers
-    cdef object _tick_handlers
+    cdef dict _instruments
+    cdef dict _bar_handlers
+    cdef dict _tick_handlers
 
     cdef readonly object log
 
