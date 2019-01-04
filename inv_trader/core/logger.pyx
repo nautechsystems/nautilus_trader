@@ -13,6 +13,7 @@ import logging
 import os
 import threading
 
+from cpython.datetime cimport datetime
 from datetime import datetime
 from logging import INFO, DEBUG
 
@@ -31,7 +32,7 @@ cdef class Logger:
     cdef object _logger
 
     def __init__(self,
-                 name=None,
+                 str name=None,
                  level_console: logging=INFO,
                  level_file: logging=DEBUG,
                  bint console_prints=True,
@@ -145,7 +146,7 @@ cdef class Logger:
             str log_level,
             str message):
 
-        time = datetime.utcnow().isoformat(timespec='milliseconds') + 'Z'
+        cdef str time = datetime.utcnow().isoformat(timespec='milliseconds') + 'Z'
         return (f'{time} [{threading.current_thread().ident}][{log_level}] '
                 f'{message}')
 

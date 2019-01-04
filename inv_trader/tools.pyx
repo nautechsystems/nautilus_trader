@@ -13,14 +13,13 @@ import inspect
 import pandas as pd
 
 from cpython.datetime cimport datetime
-from numpy import ndarray
 from typing import Callable, List
 from pandas.core.frame import DataFrame
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.model.objects import Price
 from inv_trader.model.objects cimport Bar, DataBar
-
+from inv_indicators.base.indicator import Indicator
 
 cdef str POINT = 'point'
 cdef str PRICE = 'price'
@@ -83,7 +82,7 @@ cdef class BarBuilder:
 
     cpdef DataBar _build_data_bar(
             self,
-            double[:] values: ndarray,
+            double[:] values,
             datetime timestamp):
         """
         Build a DataBar from the given index and values. The function expects the
@@ -102,7 +101,7 @@ cdef class BarBuilder:
 
     cpdef Bar _build_bar(
             self,
-            double[:] values: ndarray,
+            double[:] values,
             datetime timestamp):
         """
         Build a Bar from the given index and values. The function expects the
@@ -132,7 +131,7 @@ cdef class IndicatorUpdater:
     cdef list _outputs
 
     def __init__(self,
-                 indicator,
+                 indicator: Indicator,
                  input_method: Callable=None,
                  list outputs: List[str]=None):
         """
@@ -152,7 +151,7 @@ cdef class IndicatorUpdater:
 
         self._input_params = []
 
-        param_map = {
+        cdef dict param_map = {
             POINT: CLOSE,
             PRICE: CLOSE,
             MID: CLOSE,
@@ -193,7 +192,7 @@ cdef class IndicatorUpdater:
         
         :return: The list of indicator output feature.
         """
-        features = {}
+        cdef dict features = {}
         for output in self._outputs:
             features[output] = []
 
@@ -211,7 +210,7 @@ cdef class IndicatorUpdater:
         
         :return: The list of indicator output feature.
         """
-        features = {}
+        cdef dict features = {}
         for output in self._outputs:
             features[output] = []
 
