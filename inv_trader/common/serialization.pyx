@@ -16,7 +16,7 @@ import json
 from cpython.datetime cimport datetime
 
 from inv_trader.core.decimal cimport Decimal
-from inv_trader.commands cimport Command
+
 from inv_trader.model.enums import Venue, CurrencyCode
 from inv_trader.enums.venue cimport Venue
 from inv_trader.enums.security_type cimport SecurityType
@@ -25,6 +25,7 @@ from inv_trader.model.identifiers cimport GUID
 from inv_trader.model.objects cimport Symbol, Instrument
 from inv_trader.model.order cimport Order
 from inv_trader.model.events cimport Event
+from inv_trader.commands cimport Command
 
 
 cdef str UTF8 = 'utf-8'

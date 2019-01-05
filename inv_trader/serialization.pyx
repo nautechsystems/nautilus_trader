@@ -13,7 +13,6 @@ import msgpack
 
 from cpython.datetime cimport datetime
 from uuid import UUID
-from datetime import datetime
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.core.decimal cimport Decimal

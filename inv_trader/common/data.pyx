@@ -13,7 +13,7 @@ from cpython.datetime cimport datetime
 from typing import List, Dict, Callable
 
 from inv_trader.core.precondition cimport Precondition
-from inv_trader.common.logger import Logger, LoggerAdapter
+from inv_trader.common.logger cimport Logger, LoggerAdapter
 from inv_trader.model.objects cimport Symbol, BarType, Instrument
 from inv_trader.strategy import TradeStrategy
 
@@ -24,12 +24,10 @@ cdef class DataClient:
     Provides a data client for alpha models and trading strategies.
     """
 
-    def __init__(self, logger: Logger=None):
+    def __init__(self, Logger logger=None):
         """
         Initializes a new instance of the DataClient class.
         """
-        Precondition.type_or_none(logger, Logger, 'logger')
-
         if logger is None:
             self.log = LoggerAdapter(f"DataClient")
         else:
