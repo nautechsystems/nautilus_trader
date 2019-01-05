@@ -204,13 +204,13 @@ cdef class MockExecClient(ExecutionClient):
         """
         Connect to the execution service.
         """
-        self.log.info("MockExecClient connected.")
+        self._log.info("MockExecClient connected.")
 
     def disconnect(self):
         """
         Disconnect from the execution service.
         """
-        self.log.info("MockExecClient disconnected.")
+        self._log.info("MockExecClient disconnected.")
 
     cpdef void submit_order(self, Order order, GUID strategy_id):
         """
@@ -218,14 +218,14 @@ cdef class MockExecClient(ExecutionClient):
         """
         self._register_order(order, strategy_id)
 
-        submitted = OrderSubmitted(
+        cdef OrderSubmitted submitted = OrderSubmitted(
             order.symbol,
             order.id,
             datetime.utcnow(),
             GUID(uuid.uuid4()),
             datetime.utcnow())
 
-        accepted = OrderAccepted(
+        cdef OrderAccepted accepted = OrderAccepted(
             order.symbol,
             order.id,
             datetime.utcnow(),
@@ -234,7 +234,7 @@ cdef class MockExecClient(ExecutionClient):
 
         self._working_orders.append(order)
 
-        working = OrderWorking(
+        cdef OrderWorking working = OrderWorking(
             order.symbol,
             order.id,
             OrderId('B' + str(order.id)),
@@ -257,7 +257,7 @@ cdef class MockExecClient(ExecutionClient):
         """
         Send a cancel order command to the mock execution service.
         """
-        cancelled = OrderCancelled(
+        cdef OrderCancelled cancelled = OrderCancelled(
             order.symbol,
             order.id,
             datetime.utcnow(),
@@ -270,7 +270,7 @@ cdef class MockExecClient(ExecutionClient):
         """
         Send a modify order command to the mock execution service.
         """
-        modified = OrderModified(
+        cdef OrderModified modified = OrderModified(
             order.symbol,
             order.id,
             OrderId('B' + str(order.id)),
@@ -293,9 +293,9 @@ cdef class MockExecClient(ExecutionClient):
         """
         order = self._working_orders.pop(-1)
 
-        filled_price = Price.create(1.00000, 5) if order.price is None else order.price
+        cdef Decimal filled_price = Price.create(1.00000, 5) if order.price is None else order.price
 
-        filled = OrderFilled(
+        cdef OrderFilled filled = OrderFilled(
             order.symbol,
             order.id,
             ExecutionId('E' + str(order.id)),

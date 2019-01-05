@@ -15,7 +15,7 @@ from typing import List, Dict, Callable
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.common.logger cimport Logger, LoggerAdapter
 from inv_trader.model.objects cimport Symbol, BarType, Instrument
-from inv_trader.strategy import TradeStrategy
+from inv_trader.strategy cimport TradeStrategy
 
 cdef str UTF8 = 'utf-8'
 
@@ -29,9 +29,9 @@ cdef class DataClient:
         Initializes a new instance of the DataClient class.
         """
         if logger is None:
-            self.log = LoggerAdapter(f"DataClient")
+            self._log = LoggerAdapter(f"DataClient")
         else:
-            self.log = LoggerAdapter(f"DataClient", logger)
+            self._log = LoggerAdapter(f"DataClient", logger)
 
         self._subscriptions_bars = []   # type: List[str]
         self._subscriptions_ticks = []  # type: List[str]
@@ -39,7 +39,7 @@ cdef class DataClient:
         self._bar_handlers = {}         # type: Dict[BarType, List[Callable]]
         self._tick_handlers = {}        # type: Dict[Symbol, List[Callable]]
 
-        self.log.info("Initialized.")
+        self._log.info("Initialized.")
 
     cpdef list symbols(self):
         """
@@ -108,18 +108,16 @@ cdef class DataClient:
 
         return self._instruments[symbol]
 
-    cpdef void register_strategy(self, strategy: TradeStrategy):
+    cpdef void register_strategy(self, TradeStrategy strategy):
         """
         Registers the given trade strategy with the data client.
 
         :param strategy: The strategy to register.
         :raise ValueError: If the strategy does not inherit from TradeStrategy.
         """
-        Precondition.type(strategy, TradeStrategy, 'strategy')
-
         strategy._register_data_client(self)
 
-        self.log.info(f"Registered strategy {strategy} with the data client.")
+        self._log.info(f"Registered strategy {strategy} with the data client.")
 
     cpdef void historical_bars(
             self,
@@ -178,7 +176,7 @@ cdef class DataClient:
 
         if handler is not None and handler not in self._bar_handlers[bar_type]:
             self._bar_handlers[bar_type].append(handler)
-            self.log.debug(f"Added bar handler {handler}.")
+            self._log.debug(f"Added bar handler {handler}.")
 
     cdef void _unsubscribe_bars(
             self,
@@ -193,15 +191,15 @@ cdef class DataClient:
         Precondition.type_or_none(handler, Callable, 'handler')
 
         if bar_type not in self._bar_handlers:
-            self.log.warning(f"Cannot unsubscribe bars (no handlers for {bar_type}).")
+            self._log.warning(f"Cannot unsubscribe bars (no handlers for {bar_type}).")
             return
 
         if handler is not None:
             if handler in self._bar_handlers[bar_type]:
                 self._bar_handlers[bar_type].remove(handler)
-                self.log.debug(f"Removed handler {handler} from bar handlers.")
+                self._log.debug(f"Removed handler {handler} from bar handlers.")
             else:
-                self.log.warning(f"Cannot remove handler {handler} from bar handlers (not found).")
+                self._log.warning(f"Cannot remove handler {handler} from bar handlers (not found).")
 
     cdef void _subscribe_ticks(
             self,
@@ -220,7 +218,7 @@ cdef class DataClient:
 
         if handler is not None and handler not in self._tick_handlers:
             self._tick_handlers[symbol].append(handler)
-            self.log.debug(f"Added tick {handler}.")
+            self._log.debug(f"Added tick {handler}.")
 
     cdef void _unsubscribe_ticks(
             self,
@@ -236,15 +234,15 @@ cdef class DataClient:
         Precondition.type_or_none(handler, Callable, 'handler')
 
         if symbol not in self._tick_handlers:
-            self.log.warning(f"Cannot unsubscribe ticks (no handlers for {symbol}).")
+            self._log.warning(f"Cannot unsubscribe ticks (no handlers for {symbol}).")
             return
 
         if handler is not None:
             if handler in self._tick_handlers[symbol]:
                 self._tick_handlers[symbol].remove(handler)
-                self.log.debug(f"Removed handler {handler} from tick handlers.")
+                self._log.debug(f"Removed handler {handler} from tick handlers.")
             else:
-                self.log.warning(f"Cannot remove handler {handler} from tick handlers (not found).")
+                self._log.warning(f"Cannot remove handler {handler} from tick handlers (not found).")
 
     cdef void _reset(self):
         """
@@ -256,4 +254,4 @@ cdef class DataClient:
         self._bar_handlers = {}         # type: Dict[BarType, List[Callable]]
         self._tick_handlers = {}        # type: Dict[Symbol, List[Callable]]
 
-        self.log.info("Initialized.")
+        self._log.info("Initialized.")

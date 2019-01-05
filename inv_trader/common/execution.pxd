@@ -15,29 +15,22 @@ from inv_trader.model.account cimport Account
 from inv_trader.model.events cimport Event
 from inv_trader.model.identifiers cimport GUID
 from inv_trader.model.order cimport Order
+from inv_trader.strategy cimport TradeStrategy
 
 
 cdef class ExecutionClient:
+    cdef LoggerAdapter _log
     cdef dict _registered_strategies
     cdef dict _order_index
 
-    cdef readonly LoggerAdapter log
     cdef readonly Account account
 
-    cpdef void register_strategy(self, strategy)
-
+    cpdef void register_strategy(self, TradeStrategy strategy)
     cpdef void connect(self)
-
     cpdef void disconnect(self)
-
     cpdef void collateral_inquiry(self)
-
     cpdef void submit_order(self, Order order, GUID strategy_id)
-
     cpdef void cancel_order(self, Order order, str cancel_reason)
-
     cpdef void modify_order(self, Order order, Decimal new_price)
-
-    cpdef void _register_order(self, Order order, GUID strategy_id)
-
-    cpdef void _on_event(self, Event event)
+    cdef void _register_order(self, Order order, GUID strategy_id)
+    cdef void _on_event(self, Event event)
