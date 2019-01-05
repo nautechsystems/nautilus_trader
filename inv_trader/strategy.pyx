@@ -770,7 +770,6 @@ cdef class TradeStrategy:
         :param order: The order to submit.
         :param position_id: The position id to associate with this order.
         :raises ValueError: If the strategy has not been registered with an execution client.
-        :raises ValueError: If the position_id is not a valid string.
         :raises KeyError: If the order_id is already contained in the order book (must be unique).
         """
         Precondition.not_none(self._exec_client, 'exec_client')
@@ -904,7 +903,7 @@ cdef class TradeStrategy:
                 position.quantity)
             self.submit_order(order, position_id)
 
-    cdef void _register_data_client(self, DataClient client):
+    cpdef void _register_data_client(self, DataClient client):
         """
         Register the strategy with the given data client.
 
@@ -914,7 +913,7 @@ cdef class TradeStrategy:
         """
         self._data_client = client
 
-    cdef void _register_execution_client(self, ExecutionClient client):
+    cpdef void _register_execution_client(self, ExecutionClient client):
         """
         Register the strategy with the given execution client.
 
@@ -925,7 +924,7 @@ cdef class TradeStrategy:
         self._exec_client = client
         self._account = client.account
 
-    cdef void _update_ticks(self, Tick tick):
+    cpdef void _update_ticks(self, Tick tick):
         """"
         Updates the last held tick with the given tick, then calls on_tick()
         for the inheriting class.
@@ -938,7 +937,7 @@ cdef class TradeStrategy:
         if self._is_running:
             self.on_tick(tick)
 
-    cdef void _update_bars(self, BarType bar_type, Bar bar):
+    cpdef void _update_bars(self, BarType bar_type, Bar bar):
         """"
         Updates the internal dictionary of bars with the given bar, then calls the
         on_bar method for the inheriting class.
@@ -958,7 +957,7 @@ cdef class TradeStrategy:
         if self._is_running:
             self.on_bar(bar_type, bar)
 
-    cdef void _update_indicators(self, BarType bar_type, Bar bar):
+    cpdef void _update_indicators(self, BarType bar_type, Bar bar):
         """
         Updates the internal indicators of the given bar type with the given bar.
 
@@ -972,7 +971,7 @@ cdef class TradeStrategy:
         for updater in self._indicator_updaters[bar_type]:
             updater.update_bar(bar)
 
-    cdef void _update_events(self, Event event):
+    cpdef void _update_events(self, Event event):
         """
         Updates the strategy with the given event, then calls on_event() if the
         strategy is running.
@@ -1022,7 +1021,7 @@ cdef class TradeStrategy:
         if self._is_running:
             self.on_event(event)
 
-    cdef void _raise_time_event(self, Label label, datetime alert_time):
+    cpdef void _raise_time_event(self, Label label, datetime alert_time):
         """
         Create a new TimeEvent and pass it into _update_events().
         """
@@ -1031,7 +1030,7 @@ cdef class TradeStrategy:
         del self._timers[label]
 
     # Cannot convert below method to Python callable if cdef
-    cdef void _repeating_timer(
+    cpdef void _repeating_timer(
             self,
             Label label,
             datetime alert_time,

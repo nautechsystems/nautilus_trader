@@ -19,7 +19,7 @@ from inv_trader.strategy cimport TradeStrategy
 
 
 cdef class ExecutionClient:
-    cdef LoggerAdapter _log
+    cdef readonly LoggerAdapter _log
     cdef dict _registered_strategies
     cdef dict _order_index
 
@@ -32,5 +32,5 @@ cdef class ExecutionClient:
     cpdef void submit_order(self, Order order, GUID strategy_id)
     cpdef void cancel_order(self, Order order, str cancel_reason)
     cpdef void modify_order(self, Order order, Decimal new_price)
-    cdef void _register_order(self, Order order, GUID strategy_id)
-    cdef void _on_event(self, Event event)
+    cpdef void _register_order(self, Order order, GUID strategy_id)
+    cpdef void _on_event(self, Event event)
