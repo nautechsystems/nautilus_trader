@@ -16,7 +16,7 @@ from datetime import datetime
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.core.decimal cimport Decimal
-from inv_trader.common.logger cimport Logger, LoggerAdapter
+from inv_trader.common.logger cimport Logger
 from inv_trader.common.execution cimport ExecutionClient
 from inv_trader.commands cimport Command, OrderCommand, CollateralInquiry
 from inv_trader.commands cimport SubmitOrder, CancelOrder, ModifyOrder
@@ -25,7 +25,7 @@ from inv_trader.model.order cimport Order
 from inv_trader.model.events cimport Event, OrderEvent, AccountEvent, OrderCancelReject
 from inv_trader.model.identifiers cimport GUID, OrderId
 from inv_trader.messaging import RequestWorker, SubscriberWorker
-from inv_trader.strategy import TradeStrategy
+from inv_trader.strategy cimport TradeStrategy
 from inv_trader.common.serialization cimport CommandSerializer, EventSerializer
 from inv_trader.serialization cimport MsgPackCommandSerializer
 from inv_trader.serialization cimport MsgPackEventSerializer
@@ -91,7 +91,7 @@ cdef class LiveExecClient(ExecutionClient):
             self._event_handler,
             logger)
 
-        self.log.info(f"ZMQ v{zmq.pyzmq_version()}")
+        self._log.info(f"ZMQ v{zmq.pyzmq_version()}")
 
     cpdef void connect(self):
         """
@@ -116,7 +116,7 @@ cdef class LiveExecClient(ExecutionClient):
         cdef bytes message = self._command_serializer.serialize(command)
 
         self._commands_worker.send(message)
-        self.log.debug(f"Sent {command}")
+        self._log.debug(f"Sent {command}")
 
     cpdef void submit_order(self, Order order, GUID strategy_id):
         """
@@ -135,7 +135,7 @@ cdef class LiveExecClient(ExecutionClient):
         cdef bytes message = self._command_serializer.serialize(command)
 
         self._commands_worker.send(message)
-        self.log.debug(f"Sent {command}")
+        self._log.debug(f"Sent {command}")
 
     cpdef void cancel_order(self, Order order, str cancel_reason):
         """
@@ -156,7 +156,7 @@ cdef class LiveExecClient(ExecutionClient):
         cdef bytes message = self._command_serializer.serialize(command)
 
         self._commands_worker.send(message)
-        self.log.debug(f"Sent {command}")
+        self._log.debug(f"Sent {command}")
 
     cpdef void modify_order(self, Order order, Decimal new_price):
         """
@@ -177,7 +177,7 @@ cdef class LiveExecClient(ExecutionClient):
         cdef bytes message = self._command_serializer.serialize(command)
 
         self._commands_worker.send(message)
-        self.log.debug(f"Sent {command}")
+        self._log.debug(f"Sent {command}")
 
     cdef void _event_handler(self, bytes body):
         """"
@@ -190,7 +190,7 @@ cdef class LiveExecClient(ExecutionClient):
 
         # If no registered strategies then print message to console.
         if len(self._registered_strategies) == 0:
-            self.log.debug(f"Received {event}")
+            self._log.debug(f"Received {event}")
 
         self._on_event(event)
 
@@ -201,4 +201,4 @@ cdef class LiveExecClient(ExecutionClient):
         :param body: The order command acknowledgement message body.
         """
         cdef Command command = self._command_serializer.deserialize(body)
-        self.log.debug(f"Received order command ack for command_id {command.id}.")
+        self._log.debug(f"Received order command ack for command_id {command.id}.")

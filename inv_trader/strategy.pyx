@@ -17,11 +17,10 @@ from collections import deque
 from datetime import timezone
 from typing import Callable, Deque, Dict, List
 from threading import Timer
-from uuid import UUID
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.core.decimal cimport Decimal
-from inv_trader.common.logger import Logger, LoggerAdapter
+from inv_trader.common.logger cimport Logger, LoggerAdapter
 from inv_trader.common.execution cimport ExecutionClient
 from inv_trader.common.data cimport DataClient
 from inv_trader.model.account cimport Account
@@ -44,32 +43,12 @@ cdef class TradeStrategy:
     """
     The abstract base class for all trade strategies.
     """
-    cdef object _log
-    cdef str _name
-    cdef str _label
-    cdef GUID _id
-    cdef object _order_id_generator
-    cdef int _bar_capacity
-    cdef bint _is_running
-    cdef dict _timers
-    cdef dict _ticks
-    cdef dict _bars
-    cdef dict _indicators
-    cdef dict _indicator_updaters
-    cdef dict _indicator_index
-
-    cdef readonly dict _order_position_index
-    cdef readonly dict _order_book
-    cdef readonly dict _position_book
-    cdef readonly DataClient _data_client
-    cdef readonly ExecutionClient _exec_client
-    cdef readonly Account _account
 
     def __init__(self,
                  str label='0',
                  str order_id_tag='0',
                  int bar_capacity=1000,
-                 logger: Logger=None):
+                 Logger logger=None):
         """
         Initializes a new instance of the TradeStrategy abstract class.
 
@@ -81,18 +60,17 @@ cdef class TradeStrategy:
         :raises ValueError: If the order_id_tag is not a valid string.
         :raises ValueError: If the bar_capacity is not positive (> 0).
         """
-        Precondition.type_or_none(logger, Logger, 'logger')
         Precondition.valid_string(label, 'label')
         Precondition.valid_string(order_id_tag, 'order_id_tag')
         Precondition.positive(bar_capacity, 'bar_capacity')
 
         if logger is None:
-            self._log = LoggerAdapter(f"{self._name}-{self._label}")
+            self._log = LoggerAdapter(f"{self.name}-{self.label}")
         else:
-            self._log = LoggerAdapter(f"{self._name}-{self._label}", logger)
-        self._name = self.__class__.__name__
-        self._label = label
-        self._id = GUID(uuid.uuid4())
+            self._log = LoggerAdapter(f"{self.name}-{self.label}", logger)
+        self.name = self.__class__.__name__
+        self.label = label
+        self.id = GUID(uuid.uuid4())
         self._order_id_generator = OrderIdGenerator(order_id_tag)
         self._bar_capacity = bar_capacity
         self._is_running = False
@@ -136,7 +114,7 @@ cdef class TradeStrategy:
         """
         :return: The str() string representation of the strategy.
         """
-        return f"{self._name}-{self._label}"
+        return f"{self.name}-{self.label}"
 
     def __repr__(self) -> str:
         """
@@ -145,7 +123,7 @@ cdef class TradeStrategy:
         return f"<{str(self)} object at {id(self)}>"
 
     # @abc.abstractmethod
-    def on_start(self):
+    cpdef void on_start(self):
         """
         Called when the strategy is started.
         """
@@ -184,7 +162,7 @@ cdef class TradeStrategy:
         raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
 
     # @abc.abstractmethod
-    def on_stop(self):
+    cpdef void on_stop(self):
         """
         Called when the strategy is stopped.
         """
@@ -192,33 +170,12 @@ cdef class TradeStrategy:
         raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
 
     # @abc.abstractmethod
-    def on_reset(self):
+    cpdef void on_reset(self):
         """
         Called when the strategy is reset.
         """
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
-
-    @property
-    def name(self) -> str:
-        """
-        :return: The name of the strategy.
-        """
-        return self._name
-
-    @property
-    def label(self) -> str:
-        """
-        :return: The label of the strategy.
-        """
-        return self._label
-
-    @property
-    def id(self) -> UUID:
-        """
-        :return: The unique identifier of the strategy.
-        """
-        return self._id
 
     @property
     def is_running(self) -> bool:
@@ -364,10 +321,7 @@ cdef class TradeStrategy:
 
         return self._data_client.get_instrument(symbol)
 
-    cpdef void historical_bars(
-            self,
-            BarType bar_type,
-            int quantity=-1):
+    cpdef void historical_bars(self, BarType bar_type, int quantity):
         """
         Download the historical bars for the given parameters from the data service.
         Then pass them to all registered strategies.
@@ -381,16 +335,13 @@ cdef class TradeStrategy:
         :raises ValueError: If the amount is not positive (> 0).
         """
         Precondition.not_none(self._data_client, 'data_client')
-        if quantity == -1:
+        if quantity <= 0:
             quantity = self._bar_capacity
         Precondition.positive(quantity, 'quantity')
 
         self._data_client.historical_bars(bar_type, quantity, self._update_bars)
 
-    cpdef void historical_bars_from(
-            self,
-            BarType bar_type,
-            datetime from_datetime):
+    cpdef void historical_bars_from(self, BarType bar_type, datetime from_datetime):
         """
         Download the historical bars for the given parameters from the data service.
 
@@ -533,7 +484,7 @@ cdef class TradeStrategy:
 
         return self._indicator_index[label]
 
-    cpdef object bars(self, BarType bar_type):
+    cpdef list bars(self, BarType bar_type):
         """
         Get the bars for the given bar type.
 
@@ -547,9 +498,7 @@ cdef class TradeStrategy:
 
         return self._bars[bar_type]
 
-    cpdef Bar bar(self,
-            BarType bar_type,
-            int index):
+    cpdef Bar bar(self, BarType bar_type, int index):
         """
         Get the bar for the given bar type at the given index.
 
@@ -695,9 +644,9 @@ cdef class TradeStrategy:
             self,
             Label label,
             timedelta interval,
-            datetime start_time=None,
-            datetime stop_time=None,
-            bint repeat=False):
+            datetime start_time,
+            datetime stop_time,
+            bint repeat):
         """
         Set a timer with the given interval (time delta). The timer will run from
         the start time (optionally until the stop time). When the interval is
@@ -804,7 +753,7 @@ cdef class TradeStrategy:
         else:
             raise ValueError("Cannot flatten a FLAT position.")
 
-    def collateral_inquiry(self):
+    cpdef void collateral_inquiry(self):
         """
         Send a collateral inquiry command to the execution service.
 
@@ -814,10 +763,7 @@ cdef class TradeStrategy:
 
         self._exec_client.collateral_inquiry()
 
-    def submit_order(
-            self,
-            Order order,
-            PositionId position_id):
+    cpdef void submit_order(self, Order order, PositionId position_id):
         """
         Send a submit order command with the given order to the execution service.
 
@@ -836,12 +782,9 @@ cdef class TradeStrategy:
         self._order_position_index[order.id] = position_id
 
         self._log.info(f"Submitting {order}")
-        self._exec_client.submit_order(order, self._id)
+        self._exec_client.submit_order(order, self.id)
 
-    def modify_order(
-            self,
-            Order order,
-            Decimal new_price):
+    cpdef void modify_order(self, Order order, Decimal new_price):
         """
         Send a modify order command for the given order with the given new price
         to the execution service.
@@ -861,10 +804,7 @@ cdef class TradeStrategy:
         self._log.info(f"Modifying {order} with new price {new_price}")
         self._exec_client.modify_order(order, new_price)
 
-    def cancel_order(
-            self,
-            Order order,
-            str cancel_reason='NONE'):
+    cpdef void cancel_order(self, Order order, str cancel_reason):
         """
         Send a cancel order command for the given order and cancel_reason to the
         execution service.
@@ -884,7 +824,7 @@ cdef class TradeStrategy:
         self._log.info(f"Cancelling {order}")
         self._exec_client.cancel_order(order, cancel_reason)
 
-    cpdef void cancel_all_orders(self, str cancel_reason='NONE'):
+    cpdef void cancel_all_orders(self, str cancel_reason):
         """
         Send a cancel order command for all currently working orders in the
         order book with the given cancel_reason - to the execution service.
@@ -900,7 +840,7 @@ cdef class TradeStrategy:
             if not order.is_complete:
                 self.cancel_order(order, cancel_reason)
 
-    def flatten_position(self, PositionId position_id):
+    cpdef void flatten_position(self, PositionId position_id):
         """
         Flatten the position corresponding to the given identifier by generating
         the required market order, and sending it to the execution service.
@@ -964,7 +904,7 @@ cdef class TradeStrategy:
                 position.quantity)
             self.submit_order(order, position_id)
 
-    cpdef void _register_data_client(self, DataClient client):
+    cdef void _register_data_client(self, DataClient client):
         """
         Register the strategy with the given data client.
 
@@ -974,7 +914,7 @@ cdef class TradeStrategy:
         """
         self._data_client = client
 
-    cpdef void _register_execution_client(self, ExecutionClient client):
+    cdef void _register_execution_client(self, ExecutionClient client):
         """
         Register the strategy with the given execution client.
 
@@ -985,7 +925,7 @@ cdef class TradeStrategy:
         self._exec_client = client
         self._account = client.account
 
-    cpdef void _update_ticks(self, Tick tick):
+    cdef void _update_ticks(self, Tick tick):
         """"
         Updates the last held tick with the given tick, then calls on_tick()
         for the inheriting class.
@@ -998,10 +938,7 @@ cdef class TradeStrategy:
         if self._is_running:
             self.on_tick(tick)
 
-    cpdef void _update_bars(
-            self,
-            BarType bar_type,
-            Bar bar):
+    cdef void _update_bars(self, BarType bar_type, Bar bar):
         """"
         Updates the internal dictionary of bars with the given bar, then calls the
         on_bar method for the inheriting class.
@@ -1021,10 +958,7 @@ cdef class TradeStrategy:
         if self._is_running:
             self.on_bar(bar_type, bar)
 
-    cpdef void _update_indicators(
-            self,
-            BarType bar_type,
-            Bar bar):
+    cdef void _update_indicators(self, BarType bar_type, Bar bar):
         """
         Updates the internal indicators of the given bar type with the given bar.
 
@@ -1038,7 +972,7 @@ cdef class TradeStrategy:
         for updater in self._indicator_updaters[bar_type]:
             updater.update_bar(bar)
 
-    cpdef void _update_events(self, Event event):
+    cdef void _update_events(self, Event event):
         """
         Updates the strategy with the given event, then calls on_event() if the
         strategy is running.
@@ -1088,10 +1022,7 @@ cdef class TradeStrategy:
         if self._is_running:
             self.on_event(event)
 
-    cpdef void _raise_time_event(
-            self,
-            Label label,
-            datetime alert_time):
+    cdef void _raise_time_event(self, Label label, datetime alert_time):
         """
         Create a new TimeEvent and pass it into _update_events().
         """
@@ -1100,12 +1031,12 @@ cdef class TradeStrategy:
         del self._timers[label]
 
     # Cannot convert below method to Python callable if cdef
-    cpdef void _repeating_timer(
+    cdef void _repeating_timer(
             self,
             Label label,
             datetime alert_time,
             timedelta interval,
-            datetime stop_time=None):
+            datetime stop_time):
         """
         Create a new TimeEvent and pass it into _update_events().
         Then start a timer for the next time event.

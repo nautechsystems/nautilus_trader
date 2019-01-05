@@ -11,14 +11,13 @@
 
 from typing import Dict, Callable
 
-from inv_trader.core.precondition cimport Precondition
 from inv_trader.core.decimal cimport Decimal
 from inv_trader.common.logger cimport Logger, LoggerAdapter
 from inv_trader.model.account cimport Account
 from inv_trader.model.order cimport Order
 from inv_trader.model.events cimport Event, OrderEvent, AccountEvent, OrderCancelReject
 from inv_trader.model.identifiers cimport GUID, OrderId
-from inv_trader.strategy import TradeStrategy
+from inv_trader.strategy cimport TradeStrategy
 
 cdef str UTF8 = 'utf-8'
 
@@ -35,22 +34,20 @@ cdef class ExecutionClient:
         :param logger: The logging adapter for the component.
         """
         if logger is None:
-            self.log = LoggerAdapter(f"ExecClient")
+            self._log = LoggerAdapter(f"ExecClient")
         else:
-            self.log = LoggerAdapter(f"ExecClient", logger)
-        self.log.info("Initialized.")
+            self._log = LoggerAdapter(f"ExecClient", logger)
+        self._log.info("Initialized.")
         self.account = Account()
         self._registered_strategies = {}  # type: Dict[GUID, Callable]
         self._order_index = {}            # type: Dict[OrderId, GUID]
 
-    cpdef void register_strategy(self, strategy: TradeStrategy):
+    cpdef void register_strategy(self, TradeStrategy strategy):
         """
         Register the given strategy with the execution client.
 
         :raises ValueError: If the strategy is already registered (must have a unique UUID id).
         """
-        Precondition.type(strategy, TradeStrategy, 'strategy')
-
         if strategy.id in self._registered_strategies:
             raise ValueError(
                 "Cannot register strategy (The strategy must have a unique UUID id).")
@@ -58,7 +55,7 @@ cdef class ExecutionClient:
         self._registered_strategies[strategy.id] = strategy._update_events
         strategy._register_execution_client(self)
 
-        self.log.info(f"Registered strategy {strategy} with the execution client.")
+        self._log.info(f"Registered strategy {strategy} with the execution client.")
 
     cpdef void connect(self):
         """
@@ -102,7 +99,7 @@ cdef class ExecutionClient:
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the execution client.")
 
-    cpdef void _register_order(self, Order order, GUID strategy_id):
+    cdef void _register_order(self, Order order, GUID strategy_id):
         """
         Register the given order with the execution client.
 
@@ -114,16 +111,16 @@ cdef class ExecutionClient:
 
         self._order_index[order.id] = strategy_id
 
-    cpdef void _on_event(self, Event event):
+    cdef void _on_event(self, Event event):
         """
         Handle events received from the execution service.
         """
-        self.log.debug(f"Received {event}")
+        self._log.debug(f"Received {event}")
 
         if isinstance(event, OrderEvent):
             order_id = event.order_id
             if order_id not in self._order_index.keys():
-                self.log.warning(
+                self._log.warning(
                     f"The given event order id {order_id} was not contained in the order index.")
                 return
 
@@ -131,7 +128,7 @@ cdef class ExecutionClient:
             self._registered_strategies[strategy_id](event)
 
             if isinstance(event, OrderCancelReject):
-                self.log.warning(f"{event}")
+                self._log.warning(f"{event}")
 
         elif isinstance(event, AccountEvent):
             self.account.apply(event)

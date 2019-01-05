@@ -13,16 +13,16 @@ from cpython.datetime cimport datetime
 
 from inv_trader.common.logger cimport LoggerAdapter
 from inv_trader.model.objects cimport Symbol, BarType, Instrument
+from inv_trader.strategy cimport TradeStrategy
 
 
 cdef class DataClient:
+    cdef LoggerAdapter _log
     cdef list _subscriptions_bars
     cdef list _subscriptions_ticks
     cdef dict _instruments
     cdef dict _bar_handlers
     cdef dict _tick_handlers
-
-    cdef readonly LoggerAdapter log
 
     cpdef list symbols(self)
 
@@ -42,7 +42,7 @@ cdef class DataClient:
 
     cpdef Instrument get_instrument(self, Symbol symbol)
 
-    cpdef void register_strategy(self, strategy)
+    cpdef void register_strategy(self, TradeStrategy strategy)
 
     cpdef void historical_bars(self, BarType bar_type, int quantity, handler)
 
