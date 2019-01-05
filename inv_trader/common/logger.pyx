@@ -24,12 +24,6 @@ cdef class Logger:
     """
     Provides a logger for the trader client which wraps the Python logging module.
     """
-    cdef object _log_level_console
-    cdef object _log_level_file
-    cdef bint _console_prints
-    cdef bint _log_to_file
-    cdef str _log_file
-    cdef object _logger
 
     def __init__(self,
                  str name=None,
@@ -141,20 +135,12 @@ cdef class Logger:
             except IOError as ex:
                 self._console_print_handler(f"IOError: {ex}.", logging.CRITICAL)
 
-    cdef str _format_message(
-            self,
-            str log_level,
-            str message):
-
+    cdef str _format_message(self, str log_level, str message):
         cdef str time = datetime.utcnow().isoformat(timespec='milliseconds') + 'Z'
         return (f'{time} [{threading.current_thread().ident}][{log_level}] '
                 f'{message}')
 
-    cdef void _console_print_handler(
-            self,
-            str message,
-            log_level: logging):
-
+    cdef void _console_print_handler(self, str message, log_level: logging):
         if self._console_prints and self._log_level_console <= log_level:
             print(message)
 
@@ -163,12 +149,10 @@ cdef class LoggerAdapter:
     """
     Provides a logger adapter adapter for a components logger.
     """
-    cdef str _component_name
-    cdef Logger _logger
 
     def __init__(self,
                  str component_name=None,
-                 logger: Logger=Logger()):
+                 Logger logger=Logger()):
         """
         Initializes a new instance of the LoggerAdapter class.
 
