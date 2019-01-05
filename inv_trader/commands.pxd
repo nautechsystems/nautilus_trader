@@ -11,7 +11,9 @@
 
 from cpython.datetime cimport datetime
 
+from inv_trader.core.decimal cimport Decimal
 from inv_trader.model.identifiers cimport GUID
+from inv_trader.model.order cimport Order
 
 
 cdef class Command:
@@ -26,7 +28,7 @@ cdef class OrderCommand(Command):
     """
     The abstract base class for all order commands.
     """
-    cdef readonly object order
+    cdef readonly Order order
 
 
 cdef class SubmitOrder(OrderCommand):
@@ -46,7 +48,8 @@ cdef class ModifyOrder(OrderCommand):
     """
     Represents a command to modify the given order with the given modified price.
     """
-    cdef readonly object modified_price
+    cdef readonly Decimal modified_price
+
 
 cdef class CollateralInquiry(Command):
     """

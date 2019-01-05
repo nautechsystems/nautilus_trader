@@ -21,7 +21,7 @@ from typing import List, Dict, Callable
 
 from inv_trader.core.decimal cimport Decimal
 from inv_trader.core.precondition cimport Precondition
-from inv_trader.common.logger import Logger, LoggerAdapter
+from inv_trader.common.logger cimport Logger, LoggerAdapter
 from inv_trader.common.data cimport DataClient
 from inv_trader.common.serialization import InstrumentSerializer
 from inv_trader.model.enums import Resolution, QuoteType, Venue
@@ -38,10 +38,8 @@ cdef class LiveDataClient(DataClient):
     """
     Provides a live data client for alpha models and trading strategies.
     """
-    cdef object _log
     cdef str _host
     cdef int _port
-    cdef object _logger
     cdef object _redis_client
     cdef object _pubsub
     cdef object _pubsub_thread
@@ -49,7 +47,7 @@ cdef class LiveDataClient(DataClient):
     def __init__(self,
                  str host='localhost',
                  int port=6379,
-                 logger: Logger=None):
+                 Logger logger=None):
         """
         Initializes a new instance of the DataClient class.
 
@@ -59,22 +57,17 @@ cdef class LiveDataClient(DataClient):
         :raises ValueError: If the host is not a valid string.
         :raises ValueError: If the port is not in range [0, 65535]
         """
-        Precondition.type_or_none(logger, Logger, 'logger')
         Precondition.valid_string(host, 'host')
         Precondition.in_range(port, 'port', 0, 65535)
 
         super().__init__(logger)
         self._host = host
         self._port = port
-        if logger is None:
-            self._log = LoggerAdapter(f"DataClient")
-        else:
-            self._log = LoggerAdapter(f"DataClient", logger)
         self._redis_client = None
         self._pubsub = None
         self._pubsub_thread = None
 
-        self._log.info("Initialized.")
+        self.log.info("Initialized.")
 
     @property
     def is_connected(self) -> bool:
@@ -142,7 +135,7 @@ cdef class LiveDataClient(DataClient):
                                          port=self._port,
                                          db=0)
         self._pubsub = self._redis_client.pubsub()
-        self._log.info(f"Connected to the live data service at {self._host}:{self._port}.")
+        self.log.info(f"Connected to the live data service at {self._host}:{self._port}.")
 
         self.update_all_instruments()
 
@@ -156,16 +149,16 @@ cdef class LiveDataClient(DataClient):
         if self._pubsub_thread is not None:
             self._pubsub_thread.stop()
             time.sleep(0.1)  # Allows thread to stop.
-            self._log.debug(f"Stopped PubSub thread {self._pubsub_thread}.")
+            self.log.debug(f"Stopped PubSub thread {self._pubsub_thread}.")
 
-        self._log.info(f"Unsubscribed from tick data {self._subscriptions_ticks}.")
-        self._log.info(f"Unsubscribed from bar data {self._subscriptions_bars}.")
+        self.log.info(f"Unsubscribed from tick data {self._subscriptions_ticks}.")
+        self.log.info(f"Unsubscribed from bar data {self._subscriptions_bars}.")
 
         if self._redis_client is not None:
             self._redis_client.connection_pool.disconnect()
-            self._log.info(f"Disconnected from the live data service at {self._host}:{self._port}.")
+            self.log.info(f"Disconnected from the live data service at {self._host}:{self._port}.")
         else:
-            self._log.info("Disconnected (the live data client was already disconnected).")
+            self.log.info("Disconnected (the live data client was already disconnected).")
 
         self._redis_client = None
         self._pubsub = None
@@ -181,7 +174,7 @@ cdef class LiveDataClient(DataClient):
         for key in keys:
             instrument = InstrumentSerializer.deserialize(self._redis_client.get(key))
             self._instruments[instrument.symbol] = instrument
-            self._log.info(f"Updated instrument for {instrument.symbol}.")
+            self.log.info(f"Updated instrument for {instrument.symbol}.")
 
     cpdef void update_instrument(self, Symbol symbol):
         """
@@ -193,13 +186,13 @@ cdef class LiveDataClient(DataClient):
         key = f'instruments:{symbol.code.lower()}.{symbol.venue_string().lower()}'
 
         if key is None:
-            self._log.warning(
+            self.log.warning(
                 f"Cannot update instrument (symbol {symbol}not found in live database).")
             return
 
         instrument = InstrumentSerializer.deserialize(self._redis_client.get(key))
         self._instruments[symbol] = instrument
-        self._log.info(f"Updated instrument for {symbol}.")
+        self.log.info(f"Updated instrument for {symbol}.")
 
     cpdef Instrument get_instrument(self, Symbol symbol):
         """
@@ -229,7 +222,7 @@ cdef class LiveDataClient(DataClient):
 
         strategy._register_data_client(self)
 
-        self._log.info(f"Registered strategy {strategy} with the data client.")
+        self.log.info(f"Registered strategy {strategy} with the data client.")
 
     cpdef void historical_bars(
             self,
@@ -257,7 +250,7 @@ cdef class LiveDataClient(DataClient):
         keys = self._get_redis_bar_keys(bar_type)
 
         if len(keys) == 0:
-            self._log.warning(
+            self.log.warning(
                 "Cannot get historical bars (No bar keys found for the given parameters).")
             return
 
@@ -280,14 +273,14 @@ cdef class LiveDataClient(DataClient):
                 last_index = bar_count - quantity
                 bars = bars[last_index:]
             else:
-                self._log.warning(
+                self.log.warning(
                     f"Historical bars are < the requested amount ({len(bars)} vs {quantity}).")
 
-        self._log.info(f"Historical download of {len(bars)} bars for {bar_type} complete.")
+        self.log.info(f"Historical download of {len(bars)} bars for {bar_type} complete.")
 
         for bar in bars:
             handler(bar_type, bar)
-        self._log.debug(f"Historical bars hydrated to handler {handler}.")
+        self.log.debug(f"Historical bars hydrated to handler {handler}.")
 
     cpdef void historical_bars_from(
             self,
@@ -312,10 +305,10 @@ cdef class LiveDataClient(DataClient):
 
         self._check_connection()
 
-        keys = self._get_redis_bar_keys(bar_type)
+        cdef list keys = self._get_redis_bar_keys(bar_type)
 
         if len(keys) == 0:
-            self._log.warning(
+            self.log.warning(
                 "Cannot get historical bars (No bar keys found for the given parameters).")
             return
 
@@ -331,15 +324,15 @@ cdef class LiveDataClient(DataClient):
 
         first_bar_timestamp = bars[0].timestamp
         if first_bar_timestamp > from_datetime:
-            self._log.warning(
+            self.log.warning(
                 (f"Historical bars first bar timestamp greater than requested from datetime "
                  f"({first_bar_timestamp.isoformat()} vs {from_datetime.isoformat()})."))
 
-        self._log.info(f"Historical download of {len(bars)} bars for {bar_type} complete.")
+        self.log.info(f"Historical download of {len(bars)} bars for {bar_type} complete.")
 
         for bar in bars:
             handler(bar_type, bar)
-        self._log.debug(f"Historical bars hydrated to handler {handler}.")
+        self.log.debug(f"Historical bars hydrated to handler {handler}.")
 
     cpdef void subscribe_bars(
             self,
@@ -365,7 +358,7 @@ cdef class LiveDataClient(DataClient):
                 self._pubsub_thread = self._pubsub.run_in_thread(0.001)
             self._subscriptions_bars.append(bars_channel)
             self._subscriptions_bars.sort()
-            self._log.info(f"Subscribed to bar data for {bars_channel}.")
+            self.log.info(f"Subscribed to bar data for {bars_channel}.")
 
     cpdef void unsubscribe_bars(
             self,
@@ -391,7 +384,7 @@ cdef class LiveDataClient(DataClient):
             if bar_channel in self._subscriptions_bars:
                 self._subscriptions_bars.remove(bar_channel)
                 self._subscriptions_bars.sort()
-                self._log.info(f"Unsubscribed from bar data for {bar_channel}.")
+                self.log.info(f"Unsubscribed from bar data for {bar_channel}.")
 
     cpdef void subscribe_ticks(
             self,
@@ -417,7 +410,7 @@ cdef class LiveDataClient(DataClient):
                 self._pubsub_thread = self._pubsub.run_in_thread(0.001)
             self._subscriptions_ticks.append(ticks_channel)
             self._subscriptions_ticks.sort()
-            self._log.info(f"Subscribed to tick data for {ticks_channel}.")
+            self.log.info(f"Subscribed to tick data for {ticks_channel}.")
 
     cpdef void unsubscribe_ticks(
             self,
@@ -446,7 +439,7 @@ cdef class LiveDataClient(DataClient):
                 self._subscriptions_ticks.remove(tick_channel)
                 self._subscriptions_ticks.sort()
 
-            self._log.info(f"Unsubscribed from tick data for {tick_channel}.")
+            self.log.info(f"Unsubscribed from tick data for {tick_channel}.")
 
     cdef list _get_redis_bar_keys(self, BarType bar_type):
         """

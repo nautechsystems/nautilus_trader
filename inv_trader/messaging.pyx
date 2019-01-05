@@ -16,7 +16,7 @@ from threading import Thread
 from zmq import Context
 
 from inv_trader.core.precondition import PyPrecondition
-from inv_trader.common.logger import Logger, LoggerAdapter
+from inv_trader.common.logger cimport Logger, LoggerAdapter
 
 cdef str UTF8 = 'utf-8'
 cdef bytes DELIMITER = b' '
@@ -35,7 +35,7 @@ class MQWorker(Thread):
             str host,
             int port,
             handler: Callable,
-            logger: Logger=None):
+            Logger logger=None):
         """
         Initializes a new instance of the MQWorker class.
 
@@ -44,7 +44,7 @@ class MQWorker(Thread):
         :param host: The service host address.
         :param port: The service port.
         :param handler: The response handler.
-        :param logger: The logging adapter for the component.
+        :param logger: The logger for the component.
         :raises ValueError: If the name is not a valid string.
         :raises ValueError: If the host is not a valid string.
         :raises ValueError: If the port is not in range [0, 65535]
@@ -124,7 +124,7 @@ class RequestWorker(MQWorker):
             str host,
             int port,
             handler: Callable,
-            logger: Logger=None):
+            Logger logger=None):
         """
         Initializes a new instance of the RequestWorker class.
 
@@ -132,7 +132,7 @@ class RequestWorker(MQWorker):
         :param host: The service host address.
         :param port: The service port.
         :param handler: The response handler.
-        :param logger: The logging adapter for the component.
+        :param logger: The logger for the component.
         :raises ValueError: If the name is not a valid string.
         :raises ValueError: If the host is not a valid string.
         :raises ValueError: If the port is not in range [0, 65535]
@@ -178,7 +178,7 @@ class SubscriberWorker(MQWorker):
             int port,
             str topic,
             handler: Callable,
-            logger: Logger=None):
+            Logger logger=None):
         """
         Initializes a new instance of the SubscriberWorker class.
 
@@ -187,7 +187,7 @@ class SubscriberWorker(MQWorker):
         :param port: The service port.
         :param topic: The topic to subscribe to.
         :param handler: The message handler.
-        :param logger: The logging adapter for the component.
+        :param logger: The logger for the component.
         :raises ValueError: If the name is not a valid string.
         :raises ValueError: If the host is not a valid string.
         :raises ValueError: If the port is not in range [0, 65535]

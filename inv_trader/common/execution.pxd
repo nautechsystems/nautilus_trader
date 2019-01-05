@@ -10,6 +10,7 @@
 # cython: language_level=3, boundscheck=False, wraparound=False
 
 from inv_trader.core.decimal cimport Decimal
+from inv_trader.common.logger cimport LoggerAdapter
 from inv_trader.model.account cimport Account
 from inv_trader.model.events cimport Event
 from inv_trader.model.identifiers cimport GUID
@@ -20,7 +21,7 @@ cdef class ExecutionClient:
     cdef dict _registered_strategies
     cdef dict _order_index
 
-    cdef readonly object log
+    cdef readonly LoggerAdapter log
     cdef readonly Account account
 
     cpdef void register_strategy(self, strategy)

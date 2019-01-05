@@ -16,7 +16,7 @@ from datetime import datetime
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.core.decimal cimport Decimal
-from inv_trader.common.logger import Logger, LoggerAdapter
+from inv_trader.common.logger cimport Logger, LoggerAdapter
 from inv_trader.common.execution cimport ExecutionClient
 from inv_trader.commands cimport Command, OrderCommand, CollateralInquiry
 from inv_trader.commands cimport SubmitOrder, CancelOrder, ModifyOrder
@@ -51,7 +51,7 @@ cdef class LiveExecClient(ExecutionClient):
             int events_port=5556,
             CommandSerializer command_serializer=MsgPackCommandSerializer(),
             EventSerializer event_serializer=MsgPackEventSerializer(),
-            logger: Logger=None):
+            Logger logger=None):
         """
         Initializes a new instance of the LiveExecClient class.
 
@@ -65,7 +65,6 @@ cdef class LiveExecClient(ExecutionClient):
         :raises ValueError: If the commands_port is not in range [0, 65535]
         :raises ValueError: If the events_port is not in range [0, 65535]
         """
-        Precondition.type_or_none(logger, Logger, 'logger')
         Precondition.valid_string(host, 'host')
         Precondition.in_range(commands_port, 'commands_port', 0, 65535)
         Precondition.in_range(events_port, 'events_port', 0, 65535)

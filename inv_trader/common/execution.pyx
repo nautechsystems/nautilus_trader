@@ -13,7 +13,7 @@ from typing import Dict, Callable
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.core.decimal cimport Decimal
-from inv_trader.common.logger import Logger, LoggerAdapter
+from inv_trader.common.logger cimport Logger, LoggerAdapter
 from inv_trader.model.account cimport Account
 from inv_trader.model.order cimport Order
 from inv_trader.model.events cimport Event, OrderEvent, AccountEvent, OrderCancelReject
@@ -28,14 +28,12 @@ cdef class ExecutionClient:
     The abstract base class for all execution clients.
     """
 
-    def __init__(self, logger: Logger=None):
+    def __init__(self, Logger logger=None):
         """
         Initializes a new instance of the ExecutionClient class.
 
         :param logger: The logging adapter for the component.
         """
-        Precondition.type_or_none(logger, Logger, 'logger')
-
         if logger is None:
             self.log = LoggerAdapter(f"ExecClient")
         else:

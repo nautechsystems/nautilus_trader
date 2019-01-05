@@ -11,6 +11,7 @@
 
 from cpython.datetime cimport datetime
 
+from inv_trader.common.logger cimport LoggerAdapter
 from inv_trader.model.objects cimport Symbol, BarType, Instrument
 
 
@@ -21,7 +22,7 @@ cdef class DataClient:
     cdef dict _bar_handlers
     cdef dict _tick_handlers
 
-    cdef readonly object log
+    cdef readonly LoggerAdapter log
 
     cpdef list symbols(self)
 

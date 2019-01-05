@@ -9,12 +9,10 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False
 
-from datetime import datetime
-from decimal import Decimal
-
 from cpython.datetime cimport datetime
 
 from inv_trader.core.precondition cimport Precondition
+from inv_trader.core.decimal cimport Decimal
 from inv_trader.model.identifiers cimport GUID
 from inv_trader.model.order cimport Order
 
@@ -157,7 +155,7 @@ cdef class ModifyOrder(OrderCommand):
 
     def __init__(self,
                  Order order,
-                 modified_price: Decimal,
+                 Decimal modified_price,
                  GUID command_id,
                  datetime command_timestamp):
         """
