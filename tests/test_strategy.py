@@ -688,7 +688,7 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(KeyError, strategy.cancel_order, order)
+        self.assertRaises(KeyError, strategy.cancel_order, order, 'NONE')
 
     def test_can_cancel_order(self):
         # Arrange
@@ -806,19 +806,19 @@ class TradeStrategyTests(unittest.TestCase):
             100000)
 
         strategy.submit_order(order, PositionId('some-position'))
-        # exec_client.fill_last_order()
-        #
-        # # Act
-        # strategy.flatten_position(PositionId('some-position'))
-        # exec_client.fill_last_order()
-        #
-        # # Assert
-        # self.assertEqual(order, strategy.orders[order.id])
-        # self.assertEqual(OrderStatus.FILLED, strategy.orders[order.id].status)
-        # self.assertEqual(MarketPosition.FLAT, strategy.position(PositionId('some-position')).market_position)
-        # self.assertTrue(strategy.position(PositionId('some-position')).is_exited)
-        # self.assertTrue(PositionId('some-position') in strategy.completed_positions)
-        # self.assertTrue(strategy.is_flat)
+        exec_client.fill_last_order()
+
+        # Act
+        strategy.flatten_position(PositionId('some-position'))
+        exec_client.fill_last_order()
+
+        # Assert
+        self.assertEqual(order, strategy.orders[order.id])
+        self.assertEqual(OrderStatus.FILLED, strategy.orders[order.id].status)
+        self.assertEqual(MarketPosition.FLAT, strategy.position(PositionId('some-position')).market_position)
+        self.assertTrue(strategy.position(PositionId('some-position')).is_exited)
+        self.assertTrue(PositionId('some-position') in strategy.completed_positions)
+        self.assertTrue(strategy.is_flat)
 
     def test_flatten_position_which_does_not_exist_raises_exception(self):
         # Arrange
