@@ -32,5 +32,6 @@ cdef class ExecutionClient:
     cpdef void submit_order(self, Order order, GUID strategy_id)
     cpdef void cancel_order(self, Order order, str cancel_reason)
     cpdef void modify_order(self, Order order, Decimal new_price)
-    cpdef void _register_order(self, Order order, GUID strategy_id)
-    cpdef void _on_event(self, Event event)
+
+    cdef void _register_order(self, Order order, GUID strategy_id)
+    cdef void _on_event(self, Event event)

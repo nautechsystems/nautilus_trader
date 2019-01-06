@@ -99,7 +99,7 @@ cdef class ExecutionClient:
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the execution client.")
 
-    cpdef void _register_order(self, Order order, GUID strategy_id):
+    cdef void _register_order(self, Order order, GUID strategy_id):
         """
         Register the given order with the execution client.
 
@@ -111,7 +111,7 @@ cdef class ExecutionClient:
 
         self._order_index[order.id] = strategy_id
 
-    cpdef void _on_event(self, Event event):
+    cdef void _on_event(self, Event event):
         """
         Handle events received from the execution service.
         """

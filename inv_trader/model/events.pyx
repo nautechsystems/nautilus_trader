@@ -428,7 +428,7 @@ cdef class OrderModified(OrderEvent):
                  GUID event_id,
                  datetime event_timestamp):
         """
-        Initializes a new instance of the OrderPartiallyFilled class.
+        Initializes a new instance of the OrderModified class.
 
         :param symbol: The events order symbol.
         :param order_id: The events order identifier.
