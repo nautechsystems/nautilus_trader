@@ -19,7 +19,7 @@ from setuptools import setup, Extension
 # Command to compile c extensions
 # python setup.py build_ext --inplace
 
-VERSION = '0.72.0'
+VERSION = '0.73.0'
 AUTHOR = 'Invariance'
 INV_TRADER = 'inv_trader'
 DESCRIPTION = 'The python trading client for Invariance.'

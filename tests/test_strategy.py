@@ -319,7 +319,7 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(KeyError, strategy.position, PositionId('unknown_position_id'))
+        self.assertRaises(ValueError, strategy.position, PositionId('unknown_position_id'))
 
     def test_can_get_position(self):
         # Arrange
@@ -487,7 +487,7 @@ class TradeStrategyTests(unittest.TestCase):
         exec_client.register_strategy(strategy)
 
         start_time = datetime.now(timezone.utc) + timedelta(milliseconds=100)
-        strategy.set_timer(Label("test_timer1"), timedelta(milliseconds=100), start_time)
+        strategy.set_timer(Label("test_timer1"), timedelta(milliseconds=100), start_time, None, None)
 
         # Act
         strategy.start()
@@ -504,7 +504,7 @@ class TradeStrategyTests(unittest.TestCase):
         exec_client.register_strategy(strategy)
 
         start_time = datetime.now(timezone.utc) + timedelta(milliseconds=100)
-        strategy.set_timer(Label("test_timer1"), timedelta(milliseconds=100), start_time)
+        strategy.set_timer(Label("test_timer1"), timedelta(milliseconds=100), start_time, None, None)
 
         # Act
         strategy.start()
@@ -523,7 +523,7 @@ class TradeStrategyTests(unittest.TestCase):
         exec_client.register_strategy(strategy)
 
         start_time = datetime.now(timezone.utc) + timedelta(milliseconds=100)
-        strategy.set_timer(Label("test_timer1"), timedelta(milliseconds=100), start_time)
+        strategy.set_timer(Label("test_timer1"), timedelta(milliseconds=100), start_time, None, None)
 
         # Act
         strategy.start()
@@ -578,8 +578,8 @@ class TradeStrategyTests(unittest.TestCase):
         exec_client.register_strategy(strategy)
 
         start_time = datetime.now(timezone.utc) + timedelta(milliseconds=100)
-        strategy.set_timer(Label("test_timer1"), timedelta(milliseconds=100), start_time, repeat=True)
-        strategy.set_timer(Label("test_timer2"), timedelta(milliseconds=100), start_time, repeat=True)
+        strategy.set_timer(Label("test_timer1"), timedelta(milliseconds=100), start_time, None, True)
+        strategy.set_timer(Label("test_timer2"), timedelta(milliseconds=100), start_time, None, True)
 
         # Act
         strategy.start()
@@ -649,7 +649,7 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(KeyError, strategy.submit_order, order, position_id)
+        self.assertRaises(ValueError, strategy.submit_order, order, position_id)
 
     def test_strategy_can_submit_order(self):
         # Arrange
@@ -688,7 +688,7 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(KeyError, strategy.cancel_order, order, 'NONE')
+        self.assertRaises(ValueError, strategy.cancel_order, order, 'NONE')
 
     def test_can_cancel_order(self):
         # Arrange
@@ -729,7 +729,7 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(KeyError, strategy.modify_order, order, Price.create(1.00001, 5))
+        self.assertRaises(ValueError, strategy.modify_order, order, Price.create(1.00001, 5))
 
     def test_can_modify_order(self):
         # Arrange
@@ -828,7 +828,7 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(KeyError, strategy.flatten_position, PositionId('some-position'))
+        self.assertRaises(ValueError, strategy.flatten_position, PositionId('some-position'))
 
     def test_can_flatten_all_positions(self):
         # Arrange
