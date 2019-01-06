@@ -17,6 +17,9 @@ from inv_trader.strategy cimport TradeStrategy
 
 
 cdef class DataClient:
+    """
+    The abstract base class for all data clients.
+    """
     cdef LoggerAdapter _log
     cdef list _subscriptions_bars
     cdef list _subscriptions_ticks
