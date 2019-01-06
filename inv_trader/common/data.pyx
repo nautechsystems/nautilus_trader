@@ -21,7 +21,7 @@ cdef str UTF8 = 'utf-8'
 
 cdef class DataClient:
     """
-    Provides a data client for alpha models and trading strategies.
+    The abstract base class for all data clients.
     """
 
     def __init__(self, Logger logger=None):

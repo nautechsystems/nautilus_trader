@@ -19,6 +19,9 @@ from inv_trader.strategy cimport TradeStrategy
 
 
 cdef class ExecutionClient:
+    """
+    The abstract base class for all execution clients.
+    """
     cdef readonly LoggerAdapter _log
     cdef dict _registered_strategies
     cdef dict _order_index
