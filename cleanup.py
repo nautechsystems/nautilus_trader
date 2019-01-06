@@ -22,6 +22,11 @@ if __name__ == "__main__":
         if os.path.isfile(path) and path.endswith(cython_extension):
             os.remove(path)
 
+    for file in os.listdir('inv_trader/common'):
+        path = os.path.join('inv_trader/common', file)
+        if os.path.isfile(path) and path.endswith(cython_extension):
+            os.remove(path)
+
     for file in os.listdir('inv_trader/model'):
         path = os.path.join('inv_trader/model', file)
         if os.path.isfile(path) and path.endswith(cython_extension):

@@ -9,8 +9,9 @@
 
 # cython: language_level=3, boundscheck=False
 
-from typing import Dict, Callable
+from typing import Dict
 
+from inv_trader.core.precondition cimport Precondition
 from inv_trader.core.decimal cimport Decimal
 from inv_trader.common.logger cimport Logger, LoggerAdapter
 from inv_trader.model.account cimport Account
@@ -106,8 +107,7 @@ cdef class ExecutionClient:
         :param order: The order to register.
         :param strategy_id: The strategy id to register with the order.
         """
-        if order.id in self._order_index:
-            raise ValueError(f"The order does not have a unique id.")
+        Precondition.true(order.id not in self._order_index, 'order.id NOT in self._order_index')
 
         self._order_index[order.id] = strategy_id
 
