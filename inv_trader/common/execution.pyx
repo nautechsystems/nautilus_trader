@@ -39,7 +39,7 @@ cdef class ExecutionClient:
             self._log = LoggerAdapter(f"ExecClient", logger)
         self._log.info("Initialized.")
         self.account = Account()
-        self._registered_strategies = {}  # type: Dict[GUID, Callable]
+        self._registered_strategies = {}  # type: Dict[GUID, TradeStrategy]
         self._order_index = {}            # type: Dict[OrderId, GUID]
 
     cpdef void register_strategy(self, TradeStrategy strategy):
@@ -52,7 +52,7 @@ cdef class ExecutionClient:
             raise ValueError(
                 "Cannot register strategy (The strategy must have a unique UUID id).")
 
-        self._registered_strategies[strategy.id] = strategy._update_events
+        self._registered_strategies[strategy.id] = strategy
         strategy._register_execution_client(self)
 
         self._log.info(f"Registered strategy {strategy} with the execution client.")
@@ -125,7 +125,7 @@ cdef class ExecutionClient:
                 return
 
             strategy_id = self._order_index[order_id]
-            self._registered_strategies[strategy_id](event)
+            self._registered_strategies[strategy_id]._update_events(event)
 
             if isinstance(event, OrderCancelReject):
                 self._log.warning(f"{event}")

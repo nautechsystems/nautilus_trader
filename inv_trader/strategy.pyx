@@ -496,7 +496,7 @@ cdef class TradeStrategy:
             raise KeyError(
                 f"Cannot get bars (the bar dictionary does not contain {bar_type}).")
 
-        return self._bars[bar_type]
+        return list(self._bars[bar_type])
 
     cpdef Bar bar(self, BarType bar_type, int index):
         """
@@ -548,16 +548,13 @@ cdef class TradeStrategy:
         :param position_id: The positions identifier.
         :return: The position (if found).
         :raises ValueError: If the position_id is not a valid string.
-        :raises KeyError: If the strategies positions dictionary does not contain the given position_id.
+        :raises ValueError: If the strategies positions dictionary does not contain the given position_id.
         """
-        if position_id not in self._position_book:
-            raise KeyError(
-                (f"Cannot get position "
-                 f"(the position book does not contain the position {position_id})."))
+        Precondition.true(position_id in self._position_book, 'position_id in self._position_book')
 
         return self._position_book[position_id]
 
-    cpdef void register_indicator(
+    cpdef register_indicator(
             self,
             BarType bar_type,
             indicator: Indicator,
@@ -573,15 +570,11 @@ cdef class TradeStrategy:
         :param update_method: The update method for the indicator.
         :param label: The unique label for this indicator.
         :raises ValueError: If the label is not a valid string.
-        :raises KeyError: If the given indicator label is not unique for this strategy.
+        :raises ValueError: If the given indicator label is not unique for this strategy.
         """
         Precondition.type(indicator, Indicator, 'indicator')
         Precondition.type(update_method, Callable, 'update_method')
-
-        if label in self._indicator_index:
-            raise KeyError(
-                (f"Cannot register indicator "
-                 f"(the indicator label {label} was not unique for this strategy)."))
+        Precondition.true(label not in self._indicator_index, 'label NOT in self._indicator_index')
 
         if bar_type not in self._indicators:
             self._indicators[bar_type] = []  # type: List[Indicator]
@@ -593,7 +586,7 @@ cdef class TradeStrategy:
 
         self._indicator_index[label] = indicator
 
-    cpdef void set_time_alert(
+    cpdef set_time_alert(
             self,
             Label label,
             datetime alert_time):
@@ -607,14 +600,11 @@ cdef class TradeStrategy:
         :param label: The label for the alert (must be unique).
         :param alert_time: The time for the alert.
         :raises ValueError: If the label is not a valid string.
-        :raises KeyError: If the label is not unique for this strategy.
+        :raises ValueError: If the label is not unique for this strategy.
         :raises ValueError: If the alert_time is not > than the current time (UTC).
         """
         Precondition.true(alert_time > datetime.now(timezone.utc), 'alert_time > datetime.utcnow()')
-
-        if label in self._timers:
-            raise KeyError(
-                f"Cannot set time alert (the label {label} was not unique for this strategy).")
+        Precondition.true(label not in self._timers, 'label NOT in self._timers')
 
         timer = Timer(
             interval=(alert_time - datetime.now(timezone.utc)).total_seconds(),
@@ -625,7 +615,7 @@ cdef class TradeStrategy:
         self._timers[label] = timer
         self._log.info(f"Set time alert for {label} at {alert_time}.")
 
-    cpdef void cancel_time_alert(self, Label label):
+    cpdef cancel_time_alert(self, Label label):
         """
         Cancel the time alert corresponding to the given label.
 
@@ -633,14 +623,13 @@ cdef class TradeStrategy:
         :raises ValueError: If the label is not a valid string.
         :raises KeyError: If the label is not found in the internal timers.
         """
-        if label not in self._timers:
-            raise KeyError(f"Cannot cancel time alert (the label {label} was not found).")
+        Precondition.true(label in self._timers, 'label in self._timers')
 
         self._timers[label].cancel()
         del self._timers[label]
         self._log.info(f"Cancelled time alert for {label}.")
 
-    cpdef void set_timer(
+    cpdef set_timer(
             self,
             Label label,
             timedelta interval,
@@ -704,15 +693,14 @@ cdef class TradeStrategy:
             (f"Set timer for {label} with interval {interval}, "
              f"starting at {start_time}, stopping at {stop_time}, repeat={repeat}."))
 
-    cpdef void cancel_timer(self, Label label):
+    cpdef cancel_timer(self, Label label):
         """
         Cancel the timer corresponding to the given unique label.
 
         :param label: The label for the timer to cancel.
         :raises KeyError: If the label is not found in the internal timers.
         """
-        if label not in self._timers:
-            raise KeyError(f"Cannot cancel timer (the label {label} was not found).")
+        Precondition.true(label in self._timers, 'label in self._timers')
 
         self._timers[label].cancel()
         del self._timers[label]
@@ -753,7 +741,7 @@ cdef class TradeStrategy:
         else:
             raise ValueError("Cannot flatten a FLAT position.")
 
-    cpdef void collateral_inquiry(self):
+    cpdef collateral_inquiry(self):
         """
         Send a collateral inquiry command to the execution service.
 
@@ -763,7 +751,7 @@ cdef class TradeStrategy:
 
         self._exec_client.collateral_inquiry()
 
-    cpdef void submit_order(self, Order order, PositionId position_id):
+    cpdef submit_order(self, Order order, PositionId position_id):
         """
         Send a submit order command with the given order to the execution service.
 
@@ -773,9 +761,7 @@ cdef class TradeStrategy:
         :raises KeyError: If the order_id is already contained in the order book (must be unique).
         """
         Precondition.not_none(self._exec_client, 'exec_client')
-
-        if order.id in self._order_book:
-            raise KeyError(f"Cannot submit order (the order id {order.id} was not unique).")
+        Precondition.true(order.id not in self._order_book, 'order.id NOT in self._order_book')
 
         self._order_book[order.id] = order
         self._order_position_index[order.id] = position_id
@@ -783,7 +769,7 @@ cdef class TradeStrategy:
         self._log.info(f"Submitting {order}")
         self._exec_client.submit_order(order, self.id)
 
-    cpdef void modify_order(self, Order order, Decimal new_price):
+    cpdef modify_order(self, Order order, Decimal new_price):
         """
         Send a modify order command for the given order with the given new price
         to the execution service.
@@ -796,14 +782,12 @@ cdef class TradeStrategy:
         """
         Precondition.not_none(self._exec_client, 'exec_client')
         Precondition.positive(new_price, 'new_price')
-
-        if order.id not in self._order_book:
-            raise KeyError(f"Cannot modify order (the order id {order.id} was not found).")
+        Precondition.true(order.id in self._order_book, 'order.id in self._order_book')
 
         self._log.info(f"Modifying {order} with new price {new_price}")
         self._exec_client.modify_order(order, new_price)
 
-    cpdef void cancel_order(self, Order order, str cancel_reason):
+    cpdef cancel_order(self, Order order, str cancel_reason):
         """
         Send a cancel order command for the given order and cancel_reason to the
         execution service.
@@ -816,14 +800,12 @@ cdef class TradeStrategy:
         """
         Precondition.not_none(self._exec_client, 'exec_client')
         Precondition.valid_string(cancel_reason, 'cancel_reason')
-
-        if order.id not in self._order_book:
-            raise KeyError(f"Cannot cancel order (the order id {order.id} was not found).")
+        Precondition.true(order.id in self._order_book, 'order.id in self._order_book')
 
         self._log.info(f"Cancelling {order}")
         self._exec_client.cancel_order(order, cancel_reason)
 
-    cpdef void cancel_all_orders(self, str cancel_reason):
+    cpdef cancel_all_orders(self, str cancel_reason):
         """
         Send a cancel order command for all currently working orders in the
         order book with the given cancel_reason - to the execution service.
@@ -839,7 +821,7 @@ cdef class TradeStrategy:
             if not order.is_complete:
                 self.cancel_order(order, cancel_reason)
 
-    cpdef void flatten_position(self, PositionId position_id):
+    cpdef flatten_position(self, PositionId position_id):
         """
         Flatten the position corresponding to the given identifier by generating
         the required market order, and sending it to the execution service.
@@ -851,9 +833,7 @@ cdef class TradeStrategy:
         :raises KeyError: If the position_id is not found in the position book.
         """
         Precondition.not_none(self._exec_client, 'exec_client')
-
-        if position_id not in self._position_book.keys():
-            raise KeyError(f"Cannot flatten position (the position {position_id} was not found).")
+        Precondition.true(position_id in self._position_book, 'position_id in self._position_book')
 
         cdef Position position = self._position_book[position_id]
 
@@ -875,7 +855,7 @@ cdef class TradeStrategy:
 
         self.submit_order(order, position_id)
 
-    cpdef void flatten_all_positions(self):
+    cpdef flatten_all_positions(self):
         """
         Flatten all positions by generating the required market orders and sending
         them to the execution service. If no positions found or a position is None
