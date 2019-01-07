@@ -15,7 +15,7 @@ from inv_trader.core.precondition import Precondition
 from inv_trader.core.logger import Logger
 from inv_trader.model.enums import OrderSide, OrderStatus, TimeInForce
 from inv_trader.model.objects import Price, Symbol, Tick, BarType, Bar
-from inv_trader.model.order import Order, OrderFactory
+from inv_trader.model.order import Order
 from inv_trader.model.events import Event, OrderFilled, TimeEvent
 from inv_trader.model.identifiers import Label, OrderId, PositionId
 from inv_trader.strategy import TradeStrategy
@@ -154,7 +154,7 @@ class EMACrossLimitEntry(TradeStrategy):
 
             # BUY LOGIC
             if self.fast_ema.value >= self.slow_ema.value:
-                entry_order = OrderFactory.limit(
+                entry_order = self.order_factory.limit(
                     self.symbol,
                     self.generate_order_id(self.symbol),
                     Label('S1_E'),
@@ -171,7 +171,7 @@ class EMACrossLimitEntry(TradeStrategy):
 
             # SELL LOGIC
             elif self.fast_ema.value < self.slow_ema.value:
-                entry_order = OrderFactory.limit(
+                entry_order = self.order_factory.limit(
                     self.symbol,
                     self.generate_order_id(self.symbol),
                     Label('S1_E'),
@@ -207,7 +207,7 @@ class EMACrossLimitEntry(TradeStrategy):
                     stop_price = Price.create(event.average_price - self.SL_buffer,
                                               self.tick_decimals)
 
-                stop_order = OrderFactory.stop(
+                stop_order = self.order_factory.stop(
                     self.symbol,
                     self.generate_order_id(self.symbol),
                     Label('S1_SL'),
