@@ -25,9 +25,9 @@ INV_TRADER = 'inv_trader'
 DESCRIPTION = 'The python trading client for Invariance.'
 TEST_KIT = 'test_kit'
 LICENSE = 'Invariance Software License, April 2018'
-REQUIREMENTS = ['numpy',
+REQUIREMENTS = ['cython',
+                'numpy',
                 'pandas',
-                'cython',
                 'iso8601',
                 'inv_indicators',
                 'msgpack',
