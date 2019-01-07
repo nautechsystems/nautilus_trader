@@ -32,7 +32,7 @@ from inv_trader.model.events cimport TimeEvent
 from inv_trader.model.identifiers cimport GUID, Label, OrderId, PositionId
 from inv_trader.model.objects cimport Symbol, Tick, BarType, Bar, Instrument
 from inv_trader.model.order cimport Order
-from inv_trader.model.order import OrderIdGenerator, OrderFactory
+from inv_trader.model.order cimport OrderIdGenerator, OrderFactory
 from inv_trader.model.position cimport Position
 from inv_trader.tools import IndicatorUpdater
 
@@ -65,15 +65,16 @@ cdef class TradeStrategy:
         Precondition.positive(bar_capacity, 'bar_capacity')
 
         if logger is None:
-            self._log = LoggerAdapter(f"{self.name}-{self.label}")
+            self.log = LoggerAdapter(f"{self.name}-{self.label}")
         else:
-            self._log = LoggerAdapter(f"{self.name}-{self.label}", logger)
+            self.log = LoggerAdapter(f"{self.name}-{self.label}", logger)
         self.name = self.__class__.__name__
         self.label = label
         self.id = GUID(uuid.uuid4())
         self._order_id_generator = OrderIdGenerator(order_id_tag)
-        self._bar_capacity = bar_capacity
-        self._is_running = False
+        self.order_factory = OrderFactory()
+        self.bar_capacity = bar_capacity
+        self.is_running = False
         self._timers = {}                # type: Dict[Label, Timer]
         self._ticks = {}                 # type: Dict[Symbol, Tick]
         self._bars = {}                  # type: Dict[BarType, Deque[Bar]]
@@ -87,7 +88,7 @@ cdef class TradeStrategy:
         self._exec_client = None
         self._account = None  # Initialized when registered with execution client.
 
-        self._log.info(f"Initialized.")
+        self.log.info(f"Initialized.")
 
     def __eq__(self, other) -> bool:
         """
@@ -176,20 +177,6 @@ cdef class TradeStrategy:
         """
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
-
-    @property
-    def is_running(self) -> bool:
-        """
-        :return: A value indicating whether the strategy is running.
-        """
-        return self._is_running
-
-    @property
-    def log(self) -> LoggerAdapter:
-        """
-        :return: The logger adapter.
-        """
-        return self._log
 
     @property
     def time_now(self) -> datetime:
@@ -336,7 +323,7 @@ cdef class TradeStrategy:
         """
         Precondition.not_none(self._data_client, 'data_client')
         if quantity <= 0:
-            quantity = self._bar_capacity
+            quantity = self.bar_capacity
         Precondition.positive(quantity, 'quantity')
 
         self._data_client.historical_bars(bar_type, quantity, self._update_bars)
@@ -368,7 +355,7 @@ cdef class TradeStrategy:
         Precondition.not_none(self._data_client, 'data_client')
 
         self._data_client.subscribe_bars(bar_type, self._update_bars)
-        self._log.info(f"Subscribed to bar data for {bar_type}.")
+        self.log.info(f"Subscribed to bar data for {bar_type}.")
 
     cpdef void unsubscribe_bars(self, BarType bar_type):
         """
@@ -380,7 +367,7 @@ cdef class TradeStrategy:
         Precondition.not_none(self._data_client, 'data_client')
 
         self._data_client.unsubscribe_bars(bar_type, self._update_bars)
-        self._log.info(f"Unsubscribed from bar data for {bar_type}.")
+        self.log.info(f"Unsubscribed from bar data for {bar_type}.")
 
     cpdef void subscribe_ticks(self, Symbol symbol):
         """
@@ -392,7 +379,7 @@ cdef class TradeStrategy:
         Precondition.not_none(self._data_client, 'data_client')
 
         self._data_client.subscribe_ticks(symbol, self._update_ticks)
-        self._log.info(f"Subscribed to tick data for {symbol}.")
+        self.log.info(f"Subscribed to tick data for {symbol}.")
 
     cpdef void unsubscribe_ticks(self, Symbol symbol):
         """
@@ -404,28 +391,28 @@ cdef class TradeStrategy:
         Precondition.not_none(self._data_client, 'data_client')
 
         self._data_client.unsubscribe_ticks(symbol, self._update_ticks)
-        self._log.info(f"Unsubscribed from tick data for {symbol}.")
+        self.log.info(f"Unsubscribed from tick data for {symbol}.")
 
     cpdef void start(self):
         """
         Starts the trade strategy and calls on_start().
         """
-        self._log.info(f"Starting...")
-        self._is_running = True
+        self.log.info(f"Starting...")
+        self.is_running = True
         self.on_start()
-        self._log.info(f"Running...")
+        self.log.info(f"Running...")
 
     cpdef void stop(self):
         """
         Stops the trade strategy and calls on_stop().
         """
-        self._log.info(f"Stopping...")
+        self.log.info(f"Stopping...")
         self.on_stop()
         for label, timer in self._timers.items():
             timer.cancel()
-            self._log.info(f"Cancelled timer for {label}.")
-        self._is_running = False
-        self._log.info(f"Stopped.")
+            self.log.info(f"Cancelled timer for {label}.")
+        self.is_running = False
+        self.log.info(f"Stopped.")
 
     cpdef void reset(self):
         """
@@ -433,8 +420,8 @@ cdef class TradeStrategy:
         returning it to a fresh state (strategy must not be running).
         Then calls on_reset().
         """
-        if self._is_running:
-            self._log.warning(f"Cannot reset a running strategy...")
+        if self.is_running:
+            self.log.warning(f"Cannot reset a running strategy...")
             return
 
         self._timers = {}                # type: Dict[Label, Timer]
@@ -450,7 +437,7 @@ cdef class TradeStrategy:
         self._position_book = {}         # type: Dict[PositionId, Position or None]
 
         self.on_reset()
-        self._log.info(f"Reset.")
+        self.log.info(f"Reset.")
 
     cpdef list indicators(self, BarType bar_type):
         """
@@ -613,7 +600,7 @@ cdef class TradeStrategy:
 
         timer.start()
         self._timers[label] = timer
-        self._log.info(f"Set time alert for {label} at {alert_time}.")
+        self.log.info(f"Set time alert for {label} at {alert_time}.")
 
     cpdef cancel_time_alert(self, Label label):
         """
@@ -627,7 +614,7 @@ cdef class TradeStrategy:
 
         self._timers[label].cancel()
         del self._timers[label]
-        self._log.info(f"Cancelled time alert for {label}.")
+        self.log.info(f"Cancelled time alert for {label}.")
 
     cpdef set_timer(
             self,
@@ -689,7 +676,7 @@ cdef class TradeStrategy:
 
         timer.start()
         self._timers[label] = timer
-        self._log.info(
+        self.log.info(
             (f"Set timer for {label} with interval {interval}, "
              f"starting at {start_time}, stopping at {stop_time}, repeat={repeat}."))
 
@@ -704,7 +691,7 @@ cdef class TradeStrategy:
 
         self._timers[label].cancel()
         del self._timers[label]
-        self._log.info(f"Cancelled timer for {label}.")
+        self.log.info(f"Cancelled timer for {label}.")
 
     cpdef OrderId generate_order_id(self, Symbol symbol):
         """
@@ -715,8 +702,7 @@ cdef class TradeStrategy:
         """
         return self._order_id_generator.generate(symbol)
 
-    @staticmethod
-    def get_opposite_side(OrderSide side) -> OrderSide:
+    cpdef OrderSide get_opposite_side(self, OrderSide side):
         """
         Get the opposite order side from the original side given.
 
@@ -725,8 +711,7 @@ cdef class TradeStrategy:
         """
         return OrderSide.BUY if side is OrderSide.SELL else OrderSide.SELL
 
-    @staticmethod
-    def get_flatten_side(MarketPosition market_position) -> OrderSide:
+    cpdef get_flatten_side(self, MarketPosition market_position):
         """
         Get the order side needed to flatten a position from the given market position.
 
@@ -766,7 +751,7 @@ cdef class TradeStrategy:
         self._order_book[order.id] = order
         self._order_position_index[order.id] = position_id
 
-        self._log.info(f"Submitting {order}")
+        self.log.info(f"Submitting {order}")
         self._exec_client.submit_order(order, self.id)
 
     cpdef modify_order(self, Order order, Decimal new_price):
@@ -784,7 +769,7 @@ cdef class TradeStrategy:
         Precondition.positive(new_price, 'new_price')
         Precondition.true(order.id in self._order_book, 'order.id in self._order_book')
 
-        self._log.info(f"Modifying {order} with new price {new_price}")
+        self.log.info(f"Modifying {order} with new price {new_price}")
         self._exec_client.modify_order(order, new_price)
 
     cpdef cancel_order(self, Order order, str cancel_reason):
@@ -802,7 +787,7 @@ cdef class TradeStrategy:
         Precondition.valid_string(cancel_reason, 'cancel_reason')
         Precondition.true(order.id in self._order_book, 'order.id in self._order_book')
 
-        self._log.info(f"Cancelling {order}")
+        self.log.info(f"Cancelling {order}")
         self._exec_client.cancel_order(order, cancel_reason)
 
     cpdef cancel_all_orders(self, str cancel_reason):
@@ -838,15 +823,15 @@ cdef class TradeStrategy:
         cdef Position position = self._position_book[position_id]
 
         if position is None:
-            self._log.warning(f"Cannot flatten position (the position {position_id} was None).")
+            self.log.warning(f"Cannot flatten position (the position {position_id} was None).")
             return
 
         if position.market_position == MarketPosition.FLAT:
-            self._log.warning(
+            self.log.warning(
                 f"Cannot flatten position (the position {position_id} was already FLAT).")
             return
 
-        cdef Order order = OrderFactory.market(
+        cdef Order order = self.order_factory.market(
             position.symbol,
             self.generate_order_id(position.symbol),
             Label("FLATTEN"),
@@ -862,20 +847,20 @@ cdef class TradeStrategy:
         then will log a warning.
         """
         if len(self.active_positions) == 0:
-            self._log.warning("Cannot flatten positions (no active positions to flatten).")
+            self.log.warning("Cannot flatten positions (no active positions to flatten).")
             return
 
         for position_id, position in self._position_book.items():
             if position is None:
-                self._log.warning(f"Cannot flatten position (the position {position_id} was None.")
+                self.log.warning(f"Cannot flatten position (the position {position_id} was None.")
                 continue
             if position.market_position == MarketPosition.FLAT:
-                self._log.warning(
+                self.log.warning(
                     f"Cannot flatten position (the position {position_id} was already FLAT).")
                 continue
 
             self.log.info(f"Flattening {position}.")
-            order = OrderFactory.market(
+            order = self.order_factory.market(
                 position.symbol,
                 self.generate_order_id(position.symbol),
                 Label("FLATTEN"),
@@ -914,7 +899,7 @@ cdef class TradeStrategy:
         # Update the internal ticks.
         self._ticks[tick.symbol] = tick
 
-        if self._is_running:
+        if self.is_running:
             self.on_tick(tick)
 
     cpdef void _update_bars(self, BarType bar_type, Bar bar):
@@ -927,14 +912,14 @@ cdef class TradeStrategy:
         """
         # Update the bars.
         if bar_type not in self._bars:
-            self._bars[bar_type] = deque(maxlen=self._bar_capacity)  # type: Deque[Bar]
+            self._bars[bar_type] = deque(maxlen=self.bar_capacity)  # type: Deque[Bar]
         self._bars[bar_type].append(bar)
 
         # Update the indicators.
         if bar_type in self._indicators:
             self._update_indicators(bar_type, bar)
 
-        if self._is_running:
+        if self.is_running:
             self.on_bar(bar_type, bar)
 
     cpdef void _update_indicators(self, BarType bar_type, Bar bar):
@@ -958,7 +943,7 @@ cdef class TradeStrategy:
 
         :param event: The event received.
         """
-        self._log.info(str(event))
+        self.log.info(str(event))
 
         # Order events.
         if isinstance(event, OrderEvent):
@@ -967,7 +952,7 @@ cdef class TradeStrategy:
                 order = self._order_book[order_id]
                 order.apply(event)
             else:
-                self._log.warning("The events order id was not found in the order book.")
+                self.log.warning("The events order id was not found in the order book.")
 
             # Position events.
             if isinstance(event, OrderFilled) or isinstance(event, OrderPartiallyFilled):
@@ -981,31 +966,31 @@ cdef class TradeStrategy:
                             event.execution_time)
                         opened_position.apply(event)
                         self._position_book[position_id] = opened_position
-                        self._log.info(f"Opened {opened_position}")
+                        self.log.info(f"Opened {opened_position}")
                     else:
                         position = self._position_book[position_id]
                         position.apply(event)
 
                         if position.is_exited:
-                            self._log.info(f"Closed {position}")
+                            self.log.info(f"Closed {position}")
                         else:
-                            self._log.info(f"Modified {self._position_book[position_id]}")
+                            self.log.info(f"Modified {self._position_book[position_id]}")
                 else:
-                    self._log.warning(
+                    self.log.warning(
                         "The events order id was not found in the order position index.")
 
         # Account Events.
         elif isinstance(event, AccountEvent):
             self._account.apply(event)
 
-        if self._is_running:
+        if self.is_running:
             self.on_event(event)
 
     cpdef void _raise_time_event(self, Label label, datetime alert_time):
         """
         Create a new TimeEvent and pass it into _update_events().
         """
-        self._log.debug(f"Raising time event for {label}.")
+        self.log.debug(f"Raising time event for {label}.")
         self._update_events(TimeEvent(label, GUID(uuid.uuid4()), alert_time))
         del self._timers[label]
 
@@ -1023,7 +1008,7 @@ cdef class TradeStrategy:
         self._update_events(TimeEvent(label, GUID(uuid.uuid4()), alert_time))
 
         if stop_time is not None and alert_time + interval >= stop_time:
-            self._log.info(f"Stop time reached for timer {label}.")
+            self.log.info(f"Stop time reached for timer {label}.")
             self._timers[label].cancel()
             del self._timers[label]
             return
@@ -1036,4 +1021,4 @@ cdef class TradeStrategy:
             args=[label, next_alert_time, interval, stop_time])
         timer.start()
         self._timers[label] = timer
-        self._log.debug(f"Continuing timer for {label}...")
+        self.log.debug(f"Continuing timer for {label}...")

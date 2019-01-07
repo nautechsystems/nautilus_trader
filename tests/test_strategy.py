@@ -16,7 +16,7 @@ from datetime import datetime, timezone, timedelta
 
 from inv_trader.core.decimal import Decimal
 from inv_trader.common.logger import LoggerAdapter
-from inv_trader.model.enums import Venue, Resolution, QuoteType, OrderSide, OrderType, OrderStatus
+from inv_trader.model.enums import Venue, Resolution, QuoteType, OrderSide, TimeInForce, OrderStatus
 from inv_trader.model.enums import MarketPosition
 from inv_trader.model.objects import Price, Symbol, Tick, BarType, Bar
 from inv_trader.model.order import OrderFactory
@@ -43,6 +43,7 @@ class TradeStrategyTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
+        self.order_factory = OrderFactory()
         print('\n')
 
     def test_strategy_equality(self):
@@ -298,7 +299,7 @@ class TradeStrategyTests(unittest.TestCase):
         # Arrange
         strategy = TestStrategy1()
 
-        order = OrderFactory.market(
+        order = self.order_factory.market(
             AUDUSD_FXCM,
             OrderId('AUDUSD-123456-1'),
             Label('S1'),
@@ -637,7 +638,7 @@ class TradeStrategyTests(unittest.TestCase):
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
-        order = OrderFactory.market(
+        order = self.order_factory.market(
             AUDUSD_FXCM,
             OrderId('AUDUSD-123456-1'),
             Label('S1'),
@@ -657,7 +658,7 @@ class TradeStrategyTests(unittest.TestCase):
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
-        order = OrderFactory.market(
+        order = self.order_factory.market(
             AUDUSD_FXCM,
             OrderId('AUDUSD-123456-1'),
             Label('S1'),
@@ -679,7 +680,7 @@ class TradeStrategyTests(unittest.TestCase):
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
-        order = OrderFactory.market(
+        order = self.order_factory.market(
             AUDUSD_FXCM,
             OrderId('AUDUSD-123456-1'),
             Label('S1'),
@@ -696,7 +697,7 @@ class TradeStrategyTests(unittest.TestCase):
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
-        order = OrderFactory.market(
+        order = self.order_factory.market(
             AUDUSD_FXCM,
             OrderId('AUDUSD-123456-1'),
             Label('S1'),
@@ -720,7 +721,7 @@ class TradeStrategyTests(unittest.TestCase):
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
-        order = OrderFactory.market(
+        order = self.order_factory.market(
             AUDUSD_FXCM,
             OrderId('AUDUSD-123456-1'),
             Label('S1'),
@@ -737,13 +738,15 @@ class TradeStrategyTests(unittest.TestCase):
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
-        order = OrderFactory.limit(
+        order = self.order_factory.limit(
             AUDUSD_FXCM,
             OrderId('AUDUSD-123456-1'),
             Label('S1'),
             OrderSide.BUY,
             100000,
-            Price.create(1.00000, 5))
+            Price.create(1.00000, 5),
+            TimeInForce.DAY,
+            None)
 
         strategy.submit_order(order, PositionId(str(order.id)))
 
@@ -762,21 +765,25 @@ class TradeStrategyTests(unittest.TestCase):
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
-        order1 = OrderFactory.stop(
+        order1 = self.order_factory.stop(
             AUDUSD_FXCM,
             OrderId('AUDUSD-123456-1'),
             Label('S1'),
             OrderSide.BUY,
             100000,
-            Price.create(1.00000, 5))
+            Price.create(1.00000, 5),
+            TimeInForce.DAY,
+            None)
 
-        order2 = OrderFactory.stop(
+        order2 = self.order_factory.stop(
             AUDUSD_FXCM,
             OrderId('AUDUSD-123456-2'),
             Label('S1'),
             OrderSide.BUY,
             100000,
-            Price.create(1.00010, 5))
+            Price.create(1.00010, 5),
+            TimeInForce.DAY,
+            None)
 
         strategy.submit_order(order1, PositionId('some-position'))
         strategy.submit_order(order2, PositionId('some-position'))
@@ -798,7 +805,7 @@ class TradeStrategyTests(unittest.TestCase):
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
-        order = OrderFactory.market(
+        order = self.order_factory.market(
             AUDUSD_FXCM,
             OrderId('AUDUSD-123456-1'),
             Label('S1'),
@@ -836,14 +843,14 @@ class TradeStrategyTests(unittest.TestCase):
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
-        order1 = OrderFactory.market(
+        order1 = self.order_factory.market(
             AUDUSD_FXCM,
             OrderId('AUDUSD-123456-1'),
             Label('S1'),
             OrderSide.BUY,
             100000)
 
-        order2 = OrderFactory.market(
+        order2 = self.order_factory.market(
             AUDUSD_FXCM,
             OrderId('AUDUSD-123456-2'),
             Label('S1'),
@@ -919,7 +926,7 @@ class TradeStrategyTests(unittest.TestCase):
     def test_can_update_order_events(self):
         # Arrange
         strategy = TestStrategy1()
-        order = OrderFactory.market(
+        order = self.order_factory.market(
             AUDUSD_FXCM,
             OrderId('AUDUSD-123456-1'),
             Label('S1'),
@@ -947,7 +954,7 @@ class TradeStrategyTests(unittest.TestCase):
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
-        order = OrderFactory.market(
+        order = self.order_factory.market(
             AUDUSD_FXCM,
             OrderId('AUDUSD-123456-1'),
             Label('S1'),
@@ -975,14 +982,14 @@ class TradeStrategyTests(unittest.TestCase):
         exec_client.register_strategy(strategy)
 
         position1 = PositionId('position1')
-        order1 = OrderFactory.market(
+        order1 = self.order_factory.market(
             AUDUSD_FXCM,
             OrderId('AUDUSD-123456-1'),
             Label('S1'),
             OrderSide.BUY,
             100000)
 
-        order2 = OrderFactory.market(
+        order2 = self.order_factory.market(
             AUDUSD_FXCM,
             OrderId('AUDUSD-123456-2'),
             Label('S1'),

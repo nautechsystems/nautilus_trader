@@ -101,9 +101,10 @@ cdef class Decimal:
 
     """
 
-    def __cinit__(self, object value=None, object precision=None):
+    def __init__(self, object value=None, object precision=None):
 
-        cdef object num, den
+        cdef object num
+        cdef object den
         cdef int prec
         cdef Decimal dec
 

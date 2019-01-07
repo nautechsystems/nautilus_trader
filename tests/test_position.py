@@ -26,9 +26,14 @@ GBPUSD_FXCM = Symbol('gbpusd', Venue.FXCM)
 
 class PositionTests(unittest.TestCase):
 
+    def setUp(self):
+        # Fixture Setup
+        self.order_factory = OrderFactory()
+        print('\n')
+
     def test_initialized_position_returns_expected_attributes(self):
         # Arrange
-        order = OrderFactory.market(
+        order =  self.order_factory.market(
             AUDUSD_FXCM,
             OrderId('AUDUSD-123456-1'),
             Label('SCALPER-01'),
@@ -52,7 +57,7 @@ class PositionTests(unittest.TestCase):
 
     def test_position_filled_with_buy_order_returns_expected_attributes(self):
         # Arrange
-        order = OrderFactory.market(
+        order =  self.order_factory.market(
             AUDUSD_FXCM,
             OrderId('AUDUSD-123456-1'),
             Label('SCALPER-01'),
@@ -92,7 +97,7 @@ class PositionTests(unittest.TestCase):
 
     def test_position_filled_with_sell_order_returns_expected_attributes(self):
         # Arrange
-        order = OrderFactory.market(
+        order =  self.order_factory.market(
             AUDUSD_FXCM,
             OrderId('AUDUSD-123456-1'),
             Label('SCALPER-01'),
@@ -132,7 +137,7 @@ class PositionTests(unittest.TestCase):
 
     def test_position_partial_fills_with_buy_order_returns_expected_attributes(self):
         # Arrange
-        order = OrderFactory.market(
+        order =  self.order_factory.market(
             AUDUSD_FXCM,
             OrderId('AUDUSD-123456-1'),
             Label('SCALPER-01'),
@@ -174,7 +179,7 @@ class PositionTests(unittest.TestCase):
 
     def test_position_partial_fills_with_sell_order_returns_expected_attributes(self):
         # Arrange
-        order = OrderFactory.market(
+        order =  self.order_factory.market(
             AUDUSD_FXCM,
             OrderId('AUDUSD-123456-1'),
             Label('SCALPER-01'),
@@ -216,7 +221,7 @@ class PositionTests(unittest.TestCase):
 
     def test_position_filled_with_buy_order_then_sell_order_returns_expected_attributes(self):
         # Arrange
-        order = OrderFactory.market(
+        order =  self.order_factory.market(
             AUDUSD_FXCM,
             OrderId('AUDUSD-123456-1'),
             Label('SCALPER-01'),
@@ -271,7 +276,7 @@ class PositionTests(unittest.TestCase):
 
     def test_position_filled_with_sell_order_then_buy_order_returns_expected_attributes(self):
         # Arrange
-        order = OrderFactory.market(
+        order =  self.order_factory.market(
             AUDUSD_FXCM,
             OrderId('AUDUSD-123456-1'),
             Label('SCALPER-01'),

@@ -50,7 +50,7 @@ cdef class Order:
                  int quantity,
                  datetime timestamp,
                  Decimal price=None,
-                 TimeInForce time_in_force=TimeInForce.NONE,
+                 TimeInForce time_in_force=TimeInForce.DAY,
                  datetime expire_time=None):
         """
         Initializes a new instance of the Order class.
@@ -73,17 +73,19 @@ cdef class Order:
         :raises ValueError: If the order type has a price and the price is not positive (> 0).
         :raises ValueError: If the time_in_force is GTD and the expire_time is None.
         """
-        if time_in_force == TimeInForce.NONE:
+        if time_in_force is None:
             time_in_force = TimeInForce.DAY
 
         Precondition.positive(quantity, 'quantity')
-        # Orders without prices
-        if order_type not in PRICED_ORDER_TYPES:
-            Precondition.none(price, 'price')
+
         # Orders with prices
         if order_type in PRICED_ORDER_TYPES:
             Precondition.not_none(price, 'price')
             Precondition.positive(price, 'price')
+        # Orders without prices
+        else:
+            Precondition.none(price, 'price')
+
         if time_in_force is TimeInForce.GTD:
             Precondition.not_none(expire_time, 'expire_time')
 
@@ -254,7 +256,7 @@ cdef class Order:
             self._set_slippage()
             self._check_overfill()
 
-    cdef object _set_slippage(self):
+    cdef Decimal _set_slippage(self):
         if self.type not in PRICED_ORDER_TYPES:
             # Slippage not applicable to orders with entry prices.
             return
@@ -264,13 +266,13 @@ cdef class Order:
         else:  # side is OrderSide.SELL:
             self.slippage = (self.price - self.average_price)
 
-    cdef object _check_overfill(self):
+    cdef Decimal _check_overfill(self):
         if self.filled_quantity > self.quantity:
             self.status = OrderStatus.OVER_FILLED
 
 
 # Unix epoch is the UTC time at 00:00:00 on 1/1/1970
-cdef object UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc)
+cdef datetime UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc)
 cdef str SEPARATOR = '-'
 cdef int MILLISECONDS_PER_SECOND = 1000
 
@@ -279,9 +281,6 @@ cdef class OrderIdGenerator:
     """
     Provides a generator for unique order identifiers.
     """
-    cdef str _order_id_tag
-    cdef dict _order_symbol_counts
-    cdef list _order_ids
 
     def __init__(self, str order_id_tag):
         """
@@ -333,16 +332,16 @@ cdef class OrderIdGenerator:
 
 cdef class OrderFactory:
     """
-    A static factory class which provides different order types.
+    A factory class which provides different order types.
     """
 
-    @staticmethod
-    def market(
+    cpdef Order market(
+            self,
             Symbol symbol,
             OrderId order_id,
             Label label,
             OrderSide order_side,
-            int quantity) -> Order:
+            int quantity):
         """
         Creates and returns a new market order with the given parameters.
 
@@ -362,19 +361,19 @@ cdef class OrderFactory:
                      quantity,
                      dt.datetime.now(timezone.utc),
                      price=None,
-                     time_in_force=TimeInForce.NONE,
+                     time_in_force=TimeInForce.DAY,
                      expire_time=None)
 
-    @staticmethod
-    def limit(
+    cpdef Order limit(
+            self,
             Symbol symbol,
             OrderId order_id,
             Label label,
             OrderSide order_side,
             int quantity,
             Decimal price,
-            TimeInForce time_in_force=TimeInForce.NONE,
-            datetime expire_time=None) -> Order:
+            TimeInForce time_in_force,
+            datetime expire_time):
         """
         Creates and returns a new limit order with the given parameters.
         If the time in force is GTD then a valid expire time must be given.
@@ -392,6 +391,9 @@ cdef class OrderFactory:
         :raises ValueError: If the price is not positive (> 0).
         :raises ValueError: If the time_in_force is GTD and the expire_time is None.
         """
+        if time_in_force is None:
+            time_in_force = TimeInForce.DAY
+
         return Order(symbol,
                      order_id,
                      label,
@@ -403,16 +405,16 @@ cdef class OrderFactory:
                      time_in_force,
                      expire_time)
 
-    @staticmethod
-    def stop(
+    cpdef Order stop(
+            self,
             Symbol symbol,
             OrderId order_id,
             Label label,
             OrderSide order_side,
             int quantity,
             Decimal price,
-            TimeInForce time_in_force=TimeInForce.NONE,
-            datetime expire_time=None) -> Order:
+            TimeInForce time_in_force,
+            datetime expire_time):
         """
         Creates and returns a new stop-market order with the given parameters.
         If the time in force is GTD then a valid expire time must be given.
@@ -430,6 +432,9 @@ cdef class OrderFactory:
         :raises ValueError: If the price is not positive (> 0).
         :raises ValueError: If the time_in_force is GTD and the expire_time is None.
         """
+        if time_in_force is None:
+            time_in_force = TimeInForce.DAY
+
         return Order(symbol,
                      order_id,
                      label,
@@ -441,16 +446,16 @@ cdef class OrderFactory:
                      time_in_force,
                      expire_time)
 
-    @staticmethod
-    def stop_limit(
+    cpdef Order stop_limit(
+            self,
             Symbol symbol,
             OrderId order_id,
             Label label,
             OrderSide order_side,
             int quantity,
             Decimal price,
-            TimeInForce time_in_force=TimeInForce.NONE,
-            datetime expire_time=None) -> Order:
+            TimeInForce time_in_force,
+            datetime expire_time):
         """
         Creates and returns a new stop-limit order with the given parameters.
         If the time in force is GTD then a valid expire time must be given.
@@ -468,6 +473,9 @@ cdef class OrderFactory:
         :raises ValueError: If the price is not positive (> 0).
         :raises ValueError: If the time_in_force is GTD and the expire_time is None.
         """
+        if time_in_force is None:
+            time_in_force = TimeInForce.DAY
+
         return Order(symbol,
                      order_id,
                      label,
@@ -479,16 +487,16 @@ cdef class OrderFactory:
                      time_in_force,
                      expire_time)
 
-    @staticmethod
-    def market_if_touched(
+    cpdef Order market_if_touched(
+            self,
             Symbol symbol,
             OrderId order_id,
             Label label,
             OrderSide order_side,
             int quantity,
             Decimal price,
-            TimeInForce time_in_force=TimeInForce.NONE,
-            datetime expire_time=None) -> Order:
+            TimeInForce time_in_force,
+            datetime expire_time):
         """
         Creates and returns a new market-if-touched order with the given parameters.
         If the time in force is GTD then a valid expire time must be given.
@@ -506,6 +514,9 @@ cdef class OrderFactory:
         :raises ValueError: If the price is not positive (> 0).
         :raises ValueError: If the time_in_force is GTD and the expire_time is None.
         """
+        if time_in_force is None:
+            time_in_force = TimeInForce.DAY
+
         return Order(symbol,
                      order_id,
                      label,
@@ -517,13 +528,13 @@ cdef class OrderFactory:
                      time_in_force,
                      expire_time)
 
-    @staticmethod
-    def fill_or_kill(
+    cpdef Order fill_or_kill(
+            self,
             Symbol symbol,
             OrderId order_id,
             Label label,
             OrderSide order_side,
-            int quantity) -> Order:
+            int quantity):
         """
         Creates and returns a new fill-or-kill order with the given parameters.
 
@@ -546,13 +557,13 @@ cdef class OrderFactory:
                      time_in_force=TimeInForce.FOC,
                      expire_time=None)
 
-    @staticmethod
-    def immediate_or_cancel(
+    cpdef Order immediate_or_cancel(
+            self,
             Symbol symbol,
             OrderId order_id,
             Label label,
             OrderSide order_side,
-            int quantity) -> Order:
+            int quantity):
         """
         Creates and returns a new immediate-or-cancel order with the given parameters.
 

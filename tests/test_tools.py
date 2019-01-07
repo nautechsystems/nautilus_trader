@@ -23,32 +23,32 @@ class BarBuilderTests(unittest.TestCase):
 
     def test_can_build_data_bars(self):
         # arrange
-        data = TestDataProvider.get_gbpusd_1min_bid()
+        data = TestDataProvider.get_gbpusd_1min_bid()[:1000]
         bar_builder = BarBuilder(data, 5, 1)
 
         # act
         bars = bar_builder.build_data_bars()
 
         # assert
-        self.assertEqual(377280, len(bars))
+        self.assertEqual(1000, len(bars))
 
     def test_can_build_bars(self):
         # arrange
-        data = TestDataProvider.get_gbpusd_1min_bid()
+        data = TestDataProvider.get_gbpusd_1min_bid()[:1000]
         bar_builder = BarBuilder(data, 5, 1)
 
         # act
         bars = bar_builder.build_bars()
 
         # assert
-        self.assertEqual(377280, len(bars))
+        self.assertEqual(1000, len(bars))
 
 
 class IndicatorUpdaterTests(unittest.TestCase):
 
     def test_can_update_indicator_with_bars(self):
         # arrange
-        data = TestDataProvider.get_gbpusd_1min_bid()
+        data = TestDataProvider.get_gbpusd_1min_bid()[:1000]
         bar_builder = BarBuilder(data, 5, 1)
         bars = bar_builder.build_bars()
         ema = ExponentialMovingAverage(10)
@@ -59,12 +59,12 @@ class IndicatorUpdaterTests(unittest.TestCase):
             updater.update_bar(bar)
 
         # assert
-        self.assertEqual(377280, ema.count)
-        self.assertEqual(1.4640214397333984, ema.value)
+        self.assertEqual(1000, ema.count)
+        self.assertEqual(1.9838850009689002, ema.value)
 
     def test_can_update_indicator_with_data_bars(self):
         # arrange
-        data = TestDataProvider.get_gbpusd_1min_bid()
+        data = TestDataProvider.get_gbpusd_1min_bid()[:1000]
         bar_builder = BarBuilder(data, 5, 1)
         bars = bar_builder.build_data_bars()
         ema = ExponentialMovingAverage(10)
@@ -75,12 +75,12 @@ class IndicatorUpdaterTests(unittest.TestCase):
             updater.update_data_bar(bar)
 
         # assert
-        self.assertEqual(377280, ema.count)
-        self.assertEqual(1.464021438880837, ema.value)
+        self.assertEqual(1000, ema.count)
+        self.assertEqual(1.9838850140793318, ema.value)
 
     def test_can_build_features_from_bars(self):
         # arrange
-        data = TestDataProvider.get_gbpusd_1min_bid()
+        data = TestDataProvider.get_gbpusd_1min_bid()[:1000]
         bar_builder = BarBuilder(data, 5, 1)
         bars = bar_builder.build_bars()
         ema = ExponentialMovingAverage(10)
@@ -91,12 +91,12 @@ class IndicatorUpdaterTests(unittest.TestCase):
 
         # assert
         self.assertTrue('value' in result)
-        self.assertEqual(377280, len(result['value']))
-        self.assertEqual(1.4640214397333984, ema.value)
+        self.assertEqual(1000, len(result['value']))
+        self.assertEqual(1.9838850009689002, ema.value)
 
     def test_can_build_features_from_data_bars(self):
         # arrange
-        data = TestDataProvider.get_gbpusd_1min_bid()
+        data = TestDataProvider.get_gbpusd_1min_bid()[:1000]
         bar_builder = BarBuilder(data, 5, 1)
         bars = bar_builder.build_data_bars()
         ema = ExponentialMovingAverage(10)
@@ -107,8 +107,8 @@ class IndicatorUpdaterTests(unittest.TestCase):
 
         # assert
         self.assertTrue('value' in result)
-        self.assertEqual(377280, len(result['value']))
-        self.assertEqual(1.464021438880837, ema.value)
+        self.assertEqual(1000, len(result['value']))
+        self.assertEqual(1.9838850140793318, ema.value)
 
     def test_can_update_ema_indicator(self):
         # Arrange

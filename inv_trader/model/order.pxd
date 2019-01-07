@@ -47,5 +47,91 @@ cdef class Order:
     cdef readonly list events
 
     cpdef void apply(self, OrderEvent order_event)
-    cdef object _set_slippage(self)
-    cdef object _check_overfill(self)
+    cdef Decimal _set_slippage(self)
+    cdef Decimal _check_overfill(self)
+
+
+cdef class OrderIdGenerator:
+    """
+    Provides a generator for unique order identifiers.
+    """
+    cdef str _order_id_tag
+    cdef dict _order_symbol_counts
+    cdef list _order_ids
+
+    cpdef OrderId generate(self, Symbol order_symbol)
+    @staticmethod
+    cdef long _milliseconds_since_unix_epoch()
+
+
+cdef class OrderFactory:
+    """
+    A factory class which provides different order types.
+    """
+    cpdef Order market(
+            self,
+            Symbol symbol,
+            OrderId order_id,
+            Label label,
+            OrderSide order_side,
+            int quantity)
+
+    cpdef Order limit(
+            self,
+            Symbol symbol,
+            OrderId order_id,
+            Label label,
+            OrderSide order_side,
+            int quantity,
+            Decimal price,
+            TimeInForce time_in_force,
+            datetime expire_time)
+
+    cpdef Order stop(
+            self,
+            Symbol symbol,
+            OrderId order_id,
+            Label label,
+            OrderSide order_side,
+            int quantity,
+            Decimal price,
+            TimeInForce time_in_force,
+            datetime expire_time)
+
+    cpdef Order stop_limit(
+            self,
+            Symbol symbol,
+            OrderId order_id,
+            Label label,
+            OrderSide order_side,
+            int quantity,
+            Decimal price,
+            TimeInForce time_in_force,
+            datetime expire_time)
+
+    cpdef Order market_if_touched(
+            self,
+            Symbol symbol,
+            OrderId order_id,
+            Label label,
+            OrderSide order_side,
+            int quantity,
+            Decimal price,
+            TimeInForce time_in_force,
+            datetime expire_time)
+
+    cpdef Order fill_or_kill(
+            self,
+            Symbol symbol,
+            OrderId order_id,
+            Label label,
+            OrderSide order_side,
+            int quantity)
+
+    cpdef Order immediate_or_cancel(
+            self,
+            Symbol symbol,
+            OrderId order_id,
+            Label label,
+            OrderSide order_side,
+            int quantity)

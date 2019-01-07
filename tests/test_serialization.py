@@ -105,11 +105,16 @@ class SerializationFunctionTests(unittest.TestCase):
 
 class MsgPackOrderSerializerTests(unittest.TestCase):
 
+    def setUp(self):
+        # Fixture Setup
+        self.order_factory = OrderFactory()
+        print('\n')
+
     def test_can_serialize_and_deserialize_market_orders(self):
         # Arrange
         serializer = MsgPackOrderSerializer()
 
-        order = OrderFactory.market(
+        order = self.order_factory.market(
             AUDUSD_FXCM,
             OrderId('O123456'),
             Label('SCALPER01_SL'),
@@ -128,14 +133,15 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
         # Arrange
         serializer = MsgPackOrderSerializer()
 
-        order = OrderFactory.limit(
+        order = self.order_factory.limit(
             AUDUSD_FXCM,
             OrderId('O123456'),
             Label('S1_SL'),
             OrderSide.BUY,
             100000,
             Price.create(1.00000, 5),
-            TimeInForce.DAY)
+            TimeInForce.DAY,
+            expire_time=None)
 
         # Act
         serialized = serializer.serialize(order)
@@ -217,11 +223,16 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
 
 class MsgPackCommandSerializerTests(unittest.TestCase):
 
+    def setUp(self):
+        # Fixture Setup
+        self.order_factory = OrderFactory()
+        print('\n')
+
     def test_can_serialize_and_deserialize_submit_order_commands(self):
         # Arrange
         serializer = MsgPackCommandSerializer()
 
-        order = OrderFactory.market(
+        order = self.order_factory.market(
             AUDUSD_FXCM,
             OrderId('O123456'),
             Label('S1_SL'),
