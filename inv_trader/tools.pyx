@@ -10,6 +10,7 @@
 # cython: language_level=3, boundscheck=False, wraparound=False
 
 import inspect
+import numpy as np
 import pandas as pd
 
 from cpython.datetime cimport datetime
@@ -37,9 +38,6 @@ cdef class BarBuilder:
     Provides a means of building lists of bars from a given Pandas DataFrame of
     the correct specification.
     """
-    cdef object _data
-    cdef int _decimal_precision
-    cdef int _volume_multiple
 
     def __init__(self,
                  data: DataFrame,
@@ -80,10 +78,7 @@ cdef class BarBuilder:
                         self._data.values,
                         pd.to_datetime(self._data.index)))
 
-    cpdef DataBar _build_data_bar(
-            self,
-            double[:] values,
-            datetime timestamp):
+    cpdef DataBar _build_data_bar(self, double[:] values, datetime timestamp):
         """
         Build a DataBar from the given index and values. The function expects the
         values to be an ndarray with 5 elements [open, high, low, close, volume].
@@ -99,10 +94,7 @@ cdef class BarBuilder:
                        values[4] * self._volume_multiple,
                        timestamp)
 
-    cpdef Bar _build_bar(
-            self,
-            double[:] values,
-            datetime timestamp):
+    cpdef Bar _build_bar(self, double[:] values, datetime timestamp):
         """
         Build a Bar from the given index and values. The function expects the
         values to be an ndarray with 5 elements [open, high, low, close, volume].
@@ -125,10 +117,6 @@ cdef class IndicatorUpdater:
     with a live indicator update method, the updater will inspect the method and
     construct the required parameter list for updates.
     """
-    cdef object _indicator
-    cdef object _input_method
-    cdef list _input_params
-    cdef list _outputs
 
     def __init__(self,
                  indicator: Indicator,
@@ -186,7 +174,7 @@ cdef class IndicatorUpdater:
         """
         self._input_method(*[bar.__getattribute__(param) for param in self._input_params])
 
-    cpdef object build_features(self, list bars):
+    cpdef dict build_features(self, list bars):
         """
         Create a dictionary of output features from the given bars data.
         
@@ -204,7 +192,7 @@ cdef class IndicatorUpdater:
 
         return features
 
-    cpdef object build_features_data_bars(self, list bars):
+    cpdef dict build_features_data_bars(self, list bars):
         """
         Create a dictionary of output features from the given bars data.
         
