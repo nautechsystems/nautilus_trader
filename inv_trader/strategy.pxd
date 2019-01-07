@@ -24,7 +24,7 @@ from inv_trader.model.events cimport TimeEvent
 from inv_trader.model.identifiers cimport GUID, Label, OrderId, PositionId
 from inv_trader.model.objects cimport Symbol, Tick, BarType, Bar, Instrument
 from inv_trader.model.order cimport Order
-from inv_trader.model.order import OrderIdGenerator, OrderFactory
+from inv_trader.model.order cimport OrderIdGenerator, OrderFactory
 from inv_trader.model.position cimport Position
 
 
@@ -32,17 +32,18 @@ cdef class TradeStrategy:
     """
     The abstract base class for all trade strategies.
     """
-    cdef LoggerAdapter _log
-    cdef object _order_id_generator
-    cdef int _bar_capacity
-    cdef bint _is_running
     cdef dict _timers
     cdef dict _ticks
     cdef dict _bars
     cdef dict _indicators
     cdef dict _indicator_updaters
     cdef dict _indicator_index
+    cdef OrderIdGenerator _order_id_generator
 
+    cdef readonly LoggerAdapter log
+    cdef readonly OrderFactory order_factory
+    cdef readonly int bar_capacity
+    cdef readonly bint is_running
     cdef readonly str name
     cdef readonly str label
     cdef readonly GUID id
@@ -84,6 +85,8 @@ cdef class TradeStrategy:
     cpdef set_timer(self, Label label, timedelta interval, datetime start_time, datetime stop_time, bint repeat)
     cpdef cancel_timer(self, Label label)
     cpdef OrderId generate_order_id(self, Symbol symbol)
+    cpdef OrderSide get_opposite_side(self, OrderSide side)
+    cpdef get_flatten_side(self, MarketPosition market_position)
     cpdef collateral_inquiry(self)
     cpdef submit_order(self, Order order, PositionId position_id)
     cpdef modify_order(self, Order order, Decimal new_price)

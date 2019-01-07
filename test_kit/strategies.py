@@ -61,7 +61,7 @@ class TestStrategy1(TradeStrategy):
 
         if bar_type == self.gbpusd_1sec_mid:
             if self.ema1.value > self.ema2.value:
-                buy_order = OrderFactory.market(
+                buy_order = self.order_factory.market(
                     Symbol('GBPUSD', Venue.FXCM),
                     OrderId('O123456'),
                     Label('TestStrategy1_E'),
@@ -72,7 +72,7 @@ class TestStrategy1(TradeStrategy):
                 self.position_id = buy_order.id
 
             elif self.ema1.value < self.ema2.value:
-                sell_order = OrderFactory.market(
+                sell_order = self.order_factory.market(
                     Symbol('GBPUSD', Venue.FXCM),
                     OrderId('O123456'),
                     Label('TestStrategy1_E'),

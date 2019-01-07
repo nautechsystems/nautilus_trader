@@ -30,6 +30,7 @@ class ExecutionClientTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
+        self.order_factory = OrderFactory()
         self.strategy = TestStrategy1()
         self.exec_client = MockExecClient()
         self.exec_client.connect()
@@ -54,7 +55,7 @@ class ExecutionClientTests(unittest.TestCase):
 
         order_id = self.strategy.generate_order_id(AUDUSD_FXCM)
 
-        order = OrderFactory.market(
+        order = self.order_factory.market(
             AUDUSD_FXCM,
             order_id,
             Label('S1_E'),
@@ -75,7 +76,7 @@ class ExecutionClientTests(unittest.TestCase):
 
         order_id = self.strategy.generate_order_id(AUDUSD_FXCM)
 
-        order = OrderFactory.market(
+        order = self.order_factory.market(
             AUDUSD_FXCM,
             order_id,
             Label('S1_E'),
@@ -97,14 +98,15 @@ class ExecutionClientTests(unittest.TestCase):
 
         order_id = self.strategy.generate_order_id(AUDUSD_FXCM)
 
-        order = OrderFactory.limit(
+        order = self.order_factory.limit(
             AUDUSD_FXCM,
             order_id,
             Label('S1_E'),
             OrderSide.BUY,
             100000,
             Price.create(1.00000, 5),
-            TimeInForce.DAY)
+            TimeInForce.DAY,
+            expire_time=None)
 
         # Act
         self.strategy.submit_order(order, PositionId(str(order.id)))
@@ -122,6 +124,7 @@ class LiveExecClientTests(unittest.TestCase):
         # Fixture Setup
         print("\n")
 
+        self.order_factory = OrderFactory()
         self.strategy = TestStrategy1()
         self.exec_client = LiveExecClient()
         self.exec_client.register_strategy(self.strategy)
@@ -155,7 +158,7 @@ class LiveExecClientTests(unittest.TestCase):
         # Arrange
         order_id = self.strategy.generate_order_id(AUDUSD_FXCM)
 
-        order = OrderFactory.market(
+        order = self.order_factory.market(
             AUDUSD_FXCM,
             order_id,
             Label('S1_E'),
@@ -173,7 +176,7 @@ class LiveExecClientTests(unittest.TestCase):
         # Arrange
         order_id = self.strategy.generate_order_id(AUDUSD_FXCM)
 
-        order = OrderFactory.market(
+        order = self.order_factory.market(
             AUDUSD_FXCM,
             order_id,
             Label('S1_E'),
@@ -192,14 +195,15 @@ class LiveExecClientTests(unittest.TestCase):
         # Arrange
         order_id = self.strategy.generate_order_id(AUDUSD_FXCM)
 
-        order = OrderFactory.limit(
+        order = self.order_factory.limit(
             AUDUSD_FXCM,
             order_id,
             Label('S1_E'),
             OrderSide.BUY,
             100000,
             Price.create(1.00000, 5),
-            TimeInForce.DAY)
+            TimeInForce.DAY,
+            expire_time=None)
 
         # Act
         self.strategy.submit_order(order, PositionId('some-position'))
