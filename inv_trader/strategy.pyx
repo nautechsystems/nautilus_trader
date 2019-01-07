@@ -447,9 +447,7 @@ cdef class TradeStrategy:
         :return: The internally held indicators for the given bar type.
         :raises KeyError: If the strategies indicators dictionary does not contain the given bar_type.
         """
-        if bar_type not in self._indicators:
-            raise KeyError(
-                f"Cannot get indicators (the indicators dictionary does not contain {bar_type}).")
+        Precondition.true(bar_type in self._indicators, 'bar_type in self._indicators')
 
         return self._indicators[bar_type]
 
@@ -462,12 +460,8 @@ cdef class TradeStrategy:
         :raises ValueError: If the label is not a valid string.
         :raises KeyError: If the strategies indicator dictionary does not contain the given label.
         """
-        cdef object label_obj = Label(label)
-
-        if label_obj not in self._indicator_index:
-            raise KeyError(
-                (f"Cannot get indicator "
-                 f"(the indicator dictionary does not contain the label {label_obj})."))
+        cdef Label label_obj = Label(label)
+        Precondition.true(label_obj in self._indicator_index, 'label in self._indicator_index')
 
         return self._indicator_index[label]
 
@@ -479,9 +473,7 @@ cdef class TradeStrategy:
         :return: The list of bars (List[Deque]).
         :raises KeyError: If the strategies bars dictionary does not contain the bar type.
         """
-        if bar_type not in self._bars:
-            raise KeyError(
-                f"Cannot get bars (the bar dictionary does not contain {bar_type}).")
+        Precondition.true(bar_type in self._bars, 'bar_type in self._bars')
 
         return list(self._bars[bar_type])
 
@@ -495,8 +487,7 @@ cdef class TradeStrategy:
         :raises KeyError: If the strategies bars dictionary does not contain the bar type.
         :raises IndexError: If the strategies bars dictionary does not contain a bar at the given index.
         """
-        if bar_type not in self._bars:
-            raise KeyError(f"Cannot get bar (the bar dictionary does not contain {bar_type}).")
+        Precondition.true(bar_type in self._bars, 'bar_type in self._bars')
 
         return self._bars[bar_type][index]
 
@@ -508,8 +499,7 @@ cdef class TradeStrategy:
         :return: The tick object.
         :raises KeyError: If the strategies tick dictionary does not contain a tick for the given symbol.
         """
-        if symbol not in self._ticks:
-            raise KeyError(f"Cannot get last tick (the tick dictionary does not contain {symbol}).")
+        Precondition.true(symbol in self._ticks, 'symbol in self._ticks')
 
         return self._ticks[symbol]
 
@@ -522,9 +512,7 @@ cdef class TradeStrategy:
         :raises ValueError: If the order_id is not a valid string.
         :raises KeyError: If the strategies order book does not contain the order with the given id.
         """
-        if order_id not in self._order_book:
-            raise KeyError(
-                f"Cannot get order (the order book does not contain the order with id {order_id}).")
+        Precondition.true(order_id in self._order_book, 'order_id in self._order_book')
 
         return self._order_book[order_id]
 

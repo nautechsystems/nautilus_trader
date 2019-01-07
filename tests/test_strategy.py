@@ -159,14 +159,14 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(KeyError, strategy.indicators, unknown_bar_type)
+        self.assertRaises(ValueError, strategy.indicators, unknown_bar_type)
 
     def test_getting_indicator_for_unknown_label_raises_exception(self):
         strategy = TestStrategy1()
 
         # Act
         # Assert
-        self.assertRaises(KeyError, strategy.indicator, 'unknown_bar_type')
+        self.assertRaises(ValueError, strategy.indicator, 'unknown_bar_type')
 
     def test_getting_bars_for_unknown_bar_type_raises_exception(self):
         strategy = TestStrategy1()
@@ -179,7 +179,7 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(KeyError, strategy.bars, unknown_bar_type)
+        self.assertRaises(ValueError, strategy.bars, unknown_bar_type)
 
     def test_can_get_bars(self):
         strategy = TestStrategy1()
@@ -216,7 +216,7 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(KeyError, strategy.bar, unknown_bar_type, 0)
+        self.assertRaises(ValueError, strategy.bar, unknown_bar_type, 0)
 
     def test_getting_bar_at_out_of_range_index_raises_exception(self):
         strategy = TestStrategy1()
@@ -269,7 +269,7 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(KeyError, strategy.last_tick, AUDUSD_FXCM)
+        self.assertRaises(ValueError, strategy.last_tick, AUDUSD_FXCM)
 
     def test_can_get_last_tick(self):
         strategy = TestStrategy1()
@@ -293,7 +293,7 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(KeyError, strategy.order, OrderId('unknown_order_id'))
+        self.assertRaises(ValueError, strategy.order, OrderId('unknown_order_id'))
 
     def test_can_get_order(self):
         # Arrange
