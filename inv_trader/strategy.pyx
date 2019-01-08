@@ -20,19 +20,17 @@ from threading import Timer
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.core.decimal cimport Decimal
+from inv_trader.enums.order_side cimport OrderSide
+from inv_trader.enums.market_position cimport MarketPosition
 from inv_trader.common.logger cimport Logger, LoggerAdapter
 from inv_trader.common.execution cimport ExecutionClient
 from inv_trader.common.data cimport DataClient
 from inv_trader.model.account cimport Account
-from inv_trader.enums.order_side cimport OrderSide
-from inv_trader.enums.market_position cimport MarketPosition
 from inv_trader.model.events cimport Event, AccountEvent, OrderEvent
-from inv_trader.model.events cimport OrderFilled, OrderPartiallyFilled
-from inv_trader.model.events cimport TimeEvent
+from inv_trader.model.events cimport OrderFilled, OrderPartiallyFilled, TimeEvent
 from inv_trader.model.identifiers cimport GUID, Label, OrderId, PositionId
 from inv_trader.model.objects cimport Symbol, Tick, BarType, Bar, Instrument
-from inv_trader.model.order cimport Order
-from inv_trader.model.order cimport OrderIdGenerator, OrderFactory
+from inv_trader.model.order cimport Order, OrderIdGenerator, OrderFactory
 from inv_trader.model.position cimport Position
 from inv_trader.tools cimport IndicatorUpdater
 
@@ -649,8 +647,8 @@ cdef class TradeStrategy:
             raise KeyError(
                 f"Cannot set timer (the label {label} was not unique for this strategy).")
 
-        cdef object alert_time = start_time + interval
-        cdef object delay = (alert_time - dt.datetime.now(timezone.utc)).total_seconds()
+        cdef datetime alert_time = start_time + interval
+        cdef float delay = (alert_time - dt.datetime.now(timezone.utc)).total_seconds()
         if repeat:
             timer = Timer(
                 interval=delay,
