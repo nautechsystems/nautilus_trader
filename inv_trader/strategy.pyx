@@ -13,11 +13,11 @@ import uuid
 
 from cpython.datetime cimport datetime, timedelta
 from collections import deque
-from datetime import timezone
-from typing import Callable, Deque, Dict, List
+from typing import Callable, Dict, List
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.core.decimal cimport Decimal
+from inv_trader.core.deque cimport Deque
 from inv_trader.enums.order_side cimport OrderSide
 from inv_trader.enums.market_position cimport MarketPosition
 from inv_trader.common.clock cimport Clock, LiveClock
@@ -26,7 +26,7 @@ from inv_trader.common.execution cimport ExecutionClient
 from inv_trader.common.data cimport DataClient
 from inv_trader.model.account cimport Account
 from inv_trader.model.events cimport Event, AccountEvent, OrderEvent
-from inv_trader.model.events cimport OrderFilled, OrderPartiallyFilled, TimeEvent
+from inv_trader.model.events cimport OrderFilled, OrderPartiallyFilled
 from inv_trader.model.identifiers cimport GUID, Label, OrderId, PositionId
 from inv_trader.model.objects cimport Symbol, Tick, BarType, Bar, Instrument
 from inv_trader.model.order cimport Order, OrderIdGenerator, OrderFactory
