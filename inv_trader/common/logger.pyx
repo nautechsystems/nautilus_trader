@@ -13,11 +13,10 @@ import logging
 import os
 import threading
 
-from cpython.datetime cimport datetime
-from datetime import datetime
 from logging import INFO, DEBUG
 
 from inv_trader.core.precondition cimport Precondition
+from inv_trader.common.clock cimport Clock, LiveClock
 
 
 cdef class Logger:
@@ -31,7 +30,8 @@ cdef class Logger:
                  level_file: logging=DEBUG,
                  bint console_prints=True,
                  bint log_to_file=False,
-                 str log_file_path='log/'):
+                 str log_file_path='log/',
+                 Clock clock=LiveClock()):
         """
         Initializes a new instance of the Logger class.
 
@@ -41,6 +41,7 @@ cdef class Logger:
         :param console_prints: The boolean flag indicating whether log messages should print.
         :param log_to_file: The boolean flag indicating whether log messages should log to file
         :param log_file_path: The name of the log file (cannot be None if log_to_file is True).
+        :param clock: The clock for the logger.
         :raises ValueError: If the name is not a valid string.
         :raises ValueError: If the log_file_path is not a valid string.
         """
@@ -51,6 +52,7 @@ cdef class Logger:
 
         Precondition.valid_string(log_file_path, 'log_file_path')
 
+        self._clock = clock
         self._log_level_console = level_console
         self._log_level_file = level_file
         self._console_prints = console_prints
@@ -136,7 +138,7 @@ cdef class Logger:
                 self._console_print_handler(f"IOError: {ex}.", logging.CRITICAL)
 
     cdef str _format_message(self, str log_level, str message):
-        cdef str time = datetime.utcnow().isoformat(timespec='milliseconds') + 'Z'
+        cdef str time = self._clock.time_now().isoformat(timespec='milliseconds') + 'Z'
         return (f'{time} [{threading.current_thread().ident}][{log_level}] '
                 f'{message}')
 

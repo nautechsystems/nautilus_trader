@@ -14,6 +14,8 @@ from cpython.datetime cimport datetime, timedelta
 
 from inv_trader.core.precondition cimport Precondition
 
+cdef int MILLISECONDS_PER_SECOND = 1000
+
 
 cdef class Clock:
     """
@@ -53,6 +55,12 @@ cdef class Clock:
         :return: The time at the unix epoch (00:00:00 on 1/1/1970 UTC).
         """
         return self._unix_epoch
+
+    cdef long milliseconds_since_unix_epoch(self):
+        """
+        :return:  Returns the number of ticks of the given time now since the Unix Epoch.
+        """
+        return (self.time_now() - self._unix_epoch).total_seconds() * MILLISECONDS_PER_SECOND
 
 
 cdef class LiveClock(Clock):
