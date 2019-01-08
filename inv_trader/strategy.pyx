@@ -15,7 +15,6 @@ from cpython.datetime cimport datetime, timedelta
 from collections import deque
 from datetime import timezone
 from typing import Callable, Deque, Dict, List
-from threading import Timer
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.core.decimal cimport Decimal
@@ -76,7 +75,6 @@ cdef class TradeStrategy:
         self.order_factory = OrderFactory()
         self.bar_capacity = bar_capacity
         self.is_running = False
-        self._timers = {}                # type: Dict[Label, Timer]
         self._ticks = {}                 # type: Dict[Symbol, Tick]
         self._bars = {}                  # type: Dict[BarType, Deque[Bar]]
         self._indicators = {}            # type: Dict[BarType, List[Indicator]]
@@ -400,9 +398,9 @@ cdef class TradeStrategy:
         """
         self.log.info(f"Stopping...")
         self.on_stop()
-        for label, timer in self._timers.items():
-            timer.cancel()
-            self.log.info(f"Cancelled timer for {label}.")
+        cdef list labels = self.clock.get_labels()
+        for label in labels:
+            self.log.info(f"Cancelled timer {label}.")
         self.is_running = False
         self.log.info(f"Stopped.")
 
@@ -416,7 +414,6 @@ cdef class TradeStrategy:
             self.log.warning(f"Cannot reset a running strategy...")
             return
 
-        self._timers = {}                # type: Dict[Label, Timer]
         self._ticks = {}                 # type: Dict[Symbol, Tick]
         self._bars = {}                  # type: Dict[BarType, Deque[Bar]]
 
@@ -552,126 +549,6 @@ cdef class TradeStrategy:
         self._indicator_updaters[bar_type].append(IndicatorUpdater(indicator, update_method))
 
         self._indicator_index[label] = indicator
-
-    cpdef set_time_alert(
-            self,
-            Label label,
-            datetime alert_time):
-        """
-        Set a time alert for the given time. When the time is reached and the
-        strategy is running, on_event() is passed the TimeEvent containing the
-        alerts unique label.
-
-        Note: The timer thread will begin immediately.
-
-        :param label: The label for the alert (must be unique).
-        :param alert_time: The time for the alert.
-        :raises ValueError: If the label is not a valid string.
-        :raises ValueError: If the label is not unique for this strategy.
-        :raises ValueError: If the alert_time is not > than the current time (UTC).
-        """
-        Precondition.true(alert_time > self.clock.time_now(), 'self.clock.time_now()')
-        Precondition.true(label not in self._timers, 'label NOT in self._timers')
-
-        timer = Timer(
-            interval=(alert_time - self.clock.time_now()).total_seconds(),
-            function=self._raise_time_event,
-            args=[label, alert_time])
-
-        timer.start()
-        self._timers[label] = timer
-        self.log.info(f"Set time alert for {label} at {alert_time}.")
-
-    cpdef cancel_time_alert(self, Label label):
-        """
-        Cancel the time alert corresponding to the given label.
-
-        :param label: The label for the alert to cancel.
-        :raises ValueError: If the label is not a valid string.
-        :raises KeyError: If the label is not found in the internal timers.
-        """
-        Precondition.true(label in self._timers, 'label in self._timers')
-
-        self._timers[label].cancel()
-        del self._timers[label]
-        self.log.info(f"Cancelled time alert for {label}.")
-
-    cpdef set_timer(
-            self,
-            Label label,
-            timedelta interval,
-            datetime start_time,
-            datetime stop_time,
-            bint repeat):
-        """
-        Set a timer with the given interval (time delta). The timer will run from
-        the start time (optionally until the stop time). When the interval is
-        reached and the strategy is running, the on_event() is passed the
-        TimeEvent containing the timers unique label.
-
-        Optionally the timer can be run repeatedly whilst the strategy is running.
-
-        Note: The timer thread will begin immediately.
-
-        :param label: The label for the timer (must be unique).
-        :param interval: The time delta interval for the timer.
-        :param start_time: The start time for the timer (can be None, then starts immediately).
-        :param stop_time: The stop time for the timer (can be None).
-        :param repeat: The option for the timer to repeat until the strategy is stopped
-        :raises ValueError: If the label is not a valid string.
-        :raises KeyError: If the label is not unique.
-        :raises ValueError: If the start_time is not None and not >= the current time (UTC).
-        :raises ValueError: If the stop_time is not None and repeat is False.
-        :raises ValueError: If the stop_time is not None and not > than the start_time.
-        :raises ValueError: If the stop_time is not None and start_time plus interval is greater
-        than the stop_time.
-        """
-        if start_time is not None:
-            Precondition.true(start_time >= self.clock.time_now(),
-                              'start_time >= self.clock.time_now()')
-        else:
-            start_time = self.clock.time_now()
-        if stop_time is not None:
-            Precondition.true(repeat, 'repeat True')
-            Precondition.true(stop_time > start_time, 'stop_time > start_time')
-            Precondition.true(start_time + interval <= stop_time,
-                              'start_time + interval <= stop_time')
-
-        if label in self._timers:
-            raise KeyError(
-                f"Cannot set timer (the label {label} was not unique for this strategy).")
-
-        cdef datetime alert_time = start_time + interval
-        cdef float delay = (alert_time - self.clock.time_now()).total_seconds()
-        if repeat:
-            timer = Timer(
-                interval=delay,
-                function=self._repeating_timer,
-                args=[label, alert_time, interval, stop_time])
-        else:
-            timer = Timer(
-                interval=delay,
-                function=self._raise_time_event,
-                args=[label, alert_time])
-
-        timer.start()
-        self._timers[label] = timer
-        self.log.info(
-            (f"Set timer for {label} with interval {interval}, "
-             f"starting at {start_time}, stopping at {stop_time}, repeat={repeat}."))
-
-    cpdef cancel_timer(self, Label label):
-        """
-        Cancel the timer corresponding to the given unique label.
-
-        :param label: The label for the timer to cancel.
-        :raises KeyError: If the label is not found in the internal timers.
-        """
-        Precondition.true(label in self._timers, 'label in self._timers')
-
-        self._timers[label].cancel()
-        del self._timers[label]
-        self.log.info(f"Cancelled timer for {label}.")
 
     cpdef OrderId generate_order_id(self, Symbol symbol):
         """
@@ -848,6 +725,82 @@ cdef class TradeStrategy:
                 position.quantity)
             self.submit_order(order, position_id)
 
+    cpdef set_time_alert(
+            self,
+            Label label,
+            datetime alert_time):
+        """
+        Set a time alert for the given time. When the time is reached and the
+        strategy is running, on_event() is passed the TimeEvent containing the
+        alerts unique label.
+
+        Note: The timer thread will begin immediately.
+
+        :param label: The label for the alert (must be unique).
+        :param alert_time: The time for the alert.
+        :raises ValueError: If the label is not a valid string.
+        :raises ValueError: If the label is not unique for this strategy.
+        :raises ValueError: If the alert_time is not > than the current time (UTC).
+        """
+        self.clock.set_time_alert(label, alert_time, self._update_events)
+        self.log.info(f"Set time alert for {label} at {alert_time}.")
+
+    cpdef cancel_time_alert(self, Label label):
+        """
+        Cancel the time alert corresponding to the given label.
+
+        :param label: The label for the alert to cancel.
+        :raises ValueError: If the label is not a valid string.
+        :raises KeyError: If the label is not found in the internal timers.
+        """
+        self.clock.cancel_time_alert(label)
+        self.log.info(f"Cancelled time alert for {label}.")
+
+    cpdef set_timer(
+            self,
+            Label label,
+            timedelta interval,
+            datetime start_time,
+            datetime stop_time,
+            bint repeat):
+        """
+        Set a timer with the given interval (time delta). The timer will run from
+        the start time (optionally until the stop time). When the interval is
+        reached and the strategy is running, the on_event() is passed the
+        TimeEvent containing the timers unique label.
+
+        Optionally the timer can be run repeatedly whilst the strategy is running.
+
+        Note: The timer thread will begin immediately.
+
+        :param label: The label for the timer (must be unique).
+        :param interval: The time delta interval for the timer.
+        :param start_time: The start time for the timer (can be None, then starts immediately).
+        :param stop_time: The stop time for the timer (can be None).
+        :param repeat: The option for the timer to repeat until the strategy is stopped
+        :raises ValueError: If the label is not a valid string.
+        :raises KeyError: If the label is not unique.
+        :raises ValueError: If the start_time is not None and not >= the current time (UTC).
+        :raises ValueError: If the stop_time is not None and repeat is False.
+        :raises ValueError: If the stop_time is not None and not > than the start_time.
+        :raises ValueError: If the stop_time is not None and start_time plus interval is greater
+        than the stop_time.
+        """
+        self.clock.set_timer(label, interval, start_time, stop_time, repeat, self._update_events)
+        self.log.info(
+            (f"Set timer for {label} with interval {interval}, "
+             f"starting at {start_time}, stopping at {stop_time}, repeat={repeat}."))
+
+    cpdef cancel_timer(self, Label label):
+        """
+        Cancel the timer corresponding to the given unique label.
+
+        :param label: The label for the timer to cancel.
+        :raises KeyError: If the label is not found in the internal timers.
+        """
+        self.clock.cancel_timer(label)
+        self.log.info(f"Cancelled timer for {label}.")
+
     cpdef void _register_data_client(self, DataClient client):
         """
         Register the strategy with the given data client.
@@ -965,40 +918,3 @@ cdef class TradeStrategy:
 
         if self.is_running:
             self.on_event(event)
-
-    cpdef void _raise_time_event(self, Label label, datetime alert_time):
-        """
-        Create a new TimeEvent and pass it into _update_events().
-        """
-        self.log.debug(f"Raising time event for {label}.")
-        self._update_events(TimeEvent(label, GUID(uuid.uuid4()), alert_time))
-        del self._timers[label]
-
-    # Cannot convert below method to Python callable if cdef
-    cpdef void _repeating_timer(
-            self,
-            Label label,
-            datetime alert_time,
-            timedelta interval,
-            datetime stop_time):
-        """
-        Create a new TimeEvent and pass it into _update_events().
-        Then start a timer for the next time event.
-        """
-        self._update_events(TimeEvent(label, GUID(uuid.uuid4()), alert_time))
-
-        if stop_time is not None and alert_time + interval >= stop_time:
-            self.log.info(f"Stop time reached for timer {label}.")
-            self._timers[label].cancel()
-            del self._timers[label]
-            return
-
-        next_alert_time = alert_time + interval
-        delay = (next_alert_time - self.clock.time_now()).total_seconds()
-        timer = Timer(
-            interval=delay,
-            function=self._repeating_timer,
-            args=[label, next_alert_time, interval, stop_time])
-        timer.start()
-        self._timers[label] = timer
-        self.log.debug(f"Continuing timer for {label}...")

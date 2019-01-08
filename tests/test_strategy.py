@@ -505,12 +505,12 @@ class TradeStrategyTests(unittest.TestCase):
         exec_client.register_strategy(strategy)
 
         start_time = datetime.now(timezone.utc) + timedelta(milliseconds=100)
-        strategy.set_timer(Label("test_timer1"), timedelta(milliseconds=100), start_time, None, None)
+        strategy.set_timer(Label("test_timer2"), timedelta(milliseconds=100), start_time, None, None)
 
         # Act
         strategy.start()
         time.sleep(0.1)
-        strategy.cancel_timer(Label("test_timer1"))
+        strategy.cancel_timer(Label("test_timer2"))
         time.sleep(0.5)
         strategy.stop()
 
@@ -524,7 +524,7 @@ class TradeStrategyTests(unittest.TestCase):
         exec_client.register_strategy(strategy)
 
         start_time = datetime.now(timezone.utc) + timedelta(milliseconds=100)
-        strategy.set_timer(Label("test_timer1"), timedelta(milliseconds=100), start_time, None, None)
+        strategy.set_timer(Label("test_timer3"), timedelta(milliseconds=100), start_time, None, None)
 
         # Act
         strategy.start()
@@ -541,7 +541,7 @@ class TradeStrategyTests(unittest.TestCase):
         exec_client.register_strategy(strategy)
 
         start_time = datetime.now(timezone.utc) + timedelta(milliseconds=100)
-        strategy.set_timer(Label("test_timer1"), timedelta(milliseconds=100), start_time, None, repeat=True)
+        strategy.set_timer(Label("test_timer4"), timedelta(milliseconds=100), start_time, None, repeat=True)
 
         # Act
         strategy.start()
@@ -561,12 +561,12 @@ class TradeStrategyTests(unittest.TestCase):
 
         start_time = datetime.now(timezone.utc) + timedelta(milliseconds=100)
         stop_time = start_time + timedelta(seconds=1)
-        strategy.set_timer(Label("test_timer1"), timedelta(milliseconds=100), start_time, stop_time, repeat=True)
+        strategy.set_timer(Label("test_timer5"), timedelta(milliseconds=100), start_time, stop_time, repeat=True)
 
         # Act
         strategy.start()
         time.sleep(0.55)
-        strategy.cancel_timer(Label("test_timer1"))
+        strategy.cancel_timer(Label("test_timer5"))
         strategy.stop()
 
         # Assert
@@ -579,8 +579,8 @@ class TradeStrategyTests(unittest.TestCase):
         exec_client.register_strategy(strategy)
 
         start_time = datetime.now(timezone.utc) + timedelta(milliseconds=100)
-        strategy.set_timer(Label("test_timer1"), timedelta(milliseconds=100), start_time, None, True)
-        strategy.set_timer(Label("test_timer2"), timedelta(milliseconds=100), start_time, None, True)
+        strategy.set_timer(Label("test_timer6"), timedelta(milliseconds=100), start_time, None, True)
+        strategy.set_timer(Label("test_timer7"), timedelta(milliseconds=100), start_time, None, True)
 
         # Act
         strategy.start()

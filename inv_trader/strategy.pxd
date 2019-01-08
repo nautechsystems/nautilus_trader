@@ -103,5 +103,3 @@ cdef class TradeStrategy:
     cpdef void _update_bars(self, BarType bar_type, Bar bar)
     cpdef void _update_indicators(self, BarType bar_type, Bar bar)
     cpdef void _update_events(self, Event event)
-    cpdef void _raise_time_event(self, Label label, datetime alert_time)
-    cpdef void _repeating_timer(self, Label label, datetime alert_time, timedelta interval, datetime stop_time)

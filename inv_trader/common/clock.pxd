@@ -10,7 +10,7 @@
 # cython: language_level=3, boundscheck=False
 
 from cpython.datetime cimport datetime, timedelta
-
+from inv_trader.model.identifiers cimport Label
 
 cdef class Clock:
     """
@@ -18,11 +18,38 @@ cdef class Clock:
     """
     cdef readonly object timezone
     cdef datetime _unix_epoch
+    cdef dict _timers
 
     cpdef datetime time_now(self)
     cpdef datetime unix_epoch(self)
     cdef long milliseconds_since_unix_epoch(self)
-
+    cpdef set_time_alert(
+            self,
+            Label label,
+            datetime alert_time,
+            handler)
+    cpdef cancel_time_alert(self, Label label)
+    cpdef set_timer(
+            self,
+            Label label,
+            timedelta interval,
+            datetime start_time,
+            datetime stop_time,
+            bint repeat,
+            handler)
+    cpdef cancel_timer(self, Label label)
+    cpdef list get_labels(self)
+    cpdef stop_all_timers(self)
+    cpdef void _raise_time_event(
+            self,
+            Label label,
+            datetime alert_time)
+    cpdef void _repeating_timer(
+            self,
+            Label label,
+            datetime alert_time,
+            timedelta interval,
+            datetime stop_time)
 
 cdef class LiveClock(Clock):
     """
