@@ -14,28 +14,22 @@ from cpython.datetime cimport datetime, timedelta
 
 from inv_trader.core.precondition cimport Precondition
 
+# Unix epoch is the UTC time at 00:00:00 on 1/1/1970
+cdef datetime UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc)
 cdef int MILLISECONDS_PER_SECOND = 1000
 
 
 cdef class Clock:
     """
-    The abstract base class for all clocks.
+    The abstract base class for all clocks. All times are timezone aware UTC.
     """
 
-    def __init__(self, timezone: timezone=timezone.utc):
+    def __init__(self):
         """
         Initializes a new instance of the Clock class.
-
-        :param timezone: The timezone for the clock.
         """
-        self._timezone = timezone
-        self._unix_epoch = datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc)
-
-    cpdef object get_timezone(self):
-        """
-        :return: The current timezone of the clock.
-        """
-        return self._timezone
+        self.timezone = timezone.utc
+        self._unix_epoch = UNIX_EPOCH
 
     cpdef datetime time_now(self):
         """
@@ -68,19 +62,17 @@ cdef class LiveClock(Clock):
     Implements a clock for live trading.
     """
 
-    def __init__(self, timezone: timezone=timezone.utc):
+    def __init__(self):
         """
         Initializes a new instance of the LiveClock class.
-
-        :param timezone: The timezone for the clock.
         """
-        super().__init__(timezone=timezone)
+        super().__init__()
 
     cpdef datetime time_now(self):
         """
         :return: The current time of the clock.
         """
-        return datetime.now(self._timezone)
+        return datetime.now(self.timezone)
 
 
 cdef class TestClock(Clock):
@@ -89,16 +81,14 @@ cdef class TestClock(Clock):
     """
 
     def __init__(self,
-                 timezone: timezone=timezone.utc,
-                 datetime initial_time=datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc),
+                 datetime initial_time=UNIX_EPOCH,
                  timedelta time_step=timedelta(seconds=1)):
         """
         Initializes a new instance of the TestClock class.
 
-        :param initial_time: The initialized time for the clock.
-        :param timezone: The timezone for the clock.
+        :param initial_time: The initial time for the clock.
         """
-        super().__init__(timezone=timezone)
+        super().__init__()
         self._time = initial_time
         self.time_step = time_step
 
@@ -118,8 +108,8 @@ cdef class TestClock(Clock):
         """
         Set the clocks internal time with the given time.
         
-        :raises ValueError: If the given times timezone does not equal the clocks timezone.
+        :raises ValueError: If the given times timezone is not UTC.
         """
-        Precondition.equal(time.tzinfo, self._time.tzinfo)
+        Precondition.equal(time.tzinfo, self.timezone)
 
         self._time = time
