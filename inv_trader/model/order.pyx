@@ -9,14 +9,12 @@
 
 # cython: language_level=3, boundscheck=False
 
-import datetime as dt
-
 from cpython.datetime cimport datetime
-from datetime import timezone
 from typing import Dict, List
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.core.decimal cimport Decimal
+from inv_trader.common.clock cimport Clock, LiveClock
 from inv_trader.enums.order_side cimport OrderSide, order_side_string
 from inv_trader.enums.order_type cimport OrderType, order_type_string
 from inv_trader.enums.order_status cimport OrderStatus
@@ -271,26 +269,28 @@ cdef class Order:
             self.status = OrderStatus.OVER_FILLED
 
 
-# Unix epoch is the UTC time at 00:00:00 on 1/1/1970
-cdef datetime UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc)
-cdef str SEPARATOR = '-'
-cdef int MILLISECONDS_PER_SECOND = 1000
-
-
 cdef class OrderIdGenerator:
     """
     Provides a generator for unique order identifiers.
     """
 
-    def __init__(self, str order_id_tag):
+    def __init__(self,
+                 str order_id_tag,
+                 str separator='-',
+                 Clock clock=LiveClock()):
         """
-        Initializes a new instance of the OrderIdentifierFactory class.
+        Initializes a new instance of the OrderIdGenerator class.
 
         :param order_id_tag: The generators unique order identifier tag.
+        :param separator: The separator symbol for order ids.
+        :param clock: The internal clock.
         :raises ValueError: If the order_id_tag is not a valid string.
         """
         Precondition.valid_string(order_id_tag, 'order_id_tag')
+        Precondition.valid_string(separator, 'separator')
 
+        self._clock = clock
+        self._separator = separator
         self._order_id_tag = order_id_tag
         self._order_symbol_counts = {}  # type: Dict[Symbol, int]
         self._order_ids = []            # type: List[OrderId]
@@ -306,13 +306,13 @@ cdef class OrderIdGenerator:
             self._order_symbol_counts[order_symbol] = 0
 
         self._order_symbol_counts[order_symbol] += 1
-        cdef str milliseconds = str(OrderIdGenerator._milliseconds_since_unix_epoch())
+        cdef str milliseconds = str(self._clock.milliseconds_since_unix_epoch())
         cdef str order_count = str(self._order_symbol_counts[order_symbol])
         cdef OrderId order_id = OrderId(str(order_symbol.code)
-                                       + SEPARATOR + order_symbol.venue_string()
-                                       + SEPARATOR + order_count
-                                       + SEPARATOR + self._order_id_tag
-                                       + SEPARATOR + milliseconds)
+                                       + self._separator + order_symbol.venue_string()
+                                       + self._separator + order_count
+                                       + self._separator + self._order_id_tag
+                                       + self._separator + milliseconds)
 
         if order_id in self._order_ids:
             # TODO: Consider re-try counter
@@ -320,20 +320,19 @@ cdef class OrderIdGenerator:
         self._order_ids.append(order_id)
         return order_id
 
-    @staticmethod
-    cdef long _milliseconds_since_unix_epoch():
-        """
-        Returns the number of ticks of the given time now since the Unix Epoch.
-
-        :return: The milliseconds since the Unix Epoch.
-        """
-        return (dt.datetime.now(timezone.utc) - UNIX_EPOCH).total_seconds() * MILLISECONDS_PER_SECOND
-
 
 cdef class OrderFactory:
     """
     A factory class which provides different order types.
     """
+
+    def __init__(self, Clock clock=LiveClock()):
+        """
+        Initializes a new instance of the OrderFactory class.
+
+        :param clock: The internal clock.
+        """
+        self._clock = clock
 
     cpdef Order market(
             self,
@@ -359,7 +358,7 @@ cdef class OrderFactory:
                      order_side,
                      OrderType.MARKET,
                      quantity,
-                     dt.datetime.now(timezone.utc),
+                     self._clock.time_now(),
                      price=None,
                      time_in_force=TimeInForce.DAY,
                      expire_time=None)
@@ -400,7 +399,7 @@ cdef class OrderFactory:
                      order_side,
                      OrderType.LIMIT,
                      quantity,
-                     dt.datetime.now(timezone.utc),
+                     self._clock.time_now(),
                      price,
                      time_in_force,
                      expire_time)
@@ -441,7 +440,7 @@ cdef class OrderFactory:
                      order_side,
                      OrderType.STOP_MARKET,
                      quantity,
-                     dt.datetime.now(timezone.utc),
+                     self._clock.time_now(),
                      price,
                      time_in_force,
                      expire_time)
@@ -482,7 +481,7 @@ cdef class OrderFactory:
                      order_side,
                      OrderType.STOP_LIMIT,
                      quantity,
-                     dt.datetime.now(timezone.utc),
+                     self._clock.time_now(),
                      price,
                      time_in_force,
                      expire_time)
@@ -523,7 +522,7 @@ cdef class OrderFactory:
                      order_side,
                      OrderType.MIT,
                      quantity,
-                     dt.datetime.now(timezone.utc),
+                     self._clock.time_now(),
                      price,
                      time_in_force,
                      expire_time)
@@ -552,7 +551,7 @@ cdef class OrderFactory:
                      order_side,
                      OrderType.MARKET,
                      quantity,
-                     dt.datetime.now(timezone.utc),
+                     self._clock.time_now(),
                      price=None,
                      time_in_force=TimeInForce.FOC,
                      expire_time=None)
@@ -581,7 +580,7 @@ cdef class OrderFactory:
                      order_side,
                      OrderType.MARKET,
                      quantity,
-                     dt.datetime.now(timezone.utc),
+                     self._clock.time_now(),
                      price=None,
                      time_in_force=TimeInForce.IOC,
                      expire_time=None)

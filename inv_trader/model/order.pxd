@@ -12,6 +12,7 @@
 from cpython.datetime cimport datetime
 
 from inv_trader.core.decimal cimport Decimal
+from inv_trader.common.clock cimport Clock
 from inv_trader.model.objects cimport Symbol
 from inv_trader.model.events cimport OrderEvent
 from inv_trader.model.identifiers cimport Label, OrderId
@@ -55,19 +56,21 @@ cdef class OrderIdGenerator:
     """
     Provides a generator for unique order identifiers.
     """
+    cdef Clock _clock
+    cdef str _separator
     cdef str _order_id_tag
     cdef dict _order_symbol_counts
     cdef list _order_ids
 
     cpdef OrderId generate(self, Symbol order_symbol)
-    @staticmethod
-    cdef long _milliseconds_since_unix_epoch()
 
 
 cdef class OrderFactory:
     """
     A factory class which provides different order types.
     """
+    cdef Clock _clock
+
     cpdef Order market(
             self,
             Symbol symbol,

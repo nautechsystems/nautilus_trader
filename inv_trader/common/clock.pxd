@@ -22,6 +22,7 @@ cdef class Clock:
     cpdef object get_timezone(self)
     cpdef datetime time_now(self)
     cpdef datetime unix_epoch(self)
+    cdef long milliseconds_since_unix_epoch(self)
 
 
 cdef class LiveClock(Clock):

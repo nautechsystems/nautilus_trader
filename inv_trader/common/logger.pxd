@@ -9,6 +9,8 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False
 
+from inv_trader.common.clock cimport Clock
+
 
 cdef class Logger:
     """
@@ -20,6 +22,7 @@ cdef class Logger:
     cdef bint _log_to_file
     cdef str _log_file
     cdef object _logger
+    cdef Clock _clock
 
     cpdef void debug(self, str message)
     cpdef void info(self, str message)
