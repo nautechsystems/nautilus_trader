@@ -16,10 +16,9 @@ cdef class Clock:
     """
     The abstract base class for all clocks.
     """
-    cdef object _timezone
+    cdef readonly object timezone
     cdef datetime _unix_epoch
 
-    cpdef object get_timezone(self)
     cpdef datetime time_now(self)
     cpdef datetime unix_epoch(self)
     cdef long milliseconds_since_unix_epoch(self)

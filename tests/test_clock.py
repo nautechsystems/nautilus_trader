@@ -18,12 +18,12 @@ class ClockTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
-        self.clock = Clock(timezone.utc)
+        self.clock = Clock()
 
     def test_timezone(self):
         # Arrange
         # Act
-        result = self.clock.get_timezone()
+        result = self.clock.timezone
 
         # Assert
         self.assertEqual(timezone.utc, result)
@@ -40,7 +40,7 @@ class LiveClockTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
-        self.clock = LiveClock(timezone.utc)
+        self.clock = LiveClock()
 
     def test_time_now(self):
         # Arrange
@@ -55,7 +55,7 @@ class TestClockTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
-        self.clock = TestClock(timezone.utc)
+        self.clock = TestClock()
 
     def test_time_now(self):
         # Arrange
