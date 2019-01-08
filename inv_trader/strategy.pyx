@@ -10,7 +10,6 @@
 # cython: language_level=3, boundscheck=False
 
 import uuid
-import datetime as dt
 
 from cpython.datetime cimport datetime, timedelta
 from collections import deque
@@ -22,6 +21,7 @@ from inv_trader.core.precondition cimport Precondition
 from inv_trader.core.decimal cimport Decimal
 from inv_trader.enums.order_side cimport OrderSide
 from inv_trader.enums.market_position cimport MarketPosition
+from inv_trader.common.clock cimport Clock, LiveClock
 from inv_trader.common.logger cimport Logger, LoggerAdapter
 from inv_trader.common.execution cimport ExecutionClient
 from inv_trader.common.data cimport DataClient
@@ -46,6 +46,7 @@ cdef class TradeStrategy:
                  str label='0',
                  str order_id_tag='0',
                  int bar_capacity=1000,
+                 Clock clock=LiveClock(),
                  Logger logger=None):
         """
         Initializes a new instance of the TradeStrategy abstract class.
@@ -53,6 +54,7 @@ cdef class TradeStrategy:
         :param label: The optional unique label for the strategy.
         :param order_id_tag: The optional unique order identifier tag for the strategy.
         :param bar_capacity: The capacity for the internal bar deque(s).
+        :param clock: The internal clock for the strategy.
         :param logger: The logger (can be None, and will print).
         :raises ValueError: If the label is not a valid string.
         :raises ValueError: If the order_id_tag is not a valid string.
@@ -62,6 +64,7 @@ cdef class TradeStrategy:
         Precondition.valid_string(order_id_tag, 'order_id_tag')
         Precondition.positive(bar_capacity, 'bar_capacity')
 
+        self.clock = clock
         if logger is None:
             self.log = LoggerAdapter(f"{self.name}-{self.label}")
         else:
@@ -175,15 +178,6 @@ cdef class TradeStrategy:
         """
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
-
-    @property
-    def time_now(self) -> datetime:
-        """
-        Get the current UTC time.
-
-        :return: The current UTC time (timezone and offset aware).
-        """
-        return dt.datetime.now(timezone.utc)
 
     @property
     def all_indicators(self) -> Dict[BarType, List[Indicator]]:
@@ -338,8 +332,8 @@ cdef class TradeStrategy:
         :raises ValueError: If the from_datetime is not less than datetime.utcnow().
         """
         Precondition.not_none(self._data_client, 'data_client')
-        Precondition.true(from_datetime < dt.datetime.now(timezone.utc),
-                          'from_datetime < datetime.now(timezone.utc)')
+        Precondition.true(from_datetime < self.clock.time_now(),
+                          'from_datetime < self.clock.time_now()')
 
         self._data_client.historical_bars_from(bar_type, from_datetime, self._update_bars)
 
@@ -576,11 +570,11 @@ cdef class TradeStrategy:
         :raises ValueError: If the label is not unique for this strategy.
         :raises ValueError: If the alert_time is not > than the current time (UTC).
         """
-        Precondition.true(alert_time > datetime.now(timezone.utc), 'alert_time > datetime.utcnow()')
+        Precondition.true(alert_time > self.clock.time_now(), 'self.clock.time_now()')
         Precondition.true(label not in self._timers, 'label NOT in self._timers')
 
         timer = Timer(
-            interval=(alert_time - datetime.now(timezone.utc)).total_seconds(),
+            interval=(alert_time - self.clock.time_now()).total_seconds(),
             function=self._raise_time_event,
             args=[label, alert_time])
 
@@ -633,10 +627,10 @@ cdef class TradeStrategy:
         than the stop_time.
         """
         if start_time is not None:
-            Precondition.true(start_time >= dt.datetime.now(timezone.utc),
-                              'start_time >= datetime.utcnow()')
+            Precondition.true(start_time >= self.clock.time_now(),
+                              'start_time >= self.clock.time_now()')
         else:
-            start_time = dt.datetime.now(timezone.utc)
+            start_time = self.clock.time_now()
         if stop_time is not None:
             Precondition.true(repeat, 'repeat True')
             Precondition.true(stop_time > start_time, 'stop_time > start_time')
@@ -648,7 +642,7 @@ cdef class TradeStrategy:
                 f"Cannot set timer (the label {label} was not unique for this strategy).")
 
         cdef datetime alert_time = start_time + interval
-        cdef float delay = (alert_time - dt.datetime.now(timezone.utc)).total_seconds()
+        cdef float delay = (alert_time - self.clock.time_now()).total_seconds()
         if repeat:
             timer = Timer(
                 interval=delay,
@@ -1000,7 +994,7 @@ cdef class TradeStrategy:
             return
 
         next_alert_time = alert_time + interval
-        delay = (next_alert_time - dt.datetime.now(timezone.utc)).total_seconds()
+        delay = (next_alert_time - self.clock.time_now()).total_seconds()
         timer = Timer(
             interval=delay,
             function=self._repeating_timer,

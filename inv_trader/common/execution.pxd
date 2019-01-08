@@ -10,6 +10,7 @@
 # cython: language_level=3, boundscheck=False, wraparound=False
 
 from inv_trader.core.decimal cimport Decimal
+from inv_trader.common.clock cimport Clock
 from inv_trader.common.logger cimport LoggerAdapter
 from inv_trader.model.account cimport Account
 from inv_trader.model.events cimport Event
@@ -22,7 +23,8 @@ cdef class ExecutionClient:
     """
     The abstract base class for all execution clients.
     """
-    cdef readonly LoggerAdapter _log
+    cdef Clock _clock
+    cdef LoggerAdapter _log
     cdef dict _registered_strategies
     cdef dict _order_index
 

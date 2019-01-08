@@ -11,6 +11,7 @@
 
 from cpython.datetime cimport datetime
 
+from inv_trader.common.clock cimport Clock
 from inv_trader.common.logger cimport LoggerAdapter
 from inv_trader.model.objects cimport Symbol, BarType, Instrument
 from inv_trader.strategy cimport TradeStrategy
@@ -20,6 +21,7 @@ cdef class DataClient:
     """
     The abstract base class for all data clients.
     """
+    cdef Clock _clock
     cdef LoggerAdapter _log
     cdef list _subscriptions_bars
     cdef list _subscriptions_ticks

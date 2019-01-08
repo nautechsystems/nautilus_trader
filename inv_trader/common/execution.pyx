@@ -13,6 +13,7 @@ from typing import Dict
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.core.decimal cimport Decimal
+from inv_trader.common.clock cimport Clock, LiveClock
 from inv_trader.common.logger cimport Logger, LoggerAdapter
 from inv_trader.model.account cimport Account
 from inv_trader.model.order cimport Order
@@ -28,12 +29,16 @@ cdef class ExecutionClient:
     The abstract base class for all execution clients.
     """
 
-    def __init__(self, Logger logger=None):
+    def __init__(self,
+                 Clock clock=LiveClock(),
+                 Logger logger=None):
         """
         Initializes a new instance of the ExecutionClient class.
 
-        :param logger: The logging adapter for the component.
+        :param clock: The internal clock.
+        :param logger: The internal logger.
         """
+        self._clock = clock
         if logger is None:
             self._log = LoggerAdapter(f"ExecClient")
         else:
