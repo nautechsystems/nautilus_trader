@@ -45,7 +45,7 @@ cdef class DataClient:
         """
         :return: All instrument symbols held by the data client.
         """
-        symbols = []
+        cdef list symbols = []
         for symbol in self._instruments:
             symbols.append(symbol)
 
@@ -55,7 +55,7 @@ cdef class DataClient:
         """
         :return: All instruments held by the data client.
         """
-        instruments = []
+        cdef list instruments = []
         for instrument in self._instruments.values():
             instruments.append(instrument)
 

@@ -38,6 +38,7 @@ REQUIREMENTS = ['cython',
 
 # Embed docstrings in extensions
 Options.embed_pos_in_docstring = True
+Options.warning_errors = True
 
 
 # Recursively scan given directories
@@ -82,6 +83,6 @@ setup(
     packages=setuptools.find_packages(),
     license=LICENSE,
     requires=REQUIREMENTS,
-    ext_modules=cythonize(extensions, compiler_directives={'embedsignature': True}),
+    ext_modules=cythonize(extensions),
     cmdclass={'build_ext': Cython.Build.build_ext},
     options={'build_ext': {'inplace': False, 'force': False}})
