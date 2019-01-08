@@ -31,7 +31,8 @@ cpdef enum CurrencyCode:
     XAG = 961,
     XPT = 962,
     XAU = 959,
-    ZAR = 710
+    ZAR = 710,
+    UNKNOWN = -1
 
 cdef inline str currency_code_string(int value):
     if value == 36:
@@ -76,5 +77,7 @@ cdef inline str currency_code_string(int value):
         return "XAU"
     elif value == 710:
         return "ZAR"
+    elif value == -1:
+        return "UNKNOWN"
     else:
         return "UNKNOWN"

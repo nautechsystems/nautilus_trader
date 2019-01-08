@@ -12,6 +12,8 @@
 import datetime as dt
 
 from inv_trader.core.decimal cimport Decimal
+from inv_trader.enums.brokerage cimport Broker
+from inv_trader.enums.currency_code cimport CurrencyCode
 from inv_trader.model.events cimport AccountEvent
 from inv_trader.model.objects import Money
 
@@ -27,7 +29,9 @@ cdef class Account:
         """
         self.initialized = False
         self.id = None
+        self.broker = Broker.UNKNOWN
         self.account_number = None
+        self.currency = CurrencyCode.UNKNOWN
         self.cash_balance = Money.zero()
         self.cash_start_day = Money.zero()
         self.cash_activity_day = Money.zero()
@@ -35,6 +39,7 @@ cdef class Account:
         self.margin_used_maintenance = Money.zero()
         self.margin_ratio = Money.zero()
         self.margin_call_status = ""
+        self.free_equity = Money.zero()
         self.last_updated = dt.datetime.utcnow()
         self.events = []
 
@@ -68,13 +73,6 @@ cdef class Account:
         """
         return f"<{str(self)} object at {id(self)}>"
 
-    @property
-    def free_equity(self) -> Decimal:
-        """
-        :return: The accounts free equity after used margin.
-        """
-        return self._calculate_free_equity()
-
     cpdef void apply(self, AccountEvent event):
         """
         Applies the given account event to the account.
@@ -95,15 +93,7 @@ cdef class Account:
         self.margin_used_maintenance = event.margin_used_maintenance
         self.margin_ratio = event.margin_ratio
         self.margin_call_status = event.margin_call_status
+        self.free_equity = Decimal(max(self.cash_balance - (self.margin_used_maintenance + self.margin_used_liquidation), 0))
 
         self.events.append(event)
         self.last_updated = event.timestamp
-
-    cdef object _calculate_free_equity(self):
-        """
-        Calculate the free equity for this account.
-        
-        :return: The free equity (Decimal).
-        """
-        cdef Decimal margin_used = self.margin_used_maintenance + self.margin_used_liquidation
-        return Decimal(max(self.cash_balance - margin_used, 0))

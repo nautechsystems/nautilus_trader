@@ -28,6 +28,7 @@ cdef class Account:
     cdef readonly Broker broker
     cdef readonly AccountNumber account_number
     cdef readonly CurrencyCode currency
+    cdef readonly Decimal free_equity
     cdef readonly Decimal cash_balance
     cdef readonly Decimal cash_start_day
     cdef readonly Decimal cash_activity_day
@@ -39,4 +40,3 @@ cdef class Account:
     cdef readonly list events
 
     cpdef void apply(self, AccountEvent event)
-    cdef object _calculate_free_equity(self)
