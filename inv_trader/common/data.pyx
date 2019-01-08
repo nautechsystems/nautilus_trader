@@ -13,6 +13,7 @@ from cpython.datetime cimport datetime
 from typing import List, Dict, Callable
 
 from inv_trader.core.precondition cimport Precondition
+from inv_trader.common.clock cimport Clock, LiveClock
 from inv_trader.common.logger cimport Logger, LoggerAdapter
 from inv_trader.model.objects cimport Symbol, BarType, Instrument
 from inv_trader.strategy cimport TradeStrategy
@@ -24,10 +25,16 @@ cdef class DataClient:
     The abstract base class for all data clients.
     """
 
-    def __init__(self, Logger logger=None):
+    def __init__(self,
+                 Clock clock=LiveClock(),
+                 Logger logger=None):
         """
         Initializes a new instance of the DataClient class.
+
+        :param clock: The internal clock.
+        :param logger: The internal logger.
         """
+        self._clock = clock
         if logger is None:
             self._log = LoggerAdapter(f"DataClient")
         else:

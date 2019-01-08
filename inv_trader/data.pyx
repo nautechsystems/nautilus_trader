@@ -21,6 +21,7 @@ from typing import List, Dict, Callable
 
 from inv_trader.core.decimal cimport Decimal
 from inv_trader.core.precondition cimport Precondition
+from inv_trader.common.clock cimport Clock, LiveClock
 from inv_trader.common.logger cimport Logger
 from inv_trader.common.data cimport DataClient
 from inv_trader.common.serialization import InstrumentSerializer
@@ -47,12 +48,14 @@ cdef class LiveDataClient(DataClient):
     def __init__(self,
                  str host='localhost',
                  int port=6379,
+                 Clock clock=LiveClock(),
                  Logger logger=None):
         """
         Initializes a new instance of the DataClient class.
 
         :param host: The data service host IP address (default=127.0.0.1).
         :param port: The data service port (default=6379).
+        :param clock: The internal clock for the component.
         :param logger: The logging adapter for the component.
         :raises ValueError: If the host is not a valid string.
         :raises ValueError: If the port is not in range [0, 65535]
@@ -60,7 +63,7 @@ cdef class LiveDataClient(DataClient):
         Precondition.valid_string(host, 'host')
         Precondition.in_range(port, 'port', 0, 65535)
 
-        super().__init__(logger)
+        super().__init__(clock, logger)
         self._host = host
         self._port = port
         self._redis_client = None

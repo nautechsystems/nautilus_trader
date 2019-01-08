@@ -12,6 +12,7 @@
 from cpython.datetime cimport datetime, timedelta
 
 from inv_trader.core.decimal cimport Decimal
+from inv_trader.common.clock cimport Clock
 from inv_trader.common.logger cimport LoggerAdapter
 from inv_trader.common.execution cimport ExecutionClient
 from inv_trader.common.data cimport DataClient
@@ -40,6 +41,7 @@ cdef class TradeStrategy:
     cdef dict _indicator_index
     cdef OrderIdGenerator _order_id_generator
 
+    cdef readonly Clock clock
     cdef readonly LoggerAdapter log
     cdef readonly OrderFactory order_factory
     cdef readonly int bar_capacity
