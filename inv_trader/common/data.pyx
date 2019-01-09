@@ -52,21 +52,21 @@ cdef class DataClient:
         """
         :return: All instrument symbols held by the data client.
         """
-        cdef list symbols = []
-        for symbol in self._instruments:
-            symbols.append(symbol)
+        # cdef list symbols = []
+        # for symbol in self._instruments:
+        #     symbols.append(symbol)
 
-        return symbols
+        return list(self._instruments).copy()
 
     cpdef list instruments(self):
         """
         :return: All instruments held by the data client.
         """
-        cdef list instruments = []
-        for instrument in self._instruments.values():
-            instruments.append(instrument)
+        # cdef list instruments = []
+        # for instrument in self._instruments.values():
+        #     instruments.append(instrument)
 
-        return instruments
+        return list(self._instruments.values()).copy()
 
     cpdef list subscriptions_ticks(self):
         """
