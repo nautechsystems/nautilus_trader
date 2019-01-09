@@ -155,7 +155,7 @@ cdef class LiveClock(Clock):
         Cancel the time alert corresponding to the given label.
 
         :param label: The label for the alert to cancel.
-        :raises KeyError: If the label is not found in the internal timers.
+        :raises ValueError: If the label is not found in the internal timers.
         """
         Precondition.true(label in self._timers, 'label in self._timers')
 
@@ -186,7 +186,7 @@ cdef class LiveClock(Clock):
         :param stop_time: The stop time for the timer (can be None).
         :param repeat: The option for the timer to repeat until the strategy is stopped.
         :param handler: The handler method for the alert.
-        :raises KeyError: If the label is not unique.
+        :raises ValueError: If the label is not unique.
         :raises ValueError: If the start_time is not None and not >= the current time (UTC).
         :raises ValueError: If the stop_time is not None and repeat is False.
         :raises ValueError: If the stop_time is not None and not > than the start_time.
@@ -229,7 +229,7 @@ cdef class LiveClock(Clock):
         Cancel the timer corresponding to the given unique label.
 
         :param label: The label for the timer to cancel.
-        :raises KeyError: If the label is not found in the internal timers.
+        :raises ValueError: If the label is not found in the internal timers.
         """
         Precondition.true(label in self._timers, 'label in self._timers')
 
@@ -404,7 +404,7 @@ cdef class TestClock(Clock):
         Cancel the time alert corresponding to the given label.
 
         :param label: The label for the alert to cancel.
-        :raises KeyError: If the label is not found in the internal timers.
+        :raises ValueError: If the label is not found in the internal timers.
         """
         Precondition.true(label in self._timers, 'label in self._timers')
 
@@ -434,7 +434,7 @@ cdef class TestClock(Clock):
         :param stop_time: The stop time for the timer (can be None).
         :param repeat: The option for the timer to repeat until the strategy is stopped.
         :param handler: The handler method for the alert.
-        :raises KeyError: If the label is not unique.
+        :raises ValueError: If the label is not unique.
         :raises ValueError: If the start_time is not None and not >= the current time (UTC).
         :raises ValueError: If the stop_time is not None and repeat is False.
         :raises ValueError: If the stop_time is not None and not > than the start_time.
@@ -473,7 +473,7 @@ cdef class TestClock(Clock):
         Cancel the timer corresponding to the given unique label.
 
         :param label: The label for the timer to cancel.
-        :raises KeyError: If the label is not found in the internal timers.
+        :raises ValueError: If the label is not found in the internal timers.
         """
         Precondition.true(label in self._timers, 'label in self._timers')
 
