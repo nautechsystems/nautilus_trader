@@ -33,16 +33,15 @@ cdef class TradeStrategy:
     """
     The abstract base class for all trade strategies.
     """
+    cdef Clock _clock
+    cdef LoggerAdapter log
     cdef dict _timers
     cdef dict _ticks
     cdef dict _bars
     cdef dict _indicators
     cdef dict _indicator_updaters
-    cdef dict _indicator_index
     cdef OrderIdGenerator _order_id_generator
 
-    cdef readonly Clock clock
-    cdef readonly LoggerAdapter log
     cdef readonly OrderFactory order_factory
     cdef readonly int bar_capacity
     cdef readonly bint is_running
@@ -54,8 +53,9 @@ cdef class TradeStrategy:
     cdef readonly dict _position_book
     cdef readonly DataClient _data_client
     cdef readonly ExecutionClient _exec_client
-    cdef readonly Account _account
+    cdef Account account
 
+#-- ABSTRACT METHODS ----------------------------------------------------------#
     cpdef void on_start(self)
     cpdef void on_tick(self, Tick tick)
     cpdef void on_bar(self, BarType bar_type, Bar bar)
@@ -63,6 +63,10 @@ cdef class TradeStrategy:
     cpdef void on_stop(self)
     cpdef void on_reset(self)
 
+#-- DATA METHODS --------------------------------------------------------------#
+    cpdef readonly datetime time_now(self)
+    cpdef readonly list symbols(self)
+    cpdef readonly list instruments(self)
     cpdef Instrument get_instrument(self, Symbol symbol)
     cpdef void historical_bars(self, BarType bar_type, int quantity)
     cpdef void historical_bars_from(self, BarType bar_type, datetime from_datetime)
@@ -70,25 +74,36 @@ cdef class TradeStrategy:
     cpdef void unsubscribe_bars(self, BarType bar_type)
     cpdef void subscribe_ticks(self, Symbol symbol)
     cpdef void unsubscribe_ticks(self, Symbol symbol)
-
-    cpdef void start(self)
-    cpdef void stop(self)
-    cpdef void reset(self)
-    cpdef list indicators(self, BarType bar_type)
-    cpdef object indicator(self, str label)
     cpdef list bars(self, BarType bar_type)
     cpdef Bar bar(self, BarType bar_type, int index)
     cpdef Tick last_tick(self, Symbol symbol)
-    cpdef Order order(self, OrderId order_id)
-    cpdef Position position(self, PositionId position_id)
-    cpdef register_indicator(self, BarType bar_type, indicator, update_method, Label label)
+
+#-- INDICATOR METHODS ---------------------------------------------------------#
+    cpdef register_indicator(self, BarType bar_type, indicator, update_method)
+    cpdef list indicators(self, BarType bar_type)
+    cpdef readonly bint indicators_initialized(self, BarType bar_type)
+    cpdef readonly bint all_indicators_initialized(self)
+
+#-- ORDER MANAGEMENT METHODS --------------------------------------------------#
+    cpdef OrderId generate_order_id(self, Symbol symbol)
+    cpdef OrderSide get_opposite_side(self, OrderSide side)
+    cpdef get_flatten_side(self, MarketPosition market_position)
+    cpdef readonly Order order(self, OrderId order_id)
+    cpdef readonly Position position(self, PositionId position_id)
+    cpdef readonly dict active_orders(self)
+    cpdef readonly dict active_positions(self)
+    cpdef readonly dict completed_orders(self)
+    cpdef readonly dict completed_positions(self)
+    cpdef readonly bint is_flat(self)
+
+#-- COMMAND METHODS -----------------------------------------------------------#
+    cpdef void start(self)
+    cpdef void stop(self)
+    cpdef void reset(self)
     cpdef set_time_alert(self, Label label, datetime alert_time)
     cpdef cancel_time_alert(self, Label label)
     cpdef set_timer(self, Label label, timedelta interval, datetime start_time, datetime stop_time, bint repeat)
     cpdef cancel_timer(self, Label label)
-    cpdef OrderId generate_order_id(self, Symbol symbol)
-    cpdef OrderSide get_opposite_side(self, OrderSide side)
-    cpdef get_flatten_side(self, MarketPosition market_position)
     cpdef collateral_inquiry(self)
     cpdef submit_order(self, Order order, PositionId position_id)
     cpdef modify_order(self, Order order, Decimal new_price)
@@ -97,9 +112,12 @@ cdef class TradeStrategy:
     cpdef flatten_position(self, PositionId position_id)
     cpdef flatten_all_positions(self)
 
+#-- INTERNAL METHODS ----------------------------------------------------------#
     cpdef void _register_data_client(self, DataClient client)
     cpdef void _register_execution_client(self, ExecutionClient client)
     cpdef void _update_ticks(self, Tick tick)
     cpdef void _update_bars(self, BarType bar_type, Bar bar)
     cpdef void _update_indicators(self, BarType bar_type, Bar bar)
     cpdef void _update_events(self, Event event)
+
+    cdef void _change_clock(self, Clock clock)

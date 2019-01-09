@@ -24,7 +24,6 @@ from inv_trader.common.clock cimport Clock, LiveClock
 from inv_trader.common.logger cimport Logger, LoggerAdapter
 from inv_trader.common.execution cimport ExecutionClient
 from inv_trader.common.data cimport DataClient
-from inv_trader.model.account cimport Account
 from inv_trader.model.events cimport Event, AccountEvent, OrderEvent
 from inv_trader.model.events cimport OrderFilled, OrderPartiallyFilled
 from inv_trader.model.identifiers cimport GUID, Label, OrderId, PositionId
@@ -63,7 +62,7 @@ cdef class TradeStrategy:
         Precondition.valid_string(order_id_tag, 'order_id_tag')
         Precondition.positive(bar_capacity, 'bar_capacity')
 
-        self.clock = clock
+        self._clock = clock
         if logger is None:
             self.log = LoggerAdapter(f"{self.name}-{self.label}")
         else:
@@ -79,13 +78,12 @@ cdef class TradeStrategy:
         self._bars = {}                  # type: Dict[BarType, Deque[Bar]]
         self._indicators = {}            # type: Dict[BarType, List[Indicator]]
         self._indicator_updaters = {}    # type: Dict[BarType, List[IndicatorUpdater]]
-        self._indicator_index = {}       # type: Dict[Label, Indicator]
         self._order_book = {}            # type: Dict[OrderId, Order]
         self._order_position_index = {}  # type: Dict[OrderId, PositionId]
         self._position_book = {}         # type: Dict[PositionId, Position or None]
         self._data_client = None
         self._exec_client = None
-        self._account = None  # Initialized when registered with execution client.
+        self.account = None  # Initialized when registered with execution client.
 
         self.log.info(f"Initialized.")
 
@@ -122,6 +120,7 @@ cdef class TradeStrategy:
         """
         return f"<{str(self)} object at {id(self)}>"
 
+#-- ABSTRACT METHODS ----------------------------------------------------------#
     # @abc.abstractmethod
     cpdef void on_start(self):
         """
@@ -177,113 +176,34 @@ cdef class TradeStrategy:
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
 
-    @property
-    def all_indicators(self) -> Dict[BarType, List[Indicator]]:
+#-- DATA METHODS --------------------------------------------------------------#
+    cpdef datetime time_now(self):
         """
-        :return: The indicator dictionary for the strategy.
+        :return: The current time from the strategies internal clock (UTC). 
         """
-        return self._indicators
+        return self._clock.time_now()
 
-    @property
-    def all_bars(self) -> Dict[BarType, Deque[Bar]]:
+    cpdef list symbols(self):
         """
-        :return: The bar dictionary for the strategy.
-        """
-        return self._bars
-
-    @property
-    def ticks(self) -> Dict[Symbol, Tick]:
-        """
-        :return: The tick dictionary for the strategy
-        """
-        return self._ticks
-
-    @property
-    def orders(self) -> Dict[OrderId, Order]:
-        """
-        :return: The order book for the strategy
-        """
-        return self._order_book
-
-    @property
-    def positions(self) -> Dict[PositionId, Position]:
-        """
-        :return: The position book for the strategy.
-        """
-        return self._position_book
-
-    @property
-    def active_orders(self) -> Dict[OrderId, Order]:
-        """
-        :return: All active orders for the strategy.
-        """
-        return ({order.id: order for order in self._order_book.values()
-                 if not order.is_complete})
-
-    @property
-    def active_positions(self) -> Dict[PositionId, Position]:
-        """
-        :return: All active positions for the strategy.
-        """
-        return ({position.id: position for position in self._position_book.values()
-                 if not position.is_exited})
-
-    @property
-    def completed_orders(self) -> Dict[OrderId, Order]:
-        """
-        :return: All completed orders for the strategy.
-        """
-        return ({order.id: order for order in self._order_book.values()
-                 if order.is_complete})
-
-    @property
-    def completed_positions(self) -> Dict[PositionId, Position]:
-        """
-        :return: All completed positions for the strategy.
-        """
-        return ({position.id: position for position in self._position_book.values()
-                 if position.is_exited})
-
-    @property
-    def is_flat(self) -> bool:
-        """
-        :return: A value indicating whether this strategy is completely flat
-        (no positions other than FLAT) across all instruments.
-        """
-        return all(position.market_position == MarketPosition.FLAT
-                   for position in self._position_book.values())
-
-    @property
-    def symbols(self) -> List[Symbol]:
-        """
-        :return: All instrument symbols held by the data client
+        :return: All instrument symbols held by the data client -> List[Symbol].
         (available once registered with a data client).
         :raises ValueError: If the strategy has not been registered with a data client.
         """
         Precondition.not_none(self._data_client, 'data_client')
 
+        # List already copied in date client
         return self._data_client.symbols
 
-    @property
-    def instruments(self) -> List[Instrument]:
+    cpdef list instruments(self):
         """
-        :return: All instruments held by the data client
+        :return: All instruments held by the data client -> List[Instrument].
         (available once registered with a data client).
         :raises ValueError: If the strategy has not been registered with a data client.
         """
         Precondition.not_none(self._data_client, 'data_client')
 
+        # List already copied in date client
         return self._data_client.symbols
-
-    @property
-    def account(self) -> Account:
-        """
-        :return: The strategies account (available once registered with an execution client).
-        :raises ValueError: If the strategy has not been registered with an execution client.
-        """
-        Precondition.not_none(self._account, 'account')
-
-        return self._account
 
     cpdef Instrument get_instrument(self, Symbol symbol):
         """
@@ -330,7 +250,7 @@ cdef class TradeStrategy:
         :raises ValueError: If the from_datetime is not less than datetime.utcnow().
         """
         Precondition.not_none(self._data_client, 'data_client')
-        Precondition.true(from_datetime < self.clock.time_now(),
+        Precondition.true(from_datetime < self._clock.time_now(),
                           'from_datetime < self.clock.time_now()')
 
         self._data_client.historical_bars_from(bar_type, from_datetime, self._update_bars)
@@ -383,77 +303,6 @@ cdef class TradeStrategy:
         self._data_client.unsubscribe_ticks(symbol, self._update_ticks)
         self.log.info(f"Unsubscribed from tick data for {symbol}.")
 
-    cpdef void start(self):
-        """
-        Starts the trade strategy and calls on_start().
-        """
-        self.log.info(f"Starting...")
-        self.is_running = True
-        self.on_start()
-        self.log.info(f"Running...")
-
-    cpdef void stop(self):
-        """
-        Stops the trade strategy and calls on_stop().
-        """
-        self.log.info(f"Stopping...")
-        self.on_stop()
-        cdef list labels = self.clock.get_labels()
-        for label in labels:
-            self.log.info(f"Cancelled timer {label}.")
-        self.is_running = False
-        self.log.info(f"Stopped.")
-
-    cpdef void reset(self):
-        """
-        Reset the trade strategy by clearing all stateful internal values and
-        returning it to a fresh state (strategy must not be running).
-        Then calls on_reset().
-        """
-        if self.is_running:
-            self.log.warning(f"Cannot reset a running strategy...")
-            return
-
-        self._ticks = {}                 # type: Dict[Symbol, Tick]
-        self._bars = {}                  # type: Dict[BarType, Deque[Bar]]
-
-        # Reset all indicators.
-        for indicator_list in self._indicators.values():
-            [indicator.reset() for indicator in indicator_list]
-
-        self._order_book = {}            # type: Dict[OrderId, Order]
-        self._order_position_index = {}  # type: Dict[OrderId, PositionId]
-        self._position_book = {}         # type: Dict[PositionId, Position or None]
-
-        self.on_reset()
-        self.log.info(f"Reset.")
-
-    cpdef list indicators(self, BarType bar_type):
-        """
-        Get the indicators list for the given bar type.
-
-        :param bar_type: The bar type for the indicators list.
-        :return: The internally held indicators for the given bar type.
-        :raises KeyError: If the strategies indicators dictionary does not contain the given bar_type.
-        """
-        Precondition.true(bar_type in self._indicators, 'bar_type in self._indicators')
-
-        return self._indicators[bar_type]
-
-    cpdef object indicator(self, str label):
-        """
-        Get the indicator for the given unique label.
-
-        :param label: The unique label for the indicator.
-        :return: The internally held indicator for the given unique label.
-        :raises ValueError: If the label is not a valid string.
-        :raises KeyError: If the strategies indicator dictionary does not contain the given label.
-        """
-        cdef Label label_obj = Label(label)
-        Precondition.true(label_obj in self._indicator_index, 'label in self._indicator_index')
-
-        return self._indicator_index[label]
-
     cpdef list bars(self, BarType bar_type):
         """
         Get the bars for the given bar type.
@@ -492,38 +341,12 @@ cdef class TradeStrategy:
 
         return self._ticks[symbol]
 
-    cpdef Order order(self, OrderId order_id):
-        """
-        Get the order from the order book with the given order_id.
-
-        :param order_id: The order identifier.
-        :return: The order (if found).
-        :raises ValueError: If the order_id is not a valid string.
-        :raises KeyError: If the strategies order book does not contain the order with the given id.
-        """
-        Precondition.true(order_id in self._order_book, 'order_id in self._order_book')
-
-        return self._order_book[order_id]
-
-    cpdef Position position(self, PositionId position_id):
-        """
-        Get the position from the positions dictionary for the given position id.
-
-        :param position_id: The positions identifier.
-        :return: The position (if found).
-        :raises ValueError: If the position_id is not a valid string.
-        :raises ValueError: If the strategies positions dictionary does not contain the given position_id.
-        """
-        Precondition.true(position_id in self._position_book, 'position_id in self._position_book')
-
-        return self._position_book[position_id]
-
+#-- INDICATOR METHODS ---------------------------------------------------------#
     cpdef register_indicator(
             self,
             BarType bar_type,
             indicator: Indicator,
-            update_method: Callable,
-            Label label):
+            update_method: Callable):
         """
         Add the given indicator to the strategy. The indicator must be from the
         inv_indicators package. Once added it will receive bars of the given
@@ -532,13 +355,9 @@ cdef class TradeStrategy:
         :param bar_type: The indicators bar type.
         :param indicator: The indicator to set.
         :param update_method: The update method for the indicator.
-        :param label: The unique label for this indicator.
-        :raises ValueError: If the label is not a valid string.
-        :raises ValueError: If the given indicator label is not unique for this strategy.
         """
         Precondition.type(indicator, Indicator, 'indicator')
         Precondition.type(update_method, Callable, 'update_method')
-        Precondition.true(label not in self._indicator_index, 'label NOT in self._indicator_index')
 
         if bar_type not in self._indicators:
             self._indicators[bar_type] = []  # type: List[Indicator]
@@ -548,8 +367,45 @@ cdef class TradeStrategy:
             self._indicator_updaters[bar_type] = []  # type: List[IndicatorUpdater]
         self._indicator_updaters[bar_type].append(IndicatorUpdater(indicator, update_method))
 
-        self._indicator_index[label] = indicator
+    cpdef list indicators(self, BarType bar_type):
+        """
+        Get the indicators list for the given bar type.
 
+        :param bar_type: The bar type for the indicators list.
+        :return: The internally held indicators for the given bar type.
+        :raises ValueError: If the strategies indicators dictionary does not contain the given bar_type.
+        """
+        Precondition.true(bar_type in self._indicators, 'bar_type in self._indicators')
+
+        return self._indicators[bar_type]
+
+    cpdef bint indicators_initialized(self, BarType bar_type):
+        """
+        :return: A value indicating whether all indicators for the given bar type are initialized.
+        :raises ValueError: If the strategies indicators dictionary does not contain the given bar_type.
+        """
+        Precondition.true(bar_type in self._indicators, 'bar_type in self._indicators')
+
+        # Closures not yet supported so can't do one liner
+        cpdef bint initialized = True
+        for indicator in self._indicators[bar_type]:
+            if indicator.initialized is False:
+                initialized = False
+        return initialized
+
+    cpdef bint all_indicators_initialized(self):
+        """
+        :return: A value indicating whether all indicators for the strategy are initialized. 
+        """
+        # Closures not yet supported so can't do one liner
+        cpdef bint initialized = True
+        for indicator_list in self._indicators.values():
+            for indicator in indicator_list:
+                if indicator.initialized is False:
+                    initialized = False
+        return initialized
+
+#-- ORDER MANAGEMENT METHODS --------------------------------------------------#
     cpdef OrderId generate_order_id(self, Symbol symbol):
         """
         Generates a unique order identifier with the given symbol.
@@ -582,6 +438,117 @@ cdef class TradeStrategy:
             return OrderSide.BUY
         else:
             raise ValueError("Cannot flatten a FLAT position.")
+
+    cpdef Order order(self, OrderId order_id):
+        """
+        Get the order from the order book with the given order_id.
+
+        :param order_id: The order identifier.
+        :return: The order (if found).
+        :raises ValueError: If the order_id is not a valid string.
+        :raises KeyError: If the strategies order book does not contain the order with the given id.
+        """
+        Precondition.true(order_id in self._order_book, 'order_id in self._order_book')
+
+        return self._order_book[order_id]
+
+    cpdef Position position(self, PositionId position_id):
+        """
+        Get the position from the positions dictionary for the given position id.
+
+        :param position_id: The positions identifier.
+        :return: The position (if found).
+        :raises ValueError: If the position_id is not a valid string.
+        :raises ValueError: If the strategies positions dictionary does not contain the given position_id.
+        """
+        Precondition.true(position_id in self._position_book, 'position_id in self._position_book')
+
+        return self._position_book[position_id]
+
+    cpdef dict active_orders(self):
+        """
+        :return: All active orders for the strategy.
+        """
+        return ({order.id : order for order in self._order_book.values()
+                 if not order.is_complete})
+
+    cpdef dict active_positions(self):
+        """
+        :return: All active positions for the strategy.
+        """
+        return ({position.id: position for position in self._position_book.values()
+                 if not position.is_exited})
+
+    cpdef dict completed_orders(self):
+        """
+        :return: All completed orders for the strategy.
+        """
+        return ({order.id: order for order in self._order_book.values()
+                 if order.is_complete})
+
+    cpdef dict completed_positions(self):
+        """
+        :return: All completed positions for the strategy.
+        """
+        return ({position.id: position for position in self._position_book.values()
+                 if position.is_exited})
+
+    cpdef bint is_flat(self):
+        """
+        :return: A value indicating whether this strategy is completely flat
+        (no positions other than FLAT) across all instruments.
+        """
+        cdef bint is_flat = True
+        for position in self._position_book.values():
+            if position.market_position != MarketPosition.FLAT:
+                is_flat = False
+        return is_flat
+
+#-- COMMAND METHODS -----------------------------------------------------------#
+    cpdef void start(self):
+        """
+        Starts the trade strategy and calls on_start().
+        """
+        self.log.info(f"Starting...")
+        self.is_running = True
+        self.on_start()
+        self.log.info(f"Running...")
+
+    cpdef void stop(self):
+        """
+        Stops the trade strategy and calls on_stop().
+        """
+        self.log.info(f"Stopping...")
+        self.on_stop()
+        cdef list labels = self._clock.get_labels()
+        for label in labels:
+            self.log.info(f"Cancelled timer {label}.")
+        self.is_running = False
+        self.log.info(f"Stopped.")
+
+    cpdef void reset(self):
+        """
+        Reset the trade strategy by clearing all stateful internal values and
+        returning it to a fresh state (strategy must not be running).
+        Then calls on_reset().
+        """
+        if self.is_running:
+            self.log.warning(f"Cannot reset a running strategy...")
+            return
+
+        self._ticks = {}                 # type: Dict[Symbol, Tick]
+        self._bars = {}                  # type: Dict[BarType, Deque[Bar]]
+
+        # Reset all indicators.
+        for indicator_list in self._indicators.values():
+            [indicator.reset() for indicator in indicator_list]
+
+        self._order_book = {}            # type: Dict[OrderId, Order]
+        self._order_position_index = {}  # type: Dict[OrderId, PositionId]
+        self._position_book = {}         # type: Dict[PositionId, Position or None]
+
+        self.on_reset()
+        self.log.info(f"Reset.")
 
     cpdef collateral_inquiry(self):
         """
@@ -703,7 +670,7 @@ cdef class TradeStrategy:
         them to the execution service. If no positions found or a position is None
         then will log a warning.
         """
-        if len(self.active_positions) == 0:
+        if len(self.active_positions()) == 0:
             self.log.warning("Cannot flatten positions (no active positions to flatten).")
             return
 
@@ -742,7 +709,7 @@ cdef class TradeStrategy:
         :raises ValueError: If the label is not unique for this strategy.
         :raises ValueError: If the alert_time is not > than the current time (UTC).
         """
-        self.clock.set_time_alert(label, alert_time, self._update_events)
+        self._clock.set_time_alert(label, alert_time, self._update_events)
         self.log.info(f"Set time alert for {label} at {alert_time}.")
 
     cpdef cancel_time_alert(self, Label label):
@@ -753,7 +720,7 @@ cdef class TradeStrategy:
         :raises ValueError: If the label is not a valid string.
         :raises KeyError: If the label is not found in the internal timers.
         """
-        self.clock.cancel_time_alert(label)
+        self._clock.cancel_time_alert(label)
         self.log.info(f"Cancelled time alert for {label}.")
 
     cpdef set_timer(
@@ -786,7 +753,7 @@ cdef class TradeStrategy:
         :raises ValueError: If the stop_time is not None and start_time plus interval is greater
         than the stop_time.
         """
-        self.clock.set_timer(label, interval, start_time, stop_time, repeat, self._update_events)
+        self._clock.set_timer(label, interval, start_time, stop_time, repeat, self._update_events)
         self.log.info(
             (f"Set timer for {label} with interval {interval}, "
              f"starting at {start_time}, stopping at {stop_time}, repeat={repeat}."))
@@ -798,9 +765,10 @@ cdef class TradeStrategy:
         :param label: The label for the timer to cancel.
         :raises KeyError: If the label is not found in the internal timers.
         """
-        self.clock.cancel_timer(label)
+        self._clock.cancel_timer(label)
         self.log.info(f"Cancelled timer for {label}.")
 
+#-- INTERNAL METHODS ----------------------------------------------------------#
     cpdef void _register_data_client(self, DataClient client):
         """
         Register the strategy with the given data client.
@@ -820,7 +788,7 @@ cdef class TradeStrategy:
         :raises TypeError: If client does not inherit from ExecutionClient.
         """
         self._exec_client = client
-        self._account = client.account
+        self.account = client.account
 
     cpdef void _update_ticks(self, Tick tick):
         """"
@@ -914,7 +882,15 @@ cdef class TradeStrategy:
 
         # Account Events.
         elif isinstance(event, AccountEvent):
-            self._account.apply(event)
+            self.account.apply(event)
 
         if self.is_running:
             self.on_event(event)
+
+    cdef void _change_clock(self, Clock clock):
+        """
+        Change the strategies internal clock with the given clock
+        
+        :param clock: The clock to change to.
+        """
+        self._clock = clock

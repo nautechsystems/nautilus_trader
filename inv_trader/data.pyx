@@ -88,28 +88,6 @@ cdef class LiveDataClient(DataClient):
         return True
 
     @property
-    def symbols(self) -> List[Symbol]:
-        """
-        :return: All instrument symbols held by the data client.
-        """
-        symbols = []
-        for symbol in self._instruments:
-            symbols.append(symbol)
-
-        return symbols
-
-    @property
-    def instruments(self) -> List[Instrument]:
-        """
-        :return: All instruments held by the data client.
-        """
-        instruments = []
-        for instrument in self._instruments.values():
-            instruments.append(instrument)
-
-        return instruments
-
-    @property
     def subscriptions_all(self) -> List[str]:
         """
         :return: All subscribed channels from the pub/sub server.

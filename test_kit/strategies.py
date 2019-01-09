@@ -41,8 +41,8 @@ class TestStrategy1(TradeStrategy):
         self.ema1 = ExponentialMovingAverage(10)
         self.ema2 = ExponentialMovingAverage(20)
 
-        self.register_indicator(self.gbpusd_1sec_mid, self.ema1, self.ema1.update, Label('ema1'))
-        self.register_indicator(self.gbpusd_1sec_mid, self.ema2, self.ema2.update, Label('ema2'))
+        self.register_indicator(self.gbpusd_1sec_mid, self.ema1, self.ema1.update)
+        self.register_indicator(self.gbpusd_1sec_mid, self.ema2, self.ema2.update)
 
         self.position_id = None
 
