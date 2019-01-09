@@ -567,7 +567,7 @@ cdef class TradeStrategy:
         :param order: The order to submit.
         :param position_id: The position id to associate with this order.
         :raises ValueError: If the strategy has not been registered with an execution client.
-        :raises KeyError: If the order_id is already contained in the order book (must be unique).
+        :raises ValueError: If the order_id is already contained in the order book (must be unique).
         """
         Precondition.not_none(self._exec_client, 'exec_client')
         Precondition.true(order.id not in self._order_book, 'order.id NOT in self._order_book')
@@ -587,7 +587,7 @@ cdef class TradeStrategy:
         :param new_price: The new price for the given order.
         :raises ValueError: If the strategy has not been registered with an execution client.
         :raises ValueError: If the new_price is not positive (> 0).
-        :raises KeyError: If order_id is not found in the order book.
+        :raises ValueError: If order_id is not found in the order book.
         """
         Precondition.not_none(self._exec_client, 'exec_client')
         Precondition.positive(new_price, 'new_price')
@@ -605,7 +605,7 @@ cdef class TradeStrategy:
         :param cancel_reason: The reason for cancellation (will be logged).
         :raises ValueError: If the strategy has not been registered with an execution client.
         :raises ValueError: If the cancel_reason is not a valid string.
-        :raises KeyError: If the order_id is not found in the order book.
+        :raises ValueError: If the order_id is not found in the order book.
         """
         Precondition.not_none(self._exec_client, 'exec_client')
         Precondition.valid_string(cancel_reason, 'cancel_reason')
@@ -639,7 +639,7 @@ cdef class TradeStrategy:
         :param position_id: The position identifier to flatten.
         :raises ValueError: If the strategy has not been registered with an execution client.
         :raises ValueError: If the position_id is not a valid string.
-        :raises KeyError: If the position_id is not found in the position book.
+        :raises ValueError: If the position_id is not found in the position book.
         """
         Precondition.not_none(self._exec_client, 'exec_client')
         Precondition.true(position_id in self._position_book, 'position_id in self._position_book')
@@ -705,7 +705,6 @@ cdef class TradeStrategy:
 
         :param label: The label for the alert (must be unique).
         :param alert_time: The time for the alert.
-        :raises ValueError: If the label is not a valid string.
         :raises ValueError: If the label is not unique for this strategy.
         :raises ValueError: If the alert_time is not > than the current time (UTC).
         """
@@ -717,7 +716,6 @@ cdef class TradeStrategy:
         Cancel the time alert corresponding to the given label.
 
         :param label: The label for the alert to cancel.
-        :raises ValueError: If the label is not a valid string.
         :raises KeyError: If the label is not found in the internal timers.
         """
         self._clock.cancel_time_alert(label)
@@ -745,8 +743,7 @@ cdef class TradeStrategy:
         :param start_time: The start time for the timer (can be None, then starts immediately).
         :param stop_time: The stop time for the timer (can be None).
         :param repeat: The option for the timer to repeat until the strategy is stopped
-        :raises ValueError: If the label is not a valid string.
-        :raises KeyError: If the label is not unique.
+        :raises ValueError: If the label is not unique.
         :raises ValueError: If the start_time is not None and not >= the current time (UTC).
         :raises ValueError: If the stop_time is not None and repeat is False.
         :raises ValueError: If the stop_time is not None and not > than the start_time.
@@ -763,7 +760,7 @@ cdef class TradeStrategy:
         Cancel the timer corresponding to the given unique label.
 
         :param label: The label for the timer to cancel.
-        :raises KeyError: If the label is not found in the internal timers.
+        :raises ValueError: If the label is not found in the internal timers.
         """
         self._clock.cancel_timer(label)
         self.log.info(f"Cancelled timer for {label}.")
