@@ -12,6 +12,7 @@
 from cpython.datetime cimport datetime, timedelta
 from inv_trader.model.identifiers cimport Label
 
+
 cdef class Clock:
     """
     The abstract base class for all clocks.
@@ -40,6 +41,12 @@ cdef class Clock:
     cpdef cancel_timer(self, Label label)
     cpdef list get_labels(self)
     cpdef stop_all_timers(self)
+
+
+cdef class LiveClock(Clock):
+    """
+    Implements a clock for live trading.
+    """
     cpdef void _raise_time_event(
             self,
             Label label,
@@ -51,19 +58,28 @@ cdef class Clock:
             timedelta interval,
             datetime stop_time)
 
-cdef class LiveClock(Clock):
+
+cdef class TestTimer:
     """
-    Implements a clock for live trading.
+    Implements a fake timer for backtesting and unit testing.
     """
-    pass
+    cdef readonly Label label
+    cdef readonly datetime start
+    cdef readonly datetime stop
+    cdef readonly timedelta interval
+    cdef readonly datetime next_alert
+    cdef readonly object handler
+    cdef readonly bint repeating
+    cdef readonly bint expired
+
+    cpdef void advance(self, datetime time)
 
 
 cdef class TestClock(Clock):
     """
     Implements a clock for backtesting and unit testing.
     """
-    cdef datetime _time
     cdef readonly timedelta time_step
+    cdef datetime _time
 
-    cpdef void increment_time(self)
     cpdef void set_time(self, datetime time)

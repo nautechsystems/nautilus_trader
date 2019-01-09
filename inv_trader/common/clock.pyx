@@ -15,6 +15,7 @@ from cpython.datetime cimport datetime, timedelta
 from threading import Timer
 from typing import Dict, Callable
 
+from inv_trader.common.clock cimport TestTimer
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.model.identifiers cimport Label, GUID
 from inv_trader.model.events cimport TimeEvent
@@ -90,7 +91,7 @@ cdef class Clock:
 
     cpdef list get_labels(self):
         """
-        TBA
+        :return: The timer labels held by the clock.
         """
         return list(self._timers)
 
@@ -98,23 +99,6 @@ cdef class Clock:
         """
         TBA
         """
-        # Raise exception if not overridden in implementation.
-        raise NotImplementedError("Method must be implemented in the clock.")
-
-
-    cpdef void _raise_time_event(
-            self,
-            Label label,
-            datetime alert_time):
-        # Raise exception if not overridden in implementation.
-        raise NotImplementedError("Method must be implemented in the clock.")
-
-    cpdef void _repeating_timer(
-            self,
-            Label label,
-            datetime alert_time,
-            timedelta interval,
-            datetime stop_time):
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the clock.")
 
@@ -152,9 +136,8 @@ cdef class LiveClock(Clock):
         :param label: The label for the alert (must be unique).
         :param alert_time: The time for the alert.
         :param handler: The handler method for the alert.
-        :raises ValueError: If the label is not a valid string.
         :raises ValueError: If the label is not unique for this strategy.
-        :raises ValueError: If the alert_time is not > than the current time (UTC).
+        :raises ValueError: If the alert_time is not > than the clocks current time.
         """
         Precondition.true(alert_time > self.time_now(), 'self.time_now()')
         Precondition.true(label not in self._timers, 'label NOT in self._timers')
@@ -172,7 +155,6 @@ cdef class LiveClock(Clock):
         Cancel the time alert corresponding to the given label.
 
         :param label: The label for the alert to cancel.
-        :raises ValueError: If the label is not a valid string.
         :raises KeyError: If the label is not found in the internal timers.
         """
         Precondition.true(label in self._timers, 'label in self._timers')
@@ -266,7 +248,7 @@ cdef class LiveClock(Clock):
             Label label,
             datetime alert_time):
         """
-        Create a new TimeEvent and pass it into _update_events().
+        Create a new TimeEvent and pass it to the registered handler.
         """
         self._timers[label][1](TimeEvent(label, GUID(uuid4()), alert_time))
         del self._timers[label]
@@ -299,23 +281,63 @@ cdef class LiveClock(Clock):
         self._timers[label] = (timer, self._timers[label][1])
 
 
+cdef class TestTimer:
+    """
+    Implements a fake timer for backtesting and unit testing.
+    """
+
+    def __init__(self,
+                 Label label,
+                 timedelta interval,
+                 datetime start,
+                 datetime stop,
+                 bint repeating,
+                 handler: Callable):
+        """
+        Initializes a new instance of the TestTimer class.
+
+        :param label: The label for the timer.
+        """
+        self.label = label
+        self.start = start
+        self.stop = stop
+        self.interval = interval
+        self.next_alert = start + interval
+        self.repeating = repeating
+        self.handler = handler
+        self.expired = False
+
+    cpdef void advance(self, datetime time):
+        """
+        Wind the timer forward.
+        
+        :param time: The time to wind the timer to.
+        """
+        if time >= self.next_alert:
+            self.handler(TimeEvent(self.label, GUID(uuid4()), self.next_alert))
+
+        self.next_alert += self.interval
+        if not self.repeating or self.next_alert > self.stop:
+            self.expired = True
+
+
 cdef class TestClock(Clock):
     """
     Implements a clock for backtesting and unit testing.
     """
 
     def __init__(self,
-                 datetime initial_time=UNIX_EPOCH,
-                 timedelta time_step=timedelta(seconds=1)):
+                 timedelta time_step=timedelta(seconds=1),
+                 datetime initial_time=UNIX_EPOCH):
         """
         Initializes a new instance of the TestClock class.
 
         :param initial_time: The initial time for the clock.
         """
         super().__init__()
-        self._time = initial_time
         self.time_step = time_step
-        self._timers = {}   # type: Dict[Label, (Timer, Callable)]
+        self._time = initial_time
+        self._timers = {}  # type: Dict[Label, object]
 
     cpdef datetime time_now(self):
         """
@@ -323,49 +345,142 @@ cdef class TestClock(Clock):
         """
         return self._time
 
-    cpdef void increment_time(self):
-        """
-        Increment the clock by the internal time step.
-        """
-        self._time += self.time_step
-
     cpdef void set_time(self, datetime time):
         """
         Set the clocks internal time with the given time.
         
         :raises ValueError: If the given times timezone is not UTC.
+        :raises ValueError: If the given time is <= the clocks internal time.
         """
         Precondition.equal(time.tzinfo, self.timezone)
+        Precondition.true(time > self._time, 'time > self._time')
 
-        self._time = time
+        cdef list expired = []
+        while self._time < time:
+            for label, timer in self._timers.items():
+                # Time alerts
+                if isinstance(timer, tuple):
+                    if time >= timer[0]:
+                        timer[1](TimeEvent(label, GUID(uuid4()), timer[0]))
+                        expired.append(label)
+                else:
+                # Timers
+                    timer.advance(time)
+                    if timer.expired:
+                        expired.append(label)
 
-    cpdef set_time_alert(self, Label label, datetime alert_time, handler: Callable):
-        pass
+            # Remove expired timers
+            for timer in expired:
+                del self._timers[label]
+            expired = []
+
+            self._time += self.time_step
+
+    cpdef set_time_alert(
+            self,
+            Label label,
+            datetime alert_time,
+            handler: Callable):
+        """
+        Set a time alert for the given time. When the time is reached and the
+        strategy is running, on_event() is passed the TimeEvent containing the
+        alerts unique label.
+
+        Note: The timer thread will begin immediately.
+
+        :param label: The label for the alert (must be unique).
+        :param alert_time: The time for the alert.
+        :param handler: The handler method for the alert.
+        :raises ValueError: If the label is not unique for this strategy.
+        :raises ValueError: If the alert_time is not > than the clocks current time.
+        """
+        Precondition.true(alert_time > self.time_now(), 'self.time_now()')
+        Precondition.true(label not in self._timers, 'label NOT in self._timers')
+
+        self._timers[label] = (alert_time, handler)
 
     cpdef cancel_time_alert(self, Label label):
-        pass
+        """
+        Cancel the time alert corresponding to the given label.
 
-    cpdef set_timer(self, Label label, timedelta interval, datetime start_time, datetime stop_time, bint repeat, handler: Callable):
-        pass
+        :param label: The label for the alert to cancel.
+        :raises KeyError: If the label is not found in the internal timers.
+        """
+        Precondition.true(label in self._timers, 'label in self._timers')
+
+        del self._timers[label]
+
+    cpdef set_timer(
+            self,
+            Label label,
+            timedelta interval,
+            datetime start_time,
+            datetime stop_time,
+            bint repeat,
+            handler: Callable):
+        """
+        Set a timer with the given interval (time delta). The timer will run from
+        the start time (optionally until the stop time). When the interval is
+        reached and the strategy is running, the on_event() is passed the
+        TimeEvent containing the timers unique label.
+
+        Optionally the timer can be run repeatedly whilst the strategy is running.
+
+        Note: The timer thread will begin immediately.
+
+        :param label: The label for the timer (must be unique).
+        :param interval: The time delta interval for the timer.
+        :param start_time: The start time for the timer (can be None, then starts immediately).
+        :param stop_time: The stop time for the timer (can be None).
+        :param repeat: The option for the timer to repeat until the strategy is stopped.
+        :param handler: The handler method for the alert.
+        :raises KeyError: If the label is not unique.
+        :raises ValueError: If the start_time is not None and not >= the current time (UTC).
+        :raises ValueError: If the stop_time is not None and repeat is False.
+        :raises ValueError: If the stop_time is not None and not > than the start_time.
+        :raises ValueError: If the stop_time is not None and start_time plus interval is greater
+        than the stop_time.
+        """
+        if start_time is not None:
+            Precondition.true(start_time >= self.time_now(),
+                              'start_time >= self.clock.time_now()')
+        else:
+            start_time = self.time_now()
+        if stop_time is not None:
+            Precondition.true(repeat, 'repeat True')
+            Precondition.true(stop_time > start_time, 'stop_time > start_time')
+            Precondition.true(start_time + interval <= stop_time,
+                              'start_time + interval <= stop_time')
+
+        if label in self._timers:
+            raise KeyError(
+                f"Cannot set timer (the label {label} was not unique for this strategy).")
+
+        cdef datetime alert_time = start_time + interval
+        cdef float delay = (alert_time - self.time_now()).total_seconds()
+
+        cdef TestTimer timer = TestTimer(label,
+                                         interval,
+                                         start_time,
+                                         stop_time,
+                                         repeat,
+                                         handler)
+
+        self._timers[label] = timer
 
     cpdef cancel_timer(self, Label label):
-        pass
+        """
+        Cancel the timer corresponding to the given unique label.
 
-    cpdef list get_labels(self):
+        :param label: The label for the timer to cancel.
+        :raises KeyError: If the label is not found in the internal timers.
         """
-        TBA
-        """
-        return [self._timers.keys()]
+        Precondition.true(label in self._timers, 'label in self._timers')
+
+        del self._timers[label]
 
     cpdef stop_all_timers(self):
         """
-        TBA
+        Clears all alerts and timers.
         """
-        for label, timer in self._timers.items():
-            timer[0].cancel()
-
-    cpdef void _raise_time_event(self, Label label, datetime alert_time):
-        pass
-
-    cpdef void _repeating_timer(self, Label label, datetime alert_time, timedelta interval, datetime stop_time):
-        pass
+        self._timers = {}  # type: Dict[Label, object]
