@@ -158,10 +158,47 @@ cdef class DataClient:
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the data client.")
 
-    cdef void _subscribe_bars(
-            self,
-            BarType bar_type,
-            handler: Callable):
+    cpdef void subscribe_bars(self, BarType bar_type, handler: Callable):
+        """
+        Subscribe to live bar data for the given bar parameters.
+
+        :param bar_type: The bar type to subscribe to.
+        :param handler: The callable handler for subscription (if None will just call print).
+        """
+        # Raise exception if not overridden in implementation.
+        raise NotImplementedError("Method must be implemented in the data client.")
+
+    cpdef void unsubscribe_bars(self, BarType bar_type, handler: Callable):
+        """
+        Unsubscribes from live bar data for the given symbol and venue.
+
+        :param bar_type: The bar type to unsubscribe from.
+        :param handler: The callable handler which was subscribed (can be None).
+        """
+        # Raise exception if not overridden in implementation.
+        raise NotImplementedError("Method must be implemented in the data client.")
+
+    cpdef void subscribe_ticks(self, Symbol symbol, handler: Callable):
+        """
+        Subscribe to live tick data for the given symbol and venue.
+
+        :param symbol: The tick symbol to subscribe to.
+        :param handler: The callable handler for subscription (if None will just call print).
+        """
+        # Raise exception if not overridden in implementation.
+        raise NotImplementedError("Method must be implemented in the data client.")
+
+    cpdef void unsubscribe_ticks(self, Symbol symbol, handler: Callable):
+        """
+        Unsubscribes from live tick data for the given symbol and venue.
+
+        :param symbol: The tick symbol to unsubscribe from.
+        :param handler: The callable handler which was subscribed (can be None).
+        """
+        # Raise exception if not overridden in implementation.
+        raise NotImplementedError("Method must be implemented in the data client.")
+
+    cdef void _subscribe_bars(self, BarType bar_type, handler: Callable):
         """
         Subscribe to live bar data for the given bar parameters.
 
@@ -177,10 +214,7 @@ cdef class DataClient:
             self._bar_handlers[bar_type].append(handler)
             self._log.debug(f"Added bar handler {handler}.")
 
-    cdef void _unsubscribe_bars(
-            self,
-            BarType bar_type,
-            handler: Callable):
+    cdef void _unsubscribe_bars(self, BarType bar_type, handler: Callable):
         """
         Unsubscribes from live bar data for the given symbol and venue.
 
@@ -200,10 +234,7 @@ cdef class DataClient:
             else:
                 self._log.warning(f"Cannot remove handler {handler} from bar handlers (not found).")
 
-    cdef void _subscribe_ticks(
-            self,
-            Symbol symbol,
-            handler: Callable):
+    cdef void _subscribe_ticks(self, Symbol symbol, handler: Callable):
         """
         Subscribe to live tick data for the given symbol and venue.
 
@@ -219,10 +250,7 @@ cdef class DataClient:
             self._tick_handlers[symbol].append(handler)
             self._log.debug(f"Added tick {handler}.")
 
-    cdef void _unsubscribe_ticks(
-            self,
-            Symbol symbol,
-            handler: Callable):
+    cdef void _unsubscribe_ticks(self, Symbol symbol, handler: Callable):
         """
         Unsubscribes from live tick data for the given symbol and venue.
 

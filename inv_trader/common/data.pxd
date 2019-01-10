@@ -30,35 +30,25 @@ cdef class DataClient:
     cdef dict _tick_handlers
 
     cpdef list symbols(self)
-
     cpdef list instruments(self)
-
     cpdef list subscriptions_ticks(self)
-
     cpdef list subscriptions_bars(self)
 
     cpdef void connect(self)
-
     cpdef void disconnect(self)
-
     cpdef void update_all_instruments(self)
-
     cpdef void update_instrument(self, Symbol symbol)
-
     cpdef Instrument get_instrument(self, Symbol symbol)
-
     cpdef void register_strategy(self, TradeStrategy strategy)
-
     cpdef void historical_bars(self, BarType bar_type, int quantity, handler)
-
     cpdef void historical_bars_from(self, BarType bar_type, datetime from_datetime, handler)
+    cpdef void subscribe_bars(self, BarType bar_type, handler)
+    cpdef void unsubscribe_bars(self, BarType bar_type, handler)
+    cpdef void subscribe_ticks(self, Symbol symbol, handler)
+    cpdef void unsubscribe_ticks(self, Symbol symbol, handler)
 
     cdef void _subscribe_bars(self, BarType bar_type, handler)
-
     cdef void _unsubscribe_bars(self, BarType bar_type, handler)
-
     cdef void _subscribe_ticks(self, Symbol symbol, handler)
-
     cdef void _unsubscribe_ticks(self, Symbol symbol, handler)
-
     cdef void _reset(self)

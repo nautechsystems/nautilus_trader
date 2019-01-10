@@ -309,10 +309,7 @@ cdef class LiveDataClient(DataClient):
             handler(bar_type, bar)
         self._log.debug(f"Historical bars hydrated to handler {handler}.")
 
-    cpdef void subscribe_bars(
-            self,
-            BarType bar_type,
-            handler: Callable=None):
+    cpdef void subscribe_bars(self, BarType bar_type, handler: Callable):
         """
         Subscribe to live bar data for the given bar parameters.
 
@@ -335,10 +332,7 @@ cdef class LiveDataClient(DataClient):
             self._subscriptions_bars.sort()
             self._log.info(f"Subscribed to bar data for {bars_channel}.")
 
-    cpdef void unsubscribe_bars(
-            self,
-            BarType bar_type,
-            handler: Callable=None):
+    cpdef void unsubscribe_bars(self, BarType bar_type, handler: Callable):
         """
         Unsubscribes from live bar data for the given symbol and venue.
 
@@ -361,10 +355,7 @@ cdef class LiveDataClient(DataClient):
                 self._subscriptions_bars.sort()
                 self._log.info(f"Unsubscribed from bar data for {bar_channel}.")
 
-    cpdef void subscribe_ticks(
-            self,
-            Symbol symbol,
-            handler: Callable=None):
+    cpdef void subscribe_ticks(self, Symbol symbol, handler: Callable):
         """
         Subscribe to live tick data for the given symbol and venue.
 
@@ -377,7 +368,7 @@ cdef class LiveDataClient(DataClient):
 
         self._subscribe_ticks(symbol, handler)
 
-        ticks_channel = self._get_tick_channel_name(symbol)
+        cdef str ticks_channel = self._get_tick_channel_name(symbol)
         if ticks_channel not in self._subscriptions_ticks:
             self._pubsub.subscribe(**{ticks_channel: self._handle_tick})
 
@@ -387,10 +378,7 @@ cdef class LiveDataClient(DataClient):
             self._subscriptions_ticks.sort()
             self._log.info(f"Subscribed to tick data for {ticks_channel}.")
 
-    cpdef void unsubscribe_ticks(
-            self,
-            Symbol symbol,
-            handler: Callable=None):
+    cpdef void unsubscribe_ticks(self, Symbol symbol, handler: Callable):
         """
         Unsubscribes from live tick data for the given symbol and venue.
 

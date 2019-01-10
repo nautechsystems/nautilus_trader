@@ -95,7 +95,7 @@ class LiveDataClientTests(unittest.TestCase):
         self.data_client.connect()
 
         # Act
-        self.data_client.subscribe_ticks(Symbol('AUDUSD', Venue.FXCM))
+        self.data_client.subscribe_ticks(Symbol('AUDUSD', Venue.FXCM), handler=None)
         tick_channels = self.data_client.subscriptions_ticks
         all_channels = self.data_client.subscriptions_all
 
@@ -106,10 +106,10 @@ class LiveDataClientTests(unittest.TestCase):
     def test_can_unsubscribe_from_tick_data(self):
         # Arrange
         self.data_client.connect()
-        self.data_client.subscribe_ticks(Symbol('AUDUSD', Venue.FXCM))
+        self.data_client.subscribe_ticks(Symbol('AUDUSD', Venue.FXCM), handler=None)
 
         # Act
-        self.data_client.unsubscribe_ticks(Symbol('AUDUSD', Venue.FXCM))
+        self.data_client.unsubscribe_ticks(Symbol('AUDUSD', Venue.FXCM), handler=None)
         tick_channels = self.data_client.subscriptions_ticks
 
         # Assert
@@ -120,7 +120,7 @@ class LiveDataClientTests(unittest.TestCase):
         self.data_client.connect()
 
         # Act
-        self.data_client.subscribe_bars(BarType(Symbol('AUDUSD', Venue.FXCM), 1, Resolution.SECOND, QuoteType.BID))
+        self.data_client.subscribe_bars(BarType(Symbol('AUDUSD', Venue.FXCM), 1, Resolution.SECOND, QuoteType.BID), handler=None)
         bar_channels = self.data_client.subscriptions_bars
         all_channels = self.data_client.subscriptions_all
 
@@ -131,10 +131,10 @@ class LiveDataClientTests(unittest.TestCase):
     def test_can_unsubscribe_from_bar_data(self):
         # Arrange
         self.data_client.connect()
-        self.data_client.subscribe_bars(BarType(Symbol('AUDUSD', Venue.FXCM), 1, Resolution.SECOND, QuoteType.BID))
+        self.data_client.subscribe_bars(BarType(Symbol('AUDUSD', Venue.FXCM), 1, Resolution.SECOND, QuoteType.BID), handler=None)
 
         # Act
-        self.data_client.unsubscribe_bars(BarType(Symbol('AUDUSD', Venue.FXCM), 1, Resolution.SECOND, QuoteType.BID))
+        self.data_client.unsubscribe_bars(BarType(Symbol('AUDUSD', Venue.FXCM), 1, Resolution.SECOND, QuoteType.BID), handler=None)
         bar_channels = self.data_client.subscriptions_bars
         all_channels = self.data_client.subscriptions_all
 
@@ -145,10 +145,10 @@ class LiveDataClientTests(unittest.TestCase):
     def test_disconnecting_when_subscribed_to_multiple_channels_then_unsubscribes(self):
         # Arrange
         self.data_client.connect()
-        self.data_client.subscribe_ticks(Symbol('AUDUSD', Venue.FXCM))
-        self.data_client.subscribe_ticks(Symbol('GBPUSD', Venue.FXCM))
-        self.data_client.subscribe_ticks(Symbol('EURJPY', Venue.FXCM))
-        self.data_client.subscribe_ticks(Symbol('USDCAD', Venue.FXCM))
+        self.data_client.subscribe_ticks(Symbol('AUDUSD', Venue.FXCM), handler=None)
+        self.data_client.subscribe_ticks(Symbol('GBPUSD', Venue.FXCM), handler=None)
+        self.data_client.subscribe_ticks(Symbol('EURJPY', Venue.FXCM), handler=None)
+        self.data_client.subscribe_ticks(Symbol('USDCAD', Venue.FXCM), handler=None)
 
         # Act
         self.data_client.disconnect()
