@@ -16,5 +16,4 @@ cdef class BacktestDataClient(DataClient):
     """
     Provides a data client for the BacktestEngine.
     """
-    cdef list instruments
     cdef dict historical_data

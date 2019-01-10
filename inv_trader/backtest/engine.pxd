@@ -23,3 +23,5 @@ cdef class BacktestEngine:
     cdef BacktestDataClient data_client
     cdef BacktestExecClient exec_client
     cdef Trader trader
+
+    cpdef void run(self)

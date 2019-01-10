@@ -26,6 +26,6 @@ cdef class BacktestDataClient(DataClient):
         :param instruments: The instruments needed for the backtest.
         :param data: The historical market data needed for the backtest.
         """
-        self.instruments = instruments
+        self._instruments = instruments
         self.historical_data = data
 
