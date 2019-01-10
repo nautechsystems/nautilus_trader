@@ -64,6 +64,21 @@ cdef class Precondition:
                              f"type = {type(argument)}")
 
     @staticmethod
+    cdef list_type(list argument, type type_to_contain, str param_name):
+        """
+        Check the list only contains types of the given type to contain.
+
+        :param argument: The list argument to check.
+        :param type_to_contain: The expected type if not None.
+        :param param_name: The parameter name.
+        :raises ValueError: If the list contains a type other than the type to contain.
+        """
+        for element in argument:
+            if not isinstance(element, type_to_contain):
+                raise ValueError(f"{PRE_FAILED} (the {param_name} list contained a type other than {type_to_contain}). "
+                                f"type = {type(element)}")
+
+    @staticmethod
     cdef none(object argument, str param_name):
         """
         Check the preconditions argument is None.
@@ -220,6 +235,10 @@ class PyPrecondition:
     @staticmethod
     def type_or_none(argument, is_type, param_name):
         Precondition.type_or_none(argument, is_type, param_name)
+
+    @staticmethod
+    def list_type(argument, type_to_contain, param_name):
+        Precondition.list_type(argument, type_to_contain, param_name)
 
     @staticmethod
     def none(argument, param_name):
