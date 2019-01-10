@@ -9,9 +9,10 @@
 
 # cython: language_level=3, boundscheck=False
 
-from cpython.datetime cimport datetime
 from inv_trader.common.clock cimport Clock
 from inv_trader.common.logger cimport LoggerAdapter
+from inv_trader.common.data cimport DataClient
+from inv_trader.common.execution cimport ExecutionClient
 from inv_trader.model.identifiers cimport Label, GUID
 
 
@@ -21,6 +22,8 @@ cdef class Trader:
     """
     cdef Clock _clock
     cdef LoggerAdapter _log
+    cdef DataClient _data_client
+    cdef ExecutionClient _exec_client
 
     cdef readonly Label name
     cdef readonly GUID id

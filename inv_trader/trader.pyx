@@ -14,6 +14,10 @@ import uuid
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.common.clock cimport LiveClock
 from inv_trader.common.logger cimport Logger, LoggerAdapter
+from inv_trader.common.data cimport DataClient
+from inv_trader.common.execution cimport ExecutionClient
+from inv_trader.data import LiveDataClient
+from inv_trader.execution import LiveExecClient
 from inv_trader.strategy cimport TradeStrategy
 
 
@@ -25,6 +29,8 @@ cdef class Trader:
     def __init__(self,
                  str name='NONE',
                  list strategies=[],
+                 DataClient data_client=LiveDataClient(),
+                 ExecutionClient exec_client=LiveExecClient(),
                  Clock clock=LiveClock(),
                  Logger logger=None):
         """
@@ -36,6 +42,8 @@ cdef class Trader:
         """
         Precondition.valid_string(name, 'name')
         Precondition.list_type(strategies, TradeStrategy, 'strategies')
+        Precondition.not_none(data_client, 'data_client')
+        Precondition.not_none(exec_client, 'exec_client')
         Precondition.not_none(clock, 'clock')
 
         self._clock = clock
@@ -43,6 +51,8 @@ cdef class Trader:
             self.log = LoggerAdapter(f"{self.__class__.__name__}-{self.name}")
         else:
             self.log = LoggerAdapter(f"{self.__class__.__name__}-{self.name}", logger)
+        self._data_client = data_client
+        self._exec_client = exec_client
         self.name = Label(name)
         self.id = GUID(uuid.uuid4())
         self.strategies = strategies
