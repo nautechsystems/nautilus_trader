@@ -31,4 +31,10 @@ cdef class Trader:
     cdef readonly list started_datetimes
     cdef readonly list stopped_datetimes
 
+    cpdef void start(self)
+    cpdef void stop(self)
+    cpdef void reset(self)
+    cpdef void dispose(self)
+
+
 
