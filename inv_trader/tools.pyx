@@ -40,7 +40,7 @@ cdef class BarBuilder:
     """
 
     def __init__(self,
-                 data: DataFrame,
+                 data: DataFrame=None,
                  int decimal_precision=5,
                  int volume_multiple=1):
         """
@@ -50,7 +50,7 @@ cdef class BarBuilder:
         :param decimal_precision: The decimal precision for bar prices.
         :param volume_multiple: The volume multiple for the builder (> 0).
         """
-        Precondition.type(data, DataFrame, 'data')
+        Precondition.type_or_none(data, DataFrame, 'data')
         Precondition.not_negative(decimal_precision, 'decimal_precision')
         Precondition.positive(volume_multiple, 'volume_multiple')
 
