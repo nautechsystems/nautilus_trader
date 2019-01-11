@@ -7,10 +7,9 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-# cython: language_level=3, boundscheck=False, wraparound=False
+# cython: language_level=3, boundscheck=False
 
 import inspect
-import numpy as np
 import pandas as pd
 
 from cpython.datetime cimport datetime
@@ -58,19 +57,43 @@ cdef class BarBuilder:
         self._decimal_precision = decimal_precision
         self._volume_multiple = volume_multiple
 
-    cpdef list build_data_bars(self):
+    cpdef list build_databars_all(self):
         """
-        Build a list of DataBars from the held Pandas DataFrame.
+        Build a list of DataBars from all data.
         
         :return: The list of bars.
         """
-        return list(map(self._build_data_bar,
+        return list(map(self._build_databar,
                         self._data.values,
                         pd.to_datetime(self._data.index)))
 
-    cpdef list build_bars(self):
+    cpdef list build_databars_from(self, int index=0):
         """
-        Build a list of Bars from the held Pandas DataFrame.
+        Build a list of DataBars from the given index.
+        
+        :return: The list of bars.
+        """
+        Precondition.not_negative(index, 'index')
+
+        return list(map(self._build_databar,
+                        self._data.iloc[index:].values,
+                        pd.to_datetime(self._data.iloc[index:].index)))
+
+    cpdef list build_databars_range(self, int start=0, int end=-1):
+        """
+        Build a list of DataBars within the given range.
+        
+        :return: The list of bars.
+        """
+        Precondition.not_negative(start, 'start')
+
+        return list(map(self._build_databar,
+                        self._data.iloc[start:end].values,
+                        pd.to_datetime(self._data.iloc[start:end].index)))
+
+    cpdef list build_bars_all(self):
+        """
+        Build a list of Bars from all data.
 
         :return: The list of bars.
         """
@@ -78,7 +101,43 @@ cdef class BarBuilder:
                         self._data.values,
                         pd.to_datetime(self._data.index)))
 
-    cpdef DataBar _build_data_bar(self, double[:] values, datetime timestamp):
+    cpdef list build_bars_from(self, int index=0):
+        """
+        Build a list of Bars from the given index (>= 0).
+
+        :return: The list of bars.
+        """
+        Precondition.not_negative(index, 'index')
+
+        return list(map(self._build_bar,
+                        self._data.iloc[index:].values,
+                        pd.to_datetime(self._data.iloc[index:].index)))
+
+    cpdef list build_bars_range(self, int start=0, int end=-1):
+        """
+        Build a list of Bars within the given range.
+
+        :return: The list of bars.
+        """
+        Precondition.not_negative(start, 'start')
+
+        return list(map(self._build_bar,
+                        self._data.iloc[start:end].values,
+                        pd.to_datetime(self._data.iloc[start:end].index)))
+
+    cpdef DataBar build_databar(self, int index):
+        """
+        Build a DataBar from the row at the given index.
+        """
+        return self._build_databar(self._data.iloc[index], self._data.iloc[index].index)
+
+    cpdef Bar build_bar(self, int index):
+        """
+        Build a bar from the row at the given index.
+        """
+        return self._build_bar(self._data.iloc[index], self._data.iloc[index].index)
+
+    cpdef DataBar _build_databar(self, double[:] values, datetime timestamp):
         """
         Build a DataBar from the given index and values. The function expects the
         values to be an ndarray with 5 elements [open, high, low, close, volume].
@@ -166,7 +225,7 @@ cdef class IndicatorUpdater:
         """
         self._input_method(*[bar.__getattribute__(param) for param in self._input_params])
 
-    cpdef void update_data_bar(self, DataBar bar):
+    cpdef void update_databar(self, DataBar bar):
         """
         Update the indicator with the given Bar object.
 
@@ -192,7 +251,7 @@ cdef class IndicatorUpdater:
 
         return features
 
-    cpdef dict build_features_data_bars(self, list bars):
+    cpdef dict build_features_databars(self, list bars):
         """
         Create a dictionary of output features from the given bars data.
         
@@ -203,7 +262,7 @@ cdef class IndicatorUpdater:
             features[output] = []
 
         for bar in bars:
-            self.update_data_bar(bar)
+            self.update_databar(bar)
 
             for value in self._get_values():
                 features[value[0]].append(value[1])

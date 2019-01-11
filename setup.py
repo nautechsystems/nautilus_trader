@@ -36,9 +36,11 @@ REQUIREMENTS = ['cython',
                 'pyzmq']
 
 
-# Embed docstrings in extensions
-Options.embed_pos_in_docstring = True
-Options.warning_errors = True
+# Cython compiler options
+# -----------------------
+Options.embed_pos_in_docstring = True  # Embed docstrings in extensions
+Options.warning_errors = True  # Treat compiler warnings as errors
+Profile_Hooks = False  # Write profiling hooks into methods (some overhead, use for profiling)
 
 
 # Recursively scan given directories
@@ -83,6 +85,6 @@ setup(
     packages=setuptools.find_packages(),
     license=LICENSE,
     requires=REQUIREMENTS,
-    ext_modules=cythonize(extensions),
+    ext_modules=cythonize(extensions, compiler_directives={'profile': Profile_Hooks}),
     cmdclass={'build_ext': Cython.Build.build_ext},
     options={'build_ext': {'inplace': False, 'force': False}})

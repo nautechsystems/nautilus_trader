@@ -21,91 +21,179 @@ from test_kit.data import TestDataProvider
 
 class BarBuilderTests(unittest.TestCase):
 
-    def test_can_build_data_bars(self):
-        # arrange
+    def test_build_databars_all(self):
+        # Arrange
         data = TestDataProvider.get_gbpusd_1min_bid()[:1000]
         bar_builder = BarBuilder(data, 5, 1)
 
-        # act
-        bars = bar_builder.build_data_bars()
+        # Act
+        bars = bar_builder.build_databars_all()
 
-        # assert
+        # Assert
         self.assertEqual(1000, len(bars))
 
-    def test_can_build_bars(self):
-        # arrange
+    def test_build_databars_range_with_defaults(self):
+        # Arrange
         data = TestDataProvider.get_gbpusd_1min_bid()[:1000]
         bar_builder = BarBuilder(data, 5, 1)
 
-        # act
-        bars = bar_builder.build_bars()
+        # Act
+        bars = bar_builder.build_databars_range()
 
-        # assert
+        # Assert
+        self.assertEqual(999, len(bars))
+
+    def test_build_databars_range_with_params(self):
+        # Arrange
+        data = TestDataProvider.get_gbpusd_1min_bid()[:1000]
+        bar_builder = BarBuilder(data, 5, 1)
+
+        # Act
+        bars = bar_builder.build_databars_range(start=500)
+
+        # Assert
+        self.assertEqual(499, len(bars))
+
+    def test_build_databars_from_with_defaults(self):
+        # Arrange
+        data = TestDataProvider.get_gbpusd_1min_bid()[:1000]
+        bar_builder = BarBuilder(data, 5, 1)
+
+        # Act
+        bars = bar_builder.build_databars_from()
+
+        # Assert
         self.assertEqual(1000, len(bars))
+
+    def test_build_databars_from_with_param(self):
+        # Arrange
+        data = TestDataProvider.get_gbpusd_1min_bid()[:1000]
+        bar_builder = BarBuilder(data, 5, 1)
+
+        # Act
+        bars = bar_builder.build_databars_from(500)
+
+        # Assert
+        self.assertEqual(500, len(bars))
+
+    def test_can_build_bars_all(self):
+        # Arrange
+        data = TestDataProvider.get_gbpusd_1min_bid()[:1000]
+        bar_builder = BarBuilder(data, 5, 1)
+
+        # Act
+        bars = bar_builder.build_bars_all()
+
+        # Assert
+        self.assertEqual(1000, len(bars))
+
+    def test_can_build_bars_range_with_defaults(self):
+        # Arrange
+        data = TestDataProvider.get_gbpusd_1min_bid()[:1000]
+        bar_builder = BarBuilder(data, 5, 1)
+
+        # Act
+        bars = bar_builder.build_bars_range()
+
+        # Assert
+        self.assertEqual(999, len(bars))
+
+    def test_can_build_bars_range_with_param(self):
+        # Arrange
+        data = TestDataProvider.get_gbpusd_1min_bid()[:1000]
+        bar_builder = BarBuilder(data, 5, 1)
+
+        # Act
+        bars = bar_builder.build_bars_range(start=500)
+
+        # Assert
+        self.assertEqual(499, len(bars))
+
+    def test_can_build_bars_from_with_defaults(self):
+        # Arrange
+        data = TestDataProvider.get_gbpusd_1min_bid()[:1000]
+        bar_builder = BarBuilder(data, 5, 1)
+
+        # Act
+        bars = bar_builder.build_bars_from()
+
+        # Assert
+        self.assertEqual(1000, len(bars))
+
+    def test_can_build_bars_from_with_param(self):
+        # Arrange
+        data = TestDataProvider.get_gbpusd_1min_bid()[:1000]
+        bar_builder = BarBuilder(data, 5, 1)
+
+        # Act
+        bars = bar_builder.build_bars_from(index=500)
+
+        # Assert
+        self.assertEqual(500, len(bars))
 
 
 class IndicatorUpdaterTests(unittest.TestCase):
 
     def test_can_update_indicator_with_bars(self):
-        # arrange
+        # Arrange
         data = TestDataProvider.get_gbpusd_1min_bid()[:1000]
         bar_builder = BarBuilder(data, 5, 1)
-        bars = bar_builder.build_bars()
+        bars = bar_builder.build_bars_all()
         ema = ExponentialMovingAverage(10)
         updater = IndicatorUpdater(ema)
 
-        # act
+        # Act
         for bar in bars:
             updater.update_bar(bar)
 
-        # assert
+        # Assert
         self.assertEqual(1000, ema.count)
         self.assertEqual(1.9838850009689002, ema.value)
 
     def test_can_update_indicator_with_data_bars(self):
-        # arrange
+        # Arrange
         data = TestDataProvider.get_gbpusd_1min_bid()[:1000]
         bar_builder = BarBuilder(data, 5, 1)
-        bars = bar_builder.build_data_bars()
+        bars = bar_builder.build_databars_all()
         ema = ExponentialMovingAverage(10)
         updater = IndicatorUpdater(ema)
 
-        # act
+        # Act
         for bar in bars:
-            updater.update_data_bar(bar)
+            updater.update_databar(bar)
 
-        # assert
+        # Assert
         self.assertEqual(1000, ema.count)
         self.assertEqual(1.9838850140793318, ema.value)
 
     def test_can_build_features_from_bars(self):
-        # arrange
+        # Arrange
         data = TestDataProvider.get_gbpusd_1min_bid()[:1000]
         bar_builder = BarBuilder(data, 5, 1)
-        bars = bar_builder.build_bars()
+        bars = bar_builder.build_bars_all()
         ema = ExponentialMovingAverage(10)
         updater = IndicatorUpdater(ema)
 
-        # act
+        # Act
         result = updater.build_features(bars)
 
-        # assert
+        # Assert
         self.assertTrue('value' in result)
         self.assertEqual(1000, len(result['value']))
         self.assertEqual(1.9838850009689002, ema.value)
 
     def test_can_build_features_from_data_bars(self):
-        # arrange
+        # Arrange
         data = TestDataProvider.get_gbpusd_1min_bid()[:1000]
         bar_builder = BarBuilder(data, 5, 1)
-        bars = bar_builder.build_data_bars()
+        bars = bar_builder.build_databars_all()
         ema = ExponentialMovingAverage(10)
         updater = IndicatorUpdater(ema)
 
-        # act
-        result = updater.build_features_data_bars(bars)
+        # Act
+        result = updater.build_features_databars(bars)
 
-        # assert
+        # Assert
         self.assertTrue('value' in result)
         self.assertEqual(1000, len(result['value']))
         self.assertEqual(1.9838850140793318, ema.value)

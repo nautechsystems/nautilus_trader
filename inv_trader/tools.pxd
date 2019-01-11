@@ -23,9 +23,15 @@ cdef class BarBuilder:
     cdef int _decimal_precision
     cdef int _volume_multiple
 
-    cpdef list build_data_bars(self)
-    cpdef list build_bars(self)
-    cpdef DataBar _build_data_bar(self, double[:] values, datetime timestamp)
+    cpdef list build_databars_all(self)
+    cpdef list build_databars_from(self, int index=*)
+    cpdef list build_databars_range(self, int start=*, int end=*)
+    cpdef list build_bars_all(self)
+    cpdef list build_bars_from(self, int index=*)
+    cpdef list build_bars_range(self, int start=*, int end=*)
+    cpdef DataBar build_databar(self, int index)
+    cpdef Bar build_bar(self, int index)
+    cpdef DataBar _build_databar(self, double[:] values, datetime timestamp)
     cpdef Bar _build_bar(self, double[:] values, datetime timestamp)
 
 
@@ -41,7 +47,7 @@ cdef class IndicatorUpdater:
     cdef list _outputs
 
     cpdef void update_bar(self, Bar bar)
-    cpdef void update_data_bar(self, DataBar bar)
+    cpdef void update_databar(self, DataBar bar)
     cpdef dict build_features(self, list bars)
-    cpdef dict build_features_data_bars(self, list bars)
+    cpdef dict build_features_databars(self, list bars)
     cdef list _get_values(self)

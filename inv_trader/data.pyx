@@ -12,12 +12,10 @@
 import re
 import iso8601
 import time
-import datetime as dt
 
 from cpython.datetime cimport datetime
-from datetime import timezone
 from redis import StrictRedis, ConnectionError
-from typing import List, Dict, Callable
+from typing import List, Callable
 
 from inv_trader.core.decimal cimport Decimal
 from inv_trader.core.precondition cimport Precondition
@@ -72,8 +70,7 @@ cdef class LiveDataClient(DataClient):
 
         self._log.info("Initialized.")
 
-    @property
-    def is_connected(self) -> bool:
+    cpdef bint is_connected(self):
         """
         :return: True if the client is connected, otherwise false.
         """
@@ -217,19 +214,20 @@ cdef class LiveDataClient(DataClient):
         :raises ValueError: If the quantity is not None and not positive (> 0).
         """
         Precondition.type(handler, Callable, 'handler')
+
         if quantity is not None:
             Precondition.positive(quantity, 'quantity')
 
         self._check_connection()
 
-        keys = self._get_redis_bar_keys(bar_type)
+        cdef list keys = self._get_redis_bar_keys(bar_type)
 
         if len(keys) == 0:
             self._log.warning(
                 "Cannot get historical bars (No bar keys found for the given parameters).")
             return
 
-        bars = []
+        cdef list bars = []
         if quantity is None:
             for key in keys:
                 bar_list = self._redis_client.lrange(key, 0, -1)
@@ -272,11 +270,10 @@ cdef class LiveDataClient(DataClient):
         :param bar_type: The historical bar type to download.
         :param from_datetime: The datetime from which the historical bars should be downloaded.
         :param handler: The handler to pass the bars to.
-        :raises ValueError: If the from_datetime is not less than datetime.utcnow().
+        :raises ValueError: If the from_datetime is not less than that current datetime.
         """
         Precondition.type(handler, Callable, 'handler')
-        Precondition.true(from_datetime < dt.datetime.now(timezone.utc),
-                          'from_datetime < datetime.now(timezone.utc)')
+        Precondition.true(from_datetime < self._clock.time_now(), 'from_datetime < self._clock.time_now().')
 
         self._check_connection()
 
@@ -384,7 +381,6 @@ cdef class LiveDataClient(DataClient):
 
         :param symbol: The tick symbol to unsubscribe from.
         :param handler: The callable handler which was subscribed (can be None).
-        :raises ValueError: If the symbol is not a valid string.
         """
         Precondition.type_or_none(handler, Callable, 'handler')
 
@@ -498,10 +494,10 @@ cdef class LiveDataClient(DataClient):
         if self._redis_client is None:
             raise ConnectionError(("No connection has been established to the live database "
                                    "(please connect first)."))
-        if not self.is_connected:
+        if not self.is_connected():
             raise ConnectionError("No connection is established with the live database.")
 
-    cpdef void _handle_tick(self, message: Dict):
+    cpdef void _handle_tick(self, dict message):
         """"
         Handle the tick message by parsing to a Tick and sending to all subscribers.
 
@@ -518,7 +514,7 @@ cdef class LiveDataClient(DataClient):
         for handler in self._tick_handlers[symbol]:
             handler(tick)
 
-    cpdef void _handle_bar(self, message: Dict):
+    cpdef void _handle_bar(self, dict message):
         """"
         Handle the bar message by parsing to a Bar and sending to all subscribers.
 
