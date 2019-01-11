@@ -518,7 +518,7 @@ cdef class Instrument:
         """
         :return: The str() string representation of the instrument.
         """
-        return str(f"Instrument({self.symbol.code}.{self.symbol.venue})")
+        return str(f"Instrument({self.symbol})")
 
     def __repr__(self) -> str:
         """

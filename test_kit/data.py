@@ -15,16 +15,16 @@ from pandas import DataFrame
 class TestDataProvider:
 
     @staticmethod
-    def get_gbpusd_1min_bid() -> DataFrame:
+    def gbpusd_1min_bid() -> DataFrame:
         return pd.read_csv('GBPUSD_1 Min_Bid.csv',
                            index_col='Time (UTC)')
 
     @staticmethod
-    def get_usdjpy_1min_bid() -> DataFrame:
+    def usdjpy_1min_bid() -> DataFrame:
         return pd.read_csv('USDJPY_1 Min_Bid.csv',
                            index_col='Time (UTC)')
 
     @staticmethod
-    def get_usdjpy_1min_ask() -> DataFrame:
+    def usdjpy_1min_ask() -> DataFrame:
         return pd.read_csv('USDJPY_1 Min_Ask.csv',
                            index_col='Time (UTC)')

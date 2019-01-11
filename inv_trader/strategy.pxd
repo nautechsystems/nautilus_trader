@@ -113,8 +113,8 @@ cdef class TradeStrategy:
     cpdef flatten_all_positions(self)
 
 #-- INTERNAL METHODS ----------------------------------------------------------#
-    cpdef void _register_data_client(self, DataClient client)
-    cpdef void _register_execution_client(self, ExecutionClient client)
+    cpdef _register_data_client(self, DataClient client)
+    cpdef _register_execution_client(self, ExecutionClient client)
     cpdef void _update_ticks(self, Tick tick)
     cpdef void _update_bars(self, BarType bar_type, Bar bar)
     cpdef void _update_indicators(self, BarType bar_type, Bar bar)

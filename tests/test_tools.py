@@ -23,7 +23,7 @@ class BarBuilderTests(unittest.TestCase):
 
     def test_build_databars_all(self):
         # Arrange
-        data = TestDataProvider.get_gbpusd_1min_bid()[:1000]
+        data = TestDataProvider.gbpusd_1min_bid()[:1000]
         bar_builder = BarBuilder(data, 5, 1)
 
         # Act
@@ -34,7 +34,7 @@ class BarBuilderTests(unittest.TestCase):
 
     def test_build_databars_range_with_defaults(self):
         # Arrange
-        data = TestDataProvider.get_gbpusd_1min_bid()[:1000]
+        data = TestDataProvider.gbpusd_1min_bid()[:1000]
         bar_builder = BarBuilder(data, 5, 1)
 
         # Act
@@ -45,7 +45,7 @@ class BarBuilderTests(unittest.TestCase):
 
     def test_build_databars_range_with_params(self):
         # Arrange
-        data = TestDataProvider.get_gbpusd_1min_bid()[:1000]
+        data = TestDataProvider.gbpusd_1min_bid()[:1000]
         bar_builder = BarBuilder(data, 5, 1)
 
         # Act
@@ -56,7 +56,7 @@ class BarBuilderTests(unittest.TestCase):
 
     def test_build_databars_from_with_defaults(self):
         # Arrange
-        data = TestDataProvider.get_gbpusd_1min_bid()[:1000]
+        data = TestDataProvider.gbpusd_1min_bid()[:1000]
         bar_builder = BarBuilder(data, 5, 1)
 
         # Act
@@ -67,7 +67,7 @@ class BarBuilderTests(unittest.TestCase):
 
     def test_build_databars_from_with_param(self):
         # Arrange
-        data = TestDataProvider.get_gbpusd_1min_bid()[:1000]
+        data = TestDataProvider.gbpusd_1min_bid()[:1000]
         bar_builder = BarBuilder(data, 5, 1)
 
         # Act
@@ -78,7 +78,7 @@ class BarBuilderTests(unittest.TestCase):
 
     def test_can_build_bars_all(self):
         # Arrange
-        data = TestDataProvider.get_gbpusd_1min_bid()[:1000]
+        data = TestDataProvider.gbpusd_1min_bid()[:1000]
         bar_builder = BarBuilder(data, 5, 1)
 
         # Act
@@ -89,7 +89,7 @@ class BarBuilderTests(unittest.TestCase):
 
     def test_can_build_bars_range_with_defaults(self):
         # Arrange
-        data = TestDataProvider.get_gbpusd_1min_bid()[:1000]
+        data = TestDataProvider.gbpusd_1min_bid()[:1000]
         bar_builder = BarBuilder(data, 5, 1)
 
         # Act
@@ -100,7 +100,7 @@ class BarBuilderTests(unittest.TestCase):
 
     def test_can_build_bars_range_with_param(self):
         # Arrange
-        data = TestDataProvider.get_gbpusd_1min_bid()[:1000]
+        data = TestDataProvider.gbpusd_1min_bid()[:1000]
         bar_builder = BarBuilder(data, 5, 1)
 
         # Act
@@ -111,7 +111,7 @@ class BarBuilderTests(unittest.TestCase):
 
     def test_can_build_bars_from_with_defaults(self):
         # Arrange
-        data = TestDataProvider.get_gbpusd_1min_bid()[:1000]
+        data = TestDataProvider.gbpusd_1min_bid()[:1000]
         bar_builder = BarBuilder(data, 5, 1)
 
         # Act
@@ -122,7 +122,7 @@ class BarBuilderTests(unittest.TestCase):
 
     def test_can_build_bars_from_with_param(self):
         # Arrange
-        data = TestDataProvider.get_gbpusd_1min_bid()[:1000]
+        data = TestDataProvider.gbpusd_1min_bid()[:1000]
         bar_builder = BarBuilder(data, 5, 1)
 
         # Act
@@ -136,7 +136,7 @@ class IndicatorUpdaterTests(unittest.TestCase):
 
     def test_can_update_indicator_with_bars(self):
         # Arrange
-        data = TestDataProvider.get_gbpusd_1min_bid()[:1000]
+        data = TestDataProvider.gbpusd_1min_bid()[:1000]
         bar_builder = BarBuilder(data, 5, 1)
         bars = bar_builder.build_bars_all()
         ema = ExponentialMovingAverage(10)
@@ -152,7 +152,7 @@ class IndicatorUpdaterTests(unittest.TestCase):
 
     def test_can_update_indicator_with_data_bars(self):
         # Arrange
-        data = TestDataProvider.get_gbpusd_1min_bid()[:1000]
+        data = TestDataProvider.gbpusd_1min_bid()[:1000]
         bar_builder = BarBuilder(data, 5, 1)
         bars = bar_builder.build_databars_all()
         ema = ExponentialMovingAverage(10)
@@ -168,7 +168,7 @@ class IndicatorUpdaterTests(unittest.TestCase):
 
     def test_can_build_features_from_bars(self):
         # Arrange
-        data = TestDataProvider.get_gbpusd_1min_bid()[:1000]
+        data = TestDataProvider.gbpusd_1min_bid()[:1000]
         bar_builder = BarBuilder(data, 5, 1)
         bars = bar_builder.build_bars_all()
         ema = ExponentialMovingAverage(10)
@@ -184,7 +184,7 @@ class IndicatorUpdaterTests(unittest.TestCase):
 
     def test_can_build_features_from_data_bars(self):
         # Arrange
-        data = TestDataProvider.get_gbpusd_1min_bid()[:1000]
+        data = TestDataProvider.gbpusd_1min_bid()[:1000]
         bar_builder = BarBuilder(data, 5, 1)
         bars = bar_builder.build_databars_all()
         ema = ExponentialMovingAverage(10)
