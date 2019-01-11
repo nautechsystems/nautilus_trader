@@ -11,15 +11,14 @@
 
 from cpython.datetime cimport datetime
 from pandas import DataFrame
-from typing import List, Dict, Callable
+from typing import List, Dict
 
 from inv_trader.backtest.data cimport BacktestDataClient
 from inv_trader.backtest.execution cimport BacktestExecClient
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.common.clock cimport TestClock
-from inv_trader.model.objects cimport Symbol, Instrument, BarType
+from inv_trader.model.objects cimport Instrument, BarType
 from inv_trader.strategy cimport TradeStrategy
-from inv_trader.tools cimport BarBuilder
 
 
 cdef class BacktestEngine:
@@ -61,10 +60,6 @@ cdef class BacktestEngine:
         """
         Run the backtest.
         """
-        # Pull bar handlers out of data client
-
-        cdef dict bar_handlers = {}
-
         cdef datetime time = self.trader._clock.unix_epoch()
 
         self.data_client.iterate()
