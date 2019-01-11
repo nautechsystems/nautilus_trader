@@ -90,7 +90,7 @@ cdef class DataClient:
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the data client.")
 
-    cpdef void update_instrument(self, symbol: Symbol):
+    cpdef void update_instrument(self, Symbol symbol):
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the data client.")
 
@@ -250,13 +250,12 @@ cdef class DataClient:
             self._tick_handlers[symbol].append(handler)
             self._log.debug(f"Added tick {handler}.")
 
-    cdef void _unsubscribe_ticks(self, Symbol symbol, handler: Callable):
+    cdef void _unsubscribe_ticks(self, Symbol symbol, handler):
         """
         Unsubscribes from live tick data for the given symbol and venue.
 
         :param symbol: The tick symbol to unsubscribe from.
         :param handler: The callable handler which was subscribed (can be None).
-        :raises ValueError: If the symbol is not a valid string.
         """
         Precondition.type_or_none(handler, Callable, 'handler')
 

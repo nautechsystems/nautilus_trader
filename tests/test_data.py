@@ -55,7 +55,7 @@ class LiveDataClientTests(unittest.TestCase):
         self.data_client.disconnect()
 
         # Act
-        result = self.data_client.is_connected
+        result = self.data_client.is_connected()
 
         # Assert
         self.assertFalse(result)
@@ -65,7 +65,7 @@ class LiveDataClientTests(unittest.TestCase):
         self.data_client.connect()
 
         # Act
-        result = self.data_client.is_connected
+        result = self.data_client.is_connected()
 
         # Assert
         self.assertTrue(result)

@@ -49,17 +49,6 @@ cdef class BacktestEngine:
         self.data_client = BacktestDataClient(instruments, data)
         self.exec_client = BacktestExecClient()
 
-        # Convert instruments list to dictionary indexed by symbol
-        instruments_dict = {}  # type: Dict[Symbol, Instrument]
-        for instrument in instruments:
-            instruments_dict[instrument.symbol] = instrument
-
-        for symbol, instrument in instruments_dict:
-            self.bar_builders[symbol] = BarBuilder(decimal_precision=instrument.tick_decimals)
-
-        # Add instruments to data client
-        self.data_client._instruments = instruments_dict
-
         # Replace strategies internal clocks with test clocks
         for strategy in strategies:
             strategy._change_clock(TestClock())
