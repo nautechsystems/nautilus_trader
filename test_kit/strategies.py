@@ -11,7 +11,6 @@
 
 from inv_trader.model.enums import Venue, Resolution, QuoteType, OrderSide
 from inv_trader.model.objects import Symbol, Tick, BarType, Bar
-from inv_trader.model.order import OrderFactory
 from inv_trader.model.events import Event
 from inv_trader.model.identifiers import Label, OrderId, PositionId
 from inv_trader.strategy import TradeStrategy
@@ -26,23 +25,23 @@ class TestStrategy1(TradeStrategy):
     A simple strategy for unit testing.
     """
 
-    def __init__(self):
+    def __init__(self, bar_type: BarType):
         """
         Initializes a new instance of the TestStrategy1 class.
         """
         super().__init__(label='UnitTests', order_id_tag='TS01')
         self.object_storer = ObjectStorer()
-
-        self.gbpusd_1sec_mid = BarType(GBPUSD_FXCM,
-                                       1,
-                                       Resolution.SECOND,
-                                       QuoteType.MID)
+        self.bar_type = bar_type
 
         self.ema1 = ExponentialMovingAverage(10)
         self.ema2 = ExponentialMovingAverage(20)
 
-        self.register_indicator(self.gbpusd_1sec_mid, self.ema1, self.ema1.update)
-        self.register_indicator(self.gbpusd_1sec_mid, self.ema2, self.ema2.update)
+        self.register_indicator(bar_type=self.bar_type,
+                                indicator=self.ema1,
+                                update_method=self.ema1.update)
+        self.register_indicator(bar_type=self.bar_type,
+                                indicator=self.ema2,
+                                update_method=self.ema2.update)
 
         self.position_id = None
 
@@ -59,7 +58,7 @@ class TestStrategy1(TradeStrategy):
 
         self.object_storer.store((bar_type, Bar))
 
-        if bar_type == self.gbpusd_1sec_mid:
+        if bar_type == self.bar_type:
             if self.ema1.value > self.ema2.value:
                 buy_order = self.order_factory.market(
                     Symbol('GBPUSD', Venue.FXCM),

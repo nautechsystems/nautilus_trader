@@ -139,10 +139,11 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertEqual(timezone.utc, result.tzinfo)
 
     def test_can_get_indicators(self):
-        strategy = TestStrategy1()
+        bar_type = TestStubs.bartype_gbpusd_1sec_mid()
+        strategy = TestStrategy1(bar_type)
 
         # Act
-        result = strategy.indicators(strategy.gbpusd_1sec_mid)
+        result = strategy.indicators(strategy.bar_type)
 
         # Assert
         self.assertTrue(2, len(result))
@@ -150,7 +151,8 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_call_all_indicators_initialized(self):
         # Arrange
-        strategy = TestStrategy1()
+        bar_type = TestStubs.bartype_gbpusd_1sec_mid()
+        strategy = TestStrategy1(bar_type)
 
         # Act
         result = strategy.all_indicators_initialized()
@@ -159,7 +161,8 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertFalse(result)
 
     def test_getting_indicators_for_unknown_bar_type_raises_exception(self):
-        strategy = TestStrategy1()
+        bar_type = TestStubs.bartype_gbpusd_1sec_mid()
+        strategy = TestStrategy1(bar_type)
 
         unknown_bar_type = BarType(
             AUDUSD_FXCM,
@@ -172,7 +175,8 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertRaises(ValueError, strategy.indicators, unknown_bar_type)
 
     def test_getting_bars_for_unknown_bar_type_raises_exception(self):
-        strategy = TestStrategy1()
+        bar_type = TestStubs.bartype_gbpusd_1sec_mid()
+        strategy = TestStrategy1(bar_type)
 
         unknown_bar_type = BarType(
             AUDUSD_FXCM,
@@ -185,7 +189,8 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertRaises(ValueError, strategy.bars, unknown_bar_type)
 
     def test_can_get_bars(self):
-        strategy = TestStrategy1()
+        bar_type = TestStubs.bartype_gbpusd_1sec_mid()
+        strategy = TestStrategy1(bar_type)
 
         bar_type = BarType(GBPUSD_FXCM,
                            1,
@@ -209,7 +214,8 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertTrue(bar, result[0])
 
     def test_getting_bar_for_unknown_bar_type_raises_exception(self):
-        strategy = TestStrategy1()
+        bar_type = TestStubs.bartype_gbpusd_1sec_mid()
+        strategy = TestStrategy1(bar_type)
 
         unknown_bar_type = BarType(
             AUDUSD_FXCM,
@@ -222,7 +228,8 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertRaises(ValueError, strategy.bar, unknown_bar_type, 0)
 
     def test_getting_bar_at_out_of_range_index_raises_exception(self):
-        strategy = TestStrategy1()
+        bar_type = TestStubs.bartype_gbpusd_1sec_mid()
+        strategy = TestStrategy1(bar_type)
 
         bar_type = BarType(GBPUSD_FXCM,
                            1,
@@ -244,7 +251,8 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertRaises(IndexError, strategy.bar, bar_type, -2)
 
     def test_can_get_bar(self):
-        strategy = TestStrategy1()
+        bar_type = TestStubs.bartype_gbpusd_1sec_mid()
+        strategy = TestStrategy1(bar_type)
 
         bar_type = BarType(GBPUSD_FXCM,
                            1,
@@ -268,14 +276,16 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertEqual(bar, result)
 
     def test_getting_last_tick_with_unknown_symbol_raises_exception(self):
-        strategy = TestStrategy1()
+        bar_type = TestStubs.bartype_gbpusd_1sec_mid()
+        strategy = TestStrategy1(bar_type)
 
         # Act
         # Assert
         self.assertRaises(ValueError, strategy.last_tick, AUDUSD_FXCM)
 
     def test_can_get_last_tick(self):
-        strategy = TestStrategy1()
+        bar_type = TestStubs.bartype_gbpusd_1sec_mid()
+        strategy = TestStrategy1(bar_type)
 
         tick = Tick(Symbol('AUDUSD', Venue.FXCM),
                     Decimal('1.00000'),
@@ -292,7 +302,8 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_getting_order_with_unknown_id_raises_exception(self):
         # Arrange
-        strategy = TestStrategy1()
+        bar_type = TestStubs.bartype_gbpusd_1sec_mid()
+        strategy = TestStrategy1(bar_type)
 
         # Act
         # Assert
@@ -300,7 +311,8 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_get_order(self):
         # Arrange
-        strategy = TestStrategy1()
+        bar_type = TestStubs.bartype_audusd_1min_bid()
+        strategy = TestStrategy1(bar_type)
 
         order = self.order_factory.market(
             AUDUSD_FXCM,
@@ -319,7 +331,8 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_getting_position_with_unknown_id_raises_exception(self):
         # Arrange
-        strategy = TestStrategy1()
+        bar_type = TestStubs.bartype_audusd_1min_bid()
+        strategy = TestStrategy1(bar_type)
 
         # Act
         # Assert
@@ -327,7 +340,8 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_get_position(self):
         # Arrange
-        strategy = TestStrategy1()
+        bar_type = TestStubs.bartype_audusd_1min_bid()
+        strategy = TestStrategy1(bar_type)
 
         position = Position(
             AUDUSD_FXCM,
@@ -344,7 +358,8 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_start_strategy(self):
         # Arrange
-        strategy = TestStrategy1()
+        bar_type = TestStubs.bartype_audusd_1min_bid()
+        strategy = TestStrategy1(bar_type)
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
@@ -360,7 +375,8 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_stop_strategy(self):
         # Arrange
-        strategy = TestStrategy1()
+        bar_type = TestStubs.bartype_audusd_1min_bid()
+        strategy = TestStrategy1(bar_type)
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
@@ -373,7 +389,8 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_reset_strategy(self):
         # Arrange
-        strategy = TestStrategy1()
+        bar_type = TestStubs.bartype_audusd_1min_bid()
+        strategy = TestStrategy1(bar_type)
 
         bar_type = BarType(GBPUSD_FXCM,
                            1,
@@ -401,11 +418,8 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_register_indicator_with_strategy(self):
         # Arrange
-        bar_type = BarType(GBPUSD_FXCM,
-                           1,
-                           Resolution.SECOND,
-                           QuoteType.MID)
-        strategy = TestStrategy1()
+        bar_type = TestStubs.bartype_audusd_1min_bid()
+        strategy = TestStrategy1(bar_type)
 
         # Act
         result = strategy.indicators(bar_type)
@@ -415,7 +429,8 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_set_time_alert(self):
         # Arrange
-        strategy = TestStrategy1()
+        bar_type = TestStubs.bartype_audusd_1min_bid()
+        strategy = TestStrategy1(bar_type)
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
@@ -433,7 +448,8 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_cancel_time_alert(self):
         # Arrange
-        strategy = TestStrategy1()
+        bar_type = TestStubs.bartype_audusd_1min_bid()
+        strategy = TestStrategy1(bar_type)
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
@@ -451,7 +467,8 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_stopping_a_strategy_cancels_a_running_time_alert(self):
         # Arrange
-        strategy = TestStrategy1()
+        bar_type = TestStubs.bartype_audusd_1min_bid()
+        strategy = TestStrategy1(bar_type)
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
@@ -468,7 +485,8 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_set_multiple_time_alerts(self):
         # Arrange
-        strategy = TestStrategy1()
+        bar_type = TestStubs.bartype_audusd_1min_bid()
+        strategy = TestStrategy1(bar_type)
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
@@ -488,7 +506,8 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_set_timer(self):
         # Arrange
-        strategy = TestStrategy1()
+        bar_type = TestStubs.bartype_audusd_1min_bid()
+        strategy = TestStrategy1(bar_type)
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
@@ -505,7 +524,8 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_cancel_timer(self):
         # Arrange
-        strategy = TestStrategy1()
+        bar_type = TestStubs.bartype_audusd_1min_bid()
+        strategy = TestStrategy1(bar_type)
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
@@ -524,7 +544,8 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_stopping_a_strategy_cancels_a_running_timer(self):
         # Arrange
-        strategy = TestStrategy1()
+        bar_type = TestStubs.bartype_audusd_1min_bid()
+        strategy = TestStrategy1(bar_type)
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
@@ -541,7 +562,8 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_set_repeating_timer(self):
         # Arrange
-        strategy = TestStrategy1()
+        bar_type = TestStubs.bartype_audusd_1min_bid()
+        strategy = TestStrategy1(bar_type)
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
@@ -560,7 +582,8 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_cancel_repeating_timer(self):
         # Arrange
-        strategy = TestStrategy1()
+        bar_type = TestStubs.bartype_audusd_1min_bid()
+        strategy = TestStrategy1(bar_type)
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
@@ -579,7 +602,8 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_set_two_repeating_timers(self):
         # Arrange
-        strategy = TestStrategy1()
+        bar_type = TestStubs.bartype_audusd_1min_bid()
+        strategy = TestStrategy1(bar_type)
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
@@ -597,7 +621,8 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_generate_order_id(self):
         # Arrange
-        strategy = TestStrategy1()
+        bar_type = TestStubs.bartype_audusd_1min_bid()
+        strategy = TestStrategy1(bar_type)
 
         # Act
         result = strategy.generate_order_id(AUDUSD_FXCM)
@@ -607,7 +632,7 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_get_opposite_side_returns_expected_sides(self):
         # Arrange
-        strategy = TestStrategy1()
+        strategy = TradeStrategy()
 
         # Act
         result1 = strategy.get_opposite_side(OrderSide.BUY)
@@ -619,7 +644,7 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_get_flatten_side_with_flat_market_position_raises_exception(self):
         # Arrange
-        strategy = TestStrategy1()
+        strategy = TradeStrategy()
 
         # Act
         # Assert
@@ -627,7 +652,7 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_get_flatten_side_with_long_or_short_market_position_returns_expected_sides(self):
         # Arrange
-        strategy = TestStrategy1()
+        strategy = TradeStrategy()
 
         # Act
         result1 = strategy.get_flatten_side(MarketPosition.LONG)
@@ -639,7 +664,7 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_submitting_order_with_identical_id_raises_ex(self):
         # Arrange
-        strategy = TestStrategy1()
+        strategy = TradeStrategy()
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
@@ -659,7 +684,7 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_strategy_can_submit_order(self):
         # Arrange
-        strategy = TestStrategy1()
+        strategy = TradeStrategy()
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
@@ -681,7 +706,7 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_cancelling_order_which_does_not_exist_raises_ex(self):
         # Arrange
-        strategy = TestStrategy1()
+        strategy = TradeStrategy()
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
@@ -698,7 +723,7 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_cancel_order(self):
         # Arrange
-        strategy = TestStrategy1()
+        strategy = TradeStrategy()
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
@@ -722,7 +747,7 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_modifying_order_which_does_not_exist_raises_ex(self):
         # Arrange
-        strategy = TestStrategy1()
+        strategy = TradeStrategy()
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
@@ -739,7 +764,7 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_modify_order(self):
         # Arrange
-        strategy = TestStrategy1()
+        strategy = TradeStrategy()
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
@@ -766,7 +791,7 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_cancel_all_orders(self):
         # Arrange
-        strategy = TestStrategy1()
+        strategy = TradeStrategy()
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
@@ -806,7 +831,7 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_flatten_position(self):
         # Arrange
-        strategy = TestStrategy1()
+        strategy = TradeStrategy()
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
@@ -834,7 +859,7 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_flatten_position_which_does_not_exist_raises_exception(self):
         # Arrange
-        strategy = TestStrategy1()
+        strategy = TradeStrategy()
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
@@ -844,7 +869,7 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_flatten_all_positions(self):
         # Arrange
-        strategy = TestStrategy1()
+        strategy = TradeStrategy()
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
@@ -885,25 +910,26 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertTrue(PositionId('some-position2') in strategy.completed_positions())
         self.assertTrue(strategy.is_flat())
 
-    # def test_registering_execution_client_with_none_raises_exception(self):
-    #     # Arrange
-    #     strategy = TestStrategy1()
-    #
-    #     # Act
-    #     # Assert
-    #     self.assertRaises(ValueError, strategy._register_execution_client, None)
-
-    def test_registering_execution_client_of_wrong_type_raises_exception(self):
+    def test_registering_data_client_with_none_raises_exception(self):
         # Arrange
-        strategy = TestStrategy1()
+        strategy = TradeStrategy()
 
         # Act
         # Assert
-        self.assertRaises(TypeError, strategy._register_execution_client, LiveDataClient())
+        self.assertRaises(ValueError, strategy._register_data_client, None)
+
+    def test_registering_execution_client_with_none_raises_exception(self):
+        # Arrange
+        strategy = TradeStrategy()
+
+        # Act
+        # Assert
+        self.assertRaises(ValueError, strategy._register_execution_client, None)
 
     def test_can_update_bars_and_indicators(self):
         # Arrange
-        strategy = TestStrategy1()
+        bar_type = TestStubs.bartype_gbpusd_1sec_mid()
+        strategy = TestStrategy1(bar_type)
 
         bar_type = BarType(GBPUSD_FXCM,
                            1,
@@ -929,7 +955,8 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_update_order_events(self):
         # Arrange
-        strategy = TestStrategy1()
+        bar_type = TestStubs.bartype_audusd_1min_bid()
+        strategy = TestStrategy1(bar_type)
         order = self.order_factory.market(
             AUDUSD_FXCM,
             OrderId('AUDUSD-123456-1'),
@@ -954,7 +981,8 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_track_orders_for_an_opened_position(self):
         # Arrange
-        strategy = TestStrategy1()
+        bar_type = TestStubs.bartype_audusd_1min_bid()
+        strategy = TestStrategy1(bar_type)
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
@@ -981,7 +1009,8 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_track_orders_for_a_closing_position(self):
         # Arrange
-        strategy = TestStrategy1()
+        bar_type = TestStubs.bartype_audusd_1min_bid()
+        strategy = TestStrategy1(bar_type)
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 

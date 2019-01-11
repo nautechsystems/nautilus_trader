@@ -766,7 +766,7 @@ cdef class TradeStrategy:
         self.log.info(f"Cancelled timer for {label}.")
 
 #-- INTERNAL METHODS ----------------------------------------------------------#
-    cpdef void _register_data_client(self, DataClient client):
+    cpdef _register_data_client(self, DataClient client):
         """
         Register the strategy with the given data client.
 
@@ -774,9 +774,11 @@ cdef class TradeStrategy:
         :raises ValueError: If client is None.
         :raises TypeError: If client does not inherit from DataClient.
         """
+        Precondition.not_none(client, 'client')
+
         self._data_client = client
 
-    cpdef void _register_execution_client(self, ExecutionClient client):
+    cpdef _register_execution_client(self, ExecutionClient client):
         """
         Register the strategy with the given execution client.
 
@@ -784,6 +786,8 @@ cdef class TradeStrategy:
         :raises ValueError: If client is None.
         :raises TypeError: If client does not inherit from ExecutionClient.
         """
+        Precondition.not_none(client, 'client')
+
         self._exec_client = client
         self.account = client.account
 

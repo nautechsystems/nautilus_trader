@@ -30,8 +30,9 @@ class ExecutionClientTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
+        self.bar_type = TestStubs.bartype_gbpusd_1min_bid()
         self.order_factory = OrderFactory()
-        self.strategy = TestStrategy1()
+        self.strategy = TestStrategy1(self.bar_type)
         self.exec_client = MockExecClient()
         self.exec_client.connect()
 
@@ -124,8 +125,9 @@ class LiveExecClientTests(unittest.TestCase):
         # Fixture Setup
         print("\n")
 
+        self.bar_type = TestStubs.bartype_audusd_1min_bid()
         self.order_factory = OrderFactory()
-        self.strategy = TestStrategy1()
+        self.strategy = TestStrategy1(bar_type=self.bar_type)
         self.exec_client = LiveExecClient()
         self.exec_client.register_strategy(self.strategy)
 

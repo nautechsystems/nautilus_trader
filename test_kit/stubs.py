@@ -9,8 +9,14 @@
 
 from datetime import datetime, timedelta, timezone
 
+from inv_trader.core.decimal import Decimal
+from inv_trader.model.enums import Venue, Resolution, QuoteType, CurrencyCode, SecurityType
+from inv_trader.model.objects import Symbol, BarType, Instrument
 # Unix epoch is the UTC time at 00:00:00 on 1/1/1970
 UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc)
+AUDUSD_FXCM = Symbol('AUDUSD', Venue.FXCM)
+GBPUSD_FXCM = Symbol('GBPUSD', Venue.FXCM)
+USDJPY_FXCM = Symbol('USDJPY', Venue.FXCM)
 
 
 class TestStubs:
@@ -29,3 +35,79 @@ class TestStubs:
         :return: The unix epoch datetime plus any offset.
         """
         return UNIX_EPOCH + timedelta(minutes=offset_mins)
+
+    @staticmethod
+    def instrument_gbpusd():
+        return Instrument(Symbol('GBPUSD', Venue.FXCM),
+                          'GBP/USD',
+                          CurrencyCode.USD,
+                          SecurityType.FOREX,
+                          tick_decimals=5,
+                          tick_size=Decimal(0.00001, 5),
+                          tick_value=Decimal(0.01, 2),
+                          target_direct_spread=Decimal(0.00001, 5),
+                          round_lot_size=1000,
+                          contract_size=1,
+                          min_stop_distance_entry=Decimal(0),
+                          min_limit_distance_entry=Decimal(0),
+                          min_stop_distance=Decimal(0),
+                          min_limit_distance=Decimal(0),
+                          min_trade_size=1,
+                          max_trade_size=50000000,
+                          margin_requirement=Decimal(0),
+                          rollover_interest_buy=Decimal(0),
+                          rollover_interest_sell=Decimal(0),
+                          timestamp=UNIX_EPOCH)
+
+    @staticmethod
+    def instrument_usdjpy():
+        return Instrument(Symbol('USDJPY', Venue.FXCM),
+                          'USD/JPY',
+                          CurrencyCode.JPY,
+                          SecurityType.FOREX,
+                          tick_decimals=3,
+                          tick_size=Decimal(0.001, 3),
+                          tick_value=Decimal(0.01, 2),
+                          target_direct_spread=Decimal(0.001, 3),
+                          round_lot_size=1000,
+                          contract_size=1,
+                          min_stop_distance_entry=Decimal(0),
+                          min_limit_distance_entry=Decimal(0),
+                          min_stop_distance=Decimal(0),
+                          min_limit_distance=Decimal(0),
+                          min_trade_size=1,
+                          max_trade_size=50000000,
+                          margin_requirement=Decimal(0),
+                          rollover_interest_buy=Decimal(0),
+                          rollover_interest_sell=Decimal(0),
+                          timestamp=UNIX_EPOCH)
+
+
+    @staticmethod
+    def bartype_audusd_1min_bid():
+        return BarType(AUDUSD_FXCM, 1, Resolution.MINUTE, QuoteType.BID)
+
+    @staticmethod
+    def bartype_audusd_1min_ask():
+        return BarType(AUDUSD_FXCM, 1, Resolution.MINUTE, QuoteType.ASK)
+
+    @staticmethod
+    def bartype_gbpusd_1min_bid():
+        return BarType(GBPUSD_FXCM, 1, Resolution.MINUTE, QuoteType.BID)
+
+    @staticmethod
+    def bartype_gbpusd_1min_ask():
+        return BarType(GBPUSD_FXCM, 1, Resolution.MINUTE, QuoteType.ASK)
+
+    @staticmethod
+    def bartype_gbpusd_1sec_mid():
+        return BarType(GBPUSD_FXCM, 1, Resolution.SECOND, QuoteType.MID)
+
+    @staticmethod
+    def bartype_usdjpy_1min_bid():
+        return BarType(USDJPY_FXCM, 1, Resolution.MINUTE, QuoteType.BID)
+
+    @staticmethod
+    def bartype_usdjpy_1min_ask():
+        return BarType(USDJPY_FXCM, 1, Resolution.MINUTE, QuoteType.ASK)
+

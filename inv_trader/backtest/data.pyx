@@ -11,7 +11,7 @@
 
 from cpython.datetime cimport datetime
 from pandas import DataFrame
-from typing import List, Dict, Callable
+from typing import Set, List, Dict, Callable
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.common.data cimport DataClient
@@ -36,26 +36,33 @@ cdef class BacktestDataClient(DataClient):
         Precondition.list_type(instruments, Instrument, 'instruments')
         Precondition.dict_types(data, BarType, DataFrame, 'data')
 
+        self._iteration = 0
+        self.bar_builders = {}  # type: Dict[Symbol, BarBuilder]
         # Convert instruments list to dictionary indexed by symbol
-        instruments_dict = {}  # type: Dict[Symbol, Instrument]
+        cdef dict instruments_dict = {}  # type: Dict[Symbol, Instrument]
         for instrument in instruments:
             instruments_dict[instrument.symbol] = instrument
         self._instruments = instruments_dict
 
-        cdef list data_symbols = data.keys().symbol.distinct()  # type: List[Symbol]
+        # Create set of all data symbols
+        cdef set data_symbols = set()  # type: Set[Symbol]
+        for bar_type in data:
+            data_symbols.add(bar_type.symbol)
 
+        # Check there is the needed instrument for each data symbol
         for key in self._instruments.keys():
             Precondition.true(key in data_symbols, 'key in data_symbols, key in data_symbols')
 
-        first_shape = data.values().shape
+        cdef tuple first_shape = next(iter(data.values())).shape
         for dataframe in data.values():
             Precondition.true(dataframe.shape == first_shape, 'dataframe.shape == first_shape')
 
-        for bar_type, dataframe in data:
-            self.bar_builders[bar_type] = BarBuilder(data=dataframe,
-                                                     decimal_precision=instrument.tick_decimals) # type: Dict[BarType, BarBuilder]
+        for bar_type, dataframe in data.items():
+            if bar_type.symbol not in self.bar_builders:
+                self.bar_builders[bar_type.symbol] = BarBuilder(data=dataframe, decimal_precision=instrument.tick_decimals) # type: Dict[BarType, BarBuilder]
 
-        self._iteration = 0
+        print(self._instruments)
+        print(self.bar_builders)
 
     cpdef void connect(self):
         # Raise exception if not overridden in implementation.
