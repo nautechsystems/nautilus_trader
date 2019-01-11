@@ -18,8 +18,6 @@ cdef class BacktestEngine:
     """
     Provides a backtest engine to run a trader on historical data.
     """
-    cdef dict data
-    cdef dict bar_builders
     cdef BacktestDataClient data_client
     cdef BacktestExecClient exec_client
     cdef Trader trader

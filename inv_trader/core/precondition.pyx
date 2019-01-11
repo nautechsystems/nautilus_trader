@@ -64,19 +64,39 @@ cdef class Precondition:
                              f"type = {type(argument)}")
 
     @staticmethod
-    cdef list_type(list argument, type type_to_contain, str param_name):
+    cdef list_type(list argument, type element_type, str param_name):
         """
         Check the list only contains types of the given type to contain.
 
         :param argument: The list argument to check.
-        :param type_to_contain: The expected type if not None.
+        :param element_type: The expected element type if not empty.
         :param param_name: The parameter name.
-        :raises ValueError: If the list contains a type other than the type to contain.
+        :raises ValueError: If the list contains a type other than the given type to contain.
         """
         for element in argument:
-            if not isinstance(element, type_to_contain):
-                raise ValueError(f"{PRE_FAILED} (the {param_name} list contained a type other than {type_to_contain}). "
+            if not isinstance(element, element_type):
+                raise ValueError(f"{PRE_FAILED} (the {param_name} list contained an element with a type other than {element_type}). "
                                 f"type = {type(element)}")
+
+    @staticmethod
+    cdef dict_types(dict argument, type key_type, type value_type, str param_name):
+        """
+        Check the dictionary only contains types of the given key and value types to contain.
+
+        :param argument: The dictionary argument to check.
+        :param key_type: The expected type of the keys if not empty.
+        :param value_type: The expected type of the values if not empty.
+        :param param_name: The parameter name.
+        :raises ValueError: If the dictionary contains a key type other than the given key_type to contain.
+        :raises ValueError: If the dictionary contains a value type other than the given value_type to contain.
+        """
+        for key, value in argument.items():
+            if not isinstance(key, key_type):
+                raise ValueError(f"{PRE_FAILED} (the {param_name} dictionary contained a key type other than {key_type}). "
+                                f"type = {type(key)}")
+            if not isinstance(value, value_type):
+                raise ValueError(f"{PRE_FAILED} (the {param_name} dictionary contained a value type other than {value_type}). "
+                                f"type = {type(value)}")
 
     @staticmethod
     cdef none(object argument, str param_name):
@@ -237,8 +257,12 @@ class PyPrecondition:
         Precondition.type_or_none(argument, is_type, param_name)
 
     @staticmethod
-    def list_type(argument, type_to_contain, param_name):
-        Precondition.list_type(argument, type_to_contain, param_name)
+    def list_type(argument, element_type, param_name):
+        Precondition.list_type(argument, element_type, param_name)
+
+    @staticmethod
+    def dict_types(argument, key_type, value_type, param_name):
+        Precondition.dict_types(argument, key_type, value_type, param_name)
 
     @staticmethod
     def none(argument, param_name):

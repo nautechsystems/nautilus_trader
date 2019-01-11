@@ -9,13 +9,13 @@
 
 # cython: language_level=3, boundscheck=False
 
-from typing import List, Dict, Callable
-
 from cpython.datetime cimport datetime
+from pandas import DataFrame
+from typing import List, Dict, Callable
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.common.data cimport DataClient
-from inv_trader.model.objects cimport Symbol, BarType, Instrument
+from inv_trader.model.objects cimport Symbol, BarType, Instrument, Bar
 from inv_trader.tools cimport BarBuilder
 
 
@@ -25,16 +25,16 @@ cdef class BacktestDataClient(DataClient):
     """
 
     def __init__(self,
-                 list instruments,
-                 dict data):
+                 list instruments: List[Instrument],
+                 dict data: Dict[BarType, DataFrame]):
         """
         Initializes a new instance of the BacktestDataClient class.
 
         :param instruments: The instruments needed for the backtest.
         :param data: The historical market data needed for the backtest.
         """
-        # Check there is an instrument for each data symbol
-        # Check the shape of each data symbol is equal
+        Precondition.list_type(instruments, Instrument, 'instruments')
+        Precondition.dict_types(data, BarType, DataFrame, 'data')
 
         # Convert instruments list to dictionary indexed by symbol
         instruments_dict = {}  # type: Dict[Symbol, Instrument]
@@ -42,9 +42,20 @@ cdef class BacktestDataClient(DataClient):
             instruments_dict[instrument.symbol] = instrument
         self._instruments = instruments_dict
 
+        cdef list data_symbols = data.keys().symbol.distinct()  # type: List[Symbol]
+
+        for key in self._instruments.keys():
+            Precondition.true(key in data_symbols, 'key in data_symbols, key in data_symbols')
+
+        first_shape = data.values().shape
+        for dataframe in data.values():
+            Precondition.true(dataframe.shape == first_shape, 'dataframe.shape == first_shape')
+
         for bar_type, dataframe in data:
             self.bar_builders[bar_type] = BarBuilder(data=dataframe,
                                                      decimal_precision=instrument.tick_decimals) # type: Dict[BarType, BarBuilder]
+
+        self._iteration = 0
 
     cpdef void connect(self):
         # Raise exception if not overridden in implementation.
@@ -78,9 +89,7 @@ cdef class BacktestDataClient(DataClient):
         """
         Precondition.true(bar_type in self.bar_builders, 'bar_type in self.bar_builders')
 
-        cdef BarBuilder bar_builder = self.bar_builders[bar_type]
-        cdef list bars = []
-
+        cdef list bars = self.bar_builders[bar_type].build_bars_range(start=0, end=quantity)
 
         self._log.info(f"Historical download of {len(bars)} bars for {bar_type} complete.")
 
@@ -104,3 +113,21 @@ cdef class BacktestDataClient(DataClient):
         """
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the data client.")
+
+    cdef void iterate(self):
+        """
+        Iterate the data client one time step.
+        """
+        for bar_type in self._bar_handlers:
+            self._iterate_bar_type(bar_type)
+
+        self._iteration += 1
+
+    cdef void _iterate_bar_type(self, BarType bar_type):
+        """
+        Send the next bar to all of the handlers for that bar type.
+        """
+        cdef Bar bar = self.bar_builders[bar_type].build_bar(self._iteration)
+
+        for handler in self._bar_handlers[bar_type]:
+            handler(bar)

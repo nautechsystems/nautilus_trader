@@ -9,16 +9,15 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False
 
-from typing import Dict
-
 from cpython.datetime cimport datetime
-
+from pandas import DataFrame
+from typing import List, Dict, Callable
 
 from inv_trader.backtest.data cimport BacktestDataClient
 from inv_trader.backtest.execution cimport BacktestExecClient
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.common.clock cimport TestClock
-from inv_trader.model.objects cimport Symbol, Instrument
+from inv_trader.model.objects cimport Symbol, Instrument, BarType
 from inv_trader.strategy cimport TradeStrategy
 from inv_trader.tools cimport BarBuilder
 
@@ -29,9 +28,9 @@ cdef class BacktestEngine:
     """
 
     def __init__(self,
-                 list instruments,
-                 dict data,
-                 list strategies):
+                 list instruments: List[Instrument],
+                 dict data: Dict[BarType, DataFrame],
+                 list strategies: List[TradeStrategy]):
         """
         Initializes a new instance of the BacktestEngine class.
 
@@ -39,13 +38,9 @@ cdef class BacktestEngine:
         :param data: The historical market data needed for the backtest.
         """
         Precondition.list_type(instruments, Instrument, 'instruments')
+        Precondition.dict_types(data, BarType, DataFrame, 'data')
         Precondition.list_type(strategies, TradeStrategy, 'strategies')
 
-        # Assert data is the same shape
-
-
-
-        self.data = data
         self.data_client = BacktestDataClient(instruments, data)
         self.exec_client = BacktestExecClient()
 
@@ -71,19 +66,5 @@ cdef class BacktestEngine:
         cdef dict bar_handlers = {}
 
         cdef datetime time = self.trader._clock.unix_epoch()
-        cdef int row_n = 0
 
-        for symbol, data in self.data.items():
-            time = data.index[row_n]
-            bar = self.bar_builders[symbol]._build_bar(data.iloc[row_n])
-
-            for handler in bar_handlers[symbol]:
-                handler(bar)
-
-            self.trader._clock.set_time(time)
-
-            for strategy in self.trader.strategies:
-                strategy._clock.set_time(time)
-
-            row_n += 1
-
+        self.data_client.iterate()
