@@ -20,6 +20,8 @@ cdef class Precondition:
     @staticmethod
     cdef list_type(list argument, type type_to_contain, str param_name)
     @staticmethod
+    cdef dict_types(dict argument, type key_type, type value_type, str param_name)
+    @staticmethod
     cdef none(object argument, str param_name: str)
     @staticmethod
     cdef not_none(object argument, str param_name)
