@@ -15,7 +15,7 @@ from inv_trader.model.enums import Venue
 from inv_trader.model.objects import Price, Symbol
 
 
-class PriceTests(unittest.TestCase):
+class ObjectTests(unittest.TestCase):
 
     def test_create_price_with_zero_price_raises_exception(self):
         # Arrange
@@ -53,9 +53,9 @@ class PriceTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertTrue(symbol1 == symbol1)
-        self.assertTrue(symbol1 != symbol2)
-        self.assertTrue(symbol1 != symbol3)
+        self.assertTrue(symbol1.equals(symbol1))
+        self.assertTrue(not symbol1.equals(symbol2))
+        self.assertTrue(not symbol1.equals(symbol3))
 
     def test_symbol_str_and_repr(self):
         # Arrange

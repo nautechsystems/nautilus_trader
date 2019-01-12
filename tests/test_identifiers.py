@@ -47,10 +47,10 @@ class IdentifierTests(unittest.TestCase):
         label2 = Label('some-label-2')
 
         # Act
-        result1 = label1 == label1
-        result2 = label1 != label1
-        result3 = label1 == label2
-        result4 = label1 != label2
+        result1 = label1.equals(label1)
+        result2 = not label1.equals(label1)
+        result3 = label1.equals(label2)
+        result4 = not label1.equals(label2)
 
         # Assert
         self.assertTrue(result1)
@@ -84,10 +84,10 @@ class IdentifierTests(unittest.TestCase):
         order_id2 = Label('some-order_id-2')
 
         # Act
-        result1 = order_id1 == order_id1
-        result2 = order_id1 != order_id1
-        result3 = order_id1 == order_id2
-        result4 = order_id1 != order_id2
+        result1 = order_id1.equals(order_id1)
+        result2 = not order_id1.equals(order_id1)
+        result3 = order_id1.equals(order_id2)
+        result4 = not order_id1.equals(order_id2)
 
         # Assert
         self.assertTrue(result1)
@@ -103,6 +103,5 @@ class IdentifierTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertTrue(id1 == id1)
-        self.assertTrue(id1 != id2)
-
+        self.assertTrue(id1.equals(id1))
+        self.assertFalse(id1.equals(id2))

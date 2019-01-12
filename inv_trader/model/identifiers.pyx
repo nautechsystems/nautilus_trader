@@ -10,6 +10,7 @@
 # cython: language_level=3, boundscheck=False, wraparound=False
 
 from uuid import UUID
+
 from inv_trader.core.precondition cimport Precondition
 
 
@@ -28,20 +29,29 @@ cdef class Identifier:
 
         self.value = value
 
-    def __eq__(self, Identifier other) -> bool:
+    cpdef bint equals(self, Identifier other):
         """
-        Override the default equality comparison.
+        Compare if the object equals the given object.
+        
+        :param other: The other object to compare
+        :return: True if the objects are equal, otherwise False.
         """
         if isinstance(other, self.__class__):
             return self.value == other.value
         else:
             return False
 
+    def __eq__(self, Identifier other) -> bool:
+        """
+        Override the default equality comparison.
+        """
+        return self.equals(other)
+
     def __ne__(self, Identifier other) -> bool:
         """
         Override the default not-equals comparison.
         """
-        return not self.__eq__(other)
+        return not self.equals(other)
 
     def __hash__(self) -> int:
         """"
