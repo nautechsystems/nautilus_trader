@@ -46,17 +46,26 @@ cdef class Symbol:
         """
         return venue_string(self.venue)
 
+    cpdef bint equals(self, Symbol other):
+        """
+        Compare if the object equals the given object.
+        
+        :param other: The other object to compare
+        :return: True if the objects are equal, otherwise False.
+        """
+        return self.code == other.code and self.venue == other.venue
+
     def __eq__(self, Symbol other) -> bool:
         """
         Override the default equality comparison.
         """
-        return self.code == other.code and self.venue == other.venue
+        return self.equals(other)
 
     def __ne__(self, Symbol other) -> bool:
         """
         Override the default not-equals comparison.
         """
-        return not self.__eq__(other)
+        return not self.equals(other)
 
     def __hash__(self) -> int:
         """"
@@ -231,20 +240,29 @@ cdef class BarType:
         """
         return quote_type_string(self.quote_type)
 
-    def __eq__(self, BarType other) -> bool:
+    cpdef bint equals(self, BarType other):
         """
-        Override the default equality comparison.
+        Compare if the object equals the given object.
+        
+        :param other: The other object to compare
+        :return: True if the objects are equal, otherwise False.
         """
         return (self.symbol == other.symbol
                 and self.period == other.period
                 and self.resolution == other.resolution
                 and self.quote_type == other.quote_type)
 
+    def __eq__(self, BarType other) -> bool:
+        """
+        Override the default equality comparison.
+        """
+        return self.equals(other)
+
     def __ne__(self, BarType other) -> bool:
         """
         Override the default not-equals comparison.
         """
-        return not self.__eq__(other)
+        return not self.equals(other)
 
     def __hash__(self) -> int:
         """"

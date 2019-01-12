@@ -12,6 +12,7 @@
 
 cdef class Identifier:
     cdef readonly str value
+    cpdef bint equals(self, Identifier other)
 
 cdef class GUID(Identifier):
     pass

@@ -25,6 +25,7 @@ cdef class Symbol:
     cdef readonly str code
     cdef readonly Venue venue
     cdef str venue_string(self)
+    cpdef bint equals(self, Symbol other)
 
 cdef class Tick:
     """
@@ -44,6 +45,7 @@ cdef class BarType:
     cdef readonly int period
     cdef readonly Resolution resolution
     cdef readonly QuoteType quote_type
+    cpdef bint equals(self, BarType other)
     cdef str resolution_string(self)
     cdef str quote_type_string(self)
 
