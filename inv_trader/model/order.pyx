@@ -371,8 +371,8 @@ cdef class OrderFactory:
             OrderSide order_side,
             int quantity,
             Decimal price,
-            TimeInForce time_in_force,
-            datetime expire_time):
+            TimeInForce time_in_force=TimeInForce.DAY,
+            datetime expire_time=None):
         """
         Creates and returns a new limit order with the given parameters.
         If the time in force is GTD then a valid expire time must be given.
@@ -390,9 +390,6 @@ cdef class OrderFactory:
         :raises ValueError: If the price is not positive (> 0).
         :raises ValueError: If the time_in_force is GTD and the expire_time is None.
         """
-        if time_in_force is None:
-            time_in_force = TimeInForce.DAY
-
         return Order(symbol,
                      order_id,
                      label,
@@ -404,7 +401,7 @@ cdef class OrderFactory:
                      time_in_force,
                      expire_time)
 
-    cpdef Order stop(
+    cpdef Order stop_market(
             self,
             Symbol symbol,
             OrderId order_id,
@@ -412,8 +409,8 @@ cdef class OrderFactory:
             OrderSide order_side,
             int quantity,
             Decimal price,
-            TimeInForce time_in_force,
-            datetime expire_time):
+            TimeInForce time_in_force=TimeInForce.DAY,
+            datetime expire_time=None):
         """
         Creates and returns a new stop-market order with the given parameters.
         If the time in force is GTD then a valid expire time must be given.
@@ -431,9 +428,6 @@ cdef class OrderFactory:
         :raises ValueError: If the price is not positive (> 0).
         :raises ValueError: If the time_in_force is GTD and the expire_time is None.
         """
-        if time_in_force is None:
-            time_in_force = TimeInForce.DAY
-
         return Order(symbol,
                      order_id,
                      label,
@@ -453,8 +447,8 @@ cdef class OrderFactory:
             OrderSide order_side,
             int quantity,
             Decimal price,
-            TimeInForce time_in_force,
-            datetime expire_time):
+            TimeInForce time_in_force=TimeInForce.DAY,
+            datetime expire_time=None):
         """
         Creates and returns a new stop-limit order with the given parameters.
         If the time in force is GTD then a valid expire time must be given.
@@ -472,9 +466,6 @@ cdef class OrderFactory:
         :raises ValueError: If the price is not positive (> 0).
         :raises ValueError: If the time_in_force is GTD and the expire_time is None.
         """
-        if time_in_force is None:
-            time_in_force = TimeInForce.DAY
-
         return Order(symbol,
                      order_id,
                      label,
@@ -494,8 +485,8 @@ cdef class OrderFactory:
             OrderSide order_side,
             int quantity,
             Decimal price,
-            TimeInForce time_in_force,
-            datetime expire_time):
+            TimeInForce time_in_force=TimeInForce.DAY,
+            datetime expire_time=None):
         """
         Creates and returns a new market-if-touched order with the given parameters.
         If the time in force is GTD then a valid expire time must be given.
@@ -513,9 +504,6 @@ cdef class OrderFactory:
         :raises ValueError: If the price is not positive (> 0).
         :raises ValueError: If the time_in_force is GTD and the expire_time is None.
         """
-        if time_in_force is None:
-            time_in_force = TimeInForce.DAY
-
         return Order(symbol,
                      order_id,
                      label,

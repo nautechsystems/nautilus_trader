@@ -87,10 +87,10 @@ cdef class OrderFactory:
             OrderSide order_side,
             int quantity,
             Decimal price,
-            TimeInForce time_in_force,
-            datetime expire_time)
+            TimeInForce time_in_force=*,
+            datetime expire_time=*)
 
-    cpdef Order stop(
+    cpdef Order stop_market(
             self,
             Symbol symbol,
             OrderId order_id,
@@ -98,8 +98,8 @@ cdef class OrderFactory:
             OrderSide order_side,
             int quantity,
             Decimal price,
-            TimeInForce time_in_force,
-            datetime expire_time)
+            TimeInForce time_in_force=*,
+            datetime expire_time=*)
 
     cpdef Order stop_limit(
             self,
@@ -109,8 +109,8 @@ cdef class OrderFactory:
             OrderSide order_side,
             int quantity,
             Decimal price,
-            TimeInForce time_in_force,
-            datetime expire_time)
+            TimeInForce time_in_force=*,
+            datetime expire_time=*)
 
     cpdef Order market_if_touched(
             self,
@@ -120,8 +120,8 @@ cdef class OrderFactory:
             OrderSide order_side,
             int quantity,
             Decimal price,
-            TimeInForce time_in_force,
-            datetime expire_time)
+            TimeInForce time_in_force=*,
+            datetime expire_time=*)
 
     cpdef Order fill_or_kill(
             self,

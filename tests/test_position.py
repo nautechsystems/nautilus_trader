@@ -276,7 +276,7 @@ class PositionTests(unittest.TestCase):
 
     def test_position_filled_with_sell_order_then_buy_order_returns_expected_attributes(self):
         # Arrange
-        order =  self.order_factory.market(
+        order = self.order_factory.market(
             AUDUSD_FXCM,
             OrderId('AUDUSD-123456-1'),
             Label('SCALPER-01'),

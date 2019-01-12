@@ -795,7 +795,7 @@ class TradeStrategyTests(unittest.TestCase):
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
-        order1 = self.order_factory.stop(
+        order1 = self.order_factory.stop_market(
             AUDUSD_FXCM,
             OrderId('AUDUSD-123456-1'),
             Label('S1'),
@@ -805,7 +805,7 @@ class TradeStrategyTests(unittest.TestCase):
             TimeInForce.DAY,
             None)
 
-        order2 = self.order_factory.stop(
+        order2 = self.order_factory.stop_market(
             AUDUSD_FXCM,
             OrderId('AUDUSD-123456-2'),
             Label('S1'),
