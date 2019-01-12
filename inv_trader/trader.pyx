@@ -78,7 +78,7 @@ cdef class Trader:
         self.stopped_datetimes.append(self._clock.time_now())
 
         for strategy in self.strategies:
-            strategy.stop()
+            strategy.stop_market()
 
     cpdef void reset(self):
         """

@@ -207,7 +207,7 @@ class EMACrossLimitEntry(TradeStrategy):
                     stop_price = Price.create(event.average_price - self.SL_buffer,
                                               self.tick_decimals)
 
-                stop_order = self.order_factory.stop(
+                stop_order = self.order_factory.stop_market(
                     self.symbol,
                     self.generate_order_id(self.symbol),
                     Label('S1_SL'),

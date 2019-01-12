@@ -7,7 +7,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-# cython: language_level=3, boundscheck=False
+# cython: language_level=3, boundscheck=False, wraparound=False
 
 from cpython.datetime cimport datetime
 from typing import List
@@ -42,54 +42,19 @@ cdef class Position:
 
         self.symbol = symbol
         self.id = position_id
+        self.quantity = 0
+        self.market_position = MarketPosition.FLAT
         self.timestamp = timestamp
         self.entry_time = None
         self.exit_time = None
         self.average_entry_price = None
         self.average_exit_price = None
+        self.is_entered = False
+        self.is_exited = False
         self.events = []               # type: List[OrderEvent]
         self.execution_ids = []        # type: List[ExecutionId]
         self.execution_tickets = []    # type: List[ExecutionTicket]
-
-    @property
-    def quantity(self) -> int:
-        """
-        :return: The positions quantity.
-        """
-        return abs(self._relative_quantity)
-
-    @property
-    def is_entered(self) -> bool:
-        """
-        :return: A value indicating whether the position has entered into the market (bool).
-        """
-        return self.entry_time is not None
-
-    @property
-    def is_exited(self) -> bool:
-        """
-        :return: A value indicating whether the position has exited from the market (bool).
-        """
-        return self.exit_time is not None
-
-    @property
-    def market_position(self) -> MarketPosition:
-        """
-        :return: The positions current market position (MarketPosition).
-        """
-        if self._relative_quantity > 0:
-            return MarketPosition.LONG
-        elif self._relative_quantity < 0:
-            return MarketPosition.SHORT
-        else:
-            return MarketPosition.FLAT
-
-    @property
-    def event_count(self) -> int:
-        """
-        :return: The count of events since the position was initialized.
-        """
-        return len(self.events)
+        self.event_count = 0
 
     def __eq__(self, other) -> bool:
         """
@@ -129,6 +94,7 @@ cdef class Position:
         :param event: The order event to apply.
         """
         self.events.append(event)
+        self.event_count += 1
 
         # Handle event
         if isinstance(event, OrderFilled):
@@ -159,22 +125,34 @@ cdef class Position:
         Precondition.positive(quantity, 'quantity')
         Precondition.positive(average_price, 'average_price')
 
+        # Quantity logic
         if order_side is OrderSide.BUY:
             self._relative_quantity += quantity
         elif order_side is OrderSide.SELL:
             self._relative_quantity -= quantity
 
-        # Update the peak quantity
+        self.quantity = abs(self._relative_quantity)
+
         if abs(self._relative_quantity) > self._peak_quantity:
             self._peak_quantity = abs(self._relative_quantity)
 
-        # Capture the first time of entry
+        # Entry logic
         if self.entry_time is None:
             self.entry_time = event_time
+            self.is_entered = True
 
         self.average_entry_price = average_price
 
-        # Position was exited
+        # Exit logic
         if self.is_entered and self._relative_quantity == 0:
             self.exit_time = event_time
             self.average_exit_price = average_price
+            self.is_exited = True
+
+        # Market position logic
+        if self._relative_quantity > 0:
+            self.market_position = MarketPosition.LONG
+        elif self._relative_quantity < 0:
+            self.market_position = MarketPosition.SHORT
+        else:
+            self.market_position = MarketPosition.FLAT

@@ -16,6 +16,7 @@ from inv_trader.model.objects cimport Symbol
 from inv_trader.model.events cimport OrderEvent
 from inv_trader.model.identifiers cimport PositionId
 from inv_trader.enums.order_side cimport OrderSide
+from inv_trader.enums.market_position cimport MarketPosition
 
 
 cdef class Position:
@@ -28,14 +29,19 @@ cdef class Position:
 
     cdef readonly Symbol symbol
     cdef readonly PositionId id
+    cdef readonly int quantity
+    cdef readonly MarketPosition market_position
     cdef readonly datetime timestamp
     cdef readonly datetime entry_time
     cdef readonly datetime exit_time
     cdef readonly Decimal average_entry_price
     cdef readonly Decimal average_exit_price
+    cdef readonly bint is_entered
+    cdef readonly bint is_exited
     cdef readonly list execution_ids
     cdef readonly list execution_tickets
     cdef readonly list events
+    cdef readonly int event_count
 
     cpdef void apply(self, OrderEvent event)
     cdef void _update_position(

@@ -116,9 +116,7 @@ class OrderTests(unittest.TestCase):
             Label('S1_E'),
             OrderSide.BUY,
             100000,
-            Price.create(1.00000, 5),
-            TimeInForce.DAY,
-            None)
+            Price.create(1.00000, 5))
 
         order2 = self.order_factory.limit(
             AUDUSD_FXCM,
@@ -126,9 +124,7 @@ class OrderTests(unittest.TestCase):
             Label('S1_E'),
             OrderSide.BUY,
             100000,
-            Price.create(1.00000, 5),
-            TimeInForce.DAY,
-            None)
+            Price.create(1.00000, 5))
 
         order3 = self.order_factory.limit(
             AUDUSD_FXCM,
@@ -136,9 +132,7 @@ class OrderTests(unittest.TestCase):
             Label('S1_E'),
             OrderSide.BUY,
             100000,
-            Price.create(1.000001, 5),
-            TimeInForce.DAY,
-            None)
+            Price.create(1.000001, 5))
 
         order4 = self.order_factory.limit(
             AUDUSD_FXCM,
@@ -146,9 +140,7 @@ class OrderTests(unittest.TestCase):
             Label('S1_E'),
             OrderSide.BUY,
             100000,
-            Price.create(1.000005, 5),
-            TimeInForce.DAY,
-            None)
+            Price.create(1.000005, 5))
 
         # Assert
         self.assertEqual(Decimal('1.00000'), order1.price)
@@ -181,9 +173,7 @@ class OrderTests(unittest.TestCase):
             Label('SCALPER-01'),
             OrderSide.BUY,
             100000,
-            Price.create(1.00000, 5),
-            TimeInForce.DAY,
-            expire_time=None)
+            Price.create(1.00000, 5))
 
         # Assert
         self.assertEqual(OrderType.LIMIT, order.type)
@@ -218,19 +208,18 @@ class OrderTests(unittest.TestCase):
     def test_can_initialize_stop_market_order(self):
         # Arrange
         # Act
-        order = self.order_factory.stop(
+        order = self.order_factory.stop_market(
             AUDUSD_FXCM,
             OrderId('AUDUSD-FXCM-123456-1'),
             Label('SCALPER-01'),
             OrderSide.BUY,
             100000,
-            Price.create(1.00000, 5),
-            TimeInForce.DAY,
-            expire_time=None)
+            Price.create(1.00000, 5))
 
         # Assert
         self.assertEqual(OrderType.STOP_MARKET, order.type)
         self.assertEqual(OrderStatus.INITIALIZED, order.status)
+        self.assertEqual(TimeInForce.DAY, order.time_in_force)
         self.assertFalse(order.is_complete)
 
     def test_can_initialize_stop_limit_order(self):
@@ -242,9 +231,7 @@ class OrderTests(unittest.TestCase):
             Label('SCALPER-01'),
             OrderSide.BUY,
             100000,
-            Price.create(1.00000, 5),
-            TimeInForce.DAY,
-            expire_time=None)
+            Price.create(1.00000, 5))
 
         # Assert
         self.assertEqual(OrderType.STOP_LIMIT, order.type)
@@ -260,9 +247,7 @@ class OrderTests(unittest.TestCase):
             Label('SCALPER-01'),
             OrderSide.BUY,
             100000,
-            Price.create(1.00000, 5),
-            TimeInForce.DAY,
-            expire_time=None)
+            Price.create(1.00000, 5))
 
         # Assert
         self.assertEqual(OrderType.MIT, order.type)
