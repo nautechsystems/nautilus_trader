@@ -24,7 +24,7 @@ cdef class Position:
     """
     cdef int _relative_quantity
     cdef int _peak_quantity
-    cdef list _order_ids
+    cdef set _from_order_ids
     cdef list _execution_ids
     cdef list _execution_tickets
     cdef list _events
@@ -47,4 +47,8 @@ cdef class Position:
     cdef readonly OrderEvent last_event
 
     cdef bint equals(self, Position other)
+    cpdef list get_from_order_ids(self)
+    cpdef list get_execution_ids(self)
+    cpdef list get_execution_tickets(self)
+    cpdef list get_events(self)
     cpdef void apply(self, OrderEvent event)

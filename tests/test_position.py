@@ -83,6 +83,9 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(UNIX_EPOCH, position.entry_time)
         self.assertEqual(Decimal('1.00001'), position.average_entry_price)
         self.assertEqual(1, position.event_count)
+        self.assertEqual([order.id], position.get_from_order_ids())
+        self.assertEqual([ExecutionId('E123456')], position.get_execution_ids())
+        self.assertEqual([ExecutionTicket('T123456')], position.get_execution_tickets())
         self.assertEqual(ExecutionId('E123456'), position.execution_id)
         self.assertEqual(ExecutionTicket('T123456'), position.execution_ticket)
         self.assertTrue(position.is_entered)
@@ -288,7 +291,7 @@ class PositionTests(unittest.TestCase):
             ExecutionTicket('T123456'),
             OrderSide.SELL,
             order.quantity,
-            Decimal('1.00001'),
+            Decimal('1.00000'),
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -313,8 +316,9 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(0, position.quantity)
         self.assertEqual(MarketPosition.FLAT, position.market_position)
         self.assertEqual(UNIX_EPOCH, position.entry_time)
-        self.assertEqual(Decimal('1.00001'), position.average_entry_price)
+        self.assertEqual(Decimal('1.00000'), position.average_entry_price)
         self.assertEqual(2, position.event_count)
+        self.assertEqual([order.id], position.get_from_order_ids())
         self.assertEqual(ExecutionId('E123456'), position.execution_id)
         self.assertEqual(ExecutionTicket('T123456'), position.execution_ticket)
         self.assertEqual(UNIX_EPOCH, position.exit_time)

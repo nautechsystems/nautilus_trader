@@ -82,10 +82,10 @@ cdef class Order:
         if time_in_force is TimeInForce.GTD:
             Precondition.not_none(expire_time, 'expire_time')
 
-        self._events = []               # type: List[OrderEvent]
-        self._order_ids_broker = []     # type: List[OrderId]
-        self._execution_ids = []        # type: List[ExecutionId]
-        self._execution_tickets = []    # type: List[ExecutionTicket]
+        self._order_ids_broker = list()   # type: List[OrderId]
+        self._execution_ids = list()      # type: List[ExecutionId]
+        self._execution_tickets = list()  # type: List[ExecutionTicket]
+        self._events = list()             # type: List[OrderEvent]
 
         self.symbol = symbol
         self.id = order_id
@@ -154,6 +154,30 @@ cdef class Order:
         cdef str props = ', '.join("%s=%s" % item for item in attrs.items()).replace(', _', ', ')
         return f"<{self.__class__.__name__}({props[1:]}) object at {id(self)}>"
 
+    cpdef list get_order_ids_broker(self):
+        """
+        :return: A copy of the list of internally held broker order ids. 
+        """
+        return self._order_ids_broker.copy()
+
+    cpdef list get_execution_ids(self):
+        """
+        :return: A copy of the list of internally held execution ids. 
+        """
+        return self._execution_ids.copy()
+
+    cpdef list get_execution_tickets(self):
+        """
+        :return: A copy of the list of internally held execution tickets. 
+        """
+        return self._execution_tickets.copy()
+
+    cpdef list get_events(self):
+        """
+        :return: A copy of the list of internally held events. 
+        """
+        return self._events.copy()
+
     cpdef void apply(self, OrderEvent event):
         """
         Applies the given order event to the order.
@@ -210,9 +234,6 @@ cdef class Order:
             self._set_fill_status()
             if self.status == OrderStatus.FILLED:
                 self.is_complete = True
-
-    cdef void _set_broker_id(self):
-        self.broker_id = self._order_ids_broker[len(self._order_ids_broker) - 1]
 
     cdef void _set_slippage(self):
         if self.type not in PRICED_ORDER_TYPES:

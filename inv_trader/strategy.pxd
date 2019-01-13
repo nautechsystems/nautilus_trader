@@ -55,6 +55,7 @@ cdef class TradeStrategy:
     cdef readonly ExecutionClient _exec_client
     cdef Account account
 
+    cdef bint equals(self, TradeStrategy other)
 #-- ABSTRACT METHODS ----------------------------------------------------------#
     cpdef void on_start(self)
     cpdef void on_tick(self, Tick tick)
@@ -88,13 +89,13 @@ cdef class TradeStrategy:
     cpdef OrderId generate_order_id(self, Symbol symbol)
     cpdef OrderSide get_opposite_side(self, OrderSide side)
     cpdef get_flatten_side(self, MarketPosition market_position)
-    cpdef readonly Order order(self, OrderId order_id)
-    cpdef readonly Position position(self, PositionId position_id)
-    cpdef readonly dict active_orders(self)
-    cpdef readonly dict active_positions(self)
-    cpdef readonly dict completed_orders(self)
-    cpdef readonly dict completed_positions(self)
-    cpdef readonly bint is_flat(self)
+    cpdef Order order(self, OrderId order_id)
+    cpdef Position position(self, PositionId position_id)
+    cpdef dict active_orders(self)
+    cpdef dict active_positions(self)
+    cpdef dict completed_orders(self)
+    cpdef dict completed_positions(self)
+    cpdef bint is_flat(self)
 
 #-- COMMAND METHODS -----------------------------------------------------------#
     cpdef void start(self)
