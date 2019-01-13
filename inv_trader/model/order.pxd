@@ -26,10 +26,10 @@ cdef class Order:
     """
     Represents an order in a financial market.
     """
-    cdef list _events
     cdef list _order_ids_broker
     cdef list _execution_ids
     cdef list _execution_tickets
+    cdef list _events
 
     cdef readonly Symbol symbol
     cdef readonly OrderId id
@@ -54,8 +54,11 @@ cdef class Order:
     cdef readonly bint is_complete
 
     cdef bint equals(self, Order other)
+    cpdef list get_order_ids_broker(self)
+    cpdef list get_execution_ids(self)
+    cpdef list get_execution_tickets(self)
+    cpdef list get_events(self)
     cpdef void apply(self, OrderEvent order_event)
-    cdef void _set_broker_id(self)
     cdef void _set_slippage(self)
     cdef void _set_fill_status(self)
 

@@ -87,20 +87,26 @@ cdef class TradeStrategy:
 
         self.log.info(f"Initialized.")
 
+    cdef bint equals(self, TradeStrategy other):
+        """
+        Compare if the object equals the given object.
+        
+        :param other: The other object to compare
+        :return: True if the objects are equal, otherwise False.
+        """
+        return self.id.equals(other.id)
+
     def __eq__(self, other) -> bool:
         """
         Override the default equality comparison.
         """
-        if isinstance(other, self.__class__):
-            return str(self) == str(other)
-        else:
-            return False
+        return self.equals(other)
 
-    def __ne__(self, other):
+    def __ne__(self, other) -> bool:
         """
         Override the default not-equals comparison.
         """
-        return not self.__eq__(other)
+        return not self.equals(other)
 
     def __hash__(self):
         """"
@@ -305,10 +311,10 @@ cdef class TradeStrategy:
 
     cpdef list bars(self, BarType bar_type):
         """
-        Get the bars for the given bar type.
+        Get the bars for the given bar type (returns a copy of the deque).
 
         :param bar_type: The bar type to get.
-        :return: The list of bars (List[Deque]).
+        :return: The list of bars (List[Bar]).
         :raises KeyError: If the strategies bars dictionary does not contain the bar type.
         """
         Precondition.true(bar_type in self._bars, 'bar_type in self._bars')
@@ -369,7 +375,7 @@ cdef class TradeStrategy:
 
     cpdef list indicators(self, BarType bar_type):
         """
-        Get the indicators list for the given bar type.
+        Get the indicators list for the given bar type (returns copy).
 
         :param bar_type: The bar type for the indicators list.
         :return: The internally held indicators for the given bar type.
@@ -377,7 +383,7 @@ cdef class TradeStrategy:
         """
         Precondition.true(bar_type in self._indicators, 'bar_type in self._indicators')
 
-        return self._indicators[bar_type]
+        return self._indicators[bar_type].copy()
 
     cpdef bint indicators_initialized(self, BarType bar_type):
         """
