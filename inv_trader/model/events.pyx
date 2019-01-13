@@ -478,6 +478,7 @@ cdef class OrderFilled(OrderEvent):
         :param event_timestamp: The events timestamp.
         """
         Precondition.positive(filled_quantity, 'filled_quantity')
+        Precondition.positive(average_price, 'average_price')
 
         super().__init__(symbol,
                          order_id,
@@ -505,7 +506,7 @@ cdef class OrderPartiallyFilled(OrderEvent):
                  int filled_quantity,
                  int leaves_quantity,
                  Decimal average_price,
-                 execution_time: datetime,
+                 datetime execution_time,
                  GUID event_id,
                  datetime event_timestamp):
         """
@@ -525,6 +526,7 @@ cdef class OrderPartiallyFilled(OrderEvent):
         """
         Precondition.positive(filled_quantity, 'filled_quantity')
         Precondition.positive(leaves_quantity, 'leaves_quantity')
+        Precondition.positive(average_price, 'average_price')
 
         super().__init__(symbol,
                          order_id,
