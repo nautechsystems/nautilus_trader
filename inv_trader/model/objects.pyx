@@ -46,7 +46,7 @@ cdef class Symbol:
         """
         return venue_string(self.venue)
 
-    cpdef bint equals(self, Symbol other):
+    cdef bint equals(self, Symbol other):
         """
         Compare if the object equals the given object.
         
@@ -105,7 +105,6 @@ cdef class Price:
         :raises ValueError: If the decimals is negative (< 0).
         """
         Precondition.positive(price, 'price')
-        Precondition.not_negative(precision, 'precision')
 
         return Decimal(price, precision)
 
@@ -240,7 +239,7 @@ cdef class BarType:
         """
         return quote_type_string(self.quote_type)
 
-    cpdef bint equals(self, BarType other):
+    cdef bint equals(self, BarType other):
         """
         Compare if the object equals the given object.
         

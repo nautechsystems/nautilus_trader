@@ -15,7 +15,7 @@ from inv_trader.core.decimal cimport Decimal
 from inv_trader.common.clock cimport Clock
 from inv_trader.model.objects cimport Symbol
 from inv_trader.model.events cimport OrderEvent
-from inv_trader.model.identifiers cimport Label, OrderId
+from inv_trader.model.identifiers cimport Label, OrderId, ExecutionId, ExecutionTicket
 from inv_trader.enums.order_side cimport OrderSide
 from inv_trader.enums.order_type cimport OrderType
 from inv_trader.enums.order_status cimport OrderStatus
@@ -26,13 +26,17 @@ cdef class Order:
     """
     Represents an order in a financial market.
     """
-    cdef list _order_ids
+    cdef list _events
     cdef list _order_ids_broker
     cdef list _execution_ids
     cdef list _execution_tickets
 
     cdef readonly Symbol symbol
     cdef readonly OrderId id
+    cdef readonly OrderId id_current
+    cdef readonly OrderId broker_id
+    cdef readonly ExecutionId execution_id
+    cdef readonly ExecutionTicket execution_ticket
     cdef readonly Label label
     cdef readonly OrderSide side
     cdef readonly OrderType type
@@ -45,11 +49,15 @@ cdef class Order:
     cdef readonly Decimal average_price
     cdef readonly Decimal slippage
     cdef readonly OrderStatus status
-    cdef readonly list events
+    cdef readonly int event_count
+    cdef readonly OrderEvent last_event
+    cdef readonly bint is_complete
 
+    cdef bint equals(self, Order other)
     cpdef void apply(self, OrderEvent order_event)
-    cdef Decimal _set_slippage(self)
-    cdef Decimal _check_overfill(self)
+    cdef void _set_broker_id(self)
+    cdef void _set_slippage(self)
+    cdef void _set_fill_status(self)
 
 
 cdef class OrderIdGenerator:

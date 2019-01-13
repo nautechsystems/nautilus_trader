@@ -61,19 +61,14 @@ cdef class Order:
         :param quantity: The orders quantity (> 0).
         :param timestamp: The orders initialization timestamp.
         :param price: The orders price (can be None for market orders > 0).
-        :param time_in_force: The orders time in force (optional can be None).
-        :param expire_time: The orders expire time (optional can be None).
-        :raises ValueError: If the order_id is not a valid string.
-        :raises ValueError: If the label is not a valid string.
+        :param time_in_force: The orders time in force (optional.
+        :param expire_time: The orders expire time (optional.
         :raises ValueError: If the quantity is not positive (> 0).
         :raises ValueError: If the order type has no price and the price is not None.
         :raises ValueError: If the order type has a price and the price is None.
         :raises ValueError: If the order type has a price and the price is not positive (> 0).
         :raises ValueError: If the time_in_force is GTD and the expire_time is None.
         """
-        if time_in_force is None:
-            time_in_force = TimeInForce.DAY
-
         Precondition.positive(quantity, 'quantity')
 
         # Orders with prices
@@ -87,8 +82,16 @@ cdef class Order:
         if time_in_force is TimeInForce.GTD:
             Precondition.not_none(expire_time, 'expire_time')
 
+        self._events = []               # type: List[OrderEvent]
+        self._order_ids_broker = []     # type: List[OrderId]
+        self._execution_ids = []        # type: List[ExecutionId]
+        self._execution_tickets = []    # type: List[ExecutionTicket]
+
         self.symbol = symbol
         self.id = order_id
+        self.broker_id = None
+        self.execution_id = None
+        self.execution_ticket = None
         self.label = label
         self.side = order_side
         self.type = order_type
@@ -98,29 +101,33 @@ cdef class Order:
         self.time_in_force = time_in_force  # Can be None
         self.expire_time = expire_time      # Can be None
         self.filled_quantity = 0
-        self.average_price = Decimal('0.0')
-        self.slippage = Decimal('0.0')
+        self.average_price = Decimal(0.0)
+        self.slippage = Decimal(0.0)
         self.status = OrderStatus.INITIALIZED
-        self.events = []                # type: List[OrderEvent]
-        self._order_ids = [order_id]    # type: List[OrderId]
-        self._order_ids_broker = []     # type: List[OrderId]
-        self._execution_ids = []        # type: List[ExecutionId]
-        self._execution_tickets = []    # type: List[ExecutionTicket]
+        self.event_count = 0
+        self.last_event = None
+        self.is_complete = False
+
+    cdef bint equals(self, Order other):
+        """
+        Compare if the object equals the given object.
+        
+        :param other: The other object to compare
+        :return: True if the objects are equal, otherwise False.
+        """
+        return self.id.equals(other.id)
 
     def __eq__(self, other) -> bool:
         """
         Override the default equality comparison.
         """
-        if isinstance(other, self.__class__):
-            return self.id == other.id
-        else:
-            return False
+        return self.equals(other)
 
     def __ne__(self, other) -> bool:
         """
         Override the default not-equals comparison.
         """
-        return not self.__eq__(other)
+        return not self.equals(other)
 
     def __hash__(self) -> int:
         """"
@@ -147,114 +154,67 @@ cdef class Order:
         cdef str props = ', '.join("%s=%s" % item for item in attrs.items()).replace(', _', ', ')
         return f"<{self.__class__.__name__}({props[1:]}) object at {id(self)}>"
 
-    @property
-    def id_current(self) -> OrderId:
-        """
-        :return: The orders current identifier.
-        """
-        return self._order_ids[-1]
-
-    @property
-    def broker_id(self) -> OrderId or None:
-        """
-        :return: The orders broker-side order identifier.
-        """
-        if len(self._order_ids_broker) == 0:
-            return None
-        return self._order_ids_broker[-1]
-
-    @property
-    def execution_id(self) -> ExecutionId or None:
-        """
-        :return: The orders last execution.
-        """
-        if len(self._execution_ids) == 0:
-            return None
-        return self._execution_ids[-1]
-
-    @property
-    def execution_ticket(self) -> ExecutionTicket or None:
-        """
-        :return: The orders last execution ticket.
-        """
-        if len(self._execution_tickets) == 0:
-            return None
-        return self._execution_tickets[-1]
-
-    @property
-    def is_complete(self) -> bool:
-        """
-        :return: A value indicating whether the order is complete.
-        """
-        return (self.status is OrderStatus.CANCELLED
-                or self.status is OrderStatus.EXPIRED
-                or self.status is OrderStatus.FILLED
-                or self.status is OrderStatus.REJECTED)
-
-    @property
-    def event_count(self) -> int:
-        """
-        :return: The count of events since the order was initialized (int).
-        """
-        return len(self.events)
-
-    cpdef void apply(self, OrderEvent order_event):
+    cpdef void apply(self, OrderEvent event):
         """
         Applies the given order event to the order.
 
-        :param order_event: The order event to apply.
+        :param event: The order event to apply.
         :raises ValueError: If the order_events order_id is not equal to the id.
         """
-        Precondition.equal(order_event.order_id, self.id)
+        Precondition.equal(event.order_id, self.id)
 
-        self.events.append(order_event)
+        self._events.append(event)
+        self.event_count += 1
+        self.last_event = event
 
         # Handle event
-        if isinstance(order_event, OrderSubmitted):
+        if isinstance(event, OrderSubmitted):
             self.status = OrderStatus.SUBMITTED
 
-        elif isinstance(order_event, OrderAccepted):
+        elif isinstance(event, OrderAccepted):
             self.status = OrderStatus.ACCEPTED
 
-        elif isinstance(order_event, OrderRejected):
+        elif isinstance(event, OrderRejected):
             self.status = OrderStatus.REJECTED
+            self.is_complete = True
 
-        elif isinstance(order_event, OrderWorking):
+        elif isinstance(event, OrderWorking):
             self.status = OrderStatus.WORKING
-            self._order_ids_broker.append(order_event.broker_order_id)
+            self._order_ids_broker.append(event.broker_order_id)
+            self.broker_id = event.broker_order_id
 
-        elif isinstance(order_event, OrderCancelled):
+        elif isinstance(event, OrderCancelled):
             self.status = OrderStatus.CANCELLED
+            self.is_complete = True
 
-        elif isinstance(order_event, OrderCancelReject):
+        elif isinstance(event, OrderCancelReject):
             pass
 
-        elif isinstance(order_event, OrderExpired):
+        elif isinstance(event, OrderExpired):
             self.status = OrderStatus.EXPIRED
+            self.is_complete = True
 
-        elif isinstance(order_event, OrderModified):
-            self._order_ids_broker.append(order_event.broker_order_id)
-            self.price = order_event.modified_price
+        elif isinstance(event, OrderModified):
+            self._order_ids_broker.append(event.broker_order_id)
+            self.broker_id = event.broker_order_id
+            self.price = event.modified_price
 
-        elif isinstance(order_event, OrderFilled):
-            self.status = OrderStatus.FILLED
-            self._execution_ids.append(order_event.execution_id)
-            self._execution_tickets.append(order_event.execution_ticket)
-            self.filled_quantity = order_event.filled_quantity
-            self.average_price = order_event.average_price
+        elif isinstance(event, OrderFilled) or isinstance(event, OrderPartiallyFilled):
+            self._execution_ids.append(event.execution_id)
+            self._execution_tickets.append(event.execution_ticket)
+            self.execution_id = event.execution_id
+            self.execution_ticket = event.execution_ticket
+            self.filled_quantity = event.filled_quantity
+            self.average_price = event.average_price
             self._set_slippage()
-            self._check_overfill()
+            self._set_fill_status()
+            if self.status == OrderStatus.FILLED:
+                self.is_complete = True
 
-        elif isinstance(order_event, OrderPartiallyFilled):
-            self.status = OrderStatus.PARTIALLY_FILLED
-            self._execution_ids.append(order_event.execution_id)
-            self._execution_tickets.append(order_event.execution_ticket)
-            self.filled_quantity = order_event.filled_quantity
-            self.average_price = order_event.average_price
-            self._set_slippage()
-            self._check_overfill()
+    cdef void _set_broker_id(self):
+        self.broker_id = self._order_ids_broker[len(self._order_ids_broker) - 1]
 
-    cdef Decimal _set_slippage(self):
+    cdef void _set_slippage(self):
         if self.type not in PRICED_ORDER_TYPES:
             # Slippage not applicable to orders with entry prices.
             return
@@ -264,8 +224,12 @@ cdef class Order:
         else:  # side is OrderSide.SELL:
             self.slippage = (self.price - self.average_price)
 
-    cdef Decimal _check_overfill(self):
-        if self.filled_quantity > self.quantity:
+    cdef void _set_fill_status(self):
+        if self.filled_quantity < self.quantity:
+            self.status = OrderStatus.PARTIALLY_FILLED
+        elif self.filled_quantity == self.quantity:
+            self.status = OrderStatus.FILLED
+        elif self.filled_quantity > self.quantity:
             self.status = OrderStatus.OVER_FILLED
 
 

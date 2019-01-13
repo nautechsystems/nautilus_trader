@@ -14,8 +14,7 @@ from cpython.datetime cimport datetime
 from inv_trader.core.decimal cimport Decimal
 from inv_trader.model.objects cimport Symbol
 from inv_trader.model.events cimport OrderEvent
-from inv_trader.model.identifiers cimport PositionId
-from inv_trader.enums.order_side cimport OrderSide
+from inv_trader.model.identifiers cimport PositionId, OrderId, ExecutionId, ExecutionTicket
 from inv_trader.enums.market_position cimport MarketPosition
 
 
@@ -25,10 +24,16 @@ cdef class Position:
     """
     cdef int _relative_quantity
     cdef int _peak_quantity
-
+    cdef list _order_ids
+    cdef list _execution_ids
+    cdef list _execution_tickets
+    cdef list _events
 
     cdef readonly Symbol symbol
     cdef readonly PositionId id
+    cdef readonly ExecutionId execution_id
+    cdef readonly ExecutionTicket execution_ticket
+    cdef readonly OrderId from_order_id
     cdef readonly int quantity
     cdef readonly MarketPosition market_position
     cdef readonly datetime timestamp
@@ -38,15 +43,8 @@ cdef class Position:
     cdef readonly Decimal average_exit_price
     cdef readonly bint is_entered
     cdef readonly bint is_exited
-    cdef readonly list execution_ids
-    cdef readonly list execution_tickets
-    cdef readonly list events
     cdef readonly int event_count
+    cdef readonly OrderEvent last_event
 
+    cdef bint equals(self, Position other)
     cpdef void apply(self, OrderEvent event)
-    cdef void _update_position(
-            self,
-            OrderSide order_side,
-            int quantity,
-            Decimal average_price,
-            datetime event_time)

@@ -53,9 +53,9 @@ class ObjectTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertTrue(symbol1.equals(symbol1))
-        self.assertTrue(not symbol1.equals(symbol2))
-        self.assertTrue(not symbol1.equals(symbol3))
+        self.assertTrue(symbol1 == symbol1)
+        self.assertTrue(symbol1 != symbol2)
+        self.assertTrue(symbol1 != symbol3)
 
     def test_symbol_str_and_repr(self):
         # Arrange

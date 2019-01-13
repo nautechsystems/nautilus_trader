@@ -39,9 +39,16 @@ cdef class Position:
         """
         self._relative_quantity = 0
         self._peak_quantity = 0
+        self._order_ids = []            # type: List[OrderId]
+        self._execution_ids = []        # type: List[ExecutionId]
+        self._execution_tickets = []    # type: List[ExecutionTicket]
+        self._events = []               # type: List[OrderEvent]
 
         self.symbol = symbol
         self.id = position_id
+        self.from_order_id = None
+        self.execution_id = None
+        self.execution_ticket = None
         self.quantity = 0
         self.market_position = MarketPosition.FLAT
         self.timestamp = timestamp
@@ -51,25 +58,29 @@ cdef class Position:
         self.average_exit_price = None
         self.is_entered = False
         self.is_exited = False
-        self.events = []               # type: List[OrderEvent]
-        self.execution_ids = []        # type: List[ExecutionId]
-        self.execution_tickets = []    # type: List[ExecutionTicket]
         self.event_count = 0
+        self.last_event = None
+
+    cdef bint equals(self, Position other):
+        """
+        Compare if the object equals the given object.
+        
+        :param other: The other object to compare
+        :return: True if the objects are equal, otherwise False.
+        """
+        return self.id.equals(other.id)
 
     def __eq__(self, other) -> bool:
         """
         Override the default equality comparison.
         """
-        if isinstance(other, self.__class__):
-            return self.id == other.id
-        else:
-            return False
+        return self.equals(other)
 
-    def __ne__(self, other):
+    def __ne__(self, other) -> bool:
         """
         Override the default not-equals comparison.
         """
-        return not self.__eq__(other)
+        return not self.equals(other)
 
     def __str__(self) -> str:
         """
@@ -93,43 +104,26 @@ cdef class Position:
 
         :param event: The order event to apply.
         """
-        self.events.append(event)
+        self._events.append(event)
         self.event_count += 1
+        self.last_event = event
 
         # Handle event
-        if isinstance(event, OrderFilled):
-            self._update_position(
-                event.order_side,
-                event.filled_quantity,
-                event.average_price,
-                event.execution_time)
-            self.execution_ids.append(event.execution_id)
-            self.execution_tickets.append(event.execution_ticket)
-        elif isinstance(event, OrderPartiallyFilled):
-            self._update_position(
-                event.order_side,
-                event.filled_quantity,
-                event.average_price,
-                event.execution_time)
-            self.execution_ids.append(event.execution_id)
-            self.execution_tickets.append(event.execution_ticket)
-        else:
+        if not (isinstance(event, OrderFilled) or isinstance(event, OrderPartiallyFilled)):
             raise TypeError("Cannot apply event (unrecognized event).")
 
-    cdef void _update_position(
-            self,
-            OrderSide order_side,
-            int quantity,
-            Decimal average_price,
-            datetime event_time):
-        Precondition.positive(quantity, 'quantity')
-        Precondition.positive(average_price, 'average_price')
+        self._order_ids.append(event.order_id)
+        self._execution_ids.append(event.execution_id)
+        self._execution_tickets.append(event.execution_ticket)
+        self.from_order_id = event.order_id
+        self.execution_id = event.execution_id
+        self.execution_ticket = event.execution_ticket
 
         # Quantity logic
-        if order_side is OrderSide.BUY:
-            self._relative_quantity += quantity
-        elif order_side is OrderSide.SELL:
-            self._relative_quantity -= quantity
+        if event.order_side is OrderSide.BUY:
+            self._relative_quantity += event.filled_quantity
+        elif event.order_side is OrderSide.SELL:
+            self._relative_quantity -= event.filled_quantity
 
         self.quantity = abs(self._relative_quantity)
 
@@ -138,15 +132,15 @@ cdef class Position:
 
         # Entry logic
         if self.entry_time is None:
-            self.entry_time = event_time
+            self.entry_time = event.timestamp
             self.is_entered = True
 
-        self.average_entry_price = average_price
+        self.average_entry_price = event.average_price
 
         # Exit logic
         if self.is_entered and self._relative_quantity == 0:
-            self.exit_time = event_time
-            self.average_exit_price = average_price
+            self.exit_time = event.timestamp
+            self.average_exit_price = event.average_price
             self.is_exited = True
 
         # Market position logic
