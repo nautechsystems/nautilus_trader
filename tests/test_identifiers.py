@@ -80,8 +80,8 @@ class IdentifierTests(unittest.TestCase):
 
     def test_order_id_equality(self):
         # Arrange
-        order_id1 = Label('some-order_id-1')
-        order_id2 = Label('some-order_id-2')
+        order_id1 = OrderId('some-order_id-1')
+        order_id2 = OrderId('some-order_id-2')
 
         # Act
         result1 = order_id1 == order_id1
