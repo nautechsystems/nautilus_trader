@@ -75,13 +75,13 @@ cdef class BacktestDataClient(DataClient):
                     shapes[resolution] = dataframe.shape
                 if resolution not in indexs:
                     indexs[resolution] = dataframe.index
-                assert(dataframe.shape == shapes[resolution], f'{dataframe} is an incompatible shape')
-                assert(dataframe.index == indexs[resolution], f'{dataframe} index is out of sequence')
+                assert(dataframe.shape == shapes[resolution], f'{dataframe} shape is not equal')
+                assert(dataframe.index == indexs[resolution], f'{dataframe} index is not equal')
 
         for symbol, data in ask_data.items():
             for resolution, dataframe in data.items():
-                assert(dataframe.shape == shapes[resolution], f'{dataframe} is an incompatible shape')
-                assert(dataframe.index == indexs[resolution], f'{dataframe} index is out of sequence')
+                assert(dataframe.shape == shapes[resolution], f'{dataframe} shape is not equal')
+                assert(dataframe.index == indexs[resolution], f'{dataframe} index is not equal')
 
         for symbol in data_symbols:
             self.data_providers[symbol] = DataProvider(instrument=self._instruments[symbol],
