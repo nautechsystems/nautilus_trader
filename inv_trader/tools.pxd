@@ -31,8 +31,8 @@ cdef class BarBuilder:
     cpdef list build_bars_range(self, int start=*, int end=*)
     cpdef DataBar build_databar(self, int index)
     cpdef Bar build_bar(self, int index)
-    cpdef DataBar _build_databar(self, double[:] values, datetime timestamp)
-    cpdef Bar _build_bar(self, double[:] values, datetime timestamp)
+    cpdef DataBar _internal_build_databar(self, double[:] values, datetime timestamp)
+    cpdef Bar _internal_build_bar(self, double[:] values, datetime timestamp)
 
 
 cdef class IndicatorUpdater:

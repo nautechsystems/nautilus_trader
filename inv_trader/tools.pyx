@@ -63,7 +63,7 @@ cdef class BarBuilder:
         
         :return: The list of bars.
         """
-        return list(map(self._build_databar,
+        return list(map(self._internal_build_databar,
                         self._data.values,
                         pd.to_datetime(self._data.index)))
 
@@ -75,7 +75,7 @@ cdef class BarBuilder:
         """
         Precondition.not_negative(index, 'index')
 
-        return list(map(self._build_databar,
+        return list(map(self._internal_build_databar,
                         self._data.iloc[index:].values,
                         pd.to_datetime(self._data.iloc[index:].index)))
 
@@ -87,7 +87,7 @@ cdef class BarBuilder:
         """
         Precondition.not_negative(start, 'start')
 
-        return list(map(self._build_databar,
+        return list(map(self._internal_build_databar,
                         self._data.iloc[start:end].values,
                         pd.to_datetime(self._data.iloc[start:end].index)))
 
@@ -97,7 +97,7 @@ cdef class BarBuilder:
 
         :return: The list of bars.
         """
-        return list(map(self._build_bar,
+        return list(map(self._internal_build_bar,
                         self._data.values,
                         pd.to_datetime(self._data.index)))
 
@@ -109,7 +109,7 @@ cdef class BarBuilder:
         """
         Precondition.not_negative(index, 'index')
 
-        return list(map(self._build_bar,
+        return list(map(self._internal_build_bar,
                         self._data.iloc[index:].values,
                         pd.to_datetime(self._data.iloc[index:].index)))
 
@@ -121,23 +121,25 @@ cdef class BarBuilder:
         """
         Precondition.not_negative(start, 'start')
 
-        return list(map(self._build_bar,
+        return list(map(self._internal_build_bar,
                         self._data.iloc[start:end].values,
-                        pd.to_datetime(self._data.iloc[start:end].index)))
+                        pd.to_datetime(self._data.iloc[start:end].index, utc=True)))
 
     cpdef DataBar build_databar(self, int index):
         """
         Build a DataBar from the row at the given index.
         """
-        return self._build_databar(self._data.iloc[index], self._data.iloc[index].index)
+        return self._internal_build_databar(self._data.iloc[index].values,
+                                            pd.to_datetime(self._data.index[index], utc=True))
 
     cpdef Bar build_bar(self, int index):
         """
         Build a bar from the row at the given index.
         """
-        return self._build_bar(self._data.iloc[index], self._data.iloc[index].index)
+        return self._internal_build_bar(self._data.iloc[index].values,
+                                        pd.to_datetime(self._data.index[index]))
 
-    cpdef DataBar _build_databar(self, double[:] values, datetime timestamp):
+    cpdef DataBar _internal_build_databar(self, double[:] values, datetime timestamp):
         """
         Build a DataBar from the given index and values. The function expects the
         values to be an ndarray with 5 elements [open, high, low, close, volume].
@@ -153,7 +155,7 @@ cdef class BarBuilder:
                        values[4] * self._volume_multiple,
                        timestamp)
 
-    cpdef Bar _build_bar(self, double[:] values, datetime timestamp):
+    cpdef Bar _internal_build_bar(self, double[:] values, datetime timestamp):
         """
         Build a Bar from the given index and values. The function expects the
         values to be an ndarray with 5 elements [open, high, low, close, volume].

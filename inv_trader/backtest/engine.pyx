@@ -62,4 +62,4 @@ cdef class BacktestEngine:
         """
         cdef datetime time = self.trader._clock.unix_epoch()
 
-        self.data_client.iterate()
+        self.data_client.iterate(time)

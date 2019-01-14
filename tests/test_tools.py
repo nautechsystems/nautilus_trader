@@ -12,7 +12,7 @@ import unittest
 from datetime import datetime, timezone
 
 from inv_trader.core.decimal import Decimal
-from inv_trader.model.objects import Bar
+from inv_trader.model.objects import Bar, DataBar
 from inv_trader.tools import BarBuilder, IndicatorUpdater
 from inv_indicators.average.ema import ExponentialMovingAverage
 from inv_indicators.intrinsic_network import IntrinsicNetwork
@@ -21,112 +21,102 @@ from test_kit.data import TestDataProvider
 
 class BarBuilderTests(unittest.TestCase):
 
+    def setUp(self):
+        data = TestDataProvider.gbpusd_1min_bid()[:1000]
+        self.bar_builder = BarBuilder(data, 5, 1)
+
+    def test_build_databar(self):
+        # Arrange
+        # Act
+        bar = self.bar_builder.build_databar(0)
+
+        # Assert
+        self.assertTrue(type(bar) == DataBar)
+
+    def test_build_bar(self):
+        # Arrange
+        # Act
+        bar = self.bar_builder.build_bar(0)
+
+        # Assert
+        self.assertTrue(type(bar) == Bar)
+
     def test_build_databars_all(self):
         # Arrange
-        data = TestDataProvider.gbpusd_1min_bid()[:1000]
-        bar_builder = BarBuilder(data, 5, 1)
-
         # Act
-        bars = bar_builder.build_databars_all()
+        bars = self.bar_builder.build_databars_all()
 
         # Assert
         self.assertEqual(1000, len(bars))
 
     def test_build_databars_range_with_defaults(self):
         # Arrange
-        data = TestDataProvider.gbpusd_1min_bid()[:1000]
-        bar_builder = BarBuilder(data, 5, 1)
-
         # Act
-        bars = bar_builder.build_databars_range()
+        bars = self.bar_builder.build_databars_range()
 
         # Assert
         self.assertEqual(999, len(bars))
 
     def test_build_databars_range_with_params(self):
         # Arrange
-        data = TestDataProvider.gbpusd_1min_bid()[:1000]
-        bar_builder = BarBuilder(data, 5, 1)
-
         # Act
-        bars = bar_builder.build_databars_range(start=500)
+        bars = self.bar_builder.build_databars_range(start=500)
 
         # Assert
         self.assertEqual(499, len(bars))
 
     def test_build_databars_from_with_defaults(self):
         # Arrange
-        data = TestDataProvider.gbpusd_1min_bid()[:1000]
-        bar_builder = BarBuilder(data, 5, 1)
-
         # Act
-        bars = bar_builder.build_databars_from()
+        bars = self.bar_builder.build_databars_from()
 
         # Assert
         self.assertEqual(1000, len(bars))
 
     def test_build_databars_from_with_param(self):
         # Arrange
-        data = TestDataProvider.gbpusd_1min_bid()[:1000]
-        bar_builder = BarBuilder(data, 5, 1)
-
         # Act
-        bars = bar_builder.build_databars_from(500)
+        bars = self.bar_builder.build_databars_from(500)
 
         # Assert
         self.assertEqual(500, len(bars))
 
     def test_can_build_bars_all(self):
         # Arrange
-        data = TestDataProvider.gbpusd_1min_bid()[:1000]
-        bar_builder = BarBuilder(data, 5, 1)
-
         # Act
-        bars = bar_builder.build_bars_all()
+        bars = self.bar_builder.build_bars_all()
 
         # Assert
         self.assertEqual(1000, len(bars))
 
     def test_can_build_bars_range_with_defaults(self):
         # Arrange
-        data = TestDataProvider.gbpusd_1min_bid()[:1000]
-        bar_builder = BarBuilder(data, 5, 1)
-
         # Act
-        bars = bar_builder.build_bars_range()
+        bars = self.bar_builder.build_bars_range()
 
         # Assert
         self.assertEqual(999, len(bars))
 
     def test_can_build_bars_range_with_param(self):
         # Arrange
-        data = TestDataProvider.gbpusd_1min_bid()[:1000]
-        bar_builder = BarBuilder(data, 5, 1)
-
         # Act
-        bars = bar_builder.build_bars_range(start=500)
+        bars = self.bar_builder.build_bars_range(start=500)
 
         # Assert
         self.assertEqual(499, len(bars))
 
     def test_can_build_bars_from_with_defaults(self):
         # Arrange
-        data = TestDataProvider.gbpusd_1min_bid()[:1000]
-        bar_builder = BarBuilder(data, 5, 1)
-
         # Act
-        bars = bar_builder.build_bars_from()
+        bars = self.bar_builder.build_bars_from()
 
         # Assert
         self.assertEqual(1000, len(bars))
 
     def test_can_build_bars_from_with_param(self):
         # Arrange
-        data = TestDataProvider.gbpusd_1min_bid()[:1000]
-        bar_builder = BarBuilder(data, 5, 1)
-
         # Act
-        bars = bar_builder.build_bars_from(index=500)
+        bars = self.bar_builder.build_bars_from(index=500)
 
         # Assert
         self.assertEqual(500, len(bars))

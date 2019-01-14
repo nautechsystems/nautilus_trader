@@ -9,19 +9,28 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False
 
+from cpython.datetime cimport datetime
+
 from inv_trader.common.data cimport DataClient
-from inv_trader.model.objects cimport Instrument, BarType
+from inv_trader.model.objects cimport Symbol, BarType, Instrument
 
 
 cdef class BacktestDataClient(DataClient):
     """
     Provides a data client for the BacktestEngine.
     """
-    cdef int _iteration
+    cdef readonly dict bid_data
+    cdef readonly dict ask_data
+    cdef readonly int iteration
+    cdef readonly int iteration_end
     cdef dict data_providers
 
-    cdef void iterate(self)
-    cdef void _iterate_bar_type(self, BarType bar_type)
+
+    cpdef void subscribe_bars(self, BarType bar_type, handler)
+    cpdef void unsubscribe_bars(self, BarType bar_type, handler)
+    cpdef void subscribe_ticks(self, Symbol symbol, handler)
+    cpdef void unsubscribe_ticks(self, Symbol symbol, handler)
+    cpdef void iterate(self, datetime time)
 
 
 cdef class DataProvider:
@@ -29,8 +38,11 @@ cdef class DataProvider:
     Provides data for the BacktestDataClient.
     """
     cdef readonly Instrument instrument
-    cdef readonly dict _bid_data
-    cdef readonly dict _ask_data
-    cdef dict _bar_builders
+    cdef readonly dict iterations
+    cdef dict _bid_data
+    cdef dict _ask_data
+    cdef dict _bars
 
     cpdef void register_bar_type(self, BarType bar_type)
+    cpdef void deregister_bar_type(self, BarType bar_type)
+    cpdef dict iterate_bars(self, datetime time)
