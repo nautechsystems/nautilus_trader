@@ -9,6 +9,7 @@
 
 import unittest
 
+from inv_trader.model.enums import Resolution
 from inv_trader.model.objects import BarType
 from inv_trader.backtest.data import BacktestDataClient
 from test_kit.strategies import TestStrategy1
@@ -20,16 +21,17 @@ class BacktestDataClientTests(unittest.TestCase):
 
     def test_can_initialize_client_with_data(self):
         # Arrange
-        data_bid = TestDataProvider.usdjpy_1min_bid()
-        data_ask = TestDataProvider.usdjpy_1min_ask()
-        bartype_bid = TestStubs.bartype_usdjpy_1min_bid()
-        bartype_ask = TestStubs.bartype_usdjpy_1min_ask()
+        usdjpy = TestStubs.instrument_usdjpy()
+        bid_data_1min = TestDataProvider.usdjpy_1min_bid()
+        ask_data_1min = TestDataProvider.usdjpy_1min_ask()
 
-        instrument = TestStubs.instrument_usdjpy()
-        data = {bartype_bid: data_bid,
-                bartype_ask: data_ask}
+        instruments = [TestStubs.instrument_usdjpy()]
+        bid_data = {usdjpy.symbol: {Resolution.MINUTE: bid_data_1min}}
+        ask_data = {usdjpy.symbol: {Resolution.MINUTE: ask_data_1min}}
 
-        client = BacktestDataClient([instrument], data)
+        client = BacktestDataClient(instruments=instruments,
+                                    bid_data=bid_data,
+                                    ask_data=ask_data)
 
         # Act
 

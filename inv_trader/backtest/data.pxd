@@ -10,7 +10,7 @@
 # cython: language_level=3, boundscheck=False, wraparound=False
 
 from inv_trader.common.data cimport DataClient
-from inv_trader.model.objects cimport BarType
+from inv_trader.model.objects cimport Instrument, BarType
 
 
 cdef class BacktestDataClient(DataClient):
@@ -18,7 +18,19 @@ cdef class BacktestDataClient(DataClient):
     Provides a data client for the BacktestEngine.
     """
     cdef int _iteration
-    cdef dict bar_builders
+    cdef dict data_providers
 
     cdef void iterate(self)
     cdef void _iterate_bar_type(self, BarType bar_type)
+
+
+cdef class DataProvider:
+    """
+    Provides data for the BacktestDataClient.
+    """
+    cdef readonly Instrument instrument
+    cdef readonly dict bid_data
+    cdef readonly dict ask_data
+    cdef dict _bar_builders
+
+    cpdef void register_bar_type(self, BarType bar_type)

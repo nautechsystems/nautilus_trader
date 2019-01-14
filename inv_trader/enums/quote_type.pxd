@@ -13,8 +13,9 @@
 cpdef enum QuoteType:
     BID = 0,
     ASK = 1,
-    LAST = 2,
-    MID = 3
+    MID = 2
+    LAST = 3
+
 
 cdef inline str quote_type_string(int value):
     if value == 0:
@@ -22,8 +23,8 @@ cdef inline str quote_type_string(int value):
     elif value == 1:
         return "ASK"
     elif value == 2:
-        return "LAST"
-    elif value == 3:
         return "MID"
+    elif value == 3:
+        return "LAST"
     else:
         return "UNKNOWN"
