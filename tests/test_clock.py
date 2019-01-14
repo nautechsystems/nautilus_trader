@@ -43,6 +43,9 @@ class LiveClockTests(unittest.TestCase):
         # Fixture Setup
         self.clock = LiveClock()
 
+    def tearDown(self):
+        self.clock.stop_all_timers()
+
     def test_time_now(self):
         # Arrange
         # Act
@@ -57,6 +60,9 @@ class TestClockTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
         self.clock = TestClock()
+
+    def tearDown(self):
+        self.clock.stop_all_timers()
 
     def test_time_now(self):
         # Arrange
