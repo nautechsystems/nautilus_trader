@@ -9,6 +9,9 @@
 
 import unittest
 
+
+from datetime import datetime, timezone, timedelta
+
 from inv_trader.model.enums import Resolution
 from inv_trader.model.objects import BarType
 from inv_trader.backtest.data import BacktestDataClient
@@ -29,10 +32,37 @@ class BacktestDataClientTests(unittest.TestCase):
         bid_data = {usdjpy.symbol: {Resolution.MINUTE: bid_data_1min}}
         ask_data = {usdjpy.symbol: {Resolution.MINUTE: ask_data_1min}}
 
+        # Act
         client = BacktestDataClient(instruments=instruments,
                                     bid_data=bid_data,
                                     ask_data=ask_data)
 
+        # Assert
+        self.assertEqual(all(bid_data_1min), all(client.bid_data[usdjpy.symbol][Resolution.MINUTE]))
+        self.assertEqual(all(ask_data_1min), all(client.bid_data[usdjpy.symbol][Resolution.MINUTE]))
+
+    def test_can_iterate_bar_data(self):
+        # Arrange
+        usdjpy = TestStubs.instrument_usdjpy()
+        bid_data_1min = TestDataProvider.usdjpy_1min_bid()
+        ask_data_1min = TestDataProvider.usdjpy_1min_ask()
+
+        instruments = [TestStubs.instrument_usdjpy()]
+        bid_data = {usdjpy.symbol: {Resolution.MINUTE: bid_data_1min}}
+        ask_data = {usdjpy.symbol: {Resolution.MINUTE: ask_data_1min}}
+
+        client = BacktestDataClient(instruments=instruments,
+                                    bid_data=bid_data,
+                                    ask_data=ask_data)
+
+        receiver = []
+        client.subscribe_bars(TestStubs.bartype_usdjpy_1min_bid(), receiver.append)
+
+        start_datetime = datetime(2013, 1, 1, 0, 0, 0, 0)
+
         # Act
+        for x in range(1000):
+            client.iterate(start_datetime + timedelta(minutes=x))
 
         # Assert
+        self.assertEqual(1000, len(receiver))

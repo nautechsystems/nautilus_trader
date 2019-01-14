@@ -102,8 +102,7 @@ cdef class DataClient:
         :return: The instrument (if found)
         :raises KeyError: If the instrument is not found.
         """
-        if symbol not in self._instruments:
-            raise KeyError(f"Cannot find instrument for {symbol}.")
+        Precondition.true(symbol in self._instruments, 'symbol in self._instruments')
 
         return self._instruments[symbol]
 
@@ -160,7 +159,7 @@ cdef class DataClient:
 
     cpdef void subscribe_bars(self, BarType bar_type, handler: Callable):
         """
-        Subscribe to live bar data for the given bar parameters.
+        Subscribe to bar data for the given bar parameters.
 
         :param bar_type: The bar type to subscribe to.
         :param handler: The callable handler for subscription (if None will just call print).
@@ -170,7 +169,7 @@ cdef class DataClient:
 
     cpdef void unsubscribe_bars(self, BarType bar_type, handler: Callable):
         """
-        Unsubscribes from live bar data for the given symbol and venue.
+        Unsubscribes from bar data for the given symbol and venue.
 
         :param bar_type: The bar type to unsubscribe from.
         :param handler: The callable handler which was subscribed (can be None).
@@ -180,7 +179,7 @@ cdef class DataClient:
 
     cpdef void subscribe_ticks(self, Symbol symbol, handler: Callable):
         """
-        Subscribe to live tick data for the given symbol and venue.
+        Subscribe to tick data for the given symbol and venue.
 
         :param symbol: The tick symbol to subscribe to.
         :param handler: The callable handler for subscription (if None will just call print).
@@ -190,7 +189,7 @@ cdef class DataClient:
 
     cpdef void unsubscribe_ticks(self, Symbol symbol, handler: Callable):
         """
-        Unsubscribes from live tick data for the given symbol and venue.
+        Unsubscribes from tick data for the given symbol and venue.
 
         :param symbol: The tick symbol to unsubscribe from.
         :param handler: The callable handler which was subscribed (can be None).
@@ -200,7 +199,7 @@ cdef class DataClient:
 
     cdef void _subscribe_bars(self, BarType bar_type, handler: Callable):
         """
-        Subscribe to live bar data for the given bar parameters.
+        Subscribe to bar data for the given bar parameters.
 
         :param bar_type: The bar type to subscribe to.
         :param handler: The callable handler for subscription (if None will just call print).
@@ -213,10 +212,11 @@ cdef class DataClient:
         if handler is not None and handler not in self._bar_handlers[bar_type]:
             self._bar_handlers[bar_type].append(handler)
             self._log.debug(f"Added bar handler {handler}.")
+            self._log.info(f"Subscribed to {bar_type} bars.")
 
     cdef void _unsubscribe_bars(self, BarType bar_type, handler: Callable):
         """
-        Unsubscribes from live bar data for the given symbol and venue.
+        Unsubscribes from bar data for the given symbol and venue.
 
         :param bar_type: The bar type to unsubscribe from.
         :param handler: The callable handler which was subscribed (can be None).
@@ -231,12 +231,13 @@ cdef class DataClient:
             if handler in self._bar_handlers[bar_type]:
                 self._bar_handlers[bar_type].remove(handler)
                 self._log.debug(f"Removed handler {handler} from bar handlers.")
+                self._log.info(f"Unsubscribed from {bar_type} bars.")
             else:
                 self._log.warning(f"Cannot remove handler {handler} from bar handlers (not found).")
 
     cdef void _subscribe_ticks(self, Symbol symbol, handler: Callable):
         """
-        Subscribe to live tick data for the given symbol and venue.
+        Subscribe to tick data for the given symbol and venue.
 
         :param symbol: The tick symbol to subscribe to.
         :param handler: The callable handler for subscription (if None will just call print).
@@ -249,10 +250,11 @@ cdef class DataClient:
         if handler is not None and handler not in self._tick_handlers:
             self._tick_handlers[symbol].append(handler)
             self._log.debug(f"Added tick {handler}.")
+            self._log.info(f"Subscribed to {symbol} ticks.")
 
     cdef void _unsubscribe_ticks(self, Symbol symbol, handler):
         """
-        Unsubscribes from live tick data for the given symbol and venue.
+        Unsubscribes from tick data for the given symbol and venue.
 
         :param symbol: The tick symbol to unsubscribe from.
         :param handler: The callable handler which was subscribed (can be None).
@@ -267,6 +269,7 @@ cdef class DataClient:
             if handler in self._tick_handlers[symbol]:
                 self._tick_handlers[symbol].remove(handler)
                 self._log.debug(f"Removed handler {handler} from tick handlers.")
+                self._log.info(f"Unsubscribed from {symbol} ticks.")
             else:
                 self._log.warning(f"Cannot remove handler {handler} from tick handlers (not found).")
 

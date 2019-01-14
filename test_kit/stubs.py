@@ -42,16 +42,16 @@ class TestStubs:
                           'GBP/USD',
                           CurrencyCode.USD,
                           SecurityType.FOREX,
-                          tick_decimals=5,
+                          tick_precision=5,
                           tick_size=Decimal(0.00001, 5),
                           tick_value=Decimal(0.01, 2),
                           target_direct_spread=Decimal(0.00001, 5),
                           round_lot_size=1000,
                           contract_size=1,
-                          min_stop_distance_entry=Decimal(0),
-                          min_limit_distance_entry=Decimal(0),
-                          min_stop_distance=Decimal(0),
-                          min_limit_distance=Decimal(0),
+                          min_stop_distance_entry=0,
+                          min_limit_distance_entry=0,
+                          min_stop_distance=0,
+                          min_limit_distance=0,
                           min_trade_size=1,
                           max_trade_size=50000000,
                           margin_requirement=Decimal(0),
@@ -82,7 +82,6 @@ class TestStubs:
                           rollover_interest_sell=Decimal(0),
                           timestamp=UNIX_EPOCH)
 
-
     @staticmethod
     def bartype_audusd_1min_bid():
         return BarType(AUDUSD_FXCM, 1, Resolution.MINUTE, QuoteType.BID)
@@ -110,4 +109,3 @@ class TestStubs:
     @staticmethod
     def bartype_usdjpy_1min_ask():
         return BarType(USDJPY_FXCM, 1, Resolution.MINUTE, QuoteType.ASK)
-

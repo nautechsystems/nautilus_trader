@@ -9,14 +9,15 @@
 
 # cython: language_level=3, boundscheck=False
 
-from cpython.datetime cimport datetime
+from cpython.datetime cimport datetime, timedelta
 from pandas import DataFrame
 from typing import Set, List, Dict, Callable
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.enums.quote_type cimport QuoteType
-from inv_trader.model.enums import Resolution
 from inv_trader.enums.resolution cimport Resolution
+from inv_trader.common.clock cimport TestClock
+from inv_trader.common.logger cimport Logger
 from inv_trader.common.data cimport DataClient
 from inv_trader.model.objects cimport Symbol, BarType, Instrument, Bar
 from inv_trader.tools cimport BarBuilder
@@ -30,20 +31,25 @@ cdef class BacktestDataClient(DataClient):
     def __init__(self,
                  list instruments: List[Instrument],
                  dict bid_data: Dict[Symbol, Dict[Resolution, DataFrame]],
-                 dict ask_data: Dict[Symbol, Dict[Resolution, DataFrame]]):
+                 dict ask_data: Dict[Symbol, Dict[Resolution, DataFrame]],
+                 Logger logger=None):
         """
         Initializes a new instance of the BacktestDataClient class.
 
         :param instruments: The instruments needed for the backtest.
         :param bid_data: The historical bid market data needed for the backtest.
         :param bid_data: The historical ask market data needed for the backtest.
+        :param logger: The logger for the component.
         """
         Precondition.list_type(instruments, Instrument, 'instruments')
         Precondition.dict_types(bid_data, Symbol, dict, 'bid_data')
         Precondition.dict_types(ask_data, Symbol, dict, 'ask_data')
         Precondition.equal(bid_data.keys(), ask_data.keys())
 
-        self._iteration = 0
+        super().__init__(TestClock(), logger)
+        self.bid_data = bid_data
+        self.ask_data = ask_data
+        self.iteration = 0
         self.data_providers = dict()
 
         # Convert instruments list to dictionary indexed by symbol
@@ -88,8 +94,7 @@ cdef class BacktestDataClient(DataClient):
                                                        bid_data=bid_data[symbol],
                                                        ask_data=ask_data[symbol])
 
-        print(self._instruments)
-        print(self.data_providers)
+        self.iteration_end = shapes[Resolution.MINUTE][0]
 
     cpdef void connect(self):
         # Raise exception if not overridden in implementation.
@@ -148,23 +153,62 @@ cdef class BacktestDataClient(DataClient):
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the data client.")
 
-    cdef void iterate(self):
+    cpdef void subscribe_bars(self, BarType bar_type, handler: Callable):
+        """
+        Subscribe to live bar data for the given bar parameters.
+
+        :param bar_type: The bar type to subscribe to.
+        :param handler: The callable handler for subscription (if None will just call print).
+        """
+        Precondition.true(bar_type.symbol in self.data_providers, 'bar_type.symbol in self.data_providers')
+
+        self.data_providers[bar_type.symbol].register_bar_type(bar_type)
+        self._subscribe_bars(bar_type, handler)
+
+    cpdef void unsubscribe_bars(self, BarType bar_type, handler: Callable):
+        """
+        Unsubscribes from bar data for the given symbol and venue.
+
+        :param bar_type: The bar type to unsubscribe from.
+        :param handler: The callable handler which was subscribed (can be None).
+        """
+        Precondition.true(bar_type.symbol in self.data_providers, 'bar_type.symbol in self.data_providers')
+
+        self.data_providers[bar_type.symbol].deregister_bar_type(bar_type)
+        self._unsubscribe_bars(bar_type, handler)
+
+    cpdef void subscribe_ticks(self, Symbol symbol, handler: Callable):
+        """
+        Subscribe to tick data for the given symbol and venue.
+
+        :param symbol: The tick symbol to subscribe to.
+        :param handler: The callable handler for subscription (if None will just call print).
+        """
+        # Do nothing
+        self._subscribe_ticks(symbol, handler)
+
+    cpdef void unsubscribe_ticks(self, Symbol symbol, handler: Callable):
+        """
+        Unsubscribes from tick data for the given symbol and venue.
+
+        :param symbol: The tick symbol to unsubscribe from.
+        :param handler: The callable handler which was subscribed (can be None).
+        """
+        # Do nothing.
+        self._unsubscribe_ticks(symbol, handler)
+
+    cpdef void iterate(self, datetime time):
         """
         Iterate the data client one time step.
         """
-        for bar_type in self._bar_handlers:
-            self._iterate_bar_type(bar_type)
+        cdef dict bars = {}
+        for data_provider in self.data_providers.values():
+                bars = data_provider.iterate_bars(time)
+                for bar_type, bar in bars.items():
+                    for handler in self._bar_handlers[bar_type]:
+                        handler(bar)
 
-        self._iteration += 1
-
-    cdef void _iterate_bar_type(self, BarType bar_type):
-        """
-        Send the next bar to all of the handlers for that bar type.
-        """
-        cdef Bar bar = self.bar_builders[bar_type].build_bar(self._iteration)
-
-        for handler in self._bar_handlers[bar_type]:
-            handler(bar)
+        self.iteration += 1
 
 
 cdef class DataProvider:
@@ -187,9 +231,10 @@ cdef class DataProvider:
         Precondition.true(Resolution.MINUTE in ask_data, 'Resolution.MINUTE in bid_data')
 
         self.instrument = instrument
+        self.iterations = {}       # type: Dict[BarType, int]
         self._bid_data = bid_data  # type: Dict[Resolution, DataFrame]
         self._ask_data = ask_data  # type: Dict[Resolution, DataFrame]
-        self._bar_builders = {}    # type: Dict[BarType, BarBuilder]
+        self._bars = {}            # type: Dict[BarType, List[Bar]]
 
     cpdef void register_bar_type(self, BarType bar_type):
         """
@@ -202,7 +247,7 @@ cdef class DataProvider:
         # TODO: Add capability for re-sampled bars
         # TODO: QuoteType.LAST not yet supported
 
-        if bar_type not in self._bar_builders:
+        if bar_type not in self._bars:
             if bar_type.quote_type is QuoteType.BID:
                 data = self._bid_data[bar_type.resolution]
                 tick_precision = self.instrument.tick_precision
@@ -213,4 +258,36 @@ cdef class DataProvider:
                 data = (self._bid_data[bar_type.resolution] + self._ask_data[bar_type.resolution]) / 2
                 tick_precision = self.instrument.tick_precision + 1
 
-        self._bar_builders[bar_type] = BarBuilder(data=data, decimal_precision=tick_precision)
+            builder = BarBuilder(data=data, decimal_precision=tick_precision)
+            self._bars[bar_type] = builder.build_bars_all()
+
+        if bar_type not in self.iterations:
+            self.iterations[bar_type] = 0
+
+    cpdef void deregister_bar_type(self, BarType bar_type):
+        """
+        Deregister the given bar type with the data provider.
+        
+        :param bar_type: The bar type to deregister.
+        """
+        Precondition.true(bar_type.symbol == self.instrument.symbol, 'bar_type.symbol == self.instrument.symbol')
+
+        if bar_type in self._bars:
+            del self._bars[bar_type]
+
+        if bar_type in self.iterations:
+            del self.iterations[bar_type]
+
+    cpdef dict iterate_bars(self, datetime time):
+        """
+        TBA
+        :return: The list of built bars.
+        """
+        cdef dict bars_dict = dict()
+
+        for bar_type, bars in self._bars.items():
+            if self._bars[bar_type][self.iterations[bar_type]].timestamp == time:
+                bars_dict[bar_type] = bars[self.iterations[bar_type]]
+                self.iterations[bar_type] += 1
+
+        return bars_dict

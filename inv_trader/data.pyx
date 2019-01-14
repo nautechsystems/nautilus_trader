@@ -54,7 +54,7 @@ cdef class LiveDataClient(DataClient):
         :param host: The data service host IP address (default=127.0.0.1).
         :param port: The data service port (default=6379).
         :param clock: The internal clock for the component.
-        :param logger: The logging adapter for the component.
+        :param logger: The logger for the component.
         :raises ValueError: If the host is not a valid string.
         :raises ValueError: If the port is not in range [0, 65535]
         """
@@ -171,19 +171,6 @@ cdef class LiveDataClient(DataClient):
         cdef Instrument instrument = InstrumentSerializer.deserialize(self._redis_client.get(key))
         self._instruments[symbol] = instrument
         self._log.info(f"Updated instrument for {symbol}.")
-
-    cpdef Instrument get_instrument(self, Symbol symbol):
-        """
-        Get the instrument corresponding to the given symbol.
-
-        :param symbol: The symbol of the instrument to get.
-        :return: The instrument (if found)
-        :raises KeyError: If the instrument is not found.
-        """
-        if symbol not in self._instruments:
-            raise KeyError(f"Cannot find instrument for {symbol}.")
-
-        return self._instruments[symbol]
 
     cpdef void register_strategy(self, TradeStrategy strategy):
         """
