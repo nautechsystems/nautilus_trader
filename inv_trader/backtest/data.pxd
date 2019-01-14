@@ -29,8 +29,8 @@ cdef class DataProvider:
     Provides data for the BacktestDataClient.
     """
     cdef readonly Instrument instrument
-    cdef readonly dict bid_data
-    cdef readonly dict ask_data
+    cdef readonly dict _bid_data
+    cdef readonly dict _ask_data
     cdef dict _bar_builders
 
     cpdef void register_bar_type(self, BarType bar_type)
