@@ -17,6 +17,7 @@ from inv_trader.backtest.data cimport BacktestDataClient
 from inv_trader.backtest.execution cimport BacktestExecClient
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.common.clock cimport TestClock
+from inv_trader.enums.resolution cimport Resolution
 from inv_trader.model.objects cimport Instrument, BarType
 from inv_trader.strategy cimport TradeStrategy
 
@@ -28,7 +29,8 @@ cdef class BacktestEngine:
 
     def __init__(self,
                  list instruments: List[Instrument],
-                 dict data: Dict[BarType, DataFrame],
+                 dict bid_data: Dict[Resolution, DataFrame],
+                 dict ask_data: Dict[Resolution, DataFrame],
                  list strategies: List[TradeStrategy]):
         """
         Initializes a new instance of the BacktestEngine class.
@@ -37,10 +39,10 @@ cdef class BacktestEngine:
         :param data: The historical market data needed for the backtest.
         """
         Precondition.list_type(instruments, Instrument, 'instruments')
-        Precondition.dict_types(data, BarType, DataFrame, 'data')
+        Precondition.dict_types(bid_data, BarType, DataFrame, 'data')
         Precondition.list_type(strategies, TradeStrategy, 'strategies')
 
-        self.data_client = BacktestDataClient(instruments, data)
+        self.data_client = BacktestDataClient(instruments, bid_data, ask_data)
         self.exec_client = BacktestExecClient()
 
         # Replace strategies internal clocks with test clocks

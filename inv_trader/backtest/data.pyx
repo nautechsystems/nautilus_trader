@@ -284,10 +284,12 @@ cdef class DataProvider:
         :return: The list of built bars.
         """
         cdef dict bars_dict = dict()
+        cdef int next_index = 0
 
         for bar_type, bars in self._bars.items():
-            if self._bars[bar_type][self.iterations[bar_type]].timestamp == time:
-                bars_dict[bar_type] = bars[self.iterations[bar_type]]
+            next_index = self.iterations[bar_type]
+            if self._bars[bar_type][next_index].timestamp == time:
+                bars_dict[bar_type] = bars[next_index]
                 self.iterations[bar_type] += 1
 
         return bars_dict

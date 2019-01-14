@@ -56,8 +56,8 @@ cdef class Trader:
         self.name = Label(name)
         self.id = GUID(uuid.uuid4())
         self.strategies = strategies
-        self.started_datetimes = []
-        self.stopped_datetimes = []
+        self.started_datetimes = list()
+        self.stopped_datetimes = list()
 
     cpdef void start(self):
         """
