@@ -81,7 +81,7 @@ cdef class Instrument:
     cdef readonly str broker_symbol
     cdef readonly CurrencyCode quote_currency
     cdef readonly SecurityType security_type
-    cdef readonly int tick_decimals
+    cdef readonly int tick_precision
     cdef readonly Decimal tick_size
     cdef readonly Decimal tick_value
     cdef readonly Decimal target_direct_spread

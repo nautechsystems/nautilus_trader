@@ -14,6 +14,8 @@ from pandas import DataFrame
 from typing import Set, List, Dict, Callable
 
 from inv_trader.core.precondition cimport Precondition
+from inv_trader.enums.quote_type cimport QuoteType
+from inv_trader.enums.resolution cimport Resolution
 from inv_trader.common.data cimport DataClient
 from inv_trader.model.objects cimport Symbol, BarType, Instrument, Bar
 from inv_trader.tools cimport BarBuilder
@@ -26,43 +28,62 @@ cdef class BacktestDataClient(DataClient):
 
     def __init__(self,
                  list instruments: List[Instrument],
-                 dict data: Dict[BarType, DataFrame]):
+                 dict bid_data: Dict[Symbol, Dict[Resolution, DataFrame]],
+                 dict ask_data: Dict[Symbol, Dict[Resolution, DataFrame]]):
         """
         Initializes a new instance of the BacktestDataClient class.
 
         :param instruments: The instruments needed for the backtest.
-        :param data: The historical market data needed for the backtest.
+        :param bid_data: The historical bid market data needed for the backtest.
+        :param bid_data: The historical ask market data needed for the backtest.
         """
         Precondition.list_type(instruments, Instrument, 'instruments')
-        Precondition.dict_types(data, BarType, DataFrame, 'data')
+        Precondition.dict_types(bid_data, Symbol, dict, 'bid_data')
+        Precondition.dict_types(ask_data, Symbol, dict, 'ask_data')
 
         self._iteration = 0
-        self.bar_builders = {}  # type: Dict[Symbol, BarBuilder]
+        self.data_providers = dict()
+
         # Convert instruments list to dictionary indexed by symbol
         cdef dict instruments_dict = {}  # type: Dict[Symbol, Instrument]
         for instrument in instruments:
             instruments_dict[instrument.symbol] = instrument
         self._instruments = instruments_dict
 
+        assert(bid_data.keys() == ask_data.keys())
         # Create set of all data symbols
-        cdef set data_symbols = set()  # type: Set[Symbol]
-        for bar_type in data:
-            data_symbols.add(bar_type.symbol)
+        cdef set bid_data_symbols = set()  # type: Set[Symbol]
+        for symbol in bid_data:
+            bid_data_symbols.add(symbol)
+        cdef set ask_data_symbols = set()  # type: Set[Symbol]
+        for symbol in ask_data:
+            ask_data_symbols.add(symbol)
+        assert(bid_data_symbols == ask_data_symbols)
+        cdef set data_symbols = bid_data_symbols
 
         # Check there is the needed instrument for each data symbol
         for key in self._instruments.keys():
-            Precondition.true(key in data_symbols, 'key in data_symbols, key in data_symbols')
+            assert(key in data_symbols, f'The needed instrument {key} was not provided')
 
-        cdef tuple first_shape = next(iter(data.values())).shape
-        for dataframe in data.values():
-            Precondition.true(dataframe.shape == first_shape, 'dataframe.shape == first_shape')
+        # # Check that all resolution dataframes are of the same shape and index
+        # assert(bid_data.keys() == ask_data.keys())
+        # cdef tuple first_shape = next(iter(bid_data.values())).shape
+        # cdef datetime first_datetime = next(iter(bid_data.values())).index.iloc[0]
+        # print(first_datetime)
+        # for dataframe in bid_data.values():
+        #     assert(dataframe.shape == first_shape, f'{dataframe} is an incompatible shape')
+        #     assert(dataframe.index.iloc[0] == first_datetime, f'{dataframe} index is out of sequence')
+        # for dataframe in ask_data.values():
+        #     assert(dataframe.shape == first_shape, f'{dataframe} is an incompatible shape')
+        #     assert(dataframe.index.iloc[0] == first_datetime, f'{dataframe} index is out of sequence')
 
-        for bar_type, dataframe in data.items():
-            if bar_type.symbol not in self.bar_builders:
-                self.bar_builders[bar_type.symbol] = BarBuilder(data=dataframe, decimal_precision=instrument.tick_decimals) # type: Dict[BarType, BarBuilder]
+        for symbol in data_symbols:
+            self.data_providers[symbol] = DataProvider(instrument=self._instruments[symbol],
+                                                       bid_data=bid_data[symbol],
+                                                       ask_data=ask_data[symbol])
 
         print(self._instruments)
-        print(self.bar_builders)
+        print(self.data_providers)
 
     cpdef void connect(self):
         # Raise exception if not overridden in implementation.
@@ -94,15 +115,15 @@ cdef class BacktestDataClient(DataClient):
         :param handler: The bar handler to pass the bars to.
         :raises ValueError: If the quantity is not None and not positive (> 0).
         """
-        Precondition.true(bar_type in self.bar_builders, 'bar_type in self.bar_builders')
+        Precondition.true(bar_type.symbol in self.data_providers, 'bar_type.symbol in self.data_providers')
 
-        cdef list bars = self.bar_builders[bar_type].build_bars_range(start=0, end=quantity)
-
-        self._log.info(f"Historical download of {len(bars)} bars for {bar_type} complete.")
-
-        for bar in bars:
-            handler(bar_type, bar)
-        self._log.debug(f"Historical bars hydrated to handler {handler}.")
+        # cdef list bars = self.bar_builders[bar_type].build_bars_range(start=0, end=quantity)
+        #
+        # self._log.info(f"Historical download of {len(bars)} bars for {bar_type} complete.")
+        #
+        # for bar in bars:
+        #     handler(bar_type, bar)
+        # self._log.debug(f"Historical bars hydrated to handler {handler}.")
 
     cpdef void historical_bars_from(
             self,
@@ -138,3 +159,48 @@ cdef class BacktestDataClient(DataClient):
 
         for handler in self._bar_handlers[bar_type]:
             handler(bar)
+
+
+cdef class DataProvider:
+    """
+    Provides data for the BacktestDataClient.
+    """
+
+    def __init__(self,
+                 Instrument instrument,
+                 dict bid_data: Dict[Resolution, DataFrame],
+                 dict ask_data: Dict[Resolution, DataFrame]):
+        """
+        Initializes a new instance of the BacktestDataClient class.
+
+        :param instrument: The instrument for the data provider.
+        :param bid_data: The bid data.
+        :param ask_data: The ask data.
+        """
+        self.instrument = instrument
+        self.bid_data = bid_data
+        self.ask_data = ask_data
+        self._bar_builders = {}  # type: Dict[BarType, BarBuilder]
+
+    cpdef void register_bar_type(self, BarType bar_type):
+        """
+        TBA
+        :param bar_type: 
+        :return: 
+        """
+        Precondition.true(bar_type.symbol == self.instrument.symbol, 'bar_type.symbol == self.instrument.symbol')
+
+        # TODO: Add capability for re-sampled bars
+        # TODO: QuoteType.LAST not yet supported
+
+        if bar_type not in self._bar_builders:
+            if bar_type.quote_type is QuoteType.BID:
+                data = self.bid_data[bar_type.resolution]
+            elif bar_type.quote_type is QuoteType.ASK:
+                data = self.ask_data[bar_type.resolution]
+            elif bar_type.quote_type is QuoteType.MID:
+                data = (self.bid_data[bar_type.resolution] + self.ask_data[bar_type.resolution]) / 2
+
+        self._bar_builders[bar_type] = BarBuilder(data=data, decimal_precision=self.instrument.tick_precision)
+
+

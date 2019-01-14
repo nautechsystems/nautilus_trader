@@ -65,7 +65,7 @@ class TestStubs:
                           'USD/JPY',
                           CurrencyCode.JPY,
                           SecurityType.FOREX,
-                          tick_decimals=3,
+                          tick_precision=3,
                           tick_size=Decimal(0.001, 3),
                           tick_value=Decimal(0.01, 2),
                           target_direct_spread=Decimal(0.001, 3),

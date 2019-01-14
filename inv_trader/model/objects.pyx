@@ -437,7 +437,7 @@ cdef class Instrument:
                  str broker_symbol,
                  CurrencyCode quote_currency,
                  SecurityType security_type,
-                 int tick_decimals,
+                 int tick_precision,
                  Decimal tick_size,
                  Decimal tick_value,
                  Decimal target_direct_spread,
@@ -460,7 +460,7 @@ cdef class Instrument:
         :param broker_symbol: The instruments broker symbol.
         :param quote_currency: The instruments quote currency.
         :param security_type: The instruments security type.
-        :param tick_decimals: The instruments tick decimal digits precision.
+        :param tick_precision: The instruments tick decimal digits precision.
         :param tick_size: The instruments tick size.
         :param tick_value: The instruments tick value.
         :param target_direct_spread: The instruments target direct spread (set by broker).
@@ -478,7 +478,7 @@ cdef class Instrument:
         :param timestamp: The timestamp the instrument was created/updated at.
         """
         Precondition.valid_string(broker_symbol, 'broker_symbol')
-        Precondition.not_negative(tick_decimals, 'tick_decimals')
+        Precondition.not_negative(tick_precision, 'tick_precision')
         Precondition.positive(tick_size, 'tick_size')
         Precondition.positive(tick_value, 'tick_value')
         Precondition.not_negative(target_direct_spread, 'target_direct_spread')
@@ -496,7 +496,7 @@ cdef class Instrument:
         self.broker_symbol = broker_symbol
         self.quote_currency = quote_currency
         self.security_type = security_type
-        self.tick_decimals = tick_decimals
+        self.tick_precision = tick_precision
         self.tick_size = tick_size
         self.tick_value = tick_value
         self.target_direct_spread = target_direct_spread

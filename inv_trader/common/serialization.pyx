@@ -15,8 +15,8 @@ import json
 
 from cpython.datetime cimport datetime
 
+# Do not reorder imports (enums need to be in below order)
 from inv_trader.core.decimal cimport Decimal
-
 from inv_trader.model.enums import Venue, CurrencyCode
 from inv_trader.enums.venue cimport Venue
 from inv_trader.enums.security_type cimport SecurityType
@@ -274,7 +274,7 @@ cdef class InstrumentSerializer:
             inst_dict['BrokerSymbol']['Value'],
             CurrencyCode[inst_dict['QuoteCurrency'].upper()],
             SecurityType[inst_dict['SecurityType'].upper()],
-            inst_dict['TickDecimals'],
+            inst_dict['TickDecimals'],  # TODO: Change to TickPrecision on C# side
             Decimal(f'{tick_size}'),
             Decimal(f'{tick_value}'),
             Decimal(f'{target_direct_spread}'),
