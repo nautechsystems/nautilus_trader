@@ -177,11 +177,11 @@ cdef class DataProvider:
                  dict bid_data: Dict[Resolution, DataFrame],
                  dict ask_data: Dict[Resolution, DataFrame]):
         """
-        Initializes a new instance of the BacktestDataClient class.
+        Initializes a new instance of the DataProvider class.
 
         :param instrument: The instrument for the data provider.
-        :param bid_data: The bid data (must contain minute resolution).
-        :param ask_data: The ask data (must contain minute resolution).
+        :param bid_data: The bid data for the data provider (must contain minute resolution).
+        :param ask_data: The ask data for the data provider (must contain minute resolution).
         """
         Precondition.true(Resolution.MINUTE in bid_data, 'Resolution.MINUTE in bid_data')
         Precondition.true(Resolution.MINUTE in ask_data, 'Resolution.MINUTE in bid_data')
@@ -193,9 +193,9 @@ cdef class DataProvider:
 
     cpdef void register_bar_type(self, BarType bar_type):
         """
-        TBA
-        :param bar_type: 
-        :return: 
+        Register the given bar type with the data provider.
+        
+        :param bar_type: The bar type to register.
         """
         Precondition.true(bar_type.symbol == self.instrument.symbol, 'bar_type.symbol == self.instrument.symbol')
 
@@ -213,6 +213,4 @@ cdef class DataProvider:
                 data = (self._bid_data[bar_type.resolution] + self._ask_data[bar_type.resolution]) / 2
                 tick_precision = self.instrument.tick_precision + 1
 
-        self._bar_builders[bar_type] = BarBuilder(data=data, decimal_precision=self.instrument.tick_precision)
-
-
+        self._bar_builders[bar_type] = BarBuilder(data=data, decimal_precision=tick_precision)
