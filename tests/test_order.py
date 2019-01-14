@@ -30,7 +30,6 @@ class OrderTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
         self.order_factory = OrderFactory()
-        print('\n')
 
     def test_market_order_with_quantity_zero_raises_exception(self):
         # Arrange

@@ -529,6 +529,7 @@ cdef class TradeStrategy:
         cdef list labels = self._clock.get_labels()
         for label in labels:
             self.log.info(f"Cancelled timer {label}.")
+        self._clock.stop_all_timers()
         self.is_running = False
         self.log.info(f"Stopped.")
 
