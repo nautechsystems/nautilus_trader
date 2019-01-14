@@ -15,6 +15,7 @@ from typing import Set, List, Dict, Callable
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.enums.quote_type cimport QuoteType
+from inv_trader.model.enums import Resolution
 from inv_trader.enums.resolution cimport Resolution
 from inv_trader.common.data cimport DataClient
 from inv_trader.model.objects cimport Symbol, BarType, Instrument, Bar
@@ -40,6 +41,7 @@ cdef class BacktestDataClient(DataClient):
         Precondition.list_type(instruments, Instrument, 'instruments')
         Precondition.dict_types(bid_data, Symbol, dict, 'bid_data')
         Precondition.dict_types(ask_data, Symbol, dict, 'ask_data')
+        Precondition.equal(bid_data.keys(), ask_data.keys())
 
         self._iteration = 0
         self.data_providers = dict()
@@ -50,7 +52,6 @@ cdef class BacktestDataClient(DataClient):
             instruments_dict[instrument.symbol] = instrument
         self._instruments = instruments_dict
 
-        assert(bid_data.keys() == ask_data.keys())
         # Create set of all data symbols
         cdef set bid_data_symbols = set()  # type: Set[Symbol]
         for symbol in bid_data:
@@ -65,17 +66,22 @@ cdef class BacktestDataClient(DataClient):
         for key in self._instruments.keys():
             assert(key in data_symbols, f'The needed instrument {key} was not provided')
 
-        # # Check that all resolution dataframes are of the same shape and index
-        # assert(bid_data.keys() == ask_data.keys())
-        # cdef tuple first_shape = next(iter(bid_data.values())).shape
-        # cdef datetime first_datetime = next(iter(bid_data.values())).index.iloc[0]
-        # print(first_datetime)
-        # for dataframe in bid_data.values():
-        #     assert(dataframe.shape == first_shape, f'{dataframe} is an incompatible shape')
-        #     assert(dataframe.index.iloc[0] == first_datetime, f'{dataframe} index is out of sequence')
-        # for dataframe in ask_data.values():
-        #     assert(dataframe.shape == first_shape, f'{dataframe} is an incompatible shape')
-        #     assert(dataframe.index.iloc[0] == first_datetime, f'{dataframe} index is out of sequence')
+        # Check that all resolution DataFrames are of the same shape and index
+        cdef dict shapes = {}  # type: Dict[Resolution, tuple]
+        cdef dict indexs = {}  # type: Dict[Resolution, datetime]
+        for symbol, data in bid_data.items():
+            for resolution, dataframe in data.items():
+                if resolution not in shapes:
+                    shapes[resolution] = dataframe.shape
+                if resolution not in indexs:
+                    indexs[resolution] = dataframe.index
+                assert(dataframe.shape == shapes[resolution], f'{dataframe} is an incompatible shape')
+                assert(dataframe.index == indexs[resolution], f'{dataframe} index is out of sequence')
+
+        for symbol, data in ask_data.items():
+            for resolution, dataframe in data.items():
+                assert(dataframe.shape == shapes[resolution], f'{dataframe} is an incompatible shape')
+                assert(dataframe.index == indexs[resolution], f'{dataframe} index is out of sequence')
 
         for symbol in data_symbols:
             self.data_providers[symbol] = DataProvider(instrument=self._instruments[symbol],
@@ -174,13 +180,16 @@ cdef class DataProvider:
         Initializes a new instance of the BacktestDataClient class.
 
         :param instrument: The instrument for the data provider.
-        :param bid_data: The bid data.
-        :param ask_data: The ask data.
+        :param bid_data: The bid data (must contain minute resolution).
+        :param ask_data: The ask data (must contain minute resolution).
         """
+        Precondition.true(Resolution.MINUTE in bid_data, 'Resolution.MINUTE in bid_data')
+        Precondition.true(Resolution.MINUTE in ask_data, 'Resolution.MINUTE in bid_data')
+
         self.instrument = instrument
-        self.bid_data = bid_data
-        self.ask_data = ask_data
-        self._bar_builders = {}  # type: Dict[BarType, BarBuilder]
+        self._bid_data = bid_data  # type: Dict[Resolution, DataFrame]
+        self._ask_data = ask_data  # type: Dict[Resolution, DataFrame]
+        self._bar_builders = {}    # type: Dict[BarType, BarBuilder]
 
     cpdef void register_bar_type(self, BarType bar_type):
         """
@@ -195,11 +204,14 @@ cdef class DataProvider:
 
         if bar_type not in self._bar_builders:
             if bar_type.quote_type is QuoteType.BID:
-                data = self.bid_data[bar_type.resolution]
+                data = self._bid_data[bar_type.resolution]
+                tick_precision = self.instrument.tick_precision
             elif bar_type.quote_type is QuoteType.ASK:
-                data = self.ask_data[bar_type.resolution]
+                data = self._ask_data[bar_type.resolution]
+                tick_precision = self.instrument.tick_precision
             elif bar_type.quote_type is QuoteType.MID:
-                data = (self.bid_data[bar_type.resolution] + self.ask_data[bar_type.resolution]) / 2
+                data = (self._bid_data[bar_type.resolution] + self._ask_data[bar_type.resolution]) / 2
+                tick_precision = self.instrument.tick_precision + 1
 
         self._bar_builders[bar_type] = BarBuilder(data=data, decimal_precision=self.instrument.tick_precision)
 
