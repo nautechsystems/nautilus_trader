@@ -15,6 +15,7 @@ from datetime import datetime, timezone, timedelta
 from inv_trader.model.enums import Resolution
 from inv_trader.model.objects import BarType
 from inv_trader.backtest.data import BacktestDataClient
+from inv_trader.backtest.engine import BacktestEngine
 from test_kit.strategies import TestStrategy1
 from test_kit.data import TestDataProvider
 from test_kit.stubs import TestStubs
@@ -66,3 +67,53 @@ class BacktestDataClientTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(1000, len(receiver))
+
+
+class BacktestEngineTests(unittest.TestCase):
+
+    def test_can_initialize_engine_with_data(self):
+        # Arrange
+        usdjpy = TestStubs.instrument_usdjpy()
+        bid_data_1min = TestDataProvider.usdjpy_1min_bid()
+        ask_data_1min = TestDataProvider.usdjpy_1min_ask()
+
+        instruments = [TestStubs.instrument_usdjpy()]
+        bid_data = {usdjpy.symbol: {Resolution.MINUTE: bid_data_1min}}
+        ask_data = {usdjpy.symbol: {Resolution.MINUTE: ask_data_1min}}
+
+        strategies = [TestStrategy1(TestStubs.bartype_usdjpy_1min_bid())]
+
+        # Act
+        engine = BacktestEngine(instruments=instruments,
+                                bar_data_bid=bid_data,
+                                bar_data_ask=ask_data,
+                                strategies=strategies)
+
+        # Assert
+        self.assertEqual(all(bid_data), all(engine.data_client.bar_data_bid))
+        self.assertEqual(all(ask_data), all(engine.data_client.bar_data_bid))
+
+    def test_can_run(self):
+        # Arrange
+        usdjpy = TestStubs.instrument_usdjpy()
+        bid_data_1min = TestDataProvider.usdjpy_1min_bid()
+        ask_data_1min = TestDataProvider.usdjpy_1min_ask()
+
+        instruments = [TestStubs.instrument_usdjpy()]
+        bid_data = {usdjpy.symbol: {Resolution.MINUTE: bid_data_1min}}
+        ask_data = {usdjpy.symbol: {Resolution.MINUTE: ask_data_1min}}
+
+        strategies = [TestStrategy1(TestStubs.bartype_usdjpy_1min_bid())]
+        engine = BacktestEngine(instruments=instruments,
+                                bar_data_bid=bid_data,
+                                bar_data_ask=ask_data,
+                                strategies=strategies)
+
+        start = datetime(2013, 1, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
+        stop = datetime(2013, 1, 2, 0, 0, 0, 0, tzinfo=timezone.utc)
+
+        # Act
+        engine.run(start, stop)
+
+
+

@@ -42,8 +42,8 @@ cdef class BacktestDataClient(DataClient):
         :param logger: The logger for the component.
         """
         Precondition.list_type(instruments, Instrument, 'instruments')
-        Precondition.dict_types(bar_data_bid, Symbol, dict, 'bid_data')
-        Precondition.dict_types(bar_data_ask, Symbol, dict, 'ask_data')
+        Precondition.dict_types(bar_data_bid, Symbol, dict, 'bar_data_bid')
+        Precondition.dict_types(bar_data_ask, Symbol, dict, 'bar_data_ask')
         Precondition.equal(bar_data_bid.keys(), bar_data_ask.keys())
 
         super().__init__(TestClock(), logger)
