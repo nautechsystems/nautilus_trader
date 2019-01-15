@@ -20,6 +20,7 @@ from inv_trader.model.events import Event, OrderFilled, TimeEvent
 from inv_trader.model.identifiers import Label, OrderId, PositionId
 from inv_trader.strategy import TradeStrategy
 from inv_indicators.average.ema import ExponentialMovingAverage
+from inv_indicators.atr import AverageTrueRange
 
 
 class EMACrossStopEntry(TradeStrategy):
@@ -35,6 +36,8 @@ class EMACrossStopEntry(TradeStrategy):
                  position_size: int,
                  fast_ema: int,
                  slow_ema: int,
+                 atr_period: int,
+                 sl_atr_multiple: int,
                  bar_capacity: int=1000,
                  logger: Logger=None):
         """
@@ -61,17 +64,19 @@ class EMACrossStopEntry(TradeStrategy):
         self.bar_type = bar_type
         self.position_size = position_size
         self.tick_precision = instrument.tick_precision
-        self.entry_buffer_initial = instrument.tick_size * 5
-        self.entry_buffer = instrument.tick_size * 3
+        self.entry_buffer = instrument.tick_size
+        self.SL_atr_multiple = sl_atr_multiple
         self.SL_buffer = instrument.tick_size * 10
 
         # Create the indicators for the strategy
         self.fast_ema = ExponentialMovingAverage(fast_ema)
         self.slow_ema = ExponentialMovingAverage(slow_ema)
+        self.atr = AverageTrueRange(atr_period)
 
         # Register the indicators for updating
         self.register_indicator(self.bar_type, self.fast_ema, self.fast_ema.update)
         self.register_indicator(self.bar_type, self.slow_ema, self.slow_ema.update)
+        self.register_indicator(self.bar_type, self.atr, self.atr.update)
 
         # Users custom order management logic if you like...
         self.entry_orders = {}      # type: Dict[OrderId, Order]
@@ -86,9 +91,6 @@ class EMACrossStopEntry(TradeStrategy):
         # Subscribe to the necessary data.
         self.historical_bars(self.bar_type)
         self.subscribe_bars(self.bar_type)
-        self.subscribe_ticks(self.symbol)
-
-        self.set_time_alert(Label("test-alert1"), self.time_now + timedelta(seconds=10))
 
     def on_tick(self, tick: Tick):
         """
@@ -120,13 +122,6 @@ class EMACrossStopEntry(TradeStrategy):
                     self.cancel_order(order)
                     return
 
-        if self.symbol in self.ticks:
-            # If any open positions or pending entry orders then return
-            if not self.is_flat:
-                return
-            if len(self.active_orders) > 0:
-                return
-
             # BUY LOGIC
             if self.fast_ema.value >= self.slow_ema.value:
                 entry_order = self.order_factory.stop_market(
@@ -135,8 +130,7 @@ class EMACrossStopEntry(TradeStrategy):
                     Label('S1_E'),
                     OrderSide.BUY,
                     self.position_size,
-                    Price.create(self.ticks[self.symbol].ask - self.entry_buffer_initial,
-                                 self.tick_precision),
+                    Price.create(self.bar(self.bar_type)[0].high + self.entry_buffer, self.tick_precision),
                     time_in_force=TimeInForce.GTD,
                     expire_time=self.time_now + timedelta(minutes=1))
                 self.entry_orders[entry_order.id] = entry_order
@@ -152,8 +146,7 @@ class EMACrossStopEntry(TradeStrategy):
                     Label('S1_E'),
                     OrderSide.SELL,
                     self.position_size,
-                    Price.create(self.ticks[self.symbol].bid + self.entry_buffer_initial,
-                                 self.tick_precision),
+                    Price.create(self.bar(self.bar_type)[0].low - self.entry_buffer, self.tick_precision),
                     time_in_force=TimeInForce.GTD,
                     expire_time=self.time_now + timedelta(minutes=1))
                 self.entry_orders[entry_order.id] = entry_order
@@ -176,10 +169,12 @@ class EMACrossStopEntry(TradeStrategy):
                 # SET TRAILING STOP
                 stop_side = self.get_opposite_side(event.order_side)
                 if stop_side is OrderSide.BUY:
-                    stop_price = Price.create(event.average_price + self.SL_buffer,
+                    stop_price = Price.create(self.bar(self.bar_type)[0].high
+                                              + self.atr.value * self.SL_atr_multiple,
                                               self.tick_precision)
                 else:
-                    stop_price = Price.create(event.average_price - self.SL_buffer,
+                    stop_price = Price.create(self.bar(self.bar_type)[0].low
+                                              - self.atr.value * self.SL_atr_multiple,
                                               self.tick_precision)
 
                 stop_order = self.order_factory.stop_market(
@@ -188,15 +183,10 @@ class EMACrossStopEntry(TradeStrategy):
                     Label('S1_SL'),
                     stop_side,
                     event.filled_quantity,
-                    stop_price,
-                    time_in_force=TimeInForce.GTC)
+                    stop_price)
                 self.stop_loss_orders[stop_order.id] = stop_order
                 self.submit_order(stop_order, self.position_id)
                 self.log.info(f"Added {stop_order.id} to stop-loss orders.")
-
-        if isinstance(event, TimeEvent):
-            if event.label == 'test-alert1':
-                self.set_timer(Label("test-timer1"), interval=timedelta(seconds=30), repeat=True)
 
     def on_stop(self):
         """

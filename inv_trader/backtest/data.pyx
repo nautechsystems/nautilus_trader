@@ -95,20 +95,20 @@ cdef class BacktestDataClient(DataClient):
                                                        bar_data_ask=bar_data_ask[symbol])
 
     cpdef void connect(self):
-        # Raise exception if not overridden in implementation.
-        raise NotImplementedError()
+        # Do nothing
+        pass
 
     cpdef void disconnect(self):
-        # Raise exception if not overridden in implementation.
-        raise NotImplementedError()
+        # Do nothing
+        pass
 
     cpdef void update_all_instruments(self):
-        # Raise exception if not overridden in implementation.
-        raise NotImplementedError()
+        # Do nothing
+        pass
 
     cpdef void update_instrument(self, Symbol symbol):
-        # Raise exception if not overridden in implementation.
-        raise NotImplementedError()
+        # Do nothing
+        pass
 
     cpdef void historical_bars(
             self,
@@ -124,15 +124,8 @@ cdef class BacktestDataClient(DataClient):
         :param handler: The bar handler to pass the bars to.
         :raises ValueError: If the quantity is not None and not positive (> 0).
         """
-        Precondition.true(bar_type.symbol in self.data_providers, 'bar_type.symbol in self.data_providers')
-
-        # cdef list bars = self.bar_builders[bar_type].build_bars_range(start=0, end=quantity)
-        #
-        # self._log.info(f"Historical download of {len(bars)} bars for {bar_type} complete.")
-        #
-        # for bar in bars:
-        #     handler(bar_type, bar)
-        # self._log.debug(f"Historical bars hydrated to handler {handler}.")
+        # Do nothing
+        pass
 
     cpdef void historical_bars_from(
             self,
@@ -148,8 +141,8 @@ cdef class BacktestDataClient(DataClient):
         :param handler: The handler to pass the bars to.
         :raises ValueError: If the from_datetime is not less than datetime.utcnow().
         """
-        # Raise exception if not overridden in implementation.
-        raise NotImplementedError("Method must be implemented in the data client.")
+        # Do nothing
+        pass
 
     cpdef void subscribe_bars(self, BarType bar_type, handler: Callable):
         """
