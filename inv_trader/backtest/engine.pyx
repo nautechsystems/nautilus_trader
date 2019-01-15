@@ -92,7 +92,7 @@ cdef class BacktestEngine:
         self.backtest_clock.set_time(time)
         self.trader.start()
 
-        while time <= stop:
+        while time < stop:
             # Iterate execution first to simulate correct order of events.
             # Order fills should occur before the bar closes.
             self.exec_client.iterate(time)
@@ -100,5 +100,5 @@ cdef class BacktestEngine:
                 strategy._clock.set_time(time)
             self.data_client.iterate(time)
             time += time_step
-            print(time)
             self.backtest_clock.set_time(time)
+
