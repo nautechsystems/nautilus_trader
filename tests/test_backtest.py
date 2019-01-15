@@ -7,8 +7,8 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+import pandas as pd
 import unittest
-
 
 from datetime import datetime, timezone, timedelta
 
@@ -30,11 +30,13 @@ class BacktestDataClientTests(unittest.TestCase):
         ask_data_1min = TestDataProvider.usdjpy_1min_ask()
 
         instruments = [TestStubs.instrument_usdjpy()]
+        tick_data = {usdjpy.symbol: pd.DataFrame()}
         bid_data = {usdjpy.symbol: {Resolution.MINUTE: bid_data_1min}}
         ask_data = {usdjpy.symbol: {Resolution.MINUTE: ask_data_1min}}
 
         # Act
         client = BacktestDataClient(instruments=instruments,
+                                    tick_data=tick_data,
                                     bar_data_bid=bid_data,
                                     bar_data_ask=ask_data)
 
@@ -49,10 +51,12 @@ class BacktestDataClientTests(unittest.TestCase):
         ask_data_1min = TestDataProvider.usdjpy_1min_ask()
 
         instruments = [TestStubs.instrument_usdjpy()]
+        tick_data = {usdjpy.symbol: pd.DataFrame()}
         bid_data = {usdjpy.symbol: {Resolution.MINUTE: bid_data_1min}}
         ask_data = {usdjpy.symbol: {Resolution.MINUTE: ask_data_1min}}
 
         client = BacktestDataClient(instruments=instruments,
+                                    tick_data=tick_data,
                                     bar_data_bid=bid_data,
                                     bar_data_ask=ask_data)
 
@@ -78,6 +82,7 @@ class BacktestEngineTests(unittest.TestCase):
         ask_data_1min = TestDataProvider.usdjpy_1min_ask()
 
         instruments = [TestStubs.instrument_usdjpy()]
+        tick_data = {usdjpy.symbol: pd.DataFrame()}
         bid_data = {usdjpy.symbol: {Resolution.MINUTE: bid_data_1min}}
         ask_data = {usdjpy.symbol: {Resolution.MINUTE: ask_data_1min}}
 
@@ -85,6 +90,7 @@ class BacktestEngineTests(unittest.TestCase):
 
         # Act
         engine = BacktestEngine(instruments=instruments,
+                                tick_data=tick_data,
                                 bar_data_bid=bid_data,
                                 bar_data_ask=ask_data,
                                 strategies=strategies)
@@ -100,11 +106,13 @@ class BacktestEngineTests(unittest.TestCase):
         ask_data_1min = TestDataProvider.usdjpy_1min_ask()
 
         instruments = [TestStubs.instrument_usdjpy()]
+        tick_data = {usdjpy.symbol: pd.DataFrame()}
         bid_data = {usdjpy.symbol: {Resolution.MINUTE: bid_data_1min}}
         ask_data = {usdjpy.symbol: {Resolution.MINUTE: ask_data_1min}}
 
         strategies = [TestStrategy1(TestStubs.bartype_usdjpy_1min_bid())]
         engine = BacktestEngine(instruments=instruments,
+                                tick_data=tick_data,
                                 bar_data_bid=bid_data,
                                 bar_data_ask=ask_data,
                                 strategies=strategies)

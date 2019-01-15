@@ -31,6 +31,7 @@ cdef class BacktestEngine:
 
     def __init__(self,
                  list instruments: List[Instrument],
+                 dict tick_data: Dict[Symbol, DataFrame],
                  dict bar_data_bid: Dict[Symbol, Dict[Resolution, DataFrame]],
                  dict bar_data_ask: Dict[Symbol, Dict[Resolution, DataFrame]],
                  list strategies: List[TradeStrategy]):
@@ -48,6 +49,7 @@ cdef class BacktestEngine:
 
         self.backtest_clock = TestClock()
         self.data_client = BacktestDataClient(instruments,
+                                              tick_data,
                                               bar_data_bid,
                                               bar_data_ask)
         self.exec_client = BacktestExecClient()
@@ -62,8 +64,6 @@ cdef class BacktestEngine:
         # Replace strategies internal clocks with test clocks
         for strategy in strategies:
             strategy._change_clock(TestClock())
-            self.data_client.register_strategy(strategy)
-            self.exec_client.register_strategy(strategy)
 
         self.trader = Trader(
             'Backtest',

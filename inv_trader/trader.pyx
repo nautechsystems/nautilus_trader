@@ -59,6 +59,10 @@ cdef class Trader:
         self.started_datetimes = list()
         self.stopped_datetimes = list()
 
+        for strategy in strategies:
+            self._data_client.register_strategy(strategy)
+            self._exec_client.register_strategy(strategy)
+
     cpdef void start(self):
         """
         Start the trader.

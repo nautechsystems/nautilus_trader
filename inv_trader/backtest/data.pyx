@@ -30,6 +30,7 @@ cdef class BacktestDataClient(DataClient):
 
     def __init__(self,
                  list instruments: List[Instrument],
+                 dict tick_data: Dict[Symbol, DataFrame],
                  dict bar_data_bid: Dict[Symbol, Dict[Resolution, DataFrame]],
                  dict bar_data_ask: Dict[Symbol, Dict[Resolution, DataFrame]],
                  Logger logger=None):
@@ -42,11 +43,13 @@ cdef class BacktestDataClient(DataClient):
         :param logger: The logger for the component.
         """
         Precondition.list_type(instruments, Instrument, 'instruments')
+        Precondition.dict_types(tick_data, Symbol, DataFrame, 'tick_data')
         Precondition.dict_types(bar_data_bid, Symbol, dict, 'bar_data_bid')
         Precondition.dict_types(bar_data_ask, Symbol, dict, 'bar_data_ask')
         Precondition.equal(bar_data_bid.keys(), bar_data_ask.keys())
 
         super().__init__(TestClock(), logger)
+        self.tick_data = tick_data
         self.bar_data_bid = bar_data_bid
         self.bar_data_ask = bar_data_ask
         self.iteration = 0
