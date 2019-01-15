@@ -34,12 +34,12 @@ class BacktestDataClientTests(unittest.TestCase):
 
         # Act
         client = BacktestDataClient(instruments=instruments,
-                                    bid_data=bid_data,
-                                    ask_data=ask_data)
+                                    bar_data_bid=bid_data,
+                                    bar_data_ask=ask_data)
 
         # Assert
-        self.assertEqual(all(bid_data_1min), all(client.bid_data[usdjpy.symbol][Resolution.MINUTE]))
-        self.assertEqual(all(ask_data_1min), all(client.bid_data[usdjpy.symbol][Resolution.MINUTE]))
+        self.assertEqual(all(bid_data_1min), all(client.bar_data_bid[usdjpy.symbol][Resolution.MINUTE]))
+        self.assertEqual(all(ask_data_1min), all(client.bar_data_bid[usdjpy.symbol][Resolution.MINUTE]))
 
     def test_can_iterate_bar_data(self):
         # Arrange
@@ -52,8 +52,8 @@ class BacktestDataClientTests(unittest.TestCase):
         ask_data = {usdjpy.symbol: {Resolution.MINUTE: ask_data_1min}}
 
         client = BacktestDataClient(instruments=instruments,
-                                    bid_data=bid_data,
-                                    ask_data=ask_data)
+                                    bar_data_bid=bid_data,
+                                    bar_data_ask=ask_data)
 
         receiver = []
         client.subscribe_bars(TestStubs.bartype_usdjpy_1min_bid(), receiver.append)

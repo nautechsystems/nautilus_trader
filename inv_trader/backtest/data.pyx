@@ -30,25 +30,25 @@ cdef class BacktestDataClient(DataClient):
 
     def __init__(self,
                  list instruments: List[Instrument],
-                 dict bid_data: Dict[Symbol, Dict[Resolution, DataFrame]],
-                 dict ask_data: Dict[Symbol, Dict[Resolution, DataFrame]],
+                 dict bar_data_bid: Dict[Symbol, Dict[Resolution, DataFrame]],
+                 dict bar_data_ask: Dict[Symbol, Dict[Resolution, DataFrame]],
                  Logger logger=None):
         """
         Initializes a new instance of the BacktestDataClient class.
 
         :param instruments: The instruments needed for the backtest.
-        :param bid_data: The historical bid market data needed for the backtest.
-        :param bid_data: The historical ask market data needed for the backtest.
+        :param bar_data_bid: The historical bid market data needed for the backtest.
+        :param bar_data_ask: The historical ask market data needed for the backtest.
         :param logger: The logger for the component.
         """
         Precondition.list_type(instruments, Instrument, 'instruments')
-        Precondition.dict_types(bid_data, Symbol, dict, 'bid_data')
-        Precondition.dict_types(ask_data, Symbol, dict, 'ask_data')
-        Precondition.equal(bid_data.keys(), ask_data.keys())
+        Precondition.dict_types(bar_data_bid, Symbol, dict, 'bid_data')
+        Precondition.dict_types(bar_data_ask, Symbol, dict, 'ask_data')
+        Precondition.equal(bar_data_bid.keys(), bar_data_ask.keys())
 
         super().__init__(TestClock(), logger)
-        self.bid_data = bid_data
-        self.ask_data = ask_data
+        self.bar_data_bid = bar_data_bid
+        self.bar_data_ask = bar_data_ask
         self.iteration = 0
         self.data_providers = dict()
 
@@ -60,10 +60,10 @@ cdef class BacktestDataClient(DataClient):
 
         # Create set of all data symbols
         cdef set bid_data_symbols = set()  # type: Set[Symbol]
-        for symbol in bid_data:
+        for symbol in bar_data_bid:
             bid_data_symbols.add(symbol)
         cdef set ask_data_symbols = set()  # type: Set[Symbol]
-        for symbol in ask_data:
+        for symbol in bar_data_ask:
             ask_data_symbols.add(symbol)
         assert(bid_data_symbols == ask_data_symbols)
         cdef set data_symbols = bid_data_symbols
@@ -75,7 +75,7 @@ cdef class BacktestDataClient(DataClient):
         # Check that all resolution DataFrames are of the same shape and index
         cdef dict shapes = {}  # type: Dict[Resolution, tuple]
         cdef dict indexs = {}  # type: Dict[Resolution, datetime]
-        for symbol, data in bid_data.items():
+        for symbol, data in bar_data_bid.items():
             for resolution, dataframe in data.items():
                 if resolution not in shapes:
                     shapes[resolution] = dataframe.shape
@@ -84,17 +84,15 @@ cdef class BacktestDataClient(DataClient):
                 assert(dataframe.shape == shapes[resolution], f'{dataframe} shape is not equal')
                 assert(dataframe.index == indexs[resolution], f'{dataframe} index is not equal')
 
-        for symbol, data in ask_data.items():
+        for symbol, data in bar_data_ask.items():
             for resolution, dataframe in data.items():
                 assert(dataframe.shape == shapes[resolution], f'{dataframe} shape is not equal')
                 assert(dataframe.index == indexs[resolution], f'{dataframe} index is not equal')
 
         for symbol in data_symbols:
             self.data_providers[symbol] = DataProvider(instrument=self._instruments[symbol],
-                                                       bid_data=bid_data[symbol],
-                                                       ask_data=ask_data[symbol])
-
-        self.iteration_end = shapes[Resolution.MINUTE][0]
+                                                       bar_data_bid=bar_data_bid[symbol],
+                                                       bar_data_ask=bar_data_ask[symbol])
 
     cpdef void connect(self):
         # Raise exception if not overridden in implementation.
@@ -218,22 +216,22 @@ cdef class DataProvider:
 
     def __init__(self,
                  Instrument instrument,
-                 dict bid_data: Dict[Resolution, DataFrame],
-                 dict ask_data: Dict[Resolution, DataFrame]):
+                 dict bar_data_bid: Dict[Resolution, DataFrame],
+                 dict bar_data_ask: Dict[Resolution, DataFrame]):
         """
         Initializes a new instance of the DataProvider class.
 
         :param instrument: The instrument for the data provider.
-        :param bid_data: The bid data for the data provider (must contain minute resolution).
-        :param ask_data: The ask data for the data provider (must contain minute resolution).
+        :param bar_data_bid: The bid data for the data provider (must contain minute resolution).
+        :param bar_data_ask: The ask data for the data provider (must contain minute resolution).
         """
-        Precondition.true(Resolution.MINUTE in bid_data, 'Resolution.MINUTE in bid_data')
-        Precondition.true(Resolution.MINUTE in ask_data, 'Resolution.MINUTE in bid_data')
+        Precondition.true(Resolution.MINUTE in bar_data_bid, 'Resolution.MINUTE in bid_data')
+        Precondition.true(Resolution.MINUTE in bar_data_ask, 'Resolution.MINUTE in bid_data')
 
         self.instrument = instrument
         self.iterations = {}       # type: Dict[BarType, int]
-        self._bid_data = bid_data  # type: Dict[Resolution, DataFrame]
-        self._ask_data = ask_data  # type: Dict[Resolution, DataFrame]
+        self._bar_data_bid = bar_data_bid  # type: Dict[Resolution, DataFrame]
+        self._bar_data_ask = bar_data_ask  # type: Dict[Resolution, DataFrame]
         self._bars = {}            # type: Dict[BarType, List[Bar]]
 
     cpdef void register_bar_type(self, BarType bar_type):
@@ -249,13 +247,13 @@ cdef class DataProvider:
 
         if bar_type not in self._bars:
             if bar_type.quote_type is QuoteType.BID:
-                data = self._bid_data[bar_type.resolution]
+                data = self._bar_data_bid[bar_type.resolution]
                 tick_precision = self.instrument.tick_precision
             elif bar_type.quote_type is QuoteType.ASK:
-                data = self._ask_data[bar_type.resolution]
+                data = self._bar_data_ask[bar_type.resolution]
                 tick_precision = self.instrument.tick_precision
             elif bar_type.quote_type is QuoteType.MID:
-                data = (self._bid_data[bar_type.resolution] + self._ask_data[bar_type.resolution]) / 2
+                data = (self._bar_data_bid[bar_type.resolution] + self._bar_data_ask[bar_type.resolution]) / 2
                 tick_precision = self.instrument.tick_precision + 1
 
             builder = BarBuilder(data=data, decimal_precision=tick_precision)
