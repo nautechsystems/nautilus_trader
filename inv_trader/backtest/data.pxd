@@ -19,6 +19,7 @@ cdef class BacktestDataClient(DataClient):
     """
     Provides a data client for the BacktestEngine.
     """
+    cdef readonly dict tick_data
     cdef readonly dict bar_data_bid
     cdef readonly dict bar_data_ask
     cdef readonly int iteration
