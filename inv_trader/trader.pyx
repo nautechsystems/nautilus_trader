@@ -78,16 +78,14 @@ cdef class Trader:
         self.stopped_datetimes.append(self._clock.time_now())
 
         for strategy in self.strategies:
-            strategy.stop_market()
+            strategy.stop()
 
     cpdef void reset(self):
         """
         Reset the trader.
         """
         for strategy in self.strategies:
-            if strategy.is_running:
-                raise RuntimeError(f'Cannot reset trader as the {strategy} strategy is still running.')
-            strategy.reset()
+            strategy.stop()
 
     cpdef void dispose(self):
         """
