@@ -9,19 +9,48 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False
 
+import logging
 import pandas as pd
 
 from cpython.datetime cimport datetime, timedelta
 from pandas import DataFrame
 from typing import List, Dict
+from logging import INFO, DEBUG
 
 from inv_trader.backtest.data cimport BacktestDataClient
 from inv_trader.backtest.execution cimport BacktestExecClient
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.common.clock cimport TestClock
+from inv_trader.common.logger cimport Logger
 from inv_trader.enums.resolution cimport Resolution
-from inv_trader.model.objects cimport Symbol, Instrument, BarType
+from inv_trader.model.objects cimport Symbol, Instrument
 from inv_trader.strategy cimport TradeStrategy
+
+
+cdef class BacktestConfig:
+    """
+    Represents a configuration for a BacktestEngine.
+    """
+    def __init__(self,
+                 level_console: logging=INFO,
+                 level_file: logging=DEBUG,
+                 bint console_prints=False,
+                 bint log_to_file=False,
+                 str log_file_path='backtests/'):
+        """
+        Initializes a new instance of the BacktestEngine class.
+
+        :param level_console: The minimum log level for logging messages to the console.
+        :param level_file: The minimum log level for logging messages to the log file.
+        :param console_prints: The boolean flag indicating whether log messages should print.
+        :param log_to_file: The boolean flag indicating whether log messages should log to file
+        :param log_file_path: The name of the log file (cannot be None if log_to_file is True).
+        """
+        self.level_console = level_console
+        self.level_file = level_file
+        self.console_prints = console_prints
+        self.log_to_file = log_to_file
+        self.log_file_path = log_file_path
 
 
 cdef class BacktestEngine:
@@ -34,7 +63,8 @@ cdef class BacktestEngine:
                  dict tick_data: Dict[Symbol, DataFrame],
                  dict bar_data_bid: Dict[Symbol, Dict[Resolution, DataFrame]],
                  dict bar_data_ask: Dict[Symbol, Dict[Resolution, DataFrame]],
-                 list strategies: List[TradeStrategy]):
+                 list strategies: List[TradeStrategy],
+                 BacktestConfig config=BacktestConfig()):
         """
         Initializes a new instance of the BacktestEngine class.
 
@@ -42,17 +72,26 @@ cdef class BacktestEngine:
         :param bar_data_bid: The historical bid market data needed for the backtest.
         :param bar_data_ask: The historical ask market data needed for the backtest.
         :param strategies: The strategies for the backtest.
+        :param config: The configuration for the backtest.
         """
         Precondition.list_type(instruments, Instrument, 'instruments')
         Precondition.list_type(strategies, TradeStrategy, 'strategies')
         # Data checked in BacktestDataClient
 
         self.backtest_clock = TestClock()
+        self.backtest_log = Logger(name='backtest',
+                                   level_console=config.level_console,
+                                   level_file=config.level_file,
+                                   console_prints=config.console_prints,
+                                   log_to_file=config.log_to_file,
+                                   log_file_path=config.log_file_path,
+                                   clock=self.backtest_clock)
         self.data_client = BacktestDataClient(instruments,
                                               tick_data,
                                               bar_data_bid,
-                                              bar_data_ask)
-        self.exec_client = BacktestExecClient()
+                                              bar_data_ask,
+                                              logger=self.backtest_log)
+        self.exec_client = BacktestExecClient(logger=self.backtest_log)
 
         # Get first and last timestamp from bar data
         first_symbol = next(iter(bar_data_bid))

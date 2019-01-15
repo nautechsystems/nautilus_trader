@@ -112,7 +112,7 @@ class EMACross(TradeStrategy):
                  fast_ema: int,
                  slow_ema: int,
                  atr_period: int,
-                 sl_atr_multiple: int,
+                 sl_atr_multiple: float,
                  bar_capacity: int=1000,
                  logger: Logger=None):
         """

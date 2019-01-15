@@ -11,9 +11,21 @@
 
 from cpython.datetime cimport datetime, timedelta
 from inv_trader.common.clock cimport TestClock
+from inv_trader.common.logger cimport Logger
 from inv_trader.backtest.data cimport BacktestDataClient
 from inv_trader.backtest.execution cimport BacktestExecClient
 from inv_trader.trader cimport Trader
+
+
+cdef class BacktestConfig:
+    """
+    Represents a configuration for a BacktestEngine.
+    """
+    cdef readonly object level_console
+    cdef readonly object level_file
+    cdef readonly bint console_prints
+    cdef readonly bint log_to_file
+    cdef readonly str log_file_path
 
 
 cdef class BacktestEngine:
@@ -21,6 +33,7 @@ cdef class BacktestEngine:
     Provides a backtest engine to run a trader on historical data.
     """
     cdef readonly TestClock backtest_clock
+    cdef readonly Logger backtest_log
     cdef readonly BacktestDataClient data_client
     cdef readonly BacktestExecClient exec_client
     cdef readonly Trader trader
