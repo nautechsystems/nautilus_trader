@@ -895,7 +895,7 @@ cdef class TradeStrategy:
         if self.is_running:
             self.on_event(event)
 
-    cdef void _change_clock(self, Clock clock):
+    cpdef void _change_clock(self, Clock clock):
         """
         Change the strategies internal clock with the given clock
         

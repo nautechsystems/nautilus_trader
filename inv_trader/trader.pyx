@@ -48,9 +48,9 @@ cdef class Trader:
 
         self._clock = clock
         if logger is None:
-            self.log = LoggerAdapter(f"{self.__class__.__name__}-{self.name}")
+            self._log = LoggerAdapter(f"{self.__class__.__name__}-{self.name}")
         else:
-            self.log = LoggerAdapter(f"{self.__class__.__name__}-{self.name}", logger)
+            self._log = LoggerAdapter(f"{self.__class__.__name__}-{self.name}", logger)
         self._data_client = data_client
         self._exec_client = exec_client
         self.name = Label(name)

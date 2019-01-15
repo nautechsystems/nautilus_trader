@@ -9,6 +9,8 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False
 
+from cpython.datetime cimport datetime
+
 from inv_trader.common.execution cimport ExecutionClient
 
 
@@ -16,3 +18,6 @@ cdef class BacktestExecClient(ExecutionClient):
     """
     Provides an execution client for the BacktestEngine.
     """
+
+
+    cpdef void iterate(self, datetime time)

@@ -16,3 +16,9 @@ cdef class BacktestExecClient(ExecutionClient):
     """
     Provides an execution client for the BacktestEngine.
     """
+
+    cpdef void iterate(self, datetime time):
+        """
+        Iterate the data client one time step.
+        """
+        pass

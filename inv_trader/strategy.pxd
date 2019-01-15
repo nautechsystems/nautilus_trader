@@ -121,4 +121,4 @@ cdef class TradeStrategy:
     cpdef void _update_indicators(self, BarType bar_type, Bar bar)
     cpdef void _update_events(self, Event event)
 
-    cdef void _change_clock(self, Clock clock)
+    cpdef void _change_clock(self, Clock clock)
