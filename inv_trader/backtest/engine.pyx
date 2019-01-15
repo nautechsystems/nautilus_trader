@@ -112,6 +112,7 @@ cdef class BacktestEngine:
         # Replace strategies internal clocks with test clocks
         for strategy in strategies:
             strategy._change_clock(TestClock())
+            strategy._change_logger(self.backtest_log)
 
         self.trader = Trader(
             'Backtest',
