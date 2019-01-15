@@ -166,9 +166,8 @@ cdef class LoggerAdapter:
         else:
             component_name = ''
 
-        self._component_name = component_name
         self._logger = logger
-
+        self.component_name = component_name
 
     cpdef void debug(self, str message):
         """
@@ -211,4 +210,4 @@ cdef class LoggerAdapter:
         self._logger.critical(self._format_message(message))
 
     cdef str _format_message(self, str message):
-        return f"{self._component_name}: {message}"
+        return f"{self.component_name}: {message}"

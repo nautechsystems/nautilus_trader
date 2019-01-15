@@ -12,6 +12,8 @@ import unittest
 
 from datetime import datetime, timezone, timedelta
 
+from inv_trader.common.clock import TestClock
+from inv_trader.common.logger import Logger
 from inv_trader.model.enums import Resolution
 from inv_trader.model.objects import BarType
 from inv_trader.backtest.data import BacktestDataClient
@@ -38,7 +40,9 @@ class BacktestDataClientTests(unittest.TestCase):
         client = BacktestDataClient(instruments=instruments,
                                     tick_data=tick_data,
                                     bar_data_bid=bid_data,
-                                    bar_data_ask=ask_data)
+                                    bar_data_ask=ask_data,
+                                    clock=TestClock(),
+                                    logger=Logger())
 
         # Assert
         self.assertEqual(all(bid_data_1min), all(client.bar_data_bid[usdjpy.symbol][Resolution.MINUTE]))
@@ -58,7 +62,9 @@ class BacktestDataClientTests(unittest.TestCase):
         client = BacktestDataClient(instruments=instruments,
                                     tick_data=tick_data,
                                     bar_data_bid=bid_data,
-                                    bar_data_ask=ask_data)
+                                    bar_data_ask=ask_data,
+                                    clock=TestClock(),
+                                    logger=Logger())
 
         receiver = []
         client.subscribe_bars(TestStubs.bartype_usdjpy_1min_bid(), receiver.append)
