@@ -14,7 +14,7 @@ from inv_trader.data import LiveDataClient
 from inv_trader.execution import LiveExecClient
 from inv_trader.model.enums import Venue, Resolution, QuoteType
 from inv_trader.model.objects import Symbol, BarType
-from examples.strategy_examples import EMACrossLimitEntry
+from examples.strategies.ema_cross import EMACrossLimitEntry
 
 AUDUSD_FXCM = Symbol('AUDUSD', Venue.FXCM)
 AUDUSD_FXCM_1_SEC_MID = BarType(AUDUSD_FXCM, 1, Resolution.SECOND, QuoteType.MID)

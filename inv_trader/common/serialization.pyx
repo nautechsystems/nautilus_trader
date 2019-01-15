@@ -95,18 +95,18 @@ cdef str MARGIN_RATIO = 'margin_ratio'
 cdef str MARGIN_CALL_STATUS = 'margin_call_status'
 
 
-cpdef Symbol _parse_symbol(str symbol_string):
+cpdef Symbol parse_symbol(str symbol_string):
     """
     Parse the given string to a Symbol.
 
     :param symbol_string: The symbol string to parse.
     :return: The parsed symbol.
     """
-    split_symbol = symbol_string.split('.')
+    cdef list split_symbol = symbol_string.split('.')
     return Symbol(split_symbol[0], Venue[split_symbol[1].upper()])
 
 
-cpdef str _convert_price_to_string(price: Decimal):
+cpdef str convert_price_to_string(Decimal price):
     """
     Convert the given object to a decimal or 'NONE' string.
 
@@ -116,7 +116,7 @@ cpdef str _convert_price_to_string(price: Decimal):
     return NONE if price is None else str(price)
 
 
-cpdef object _convert_string_to_price(str price_string):
+cpdef object convert_string_to_price(str price_string):
     """
     Convert the given price string to a Decimal or None.
 
@@ -126,7 +126,7 @@ cpdef object _convert_string_to_price(str price_string):
     return None if price_string == NONE else Decimal(price_string)
 
 
-cpdef str _convert_datetime_to_string(datetime expire_time):
+cpdef str convert_datetime_to_string(datetime expire_time):
     """
     Convert the given object to a valid ISO8601 string, or 'NONE'.
 
@@ -137,7 +137,7 @@ cpdef str _convert_datetime_to_string(datetime expire_time):
             else expire_time.isoformat(timespec='milliseconds').replace('+00:00', 'Z'))
 
 
-cpdef datetime _convert_string_to_datetime(str expire_time_string):
+cpdef datetime convert_string_to_datetime(str expire_time_string):
     """
     Convert the given string to a datetime object, or None.
 
