@@ -29,20 +29,24 @@ cdef class BacktestEngine:
 
     def __init__(self,
                  list instruments: List[Instrument],
-                 dict bid_data: Dict[Resolution, DataFrame],
-                 dict ask_data: Dict[Resolution, DataFrame],
+                 dict bar_data_bid: Dict[Resolution, DataFrame],
+                 dict bar_data_ask: Dict[Resolution, DataFrame],
                  list strategies: List[TradeStrategy]):
         """
         Initializes a new instance of the BacktestEngine class.
 
         :param strategies: The strategies to backtest.
-        :param data: The historical market data needed for the backtest.
+        :param bar_data_bid: The historical bid market data needed for the backtest.
+        :param bar_data_ask: The historical ask market data needed for the backtest.
         """
         Precondition.list_type(instruments, Instrument, 'instruments')
-        Precondition.dict_types(bid_data, BarType, DataFrame, 'data')
+        Precondition.dict_types(bar_data_bid, BarType, DataFrame, 'data')
         Precondition.list_type(strategies, TradeStrategy, 'strategies')
 
-        self.data_client = BacktestDataClient(instruments, bid_data, ask_data)
+        self.backtest_clock = TestClock()
+        self.data_client = BacktestDataClient(instruments,
+                                              bar_data_bid,
+                                              bar_data_ask)
         self.exec_client = BacktestExecClient()
 
         # Replace strategies internal clocks with test clocks
@@ -56,7 +60,7 @@ cdef class BacktestEngine:
             strategies,
             self.data_client,
             self.exec_client,
-            clock=TestClock())
+            clock=self.backtest_clock)
 
     cpdef void run(self):
         """

@@ -9,6 +9,7 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False
 
+from inv_trader.common.clock cimport TestClock
 from inv_trader.backtest.data cimport BacktestDataClient
 from inv_trader.backtest.execution cimport BacktestExecClient
 from inv_trader.trader cimport Trader
@@ -18,6 +19,7 @@ cdef class BacktestEngine:
     """
     Provides a backtest engine to run a trader on historical data.
     """
+    cdef TestClock backtest_clock
     cdef BacktestDataClient data_client
     cdef BacktestExecClient exec_client
     cdef Trader trader
