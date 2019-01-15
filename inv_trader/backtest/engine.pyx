@@ -79,19 +79,28 @@ cdef class BacktestEngine:
         # Data checked in BacktestDataClient
 
         self.backtest_clock = TestClock()
-        self.backtest_log = Logger(name='backtest',
-                                   level_console=config.level_console,
-                                   level_file=config.level_file,
-                                   console_prints=config.console_prints,
-                                   log_to_file=config.log_to_file,
-                                   log_file_path=config.log_file_path,
-                                   clock=self.backtest_clock)
-        self.data_client = BacktestDataClient(instruments,
-                                              tick_data,
-                                              bar_data_bid,
-                                              bar_data_ask,
-                                              logger=self.backtest_log)
-        self.exec_client = BacktestExecClient(logger=self.backtest_log)
+        self.backtest_log = Logger(
+            name='backtest',
+            level_console=config.level_console,
+            level_file=config.level_file,
+            console_prints=config.console_prints,
+            log_to_file=config.log_to_file,
+            log_file_path=config.log_file_path,
+            clock=self.backtest_clock)
+
+        self.data_client = BacktestDataClient(
+            instruments,
+            tick_data,
+            bar_data_bid,
+            bar_data_ask,
+            clock=self.backtest_clock,
+            logger=self.backtest_log)
+        self.exec_client = BacktestExecClient(
+            tick_data,
+            bar_data_bid,
+            bar_data_ask,
+            clock=self.backtest_clock,
+            logger=self.backtest_log)
 
         # Get first and last timestamp from bar data
         first_symbol = next(iter(bar_data_bid))

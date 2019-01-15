@@ -13,8 +13,9 @@ from pandas import DataFrame
 from typing import Set, List, Dict, Callable
 
 from inv_trader.core.decimal cimport Decimal
+from inv_trader.core.precondition cimport Precondition
 from inv_trader.enums.resolution cimport Resolution
-from inv_trader.common.clock cimport Clock, LiveClock
+from inv_trader.common.clock cimport Clock, TestClock
 from inv_trader.common.logger cimport Logger, LoggerAdapter
 from inv_trader.model.account cimport Account
 from inv_trader.model.objects cimport Symbol
@@ -33,14 +34,21 @@ cdef class BacktestExecClient(ExecutionClient):
                  dict tick_data: Dict[Symbol, DataFrame],
                  dict bar_data_bid: Dict[Symbol, Dict[Resolution, DataFrame]],
                  dict bar_data_ask: Dict[Symbol, Dict[Resolution, DataFrame]],
-                 Logger logger=None):
+                 TestClock clock,
+                 Logger logger):
         """
         Initializes a new instance of the BacktestDataClient class.
 
         :param bar_data_bid: The historical bid market data needed for the backtest.
         :param bar_data_ask: The historical ask market data needed for the backtest.
+        :param clock: The clock for the component.
         :param logger: The logger for the component.
         """
+        Precondition.not_none(clock, 'clock')
+        Precondition.not_none(logger, 'logger')
+
+        super().__init__(clock, logger)
+
         self.tick_data = tick_data
         self.bar_data_bid = bar_data_bid
         self.bar_data_ask = bar_data_ask

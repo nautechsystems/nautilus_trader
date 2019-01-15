@@ -36,8 +36,8 @@ cdef class LoggerAdapter:
     """
     Provides a logger adapter adapter for a components logger.
     """
-    cdef str _component_name
     cdef Logger _logger
+    cdef readonly str component_name
 
     cpdef void debug(self, str message)
     cpdef void info(self, str message)
