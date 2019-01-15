@@ -902,3 +902,11 @@ cdef class TradeStrategy:
         :param clock: The clock to change to.
         """
         self._clock = clock
+
+    cpdef void _change_logger(self, Logger logger):
+        """
+        Change the strategies internal logger with the given logger.
+        
+        :param logger: The logger to change to.
+        """
+        self.log = LoggerAdapter(f"{self.name}-{self.label}", logger)

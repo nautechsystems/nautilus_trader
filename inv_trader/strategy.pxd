@@ -13,7 +13,7 @@ from cpython.datetime cimport datetime, timedelta
 
 from inv_trader.core.decimal cimport Decimal
 from inv_trader.common.clock cimport Clock
-from inv_trader.common.logger cimport LoggerAdapter
+from inv_trader.common.logger cimport Logger, LoggerAdapter
 from inv_trader.common.execution cimport ExecutionClient
 from inv_trader.common.data cimport DataClient
 from inv_trader.model.account cimport Account
@@ -120,5 +120,5 @@ cdef class TradeStrategy:
     cpdef void _update_bars(self, BarType bar_type, Bar bar)
     cpdef void _update_indicators(self, BarType bar_type, Bar bar)
     cpdef void _update_events(self, Event event)
-
     cpdef void _change_clock(self, Clock clock)
+    cpdef void _change_logger(self, Logger logger)
