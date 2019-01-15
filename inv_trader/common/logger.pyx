@@ -143,7 +143,7 @@ cdef class Logger:
                 f'{message}')
 
     cdef void _console_print_handler(self, str message, log_level: logging):
-        if self._console_prints and self._log_level_console <= log_level:
+        if self._console_prints and log_level >= self._log_level_console:
             print(message)
 
 

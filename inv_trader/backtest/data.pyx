@@ -9,7 +9,7 @@
 
 # cython: language_level=3, boundscheck=False
 
-from cpython.datetime cimport datetime, timedelta
+from cpython.datetime cimport datetime
 from pandas import DataFrame
 from typing import Set, List, Dict, Callable
 

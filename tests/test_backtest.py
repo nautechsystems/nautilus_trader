@@ -16,7 +16,7 @@ from inv_trader.model.enums import Resolution
 from inv_trader.model.objects import BarType
 from inv_trader.backtest.data import BacktestDataClient
 from inv_trader.backtest.engine import BacktestEngine
-from test_kit.strategies import TestStrategy1
+from test_kit.strategies import TestStrategy1, EMACross
 from test_kit.data import TestDataProvider
 from test_kit.stubs import TestStubs
 
@@ -110,7 +110,15 @@ class BacktestEngineTests(unittest.TestCase):
         bid_data = {usdjpy.symbol: {Resolution.MINUTE: bid_data_1min}}
         ask_data = {usdjpy.symbol: {Resolution.MINUTE: ask_data_1min}}
 
-        strategies = [TestStrategy1(TestStubs.bartype_usdjpy_1min_bid())]
+        strategies = [EMACross(label='EMACross_Test',
+                               order_id_tag='01',
+                               instrument=usdjpy,
+                               bar_type=TestStubs.bartype_usdjpy_1min_bid(),
+                               position_size=100000,
+                               fast_ema=10,
+                               slow_ema=20,
+                               atr_period=20,
+                               sl_atr_multiple=2.0)]
         engine = BacktestEngine(instruments=instruments,
                                 tick_data=tick_data,
                                 bar_data_bid=bid_data,
