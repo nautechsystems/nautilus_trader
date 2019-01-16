@@ -81,12 +81,15 @@ cdef class DataClient:
 
     cpdef void disconnect(self):
         """
-        Disconnect from the execution service.
+        Disconnect from the data service.
         """
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the data client.")
 
     cpdef void update_all_instruments(self):
+        """
+        Update all instruments from the database.
+        """
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the data client.")
 

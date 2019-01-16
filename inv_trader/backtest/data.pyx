@@ -16,7 +16,7 @@ from typing import Set, List, Dict, Callable
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.enums.quote_type cimport QuoteType
 from inv_trader.enums.resolution cimport Resolution
-from inv_trader.common.clock cimport Clock, TestClock
+from inv_trader.common.clock cimport TestClock
 from inv_trader.common.logger cimport Logger
 from inv_trader.common.data cimport DataClient
 from inv_trader.model.objects cimport Symbol, BarType, Instrument, Bar
@@ -103,20 +103,31 @@ cdef class BacktestDataClient(DataClient):
                                                        bar_data_ask=bar_data_ask[symbol])
 
     cpdef void connect(self):
-        # Do nothing
-        pass
+        """
+        Connect to the data service.
+        """
+        self._log.info("Connected.")
 
     cpdef void disconnect(self):
-        # Do nothing
-        pass
+        """
+        Disconnect from the data service.
+        """
+        self._log.info("Disconnected.")
 
     cpdef void update_all_instruments(self):
-        # Do nothing
-        pass
+        """
+        Update all instruments from the database.
+        """
+        self._log.info(f"Updated all instruments.")
 
     cpdef void update_instrument(self, Symbol symbol):
-        # Do nothing
-        pass
+        """
+        Update the instrument corresponding to the given symbol (if found).
+        Will log a warning is symbol is not found.
+
+        :param symbol: The symbol to update.
+        """
+        self._log.info(f"Updated instrument {symbol}.")
 
     cpdef void historical_bars(
             self,
@@ -132,8 +143,7 @@ cdef class BacktestDataClient(DataClient):
         :param handler: The bar handler to pass the bars to.
         :raises ValueError: If the quantity is not None and not positive (> 0).
         """
-        # Do nothing
-        pass
+        self._log.info(f"Simulating download of {quantity} historical bars for {bar_type}.")
 
     cpdef void historical_bars_from(
             self,
@@ -149,8 +159,7 @@ cdef class BacktestDataClient(DataClient):
         :param handler: The handler to pass the bars to.
         :raises ValueError: If the from_datetime is not less than datetime.utcnow().
         """
-        # Do nothing
-        pass
+        self._log.info(f"Simulating download of historical bars from {from_datetime} for {bar_type}.")
 
     cpdef void subscribe_bars(self, BarType bar_type, handler: Callable):
         """
@@ -230,10 +239,10 @@ cdef class DataProvider:
         Precondition.true(Resolution.MINUTE in bar_data_ask, 'Resolution.MINUTE in bid_data')
 
         self.instrument = instrument
-        self.iterations = {}       # type: Dict[BarType, int]
+        self.iterations = {}               # type: Dict[BarType, int]
         self._bar_data_bid = bar_data_bid  # type: Dict[Resolution, DataFrame]
         self._bar_data_ask = bar_data_ask  # type: Dict[Resolution, DataFrame]
-        self._bars = {}            # type: Dict[BarType, List[Bar]]
+        self._bars = {}                    # type: Dict[BarType, List[Bar]]
 
     cpdef void register_bar_type(self, BarType bar_type):
         """

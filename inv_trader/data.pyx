@@ -107,7 +107,7 @@ cdef class LiveDataClient(DataClient):
 
     cpdef void connect(self):
         """
-        Connect to the data service, create a pub/sub server and update all instruments.
+        Connect to the data service, creating a pub/sub server.
         """
         self._redis_client = StrictRedis(host=self._host,
                                          port=self._port,
@@ -115,11 +115,10 @@ cdef class LiveDataClient(DataClient):
         self._pubsub = self._redis_client.pubsub()
         self._log.info(f"Connected to the live data service at {self._host}:{self._port}.")
 
-        self.update_all_instruments()
-
     cpdef void disconnect(self):
         """
-        Disconnect from the local pub/sub server and the data service.
+        Disconnect from the data service, unsubscribes from the pub/sub server
+        and stops the pub/sub thread.
         """
         if self._pubsub is not None:
             self._pubsub.unsubscribe()
@@ -145,7 +144,7 @@ cdef class LiveDataClient(DataClient):
 
     cpdef void update_all_instruments(self):
         """
-        Update all held instruments from the live database.
+        Update all instruments from the live database.
         """
         cdef list keys = self._redis_client.keys('instruments*')
 
