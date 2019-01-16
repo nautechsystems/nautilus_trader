@@ -18,6 +18,7 @@ cdef class BacktestExecClient(ExecutionClient):
     """
     Provides an execution client for the BacktestEngine.
     """
+    cdef readonly dict instruments
     cdef readonly dict tick_data
     cdef readonly dict bar_data_bid
     cdef readonly dict bar_data_ask

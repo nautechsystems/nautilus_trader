@@ -23,6 +23,8 @@ cdef class Account:
     """
     Represents a brokerage account.
     """
+    cdef list _events
+
     cdef readonly bint initialized
     cdef readonly AccountId id
     cdef readonly Broker broker
@@ -37,6 +39,9 @@ cdef class Account:
     cdef readonly Decimal margin_ratio
     cdef readonly str margin_call_status
     cdef readonly datetime last_updated
-    cdef readonly list events
+    cdef readonly int event_count
+    cdef readonly AccountEvent last_event
 
+    cpdef list get_events(self)
     cpdef void apply(self, AccountEvent event)
+    cdef void _initialize(self, AccountEvent event)

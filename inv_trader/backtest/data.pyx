@@ -39,6 +39,7 @@ cdef class BacktestDataClient(DataClient):
         Initializes a new instance of the BacktestDataClient class.
 
         :param instruments: The instruments needed for the backtest.
+        :param tick_data: The historical tick market data needed for the backtest.
         :param bar_data_bid: The historical bid market data needed for the backtest.
         :param bar_data_ask: The historical ask market data needed for the backtest.
         :param clock: The clock for the component.

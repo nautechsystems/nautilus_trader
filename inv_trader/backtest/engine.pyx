@@ -17,12 +17,14 @@ from pandas import DataFrame
 from typing import List, Dict
 from logging import INFO, DEBUG
 
+from inv_trader.core.decimal cimport Decimal
+from inv_trader.core.precondition cimport Precondition
 from inv_trader.backtest.data cimport BacktestDataClient
 from inv_trader.backtest.execution cimport BacktestExecClient
-from inv_trader.core.precondition cimport Precondition
 from inv_trader.common.clock cimport LiveClock, TestClock
 from inv_trader.common.logger cimport Logger
 from inv_trader.enums.resolution cimport Resolution
+from inv_trader.model.objects import Money
 from inv_trader.model.objects cimport Symbol, Instrument
 from inv_trader.strategy cimport TradeStrategy
 
@@ -32,6 +34,7 @@ cdef class BacktestConfig:
     Represents a configuration for a BacktestEngine.
     """
     def __init__(self,
+                 Decimal starting_capital=Money.create(1000000),
                  level_console: logging=INFO,
                  level_file: logging=DEBUG,
                  bint console_prints=False,
@@ -46,6 +49,7 @@ cdef class BacktestConfig:
         :param log_to_file: The boolean flag indicating whether log messages should log to file
         :param log_file_path: The name of the log file (cannot be None if log_to_file is True).
         """
+        self.starting_capital = starting_capital
         self.level_console = level_console
         self.level_file = level_file
         self.console_prints = console_prints
@@ -78,9 +82,11 @@ cdef class BacktestEngine:
         Precondition.list_type(strategies, TradeStrategy, 'strategies')
         # Data checked in BacktestDataClient
 
+        self.config = config
         self.clock = LiveClock()
         self.test_clock = TestClock()
         self.log = Logger()
+
         self.test_log = Logger(
             name='backtest',
             level_console=config.level_console,
@@ -97,10 +103,13 @@ cdef class BacktestEngine:
             bar_data_ask,
             clock=TestClock(),
             logger=self.test_log)
+
         self.exec_client = BacktestExecClient(
+            instruments,
             tick_data,
             bar_data_bid,
             bar_data_ask,
+            starting_capital=config.starting_capital,
             clock=TestClock(),
             logger=self.test_log)
 

@@ -275,10 +275,10 @@ cdef class OrderIdGenerator:
         Precondition.valid_string(separator, 'separator')
 
         self._clock = clock
-        self._separator = separator
-        self._order_id_tag = order_id_tag
         self._order_symbol_counts = {}  # type: Dict[Symbol, int]
         self._order_ids = []            # type: List[OrderId]
+        self.separator = separator
+        self.order_id_tag = order_id_tag
 
     cpdef OrderId generate(self, Symbol order_symbol):
         """
@@ -294,10 +294,10 @@ cdef class OrderIdGenerator:
         cdef str milliseconds = str(self._clock.milliseconds_since_unix_epoch())
         cdef str order_count = str(self._order_symbol_counts[order_symbol])
         cdef OrderId order_id = OrderId(str(order_symbol.code)
-                                       + self._separator + order_symbol.venue_string()
-                                       + self._separator + order_count
-                                       + self._separator + self._order_id_tag
-                                       + self._separator + milliseconds)
+                                       + self.separator + order_symbol.venue_string()
+                                       + self.separator + order_count
+                                       + self.separator + self.order_id_tag
+                                       + self.separator + milliseconds)
 
         if order_id in self._order_ids:
             # TODO: Consider re-try counter

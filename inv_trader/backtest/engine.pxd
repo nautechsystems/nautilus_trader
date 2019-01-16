@@ -10,6 +10,8 @@
 # cython: language_level=3, boundscheck=False, wraparound=False
 
 from cpython.datetime cimport datetime, timedelta
+
+from inv_trader.core.decimal cimport Decimal
 from inv_trader.common.clock cimport Clock
 from inv_trader.common.logger cimport Logger
 from inv_trader.backtest.data cimport BacktestDataClient
@@ -21,6 +23,7 @@ cdef class BacktestConfig:
     """
     Represents a configuration for a BacktestEngine.
     """
+    cdef readonly Decimal starting_capital
     cdef readonly object level_console
     cdef readonly object level_file
     cdef readonly bint console_prints
@@ -34,6 +37,7 @@ cdef class BacktestEngine:
     """
     cdef readonly Clock clock
     cdef readonly Clock test_clock
+    cdef readonly BacktestConfig config
     cdef readonly Logger log
     cdef readonly Logger test_log
     cdef readonly BacktestDataClient data_client
