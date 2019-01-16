@@ -83,3 +83,4 @@ cdef class TestClock(Clock):
     cdef datetime _time
 
     cpdef void set_time(self, datetime time)
+    cpdef void iterate_time(self, datetime time)

@@ -162,7 +162,6 @@ class EMACross(TradeStrategy):
         start logic.
         """
         # Subscribe to the necessary data.
-        self.historical_bars(self.bar_type)
         self.subscribe_bars(self.bar_type)
 
     def on_tick(self, tick: Tick):

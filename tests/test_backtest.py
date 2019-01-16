@@ -17,7 +17,7 @@ from inv_trader.common.logger import Logger
 from inv_trader.model.enums import Resolution
 from inv_trader.model.objects import BarType
 from inv_trader.backtest.data import BacktestDataClient
-from inv_trader.backtest.engine import BacktestEngine
+from inv_trader.backtest.engine import BacktestConfig, BacktestEngine
 from test_kit.strategies import TestStrategy1, EMACross
 from test_kit.data import TestDataProvider
 from test_kit.stubs import TestStubs
@@ -102,6 +102,7 @@ class BacktestEngineTests(unittest.TestCase):
                                 strategies=strategies)
 
         # Assert
+        # Does not throw exception
         self.assertEqual(all(bid_data), all(engine.data_client.bar_data_bid))
         self.assertEqual(all(ask_data), all(engine.data_client.bar_data_bid))
 
@@ -125,17 +126,20 @@ class BacktestEngineTests(unittest.TestCase):
                                slow_ema=20,
                                atr_period=20,
                                sl_atr_multiple=2.0)]
+
+        config = BacktestConfig(console_prints=True)
         engine = BacktestEngine(instruments=instruments,
                                 tick_data=tick_data,
                                 bar_data_bid=bid_data,
                                 bar_data_ask=ask_data,
-                                strategies=strategies)
+                                strategies=strategies,
+                                config=config)
 
         start = datetime(2013, 1, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
-        stop = datetime(2013, 1, 2, 0, 0, 0, 0, tzinfo=timezone.utc)
+        stop = datetime(2013, 1, 1, 12, 0, 0, 0, tzinfo=timezone.utc)
 
         # Act
-        # engine.run(start, stop)
+        engine.run(start, stop)
 
 
 

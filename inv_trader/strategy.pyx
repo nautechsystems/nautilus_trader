@@ -910,3 +910,19 @@ cdef class TradeStrategy:
         :param logger: The logger to change to.
         """
         self.log = LoggerAdapter(f"{self.name}-{self.label}", logger)
+
+    cpdef void _set_time(self, datetime time):
+        """
+        Set the strategies clock time to the given time.
+        
+        :param time: The time to set the clock to.
+        """
+        self._clock.set_time(time)
+
+    cpdef void _iterate(self, datetime time):
+        """
+        Iterate the strategies clock to the given time.
+        
+        :param time: The time to iterate the clock to.
+        """
+        self._clock.iterate_time(time)
