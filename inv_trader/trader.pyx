@@ -30,7 +30,7 @@ cdef class Trader:
     """
 
     def __init__(self,
-                 str name='NONE',
+                 str name='TRADER',
                  list strategies=[],
                  DataClient data_client=LiveDataClient(),
                  ExecutionClient exec_client=LiveExecClient(),
