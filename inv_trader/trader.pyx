@@ -11,6 +11,9 @@
 
 import uuid
 
+from cpython.datetime cimport datetime
+from typing import List
+
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.common.clock cimport LiveClock
 from inv_trader.common.logger cimport Logger, LoggerAdapter
@@ -56,8 +59,8 @@ cdef class Trader:
         self.name = Label(name)
         self.id = GUID(uuid.uuid4())
         self.strategies = strategies
-        self.started_datetimes = list()
-        self.stopped_datetimes = list()
+        self.started_datetimes = list()  # type: List[datetime]
+        self.stopped_datetimes = list()  # type: List[datetime]
 
         for strategy in strategies:
             self._data_client.register_strategy(strategy)
