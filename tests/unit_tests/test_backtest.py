@@ -15,9 +15,9 @@ from datetime import datetime, timezone, timedelta
 from inv_trader.common.clock import TestClock
 from inv_trader.common.logger import Logger
 from inv_trader.model.enums import Resolution
-from inv_trader.model.objects import BarType
 from inv_trader.backtest.data import BacktestDataClient
 from inv_trader.backtest.engine import BacktestConfig, BacktestEngine
+from test_kit.objects import ObjectStorer
 from test_kit.strategies import TestStrategy1, EMACross
 from test_kit.data import TestDataProvider
 from test_kit.stubs import TestStubs
@@ -66,17 +66,17 @@ class BacktestDataClientTests(unittest.TestCase):
                                     clock=TestClock(),
                                     logger=Logger())
 
-        receiver = []
-        client.subscribe_bars(TestStubs.bartype_usdjpy_1min_bid(), receiver.append)
+        receiver = ObjectStorer()
+        client.subscribe_bars(TestStubs.bartype_usdjpy_1min_bid(), receiver.store_2)
 
-        start_datetime = datetime(2013, 1, 1, 0, 0, 0, 0)
+        start_datetime = datetime(2013, 1, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
 
         # Act
         for x in range(1000):
             client.iterate(start_datetime + timedelta(minutes=x))
 
         # Assert
-        self.assertEqual(1000, len(receiver))
+        self.assertEqual(1000, len(receiver.get_store()))
 
 
 class BacktestEngineTests(unittest.TestCase):

@@ -246,13 +246,11 @@ class LiveDataClientTests(unittest.TestCase):
                     datetime(2018, 1, 1, 19, 59, 1, 0, timezone.utc))
 
         # Act
-        self.redis_tester.publish(
-            'audusd.fxcm',
-            '1.00000,1.00001,2018-01-01T19:59:01.000Z')
+        self.redis_tester.publish('audusd.fxcm', '1.00000,1.00001,2018-01-01T19:59:01.000Z')
 
         # Assert
         time.sleep(0.1)  # Allow threads to work.
-        self.assertEqual(tick, storer.get_store[0])
+        self.assertEqual(tick, storer.get_store()[0])
 
     def test_can_receive_many_ticks(self):
         # Arrange
@@ -272,7 +270,7 @@ class LiveDataClientTests(unittest.TestCase):
         # Assert
         time.sleep(0.1)  # Allow threads to work.
         self.assertEqual(5, storer.count)
-        self.assertEqual('Tick(AUDUSD.FXCM,1.00000,1.00005,2018-01-01T20:00:05+00:00)', str(storer.get_store[4]))
+        self.assertEqual('Tick(AUDUSD.FXCM,1.00000,1.00005,2018-01-01T20:00:05+00:00)', str(storer.get_store()[4]))
 
     def test_can_receive_ticks_from_multiple_subscribers(self):
         # Arrange
@@ -302,13 +300,13 @@ class LiveDataClientTests(unittest.TestCase):
         # Assert
         time.sleep(0.1)  # Allow threads to work.
         self.assertEqual(15, storer.count)
-        self.assertEqual('Tick(EURUSD.FXCM,1.00000,1.00005,2018-01-01T20:00:05+00:00)', str(storer.get_store[14]))
+        self.assertEqual('Tick(EURUSD.FXCM,1.00000,1.00005,2018-01-01T20:00:05+00:00)', str(storer.get_store()[14]))
 
     def test_can_receive_bar(self):
         # Arrange
         storer = ObjectStorer()
         self.data_client.connect()
-        self.data_client.subscribe_bars(BarType(Symbol('AUDUSD', Venue.FXCM), 1, Resolution.SECOND, QuoteType.BID), storer.store_both)
+        self.data_client.subscribe_bars(BarType(Symbol('AUDUSD', Venue.FXCM), 1, Resolution.SECOND, QuoteType.BID), storer.store_2)
 
         bar = Bar(
             Decimal('1.00001'),
@@ -325,75 +323,55 @@ class LiveDataClientTests(unittest.TestCase):
 
         # Assert
         time.sleep(0.1)  # Allow threads to work.
-        self.assertEqual(str(bar), str(storer.get_store[1]))
+        self.assertEqual(str(bar), str(storer.get_store()[0][1]))
 
     def test_can_receive_many_bars(self):
         # Arrange
         storer = ObjectStorer()
         self.data_client.connect()
-        self.data_client.subscribe_bars(BarType(Symbol('AUDUSD', Venue.FXCM), 1, Resolution.SECOND, QuoteType.BID), storer.store_both)
+        self.data_client.subscribe_bars(BarType(Symbol('AUDUSD', Venue.FXCM), 1, Resolution.SECOND, QuoteType.BID), storer.store_2)
 
         # Act
-        self.redis_tester.publish('audusd.fxcm-1-second[bid]',
-                                  '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:00+00:00')
-        self.redis_tester.publish('audusd.fxcm-1-second[bid]',
-                                  '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:01+00:00')
-        self.redis_tester.publish('audusd.fxcm-1-second[bid]',
-                                  '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:02+00:00')
-        self.redis_tester.publish('audusd.fxcm-1-second[bid]',
-                                  '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:03+00:00')
-        self.redis_tester.publish('audusd.fxcm-1-second[bid]',
-                                  '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:04+00:00')
+        self.redis_tester.publish('audusd.fxcm-1-second[bid]', '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:00+00:00')
+        self.redis_tester.publish('audusd.fxcm-1-second[bid]', '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:01+00:00')
+        self.redis_tester.publish('audusd.fxcm-1-second[bid]', '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:02+00:00')
+        self.redis_tester.publish('audusd.fxcm-1-second[bid]', '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:03+00:00')
+        self.redis_tester.publish('audusd.fxcm-1-second[bid]', '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:04+00:00')
 
         # Assert
         time.sleep(0.1)  # Allow threads to work.
-        self.assertEqual(10, storer.count)  # All bar types and bars.
-        self.assertEqual('Bar(1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:04+00:00)', str(storer.get_store[9]))
+        self.assertEqual(5, storer.count)  # All bar types and bars.
+        self.assertEqual('Bar(1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:04+00:00)', str(storer.get_store()[4][1]))
 
     def test_can_receive_bars_from_multiple_subscribers(self):
         # Arrange
         storer = ObjectStorer()
         self.data_client.connect()
-        self.data_client.subscribe_bars(BarType(Symbol('AUDUSD', Venue.FXCM), 1, Resolution.SECOND, QuoteType.BID), storer.store_both)
-        self.data_client.subscribe_bars(BarType(Symbol('GBPUSD', Venue.FXCM), 1, Resolution.SECOND, QuoteType.BID), storer.store_both)
-        self.data_client.subscribe_bars(BarType(Symbol('EURUSD', Venue.FXCM), 1, Resolution.SECOND, QuoteType.BID), storer.store_both)
+        self.data_client.subscribe_bars(BarType(Symbol('AUDUSD', Venue.FXCM), 1, Resolution.SECOND, QuoteType.BID), storer.store_2)
+        self.data_client.subscribe_bars(BarType(Symbol('GBPUSD', Venue.FXCM), 1, Resolution.SECOND, QuoteType.BID), storer.store_2)
+        self.data_client.subscribe_bars(BarType(Symbol('EURUSD', Venue.FXCM), 1, Resolution.SECOND, QuoteType.BID), storer.store_2)
 
         # Act
-        self.redis_tester.publish('audusd.fxcm-1-second[bid]',
-                                  '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:00+00:00')
-        self.redis_tester.publish('audusd.fxcm-1-second[bid]',
-                                  '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:01+00:00')
-        self.redis_tester.publish('audusd.fxcm-1-second[bid]',
-                                  '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:02+00:00')
-        self.redis_tester.publish('audusd.fxcm-1-second[bid]',
-                                  '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:03+00:00')
-        self.redis_tester.publish('audusd.fxcm-1-second[bid]',
-                                  '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:04+00:00')
-        self.redis_tester.publish('eurusd.fxcm-1-second[bid]',
-                                  '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:00+00:00')
-        self.redis_tester.publish('eurusd.fxcm-1-second[bid]',
-                                  '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:01+00:00')
-        self.redis_tester.publish('eurusd.fxcm-1-second[bid]',
-                                  '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:02+00:00')
-        self.redis_tester.publish('eurusd.fxcm-1-second[bid]',
-                                  '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:03+00:00')
-        self.redis_tester.publish('eurusd.fxcm-1-second[bid]',
-                                  '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:04+00:00')
-        self.redis_tester.publish('gbpusd.fxcm-1-second[bid]',
-                                  '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:00+00:00')
-        self.redis_tester.publish('gbpusd.fxcm-1-second[bid]',
-                                  '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:01+00:00')
-        self.redis_tester.publish('gbpusd.fxcm-1-second[bid]',
-                                  '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:02+00:00')
-        self.redis_tester.publish('gbpusd.fxcm-1-second[bid]',
-                                  '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:03+00:00')
-        self.redis_tester.publish('gbpusd.fxcm-1-second[bid]',
-                                  '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:04+00:00')
+        self.redis_tester.publish('audusd.fxcm-1-second[bid]', '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:00+00:00')
+        self.redis_tester.publish('audusd.fxcm-1-second[bid]', '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:01+00:00')
+        self.redis_tester.publish('audusd.fxcm-1-second[bid]', '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:02+00:00')
+        self.redis_tester.publish('audusd.fxcm-1-second[bid]', '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:03+00:00')
+        self.redis_tester.publish('audusd.fxcm-1-second[bid]', '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:04+00:00')
+        self.redis_tester.publish('eurusd.fxcm-1-second[bid]', '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:00+00:00')
+        self.redis_tester.publish('eurusd.fxcm-1-second[bid]', '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:01+00:00')
+        self.redis_tester.publish('eurusd.fxcm-1-second[bid]', '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:02+00:00')
+        self.redis_tester.publish('eurusd.fxcm-1-second[bid]', '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:03+00:00')
+        self.redis_tester.publish('eurusd.fxcm-1-second[bid]', '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:04+00:00')
+        self.redis_tester.publish('gbpusd.fxcm-1-second[bid]', '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:00+00:00')
+        self.redis_tester.publish('gbpusd.fxcm-1-second[bid]', '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:01+00:00')
+        self.redis_tester.publish('gbpusd.fxcm-1-second[bid]', '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:02+00:00')
+        self.redis_tester.publish('gbpusd.fxcm-1-second[bid]', '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:03+00:00')
+        self.redis_tester.publish('gbpusd.fxcm-1-second[bid]', '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:04+00:00')
 
         # Assert
         time.sleep(0.1)  # Allow threads to work.
-        self.assertEqual(30, storer.count)  # All bar types and bars.
-        self.assertEqual('Bar(1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:04+00:00)', str(storer.get_store[29]))
+        self.assertEqual(15, storer.count)  # All bar types and bars.
+        self.assertEqual('Bar(1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:04+00:00)', str(storer.get_store()[14][1]))
 
     def test_can_add_bartype_to_dict(self):
         # Arrange
