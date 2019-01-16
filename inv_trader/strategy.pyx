@@ -263,7 +263,7 @@ cdef class TradeStrategy:
 
     cpdef void subscribe_bars(self, BarType bar_type):
         """
-        Subscribe to live bar data for the given bar type.
+        Subscribe to bar data for the given bar type.
 
         :param bar_type: The bar type to subscribe to.
         :raises ValueError: If strategy has not been registered with a data client.
@@ -275,7 +275,7 @@ cdef class TradeStrategy:
 
     cpdef void unsubscribe_bars(self, BarType bar_type):
         """
-        Unsubscribe from live bar data for the given bar type.
+        Unsubscribe from bar data for the given bar type.
 
         :param bar_type: The bar type to unsubscribe from.
         :raises ValueError: If strategy has not been registered with a data client.
@@ -287,7 +287,7 @@ cdef class TradeStrategy:
 
     cpdef void subscribe_ticks(self, Symbol symbol):
         """
-        Subscribe to live tick data for the given symbol.
+        Subscribe to tick data for the given symbol.
 
         :param symbol: The tick symbol to subscribe to.
         :raises ValueError: If strategy has not been registered with a data client.
@@ -299,7 +299,7 @@ cdef class TradeStrategy:
 
     cpdef void unsubscribe_ticks(self, Symbol symbol):
         """
-        Unsubscribe from live tick data for the given symbol.
+        Unsubscribe from tick data for the given symbol.
 
         :param symbol: The tick symbol to unsubscribe from.
         :raises ValueError: If strategy has not been registered with a data client.

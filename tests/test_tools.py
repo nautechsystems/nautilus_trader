@@ -25,22 +25,6 @@ class BarBuilderTests(unittest.TestCase):
         data = TestDataProvider.gbpusd_1min_bid()[:1000]
         self.bar_builder = BarBuilder(data, 5, 1)
 
-    def test_build_databar(self):
-        # Arrange
-        # Act
-        bar = self.bar_builder.build_databar(0)
-
-        # Assert
-        self.assertTrue(type(bar) == DataBar)
-
-    def test_build_bar(self):
-        # Arrange
-        # Act
-        bar = self.bar_builder.build_bar(0)
-
-        # Assert
-        self.assertTrue(type(bar) == Bar)
-
     def test_build_databars_all(self):
         # Arrange
         # Act
