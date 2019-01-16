@@ -20,7 +20,7 @@ from logging import INFO, DEBUG
 from inv_trader.backtest.data cimport BacktestDataClient
 from inv_trader.backtest.execution cimport BacktestExecClient
 from inv_trader.core.precondition cimport Precondition
-from inv_trader.common.clock cimport TestClock
+from inv_trader.common.clock cimport LiveClock, TestClock
 from inv_trader.common.logger cimport Logger
 from inv_trader.enums.resolution cimport Resolution
 from inv_trader.model.objects cimport Symbol, Instrument
@@ -78,15 +78,17 @@ cdef class BacktestEngine:
         Precondition.list_type(strategies, TradeStrategy, 'strategies')
         # Data checked in BacktestDataClient
 
-        self.clock = TestClock()
-        self.log = Logger(
+        self.clock = LiveClock()
+        self.test_clock = TestClock()
+        self.log = Logger()
+        self.test_log = Logger(
             name='backtest',
             level_console=config.level_console,
             level_file=config.level_file,
             console_prints=config.console_prints,
             log_to_file=config.log_to_file,
             log_file_path=config.log_file_path,
-            clock=self.clock)
+            clock=self.test_clock)
 
         self.data_client = BacktestDataClient(
             instruments,
@@ -94,13 +96,13 @@ cdef class BacktestEngine:
             bar_data_bid,
             bar_data_ask,
             clock=TestClock(),
-            logger=self.log)
+            logger=self.test_log)
         self.exec_client = BacktestExecClient(
             tick_data,
             bar_data_bid,
             bar_data_ask,
             clock=TestClock(),
-            logger=self.log)
+            logger=self.test_log)
 
         # Get first and last timestamp from bar data
         first_symbol = next(iter(bar_data_bid))
@@ -112,14 +114,14 @@ cdef class BacktestEngine:
         # Replace strategies internal clocks with test clocks
         for strategy in strategies:
             strategy._change_clock(TestClock())
-            strategy._change_logger(self.log)
+            strategy._change_logger(self.test_log)
 
         self.trader = Trader(
             'Backtest',
             strategies,
             self.data_client,
             self.exec_client,
-            self.clock)
+            self.test_clock)
 
     cpdef void run(
             self,
@@ -137,9 +139,9 @@ cdef class BacktestEngine:
         Precondition.true(start >= self.first_timestamp, 'start >= self.first_timestamp')
         Precondition.true(stop <= self.last_timestamp, 'stop <= self.last_timestamp')
 
-        self.log.info(f"Running backtest from {start} to {stop} with {timedelta} steps.")
+        self.test_log.info(f"Running backtest from {start} to {stop} with {timedelta} steps.")
         cdef datetime time = start
-        self.clock.set_time(time)
+        self.test_clock.set_time(time)
 
         # Set all strategy clocks to the start of the backtest period.
         for strategy in self.trader.strategies:
@@ -155,7 +157,7 @@ cdef class BacktestEngine:
                 strategy._iterate(time)
             self.data_client.iterate(time)
             time += time_step
-            self.clock.set_time(time)
+            self.test_clock.set_time(time)
 
         self.trader.stop()
         self.trader.reset()
