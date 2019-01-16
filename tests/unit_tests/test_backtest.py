@@ -86,60 +86,74 @@ class BacktestDataClientTests(unittest.TestCase):
 # -- EXECUTION ----------------------------------------------------------------------------------- #
 class BacktestExecClientTests(unittest.TestCase):
 
-    def test_can_initialize_client_with_data(self):
-        # Arrange
-        usdjpy = TestStubs.instrument_usdjpy()
+    def setUp(self):
+        # Fixture Setup
+        self.usdjpy = TestStubs.instrument_usdjpy()
         bid_data_1min = TestDataProvider.usdjpy_1min_bid()
         ask_data_1min = TestDataProvider.usdjpy_1min_ask()
 
-        instruments = [TestStubs.instrument_usdjpy()]
-        tick_data = {usdjpy.symbol: pd.DataFrame()}
-        bid_data = {usdjpy.symbol: {Resolution.MINUTE: bid_data_1min}}
-        ask_data = {usdjpy.symbol: {Resolution.MINUTE: ask_data_1min}}
+        self.instruments = [TestStubs.instrument_usdjpy()]
+        self.tick_data = {self.usdjpy.symbol: pd.DataFrame()}
+        self.bid_data = {self.usdjpy.symbol: {Resolution.MINUTE: bid_data_1min}}
+        self.ask_data = {self.usdjpy.symbol: {Resolution.MINUTE: ask_data_1min}}
 
+        self.strategies = [TestStrategy1(TestStubs.bartype_usdjpy_1min_bid())]
+
+        self.client = BacktestExecClient(instruments=self.instruments,
+                                         tick_data=self.tick_data,
+                                         bar_data_bid=self.bid_data,
+                                         bar_data_ask=self.ask_data,
+                                         starting_capital=Money.create(1000000),
+                                         clock=TestClock(),
+                                         logger=Logger())
+
+    def test_can_initialize_client_with_data(self):
+        # Arrange
         # Act
-        client = BacktestExecClient(instruments=instruments,
-                                    tick_data=tick_data,
-                                    bar_data_bid=bid_data,
-                                    bar_data_ask=ask_data,
-                                    starting_capital=Money.create(1000000),
-                                    clock=TestClock(),
-                                    logger=Logger())
+        # Assert
+        self.assertEqual(all(self.bid_data), all(self.client.bar_data_bid[self.usdjpy.symbol][Resolution.MINUTE]))
+        self.assertEqual(all(self.ask_data), all(self.client.bar_data_bid[self.usdjpy.symbol][Resolution.MINUTE]))
+        self.assertEqual(Decimal(1000000), self.client.account.cash_balance)
+        self.assertEqual(Decimal(1000000), self.client.account.free_equity)
+
+    def test_can_send_collateral_inquiry(self):
+        # Arrange
+        # Act
+        self.client.collateral_inquiry()
 
         # Assert
-        self.assertEqual(all(bid_data_1min), all(client.bar_data_bid[usdjpy.symbol][Resolution.MINUTE]))
-        self.assertEqual(all(ask_data_1min), all(client.bar_data_bid[usdjpy.symbol][Resolution.MINUTE]))
-        self.assertEqual(Decimal(1000000), client.account.cash_balance)
-        self.assertEqual(Decimal(1000000), client.account.free_equity)
+        self.assertEqual(2, self.client.account.event_count)
 
 
 # -- ENGINE -------------------------------------------------------------------------------------- #
 class BacktestEngineTests(unittest.TestCase):
 
-    def test_can_initialize_engine_with_data(self):
-        # Arrange
+    def setUp(self):
+        # Fixture Setup
         usdjpy = TestStubs.instrument_usdjpy()
         bid_data_1min = TestDataProvider.usdjpy_1min_bid()
         ask_data_1min = TestDataProvider.usdjpy_1min_ask()
 
-        instruments = [TestStubs.instrument_usdjpy()]
-        tick_data = {usdjpy.symbol: pd.DataFrame()}
-        bid_data = {usdjpy.symbol: {Resolution.MINUTE: bid_data_1min}}
-        ask_data = {usdjpy.symbol: {Resolution.MINUTE: ask_data_1min}}
+        self.instruments = [TestStubs.instrument_usdjpy()]
+        self.tick_data = {usdjpy.symbol: pd.DataFrame()}
+        self.bid_data = {usdjpy.symbol: {Resolution.MINUTE: bid_data_1min}}
+        self.ask_data = {usdjpy.symbol: {Resolution.MINUTE: ask_data_1min}}
 
-        strategies = [TestStrategy1(TestStubs.bartype_usdjpy_1min_bid())]
+        self.strategies = [TestStrategy1(TestStubs.bartype_usdjpy_1min_bid())]
 
+        self.engine = BacktestEngine(instruments=self.instruments,
+                                     tick_data=self.tick_data,
+                                     bar_data_bid=self.bid_data,
+                                     bar_data_ask=self.ask_data,
+                                     strategies=self.strategies)
+
+    def test_can_initialize_engine_with_data(self):
+        # Arrange
         # Act
-        engine = BacktestEngine(instruments=instruments,
-                                tick_data=tick_data,
-                                bar_data_bid=bid_data,
-                                bar_data_ask=ask_data,
-                                strategies=strategies)
-
         # Assert
         # Does not throw exception
-        self.assertEqual(all(bid_data), all(engine.data_client.bar_data_bid))
-        self.assertEqual(all(ask_data), all(engine.data_client.bar_data_bid))
+        self.assertEqual(all(self.bid_data), all(self.engine.data_client.bar_data_bid))
+        self.assertEqual(all(self.ask_data), all(self.engine.data_client.bar_data_bid))
 
     def test_can_run(self):
         # Arrange

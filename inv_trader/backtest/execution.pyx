@@ -70,6 +70,8 @@ cdef class BacktestExecClient(ExecutionClient):
         self.bar_data_bid = bar_data_bid
         self.bar_data_ask = bar_data_ask
         self.iteration = 0
+        self.account_cash_start_day = starting_capital
+        self.account_cash_activity_day = Decimal(0, 2)
 
         cdef AccountEvent initial_starting = AccountEvent(self.account.id,
                                                           Broker.SIMULATED,
@@ -103,8 +105,20 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         Send a collateral inquiry command to the execution service.
         """
-        # Do nothing
-        pass
+        cdef AccountEvent event = AccountEvent(self.account.id,
+                                               self.account.broker,
+                                               self.account.account_number,
+                                               self.account.currency,
+                                               self.account.cash_balance,
+                                               self.account_cash_start_day,
+                                               self.account_cash_activity_day,
+                                               self.account.margin_used_liquidation,
+                                               self.account.margin_used_maintenance,
+                                               self.account.margin_ratio,
+                                               self.account.margin_call_status,
+                                               GUID(uuid.uuid4()),
+                                               self._clock.time_now())
+        self._on_event(event)
 
     cpdef void submit_order(self, Order order, GUID strategy_id):
         """

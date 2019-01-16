@@ -11,6 +11,7 @@
 
 from cpython.datetime cimport datetime
 
+from inv_trader.core.decimal cimport Decimal
 from inv_trader.common.execution cimport ExecutionClient
 
 
@@ -23,5 +24,7 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef readonly dict bar_data_bid
     cdef readonly dict bar_data_ask
     cdef readonly int iteration
+    cdef readonly Decimal account_cash_start_day
+    cdef readonly Decimal account_cash_activity_day
 
     cpdef void iterate(self, datetime time)
