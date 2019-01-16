@@ -56,7 +56,7 @@ cdef class TradeStrategy:
     cdef Account account
 
     cdef bint equals(self, TradeStrategy other)
-#-- ABSTRACT METHODS ----------------------------------------------------------#
+# -- ABSTRACT METHODS ---------------------------------------------------------------------------- #
     cpdef void on_start(self)
     cpdef void on_tick(self, Tick tick)
     cpdef void on_bar(self, BarType bar_type, Bar bar)
@@ -64,7 +64,7 @@ cdef class TradeStrategy:
     cpdef void on_stop(self)
     cpdef void on_reset(self)
 
-#-- DATA METHODS --------------------------------------------------------------#
+# -- DATA METHODS -------------------------------------------------------------------------------- #
     cpdef readonly datetime time_now(self)
     cpdef readonly list symbols(self)
     cpdef readonly list instruments(self)
@@ -79,13 +79,13 @@ cdef class TradeStrategy:
     cpdef Bar bar(self, BarType bar_type, int index)
     cpdef Tick last_tick(self, Symbol symbol)
 
-#-- INDICATOR METHODS ---------------------------------------------------------#
+# -- INDICATOR METHODS --------------------------------------------------------------------------- #
     cpdef register_indicator(self, BarType bar_type, indicator, update_method)
     cpdef list indicators(self, BarType bar_type)
     cpdef readonly bint indicators_initialized(self, BarType bar_type)
     cpdef readonly bint all_indicators_initialized(self)
 
-#-- ORDER MANAGEMENT METHODS --------------------------------------------------#
+# -- ORDER MANAGEMENT METHODS -------------------------------------------------------------------- #
     cpdef OrderId generate_order_id(self, Symbol symbol)
     cpdef OrderSide get_opposite_side(self, OrderSide side)
     cpdef get_flatten_side(self, MarketPosition market_position)
@@ -97,7 +97,7 @@ cdef class TradeStrategy:
     cpdef dict completed_positions(self)
     cpdef bint is_flat(self)
 
-#-- COMMAND METHODS -----------------------------------------------------------#
+# -- COMMAND METHODS ----------------------------------------------------------------------------- #
     cpdef void start(self)
     cpdef void stop(self)
     cpdef void reset(self)
@@ -113,7 +113,7 @@ cdef class TradeStrategy:
     cpdef flatten_position(self, PositionId position_id)
     cpdef flatten_all_positions(self)
 
-#-- INTERNAL METHODS ----------------------------------------------------------#
+# -- INTERNAL METHODS ---------------------------------------------------------------------------- #
     cpdef _register_data_client(self, DataClient client)
     cpdef _register_execution_client(self, ExecutionClient client)
     cpdef void _update_ticks(self, Tick tick)

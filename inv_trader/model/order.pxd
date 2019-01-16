@@ -68,10 +68,11 @@ cdef class OrderIdGenerator:
     Provides a generator for unique order identifiers.
     """
     cdef Clock _clock
-    cdef str _separator
-    cdef str _order_id_tag
     cdef dict _order_symbol_counts
     cdef list _order_ids
+
+    cdef readonly str separator
+    cdef readonly str order_id_tag
 
     cpdef OrderId generate(self, Symbol order_symbol)
 

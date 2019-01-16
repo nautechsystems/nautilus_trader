@@ -27,6 +27,8 @@ cdef class Account:
         """
         Initializes a new instance of the Account class.
         """
+        self._events = list()
+
         self.initialized = False
         self.id = None
         self.broker = Broker.UNKNOWN
@@ -40,8 +42,9 @@ cdef class Account:
         self.margin_ratio = Money.zero()
         self.margin_call_status = ""
         self.free_equity = Money.zero()
-        self.last_updated = dt.datetime.utcnow()
-        self.events = []
+        self.last_updated = None
+        self.event_count = 0
+        self.last_event = None
 
     def __eq__(self, Account other) -> bool:
         """
@@ -73,18 +76,24 @@ cdef class Account:
         """
         return f"<{str(self)} object at {id(self)}>"
 
+    cpdef list get_events(self):
+        """
+        :return: A copy of the list of internally held events. 
+        """
+        return self._events.copy()
+
     cpdef void apply(self, AccountEvent event):
         """
         Applies the given account event to the account.
 
         :param event: The account event.
         """
+        self._events.append(event)
+        self.event_count += 1
+        self.last_event = event
+
         if not self.initialized:
-            self.broker = event.broker
-            self.account_number = event.account_number
-            self.id = event.account_id
-            self.currency = event.currency
-            self.initialized = True
+            self._initialize(event)
 
         self.cash_balance = event.cash_balance
         self.cash_start_day = event.cash_start_day
@@ -95,5 +104,16 @@ cdef class Account:
         self.margin_call_status = event.margin_call_status
         self.free_equity = Decimal(max(self.cash_balance - (self.margin_used_maintenance + self.margin_used_liquidation), 0))
 
-        self.events.append(event)
         self.last_updated = event.timestamp
+
+    cdef void _initialize(self, AccountEvent event):
+        """
+        Initialize the account with the given event.
+        
+        :param event: The event to initialize with.
+        """
+        self.broker = event.broker
+        self.account_number = event.account_number
+        self.id = event.account_id
+        self.currency = event.currency
+        self.initialized = True

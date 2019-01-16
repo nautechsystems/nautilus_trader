@@ -11,17 +11,20 @@
 
 
 cpdef enum Broker:
-    DUKASCOPY = 0,
-    FXCM = 1,
-    INTERACTIVE_BROKERS = 2
-    UNKNOWN = -1
+    UNKNOWN = -1,
+    SIMULATED = 0,
+    DUKASCOPY = 1,
+    FXCM = 2,
+    INTERACTIVE_BROKERS = 3
 
 cdef inline str broker_string(int value):
     if value == 0:
-        return "DUKASCOPY"
+        return "SIMULATED"
     elif value == 1:
-        return "FXCM"
+        return "DUKASCOPY"
     elif value == 2:
+        return "FXCM"
+    elif value == 3:
         return "INTERACTIVE_BROKERS"
     elif value == -1:
         return "UNKNOWN"
