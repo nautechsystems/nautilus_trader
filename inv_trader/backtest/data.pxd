@@ -23,7 +23,7 @@ cdef class BacktestDataClient(DataClient):
     cdef readonly dict bar_data_bid
     cdef readonly dict bar_data_ask
     cdef readonly int iteration
-    cdef dict data_providers
+    cdef readonly dict data_providers
 
     cpdef void subscribe_bars(self, BarType bar_type, handler)
     cpdef void unsubscribe_bars(self, BarType bar_type, handler)

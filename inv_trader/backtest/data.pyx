@@ -57,7 +57,7 @@ cdef class BacktestDataClient(DataClient):
         self.bar_data_bid = bar_data_bid
         self.bar_data_ask = bar_data_ask
         self.iteration = 0
-        self.data_providers = dict()
+        self.data_providers = dict()  # type: Dict[Symbol, DataProvider]
 
         # Convert instruments list to dictionary indexed by symbol
         cdef dict instruments_dict = {}  # type: Dict[Symbol, Instrument]
@@ -97,6 +97,7 @@ cdef class BacktestDataClient(DataClient):
                 assert(dataframe.index == indexs[resolution], f'{dataframe} index is not equal')
 
         for symbol in data_symbols:
+            self._log.info(f'Build data provider for {symbol}.')
             self.data_providers[symbol] = DataProvider(instrument=self._instruments[symbol],
                                                        bar_data_bid=bar_data_bid[symbol],
                                                        bar_data_ask=bar_data_ask[symbol])
@@ -204,7 +205,7 @@ cdef class BacktestDataClient(DataClient):
                 bars = data_provider.iterate_bars(time)
                 for bar_type, bar in bars.items():
                     for handler in self._bar_handlers[bar_type]:
-                        handler(bar)
+                        handler(bar_type, bar)
 
         self.iteration += 1
 
