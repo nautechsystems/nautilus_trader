@@ -69,8 +69,9 @@ cdef class TradeStrategy:
             self.log = LoggerAdapter(f"{self.name}-{self.label}", logger)
         self.name = self.__class__.__name__
         self.label = label
+        self.order_id_tag = order_id_tag
         self.id = GUID(uuid.uuid4())
-        self._order_id_generator = OrderIdGenerator(order_id_tag)
+        self._order_id_generator = OrderIdGenerator(order_id_tag=order_id_tag, clock=self._clock)
         self.order_factory = OrderFactory()
         self.bar_capacity = bar_capacity
         self.is_running = False
@@ -902,6 +903,7 @@ cdef class TradeStrategy:
         :param clock: The clock to change to.
         """
         self._clock = clock
+        self._order_id_generator = OrderIdGenerator(self.order_id_tag, clock=self._clock)
 
     cpdef void _change_logger(self, Logger logger):
         """

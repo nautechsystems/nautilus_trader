@@ -15,7 +15,7 @@ import time
 from datetime import datetime, timezone, timedelta
 
 from inv_trader.core.decimal import Decimal
-from inv_trader.common.logger import LoggerAdapter
+from inv_trader.common.clock import TestClock
 from inv_trader.model.enums import Venue, Resolution, QuoteType, OrderSide, TimeInForce, OrderStatus
 from inv_trader.model.enums import MarketPosition
 from inv_trader.model.objects import Price, Symbol, Tick, BarType, Bar
@@ -621,14 +621,14 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_generate_order_id(self):
         # Arrange
-        bar_type = TestStubs.bartype_audusd_1min_bid()
-        strategy = TestStrategy1(bar_type)
+        strategy = TradeStrategy()
 
         # Act
         result = strategy.generate_order_id(AUDUSD_FXCM)
 
         # Assert
-        self.assertTrue(result.value.startswith('AUDUSD-FXCM-1-TS01-'))
+        print(result)
+        self.assertTrue(result.value.startswith('AUDUSD-FXCM-1-0-'))
 
     def test_get_opposite_side_returns_expected_sides(self):
         # Arrange
@@ -661,6 +661,18 @@ class TradeStrategyTests(unittest.TestCase):
         # Assert
         self.assertEqual(OrderSide.SELL, result1)
         self.assertEqual(OrderSide.BUY, result2)
+
+    def test_can_change_clock(self):
+        # Arrange
+        clock = TestClock()
+        strategy = TradeStrategy()
+
+        # Act
+        strategy._change_clock(clock)
+
+        # Assert
+        self.assertEqual(clock.unix_epoch(), strategy.time_now())
+        self.assertEqual(OrderId('AUDUSD-FXCM-1-0-0'), strategy.generate_order_id(AUDUSD_FXCM))
 
     def test_submitting_order_with_identical_id_raises_ex(self):
         # Arrange
