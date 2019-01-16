@@ -347,13 +347,22 @@ cdef class TestClock(Clock):
 
     cpdef void set_time(self, datetime time):
         """
-        Set the clocks internal time with the given time.
+        Set the clocks time to the given time.
+        
+        :param time: The time to set to.
+        """
+        Precondition.equal(time.tzinfo, self.timezone)
+
+        self._time = time
+
+    cpdef void iterate_time(self, datetime time):
+        """
+        Iterates the clocks time to the given time at time_step intervals.
         
         :raises ValueError: If the given times timezone is not UTC.
         :raises ValueError: If the given time is <= the clocks internal time.
         """
         Precondition.equal(time.tzinfo, self.timezone)
-        Precondition.true(time > self._time, 'time > self._time')
 
         cdef list expired = []
         while self._time < time:

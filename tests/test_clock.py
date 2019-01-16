@@ -83,6 +83,17 @@ class TestClockTests(unittest.TestCase):
         # Assert
         self.assertEqual(new_time, result)
 
+    def test_iterate_time(self):
+        # Arrange
+        new_time = datetime(1970, 2, 1, 0, 0, 1, 0, timezone.utc)
+
+        # Act
+        self.clock.iterate_time(new_time)
+        result = self.clock.time_now()
+
+        # Assert
+        self.assertEqual(new_time, result)
+
     def test_can_set_time_alert(self):
         # Arrange
         receiver = []
@@ -113,7 +124,7 @@ class TestClockTests(unittest.TestCase):
         self.clock.set_time_alert(Label("test_alert1"), alert_time, receiver.append)
 
         # Act
-        self.clock.set_time(self.clock.unix_epoch() + timedelta(minutes=1))
+        self.clock.iterate_time(self.clock.unix_epoch() + timedelta(minutes=1))
 
         # Assert
         self.assertEqual(1, len(receiver))
@@ -128,7 +139,7 @@ class TestClockTests(unittest.TestCase):
         self.clock.set_time_alert(Label("test_alert2"), alert_time2, receiver.append)
 
         # Act
-        self.clock.set_time(self.clock.unix_epoch() + timedelta(minutes=1))
+        self.clock.iterate_time(self.clock.unix_epoch() + timedelta(minutes=1))
 
         # Assert
         self.assertEqual(2, len(receiver))
@@ -191,7 +202,7 @@ class TestClockTests(unittest.TestCase):
             receiver.append)
 
         # Act
-        self.clock.set_time(stop_time)
+        self.clock.iterate_time(stop_time)
 
         # Assert
         self.assertEqual(5, len(receiver))

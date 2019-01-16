@@ -122,3 +122,5 @@ cdef class TradeStrategy:
     cpdef void _update_events(self, Event event)
     cpdef void _change_clock(self, Clock clock)
     cpdef void _change_logger(self, Logger logger)
+    cpdef void _set_time(self, datetime time)
+    cpdef void _iterate(self, datetime time)
