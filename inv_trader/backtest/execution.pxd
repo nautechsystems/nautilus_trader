@@ -26,5 +26,6 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef readonly int iteration
     cdef readonly Decimal account_cash_start_day
     cdef readonly Decimal account_cash_activity_day
+    cdef readonly dict working_orders
 
     cpdef void iterate(self, datetime time)

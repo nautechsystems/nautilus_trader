@@ -72,6 +72,7 @@ cdef class BacktestExecClient(ExecutionClient):
         self.iteration = 0
         self.account_cash_start_day = starting_capital
         self.account_cash_activity_day = Decimal(0, 2)
+        self.working_orders = dict()  # type: Dict[OrderId, Order]
 
         cdef AccountEvent initial_starting = AccountEvent(self.account.id,
                                                           Broker.SIMULATED,
@@ -145,4 +146,5 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         Iterate the data client one time step.
         """
-        pass
+        for order in self.working_orders:
+            pass
