@@ -27,7 +27,6 @@ class ObjectStorer:
         """
         return len(self._store)
 
-    @property
     def get_store(self) -> List[object]:
         """"
         return: The internal object store.
@@ -41,11 +40,9 @@ class ObjectStorer:
         print(f"Storing {obj}")
         self._store.append(obj)
 
-    def store_both(self, obj1: object, obj2: object):
+    def store_2(self, obj1: object, obj2: object):
         """"
-        Store the given objects.
+        Store the given objects as a tuple.
         """
-        print(f"Storing {obj1}")
-        print(f"Storing {obj2}")
-        self._store.append(obj1)
-        self._store.append(obj2)
+        print(f"Storing {(obj1, obj2)}")
+        self._store.append((obj1, obj2))

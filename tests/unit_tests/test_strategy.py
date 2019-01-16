@@ -371,7 +371,7 @@ class TradeStrategyTests(unittest.TestCase):
         # Assert
         self.assertFalse(result1)
         self.assertTrue(result2)
-        self.assertTrue('custom start logic' in strategy.object_storer.get_store)
+        self.assertTrue('custom start logic' in strategy.object_storer.get_store())
 
     def test_can_stop_strategy(self):
         # Arrange
@@ -385,7 +385,7 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Assert
         self.assertFalse(strategy.is_running)
-        self.assertTrue('custom stop logic' in strategy.object_storer.get_store)
+        self.assertTrue('custom stop logic' in strategy.object_storer.get_store())
 
     def test_can_reset_strategy(self):
         # Arrange
@@ -414,7 +414,7 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertFalse(strategy.is_running)
         self.assertEqual(0, strategy.ema1.count)
         self.assertEqual(0, strategy.ema2.count)
-        self.assertTrue('custom reset logic' in strategy.object_storer.get_store)
+        self.assertTrue('custom reset logic' in strategy.object_storer.get_store())
 
     def test_can_register_indicator_with_strategy(self):
         # Arrange
@@ -444,7 +444,7 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(3, strategy.object_storer.count)
-        self.assertTrue(isinstance(strategy.object_storer.get_store[1], TimeEvent))
+        self.assertTrue(isinstance(strategy.object_storer.get_store()[1], TimeEvent))
 
     def test_can_cancel_time_alert(self):
         # Arrange
@@ -501,8 +501,8 @@ class TradeStrategyTests(unittest.TestCase):
         strategy.stop()
 
         # Assert
-        self.assertTrue(isinstance(strategy.object_storer.get_store[1], TimeEvent))
-        self.assertTrue(isinstance(strategy.object_storer.get_store[2], TimeEvent))
+        self.assertTrue(isinstance(strategy.object_storer.get_store()[1], TimeEvent))
+        self.assertTrue(isinstance(strategy.object_storer.get_store()[2], TimeEvent))
 
     def test_can_set_timer(self):
         # Arrange
@@ -520,7 +520,7 @@ class TradeStrategyTests(unittest.TestCase):
         strategy.stop()
 
         # Assert
-        self.assertTrue(isinstance(strategy.object_storer.get_store[1], TimeEvent))
+        self.assertTrue(isinstance(strategy.object_storer.get_store()[1], TimeEvent))
 
     def test_can_cancel_timer(self):
         # Arrange
@@ -576,9 +576,9 @@ class TradeStrategyTests(unittest.TestCase):
         strategy.stop()
 
         # Assert
-        self.assertTrue(isinstance(strategy.object_storer.get_store[1], TimeEvent))
-        self.assertTrue(isinstance(strategy.object_storer.get_store[2], TimeEvent))
-        self.assertTrue(isinstance(strategy.object_storer.get_store[3], TimeEvent))
+        self.assertTrue(isinstance(strategy.object_storer.get_store()[1], TimeEvent))
+        self.assertTrue(isinstance(strategy.object_storer.get_store()[2], TimeEvent))
+        self.assertTrue(isinstance(strategy.object_storer.get_store()[3], TimeEvent))
 
     def test_can_cancel_repeating_timer(self):
         # Arrange
@@ -951,7 +951,7 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertEqual(1, len(strategy.bars(bar_type)))
         self.assertEqual(1, strategy.ema1.count)
         self.assertEqual(1, strategy.ema2.count)
-        self.assertEqual(0, len(strategy.object_storer.get_store))
+        self.assertEqual(0, len(strategy.object_storer.get_store()))
 
     def test_can_update_order_events(self):
         # Arrange

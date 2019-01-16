@@ -202,10 +202,10 @@ cdef class BacktestDataClient(DataClient):
         """
         cdef dict bars = {}
         for data_provider in self.data_providers.values():
-                bars = data_provider.iterate_bars(time)
-                for bar_type, bar in bars.items():
-                    for handler in self._bar_handlers[bar_type]:
-                        handler(bar_type, bar)
+            bars = data_provider.iterate_bars(time)
+            for bar_type, bar in bars.items():
+                for handler in self._bar_handlers[bar_type]:
+                    handler(bar_type, bar)
 
         self.iteration += 1
 
