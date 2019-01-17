@@ -16,7 +16,11 @@ from inv_trader.core.decimal import Decimal
 from inv_trader.common.clock import TestClock
 from inv_trader.common.logger import Logger
 from inv_trader.model.enums import Resolution
-from inv_trader.model.objects import Money
+from inv_trader.model.enums import Venue, OrderSide, OrderStatus, TimeInForce
+from inv_trader.model.identifiers import Label, OrderId, PositionId
+from inv_trader.model.objects import Price, Symbol
+from inv_trader.model.objects import Symbol, Money
+from inv_trader.strategy import TradeStrategy
 from inv_trader.backtest.data import BacktestDataClient
 from inv_trader.backtest.execution import BacktestExecClient
 from inv_trader.backtest.engine import BacktestConfig, BacktestEngine
@@ -24,6 +28,9 @@ from test_kit.objects import ObjectStorer
 from test_kit.strategies import TestStrategy1, EMACross
 from test_kit.data import TestDataProvider
 from test_kit.stubs import TestStubs
+
+UNIX_EPOCH = TestStubs.unix_epoch()
+USDJPY_FXCM = Symbol('USDJPY', Venue.FXCM)
 
 
 # -- DATA ---------------------------------------------------------------------------------------- #
@@ -104,6 +111,7 @@ class BacktestExecClientTests(unittest.TestCase):
                                          bar_data_bid=self.bid_data,
                                          bar_data_ask=self.ask_data,
                                          starting_capital=Money.create(1000000),
+                                         slippage_ticks=1,
                                          clock=TestClock(),
                                          logger=Logger())
 
@@ -115,6 +123,7 @@ class BacktestExecClientTests(unittest.TestCase):
         self.assertEqual(all(self.ask_data), all(self.client.bar_data_bid[self.usdjpy.symbol][Resolution.MINUTE]))
         self.assertEqual(Decimal(1000000), self.client.account.cash_balance)
         self.assertEqual(Decimal(1000000), self.client.account.free_equity)
+        self.assertEqual(Decimal('0.001'), self.client.slippage_index[self.usdjpy.symbol])
 
     def test_can_send_collateral_inquiry(self):
         # Arrange
@@ -123,6 +132,26 @@ class BacktestExecClientTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(2, self.client.account.event_count)
+
+    def test_can_submit_market_order(self):
+        # Arrange
+        strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
+        self.client.register_strategy(strategy)
+        strategy.start()
+
+        order = strategy.order_factory.market(
+            USDJPY_FXCM,
+            OrderId('123456'),
+            Label('S1_E'),
+            OrderSide.BUY,
+            100000)
+
+        # Act
+        strategy.submit_order(order, PositionId(str(order.id)))
+
+        # Assert
+        self.assertEqual(4, strategy.object_storer.count)
+        self.assertEqual(Decimal('86.711'), order.average_price)
 
 
 # -- ENGINE -------------------------------------------------------------------------------------- #

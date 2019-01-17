@@ -35,6 +35,7 @@ cdef class BacktestConfig:
     """
     def __init__(self,
                  Decimal starting_capital=Money.create(1000000),
+                 int slippage_ticks=0,
                  level_console: logging=INFO,
                  level_file: logging=DEBUG,
                  bint console_prints=False,
@@ -110,6 +111,7 @@ cdef class BacktestEngine:
             bar_data_bid,
             bar_data_ask,
             starting_capital=config.starting_capital,
+            slippage_ticks=config.slippage_ticks,
             clock=TestClock(),
             logger=self.test_log)
 
