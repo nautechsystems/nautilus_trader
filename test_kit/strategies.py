@@ -12,6 +12,7 @@
 from datetime import timedelta
 from typing import Dict
 
+from inv_trader.common.clock import Clock, LiveClock, TestClock
 from inv_trader.common.logger import Logger
 from inv_trader.model.enums import Venue, Resolution, QuoteType, OrderSide, TimeInForce
 from inv_trader.model.objects import Symbol, Tick, BarType, Bar, Instrument, Price
@@ -32,11 +33,11 @@ class TestStrategy1(TradeStrategy):
     A simple strategy for unit testing.
     """
 
-    def __init__(self, bar_type: BarType):
+    def __init__(self, bar_type: BarType, clock: Clock=LiveClock()):
         """
         Initializes a new instance of the TestStrategy1 class.
         """
-        super().__init__(label='UnitTests', order_id_tag='TS01')
+        super().__init__(label='UnitTests', order_id_tag='TS01', clock=clock)
         self.object_storer = ObjectStorer()
         self.bar_type = bar_type
 

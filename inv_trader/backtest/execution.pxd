@@ -13,6 +13,7 @@ from cpython.datetime cimport datetime
 
 from inv_trader.core.decimal cimport Decimal
 from inv_trader.common.execution cimport ExecutionClient
+from inv_trader.model.order cimport Order
 
 
 cdef class BacktestExecClient(ExecutionClient):
@@ -26,6 +27,14 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef readonly int iteration
     cdef readonly Decimal account_cash_start_day
     cdef readonly Decimal account_cash_activity_day
-    cdef readonly dict working_orders
+    cdef readonly dict current_bids
+    cdef readonly dict current_asks
+    cdef readonly dict slippage_index
+    cdef readonly list working_orders
 
     cpdef void iterate(self, datetime time)
+
+    cdef void _set_current_market_prices(self)
+    cdef void _set_slippage_index(self, int slippage_ticks)
+    cdef void _reject_order(self, Order order, str reason)
+    cdef void _fill_order(self, Order order, Decimal market_price)

@@ -61,7 +61,7 @@ cdef class ExecutionClient:
         self._registered_strategies[strategy.id] = strategy
         strategy._register_execution_client(self)
 
-        self._log.info(f"Registered strategy {strategy} with the execution client.")
+        self._log.info(f"Registered strategy {strategy}.")
 
     cpdef void connect(self):
         """
