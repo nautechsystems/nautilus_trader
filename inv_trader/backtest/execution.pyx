@@ -79,12 +79,16 @@ cdef class BacktestExecClient(ExecutionClient):
         self.iteration = 0
         self.account_cash_start_day = starting_capital
         self.account_cash_activity_day = Decimal(0, 2)
-        self.current_bids = dict()      # type: Dict[Symbol, Decimal]
-        self.current_asks = dict()      # type: Dict[Symbol, Decimal]
+        self.bids_current = dict()      # type: Dict[Symbol, Decimal]
+        self.bids_high = dict()         # type: Dict[Symbol, Decimal]
+        self.bids_low = dict()          # type: Dict[Symbol, Decimal]
+        self.asks_current = dict()      # type: Dict[Symbol, Decimal]
+        self.asks_high = dict()         # type: Dict[Symbol, Decimal]
+        self.asks_low = dict()          # type: Dict[Symbol, Decimal]
         self.slippage_index = dict()    # type: Dict[Symbol, Decimal]
         self.working_orders = dict()    # type: Dict[OrderId, Order]
 
-        self._set_current_market_prices()
+        self._set_iteration_market_prices()
         self._set_slippage_index(slippage_ticks)
 
         cdef AccountEvent initial_starting = AccountEvent(self.account.id,
@@ -161,8 +165,8 @@ cdef class BacktestExecClient(ExecutionClient):
             self._clock.time_now())
         self._on_event(accepted)
 
-        cdef Decimal current_ask = self.current_asks[order.symbol]
-        cdef Decimal current_bid = self.current_bids[order.symbol]
+        cdef Decimal current_ask = self.asks_current[order.symbol]
+        cdef Decimal current_bid = self.bids_current[order.symbol]
 
         if order.side is OrderSide.BUY:
             if order.type is OrderType.MARKET:
@@ -170,21 +174,24 @@ cdef class BacktestExecClient(ExecutionClient):
                 return
             elif order.type is OrderType.STOP_MARKET or OrderType.STOP_LIMIT or OrderType.MIT:
                 if order.price < current_ask:
-                    self._reject_order(order,  f'Buy stop order price of {order.price} is already below the market {current_ask}')
+                    self._reject_order(order,  f'Buy stop order price of {order.price} is already below the ask {current_ask}')
                     return
             elif order.type is OrderType.LIMIT:
-                    self._reject_order(order,  f'Buy limit order price of {order.price} is already above the market {current_ask}')
+                if order.price > current_ask:
+                    self._reject_order(order,  f'Buy limit order price of {order.price} is already above the ask {current_ask}')
+                    return
         elif order.side is OrderSide.SELL:
             if order.type is OrderType.MARKET:
                 self._fill_order(order, current_bid)
                 return
             elif order.type is OrderType.STOP_MARKET or OrderType.STOP_LIMIT or OrderType.MIT:
                 if order.price > current_bid:
-                    self._reject_order(order,  f'Sell stop order price of {order.price} is already above the market {current_bid}')
+                    self._reject_order(order,  f'Sell stop order price of {order.price} is already above the bid {current_bid}')
                     return
             elif order.type is OrderType.LIMIT:
                 if order.price < current_bid:
-                    self._reject_order(order,  f'Sell limit order price of {order.price} is already below the market {current_bid}')
+                    self._reject_order(order,  f'Sell limit order price of {order.price} is already below the bid {current_bid}')
+                    return
 
         self.working_orders[order.id] = order
 
@@ -209,29 +216,99 @@ cdef class BacktestExecClient(ExecutionClient):
         Send a cancel order request to the execution service.
         """
         Precondition.true(order.id in self.working_orders, 'order.id in self.working_orders')
-        pass
+
+        cdef OrderCancelled cancelled = OrderCancelled(
+            order.symbol,
+            order.id,
+            self._clock.time_now(),
+            GUID(uuid.uuid4()),
+            self._clock.time_now())
+        self._on_event(cancelled)
+
+        del self.working_orders[order.id]
 
     cpdef void modify_order(self, Order order, Decimal new_price):
         """
         Send a modify order request to the execution service.
         """
         Precondition.true(order.id in self.working_orders, 'order.id in self.working_orders')
-        pass
+
+        cdef Decimal current_ask = self.asks_current[order.symbol]
+        cdef Decimal current_bid = self.bids_current[order.symbol]
+
+        if order.side is OrderSide.BUY:
+            if order.type is OrderType.STOP_MARKET or OrderType.STOP_LIMIT or OrderType.MIT:
+                if order.price < current_ask:
+                    self._reject_modify_order(order,  f'Buy stop order price of {order.price} is already below the ask {current_ask}')
+                    return
+            elif order.type is OrderType.LIMIT:
+                if order.price > current_ask:
+                    self._reject_modify_order(order,  f'Buy limit order price of {order.price} is already above the ask {current_ask}')
+                    return
+        elif order.side is OrderSide.SELL:
+            if order.type is OrderType.STOP_MARKET or OrderType.STOP_LIMIT or OrderType.MIT:
+                if order.price > current_bid:
+                    self._reject_modify_order(order,  f'Sell stop order price of {order.price} is already above the bid {current_bid}')
+                    return
+            elif order.type is OrderType.LIMIT:
+                if order.price < current_bid:
+                    self._reject_modify_order(order,  f'Sell limit order price of {order.price} is already below the bid {current_bid}')
+                    return
+
+        cdef OrderModified modified = OrderModified(
+            order.symbol,
+            order.id,
+            order.broker_id,
+            new_price,
+            self._clock.time_now(),
+            GUID(uuid.uuid4()),
+            self._clock.time_now())
+        self._on_event(modified)
 
     cpdef void iterate(self, datetime time):
         """
         Iterate the data client one time step.
         """
-        for order_id, order in self.working_orders.items():
-            pass
+        self._set_iteration_market_prices()
 
-    cdef void _set_current_market_prices(self):
+        for order_id, order in self.working_orders.items():
+            # Check for order fill
+            if order.side is OrderSide.BUY:
+                if order.type is OrderType.STOP_MARKET or OrderType.STOP_LIMIT or OrderType.MIT:
+                    if self.asks_high[order.symbol] >= order.price:
+                        self._fill_order(order, self.asks_high[order.symbol])
+                        continue
+                elif order.type is OrderType.LIMIT:
+                    if self.asks_low[order.symbol] < order.price:
+                        self._fill_order(order, self.asks_low[order.symbol])
+                        continue
+            elif order.side is OrderSide.SELL:
+                if order.type is OrderType.STOP_MARKET or OrderType.STOP_LIMIT or OrderType.MIT:
+                    if self.bids_low[order.symbol] <= order.price:
+                        self._fill_order(order, self.bids_low[order.symbol])
+                        continue
+                elif order.type is OrderType.LIMIT:
+                    if self.bids_high[order.symbol] > order.price:
+                        self._fill_order(order, self.bids_high[order.symbol])
+                        continue
+
+            # Check for order expiry
+            if order.expire_time is not None and order.expire_time <= time:
+                self._expire_order(order)
+
+        self.iteration += 1
+
+    cdef void _set_iteration_market_prices(self):
         """
-        Set the current market prices based on the iteration.
+        Set the current market prices for the iteration.
         """
         for symbol, instrument in self.instruments.items():
-            self.current_bids[symbol] = Decimal(self.bar_data_bid[symbol][Resolution.MINUTE].iloc[self.iteration]['Open'], instrument.tick_precision)
-            self.current_asks[symbol] = Decimal(self.bar_data_ask[symbol][Resolution.MINUTE].iloc[self.iteration]['Open'], instrument.tick_precision)
+            self.bids_current[symbol] = Decimal(self.bar_data_bid[symbol][Resolution.MINUTE].iloc[self.iteration]['Close'], instrument.tick_precision)
+            self.bids_high[symbol] = Decimal(self.bar_data_bid[symbol][Resolution.MINUTE].iloc[self.iteration]['High'], instrument.tick_precision)
+            self.bids_low[symbol] = Decimal(self.bar_data_bid[symbol][Resolution.MINUTE].iloc[self.iteration]['Low'], instrument.tick_precision)
+            self.asks_current[symbol] = Decimal(self.bar_data_ask[symbol][Resolution.MINUTE].iloc[self.iteration]['Close'], instrument.tick_precision)
+            self.asks_high[symbol] = Decimal(self.bar_data_ask[symbol][Resolution.MINUTE].iloc[self.iteration]['High'], instrument.tick_precision)
+            self.asks_low[symbol] = Decimal(self.bar_data_ask[symbol][Resolution.MINUTE].iloc[self.iteration]['Low'], instrument.tick_precision)
 
     cdef void _set_slippage_index(self, int slippage_ticks):
         """
@@ -246,15 +323,45 @@ cdef class BacktestExecClient(ExecutionClient):
 
     cdef void _reject_order(self, Order order, str reason):
         """
-        Reject the given order by sending an OrderRejected event to the on event handler.
+        Reject the given order by sending an OrderRejected event to the on event 
+        handler.
         """
-        cdef OrderRejected rejected = OrderRejected(order.symbol,
-                                                   order.id,
-                                                   self._clock.time_now(),
-                                                   reason,
-                                                   GUID(uuid.uuid4()),
-                                                   self._clock.time_now())
+        cdef OrderRejected rejected = OrderRejected(
+            order.symbol,
+            order.id,
+            self._clock.time_now(),
+            reason,
+            GUID(uuid.uuid4()),
+            self._clock.time_now())
         self._on_event(rejected)
+
+    cdef void _reject_modify_order(self, Order order, str reason):
+        """
+        Reject the command to modify the given order by sending an 
+        OrderCancelReject event to the event handler.
+        """
+        cdef OrderCancelReject cancel_reject = OrderCancelReject(
+            order.symbol,
+            order.id,
+            self._clock.time_now(),
+            'INVALID PRICE',
+            reason,
+            GUID(uuid.uuid4()),
+            self._clock.time_now())
+        self._on_event(cancel_reject)
+
+    cdef void _expire_order(self, Order order):
+        """
+        Expire the given order by sending an OrderExpired event to the on event
+        handler.
+        """
+        cdef OrderExpired expired = OrderExpired(
+            order.symbol,
+            order.id,
+            order.expire_time,
+            GUID(uuid.uuid4()),
+            self._clock.time_now())
+        self._on_event(expired)
 
     cdef void _fill_order(self, Order order, Decimal market_price):
         """
