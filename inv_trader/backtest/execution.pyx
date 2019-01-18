@@ -82,7 +82,7 @@ cdef class BacktestExecClient(ExecutionClient):
         self.current_bids = dict()      # type: Dict[Symbol, Decimal]
         self.current_asks = dict()      # type: Dict[Symbol, Decimal]
         self.slippage_index = dict()    # type: Dict[Symbol, Decimal]
-        self.working_orders = list()    # type: List[Order]
+        self.working_orders = dict()    # type: Dict[OrderId, Order]
 
         self._set_current_market_prices()
         self._set_slippage_index(slippage_ticks)
@@ -141,6 +141,8 @@ cdef class BacktestExecClient(ExecutionClient):
         :param order: The order to submit.
         :param strategy_id: The strategy identifier to register the order with.
         """
+        Precondition.true(order.id not in self.working_orders, 'order.id not in self.working_orders')
+
         self._register_order(order, strategy_id)
 
         cdef OrderSubmitted submitted = OrderSubmitted(
@@ -206,21 +208,21 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         Send a cancel order request to the execution service.
         """
-        # Do nothing
+        Precondition.true(order.id in self.working_orders, 'order.id in self.working_orders')
         pass
 
     cpdef void modify_order(self, Order order, Decimal new_price):
         """
         Send a modify order request to the execution service.
         """
-        # Do nothing
+        Precondition.true(order.id in self.working_orders, 'order.id in self.working_orders')
         pass
 
     cpdef void iterate(self, datetime time):
         """
         Iterate the data client one time step.
         """
-        for order in self.working_orders:
+        for order_id, order in self.working_orders.items():
             pass
 
     cdef void _set_current_market_prices(self):
@@ -230,6 +232,7 @@ cdef class BacktestExecClient(ExecutionClient):
         for symbol, instrument in self.instruments.items():
             self.current_bids[symbol] = Decimal(self.bar_data_bid[symbol][Resolution.MINUTE].iloc[self.iteration]['Open'], instrument.tick_precision)
             self.current_asks[symbol] = Decimal(self.bar_data_ask[symbol][Resolution.MINUTE].iloc[self.iteration]['Open'], instrument.tick_precision)
+
     cdef void _set_slippage_index(self, int slippage_ticks):
         """
         Set the slippage index based on the given integer.

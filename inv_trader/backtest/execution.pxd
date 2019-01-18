@@ -30,7 +30,7 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef readonly dict current_bids
     cdef readonly dict current_asks
     cdef readonly dict slippage_index
-    cdef readonly list working_orders
+    cdef readonly dict working_orders
 
     cpdef void iterate(self, datetime time)
 
