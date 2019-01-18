@@ -126,7 +126,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
             PRICE: convert_price_to_string(order.price),
             TIME_IN_FORCE: time_in_force_string(order.time_in_force),
             EXPIRE_TIME: convert_datetime_to_string(order.expire_time)
-            }, encoding=UTF8)
+            })
 
     cpdef Order deserialize(self, bytes order_bytes):
         """
