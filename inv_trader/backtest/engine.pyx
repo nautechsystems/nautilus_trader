@@ -122,9 +122,10 @@ cdef class BacktestEngine:
         self.first_timestamp = pd.to_datetime(first_dataframe.index[0], utc=True)
         self.last_timestamp = pd.to_datetime(first_dataframe.index[len(first_dataframe) - 1], utc=True)
 
-        # Replace strategies internal clocks with test clocks
         for strategy in strategies:
+            # Replace strategies clocks with test clocks
             strategy._change_clock(TestClock())
+            # Replace strategies loggers with test loggers
             strategy._change_logger(self.test_log)
 
         self.trader = Trader(
@@ -154,15 +155,15 @@ cdef class BacktestEngine:
         cdef datetime time = start
         self.test_clock.set_time(time)
 
-        # Set all strategy clocks to the start of the backtest period.
+        # Set all strategy clocks to the start of the backtest period
         for strategy in self.trader.strategies:
             strategy._set_time(start)
 
         self.trader.start()
 
         while time < stop:
-            # Iterate execution first to simulate correct order of events.
-            # Order fills should occur before the bar closes.
+            # Iterate execution first to simulate correct order of events
+            # Order fills should occur before the bar closes
             self.exec_client.iterate(time)
             for strategy in self.trader.strategies:
                 strategy._iterate(time)
