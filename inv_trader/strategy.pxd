@@ -34,7 +34,6 @@ cdef class TradeStrategy:
     The abstract base class for all trade strategies.
     """
     cdef Clock _clock
-    cdef LoggerAdapter log
     cdef dict _timers
     cdef dict _ticks
     cdef dict _bars
@@ -42,6 +41,7 @@ cdef class TradeStrategy:
     cdef dict _indicator_updaters
     cdef OrderIdGenerator _order_id_generator
 
+    cdef readonly LoggerAdapter log
     cdef readonly OrderFactory order_factory
     cdef readonly int bar_capacity
     cdef readonly bint is_running

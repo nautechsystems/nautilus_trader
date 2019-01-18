@@ -98,7 +98,7 @@ cdef class BacktestDataClient(DataClient):
                 assert(dataframe.index == indexs[resolution], f'{dataframe} index is not equal')
 
         for symbol in data_symbols:
-            self._log.info(f'Built data provider for {symbol}.')
+            self._log.info(f'Preparing data for {symbol}...')
             self.data_providers[symbol] = DataProvider(instrument=self._instruments[symbol],
                                                        bar_data_bid=bar_data_bid[symbol],
                                                        bar_data_ask=bar_data_ask[symbol])

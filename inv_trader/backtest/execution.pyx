@@ -294,7 +294,8 @@ cdef class BacktestExecClient(ExecutionClient):
 
             # Check for order expiry
             if order.expire_time is not None and order.expire_time <= time:
-                self._expire_order(order)
+                pass
+                #self._expire_order(order)
 
         self.iteration += 1
 
