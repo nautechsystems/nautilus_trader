@@ -337,7 +337,7 @@ cdef class TradeStrategy:
         Precondition.true(bar_type in self._bars, 'bar_type in self._bars')
         Precondition.not_negative(index, 'index')
 
-        return self._bars[bar_type][index]
+        return self._bars[bar_type][len(self._bars[bar_type]) - 1 - index]
 
     cpdef Bar last_bar(self, BarType bar_type):
         """

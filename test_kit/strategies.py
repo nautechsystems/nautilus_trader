@@ -19,7 +19,7 @@ from inv_trader.model.objects import Symbol, Tick, BarType, Bar, Instrument, Pri
 from inv_trader.model.events import Event
 from inv_trader.model.identifiers import Label, OrderId, PositionId
 from inv_trader.model.order import Order
-from inv_trader.model.events import OrderFilled, OrderExpired
+from inv_trader.model.events import OrderFilled, OrderExpired, OrderRejected
 from inv_trader.strategy import TradeStrategy
 from inv_indicators.average.ema import ExponentialMovingAverage
 from inv_indicators.atr import AverageTrueRange
@@ -188,8 +188,8 @@ class EMACross(TradeStrategy):
         if not self.fast_ema.initialized or not self.slow_ema.initialized:
             return
 
-        print(self.bar(bar_type, index=0))
-        print(self.last_bar(bar_type))
+        print(f"LAST BAR: {self.last_bar(self.bar_type)}")
+        # TODO: Account for spread, bid bars only at the moment
         if self.position_id is None:
             # BUY LOGIC
             if self.fast_ema.value >= self.slow_ema.value:
@@ -222,6 +222,10 @@ class EMACross(TradeStrategy):
                 self.position_id = PositionId(str(entry_order.id))
                 self.submit_order(entry_order, self.position_id)
                 self.log.info(f"Added {entry_order.id} to entry orders.")
+
+        if len(self.stop_loss_orders) > 0:
+            #TODO: Trail stop
+            pass
 
     def on_event(self, event: Event):
         """
@@ -261,6 +265,12 @@ class EMACross(TradeStrategy):
                 self.position_id = None
 
         if isinstance(event, OrderExpired):
+            if event.order_id in self.entry_orders:
+                del self.entry_orders[event.order_id]
+                self.position_id = None
+
+        if isinstance(event, OrderRejected):
+            print(f"OrderRejected({event.order_id}): {event.rejected_reason}")
             if event.order_id in self.entry_orders:
                 del self.entry_orders[event.order_id]
                 self.position_id = None

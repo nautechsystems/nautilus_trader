@@ -157,13 +157,6 @@ cdef class BacktestEngine:
 
         cdef time_step = timedelta(minutes=time_step_mins)
 
-        self.data_client.set_initial_iteration(start, time_step)  # Also sets clock to start time
-        self.exec_client.set_initial_iteration(start, time_step)  # Also sets clock to start time
-
-        assert(self.data_client.iteration == self.exec_client.iteration)
-        assert(self.data_client._clock.time_now() == start)  # Access of protected method ok here
-        assert(self.exec_client._clock.time_now() == start)  # Access of protected method ok here
-
         self.test_log.info(f"Running backtest from {start} to {stop} with {time_step_mins} minute time steps.")
         cdef datetime time = start
         self.test_clock.set_time(time)
@@ -173,6 +166,13 @@ cdef class BacktestEngine:
             strategy._set_time(start)
 
         self.trader.start()
+
+        self.data_client.set_initial_iteration(start, time_step)  # Also sets clock to start time
+        self.exec_client.set_initial_iteration(start, time_step)  # Also sets clock to start time
+
+        assert(self.data_client.iteration == self.exec_client.iteration)
+        assert(self.data_client._clock.time_now() == start)  # Access of protected method ok here
+        assert(self.exec_client._clock.time_now() == start)  # Access of protected method ok here
 
         while time < stop:
             # Iterate execution first to simulate correct order of events
