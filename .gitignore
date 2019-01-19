@@ -7,6 +7,7 @@
 *.lib
 *.html
 *.log
+*.prof
 .cache
 .git
 .idea
