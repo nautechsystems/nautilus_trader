@@ -66,13 +66,17 @@ class BacktestDataClientTests(unittest.TestCase):
     def test_can_set_initial_iteration(self):
         # Arrange
         start = datetime(2013, 1, 2, 0, 0, 0, 0, tzinfo=timezone.utc)
+        dummy = []
 
         # Act
+        self.client.subscribe_bars(TestStubs.bartype_usdjpy_1min_bid(), dummy.append)
         self.client.set_initial_iteration(start, timedelta(minutes=1))
 
         # Assert
         self.assertEqual(1440, self.client.iteration)
         self.assertEqual(start, self.client.time_now())
+        self.assertEqual(1440, self.client.data_providers[self.usdjpy.symbol].iterations[TestStubs.bartype_usdjpy_1min_bid()])
+        self.assertEqual(start, self.client.data_providers[self.usdjpy.symbol]._bars[TestStubs.bartype_usdjpy_1min_bid()][1440].timestamp)
 
     def test_can_iterate_bar_data(self):
         # Arrange
@@ -162,6 +166,7 @@ class BacktestExecClientTests(unittest.TestCase):
         strategy.submit_order(order, PositionId(str(order.id)))
 
         # Assert
+        print(strategy.object_storer.get_store())
         self.assertEqual(4, strategy.object_storer.count)
         self.assertEqual(Decimal('86.711'), order.average_price)
 
@@ -232,5 +237,5 @@ class BacktestEngineTests(unittest.TestCase):
         engine.run(start, stop)
 
         # Assert
-        #self.assertEqual(1440, engine.data_client.data_providers[usdjpy.symbol].iterations[TestStubs.bartype_usdjpy_1min_bid()])
-        #self.assertEqual(1440, strategies[0].fast_ema.count)
+        self.assertEqual(2880, engine.data_client.data_providers[usdjpy.symbol].iterations[TestStubs.bartype_usdjpy_1min_bid()])
+        self.assertEqual(1440, strategies[0].fast_ema.count)

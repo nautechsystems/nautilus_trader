@@ -110,6 +110,46 @@ cdef class BacktestDataClient(DataClient):
                                                        bar_data_bid=bar_data_bid[symbol],
                                                        bar_data_ask=bar_data_ask[symbol])
 
+    cpdef void set_initial_iteration(
+            self,
+            datetime to_time,
+            timedelta time_step):
+        """
+        Wind the data client data providers bar iterations forwards to the given 
+        to_time with the given time_step.
+        
+        :param to_time: The time to wind the data client to.
+        :param time_step: The time step to iterate at.
+        """
+        cdef datetime current = self.minute_data_index[0]
+        cdef int next_index = 0
+
+        while current < to_time:
+            if self.minute_data_index[next_index] == current:
+                next_index += 1
+                self.iteration += 1
+            current += time_step
+
+        for symbol, data_provider in self.data_providers.items():
+            data_provider.set_initial_iterations(self.minute_data_index[0], to_time, time_step)
+
+        self._clock.set_time(current)
+
+    cpdef void iterate(self, datetime time):
+        """
+        Iterate the data client one time step.
+        """
+        # TODO: Iterate tick data.
+
+        cdef dict bars = {}
+        for data_provider in self.data_providers.values():
+            bars = data_provider.iterate_bars(time)
+            for bar_type, bar in bars.items():
+                for handler in self._bar_handlers[bar_type]:
+                    handler(bar_type, bar)
+
+        self.iteration += 1
+
     cpdef void connect(self):
         """
         Connect to the data service.
@@ -213,46 +253,6 @@ cdef class BacktestDataClient(DataClient):
         # Do nothing.
         self._unsubscribe_ticks(symbol, handler)
 
-    cpdef void iterate(self, datetime time):
-        """
-        Iterate the data client one time step.
-        """
-        # TODO: Iterate tick data.
-
-        cdef dict bars = {}
-        for data_provider in self.data_providers.values():
-            bars = data_provider.iterate_bars(time)
-            for bar_type, bar in bars.items():
-                for handler in self._bar_handlers[bar_type]:
-                    handler(bar_type, bar)
-
-        self.iteration += 1
-
-    cpdef void set_initial_iteration(
-            self,
-            datetime to_time,
-            timedelta time_step):
-        """
-        Wind the data client data providers bar iterations forwards to the given 
-        to_time with the given time_step.
-        
-        :param to_time: The time to wind the data client to.
-        :param time_step: The time step to iterate at.
-        """
-        cdef datetime current = self.minute_data_index[0]
-        cdef int next_index = 0
-
-        while current < to_time:
-            if self.minute_data_index[next_index] == current:
-                next_index += 1
-                self.iteration += 1
-            current += time_step
-
-        for symbol, data_provider in self.data_providers.items():
-            data_provider.set_initial_iterations(self.minute_data_index[0], to_time, time_step)
-
-        self._clock.set_time(current)
-
 
 cdef class DataProvider:
     """
@@ -321,24 +321,6 @@ cdef class DataProvider:
         if bar_type in self.iterations:
             del self.iterations[bar_type]
 
-    cpdef dict iterate_bars(self, datetime time):
-        """
-        Build a list of bars which have closed based on the held historical data
-        and the given datetime.
-
-        :return: The list of built bars.
-        """
-        cdef dict bars_dict = dict()
-        cdef int next_index = 0
-
-        for bar_type, bars in self._bars.items():
-            next_index = self.iterations[bar_type]
-            if self._bars[bar_type][next_index].timestamp == time:
-                bars_dict[bar_type] = bars[next_index]
-                self.iterations[bar_type] += 1
-
-        return bars_dict
-
     cpdef void set_initial_iterations(
             self,
             datetime from_time,
@@ -355,3 +337,24 @@ cdef class DataProvider:
                 if self._bars[bar_type][next_index].timestamp == current:
                     self.iterations[bar_type] += 1
             current += time_step
+
+    cpdef dict iterate_bars(self, datetime time):
+        """
+        Build a list of bars which have closed based on the held historical data
+        and the given datetime.
+
+        :return: The list of built bars.
+        """
+        cdef dict bars_dict = dict()
+        cdef int next_index = 0
+
+        for bar_type, bars in self._bars.items():
+            next_index = self.iterations[bar_type]
+            # print(self.iterations)
+            # print(self._bars[bar_type][next_index].timestamp)
+            # print(time)
+            if self._bars[bar_type][next_index].timestamp == time:
+                bars_dict[bar_type] = bars[next_index]
+                self.iterations[bar_type] += 1
+
+        return bars_dict

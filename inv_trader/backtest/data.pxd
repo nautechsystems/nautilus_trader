@@ -26,12 +26,12 @@ cdef class BacktestDataClient(DataClient):
     cdef readonly int iteration
     cdef readonly dict data_providers
 
+    cpdef void set_initial_iteration(self, datetime to_time, timedelta time_step)
+    cpdef void iterate(self, datetime time)
     cpdef void subscribe_bars(self, BarType bar_type, handler)
     cpdef void unsubscribe_bars(self, BarType bar_type, handler)
     cpdef void subscribe_ticks(self, Symbol symbol, handler)
     cpdef void unsubscribe_ticks(self, Symbol symbol, handler)
-    cpdef void set_initial_iteration(self, datetime to_time, timedelta time_step)
-    cpdef void iterate(self, datetime time)
 
 
 cdef class DataProvider:
@@ -46,5 +46,5 @@ cdef class DataProvider:
 
     cpdef void register_bar_type(self, BarType bar_type)
     cpdef void deregister_bar_type(self, BarType bar_type)
-    cpdef dict iterate_bars(self, datetime time)
     cpdef void set_initial_iterations(self, datetime from_time, datetime to_time, timedelta time_step)
+    cpdef dict iterate_bars(self, datetime time)

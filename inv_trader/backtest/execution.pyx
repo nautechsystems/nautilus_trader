@@ -94,13 +94,13 @@ cdef class BacktestExecClient(ExecutionClient):
         self.iteration = 0
         self.account_cash_start_day = starting_capital
         self.account_cash_activity_day = Decimal(0, 2)
-        self.bids_current = dict()      # type: Dict[Symbol, float]
-        self.bids_high = dict()         # type: Dict[Symbol, float]
-        self.bids_low = dict()          # type: Dict[Symbol, float]
-        self.asks_current = dict()      # type: Dict[Symbol, float]
-        self.asks_high = dict()         # type: Dict[Symbol, float]
-        self.asks_low = dict()          # type: Dict[Symbol, float]
-        self.slippage_index = dict()    # type: Dict[Symbol, float]
+        self.bids_current = dict()      # type: Dict[Symbol, Decimal]
+        self.bids_high = dict()         # type: Dict[Symbol, Decimal]
+        self.bids_low = dict()          # type: Dict[Symbol, Decimal]
+        self.asks_current = dict()      # type: Dict[Symbol, Decimal]
+        self.asks_high = dict()         # type: Dict[Symbol, Decimal]
+        self.asks_low = dict()          # type: Dict[Symbol, Decimal]
+        self.slippage_index = dict()    # type: Dict[Symbol, Decimal]
         self.working_orders = dict()    # type: Dict[OrderId, Order]
 
         self._set_market_prices()
@@ -248,11 +248,11 @@ cdef class BacktestExecClient(ExecutionClient):
                 return
             elif order.type is OrderType.STOP_MARKET or OrderType.STOP_LIMIT or OrderType.MIT:
                 if order.price < current_ask:
-                    self._reject_order(order,  f'Buy stop order price of {order.price} is already below the ask {current_ask}')
+                    self._reject_order(order,  f'Buy stop order price of {order.price} is below the ask {current_ask}')
                     return
             elif order.type is OrderType.LIMIT:
                 if order.price > current_ask:
-                    self._reject_order(order,  f'Buy limit order price of {order.price} is already above the ask {current_ask}')
+                    self._reject_order(order,  f'Buy limit order price of {order.price} is above the ask {current_ask}')
                     return
         elif order.side is OrderSide.SELL:
             if order.type is OrderType.MARKET:
@@ -260,11 +260,11 @@ cdef class BacktestExecClient(ExecutionClient):
                 return
             elif order.type is OrderType.STOP_MARKET or OrderType.STOP_LIMIT or OrderType.MIT:
                 if order.price > current_bid:
-                    self._reject_order(order,  f'Sell stop order price of {order.price} is already above the bid {current_bid}')
+                    self._reject_order(order,  f'Sell stop order price of {order.price} is above the bid {current_bid}')
                     return
             elif order.type is OrderType.LIMIT:
                 if order.price < current_bid:
-                    self._reject_order(order,  f'Sell limit order price of {order.price} is already below the bid {current_bid}')
+                    self._reject_order(order,  f'Sell limit order price of {order.price} is below the bid {current_bid}')
                     return
 
         self.working_orders[order.id] = order
@@ -297,9 +297,9 @@ cdef class BacktestExecClient(ExecutionClient):
             self._clock.time_now(),
             GUID(uuid.uuid4()),
             self._clock.time_now())
-        self._on_event(cancelled)
 
         del self.working_orders[order.id]
+        self._on_event(cancelled)
 
     cpdef void modify_order(self, Order order, Decimal new_price):
         """
@@ -313,20 +313,20 @@ cdef class BacktestExecClient(ExecutionClient):
         if order.side is OrderSide.BUY:
             if order.type is OrderType.STOP_MARKET or OrderType.STOP_LIMIT or OrderType.MIT:
                 if order.price < current_ask:
-                    self._reject_modify_order(order,  f'Buy stop order price of {order.price} is already below the ask {current_ask}')
+                    self._reject_modify_order(order,  f'Buy stop order price of {order.price} is below the ask {current_ask}')
                     return
             elif order.type is OrderType.LIMIT:
                 if order.price > current_ask:
-                    self._reject_modify_order(order,  f'Buy limit order price of {order.price} is already above the ask {current_ask}')
+                    self._reject_modify_order(order,  f'Buy limit order price of {order.price} is above the ask {current_ask}')
                     return
         elif order.side is OrderSide.SELL:
             if order.type is OrderType.STOP_MARKET or OrderType.STOP_LIMIT or OrderType.MIT:
                 if order.price > current_bid:
-                    self._reject_modify_order(order,  f'Sell stop order price of {order.price} is already above the bid {current_bid}')
+                    self._reject_modify_order(order,  f'Sell stop order price of {order.price} is above the bid {current_bid}')
                     return
             elif order.type is OrderType.LIMIT:
                 if order.price < current_bid:
-                    self._reject_modify_order(order,  f'Sell limit order price of {order.price} is already below the bid {current_bid}')
+                    self._reject_modify_order(order,  f'Sell limit order price of {order.price} is below the bid {current_bid}')
                     return
 
         cdef OrderModified modified = OrderModified(
@@ -344,12 +344,16 @@ cdef class BacktestExecClient(ExecutionClient):
         Set the current market prices for the iteration.
         """
         for symbol, instrument in self.instruments.items():
-            self.bids_current[symbol] = self.bar_data_bid[symbol].iloc[self.iteration]['Close']
-            self.bids_high[symbol] = self.bar_data_bid[symbol].iloc[self.iteration]['High']
-            self.bids_low[symbol] = self.bar_data_bid[symbol].iloc[self.iteration]['Low']
-            self.asks_current[symbol] = self.bar_data_ask[symbol].iloc[self.iteration]['Close']
-            self.asks_high[symbol] = self.bar_data_ask[symbol].iloc[self.iteration]['High']
-            self.asks_low[symbol] = self.bar_data_ask[symbol].iloc[self.iteration]['Low']
+            self.bids_current[symbol] = Decimal(self.bar_data_bid[symbol].iloc[self.iteration]['Close'], instrument.tick_precision)
+            self.bids_high[symbol] = Decimal(self.bar_data_bid[symbol].iloc[self.iteration]['High'], instrument.tick_precision)
+            self.bids_low[symbol] = Decimal(self.bar_data_bid[symbol].iloc[self.iteration]['Low'], instrument.tick_precision)
+            self.asks_current[symbol] = Decimal(self.bar_data_ask[symbol].iloc[self.iteration]['Close'], instrument.tick_precision)
+            self.asks_high[symbol] = Decimal(self.bar_data_ask[symbol].iloc[self.iteration]['High'], instrument.tick_precision)
+            self.asks_low[symbol] = Decimal(self.bar_data_ask[symbol].iloc[self.iteration]['Low'], instrument.tick_precision)
+
+            # print(f"{symbol}-IDX: {self.iteration}")
+            # print(f"{symbol}-ASK: {self.asks_current[symbol]}")
+            # print(f"{symbol}-BID: {self.bids_current[symbol]}")
 
     cdef void _set_slippage_index(self, int slippage_ticks):
         """
@@ -429,5 +433,8 @@ cdef class BacktestExecClient(ExecutionClient):
             GUID(uuid.uuid4()),
             self._clock.time_now())
 
+        # Remove from working orders if present
+        if order.id in self.working_orders:
+            del self.working_orders[order.id]
+
         self._on_event(filled)
-        del self.working_orders[order.id]
