@@ -44,7 +44,6 @@ cdef class BacktestEngine:
     cdef readonly BacktestDataClient data_client
     cdef readonly BacktestExecClient exec_client
     cdef readonly Trader trader
-    cdef readonly datetime first_timestamp
-    cdef readonly datetime last_timestamp
+    cdef readonly list minute_data_index
 
-    cpdef void run(self, datetime start, datetime stop, timedelta time_step=*)
+    cpdef void run(self, datetime start, datetime stop, int time_step_mins=*)

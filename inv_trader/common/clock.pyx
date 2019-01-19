@@ -351,8 +351,6 @@ cdef class TestClock(Clock):
         
         :param time: The time to set to.
         """
-        Precondition.equal(time.tzinfo, self.timezone)
-
         self._time = time
 
     cpdef void iterate_time(self, datetime time):

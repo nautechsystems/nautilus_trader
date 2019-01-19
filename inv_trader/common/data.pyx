@@ -48,6 +48,12 @@ cdef class DataClient:
 
         self._log.info("Initialized.")
 
+    cpdef datetime time_now(self):
+        """
+        :return: The current time of the internal clock. 
+        """
+        return self._clock.time_now()
+
     cpdef list symbols(self):
         """
         :return: All instrument symbols held by the data client.

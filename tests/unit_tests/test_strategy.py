@@ -248,7 +248,7 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(IndexError, strategy.bar, bar_type, -2)
+        self.assertRaises(ValueError, strategy.bar, bar_type, -2)
 
     def test_can_get_bar(self):
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
@@ -271,6 +271,31 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Act
         result = strategy.bar(bar_type, 0)
+
+        # Assert
+        self.assertEqual(bar, result)
+
+    def test_can_get_last_bar(self):
+        bar_type = TestStubs.bartype_gbpusd_1sec_mid()
+        strategy = TestStrategy1(bar_type)
+
+        bar_type = BarType(GBPUSD_FXCM,
+                           1,
+                           Resolution.SECOND,
+                           QuoteType.MID)
+
+        bar = Bar(
+            Decimal('1.00001'),
+            Decimal('1.00004'),
+            Decimal('1.00002'),
+            Decimal('1.00003'),
+            100000,
+            datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc))
+
+        strategy._update_bars(bar_type, bar)
+
+        # Act
+        result = strategy.last_bar(bar_type)
 
         # Assert
         self.assertEqual(bar, result)

@@ -9,7 +9,7 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False
 
-from cpython.datetime cimport datetime
+from cpython.datetime cimport datetime, timedelta
 
 from inv_trader.core.decimal cimport Decimal
 from inv_trader.common.execution cimport ExecutionClient
@@ -24,6 +24,7 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef readonly dict tick_data
     cdef readonly dict bar_data_bid
     cdef readonly dict bar_data_ask
+    cdef readonly list minute_data_index
     cdef readonly int iteration
     cdef readonly Decimal account_cash_start_day
     cdef readonly Decimal account_cash_activity_day
@@ -36,9 +37,10 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef readonly dict slippage_index
     cdef readonly dict working_orders
 
+    cpdef void set_initial_iteration(self, datetime to_time, timedelta time_step)
     cpdef void iterate(self, datetime time)
 
-    cdef void _set_iteration_market_prices(self)
+    cdef void _set_market_prices(self)
     cdef void _set_slippage_index(self, int slippage_ticks)
     cdef void _reject_order(self, Order order, str reason)
     cdef void _reject_modify_order(self, Order order, str reason)

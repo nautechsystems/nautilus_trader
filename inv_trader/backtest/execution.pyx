@@ -9,6 +9,7 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False
 
+import pandas as pd
 import uuid
 
 from pandas import DataFrame
@@ -61,6 +62,10 @@ cdef class BacktestExecClient(ExecutionClient):
         :param clock: The clock for the component.
         :param logger: The logger for the component.
         """
+        Precondition.list_type(instruments, Instrument, 'instruments')
+        Precondition.dict_types(tick_data, Symbol, DataFrame, 'tick_data')
+        Precondition.dict_types(bar_data_bid, Symbol, dict, 'bar_data_bid')
+        Precondition.dict_types(bar_data_ask, Symbol, dict, 'bar_data_ask')
         Precondition.positive(starting_capital, 'starting_capital')
         Precondition.not_negative(slippage_ticks, 'slippage_ticks')
         Precondition.not_none(clock, 'clock')
@@ -74,21 +79,31 @@ cdef class BacktestExecClient(ExecutionClient):
             instruments_dict[instrument.symbol] = instrument
         self.instruments = instruments_dict
         self.tick_data = tick_data
-        self.bar_data_bid = bar_data_bid
-        self.bar_data_ask = bar_data_ask
+        self.bar_data_bid = dict()  # type: Dict[Symbol, DataFrame]
+        self.bar_data_ask = dict()  # type: Dict[Symbol, DataFrame]
+
+        # Set minute data index
+        first_dataframe = bar_data_bid[next(iter(bar_data_bid))][Resolution.MINUTE]
+        self.minute_data_index = list(pd.to_datetime(first_dataframe.index, utc=True))
+
+        # Set bar data to one minute bars
+        for symbol, instrument in self.instruments.items():
+            self.bar_data_bid[symbol] = bar_data_bid[symbol][Resolution.MINUTE]
+            self.bar_data_ask[symbol] = bar_data_ask[symbol][Resolution.MINUTE]
+
         self.iteration = 0
         self.account_cash_start_day = starting_capital
         self.account_cash_activity_day = Decimal(0, 2)
-        self.bids_current = dict()      # type: Dict[Symbol, Decimal]
-        self.bids_high = dict()         # type: Dict[Symbol, Decimal]
-        self.bids_low = dict()          # type: Dict[Symbol, Decimal]
-        self.asks_current = dict()      # type: Dict[Symbol, Decimal]
-        self.asks_high = dict()         # type: Dict[Symbol, Decimal]
-        self.asks_low = dict()          # type: Dict[Symbol, Decimal]
-        self.slippage_index = dict()    # type: Dict[Symbol, Decimal]
+        self.bids_current = dict()      # type: Dict[Symbol, float]
+        self.bids_high = dict()         # type: Dict[Symbol, float]
+        self.bids_low = dict()          # type: Dict[Symbol, float]
+        self.asks_current = dict()      # type: Dict[Symbol, float]
+        self.asks_high = dict()         # type: Dict[Symbol, float]
+        self.asks_low = dict()          # type: Dict[Symbol, float]
+        self.slippage_index = dict()    # type: Dict[Symbol, float]
         self.working_orders = dict()    # type: Dict[OrderId, Order]
 
-        self._set_iteration_market_prices()
+        self._set_market_prices()
         self._set_slippage_index(slippage_ticks)
 
         cdef AccountEvent initial_starting = AccountEvent(self.account.id,
@@ -107,6 +122,10 @@ cdef class BacktestExecClient(ExecutionClient):
 
         self.account.apply(initial_starting)
 
+        for symbol, instrument in self.instruments.items():
+            self.bids_current[symbol] = Decimal(self.bar_data_bid[symbol].iloc[self.iteration]['Open'], instrument.tick_precision)
+            self.asks_current[symbol] = Decimal(self.bar_data_ask[symbol].iloc[self.iteration]['Open'], instrument.tick_precision)
+
     cpdef void connect(self):
         """
         Connect to the execution service.
@@ -118,6 +137,61 @@ cdef class BacktestExecClient(ExecutionClient):
         Disconnect from the execution service.
         """
         self._log.info("Disconnected.")
+
+    cpdef void set_initial_iteration(
+            self,
+            datetime to_time,
+            timedelta time_step):
+        """
+        Wind the execution clients iteration forwards to the given to_time with 
+        the given time_step.
+
+        :param to_time: The time to wind the execution client to.
+        :param time_step: The time step to iterate at.
+        """
+        cdef datetime current = self.minute_data_index[0]
+        cdef int next_index = 0
+
+        while current < to_time:
+            if self.minute_data_index[next_index] == current:
+                next_index += 1
+                self.iteration += 1
+            current += time_step
+
+        self._clock.set_time(current)
+
+    cpdef void iterate(self, datetime time):
+        """
+        Iterate the data client one time step.
+        """
+        self._set_market_prices()
+
+        for order_id, order in self.working_orders.items():
+            # Check for order fill
+            if order.side is OrderSide.BUY:
+                if order.type is OrderType.STOP_MARKET or OrderType.STOP_LIMIT or OrderType.MIT:
+                    if self.asks_high[order.symbol] >= order.price:
+                        self._fill_order(order, self.asks_high[order.symbol])
+                        continue
+                elif order.type is OrderType.LIMIT:
+                    if self.asks_low[order.symbol] < order.price:
+                        self._fill_order(order, self.asks_low[order.symbol])
+                        continue
+            elif order.side is OrderSide.SELL:
+                if order.type is OrderType.STOP_MARKET or OrderType.STOP_LIMIT or OrderType.MIT:
+                    if self.bids_low[order.symbol] <= order.price:
+                        self._fill_order(order, self.bids_low[order.symbol])
+                        continue
+                elif order.type is OrderType.LIMIT:
+                    if self.bids_high[order.symbol] > order.price:
+                        self._fill_order(order, self.bids_high[order.symbol])
+                        continue
+
+            # Check for order expiry
+            if order.expire_time is not None and time >= order.expire_time:
+                self._expire_order(order)
+
+        self.iteration += 1
 
     cpdef void collateral_inquiry(self):
         """
@@ -265,51 +339,17 @@ cdef class BacktestExecClient(ExecutionClient):
             self._clock.time_now())
         self._on_event(modified)
 
-    cpdef void iterate(self, datetime time):
-        """
-        Iterate the data client one time step.
-        """
-        self._set_iteration_market_prices()
-
-        for order_id, order in self.working_orders.items():
-            # Check for order fill
-            if order.side is OrderSide.BUY:
-                if order.type is OrderType.STOP_MARKET or OrderType.STOP_LIMIT or OrderType.MIT:
-                    if self.asks_high[order.symbol] >= order.price:
-                        self._fill_order(order, self.asks_high[order.symbol])
-                        continue
-                elif order.type is OrderType.LIMIT:
-                    if self.asks_low[order.symbol] < order.price:
-                        self._fill_order(order, self.asks_low[order.symbol])
-                        continue
-            elif order.side is OrderSide.SELL:
-                if order.type is OrderType.STOP_MARKET or OrderType.STOP_LIMIT or OrderType.MIT:
-                    if self.bids_low[order.symbol] <= order.price:
-                        self._fill_order(order, self.bids_low[order.symbol])
-                        continue
-                elif order.type is OrderType.LIMIT:
-                    if self.bids_high[order.symbol] > order.price:
-                        self._fill_order(order, self.bids_high[order.symbol])
-                        continue
-
-            # Check for order expiry
-            if order.expire_time is not None and order.expire_time <= time:
-                pass
-                #self._expire_order(order)
-
-        self.iteration += 1
-
-    cdef void _set_iteration_market_prices(self):
+    cdef void _set_market_prices(self):
         """
         Set the current market prices for the iteration.
         """
         for symbol, instrument in self.instruments.items():
-            self.bids_current[symbol] = Decimal(self.bar_data_bid[symbol][Resolution.MINUTE].iloc[self.iteration]['Close'], instrument.tick_precision)
-            self.bids_high[symbol] = Decimal(self.bar_data_bid[symbol][Resolution.MINUTE].iloc[self.iteration]['High'], instrument.tick_precision)
-            self.bids_low[symbol] = Decimal(self.bar_data_bid[symbol][Resolution.MINUTE].iloc[self.iteration]['Low'], instrument.tick_precision)
-            self.asks_current[symbol] = Decimal(self.bar_data_ask[symbol][Resolution.MINUTE].iloc[self.iteration]['Close'], instrument.tick_precision)
-            self.asks_high[symbol] = Decimal(self.bar_data_ask[symbol][Resolution.MINUTE].iloc[self.iteration]['High'], instrument.tick_precision)
-            self.asks_low[symbol] = Decimal(self.bar_data_ask[symbol][Resolution.MINUTE].iloc[self.iteration]['Low'], instrument.tick_precision)
+            self.bids_current[symbol] = self.bar_data_bid[symbol].iloc[self.iteration]['Close']
+            self.bids_high[symbol] = self.bar_data_bid[symbol].iloc[self.iteration]['High']
+            self.bids_low[symbol] = self.bar_data_bid[symbol].iloc[self.iteration]['Low']
+            self.asks_current[symbol] = self.bar_data_ask[symbol].iloc[self.iteration]['Close']
+            self.asks_high[symbol] = self.bar_data_ask[symbol].iloc[self.iteration]['High']
+            self.asks_low[symbol] = self.bar_data_ask[symbol].iloc[self.iteration]['Low']
 
     cdef void _set_slippage_index(self, int slippage_ticks):
         """
@@ -334,6 +374,7 @@ cdef class BacktestExecClient(ExecutionClient):
             reason,
             GUID(uuid.uuid4()),
             self._clock.time_now())
+
         self._on_event(rejected)
 
     cdef void _reject_modify_order(self, Order order, str reason):
@@ -349,6 +390,7 @@ cdef class BacktestExecClient(ExecutionClient):
             reason,
             GUID(uuid.uuid4()),
             self._clock.time_now())
+
         self._on_event(cancel_reject)
 
     cdef void _expire_order(self, Order order):
@@ -362,7 +404,9 @@ cdef class BacktestExecClient(ExecutionClient):
             order.expire_time,
             GUID(uuid.uuid4()),
             self._clock.time_now())
+
         self._on_event(expired)
+        del self.working_orders[order.id]
 
     cdef void _fill_order(self, Order order, Decimal market_price):
         """
@@ -384,4 +428,6 @@ cdef class BacktestExecClient(ExecutionClient):
             self._clock.time_now(),
             GUID(uuid.uuid4()),
             self._clock.time_now())
+
         self._on_event(filled)
+        del self.working_orders[order.id]

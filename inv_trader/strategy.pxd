@@ -78,6 +78,7 @@ cdef class TradeStrategy:
     cpdef void unsubscribe_ticks(self, Symbol symbol)
     cpdef list bars(self, BarType bar_type)
     cpdef Bar bar(self, BarType bar_type, int index)
+    cpdef Bar last_bar(self, BarType bar_type)
     cpdef Tick last_tick(self, Symbol symbol)
 
 # -- INDICATOR METHODS --------------------------------------------------------------------------- #
