@@ -19,7 +19,7 @@ from inv_trader.model.objects import Symbol, Tick, BarType, Bar, Instrument, Pri
 from inv_trader.model.events import Event
 from inv_trader.model.identifiers import Label, OrderId, PositionId
 from inv_trader.model.order import Order
-from inv_trader.model.events import OrderFilled
+from inv_trader.model.events import OrderFilled, OrderExpired
 from inv_trader.strategy import TradeStrategy
 from inv_indicators.average.ema import ExponentialMovingAverage
 from inv_indicators.atr import AverageTrueRange
@@ -69,7 +69,7 @@ class TestStrategy1(TradeStrategy):
         if bar_type == self.bar_type:
             if self.ema1.value > self.ema2.value:
                 buy_order = self.order_factory.market(
-                    Symbol(self.bar_type.symbol, Venue.FXCM),
+                    self.bar_type.symbol, Venue.FXCM,
                     self.generate_order_id(self.bar_type.symbol),
                     Label('TestStrategy1_E'),
                     OrderSide.BUY,
@@ -80,7 +80,7 @@ class TestStrategy1(TradeStrategy):
 
             elif self.ema1.value < self.ema2.value:
                 sell_order = self.order_factory.market(
-                    Symbol(self.bar_type.symbol, Venue.FXCM),
+                    self.bar_type.symbol, Venue.FXCM,
                     self.generate_order_id(self.bar_type.symbol),
                     Label('TestStrategy1_E'),
                     OrderSide.SELL,
@@ -188,44 +188,40 @@ class EMACross(TradeStrategy):
         if not self.fast_ema.initialized or not self.slow_ema.initialized:
             return
 
-        # for order in self.entry_orders.values():
-        #     if not order.is_complete:
-        #         # Check if order should be expired
-        #         if order.expire_time is not None and bar.timestamp >= order.expire_time:
-        #             self.cancel_order(order)
-        #             return
+        print(self.bar(bar_type, index=0))
+        print(self.last_bar(bar_type))
+        if self.position_id is None:
+            # BUY LOGIC
+            if self.fast_ema.value >= self.slow_ema.value:
+                entry_order = self.order_factory.stop_market(
+                    self.symbol,
+                    self.generate_order_id(self.symbol),
+                    Label('S1_E'),
+                    OrderSide.BUY,
+                    self.position_size,
+                    Price.create(self.last_bar(self.bar_type).high + self.entry_buffer, self.tick_precision),
+                    time_in_force=TimeInForce.GTD,
+                    expire_time=self.time_now() + timedelta(minutes=1))
+                self.entry_orders[entry_order.id] = entry_order
+                self.position_id = PositionId(str(entry_order.id))
+                self.submit_order(entry_order, self.position_id)
+                self.log.info(f"Added {entry_order.id} to entry orders.")
 
-        # BUY LOGIC
-        if self.fast_ema.value >= self.slow_ema.value:
-            entry_order = self.order_factory.stop_market(
-                self.symbol,
-                self.generate_order_id(self.symbol),
-                Label('S1_E'),
-                OrderSide.BUY,
-                self.position_size,
-                Price.create(self.bar(self.bar_type, 0).high + self.entry_buffer, self.tick_precision),
-                time_in_force=TimeInForce.GTD,
-                expire_time=self.time_now() + timedelta(minutes=1))
-            self.entry_orders[entry_order.id] = entry_order
-            self.position_id = PositionId(str(entry_order.id))
-            self.submit_order(entry_order, self.position_id)
-            self.log.info(f"Added {entry_order.id} to entry orders.")
-
-        # SELL LOGIC
-        elif self.fast_ema.value < self.slow_ema.value:
-            entry_order = self.order_factory.stop_market(
-                self.symbol,
-                self.generate_order_id(self.symbol),
-                Label('S1_E'),
-                OrderSide.SELL,
-                self.position_size,
-                Price.create(self.bar(self.bar_type, 0).low - self.entry_buffer, self.tick_precision),
-                time_in_force=TimeInForce.GTD,
-                expire_time=self.time_now() + timedelta(minutes=1))
-            self.entry_orders[entry_order.id] = entry_order
-            self.position_id = PositionId(str(entry_order.id))
-            self.submit_order(entry_order, self.position_id)
-            self.log.info(f"Added {entry_order.id} to entry orders.")
+            # SELL LOGIC
+            elif self.fast_ema.value < self.slow_ema.value:
+                entry_order = self.order_factory.stop_market(
+                    self.symbol,
+                    self.generate_order_id(self.symbol),
+                    Label('S1_E'),
+                    OrderSide.SELL,
+                    self.position_size,
+                    Price.create(self.last_bar(self.bar_type).low - self.entry_buffer, self.tick_precision),
+                    time_in_force=TimeInForce.GTD,
+                    expire_time=self.time_now() + timedelta(minutes=1))
+                self.entry_orders[entry_order.id] = entry_order
+                self.position_id = PositionId(str(entry_order.id))
+                self.submit_order(entry_order, self.position_id)
+                self.log.info(f"Added {entry_order.id} to entry orders.")
 
     def on_event(self, event: Event):
         """
@@ -238,15 +234,15 @@ class EMACross(TradeStrategy):
         if isinstance(event, OrderFilled):
             # A real strategy should also cover the OrderPartiallyFilled case...
 
-            if event.order_id in self.entry_orders.keys():
+            if event.order_id in self.entry_orders:
                 # SET TRAILING STOP
                 stop_side = self.get_opposite_side(event.order_side)
                 if stop_side is OrderSide.BUY:
-                    stop_price = Price.create(self.bar(self.bar_type, 0).high
+                    stop_price = Price.create(self.last_bar(self.bar_type).high
                                               + self.atr.value * self.SL_atr_multiple,
                                               self.tick_precision)
                 else:
-                    stop_price = Price.create(self.bar(self.bar_type, 0).low
+                    stop_price = Price.create(self.last_bar(self.bar_type).low
                                               - self.atr.value * self.SL_atr_multiple,
                                               self.tick_precision)
 
@@ -260,6 +256,14 @@ class EMACross(TradeStrategy):
                 self.stop_loss_orders[stop_order.id] = stop_order
                 self.submit_order(stop_order, self.position_id)
                 self.log.info(f"Added {stop_order.id} to stop-loss orders.")
+            elif event.order_id in self.stop_loss_orders:
+                del self.stop_loss_orders[event.order_id]
+                self.position_id = None
+
+        if isinstance(event, OrderExpired):
+            if event.order_id in self.entry_orders:
+                del self.entry_orders[event.order_id]
+                self.position_id = None
 
     def on_stop(self):
         """

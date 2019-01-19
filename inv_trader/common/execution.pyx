@@ -9,6 +9,7 @@
 
 # cython: language_level=3, boundscheck=False
 
+from cpython.datetime cimport datetime
 from typing import Dict
 
 from inv_trader.core.precondition cimport Precondition
@@ -47,6 +48,12 @@ cdef class ExecutionClient:
         self.account = Account()
         self._registered_strategies = {}  # type: Dict[GUID, TradeStrategy]
         self._order_index = {}            # type: Dict[OrderId, GUID]
+
+    cpdef datetime time_now(self):
+        """
+        :return: The current time of the internal clock. 
+        """
+        return self._clock.time_now()
 
     cpdef void register_strategy(self, TradeStrategy strategy):
         """

@@ -9,7 +9,9 @@
 
 # cython: language_level=3, boundscheck=False
 
-from cpython.datetime cimport datetime
+import pandas as pd
+
+from cpython.datetime cimport datetime, timedelta
 from pandas import DataFrame
 from typing import Set, List, Dict, Callable
 
@@ -55,8 +57,13 @@ cdef class BacktestDataClient(DataClient):
 
         super().__init__(clock, logger)
         self.tick_data = tick_data
-        self.bar_data_bid = bar_data_bid
-        self.bar_data_ask = bar_data_ask
+        self.bar_data_bid = bar_data_bid  # type: Dict[Symbol, Dict[Resolution, DataFrame]]
+        self.bar_data_ask = bar_data_ask  # type: Dict[Symbol, Dict[Resolution, DataFrame]]
+
+        # Set minute data index
+        first_dataframe = bar_data_bid[next(iter(bar_data_bid))][Resolution.MINUTE]
+        self.minute_data_index = list(pd.to_datetime(first_dataframe.index, utc=True))
+
         self.iteration = 0
         self.data_providers = dict()  # type: Dict[Symbol, DataProvider]
 
@@ -221,6 +228,31 @@ cdef class BacktestDataClient(DataClient):
 
         self.iteration += 1
 
+    cpdef void set_initial_iteration(
+            self,
+            datetime to_time,
+            timedelta time_step):
+        """
+        Wind the data client data providers bar iterations forwards to the given 
+        to_time with the given time_step.
+        
+        :param to_time: The time to wind the data client to.
+        :param time_step: The time step to iterate at.
+        """
+        cdef datetime current = self.minute_data_index[0]
+        cdef int next_index = 0
+
+        while current < to_time:
+            if self.minute_data_index[next_index] == current:
+                next_index += 1
+                self.iteration += 1
+            current += time_step
+
+        for symbol, data_provider in self.data_providers.items():
+            data_provider.set_initial_iterations(self.minute_data_index[0], to_time, time_step)
+
+        self._clock.set_time(current)
+
 
 cdef class DataProvider:
     """
@@ -242,10 +274,10 @@ cdef class DataProvider:
         Precondition.true(Resolution.MINUTE in bar_data_ask, 'Resolution.MINUTE in bid_data')
 
         self.instrument = instrument
-        self.iterations = {}               # type: Dict[BarType, int]
+        self.iterations = dict()           # type: Dict[BarType, int]
         self._bar_data_bid = bar_data_bid  # type: Dict[Resolution, DataFrame]
         self._bar_data_ask = bar_data_ask  # type: Dict[Resolution, DataFrame]
-        self._bars = {}                    # type: Dict[BarType, List[Bar]]
+        self._bars = dict()                # type: Dict[BarType, List[Bar]]
 
     cpdef void register_bar_type(self, BarType bar_type):
         """
@@ -291,7 +323,9 @@ cdef class DataProvider:
 
     cpdef dict iterate_bars(self, datetime time):
         """
-        TBA
+        Build a list of bars which have closed based on the held historical data
+        and the given datetime.
+
         :return: The list of built bars.
         """
         cdef dict bars_dict = dict()
@@ -304,3 +338,20 @@ cdef class DataProvider:
                 self.iterations[bar_type] += 1
 
         return bars_dict
+
+    cpdef void set_initial_iterations(
+            self,
+            datetime from_time,
+            datetime to_time,
+            timedelta time_step):
+        """
+        Set the iteration based on the given time.
+        """
+        cdef datetime current = from_time
+
+        while current < to_time:
+            for bar_type, bars in self._bars.items():
+                next_index = self.iterations[bar_type]
+                if self._bars[bar_type][next_index].timestamp == current:
+                    self.iterations[bar_type] += 1
+            current += time_step

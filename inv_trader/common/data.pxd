@@ -29,6 +29,7 @@ cdef class DataClient:
     cdef dict _bar_handlers
     cdef dict _tick_handlers
 
+    cpdef datetime time_now(self)
     cpdef list symbols(self)
     cpdef list instruments(self)
     cpdef list subscriptions_ticks(self)

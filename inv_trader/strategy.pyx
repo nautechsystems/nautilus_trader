@@ -7,7 +7,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-# cython: language_level=3, boundscheck=False
+# cython: language_level=3, boundscheck=False, wraparound=False
 
 import uuid
 
@@ -75,13 +75,13 @@ cdef class TradeStrategy:
         self.order_factory = OrderFactory()
         self.bar_capacity = bar_capacity
         self.is_running = False
-        self._ticks = {}                 # type: Dict[Symbol, Tick]
-        self._bars = {}                  # type: Dict[BarType, Deque[Bar]]
-        self._indicators = {}            # type: Dict[BarType, List[Indicator]]
-        self._indicator_updaters = {}    # type: Dict[BarType, List[IndicatorUpdater]]
-        self._order_book = {}            # type: Dict[OrderId, Order]
-        self._order_position_index = {}  # type: Dict[OrderId, PositionId]
-        self._position_book = {}         # type: Dict[PositionId, Position or None]
+        self._ticks = dict()                 # type: Dict[Symbol, Tick]
+        self._bars = dict()                  # type: Dict[BarType, Deque[Bar]]
+        self._indicators = dict()            # type: Dict[BarType, List[Indicator]]
+        self._indicator_updaters = dict()    # type: Dict[BarType, List[IndicatorUpdater]]
+        self._order_book = dict()            # type: Dict[OrderId, Order]
+        self._order_position_index = dict()  # type: Dict[OrderId, PositionId]
+        self._position_book = dict()         # type: Dict[PositionId, Position or None]
         self._data_client = None
         self._exec_client = None
         self.account = None  # Initialized when registered with execution client.
@@ -324,17 +324,33 @@ cdef class TradeStrategy:
 
     cpdef Bar bar(self, BarType bar_type, int index):
         """
-        Get the bar for the given bar type at the given index.
+        Get the bar for the given bar type at the given index (reverse indexing, 
+        pass index=0 for the last received bar).
 
         :param bar_type: The bar type to get.
-        :param index: The index to get (can be positive or negative but not out of range).
+        :param index: The index (>= 0).
         :return: The bar (if found).
-        :raises KeyError: If the strategies bars dictionary does not contain the bar type.
+        :raises ValueError: If the strategies bars dictionary does not contain the bar type.
+        :raises ValueError: If the index is negative.
+        :raises IndexError: If the strategies bars dictionary does not contain a bar at the given index.
+        """
+        Precondition.true(bar_type in self._bars, 'bar_type in self._bars')
+        Precondition.not_negative(index, 'index')
+
+        return self._bars[bar_type][index]
+
+    cpdef Bar last_bar(self, BarType bar_type):
+        """
+        Get the last bar for the given bar type (if a bar has been received).
+
+        :param bar_type: The bar type to get.
+        :return: The bar (if found).
+        :raises ValueError: If the strategies bars dictionary does not contain the bar type.
         :raises IndexError: If the strategies bars dictionary does not contain a bar at the given index.
         """
         Precondition.true(bar_type in self._bars, 'bar_type in self._bars')
 
-        return self._bars[bar_type][index]
+        return self._bars[bar_type][len(self._bars[bar_type]) - 1]
 
     cpdef Tick last_tick(self, Symbol symbol):
         """

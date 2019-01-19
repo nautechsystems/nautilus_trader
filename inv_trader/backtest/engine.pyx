@@ -7,7 +7,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-# cython: language_level=3, boundscheck=False, wraparound=False
+# cython: language_level=3, boundscheck=False
 
 import logging
 import pandas as pd
@@ -115,12 +115,13 @@ cdef class BacktestEngine:
             clock=TestClock(),
             logger=self.test_log)
 
-        # Get first and last timestamp from bar data
-        first_symbol = next(iter(bar_data_bid))
-        first_resolution = next(iter(bar_data_bid[first_symbol]))
-        first_dataframe = bar_data_bid[first_symbol][first_resolution]
-        self.first_timestamp = pd.to_datetime(first_dataframe.index[0], utc=True)
-        self.last_timestamp = pd.to_datetime(first_dataframe.index[len(first_dataframe) - 1], utc=True)
+        # Set minute data index
+        first_dataframe = bar_data_bid[next(iter(bar_data_bid))][Resolution.MINUTE]
+        self.minute_data_index = list(pd.to_datetime(first_dataframe.index, utc=True))
+
+        assert(self.minute_data_index == self.data_client.minute_data_index)
+        assert(self.minute_data_index == self.exec_client.minute_data_index)
+
 
         for strategy in strategies:
             # Replace strategies clocks with test clocks
@@ -139,19 +140,31 @@ cdef class BacktestEngine:
             self,
             datetime start,
             datetime stop,
-            timedelta time_step=timedelta(minutes=1)):
+            int time_step_mins=1):
         """
         Run the backtest.
         
         :param start: The start time for the backtest (must be >= first_timestamp and < stop).
         :param stop: The stop time for the backtest (must be <= last_timestamp and > start).
-        :param time_step: The time step for each test clock iterations (should be default 1 minute).
+        :param time_step_mins: The time step in minutes for each test clock iterations (> 0)
+        
+        Note: The default time_step_mins is 1 and shouldn't need to be changed.
         """
         Precondition.true(start < stop, 'start < stop')
-        Precondition.true(start >= self.first_timestamp, 'start >= self.first_timestamp')
-        Precondition.true(stop <= self.last_timestamp, 'stop <= self.last_timestamp')
+        Precondition.true(start >= self.minute_data_index[0], 'start >= self.first_timestamp')
+        Precondition.true(stop <= self.minute_data_index[- 1], 'stop <= self.last_timestamp')
+        Precondition.positive(time_step_mins, 'time_step_mins')
 
-        self.test_log.info(f"Running backtest from {start} to {stop} with {timedelta} steps.")
+        cdef time_step = timedelta(minutes=time_step_mins)
+
+        self.data_client.set_initial_iteration(start, time_step)  # Also sets clock to start time
+        self.exec_client.set_initial_iteration(start, time_step)  # Also sets clock to start time
+
+        assert(self.data_client.iteration == self.exec_client.iteration)
+        assert(self.data_client._clock.time_now() == start)  # Access of protected method ok here
+        assert(self.exec_client._clock.time_now() == start)  # Access of protected method ok here
+
+        self.test_log.info(f"Running backtest from {start} to {stop} with {time_step_mins} minute time steps.")
         cdef datetime time = start
         self.test_clock.set_time(time)
 

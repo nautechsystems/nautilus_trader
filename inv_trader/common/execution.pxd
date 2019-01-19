@@ -9,6 +9,8 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False
 
+from cpython.datetime cimport datetime
+
 from inv_trader.core.decimal cimport Decimal
 from inv_trader.common.clock cimport Clock
 from inv_trader.common.logger cimport LoggerAdapter
@@ -30,6 +32,7 @@ cdef class ExecutionClient:
 
     cdef readonly Account account
 
+    cpdef datetime time_now(self)
     cpdef void register_strategy(self, TradeStrategy strategy)
     cpdef void connect(self)
     cpdef void disconnect(self)
