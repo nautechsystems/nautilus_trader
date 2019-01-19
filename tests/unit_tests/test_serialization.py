@@ -18,7 +18,8 @@ from inv_trader.commands import CollateralInquiry
 from inv_trader.model.enums import Venue, OrderSide, OrderType, TimeInForce
 from inv_trader.model.enums import CurrencyCode, SecurityType
 from inv_trader.model.identifiers import GUID, Label, OrderId, ExecutionId, ExecutionTicket
-from inv_trader.model.objects import Symbol, Price, Instrument
+from inv_trader.model.objects import Symbol, Instrument
+from inv_trader.model.price import price
 from inv_trader.model.order import Order, OrderFactory
 from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
 from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
@@ -139,7 +140,7 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
             Label('S1_SL'),
             OrderSide.BUY,
             100000,
-            Price.create(1.00000, 5),
+            price(1.00000, 5),
             TimeInForce.DAY,
             expire_time=None)
 

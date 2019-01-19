@@ -18,6 +18,7 @@ from inv_trader.enums.venue cimport Venue
 from inv_trader.enums.resolution cimport Resolution
 from inv_trader.enums.quote_type cimport QuoteType
 
+
 cdef class Symbol:
     """
     Represents the symbol for a financial market tradeable instrument.

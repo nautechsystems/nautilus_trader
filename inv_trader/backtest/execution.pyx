@@ -23,7 +23,7 @@ from inv_trader.enums.resolution cimport Resolution
 from inv_trader.enums.order_type cimport OrderType
 from inv_trader.enums.order_side cimport OrderSide
 from inv_trader.model.identifiers cimport AccountNumber
-from inv_trader.model.objects import Money
+from inv_trader.model.money import money_zero, money
 from inv_trader.model.objects cimport Symbol, Instrument
 from inv_trader.model.order cimport Order
 from inv_trader.model.events cimport Event, OrderEvent, AccountEvent, OrderCancelReject
@@ -46,7 +46,7 @@ cdef class BacktestExecClient(ExecutionClient):
                  dict tick_data: Dict[Symbol, DataFrame],
                  dict bar_data_bid: Dict[Symbol, Dict[Resolution, DataFrame]],
                  dict bar_data_ask: Dict[Symbol, Dict[Resolution, DataFrame]],
-                 Decimal starting_capital,
+                 int starting_capital,
                  int slippage_ticks,
                  TestClock clock,
                  Logger logger):
@@ -92,8 +92,8 @@ cdef class BacktestExecClient(ExecutionClient):
             self.bar_data_ask[symbol] = bar_data_ask[symbol][Resolution.MINUTE]
 
         self.iteration = 0
-        self.account_cash_start_day = starting_capital
-        self.account_cash_activity_day = Decimal(0, 2)
+        self.account_cash_start_day = money(starting_capital)
+        self.account_cash_activity_day = money_zero()
         self.bids_current = dict()      # type: Dict[Symbol, Decimal]
         self.bids_high = dict()         # type: Dict[Symbol, Decimal]
         self.bids_low = dict()          # type: Dict[Symbol, Decimal]
@@ -110,11 +110,11 @@ cdef class BacktestExecClient(ExecutionClient):
                                                           Broker.SIMULATED,
                                                           AccountNumber('9999'),
                                                           CurrencyCode.USD,
-                                                          starting_capital,
-                                                          starting_capital,
-                                                          Money.zero(),
-                                                          Money.zero(),
-                                                          Money.zero(),
+                                                          money(starting_capital),
+                                                          money(starting_capital),
+                                                          money_zero(),
+                                                          money_zero(),
+                                                          money_zero(),
                                                           Decimal(0),
                                                           'NONE',
                                                           GUID(uuid.uuid4()),

@@ -18,9 +18,7 @@ from inv_trader.common.logger import Logger
 from inv_trader.model.enums import Resolution
 from inv_trader.model.enums import Venue, OrderSide, OrderStatus, TimeInForce
 from inv_trader.model.identifiers import Label, OrderId, PositionId
-from inv_trader.model.objects import Price, Symbol
-from inv_trader.model.objects import Symbol, Money
-from inv_trader.strategy import TradeStrategy
+from inv_trader.model.objects import Symbol
 from inv_trader.backtest.data import BacktestDataClient
 from inv_trader.backtest.execution import BacktestExecClient
 from inv_trader.backtest.engine import BacktestConfig, BacktestEngine
@@ -114,7 +112,7 @@ class BacktestExecClientTests(unittest.TestCase):
                                          tick_data=self.tick_data,
                                          bar_data_bid=self.bid_data,
                                          bar_data_ask=self.ask_data,
-                                         starting_capital=Money.create(1000000),
+                                         starting_capital=1000000,
                                          slippage_ticks=1,
                                          clock=TestClock(),
                                          logger=Logger())

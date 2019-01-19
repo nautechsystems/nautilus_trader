@@ -18,7 +18,8 @@ from inv_trader.core.decimal import Decimal
 from inv_trader.common.clock import TestClock
 from inv_trader.model.enums import Venue, Resolution, QuoteType, OrderSide, TimeInForce, OrderStatus
 from inv_trader.model.enums import MarketPosition
-from inv_trader.model.objects import Price, Symbol, Tick, BarType, Bar
+from inv_trader.model.objects import Symbol, Tick, BarType, Bar
+from inv_trader.model.price import price
 from inv_trader.model.order import OrderFactory
 from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
 from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
@@ -797,7 +798,7 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(ValueError, strategy.modify_order, order, Price.create(1.00001, 5))
+        self.assertRaises(ValueError, strategy.modify_order, order, price(1.00001, 5))
 
     def test_can_modify_order(self):
         # Arrange
@@ -811,19 +812,19 @@ class TradeStrategyTests(unittest.TestCase):
             Label('S1'),
             OrderSide.BUY,
             100000,
-            Price.create(1.00000, 5),
+            price(1.00000, 5),
             TimeInForce.DAY,
             None)
 
         strategy.submit_order(order, PositionId(str(order.id)))
 
         # Act
-        strategy.modify_order(order, Price.create(1.00001, 5))
+        strategy.modify_order(order, price(1.00001, 5))
 
         # Assert
         self.assertEqual(order, strategy._order_book[order.id])
         self.assertEqual(OrderStatus.WORKING, strategy._order_book[order.id].status)
-        self.assertEqual(Price.create(1.00001, 5), strategy._order_book[order.id].price)
+        self.assertEqual(price(1.00001, 5), strategy._order_book[order.id].price)
         self.assertTrue(strategy.is_flat())
 
     def test_can_cancel_all_orders(self):
@@ -838,7 +839,7 @@ class TradeStrategyTests(unittest.TestCase):
             Label('S1'),
             OrderSide.BUY,
             100000,
-            Price.create(1.00000, 5),
+            price(1.00000, 5),
             TimeInForce.DAY,
             None)
 
@@ -848,7 +849,7 @@ class TradeStrategyTests(unittest.TestCase):
             Label('S1'),
             OrderSide.BUY,
             100000,
-            Price.create(1.00010, 5),
+            price(1.00010, 5),
             TimeInForce.DAY,
             None)
 

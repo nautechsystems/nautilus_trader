@@ -12,10 +12,11 @@
 from datetime import timedelta
 from typing import Dict
 
-from inv_trader.common.clock import Clock, LiveClock, TestClock
+from inv_trader.common.clock import Clock, LiveClock
 from inv_trader.common.logger import Logger
-from inv_trader.model.enums import Venue, Resolution, QuoteType, OrderSide, TimeInForce
-from inv_trader.model.objects import Symbol, Tick, BarType, Bar, Instrument, Price
+from inv_trader.model.enums import Venue, OrderSide, TimeInForce
+from inv_trader.model.objects import Symbol, Tick, BarType, Bar, Instrument
+from inv_trader.model.price import price
 from inv_trader.model.events import Event
 from inv_trader.model.identifiers import Label, OrderId, PositionId
 from inv_trader.model.order import Order
@@ -199,7 +200,7 @@ class EMACross(TradeStrategy):
                     Label('S1_E'),
                     OrderSide.BUY,
                     self.position_size,
-                    Price.create(self.last_bar(self.bar_type).high + self.entry_buffer, self.tick_precision),
+                    price(self.last_bar(self.bar_type).high + self.entry_buffer, self.tick_precision),
                     time_in_force=TimeInForce.GTD,
                     expire_time=self.time_now() + timedelta(minutes=1))
                 self.entry_orders[entry_order.id] = entry_order
@@ -215,7 +216,7 @@ class EMACross(TradeStrategy):
                     Label('S1_E'),
                     OrderSide.SELL,
                     self.position_size,
-                    Price.create(self.last_bar(self.bar_type).low - self.entry_buffer, self.tick_precision),
+                    price(self.last_bar(self.bar_type).low - self.entry_buffer, self.tick_precision),
                     time_in_force=TimeInForce.GTD,
                     expire_time=self.time_now() + timedelta(minutes=1))
                 self.entry_orders[entry_order.id] = entry_order
@@ -242,13 +243,13 @@ class EMACross(TradeStrategy):
                 # SET TRAILING STOP
                 stop_side = self.get_opposite_side(event.order_side)
                 if stop_side is OrderSide.BUY:
-                    stop_price = Price.create(self.last_bar(self.bar_type).high
-                                              + self.atr.value * self.SL_atr_multiple,
-                                              self.tick_precision)
+                    stop_price = price(self.last_bar(self.bar_type).high
+                                       + self.atr.value * self.SL_atr_multiple,
+                                       self.tick_precision)
                 else:
-                    stop_price = Price.create(self.last_bar(self.bar_type).low
-                                              - self.atr.value * self.SL_atr_multiple,
-                                              self.tick_precision)
+                    stop_price = price(self.last_bar(self.bar_type).low
+                                       - self.atr.value * self.SL_atr_multiple,
+                                       self.tick_precision)
 
                 stop_order = self.order_factory.stop_market(
                     self.symbol,

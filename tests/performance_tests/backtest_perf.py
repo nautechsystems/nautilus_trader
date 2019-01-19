@@ -94,7 +94,7 @@ class BacktestEngineTests(unittest.TestCase):
                                 config=config)
 
         start = datetime(2013, 1, 1, 22, 0, 0, 0, tzinfo=timezone.utc)
-        stop = datetime(2013, 1, 3, 0, 0, 0, 0, tzinfo=timezone.utc)
+        stop = datetime(2013, 1, 2, 0, 0, 0, 0, tzinfo=timezone.utc)
 
         cProfile.runctx('engine.run(start, stop)', globals(), locals(), 'Profile.prof')
         s = pstats.Stats("Profile.prof")
