@@ -86,58 +86,6 @@ cdef class Symbol:
         return str(f"<{str(self)} object at {id(self)}>")
 
 
-cdef class Price:
-    """
-    Provides a factory for creating Decimal objects representing price.
-    """
-
-    @staticmethod
-    def create(float price,
-               int precision) -> Decimal:
-        """
-        Creates and returns a new price from the given values.
-        The price is rounded to the given decimal digits.
-
-        :param price: The price value.
-        :param precision: The decimal precision of the price.
-        :return: A Decimal representing the price.
-        :raises ValueError: If the price is not positive (> 0).
-        :raises ValueError: If the decimals is negative (< 0).
-        """
-        Precondition.positive(price, 'price')
-
-        return Decimal(price, precision)
-
-
-cdef class Money:
-    """
-    Provides a factory for creating Decimal objects representing money.
-    """
-
-    @staticmethod
-    def zero() -> Decimal:
-        """
-        Creates and returns a new zero amount of money.
-
-        :return:
-        """
-        return Decimal(0, 2)
-
-    @staticmethod
-    def create(float amount) -> Decimal:
-        """
-        Creates and returns money from the given values.
-        The money is rounded to two decimal digits.
-
-        :param amount: The money amount.
-        :return: A Decimal representing the money.
-        :raises ValueError: If the amount is negative (< 0).
-        """
-        Precondition.not_negative(amount, 'amount')
-
-        return Decimal(amount, 2)
-
-
 cdef class Tick:
     """
     Represents a single tick in a financial market.

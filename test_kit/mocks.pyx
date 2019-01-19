@@ -20,7 +20,7 @@ from cpython.datetime cimport datetime
 
 from inv_trader.core.decimal cimport Decimal
 from inv_trader.common.execution cimport ExecutionClient
-from inv_trader.model.objects import Price
+from inv_trader.model.price import price
 from inv_trader.model.order cimport Order
 from inv_trader.model.events cimport Event, OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
 from inv_trader.model.events cimport OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
@@ -292,7 +292,7 @@ cdef class MockExecClient(ExecutionClient):
         Fills the last order held by the execution service.
         """
         cdef Order order = self._working_orders.pop(-1)
-        cdef Decimal filled_price = Price.create(1.00000, 5) if order.price is None else order.price
+        cdef Decimal filled_price = price(1.00000, 5) if order.price is None else order.price
 
         cdef OrderFilled filled = OrderFilled(
             order.symbol,

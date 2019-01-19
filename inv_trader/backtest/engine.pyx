@@ -17,14 +17,12 @@ from pandas import DataFrame
 from typing import List, Dict
 from logging import INFO, DEBUG
 
-from inv_trader.core.decimal cimport Decimal
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.backtest.data cimport BacktestDataClient
 from inv_trader.backtest.execution cimport BacktestExecClient
 from inv_trader.common.clock cimport LiveClock, TestClock
 from inv_trader.common.logger cimport Logger
 from inv_trader.enums.resolution cimport Resolution
-from inv_trader.model.objects import Money
 from inv_trader.model.objects cimport Symbol, Instrument
 from inv_trader.strategy cimport TradeStrategy
 
@@ -34,7 +32,7 @@ cdef class BacktestConfig:
     Represents a configuration for a BacktestEngine.
     """
     def __init__(self,
-                 Decimal starting_capital=Money.create(1000000),
+                 int starting_capital=1000000,
                  int slippage_ticks=0,
                  level_console: logging=INFO,
                  level_file: logging=DEBUG,
@@ -45,11 +43,16 @@ cdef class BacktestConfig:
         Initializes a new instance of the BacktestEngine class.
 
         :param level_console: The minimum log level for logging messages to the console.
+        :param level_console: The minimum log level for logging messages to the console.
+        :param level_console: The minimum log level for logging messages to the console.
         :param level_file: The minimum log level for logging messages to the log file.
         :param console_prints: The boolean flag indicating whether log messages should print.
         :param log_to_file: The boolean flag indicating whether log messages should log to file
         :param log_file_path: The name of the log file (cannot be None if log_to_file is True).
         """
+        Precondition.positive(starting_capital, 'starting_capital')
+        Precondition.not_negative(slippage_ticks, 'slippage_ticks')
+
         self.starting_capital = starting_capital
         self.level_console = level_console
         self.level_file = level_file

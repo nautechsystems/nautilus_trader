@@ -12,7 +12,8 @@ import unittest
 from decimal import Decimal
 
 from inv_trader.model.enums import Venue
-from inv_trader.model.objects import Price, Symbol
+from inv_trader.model.objects import Symbol
+from inv_trader.model.price import price
 
 
 class ObjectTests(unittest.TestCase):
@@ -21,22 +22,22 @@ class ObjectTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ValueError, Price.create, -1, 0)
+        self.assertRaises(ValueError, price, -1, 0)
 
     def test_create_price_with_negative_decimals_raises_exception(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ValueError, Price.create, 1.00000, -1)
+        self.assertRaises(ValueError, price, 1.00000, -1)
 
     def test_create_price_with_valid_inputs_returns_expected_decimal_object(self):
         # Arrange
         # Act
-        result1 = Price.create(1.00000, 5)
-        result2 = Price.create(1.0, 0)
-        result3 = Price.create(1.001, 2)
-        result4 = Price.create(1.1, 0)
-        result5 = Price.create(1.000001, 5)
+        result1 = price(1.00000, 5)
+        result2 = price(1.0, 0)
+        result3 = price(1.001, 2)
+        result4 = price(1.1, 0)
+        result5 = price(1.000001, 5)
 
         # Assert
         self.assertEqual(Decimal('1.00000'), result1)

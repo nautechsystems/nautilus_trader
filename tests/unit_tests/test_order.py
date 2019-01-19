@@ -12,7 +12,8 @@ import uuid
 
 from inv_trader.core.decimal import Decimal
 from inv_trader.model.enums import Venue, OrderSide, OrderType, OrderStatus, TimeInForce
-from inv_trader.model.objects import Price, Symbol
+from inv_trader.model.objects import Symbol
+from inv_trader.model.price import price
 from inv_trader.model.identifiers import GUID, Label, OrderId, ExecutionId, ExecutionTicket
 from inv_trader.model.order import Order, OrderFactory
 from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
@@ -58,7 +59,7 @@ class OrderTests(unittest.TestCase):
             OrderType.LIMIT,
             100000,
             UNIX_EPOCH,
-            price=Price.create(1.00000, 5),
+            price=price(1.00000, 5),
             time_in_force=TimeInForce.GTD,
             expire_time=None)
 
@@ -75,7 +76,7 @@ class OrderTests(unittest.TestCase):
             OrderType.MARKET,
             100000,
             UNIX_EPOCH,
-            price=Price.create(1.00000, 5))
+            price=price(1.00000, 5))
 
     def test_stop_order_with_no_price_input_raises_exception(self):
         # Arrange
@@ -115,7 +116,7 @@ class OrderTests(unittest.TestCase):
             Label('S1_E'),
             OrderSide.BUY,
             100000,
-            Price.create(1.00000, 5))
+            price(1.00000, 5))
 
         order2 = self.order_factory.limit(
             AUDUSD_FXCM,
@@ -123,7 +124,7 @@ class OrderTests(unittest.TestCase):
             Label('S1_E'),
             OrderSide.BUY,
             100000,
-            Price.create(1.00000, 5))
+            price(1.00000, 5))
 
         order3 = self.order_factory.limit(
             AUDUSD_FXCM,
@@ -131,7 +132,7 @@ class OrderTests(unittest.TestCase):
             Label('S1_E'),
             OrderSide.BUY,
             100000,
-            Price.create(1.000001, 5))
+            price(1.000001, 5))
 
         order4 = self.order_factory.limit(
             AUDUSD_FXCM,
@@ -139,7 +140,7 @@ class OrderTests(unittest.TestCase):
             Label('S1_E'),
             OrderSide.BUY,
             100000,
-            Price.create(1.000005, 5))
+            price(1.000005, 5))
 
         # Assert
         self.assertEqual(Decimal('1.00000'), order1.price)
@@ -172,7 +173,7 @@ class OrderTests(unittest.TestCase):
             Label('SCALPER-01'),
             OrderSide.BUY,
             100000,
-            Price.create(1.00000, 5))
+            price(1.00000, 5))
 
         # Assert
         self.assertEqual(OrderType.LIMIT, order.type)
@@ -190,7 +191,7 @@ class OrderTests(unittest.TestCase):
             Label('SCALPER-01'),
             OrderSide.BUY,
             100000,
-            Price.create(1.00000, 5),
+            price(1.00000, 5),
             TimeInForce.GTD,
             UNIX_EPOCH)
 
@@ -213,7 +214,7 @@ class OrderTests(unittest.TestCase):
             Label('SCALPER-01'),
             OrderSide.BUY,
             100000,
-            Price.create(1.00000, 5))
+            price(1.00000, 5))
 
         # Assert
         self.assertEqual(OrderType.STOP_MARKET, order.type)
@@ -230,7 +231,7 @@ class OrderTests(unittest.TestCase):
             Label('SCALPER-01'),
             OrderSide.BUY,
             100000,
-            Price.create(1.00000, 5))
+            price(1.00000, 5))
 
         # Assert
         self.assertEqual(OrderType.STOP_LIMIT, order.type)
@@ -246,7 +247,7 @@ class OrderTests(unittest.TestCase):
             Label('SCALPER-01'),
             OrderSide.BUY,
             100000,
-            Price.create(1.00000, 5))
+            price(1.00000, 5))
 
         # Assert
         self.assertEqual(OrderType.MIT, order.type)
@@ -542,7 +543,7 @@ class OrderTests(unittest.TestCase):
             Label('SCALPER-01'),
             OrderSide.BUY,
             100000,
-            Price.create(1.00000, 5),
+            price(1.00000, 5),
             TimeInForce.DAY,
             expire_time=None)
 
@@ -577,7 +578,7 @@ class OrderTests(unittest.TestCase):
             Label('SCALPER-01'),
             OrderSide.BUY,
             100000,
-            Price.create(1.00000, 5),
+            price(1.00000, 5),
             TimeInForce.DAY,
             expire_time=None)
 
@@ -613,7 +614,7 @@ class OrderTests(unittest.TestCase):
             Label('SCALPER-01'),
             OrderSide.BUY,
             100000,
-            Price.create(1.00000, 5),
+            price(1.00000, 5),
             TimeInForce.DAY,
             expire_time=None)
 
