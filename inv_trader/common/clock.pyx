@@ -360,7 +360,7 @@ cdef class TestClock(Clock):
         :raises ValueError: If the given times timezone is not UTC.
         :raises ValueError: If the given time is <= the clocks internal time.
         """
-        Precondition.equal(time.tzinfo, self.timezone)
+        Precondition.true(time.tzinfo == self.timezone, 'time.tzinfo == self.timezone')
 
         cdef list expired = []
         while self._time < time:

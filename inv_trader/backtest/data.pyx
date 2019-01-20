@@ -51,7 +51,7 @@ cdef class BacktestDataClient(DataClient):
         Precondition.dict_types(tick_data, Symbol, DataFrame, 'tick_data')
         Precondition.dict_types(bar_data_bid, Symbol, dict, 'bar_data_bid')
         Precondition.dict_types(bar_data_ask, Symbol, dict, 'bar_data_ask')
-        Precondition.equal(bar_data_bid.keys(), bar_data_ask.keys())
+        Precondition.true(bar_data_bid.keys() == bar_data_ask.keys(), 'bar_data_bid.keys() == bar_data_ask.keys()')
         Precondition.not_none(clock, 'clock')
         Precondition.not_none(logger, 'logger')
 

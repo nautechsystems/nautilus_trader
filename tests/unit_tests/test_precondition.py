@@ -11,6 +11,7 @@ import unittest
 
 from inv_trader.core.decimal import Decimal
 from inv_trader.core.precondition import PyPrecondition
+from inv_trader.model.identifiers import OrderId
 
 
 class PreconditionTests(unittest.TestCase):
@@ -139,15 +140,13 @@ class PreconditionTests(unittest.TestCase):
         # arrange
         # act
         # assert
-        self.assertRaises(ValueError, PyPrecondition.equal, "", " ")
-        self.assertRaises(ValueError, PyPrecondition.equal, 1, 2)
+        self.assertRaises(ValueError, PyPrecondition.equal, OrderId('123456'), OrderId('123'))
 
     def test_precondition_equal_when_args_are_equal_does_nothing(self):
         # arrange
         # act
         # assert
-        PyPrecondition.equal(1, 1)
-        PyPrecondition.equal("", "")
+        PyPrecondition.equal(OrderId('123456'), OrderId('123456'))
         self.assertTrue(True)  # ValueError not raised.
 
     def test_precondition_equal_lengths_when_args_not_equal_lengths_raises_value_error(self):
