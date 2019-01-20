@@ -12,16 +12,19 @@
 from datetime import timedelta
 from typing import Dict
 
-from inv_trader.common.clock import Clock, LiveClock
-from inv_trader.common.logger import Logger
-from inv_trader.model.enums import Venue, OrderSide, TimeInForce
-from inv_trader.model.objects import Symbol, Tick, BarType, Bar, Instrument
-from inv_trader.model.price import price
-from inv_trader.model.events import Event
-from inv_trader.model.identifiers import Label, OrderId, PositionId
-from inv_trader.model.order import Order
-from inv_trader.model.events import OrderFilled, OrderExpired, OrderRejected
-from inv_trader.strategy import TradeStrategy
+from inv_trader.core.decimal cimport Decimal
+from inv_trader.common.clock cimport Clock, LiveClock
+from inv_trader.common.logger cimport Logger
+from inv_trader.enums.venue cimport Venue
+from inv_trader.enums.order_side cimport OrderSide
+from inv_trader.enums.time_in_force cimport TimeInForce
+from inv_trader.model.objects cimport Symbol, Tick, BarType, Bar, Instrument
+from inv_trader.model.price cimport price
+from inv_trader.model.events cimport Event
+from inv_trader.model.identifiers cimport Label, OrderId, PositionId
+from inv_trader.model.order cimport Order
+from inv_trader.model.events cimport OrderFilled, OrderExpired, OrderRejected
+from inv_trader.strategy cimport TradeStrategy
 from inv_indicators.average.ema import ExponentialMovingAverage
 from inv_indicators.atr import AverageTrueRange
 from test_kit.objects import ObjectStorer
@@ -100,10 +103,24 @@ class TestStrategy1(TradeStrategy):
         self.object_storer.store('custom reset logic')
 
 
-class EMACross(TradeStrategy):
+cdef class EMACross(TradeStrategy):
     """"
     A simple moving average cross example strategy.
     """
+    cdef Instrument instrument
+    cdef Symbol symbol
+    cdef BarType bar_type
+    cdef int position_size
+    cdef int tick_precision
+    cdef Decimal entry_buffer
+    cdef float SL_atr_multiple
+    cdef Decimal SL_buffer
+    cdef object fast_ema
+    cdef object slow_ema
+    cdef object atr
+    cdef dict entry_orders
+    cdef dict stop_loss_orders
+    cdef PositionId position_id
 
     def __init__(self,
                  label: str,
@@ -158,7 +175,7 @@ class EMACross(TradeStrategy):
         self.stop_loss_orders = {}  # type: Dict[OrderId, Order]
         self.position_id = None
 
-    def on_start(self):
+    cpdef void on_start(self):
         """
         This method is called when self.start() is called, and after internal
         start logic.
@@ -166,7 +183,7 @@ class EMACross(TradeStrategy):
         # Subscribe to the necessary data.
         self.subscribe_bars(self.bar_type)
 
-    def on_tick(self, tick: Tick):
+    cpdef void on_tick(self, Tick tick):
         """
         This method is called whenever a Tick is received by the strategy, after
         the Tick has been processed by the base class (update last received Tick
@@ -177,7 +194,7 @@ class EMACross(TradeStrategy):
         """
         pass
 
-    def on_bar(self, bar_type: BarType, bar: Bar):
+    cpdef void on_bar(self, BarType bar_type, Bar bar):
         """
         This method is called whenever the strategy receives a Bar, after the
         Bar has been processed by the base class (update indicators etc).
@@ -224,11 +241,17 @@ class EMACross(TradeStrategy):
                 self.submit_order(entry_order, self.position_id)
                 self.log.info(f"Added {entry_order.id} to entry orders.")
 
-        if len(self.stop_loss_orders) > 0:
-            #TODO: Trail stop
-            pass
+        for order_id, order in self.stop_loss_orders.items():
+            if order.side is OrderSide.SELL:
+                temp_price = self.last_bar(self.bar_type).low
+                if order.price < temp_price:
+                    self.modify_order(order, temp_price)
+            elif order.side is OrderSide.BUY:
+                temp_price = self.last_bar(self.bar_type).high
+                if order.price > temp_price:
+                    self.modify_order(order, temp_price)
 
-    def on_event(self, event: Event):
+    cpdef void on_event(self, Event event):
         """
         This method is called whenever the strategy receives an Event object,
         after the event has been processed by the base class (updating any objects it needs to).
@@ -276,17 +299,17 @@ class EMACross(TradeStrategy):
                 del self.entry_orders[event.order_id]
                 self.position_id = None
 
-    def on_stop(self):
+    cpdef void on_stop(self):
         """
         This method is called when self.stop() is called before internal
         stopping logic.
         """
-        if not self.is_flat:
+        if not self.is_flat():
             self.flatten_all_positions()
 
         self.cancel_all_orders("STOPPING STRATEGY")
 
-    def on_reset(self):
+    cpdef void on_reset(self):
         """
         This method is called when self.reset() is called, and after internal
         reset logic such as clearing the internally held bars, ticks and resetting

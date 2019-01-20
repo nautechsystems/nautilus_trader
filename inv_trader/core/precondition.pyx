@@ -143,13 +143,13 @@ cdef class Precondition:
     @staticmethod
     cdef equal(object argument1, object argument2):
         """
-        Check the preconditions arguments are equal.
+        Check the preconditions arguments are equal (the given object must implement .equals).
 
         :param argument1: The first argument to check.
         :param argument2: The second argument to check.
         :raises ValueError: If the arguments are not equal.
         """
-        if argument1 != argument2:
+        if not argument1.equals(argument2):
             raise ValueError(f"{PRE_FAILED} (the arguments were not equal). "
                              f"values = {argument1} and {argument2}")
 

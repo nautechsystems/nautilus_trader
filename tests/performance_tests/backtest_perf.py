@@ -20,8 +20,7 @@ from inv_trader.common.logger import Logger
 from inv_trader.model.enums import Resolution
 from inv_trader.model.enums import Venue, OrderSide, OrderStatus, TimeInForce
 from inv_trader.model.identifiers import Label, OrderId, PositionId
-from inv_trader.model.objects import Price, Symbol
-from inv_trader.model.objects import Symbol, Money
+from inv_trader.model.objects import Symbol
 from inv_trader.strategy import TradeStrategy
 from inv_trader.backtest.data import BacktestDataClient
 from inv_trader.backtest.execution import BacktestExecClient
