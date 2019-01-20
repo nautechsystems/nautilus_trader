@@ -166,29 +166,34 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         self._set_market_prices()
 
-        for order_id, order in self.working_orders.items():
+        for order_id, order in self.working_orders.copy().items():  # Copy dict to avoid resize during loop
             # Check for order fill
             if order.side is OrderSide.BUY:
                 if order.type is OrderType.STOP_MARKET or OrderType.STOP_LIMIT or OrderType.MIT:
                     if self.asks_high[order.symbol] >= order.price:
+                        del self.working_orders[order.id]
                         self._fill_order(order, self.asks_high[order.symbol])
                         continue
                 elif order.type is OrderType.LIMIT:
                     if self.asks_low[order.symbol] < order.price:
+                        del self.working_orders[order.id]
                         self._fill_order(order, self.asks_low[order.symbol])
                         continue
             elif order.side is OrderSide.SELL:
                 if order.type is OrderType.STOP_MARKET or OrderType.STOP_LIMIT or OrderType.MIT:
                     if self.bids_low[order.symbol] <= order.price:
+                        del self.working_orders[order.id]
                         self._fill_order(order, self.bids_low[order.symbol])
                         continue
                 elif order.type is OrderType.LIMIT:
                     if self.bids_high[order.symbol] > order.price:
+                        del self.working_orders[order.id]
                         self._fill_order(order, self.bids_high[order.symbol])
                         continue
 
             # Check for order expiry
             if order.expire_time is not None and time >= order.expire_time:
+                del self.working_orders[order.id]
                 self._expire_order(order)
 
         self.iteration += 1
@@ -337,6 +342,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._clock.time_now(),
             GUID(uuid.uuid4()),
             self._clock.time_now())
+
         self._on_event(modified)
 
     cdef void _set_market_prices(self):
@@ -410,7 +416,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._clock.time_now())
 
         self._on_event(expired)
-        del self.working_orders[order.id]
+
 
     cdef void _fill_order(self, Order order, Decimal market_price):
         """
@@ -432,9 +438,5 @@ cdef class BacktestExecClient(ExecutionClient):
             self._clock.time_now(),
             GUID(uuid.uuid4()),
             self._clock.time_now())
-
-        # Remove from working orders if present
-        if order.id in self.working_orders:
-            del self.working_orders[order.id]
 
         self._on_event(filled)

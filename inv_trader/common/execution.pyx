@@ -66,7 +66,7 @@ cdef class ExecutionClient:
                 "Cannot register strategy (The strategy must have a unique UUID id).")
 
         self._registered_strategies[strategy.id] = strategy
-        strategy._register_execution_client(self)
+        strategy._register_execution_client(self)  # Access to protected member ok here
 
         self._log.info(f"Registered strategy {strategy}.")
 
@@ -130,14 +130,13 @@ cdef class ExecutionClient:
         self._log.debug(f"Received {event}")
 
         if isinstance(event, OrderEvent):
-            order_id = event.order_id
-            if order_id not in self._order_index.keys():
+            if event.order_id not in self._order_index:
                 self._log.warning(
-                    f"The given event order id {order_id} was not contained in the order index.")
+                    f"The given event order id {event.order_id} was not contained in the order index.")
                 return
 
-            strategy_id = self._order_index[order_id]
-            self._registered_strategies[strategy_id]._update_events(event)
+            strategy_id = self._order_index[event.order_id]
+            self._registered_strategies[strategy_id]._update_events(event)  # Access to protected member ok here
 
             if isinstance(event, OrderCancelReject):
                 self._log.warning(f"{event}")
