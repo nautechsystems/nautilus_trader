@@ -39,22 +39,42 @@ class EmptyStrategy(TradeStrategy):
     def on_start(self):
         pass
 
-    def on_tick(self, tick: Tick):
+    def on_tick(self, Tick tick):
         pass
 
-    def on_bar(
-            self,
-            bar_type: BarType,
-            bar: Bar):
+    def on_bar(self, BarType bar_type, Bar bar):
         pass
 
-    def on_event(self, event: Event):
+    def on_event(self, Event event):
         pass
 
     def on_stop(self):
         pass
 
     def on_reset(self):
+        pass
+
+
+cdef class EmptyStrategyCython(TradeStrategy):
+    """
+    A Cython strategy which is empty and does nothing.
+    """
+    cpdef void on_start(self):
+        pass
+
+    cpdef void on_tick(self, Tick tick):
+        pass
+
+    cpdef void on_bar(self, BarType bar_type, Bar bar):
+        pass
+
+    cpdef void on_event(self, Event event):
+        pass
+
+    cpdef void on_stop(self):
+        pass
+
+    cpdef void on_reset(self):
         pass
 
 
@@ -89,10 +109,7 @@ class TestStrategy1(TradeStrategy):
     def on_tick(self, tick: Tick):
         self.object_storer.store(tick)
 
-    def on_bar(
-            self,
-            bar_type: BarType,
-            bar: Bar):
+    def on_bar(self, bar_type: BarType, bar: Bar):
 
         self.object_storer.store((bar_type, Bar))
 

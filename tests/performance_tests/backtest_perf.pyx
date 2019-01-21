@@ -7,26 +7,20 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+# cython: language_level=3, boundscheck=False
+
 import cProfile
 import pstats
 import pandas as pd
-import unittest
 
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 
-from inv_trader.core.decimal import Decimal
-from inv_trader.common.clock import TestClock
-from inv_trader.common.logger import Logger
 from inv_trader.model.enums import Resolution
-from inv_trader.model.enums import Venue, OrderSide, OrderStatus, TimeInForce
-from inv_trader.model.identifiers import Label, OrderId, PositionId
+from inv_trader.model.enums import Venue
 from inv_trader.model.objects import Symbol
-from inv_trader.strategy import TradeStrategy
-from inv_trader.backtest.data import BacktestDataClient
-from inv_trader.backtest.execution import BacktestExecClient
 from inv_trader.backtest.engine import BacktestConfig, BacktestEngine
-from test_kit.objects import ObjectStorer
-from test_kit.strategies import EmptyStrategy, TestStrategy1, EMACross
+from test_kit.strategies import EMACross
+from test_kit.strategies import EmptyStrategyCython
 from test_kit.data import TestDataProvider
 from test_kit.stubs import TestStubs
 
@@ -34,29 +28,9 @@ UNIX_EPOCH = TestStubs.unix_epoch()
 USDJPY_FXCM = Symbol('USDJPY', Venue.FXCM)
 
 
-class BacktestEnginePerformanceTests(unittest.TestCase):
+cdef class BacktestEnginePerformanceTests:
 
-    def setUp(self):
-        # Fixture Setup
-        usdjpy = TestStubs.instrument_usdjpy()
-        bid_data_1min = TestDataProvider.usdjpy_1min_bid()
-        ask_data_1min = TestDataProvider.usdjpy_1min_ask()
-
-        self.instruments = [TestStubs.instrument_usdjpy()]
-        self.tick_data = {usdjpy.symbol: pd.DataFrame()}
-        self.bid_data = {usdjpy.symbol: {Resolution.MINUTE: bid_data_1min}}
-        self.ask_data = {usdjpy.symbol: {Resolution.MINUTE: ask_data_1min}}
-
-        self.strategies = [TestStrategy1(TestStubs.bartype_usdjpy_1min_bid())]
-
-        self.engine = BacktestEngine(instruments=self.instruments,
-                                     tick_data=self.tick_data,
-                                     bar_data_bid=self.bid_data,
-                                     bar_data_ask=self.ask_data,
-                                     strategies=self.strategies)
-
-    @staticmethod
-    def test_running_blank_strategy(self):
+    cpdef void test_running_blank_strategy(self):
         # Arrange
         usdjpy = TestStubs.instrument_usdjpy()
         bid_data_1min = TestDataProvider.usdjpy_1min_bid()
@@ -67,7 +41,7 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         bid_data = {usdjpy.symbol: {Resolution.MINUTE: bid_data_1min}}
         ask_data = {usdjpy.symbol: {Resolution.MINUTE: ask_data_1min}}
 
-        strategies = [EmptyStrategy()]
+        strategies = [EmptyStrategyCython()]
 
         config = BacktestConfig(console_prints=True)
         engine = BacktestEngine(instruments=instruments,
@@ -80,9 +54,10 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         start = datetime(2013, 1, 1, 22, 0, 0, 0, tzinfo=timezone.utc)
         stop = datetime(2013, 2, 10, 0, 0, 0, 0, tzinfo=timezone.utc)
 
-        cProfile.runctx('engine.run(start, stop)', globals(), locals(), 'Profile.prof')
-        s = pstats.Stats("Profile.prof")
-        s.strip_dirs().sort_stats("time").print_stats()
+        engine.run(start, stop)
+        # cProfile.runctx('engine.run(start, stop)', globals(), locals(), 'Profile.prof')
+        # s = pstats.Stats("Profile.prof")
+        # s.strip_dirs().sort_stats("time").print_stats()
 
     @staticmethod
     def test_can_run(self):
@@ -120,3 +95,7 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         cProfile.runctx('engine.run(start, stop)', globals(), locals(), 'Profile.prof')
         s = pstats.Stats("Profile.prof")
         s.strip_dirs().sort_stats("time").print_stats()
+
+if __name__ == "__main__":
+    tests = BacktestEnginePerformanceTests()
+    tests.test_running_blank_strategy()
