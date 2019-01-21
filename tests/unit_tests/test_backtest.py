@@ -266,6 +266,37 @@ class BacktestExecClientTests(unittest.TestCase):
 # -- ENGINE -------------------------------------------------------------------------------------- #
 class BacktestEngineTests(unittest.TestCase):
 
+    def test_can_run_empty_strategy(self):
+        # Arrange
+        usdjpy = TestStubs.instrument_usdjpy()
+        bid_data_1min = TestDataProvider.usdjpy_1min_bid()
+        ask_data_1min = TestDataProvider.usdjpy_1min_ask()
+
+        instruments = [TestStubs.instrument_usdjpy()]
+        tick_data = {usdjpy.symbol: pd.DataFrame()}
+        bid_data = {usdjpy.symbol: {Resolution.MINUTE: bid_data_1min}}
+        ask_data = {usdjpy.symbol: {Resolution.MINUTE: ask_data_1min}}
+
+        strategies = [EmptyStrategy()]
+
+        config = BacktestConfig(console_prints=True)
+        engine = BacktestEngine(instruments=instruments,
+                                data_ticks=tick_data,
+                                data_bars_bid=bid_data,
+                                data_bars_ask=ask_data,
+                                strategies=strategies,
+                                config=config)
+
+        start = datetime(2013, 1, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
+        stop = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
+
+        # Act
+        engine.run(start, stop)
+
+        # Assert
+        self.assertEqual(44640, engine.data_client.iteration)
+        self.assertEqual(44640, engine.exec_client.iteration)
+
     def test_can_run(self):
         # Arrange
         usdjpy = TestStubs.instrument_usdjpy()
