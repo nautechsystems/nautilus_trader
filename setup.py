@@ -24,6 +24,7 @@ AUTHOR = 'Invariance'
 INV_TRADER = 'inv_trader'
 DESCRIPTION = 'The python trading client for Invariance.'
 TEST_KIT = 'test_kit'
+TESTS = 'tests'
 LICENSE = 'Invariance Software License, April 2018'
 REQUIREMENTS = ['cython',
                 'numpy',
@@ -76,7 +77,8 @@ def make_extension(ext_name) -> Extension:
 
 # Generate list of extensions
 extensions = [make_extension(name) for name in scan_directories([INV_TRADER,
-                                                                 TEST_KIT])]
+                                                                 TEST_KIT,
+                                                                 TESTS])]
 
 setup(
     name=INV_TRADER,
