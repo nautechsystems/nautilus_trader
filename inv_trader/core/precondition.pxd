@@ -18,6 +18,10 @@ cdef class Precondition:
     @staticmethod
     cdef type_or_none(object argument, object is_type, str param_name)
     @staticmethod
+    cdef is_in(object key, dict dictionary, str param_name, str dict_name)
+    @staticmethod
+    cdef not_in(object key, dict dictionary, str param_name, str dict_name)
+    @staticmethod
     cdef list_type(list argument, type type_to_contain, str param_name)
     @staticmethod
     cdef dict_types(dict argument, type key_type, type value_type, str param_name)
