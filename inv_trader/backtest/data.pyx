@@ -32,40 +32,40 @@ cdef class BacktestDataClient(DataClient):
 
     def __init__(self,
                  list instruments: List[Instrument],
-                 dict tick_data: Dict[Symbol, DataFrame],
-                 dict bar_data_bid: Dict[Symbol, Dict[Resolution, DataFrame]],
-                 dict bar_data_ask: Dict[Symbol, Dict[Resolution, DataFrame]],
+                 dict data_ticks: Dict[Symbol, DataFrame],
+                 dict data_bars_bid: Dict[Symbol, Dict[Resolution, DataFrame]],
+                 dict data_bars_ask: Dict[Symbol, Dict[Resolution, DataFrame]],
                  TestClock clock,
                  Logger logger):
         """
         Initializes a new instance of the BacktestDataClient class.
 
         :param instruments: The instruments needed for the backtest.
-        :param tick_data: The historical tick market data needed for the backtest.
-        :param bar_data_bid: The historical bid market data needed for the backtest.
-        :param bar_data_ask: The historical ask market data needed for the backtest.
+        :param data_ticks: The historical ticks data needed for the backtest.
+        :param data_bars_bid: The historical bid bars data needed for the backtest.
+        :param data_bars_ask: The historical ask bars data needed for the backtest.
         :param clock: The clock for the component.
         :param logger: The logger for the component.
         """
         Precondition.list_type(instruments, Instrument, 'instruments')
-        Precondition.dict_types(tick_data, Symbol, DataFrame, 'tick_data')
-        Precondition.dict_types(bar_data_bid, Symbol, dict, 'bar_data_bid')
-        Precondition.dict_types(bar_data_ask, Symbol, dict, 'bar_data_ask')
-        Precondition.true(bar_data_bid.keys() == bar_data_ask.keys(), 'bar_data_bid.keys() == bar_data_ask.keys()')
+        Precondition.dict_types(data_ticks, Symbol, DataFrame, 'tick_data')
+        Precondition.dict_types(data_bars_bid, Symbol, dict, 'bar_data_bid')
+        Precondition.dict_types(data_bars_ask, Symbol, dict, 'bar_data_ask')
+        Precondition.true(data_bars_bid.keys() == data_bars_ask.keys(), 'bar_data_bid.keys() == bar_data_ask.keys()')
         Precondition.not_none(clock, 'clock')
         Precondition.not_none(logger, 'logger')
 
         super().__init__(clock, logger)
-        self.tick_data = tick_data
-        self.bar_data_bid = bar_data_bid  # type: Dict[Symbol, Dict[Resolution, DataFrame]]
-        self.bar_data_ask = bar_data_ask  # type: Dict[Symbol, Dict[Resolution, DataFrame]]
+        self.data_tick = data_ticks
+        self.bar_data_bid = data_bars_bid  # type: Dict[Symbol, Dict[Resolution, DataFrame]]
+        self.bar_data_ask = data_bars_ask  # type: Dict[Symbol, Dict[Resolution, DataFrame]]
 
         # Set minute data index
-        first_dataframe = bar_data_bid[next(iter(bar_data_bid))][Resolution.MINUTE]
-        self.minute_data_index = list(pd.to_datetime(first_dataframe.index, utc=True))
+        first_dataframe = data_bars_bid[next(iter(data_bars_bid))][Resolution.MINUTE]
+        self.data_minute_index = list(pd.to_datetime(first_dataframe.index, utc=True))
 
-        self.iteration = 0
         self.data_providers = dict()  # type: Dict[Symbol, DataProvider]
+        self.iteration = 0
 
         # Convert instruments list to dictionary indexed by symbol
         cdef dict instruments_dict = {}  # type: Dict[Symbol, Instrument]
@@ -75,10 +75,10 @@ cdef class BacktestDataClient(DataClient):
 
         # Create set of all data symbols
         cdef set bid_data_symbols = set()  # type: Set[Symbol]
-        for symbol in bar_data_bid:
+        for symbol in data_bars_bid:
             bid_data_symbols.add(symbol)
         cdef set ask_data_symbols = set()  # type: Set[Symbol]
-        for symbol in bar_data_ask:
+        for symbol in data_bars_ask:
             ask_data_symbols.add(symbol)
         assert(bid_data_symbols == ask_data_symbols)
         cdef set data_symbols = bid_data_symbols
@@ -90,7 +90,7 @@ cdef class BacktestDataClient(DataClient):
         # Check that all resolution DataFrames are of the same shape and index
         cdef dict shapes = {}  # type: Dict[Resolution, tuple]
         cdef dict indexs = {}  # type: Dict[Resolution, datetime]
-        for symbol, data in bar_data_bid.items():
+        for symbol, data in data_bars_bid.items():
             for resolution, dataframe in data.items():
                 if resolution not in shapes:
                     shapes[resolution] = dataframe.shape
@@ -99,16 +99,39 @@ cdef class BacktestDataClient(DataClient):
                 assert(dataframe.shape == shapes[resolution], f'{dataframe} shape is not equal')
                 assert(dataframe.index == indexs[resolution], f'{dataframe} index is not equal')
 
-        for symbol, data in bar_data_ask.items():
+        for symbol, data in data_bars_ask.items():
             for resolution, dataframe in data.items():
                 assert(dataframe.shape == shapes[resolution], f'{dataframe} shape is not equal')
                 assert(dataframe.index == indexs[resolution], f'{dataframe} index is not equal')
 
+        # Prepare data providers
         for symbol in data_symbols:
-            self._log.info(f'Preparing data for {symbol}...')
+            self._log.info(f'Creating data provider for {symbol}...')
             self.data_providers[symbol] = DataProvider(instrument=self._instruments[symbol],
-                                                       bar_data_bid=bar_data_bid[symbol],
-                                                       bar_data_ask=bar_data_ask[symbol])
+                                                       data_bars_bid=data_bars_bid[symbol],
+                                                       data_bars_ask=data_bars_ask[symbol])
+
+    cpdef dict get_minute_bid_bars(self):
+        """
+        Get the dictionary of all built one minute bid bars.
+        """
+        cdef dict minute_bid_bars = dict()  # type: Dict[BarType, List[Bar]]
+
+        for symbol, data_provider in self.data_providers.items():
+            minute_bid_bars[symbol] = data_provider.bars[data_provider.minute_bid]
+
+        return minute_bid_bars
+
+    cpdef dict get_minute_ask_bars(self):
+        """
+        Get the dictionary of all built one minute ask bars.
+        """
+        cdef dict minute_ask_bars = dict()  # type: Dict[BarType, List[Bar]]
+
+        for symbol, data_provider in self.data_providers.items():
+            minute_ask_bars[symbol] = data_provider.bars[data_provider.minute_ask]
+
+        return minute_ask_bars
 
     cpdef void set_initial_iteration(
             self,
@@ -121,17 +144,17 @@ cdef class BacktestDataClient(DataClient):
         :param to_time: The time to wind the data client to.
         :param time_step: The time step to iterate at.
         """
-        cdef datetime current = self.minute_data_index[0]
+        cdef datetime current = self.data_minute_index[0]
         cdef int next_index = 0
 
         while current < to_time:
-            if self.minute_data_index[next_index] == current:
+            if self.data_minute_index[next_index] == current:
                 next_index += 1
                 self.iteration += 1
             current += time_step
 
         for symbol, data_provider in self.data_providers.items():
-            data_provider.set_initial_iterations(self.minute_data_index[0], to_time, time_step)
+            data_provider.set_initial_iterations(self.data_minute_index[0], to_time, time_step)
 
         self._clock.set_time(current)
 
@@ -145,8 +168,9 @@ cdef class BacktestDataClient(DataClient):
         for data_provider in self.data_providers.values():
             bars = data_provider.iterate_bars(time)
             for bar_type, bar in bars.items():
-                for handler in self._bar_handlers[bar_type]:
-                    handler(bar_type, bar)
+                if bar_type in self._bar_handlers:
+                    for handler in self._bar_handlers[bar_type]:
+                        handler(bar_type, bar)
 
         self.iteration += 1
 
@@ -261,23 +285,37 @@ cdef class DataProvider:
 
     def __init__(self,
                  Instrument instrument,
-                 dict bar_data_bid: Dict[Resolution, DataFrame],
-                 dict bar_data_ask: Dict[Resolution, DataFrame]):
+                 dict data_bars_bid: Dict[Resolution, DataFrame],
+                 dict data_bars_ask: Dict[Resolution, DataFrame]):
         """
         Initializes a new instance of the DataProvider class.
 
         :param instrument: The instrument for the data provider.
-        :param bar_data_bid: The bid data for the data provider (must contain minute resolution).
-        :param bar_data_ask: The ask data for the data provider (must contain minute resolution).
+        :param data_bars_bid: The bid bars data for the data provider (must contain minute resolution).
+        :param data_bars_ask: The ask bars data for the data provider (must contain minute resolution).
         """
-        Precondition.is_in(Resolution.MINUTE, bar_data_bid, 'Resolution.MINUTE', 'bar_data_bid')
-        Precondition.is_in(Resolution.MINUTE, bar_data_ask, 'Resolution.MINUTE', 'bar_data_ask')
+        Precondition.is_in(Resolution.MINUTE, data_bars_bid, 'Resolution.MINUTE', 'data_bars_bid')
+        Precondition.is_in(Resolution.MINUTE, data_bars_ask, 'Resolution.MINUTE', 'data_bars_ask')
 
         self.instrument = instrument
-        self.iterations = dict()           # type: Dict[BarType, int]
-        self._bar_data_bid = bar_data_bid  # type: Dict[Resolution, DataFrame]
-        self._bar_data_ask = bar_data_ask  # type: Dict[Resolution, DataFrame]
-        self._bars = dict()                # type: Dict[BarType, List[Bar]]
+        self._data_bars_bid = data_bars_bid  # type: Dict[Resolution, DataFrame]
+        self._data_bars_ask = data_bars_ask  # type: Dict[Resolution, DataFrame]
+        self.bars = dict()                   # type: Dict[BarType, List[Bar]]
+        self.iterations = dict()             # type: Dict[BarType, int]
+
+        # Prepare 1 minute bid bars
+        self.minute_bid = BarType(instrument.symbol, 1, Resolution.MINUTE, QuoteType.BID)
+        cdef BarBuilder builder_bid = BarBuilder(data=data_bars_bid[Resolution.MINUTE],
+                                                 decimal_precision=instrument.tick_precision)
+        self.bars[self.minute_bid] = builder_bid.build_bars_all()
+        self.iterations[self.minute_bid] = 0
+
+        # Prepare 1 minute ask bars
+        self.minute_ask = BarType(instrument.symbol, 1, Resolution.MINUTE, QuoteType.ASK)
+        cdef BarBuilder builder_ask = BarBuilder(data=data_bars_ask[Resolution.MINUTE],
+                                                 decimal_precision=instrument.tick_precision)
+        self.bars[self.minute_ask] = builder_ask.build_bars_all()
+        self.iterations[self.minute_ask] = 0
 
     cpdef void register_bar_type(self, BarType bar_type):
         """
@@ -290,19 +328,19 @@ cdef class DataProvider:
         # TODO: Add capability for re-sampled bars
         # TODO: QuoteType.LAST not yet supported
 
-        if bar_type not in self._bars:
+        if bar_type not in self.bars:
             if bar_type.quote_type is QuoteType.BID:
-                data = self._bar_data_bid[bar_type.resolution]
+                data = self._data_bars_bid[bar_type.resolution]
                 tick_precision = self.instrument.tick_precision
             elif bar_type.quote_type is QuoteType.ASK:
-                data = self._bar_data_ask[bar_type.resolution]
+                data = self._data_bars_ask[bar_type.resolution]
                 tick_precision = self.instrument.tick_precision
             elif bar_type.quote_type is QuoteType.MID:
-                data = (self._bar_data_bid[bar_type.resolution] + self._bar_data_ask[bar_type.resolution]) / 2
+                data = (self._data_bars_bid[bar_type.resolution] + self._data_bars_ask[bar_type.resolution]) / 2
                 tick_precision = self.instrument.tick_precision + 1
 
             builder = BarBuilder(data=data, decimal_precision=tick_precision)
-            self._bars[bar_type] = builder.build_bars_all()
+            self.bars[bar_type] = builder.build_bars_all()
 
         if bar_type not in self.iterations:
             self.iterations[bar_type] = 0
@@ -315,11 +353,11 @@ cdef class DataProvider:
         """
         Precondition.true(bar_type.symbol == self.instrument.symbol, 'bar_type.symbol == self.instrument.symbol')
 
-        if bar_type in self._bars:
-            del self._bars[bar_type]
+        if bar_type in self.bars and bar_type is not self.minute_bid and bar_type is not self.minute_ask:
+            del self.bars[bar_type]
 
-        if bar_type in self.iterations:
-            del self.iterations[bar_type]
+            if bar_type in self.iterations:
+                del self.iterations[bar_type]
 
     cpdef void set_initial_iterations(
             self,
@@ -332,9 +370,9 @@ cdef class DataProvider:
         cdef datetime current = from_time
 
         while current < to_time:
-            for bar_type, bars in self._bars.items():
+            for bar_type, bars in self.bars.items():
                 next_index = self.iterations[bar_type]
-                if self._bars[bar_type][next_index].timestamp == current:
+                if self.bars[bar_type][next_index].timestamp == current:
                     self.iterations[bar_type] += 1
             current += time_step
 
@@ -348,12 +386,9 @@ cdef class DataProvider:
         cdef dict bars_dict = dict()
         cdef int next_index = 0
 
-        for bar_type, bars in self._bars.items():
+        for bar_type, bars in self.bars.items():
             next_index = self.iterations[bar_type]
-            # print(self.iterations)
-            # print(self._bars[bar_type][next_index].timestamp)
-            # print(time)
-            if self._bars[bar_type][next_index].timestamp == time:
+            if self.bars[bar_type][next_index].timestamp == time:
                 bars_dict[bar_type] = bars[next_index]
                 self.iterations[bar_type] += 1
 

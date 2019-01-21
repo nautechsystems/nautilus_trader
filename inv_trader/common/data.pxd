@@ -39,6 +39,7 @@ cdef class DataClient:
     cpdef void disconnect(self)
     cpdef void update_all_instruments(self)
     cpdef void update_instrument(self, Symbol symbol)
+    cpdef dict get_all_instruments(self)
     cpdef Instrument get_instrument(self, Symbol symbol)
     cpdef void register_strategy(self, TradeStrategy strategy)
     cpdef void historical_bars(self, BarType bar_type, int quantity, handler)

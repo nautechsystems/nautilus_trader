@@ -9,7 +9,6 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False
 
-import pandas as pd
 import uuid
 
 from pandas import DataFrame
@@ -19,11 +18,10 @@ from inv_trader.core.decimal cimport Decimal
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.enums.brokerage cimport Broker
 from inv_trader.enums.currency_code cimport CurrencyCode
-from inv_trader.enums.resolution cimport Resolution
 from inv_trader.enums.order_type cimport OrderType
 from inv_trader.enums.order_side cimport OrderSide
 from inv_trader.model.money import money_zero, money
-from inv_trader.model.objects cimport Symbol, Instrument
+from inv_trader.model.objects cimport Symbol, Bar, BarType, Instrument
 from inv_trader.model.order cimport Order
 from inv_trader.model.events cimport Event, OrderEvent, AccountEvent, OrderCancelReject
 from inv_trader.model.events cimport OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
@@ -42,9 +40,10 @@ cdef class BacktestExecClient(ExecutionClient):
 
     def __init__(self,
                  list instruments: List[Instrument],
-                 dict tick_data: Dict[Symbol, DataFrame],
-                 dict bar_data_bid: Dict[Symbol, Dict[Resolution, DataFrame]],
-                 dict bar_data_ask: Dict[Symbol, Dict[Resolution, DataFrame]],
+                 dict data_ticks: Dict[Symbol, DataFrame],
+                 dict data_bars_bid: Dict[Symbol, List[Bar]],
+                 dict data_bars_ask: Dict[Symbol, List[Bar]],
+                 list data_minute_index: List[datetime],
                  int starting_capital,
                  int slippage_ticks,
                  TestClock clock,
@@ -53,18 +52,19 @@ cdef class BacktestExecClient(ExecutionClient):
         Initializes a new instance of the BacktestDataClient class.
 
         :param instruments: The instruments needed for the backtest.
-        :param tick_data: The historical tick market data needed for the backtest.
-        :param bar_data_bid: The historical bid market data needed for the backtest.
-        :param bar_data_ask: The historical ask market data needed for the backtest.
+        :param data_ticks: The historical tick market data needed for the backtest.
+        :param data_bars_bid: The historical bid bars data needed for the backtest.
+        :param data_bars_ask: The historical ask bars data needed for the backtest.
+        :param data_minute_index: The historical minute bars index.
         :param starting_capital: The starting capital for the backtest account (> 0).
         :param slippage_ticks: The slippage for each order fill in ticks (>= 0).
         :param clock: The clock for the component.
         :param logger: The logger for the component.
         """
         Precondition.list_type(instruments, Instrument, 'instruments')
-        Precondition.dict_types(tick_data, Symbol, DataFrame, 'tick_data')
-        Precondition.dict_types(bar_data_bid, Symbol, dict, 'bar_data_bid')
-        Precondition.dict_types(bar_data_ask, Symbol, dict, 'bar_data_ask')
+        Precondition.dict_types(data_ticks, Symbol, DataFrame, 'data_ticks')
+        Precondition.dict_types(data_bars_bid, Symbol, list, 'data_bars_bid')
+        Precondition.dict_types(data_bars_ask, Symbol, list, 'data_bars_ask')
         Precondition.positive(starting_capital, 'starting_capital')
         Precondition.not_negative(slippage_ticks, 'slippage_ticks')
         Precondition.not_none(clock, 'clock')
@@ -73,36 +73,21 @@ cdef class BacktestExecClient(ExecutionClient):
         super().__init__(clock, logger)
 
         # Convert instruments list to dictionary indexed by symbol
-        cdef dict instruments_dict = dict()  # type: Dict[Symbol, Instrument]
+        cdef dict instruments_dict = {}             # type: Dict[Symbol, Instrument]
         for instrument in instruments:
             instruments_dict[instrument.symbol] = instrument
-        self.instruments = instruments_dict
-        self.tick_data = tick_data
-        self.bar_data_bid = dict()  # type: Dict[Symbol, DataFrame]
-        self.bar_data_ask = dict()  # type: Dict[Symbol, DataFrame]
 
-        # Set minute data index
-        first_dataframe = bar_data_bid[next(iter(bar_data_bid))][Resolution.MINUTE]
-        self.minute_data_index = list(pd.to_datetime(first_dataframe.index, utc=True))
-
-        # Set bar data to one minute bars
-        for symbol, instrument in self.instruments.items():
-            self.bar_data_bid[symbol] = bar_data_bid[symbol][Resolution.MINUTE]
-            self.bar_data_ask[symbol] = bar_data_ask[symbol][Resolution.MINUTE]
-
+        self.instruments = instruments_dict         # type: Dict[Symbol, Instrument]
+        self.data_ticks = data_ticks                # type: Dict[Symbol, DataFrame]
+        self.data_bars_bid = data_bars_bid          # type: Dict[Symbol, List[Bar]]
+        self.data_bars_ask = data_bars_ask          # type: Dict[Symbol, List[Bar]]
+        self.data_minute_index = data_minute_index  # type: List[datetime]
         self.iteration = 0
         self.account_cash_start_day = money(starting_capital)
         self.account_cash_activity_day = money_zero()
-        self.bids_current = dict()      # type: Dict[Symbol, Decimal]
-        self.bids_high = dict()         # type: Dict[Symbol, Decimal]
-        self.bids_low = dict()          # type: Dict[Symbol, Decimal]
-        self.asks_current = dict()      # type: Dict[Symbol, Decimal]
-        self.asks_high = dict()         # type: Dict[Symbol, Decimal]
-        self.asks_low = dict()          # type: Dict[Symbol, Decimal]
-        self.slippage_index = dict()    # type: Dict[Symbol, Decimal]
-        self.working_orders = dict()    # type: Dict[OrderId, Order]
+        self.slippage_index = dict()                # type: Dict[Symbol, Decimal]
+        self.working_orders = dict()                # type: Dict[OrderId, Order]
 
-        self._set_market_prices()
         self._set_slippage_index(slippage_ticks)
 
         cdef AccountEvent initial_starting = AccountEvent(self.account.id,
@@ -120,10 +105,6 @@ cdef class BacktestExecClient(ExecutionClient):
                                                           self._clock.time_now())
 
         self.account.apply(initial_starting)
-
-        for symbol, instrument in self.instruments.items():
-            self.bids_current[symbol] = Decimal(self.bar_data_bid[symbol].iloc[self.iteration]['Open'], instrument.tick_precision)
-            self.asks_current[symbol] = Decimal(self.bar_data_ask[symbol].iloc[self.iteration]['Open'], instrument.tick_precision)
 
     cpdef void connect(self):
         """
@@ -148,11 +129,11 @@ cdef class BacktestExecClient(ExecutionClient):
         :param to_time: The time to wind the execution client to.
         :param time_step: The time step to iterate at.
         """
-        cdef datetime current = self.minute_data_index[0]
+        cdef datetime current = self.data_minute_index[0]
         cdef int next_index = 0
 
         while current < to_time:
-            if self.minute_data_index[next_index] == current:
+            if self.data_minute_index[next_index] == current:
                 next_index += 1
                 self.iteration += 1
             current += time_step
@@ -163,31 +144,29 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         Iterate the data client one time step.
         """
-        self._set_market_prices()
-
         for order_id, order in self.working_orders.copy().items():  # Copy dict to avoid resize during loop
             # Check for order fill
             if order.side is OrderSide.BUY:
                 if order.type is OrderType.STOP_MARKET or OrderType.STOP_LIMIT or OrderType.MIT:
-                    if self.asks_high[order.symbol] >= order.price:
+                    if self.data_bars_ask[order.symbol][self.iteration].high >= order.price:
                         del self.working_orders[order.id]
-                        self._fill_order(order, self.asks_high[order.symbol])
+                        self._fill_order(order, self.data_bars_ask[order.symbol][self.iteration].high)
                         continue
                 elif order.type is OrderType.LIMIT:
-                    if self.asks_low[order.symbol] < order.price:
+                    if self.data_bars_ask[order.symbol][self.iteration].low < order.price:
                         del self.working_orders[order.id]
-                        self._fill_order(order, self.asks_low[order.symbol])
+                        self._fill_order(order, self.data_bars_ask[order.symbol][self.iteration].low)
                         continue
             elif order.side is OrderSide.SELL:
                 if order.type is OrderType.STOP_MARKET or OrderType.STOP_LIMIT or OrderType.MIT:
-                    if self.bids_low[order.symbol] <= order.price:
+                    if self.data_bars_bid[order.symbol][self.iteration].low <= order.price:
                         del self.working_orders[order.id]
-                        self._fill_order(order, self.bids_low[order.symbol])
+                        self._fill_order(order, self.data_bars_bid[order.symbol][self.iteration].low)
                         continue
                 elif order.type is OrderType.LIMIT:
-                    if self.bids_high[order.symbol] > order.price:
+                    if self.data_bars_bid[order.symbol][self.iteration].high > order.price:
                         del self.working_orders[order.id]
-                        self._fill_order(order, self.bids_high[order.symbol])
+                        self._fill_order(order, self.data_bars_bid[order.symbol][self.iteration].high)
                         continue
 
             # Check for order expiry
@@ -243,8 +222,8 @@ cdef class BacktestExecClient(ExecutionClient):
             self._clock.time_now())
         self._on_event(accepted)
 
-        cdef Decimal current_ask = self.asks_current[order.symbol]
-        cdef Decimal current_bid = self.bids_current[order.symbol]
+        cdef Decimal current_ask = self.data_bars_ask[order.symbol][self.iteration].close
+        cdef Decimal current_bid = self.data_bars_bid[order.symbol][self.iteration].close
 
         # Check order price is valid or reject
         if order.side is OrderSide.BUY:
@@ -314,8 +293,8 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         Precondition.is_in(order.id, self.working_orders, 'order.id', 'working_orders')
 
-        cdef Decimal current_ask = self.asks_current[order.symbol]
-        cdef Decimal current_bid = self.bids_current[order.symbol]
+        cdef Decimal current_ask = self.data_bars_ask[order.symbol][self.iteration].close
+        cdef Decimal current_bid = self.data_bars_bid[order.symbol][self.iteration].close
 
         if order.side is OrderSide.BUY:
             if order.type is OrderType.STOP_MARKET or order.type is OrderType.STOP_LIMIT or order.type is OrderType.MIT:
@@ -346,22 +325,6 @@ cdef class BacktestExecClient(ExecutionClient):
             self._clock.time_now())
 
         self._on_event(modified)
-
-    cdef void _set_market_prices(self):
-        """
-        Set the current market prices for the iteration.
-        """
-        for symbol, instrument in self.instruments.items():
-            self.bids_current[symbol] = Decimal(self.bar_data_bid[symbol].iloc[self.iteration]['Close'], instrument.tick_precision)
-            self.bids_high[symbol] = Decimal(self.bar_data_bid[symbol].iloc[self.iteration]['High'], instrument.tick_precision)
-            self.bids_low[symbol] = Decimal(self.bar_data_bid[symbol].iloc[self.iteration]['Low'], instrument.tick_precision)
-            self.asks_current[symbol] = Decimal(self.bar_data_ask[symbol].iloc[self.iteration]['Close'], instrument.tick_precision)
-            self.asks_high[symbol] = Decimal(self.bar_data_ask[symbol].iloc[self.iteration]['High'], instrument.tick_precision)
-            self.asks_low[symbol] = Decimal(self.bar_data_ask[symbol].iloc[self.iteration]['Low'], instrument.tick_precision)
-
-            # print(f"{symbol}-IDX: {self.iteration}")
-            # print(f"{symbol}-ASK: {self.asks_current[symbol]}")
-            # print(f"{symbol}-BID: {self.bids_current[symbol]}")
 
     cdef void _set_slippage_index(self, int slippage_ticks):
         """

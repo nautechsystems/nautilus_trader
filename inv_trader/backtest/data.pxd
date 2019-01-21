@@ -19,13 +19,15 @@ cdef class BacktestDataClient(DataClient):
     """
     Provides a data client for the BacktestEngine.
     """
-    cdef readonly dict tick_data
+    cdef readonly dict data_tick
     cdef readonly dict bar_data_bid
     cdef readonly dict bar_data_ask
-    cdef readonly list minute_data_index
-    cdef readonly int iteration
+    cdef readonly list data_minute_index
     cdef readonly dict data_providers
+    cdef readonly int iteration
 
+    cpdef dict get_minute_bid_bars(self)
+    cpdef dict get_minute_ask_bars(self)
     cpdef void set_initial_iteration(self, datetime to_time, timedelta time_step)
     cpdef void iterate(self, datetime time)
     cpdef void subscribe_bars(self, BarType bar_type, handler)
@@ -39,10 +41,12 @@ cdef class DataProvider:
     Provides data for the BacktestDataClient.
     """
     cdef readonly Instrument instrument
+    cdef readonly dict _data_bars_bid
+    cdef readonly dict _data_bars_ask
+    cdef readonly BarType minute_bid
+    cdef readonly BarType minute_ask
+    cdef readonly dict bars
     cdef readonly dict iterations
-    cdef readonly dict _bar_data_bid
-    cdef readonly dict _bar_data_ask
-    cdef readonly dict _bars
 
     cpdef void register_bar_type(self, BarType bar_type)
     cpdef void deregister_bar_type(self, BarType bar_type)
