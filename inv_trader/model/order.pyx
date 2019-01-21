@@ -295,8 +295,8 @@ cdef class OrderIdGenerator:
         cdef str order_count = str(self._order_symbol_counts[order_symbol])
         cdef OrderId order_id = OrderId(str(order_symbol.code)
                                        + self.separator + order_symbol.venue_string()
-                                       + self.separator + order_count
                                        + self.separator + self.order_id_tag
+                                       + self.separator + order_count
                                        + self.separator + milliseconds)
 
         if order_id in self._order_ids:

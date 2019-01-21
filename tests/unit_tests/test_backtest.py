@@ -19,6 +19,7 @@ from inv_trader.model.enums import Resolution
 from inv_trader.model.enums import Venue, OrderSide, OrderStatus, TimeInForce
 from inv_trader.model.identifiers import Label, OrderId, PositionId
 from inv_trader.model.objects import Symbol
+from inv_trader.model.events import OrderRejected, OrderWorking, OrderModified, OrderFilled
 from inv_trader.backtest.data import BacktestDataClient
 from inv_trader.backtest.execution import BacktestExecClient
 from inv_trader.backtest.engine import BacktestConfig, BacktestEngine
@@ -164,9 +165,77 @@ class BacktestExecClientTests(unittest.TestCase):
         strategy.submit_order(order, PositionId(str(order.id)))
 
         # Assert
+        self.assertEqual(4, strategy.object_storer.count)
+        self.assertTrue(isinstance(strategy.object_storer.get_store()[3], OrderFilled))
+        self.assertEqual(Decimal('86.711'), order.average_price)
+
+    def test_can_submit_limit_order(self):
+        # Arrange
+        strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
+        self.client.register_strategy(strategy)
+        strategy.start()
+
+        order = strategy.order_factory.limit(
+            USDJPY_FXCM,
+            OrderId('123456'),
+            Label('S1_E'),
+            OrderSide.BUY,
+            100000,
+            Decimal('80.000'))
+
+        # Act
+        strategy.submit_order(order, PositionId(str(order.id)))
+
+        # Assert
         print(strategy.object_storer.get_store())
         self.assertEqual(4, strategy.object_storer.count)
-        self.assertEqual(Decimal('86.711'), order.average_price)
+        self.assertTrue(isinstance(strategy.object_storer.get_store()[3], OrderWorking))
+        self.assertEqual(Decimal('80.000'), order.price)
+
+    def test_can_modify_stop_order(self):
+        # Arrange
+        strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
+        self.client.register_strategy(strategy)
+        strategy.start()
+
+        order = strategy.order_factory.stop_market(
+            USDJPY_FXCM,
+            OrderId('123456'),
+            Label('S1_E'),
+            OrderSide.BUY,
+            100000,
+            Decimal('86.711'))
+
+        strategy.submit_order(order, PositionId(str(order.id)))
+
+        # Act
+        strategy.modify_order(order, Decimal('86.712'))
+
+        # Assert
+        self.assertEqual(Decimal('86.712'), order.price)
+        self.assertEqual(5, strategy.object_storer.count)
+        self.assertTrue(isinstance(strategy.object_storer.get_store()[4], OrderModified))
+
+    def test_order_with_invalid_price_gets_rejected(self):
+        # Arrange
+        strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
+        self.client.register_strategy(strategy)
+        strategy.start()
+
+        order = strategy.order_factory.stop_market(
+            USDJPY_FXCM,
+            OrderId('123456'),
+            Label('S1_E'),
+            OrderSide.BUY,
+            100000,
+            Decimal('80.000'))
+
+        # Act
+        strategy.submit_order(order, PositionId(str(order.id)))
+
+        # Assert
+        self.assertEqual(4, strategy.object_storer.count)
+        self.assertTrue(isinstance(strategy.object_storer.get_store()[3], OrderRejected))
 
 
 # -- ENGINE -------------------------------------------------------------------------------------- #

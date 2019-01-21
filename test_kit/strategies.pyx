@@ -23,7 +23,7 @@ from inv_trader.model.price cimport price
 from inv_trader.model.events cimport Event
 from inv_trader.model.identifiers cimport Label, OrderId, PositionId
 from inv_trader.model.order cimport Order
-from inv_trader.model.events cimport OrderFilled, OrderExpired, OrderRejected
+from inv_trader.model.events cimport OrderFilled, OrderExpired, OrderRejected, OrderWorking
 from inv_trader.strategy cimport TradeStrategy
 from inv_indicators.average.ema import ExponentialMovingAverage
 from inv_indicators.atr import AverageTrueRange
@@ -107,31 +107,31 @@ cdef class EMACross(TradeStrategy):
     """"
     A simple moving average cross example strategy.
     """
-    cdef Instrument instrument
-    cdef Symbol symbol
-    cdef BarType bar_type
-    cdef int position_size
-    cdef int tick_precision
-    cdef Decimal entry_buffer
-    cdef float SL_atr_multiple
-    cdef Decimal SL_buffer
-    cdef object fast_ema
-    cdef object slow_ema
-    cdef object atr
-    cdef dict entry_orders
-    cdef dict stop_loss_orders
-    cdef PositionId position_id
+    cdef readonly Instrument instrument
+    cdef readonly Symbol symbol
+    cdef readonly BarType bar_type
+    cdef readonly int position_size
+    cdef readonly int tick_precision
+    cdef readonly Decimal entry_buffer
+    cdef readonly float SL_atr_multiple
+    cdef readonly Decimal SL_buffer
+    cdef readonly object fast_ema
+    cdef readonly object slow_ema
+    cdef readonly object atr
+    cdef readonly dict entry_orders
+    cdef readonly dict stop_loss_orders
+    cdef readonly PositionId position_id
 
     def __init__(self,
                  label: str,
                  order_id_tag: str,
                  instrument: Instrument,
                  bar_type: BarType,
-                 position_size: int,
-                 fast_ema: int,
-                 slow_ema: int,
-                 atr_period: int,
-                 sl_atr_multiple: float,
+                 position_size: int=100000,
+                 fast_ema: int=10,
+                 slow_ema: int=20,
+                 atr_period: int=20,
+                 sl_atr_multiple: float=2,
                  bar_capacity: int=1000,
                  logger: Logger=None):
         """
@@ -243,11 +243,15 @@ cdef class EMACross(TradeStrategy):
 
         for order_id, order in self.stop_loss_orders.items():
             if order.side is OrderSide.SELL:
-                temp_price = self.last_bar(self.bar_type).low
+                temp_price = price(self.last_bar(self.bar_type).low
+                                   - self.atr.value * self.SL_atr_multiple,
+                                   self.tick_precision)
                 if order.price < temp_price:
                     self.modify_order(order, temp_price)
             elif order.side is OrderSide.BUY:
-                temp_price = self.last_bar(self.bar_type).high
+                temp_price = price(self.last_bar(self.bar_type).low
+                                   - self.atr.value * self.SL_atr_multiple,
+                                   self.tick_precision)
                 if order.price > temp_price:
                     self.modify_order(order, temp_price)
 
@@ -259,6 +263,12 @@ cdef class EMACross(TradeStrategy):
 
         :param event: The received event.
         """
+        # If an entry order is rejected them remove it
+        if isinstance(event, OrderRejected):
+            if event.order_id in self.entry_orders:
+                del self.entry_orders[event.order_id]
+                self.position_id = None
+
         if isinstance(event, OrderFilled):
             # A real strategy should also cover the OrderPartiallyFilled case...
 
@@ -297,6 +307,12 @@ cdef class EMACross(TradeStrategy):
             print(f"OrderRejected({event.order_id}): {event.rejected_reason}")
             if event.order_id in self.entry_orders:
                 del self.entry_orders[event.order_id]
+                self.position_id = None
+            # If a stop-loss order is rejected then flatten the entered position
+            if event.order_id in self.stop_loss_orders:
+                self.flatten_all_positions()
+                self.entry_orders = {}      # type: Dict[OrderId, Order]
+                self.stop_loss_orders = {}  # type: Dict[OrderId, Order]
                 self.position_id = None
 
     cpdef void on_stop(self):

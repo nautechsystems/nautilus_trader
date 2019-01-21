@@ -19,7 +19,7 @@ from setuptools import setup, Extension
 # Command to compile c extensions
 # python setup.py build_ext --inplace
 
-VERSION = '0.74.0'
+VERSION = '0.75.0'
 AUTHOR = 'Invariance'
 INV_TRADER = 'inv_trader'
 DESCRIPTION = 'The python trading client for Invariance.'
@@ -40,6 +40,7 @@ REQUIREMENTS = ['cython',
 # -----------------------
 Options.embed_pos_in_docstring = True  # Embed docstrings in extensions
 Options.warning_errors = True  # Treat compiler warnings as errors
+Options.cimport_from_pyx = True  # Allows cimporting from a pyx file without a pxd file
 Profile_Hooks = False  # Write profiling hooks into methods (some overhead, use for profiling)
 
 
@@ -87,4 +88,5 @@ setup(
     requires=REQUIREMENTS,
     ext_modules=cythonize(extensions, compiler_directives={'profile': Profile_Hooks}),
     cmdclass={'build_ext': Cython.Build.build_ext},
-    options={'build_ext': {'inplace': False, 'force': False}})
+    options={'build_ext': {'inplace': False, 'force': False}},
+    zip_safe=False)

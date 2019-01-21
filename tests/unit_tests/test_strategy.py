@@ -654,7 +654,7 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Assert
         print(result)
-        self.assertTrue(result.value.startswith('AUDUSD-FXCM-1-0-'))
+        self.assertTrue(result.value.startswith('AUDUSD-FXCM-0-1-'))
 
     def test_get_opposite_side_returns_expected_sides(self):
         # Arrange

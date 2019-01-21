@@ -246,11 +246,13 @@ cdef class BacktestExecClient(ExecutionClient):
         cdef Decimal current_ask = self.asks_current[order.symbol]
         cdef Decimal current_bid = self.bids_current[order.symbol]
 
+        # Check order price is valid or reject
         if order.side is OrderSide.BUY:
             if order.type is OrderType.MARKET:
                 self._fill_order(order, current_ask)
                 return
-            elif order.type is OrderType.STOP_MARKET or OrderType.STOP_LIMIT or OrderType.MIT:
+            elif order.type is OrderType.STOP_MARKET or order.type is OrderType.STOP_LIMIT or order.type is OrderType.MIT:
+                print(order.type)
                 if order.price < current_ask:
                     self._reject_order(order,  f'Buy stop order price of {order.price} is below the ask {current_ask}')
                     return
@@ -262,7 +264,7 @@ cdef class BacktestExecClient(ExecutionClient):
             if order.type is OrderType.MARKET:
                 self._fill_order(order, current_bid)
                 return
-            elif order.type is OrderType.STOP_MARKET or OrderType.STOP_LIMIT or OrderType.MIT:
+            elif order.type is OrderType.STOP_MARKET or order.type is OrderType.STOP_LIMIT or order.type is OrderType.MIT:
                 if order.price > current_bid:
                     self._reject_order(order,  f'Sell stop order price of {order.price} is above the bid {current_bid}')
                     return
@@ -271,6 +273,8 @@ cdef class BacktestExecClient(ExecutionClient):
                     self._reject_order(order,  f'Sell limit order price of {order.price} is below the bid {current_bid}')
                     return
 
+        # Order now becomes working
+        self._log.debug(f"{order.id} WORKING at {order.price}.")
         self.working_orders[order.id] = order
 
         cdef OrderWorking working = OrderWorking(
@@ -315,7 +319,7 @@ cdef class BacktestExecClient(ExecutionClient):
         cdef Decimal current_bid = self.bids_current[order.symbol]
 
         if order.side is OrderSide.BUY:
-            if order.type is OrderType.STOP_MARKET or OrderType.STOP_LIMIT or OrderType.MIT:
+            if order.type is OrderType.STOP_MARKET or order.type is OrderType.STOP_LIMIT or order.type is OrderType.MIT:
                 if order.price < current_ask:
                     self._reject_modify_order(order,  f'Buy stop order price of {order.price} is below the ask {current_ask}')
                     return
@@ -324,7 +328,7 @@ cdef class BacktestExecClient(ExecutionClient):
                     self._reject_modify_order(order,  f'Buy limit order price of {order.price} is above the ask {current_ask}')
                     return
         elif order.side is OrderSide.SELL:
-            if order.type is OrderType.STOP_MARKET or OrderType.STOP_LIMIT or OrderType.MIT:
+            if order.type is OrderType.STOP_MARKET or order.type is OrderType.STOP_LIMIT or order.type is OrderType.MIT:
                 if order.price > current_bid:
                     self._reject_modify_order(order,  f'Sell stop order price of {order.price} is above the bid {current_bid}')
                     return
