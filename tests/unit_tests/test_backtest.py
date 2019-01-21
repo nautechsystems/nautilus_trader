@@ -24,7 +24,7 @@ from inv_trader.backtest.data import BacktestDataClient
 from inv_trader.backtest.execution import BacktestExecClient
 from inv_trader.backtest.engine import BacktestConfig, BacktestEngine
 from test_kit.objects import ObjectStorer
-from test_kit.strategies import TestStrategy1, EMACross
+from test_kit.strategies import EmptyStrategy, TestStrategy1, EMACross
 from test_kit.data import TestDataProvider
 from test_kit.stubs import TestStubs
 
@@ -192,7 +192,7 @@ class BacktestExecClientTests(unittest.TestCase):
         # Assert
         self.assertEqual(4, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[3], OrderFilled))
-        self.assertEqual(Decimal('86.711'), order.average_price)
+        self.assertEqual(Decimal('86.710'), order.average_price)
 
     def test_can_submit_limit_order(self):
         # Arrange
