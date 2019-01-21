@@ -31,7 +31,6 @@ from inv_trader.model.objects cimport Symbol, Tick, BarType, Bar, Instrument
 from inv_trader.model.order cimport Order, OrderIdGenerator, OrderFactory
 from inv_trader.model.position cimport Position
 from inv_trader.tools cimport IndicatorUpdater
-
 Indicator = object
 
 
