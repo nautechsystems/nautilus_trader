@@ -21,26 +21,19 @@ cdef class BacktestExecClient(ExecutionClient):
     Provides an execution client for the BacktestEngine.
     """
     cdef readonly dict instruments
-    cdef readonly dict tick_data
-    cdef readonly dict bar_data_bid
-    cdef readonly dict bar_data_ask
-    cdef readonly list minute_data_index
+    cdef readonly dict data_ticks
+    cdef readonly dict data_bars_bid
+    cdef readonly dict data_bars_ask
+    cdef readonly list data_minute_index
     cdef readonly int iteration
     cdef readonly Decimal account_cash_start_day
     cdef readonly Decimal account_cash_activity_day
-    cdef readonly dict bids_current
-    cdef readonly dict bids_high
-    cdef readonly dict bids_low
-    cdef readonly dict asks_current
-    cdef readonly dict asks_high
-    cdef readonly dict asks_low
     cdef readonly dict slippage_index
     cdef readonly dict working_orders
 
     cpdef void set_initial_iteration(self, datetime to_time, timedelta time_step)
     cpdef void iterate(self, datetime time)
 
-    cdef void _set_market_prices(self)
     cdef void _set_slippage_index(self, int slippage_ticks)
     cdef void _reject_order(self, Order order, str reason)
     cdef void _reject_modify_order(self, Order order, str reason)

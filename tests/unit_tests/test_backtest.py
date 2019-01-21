@@ -38,19 +38,19 @@ class BacktestDataClientTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
         self.usdjpy = TestStubs.instrument_usdjpy()
-        self.bid_data_1min = TestDataProvider.usdjpy_1min_bid()
-        self.ask_data_1min = TestDataProvider.usdjpy_1min_ask()
+        self.bid_data_1min = TestDataProvider.usdjpy_1min_bid().iloc[:2000]
+        self.ask_data_1min = TestDataProvider.usdjpy_1min_ask().iloc[:2000]
 
         self.instruments = [TestStubs.instrument_usdjpy()]
-        self.tick_data = {self.usdjpy.symbol: pd.DataFrame()}
-        self.bid_data = {self.usdjpy.symbol: {Resolution.MINUTE: self.bid_data_1min}}
-        self.ask_data = {self.usdjpy.symbol: {Resolution.MINUTE: self.ask_data_1min}}
+        self.data_ticks = {self.usdjpy.symbol: pd.DataFrame()}
+        self.data_bars_bid = {self.usdjpy.symbol: {Resolution.MINUTE: self.bid_data_1min}}
+        self.data_bars_ask = {self.usdjpy.symbol: {Resolution.MINUTE: self.ask_data_1min}}
 
         self.client = BacktestDataClient(
             instruments=self.instruments,
-            tick_data=self.tick_data,
-            bar_data_bid=self.bid_data,
-            bar_data_ask=self.ask_data,
+            data_ticks=self.data_ticks,
+            data_bars_bid=self.data_bars_bid,
+            data_bars_ask=self.data_bars_ask,
             clock=TestClock(),
             logger=Logger())
 
@@ -60,7 +60,23 @@ class BacktestDataClientTests(unittest.TestCase):
         # Assert
         self.assertEqual(all(self.bid_data_1min), all(self.client.bar_data_bid[self.usdjpy.symbol][Resolution.MINUTE]))
         self.assertEqual(all(self.ask_data_1min), all(self.client.bar_data_bid[self.usdjpy.symbol][Resolution.MINUTE]))
-        self.assertEqual(all(self.bid_data_1min.index), all(self.client.minute_data_index))
+        self.assertEqual(all(self.bid_data_1min.index), all(self.client.data_minute_index))
+
+    def test_can_get_one_minute_bid_bars(self):
+        # Arrange
+        # Act
+        bars = self.client.get_minute_bid_bars()
+
+        # Assert
+        self.assertEqual(2000, len(bars[self.usdjpy.symbol]))
+
+    def test_can_get_one_minute_ask_bars(self):
+        # Arrange
+        # Act
+        bars = self.client.get_minute_ask_bars()
+
+        # Assert
+        self.assertEqual(2000, len(bars[self.usdjpy.symbol]))
 
     def test_can_set_initial_iteration(self):
         # Arrange
@@ -75,7 +91,7 @@ class BacktestDataClientTests(unittest.TestCase):
         self.assertEqual(1440, self.client.iteration)
         self.assertEqual(start, self.client.time_now())
         self.assertEqual(1440, self.client.data_providers[self.usdjpy.symbol].iterations[TestStubs.bartype_usdjpy_1min_bid()])
-        self.assertEqual(start, self.client.data_providers[self.usdjpy.symbol]._bars[TestStubs.bartype_usdjpy_1min_bid()][1440].timestamp)
+        self.assertEqual(start, self.client.data_providers[self.usdjpy.symbol].bars[TestStubs.bartype_usdjpy_1min_bid()][1440].timestamp)
 
     def test_can_iterate_bar_data(self):
         # Arrange
@@ -90,7 +106,7 @@ class BacktestDataClientTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(1000, len(receiver.get_store()))
-        self.assertTrue(self.client.minute_data_index[0] == self.client.data_providers[self.usdjpy.symbol]._bars[TestStubs.bartype_usdjpy_1min_bid()][0].timestamp)
+        self.assertTrue(self.client.data_minute_index[0] == self.client.data_providers[self.usdjpy.symbol].bars[TestStubs.bartype_usdjpy_1min_bid()][0].timestamp)
 
 
 # -- EXECUTION ----------------------------------------------------------------------------------- #
@@ -99,20 +115,29 @@ class BacktestExecClientTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
         self.usdjpy = TestStubs.instrument_usdjpy()
-        self.bid_data_1min = TestDataProvider.usdjpy_1min_bid()
-        self.ask_data_1min = TestDataProvider.usdjpy_1min_ask()
+        self.bid_data_1min = TestDataProvider.usdjpy_1min_bid()[:2000]
+        self.ask_data_1min = TestDataProvider.usdjpy_1min_ask()[:2000]
 
         self.instruments = [TestStubs.instrument_usdjpy()]
-        self.tick_data = {self.usdjpy.symbol: pd.DataFrame()}
-        self.bid_data = {self.usdjpy.symbol: {Resolution.MINUTE: self.bid_data_1min}}
-        self.ask_data = {self.usdjpy.symbol: {Resolution.MINUTE: self.ask_data_1min}}
+        self.data_ticks = {self.usdjpy.symbol: pd.DataFrame()}
+        self.data_bars_bid = {self.usdjpy.symbol: {Resolution.MINUTE: self.bid_data_1min}}
+        self.data_bars_ask = {self.usdjpy.symbol: {Resolution.MINUTE: self.ask_data_1min}}
 
         self.strategies = [TestStrategy1(TestStubs.bartype_usdjpy_1min_bid())]
 
+        self.data_client = BacktestDataClient(
+            instruments=self.instruments,
+            data_ticks=self.data_ticks,
+            data_bars_bid=self.data_bars_bid,
+            data_bars_ask=self.data_bars_ask,
+            clock=TestClock(),
+            logger=Logger())
+
         self.client = BacktestExecClient(instruments=self.instruments,
-                                         tick_data=self.tick_data,
-                                         bar_data_bid=self.bid_data,
-                                         bar_data_ask=self.ask_data,
+                                         data_ticks=self.data_ticks,
+                                         data_bars_bid=self.data_client.get_minute_bid_bars(),
+                                         data_bars_ask=self.data_client.get_minute_ask_bars(),
+                                         data_minute_index=self.data_client.data_minute_index,
                                          starting_capital=1000000,
                                          slippage_ticks=1,
                                          clock=TestClock(),
@@ -122,9 +147,9 @@ class BacktestExecClientTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(all(self.bid_data), all(self.client.bar_data_bid[self.usdjpy.symbol]))
-        self.assertEqual(all(self.ask_data), all(self.client.bar_data_bid[self.usdjpy.symbol]))
-        self.assertEqual(all(self.bid_data_1min.index), all(self.client.minute_data_index))
+        self.assertEqual(all(self.data_bars_bid), all(self.client.data_bars_bid[self.usdjpy.symbol]))
+        self.assertEqual(all(self.data_bars_ask), all(self.client.data_bars_ask[self.usdjpy.symbol]))
+        self.assertEqual(all(self.bid_data_1min.index), all(self.client.data_minute_index))
         self.assertEqual(Decimal(1000000), self.client.account.cash_balance)
         self.assertEqual(Decimal(1000000), self.client.account.free_equity)
         self.assertEqual(Decimal('0.001'), self.client.slippage_index[self.usdjpy.symbol])
@@ -241,33 +266,6 @@ class BacktestExecClientTests(unittest.TestCase):
 # -- ENGINE -------------------------------------------------------------------------------------- #
 class BacktestEngineTests(unittest.TestCase):
 
-    def setUp(self):
-        # Fixture Setup
-        self.usdjpy = TestStubs.instrument_usdjpy()
-        self.bid_data_1min = TestDataProvider.usdjpy_1min_bid()
-        self.ask_data_1min = TestDataProvider.usdjpy_1min_ask()
-
-        self.instruments = [TestStubs.instrument_usdjpy()]
-        self.tick_data = {self.usdjpy.symbol: pd.DataFrame()}
-        self.bid_data = {self.usdjpy.symbol: {Resolution.MINUTE: self.bid_data_1min}}
-        self.ask_data = {self.usdjpy.symbol: {Resolution.MINUTE: self.ask_data_1min}}
-
-        self.strategies = [TestStrategy1(TestStubs.bartype_usdjpy_1min_bid())]
-
-        self.engine = BacktestEngine(instruments=self.instruments,
-                                     tick_data=self.tick_data,
-                                     bar_data_bid=self.bid_data,
-                                     bar_data_ask=self.ask_data,
-                                     strategies=self.strategies)
-
-    def test_can_initialize_engine_with_data(self):
-        # Arrange
-        # Act
-        # Assert
-        # Does not throw exception
-        self.assertEqual(all(self.bid_data), all(self.engine.data_client.bar_data_bid))
-        self.assertEqual(all(self.ask_data), all(self.engine.data_client.bar_data_bid))
-
     def test_can_run(self):
         # Arrange
         usdjpy = TestStubs.instrument_usdjpy()
@@ -291,9 +289,9 @@ class BacktestEngineTests(unittest.TestCase):
 
         config = BacktestConfig(console_prints=True)
         engine = BacktestEngine(instruments=instruments,
-                                tick_data=tick_data,
-                                bar_data_bid=bid_data,
-                                bar_data_ask=ask_data,
+                                data_ticks=tick_data,
+                                data_bars_bid=bid_data,
+                                data_bars_ask=ask_data,
                                 strategies=strategies,
                                 config=config)
 

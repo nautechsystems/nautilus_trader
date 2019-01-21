@@ -68,17 +68,17 @@ cdef class BacktestEngine:
 
     def __init__(self,
                  list instruments: List[Instrument],
-                 dict tick_data: Dict[Symbol, DataFrame],
-                 dict bar_data_bid: Dict[Symbol, Dict[Resolution, DataFrame]],
-                 dict bar_data_ask: Dict[Symbol, Dict[Resolution, DataFrame]],
+                 dict data_ticks: Dict[Symbol, DataFrame],
+                 dict data_bars_bid: Dict[Symbol, Dict[Resolution, DataFrame]],
+                 dict data_bars_ask: Dict[Symbol, Dict[Resolution, DataFrame]],
                  list strategies: List[TradeStrategy],
                  BacktestConfig config=BacktestConfig()):
         """
         Initializes a new instance of the BacktestEngine class.
 
         :param strategies: The strategies to backtest.
-        :param bar_data_bid: The historical bid market data needed for the backtest.
-        :param bar_data_ask: The historical ask market data needed for the backtest.
+        :param data_bars_bid: The historical bid market data needed for the backtest.
+        :param data_bars_ask: The historical ask market data needed for the backtest.
         :param strategies: The strategies for the backtest.
         :param config: The configuration for the backtest.
         """
@@ -102,29 +102,29 @@ cdef class BacktestEngine:
 
         self.data_client = BacktestDataClient(
             instruments,
-            tick_data,
-            bar_data_bid,
-            bar_data_ask,
+            data_ticks,
+            data_bars_bid,
+            data_bars_ask,
             clock=TestClock(),
             logger=self.test_log)
 
         self.exec_client = BacktestExecClient(
             instruments,
-            tick_data,
-            bar_data_bid,
-            bar_data_ask,
+            data_ticks,
+            self.data_client.get_minute_bid_bars(),
+            self.data_client.get_minute_ask_bars(),
+            data_minute_index=self.data_client.data_minute_index,
             starting_capital=config.starting_capital,
             slippage_ticks=config.slippage_ticks,
             clock=TestClock(),
             logger=self.test_log)
 
         # Set minute data index
-        first_dataframe = bar_data_bid[next(iter(bar_data_bid))][Resolution.MINUTE]
-        self.minute_data_index = list(pd.to_datetime(first_dataframe.index, utc=True))
+        first_dataframe = data_bars_bid[next(iter(data_bars_bid))][Resolution.MINUTE]
+        self.data_minute_index = list(pd.to_datetime(first_dataframe.index, utc=True))
 
-        assert(self.minute_data_index == self.data_client.minute_data_index)
-        assert(self.minute_data_index == self.exec_client.minute_data_index)
-
+        assert(self.data_minute_index == self.data_client.data_minute_index)
+        assert(self.data_minute_index == self.exec_client.data_minute_index)
 
         for strategy in strategies:
             # Replace strategies clocks with test clocks
@@ -154,8 +154,8 @@ cdef class BacktestEngine:
         Note: The default time_step_mins is 1 and shouldn't need to be changed.
         """
         Precondition.true(start < stop, 'start < stop')
-        Precondition.true(start >= self.minute_data_index[0], 'start >= self.first_timestamp')
-        Precondition.true(stop <= self.minute_data_index[- 1], 'stop <= self.last_timestamp')
+        Precondition.true(start >= self.data_minute_index[0], 'start >= self.first_timestamp')
+        Precondition.true(stop <= self.data_minute_index[- 1], 'stop <= self.last_timestamp')
         Precondition.positive(time_step_mins, 'time_step_mins')
 
         cdef time_step = timedelta(minutes=time_step_mins)

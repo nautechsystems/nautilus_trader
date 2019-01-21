@@ -103,6 +103,12 @@ cdef class DataClient:
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the data client.")
 
+    cpdef dict get_all_instruments(self):
+        """
+        :return: A copy of the dictionary of all instruments.
+        """
+        return self._instruments.copy()  # type: Dict[Symbol, Instrument]
+
     cpdef Instrument get_instrument(self, Symbol symbol):
         """
         Get the instrument corresponding to the given symbol.
