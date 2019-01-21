@@ -223,7 +223,7 @@ cdef class BacktestExecClient(ExecutionClient):
         :param order: The order to submit.
         :param strategy_id: The strategy identifier to register the order with.
         """
-        Precondition.true(order.id not in self.working_orders, 'order.id not in self.working_orders')
+        Precondition.not_in(order.id, self.working_orders, 'order.id', 'working_orders')
 
         self._register_order(order, strategy_id)
 
@@ -297,7 +297,7 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         Send a cancel order request to the execution service.
         """
-        Precondition.true(order.id in self.working_orders, 'order.id in self.working_orders')
+        Precondition.is_in(order.id, self.working_orders, 'order.id', 'working_orders')
 
         cdef OrderCancelled cancelled = OrderCancelled(
             order.symbol,
@@ -313,7 +313,7 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         Send a modify order request to the execution service.
         """
-        Precondition.true(order.id in self.working_orders, 'order.id in self.working_orders')
+        Precondition.is_in(order.id, self.working_orders, 'order.id', 'working_orders')
 
         cdef Decimal current_ask = self.asks_current[order.symbol]
         cdef Decimal current_bid = self.bids_current[order.symbol]

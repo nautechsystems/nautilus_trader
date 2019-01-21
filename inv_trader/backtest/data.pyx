@@ -216,7 +216,7 @@ cdef class BacktestDataClient(DataClient):
         :param bar_type: The bar type to subscribe to.
         :param handler: The callable handler for subscription (if None will just call print).
         """
-        Precondition.true(bar_type.symbol in self.data_providers, 'bar_type.symbol in self.data_providers')
+        Precondition.is_in(bar_type.symbol, self.data_providers, 'symbol', 'data_providers')
 
         self.data_providers[bar_type.symbol].register_bar_type(bar_type)
         self._subscribe_bars(bar_type, handler)
@@ -228,7 +228,7 @@ cdef class BacktestDataClient(DataClient):
         :param bar_type: The bar type to unsubscribe from.
         :param handler: The callable handler which was subscribed (can be None).
         """
-        Precondition.true(bar_type.symbol in self.data_providers, 'bar_type.symbol in self.data_providers')
+        Precondition.is_in(bar_type.symbol, self.data_providers, 'symbol', 'data_providers')
 
         self.data_providers[bar_type.symbol].deregister_bar_type(bar_type)
         self._unsubscribe_bars(bar_type, handler)
@@ -270,8 +270,8 @@ cdef class DataProvider:
         :param bar_data_bid: The bid data for the data provider (must contain minute resolution).
         :param bar_data_ask: The ask data for the data provider (must contain minute resolution).
         """
-        Precondition.true(Resolution.MINUTE in bar_data_bid, 'Resolution.MINUTE in bid_data')
-        Precondition.true(Resolution.MINUTE in bar_data_ask, 'Resolution.MINUTE in bid_data')
+        Precondition.is_in(Resolution.MINUTE, bar_data_bid, 'Resolution.MINUTE', 'bar_data_bid')
+        Precondition.is_in(Resolution.MINUTE, bar_data_ask, 'Resolution.MINUTE', 'bar_data_ask')
 
         self.instrument = instrument
         self.iterations = dict()           # type: Dict[BarType, int]
