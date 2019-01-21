@@ -701,8 +701,6 @@ cdef class TradeStrategy:
                 self.log.warning(f"Cannot flatten position (the position {position_id} was None.")
                 continue
             if position.market_position == MarketPosition.FLAT:
-                self.log.warning(
-                    f"Cannot flatten position (the position {position_id} was already FLAT).")
                 continue
 
             self.log.info(f"Flattening {position}.")

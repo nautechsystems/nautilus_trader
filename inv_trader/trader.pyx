@@ -94,7 +94,7 @@ cdef class Trader:
         Reset the trader.
         """
         for strategy in self.strategies:
-            strategy.stop()
+            strategy.reset()
 
     cpdef void dispose(self):
         """

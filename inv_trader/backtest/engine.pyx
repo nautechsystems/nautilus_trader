@@ -188,4 +188,9 @@ cdef class BacktestEngine:
             self.test_clock.set_time(time)
 
         self.trader.stop()
+
+    cpdef void reset(self):
+        """
+        Reset the backtest engine. The internal trader and all strategies are reset.
+        """
         self.trader.reset()
