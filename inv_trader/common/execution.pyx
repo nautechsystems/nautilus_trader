@@ -61,9 +61,7 @@ cdef class ExecutionClient:
 
         :raises ValueError: If the strategy is already registered (must have a unique UUID id).
         """
-        if strategy.id in self._registered_strategies:
-            raise ValueError(
-                "Cannot register strategy (The strategy must have a unique UUID id).")
+        Precondition.not_in(strategy.id, self._registered_strategies, 'strategy', 'registered_strategies')
 
         self._registered_strategies[strategy.id] = strategy
         strategy._register_execution_client(self)  # Access to protected member ok here
@@ -118,6 +116,7 @@ cdef class ExecutionClient:
 
         :param order: The order to register.
         :param strategy_id: The strategy id to register with the order.
+        :raises ValueError: If the order.id is already in the order_index.
         """
         Precondition.true(order.id not in self._order_index, 'order.id NOT in self._order_index')
 
