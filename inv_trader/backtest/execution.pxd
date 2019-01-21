@@ -26,6 +26,12 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef readonly dict data_bars_ask
     cdef readonly list data_minute_index
     cdef readonly int iteration
+    cdef readonly dict current_bid_H
+    cdef readonly dict current_bid_L
+    cdef readonly dict current_bid_C
+    cdef readonly dict current_ask_H
+    cdef readonly dict current_ask_L
+    cdef readonly dict current_ask_C
     cdef readonly Decimal account_cash_start_day
     cdef readonly Decimal account_cash_activity_day
     cdef readonly dict slippage_index
@@ -35,6 +41,7 @@ cdef class BacktestExecClient(ExecutionClient):
     cpdef void iterate(self, datetime time)
 
     cdef void _set_slippage_index(self, int slippage_ticks)
+    cpdef void _set_market_prices(self)
     cdef void _reject_order(self, Order order, str reason)
     cdef void _reject_modify_order(self, Order order, str reason)
     cdef void _expire_order(self, Order order)
