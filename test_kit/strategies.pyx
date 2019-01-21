@@ -206,8 +206,8 @@ cdef class EMACross(TradeStrategy):
         if not self.fast_ema.initialized or not self.slow_ema.initialized:
             return
 
-        print(f"LAST BAR: {self.last_bar(self.bar_type)}")
-        # TODO: Account for spread, bid bars only at the moment
+        # print(f"LAST BAR: {self.last_bar(self.bar_type)}")
+        # TODO: Account for the spread, using bid bars only at the moment
         if self.position_id is None:
             # BUY LOGIC
             if self.fast_ema.value >= self.slow_ema.value:

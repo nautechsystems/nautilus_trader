@@ -18,7 +18,7 @@ from inv_trader.common.clock cimport Clock, LiveClock
 from inv_trader.common.logger cimport Logger, LoggerAdapter
 from inv_trader.model.account cimport Account
 from inv_trader.model.order cimport Order
-from inv_trader.model.events cimport Event, OrderEvent, AccountEvent, OrderCancelReject
+from inv_trader.model.events cimport Event, OrderEvent, AccountEvent, OrderRejected, OrderCancelReject
 from inv_trader.model.identifiers cimport GUID, OrderId
 from inv_trader.strategy cimport TradeStrategy
 
@@ -130,6 +130,11 @@ cdef class ExecutionClient:
         self._log.debug(f"Received {event}")
 
         if isinstance(event, OrderEvent):
+            if isinstance(event, OrderRejected):
+                self._log.warning(f"{event} {event.rejected_reason}")
+            elif isinstance(event, OrderCancelReject):
+                self._log.warning(f"{event} {event.cancel_reject_reason} {event.cancel_reject_response}")
+
             if event.order_id not in self._order_index:
                 self._log.warning(
                     f"The given event order id {event.order_id} was not contained in the order index.")
@@ -137,9 +142,6 @@ cdef class ExecutionClient:
 
             strategy_id = self._order_index[event.order_id]
             self._registered_strategies[strategy_id]._update_events(event)  # Access to protected member ok here
-
-            if isinstance(event, OrderCancelReject):
-                self._log.warning(f"{event}")
 
         elif isinstance(event, AccountEvent):
             self.account.apply(event)
