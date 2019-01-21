@@ -140,7 +140,7 @@ cdef class LiveClock(Clock):
         :raises ValueError: If the alert_time is not > than the clocks current time.
         """
         Precondition.true(alert_time > self.time_now(), 'self.time_now()')
-        Precondition.true(label not in self._timers, 'label NOT in self._timers')
+        Precondition.not_in(label, self._timers, 'label', 'timers')
 
         timer = Timer(
             interval=(alert_time - self.time_now()).total_seconds(),
@@ -157,7 +157,7 @@ cdef class LiveClock(Clock):
         :param label: The label for the alert to cancel.
         :raises ValueError: If the label is not found in the internal timers.
         """
-        Precondition.true(label in self._timers, 'label in self._timers')
+        Precondition.is_in(label, self._timers, 'label', 'timers')
 
         self._timers[label][0].cancel()
         del self._timers[label]
@@ -193,6 +193,8 @@ cdef class LiveClock(Clock):
         :raises ValueError: If the stop_time is not None and start_time plus interval is greater
         than the stop_time.
         """
+        Precondition.not_in(label, self._timers, 'label', 'timers')
+
         if start_time is not None:
             Precondition.true(start_time >= self.time_now(),
                               'start_time >= self.clock.time_now()')
@@ -231,7 +233,7 @@ cdef class LiveClock(Clock):
         :param label: The label for the timer to cancel.
         :raises ValueError: If the label is not found in the internal timers.
         """
-        Precondition.true(label in self._timers, 'label in self._timers')
+        Precondition.is_in(label, self._timers, 'label', 'timers')
 
         self._timers[label][0].cancel()
         del self._timers[label]
@@ -402,7 +404,7 @@ cdef class TestClock(Clock):
         :raises ValueError: If the alert_time is not > than the clocks current time.
         """
         Precondition.true(alert_time > self.time_now(), 'self.time_now()')
-        Precondition.true(label not in self._timers, 'label NOT in self._timers')
+        Precondition.not_in(label, self._timers, 'label', 'timers')
 
         self._timers[label] = (alert_time, handler)
 
@@ -413,7 +415,7 @@ cdef class TestClock(Clock):
         :param label: The label for the alert to cancel.
         :raises ValueError: If the label is not found in the internal timers.
         """
-        Precondition.true(label in self._timers, 'label in self._timers')
+        Precondition.is_in(label, self._timers, 'label', 'timers')
 
         del self._timers[label]
 
@@ -448,6 +450,8 @@ cdef class TestClock(Clock):
         :raises ValueError: If the stop_time is not None and start_time plus interval is greater
         than the stop_time.
         """
+        Precondition.not_in(label, self._timers, 'label', 'timers')
+
         if start_time is not None:
             Precondition.true(start_time >= self.time_now(),
                               'start_time >= self.clock.time_now()')
@@ -482,7 +486,7 @@ cdef class TestClock(Clock):
         :param label: The label for the timer to cancel.
         :raises ValueError: If the label is not found in the internal timers.
         """
-        Precondition.true(label in self._timers, 'label in self._timers')
+        Precondition.is_in(label, self._timers, 'label', 'timers')
 
         del self._timers[label]
 

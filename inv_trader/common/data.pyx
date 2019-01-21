@@ -111,7 +111,7 @@ cdef class DataClient:
         :return: The instrument (if found)
         :raises KeyError: If the instrument is not found.
         """
-        Precondition.true(symbol in self._instruments, 'symbol in self._instruments')
+        Precondition.is_in(symbol, self._instruments, 'symbol', 'instruments')
 
         return self._instruments[symbol]
 
