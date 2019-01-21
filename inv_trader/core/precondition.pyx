@@ -73,11 +73,11 @@ cdef class Precondition:
         :param dictionary: The dictionary which should contain the key argument.
         :param param_name: The key parameter name.
         :param dict_name: The dictionary name.
-        :raises ValueError: If the key is not contained in the dictionary.
+        :raises ValueError: If the key is not contained in the dictionary keys.
         """
         if key not in dictionary:
-            raise ValueError(f"{PRE_FAILED} (the {param_name} {key} was not contained within the "
-                             f"keys of {dict_name}.)")
+            raise ValueError(f"{PRE_FAILED} (the {param_name} {key} key was not contained within the "
+                             f" {dict_name} dictionary).")
 
     @staticmethod
     cdef not_in(object key, dict dictionary, str param_name, str dict_name):
@@ -89,11 +89,11 @@ cdef class Precondition:
         :param dictionary: The dictionary which should NOT contain the key argument.
         :param param_name: The key parameter name.
         :param dict_name: The dictionary name.
-        :raises ValueError: If the key is not contained in the dictionary.
+        :raises ValueError: If the key is already contained in the dictionary keys.
         """
         if key in dictionary:
-            raise ValueError(f"{PRE_FAILED} (the {param_name} {key} was already contained within the "
-                             f"keys of {dict_name}.)")
+            raise ValueError(f"{PRE_FAILED} (the {param_name} {key} key was already contained within the "
+                             f"{dict_name} dictionary).")
 
     @staticmethod
     cdef list_type(list argument, type element_type, str param_name):
