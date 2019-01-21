@@ -19,9 +19,9 @@ cdef class BacktestDataClient(DataClient):
     """
     Provides a data client for the BacktestEngine.
     """
-    cdef readonly dict data_tick
-    cdef readonly dict bar_data_bid
-    cdef readonly dict bar_data_ask
+    cdef readonly dict dataframes_ticks
+    cdef readonly dict dataframes_bars_bid
+    cdef readonly dict dataframes_bars_ask
     cdef readonly list data_minute_index
     cdef readonly dict data_providers
     cdef readonly int iteration
@@ -41,8 +41,8 @@ cdef class DataProvider:
     Provides data for the BacktestDataClient.
     """
     cdef readonly Instrument instrument
-    cdef readonly dict _data_bars_bid
-    cdef readonly dict _data_bars_ask
+    cdef readonly dict _dataframes_bars_bid
+    cdef readonly dict _dataframes_bars_ask
     cdef readonly BarType minute_bid
     cdef readonly BarType minute_ask
     cdef readonly dict bars
