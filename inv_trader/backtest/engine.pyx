@@ -119,9 +119,7 @@ cdef class BacktestEngine:
             clock=TestClock(),
             logger=self.test_log)
 
-        # Set minute data index
-        first_dataframe = data_bars_bid[next(iter(data_bars_bid))][Resolution.MINUTE]
-        self.data_minute_index = list(pd.to_datetime(first_dataframe.index, utc=True))
+        self.data_minute_index = self.data_client.data_minute_index
 
         assert(self.data_minute_index == self.data_client.data_minute_index)
         assert(self.data_minute_index == self.exec_client.data_minute_index)

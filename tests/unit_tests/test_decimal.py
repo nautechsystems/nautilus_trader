@@ -1,13 +1,17 @@
-"""Test driver for both implementations of decimalfp."""
-
+#!/usr/bin/env python3
+# -------------------------------------------------------------------------------------------------
+# <copyright file="test_decimal.py" company="Invariance Pte">
+#  Copyright (C) 2018-2019 Invariance Pte. All rights reserved.
+#  The use of this source code is governed by the license as found in the LICENSE.md file.
+#  http://www.invariance.com
+# </copyright>
+# -------------------------------------------------------------------------------------------------
 
 from __future__ import absolute_import, division
 
 import copy
-import locale
 import math
 import operator
-import os
 import sys
 import unittest
 from decimal import Decimal as _StdLibDecimal, InvalidOperation
@@ -20,8 +24,6 @@ from inv_trader.core.decimal import (
     ROUNDING,
     set_rounding,
 )
-from inv_trader.core.decimal import Decimal as _CDecimal
-from inv_trader.core.decimal import Decimal as _PyDecimal
 
 __metaclass__ = type
 
@@ -66,8 +68,7 @@ class DecimalTest(unittest.TestCase):
         self.assertTrue(Decimal(sys.float_info.max, 27))
         self.assertRaises(ValueError, Decimal, sys.float_info.min)
         self.assertEqual(Decimal(sys.float_info.min, 32), 0)
-        self.assertEqual(Decimal(sys.float_info.min, 320),
-                         Decimal('2225073858507', 320) / 10 ** 320)
+        self.assertEqual(Decimal(sys.float_info.min, 320), Decimal('2225073858507', 320) / 10 ** 320)
         self.assertTrue(Decimal(u'+21.4'))
         self.assertTrue(Decimal(b'+21.4'))
         self.assertNotEqual(Decimal('+21.4'), 21.4)
@@ -81,12 +82,9 @@ class DecimalTest(unittest.TestCase):
         self.assertTrue(Decimal('+1e-2000'))
         self.assertTrue(Decimal(_StdLibDecimal('-123.4567')))
         self.assertTrue(Decimal(_StdLibDecimal('-123.4567'), 2))
-        self.assertEqual(Decimal('-123.4567'),
-                         Decimal(_StdLibDecimal('-123.4567')))
-        self.assertEqual(Decimal('1.234e12'),
-                         Decimal(_StdLibDecimal('1.234e12')))
-        self.assertEqual(Decimal('1.234e-12'),
-                         Decimal(_StdLibDecimal('1.234e-12')))
+        self.assertEqual(Decimal('-123.4567'), Decimal(_StdLibDecimal('-123.4567')))
+        self.assertEqual(Decimal('1.234e12'), Decimal(_StdLibDecimal('1.234e12')))
+        self.assertEqual(Decimal('1.234e-12'), Decimal(_StdLibDecimal('1.234e-12')))
         self.assertRaises(TypeError, Decimal, 1, '')
         self.assertRaises(ValueError, Decimal, 1, -1)
         self.assertRaises(TypeError, Decimal, Decimal)
@@ -112,16 +110,13 @@ class DecimalTest(unittest.TestCase):
         self.assertEqual(Decimal.from_float(1.111e12), Decimal(1.111e12))
         self.assertEqual(Decimal.from_float(12), Decimal(12))
         self.assertRaises(TypeError, Decimal.from_float, '1.111e12')
-        self.assertEqual(Decimal.from_decimal(_StdLibDecimal('1.23e12')),
-                         Decimal('1.23e12'))
-        self.assertEqual(Decimal.from_decimal(_StdLibDecimal(12)),
-                         Decimal(12))
+        self.assertEqual(Decimal.from_decimal(_StdLibDecimal('1.23e12')), Decimal('1.23e12'))
+        self.assertEqual(Decimal.from_decimal(_StdLibDecimal(12)), Decimal(12))
         self.assertRaises(TypeError, Decimal.from_decimal, '1.23e12')
         self.assertEqual(Decimal.from_real(0.25), Decimal(0.25))
         self.assertEqual(Decimal.from_real(Fraction(1, 4)), Decimal(0.25))
         self.assertRaises(ValueError, Decimal.from_real, Fraction(1, 3))
-        self.assertEqual(Decimal.from_real(Fraction(1, 3), exact=False),
-                         Decimal(Fraction(1, 3), LIMIT_PREC))
+        self.assertEqual(Decimal.from_real(Fraction(1, 3), exact=False), Decimal(Fraction(1, 3), LIMIT_PREC))
         self.assertRaises(ValueError, Decimal.from_real, float('nan'))
         self.assertRaises(ValueError, Decimal.from_real, float('inf'))
         self.assertRaises(TypeError, Decimal.from_real, 'a')
@@ -174,8 +169,7 @@ class DecimalTest(unittest.TestCase):
         self.assertEqual(str(Decimal(-20.5e-12, 13)), '-0.0000000000205')
         self.assertEqual(str(Decimal()), '0')
         self.assertEqual(str(Decimal(0, 2)), '0.00')
-        self.assertEqual(repr(Decimal('-23.400007', 3)),
-                         "Decimal('-23.4', 3)")
+        self.assertEqual(repr(Decimal('-23.400007', 3)), "Decimal('-23.4', 3)")
         self.assertEqual(repr(f), "Decimal('23.456', 4)")
         self.assertEqual(repr(f), repr(copy.copy(f)))
         self.assertEqual(repr(f), repr(copy.deepcopy(f)))
@@ -440,26 +434,16 @@ class DecimalTest(unittest.TestCase):
         self.assertEqual(h % f, Decimal('8.956'))
         self.assertEqual(f % i, Decimal('3.456'))
         self.assertEqual(i % f, Decimal(9, 3))
-        self.assertEqual(Decimal('0.5') + 0.3,
-                         Fraction(14411518807585587, 18014398509481984))
-        self.assertEqual(0.3 + Decimal('0.5'),
-                         Fraction(14411518807585587, 18014398509481984))
-        self.assertEqual(Decimal('0.5') - 0.3,
-                         Fraction(3602879701896397, 18014398509481984))
-        self.assertEqual(0.3 - Decimal('0.5'),
-                         Fraction(-3602879701896397, 18014398509481984))
-        self.assertEqual(Decimal(2 ** 32) * 0.3,
-                         Decimal('1288490188.7999999523162841796875'))
-        self.assertEqual(0.3 * Decimal(2 ** 32),
-                         Decimal('1288490188.7999999523162841796875'))
-        self.assertEqual(Decimal('0.5') * 0.3,
-                         Fraction(5404319552844595, 36028797018963968))
-        self.assertEqual(0.3 * Decimal('0.5'),
-                         Fraction(5404319552844595, 36028797018963968))
-        self.assertEqual(0.3 / Decimal(2),
-                         Fraction(5404319552844595, 36028797018963968))
-        self.assertEqual(Decimal(2) / 0.3,
-                         Fraction(36028797018963968, 5404319552844595))
+        self.assertEqual(Decimal('0.5') + 0.3, Fraction(14411518807585587, 18014398509481984))
+        self.assertEqual(0.3 + Decimal('0.5'), Fraction(14411518807585587, 18014398509481984))
+        self.assertEqual(Decimal('0.5') - 0.3, Fraction(3602879701896397, 18014398509481984))
+        self.assertEqual(0.3 - Decimal('0.5'), Fraction(-3602879701896397, 18014398509481984))
+        self.assertEqual(Decimal(2 ** 32) * 0.3, Decimal('1288490188.7999999523162841796875'))
+        self.assertEqual(0.3 * Decimal(2 ** 32), Decimal('1288490188.7999999523162841796875'))
+        self.assertEqual(Decimal('0.5') * 0.3, Fraction(5404319552844595, 36028797018963968))
+        self.assertEqual(0.3 * Decimal('0.5'), Fraction(5404319552844595, 36028797018963968))
+        self.assertEqual(0.3 / Decimal(2), Fraction(5404319552844595, 36028797018963968))
+        self.assertEqual(Decimal(2) / 0.3, Fraction(36028797018963968, 5404319552844595))
         # corner cases
         nan = float('nan')
         inf = float('inf')
@@ -498,22 +482,6 @@ class DecimalTest(unittest.TestCase):
         self.assertEqual(loads(dumps(d)), d)
 
     def test_format(self):
-        # d = Decimal('1234567890.12345678901234567890')
-        # loc = locale.getlocale()
-        # if sys.platform == 'win32':
-        #     locale.setlocale(locale.LC_ALL, 'German_Germany.1252')
-        # else:
-        #     locale.setlocale(locale.LC_ALL, 'de_DE.UTF-8')
-        # pth = os.path.dirname(__file__)
-        # fn = os.path.join(pth, "format.tests")
-        # with open(fn) as tests:
-        #     for line in tests:
-        #         formatSpec, result = [s.strip("'")
-        #                               for s in line.strip().split('\t')]
-        #         if formatSpec:
-        #             self.assertEqual(format(d, formatSpec), result)
-        #         else:
-        #             self.assertEqual(format(d), result)
         d = Decimal('0.0038')
         self.assertEqual(format(d), str(d))
         self.assertEqual(format(d, '<.3'), str(d.adjusted(3)))
@@ -523,32 +491,9 @@ class DecimalTest(unittest.TestCase):
         self.assertEqual(format(d), str(d))
         self.assertEqual(format(d, '<.3'), str(d.adjusted(3)))
         self.assertEqual(format(d, '>10.3'), '   %s' % d.adjusted(3))
-        #locale.setlocale(locale.LC_ALL, loc)
         self.assertRaises(ValueError, format, d, ' +012.5F')
         self.assertRaises(ValueError, format, d, '_+012.5F')
         self.assertRaises(ValueError, format, d, '+012.5e')
         self.assertRaises(ValueError, format, d, '+012.5E')
         self.assertRaises(ValueError, format, d, '+012.5g')
         self.assertRaises(ValueError, format, d, '+012.5G')
-
-
-# class PyImplTest(unittest.TestCase, DecimalTest):
-#
-#     """Testing the Python implementation."""
-#
-#     def setUp(self):
-#         global Decimal
-#         Decimal = _PyDecimal
-#
-#
-# class CImplTest(unittest.TestCase, DecimalTest):
-#
-#     """Testing the Cython implementation."""
-#
-#     def setUp(self):
-#         global Decimal
-#         Decimal = _CDecimal
-
-
-# if __name__ == '__main__':
-#     unittest.main()
