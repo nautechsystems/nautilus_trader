@@ -698,7 +698,7 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(clock.unix_epoch(), strategy.time_now())
-        self.assertEqual(OrderId('AUDUSD-FXCM-1-0-0'), strategy.generate_order_id(AUDUSD_FXCM))
+        self.assertEqual(OrderId('AUDUSD-FXCM-0-1-0'), strategy.generate_order_id(AUDUSD_FXCM))
 
     def test_submitting_order_with_identical_id_raises_ex(self):
         # Arrange
