@@ -32,6 +32,32 @@ from test_kit.objects import ObjectStorer
 GBPUSD_FXCM = Symbol('GBPUSD', Venue.FXCM)
 
 
+class EmptyStrategy(TradeStrategy):
+    """
+    A strategy which is empty and does nothing.
+    """
+    def on_start(self):
+        pass
+
+    def on_tick(self, tick: Tick):
+        pass
+
+    def on_bar(
+            self,
+            bar_type: BarType,
+            bar: Bar):
+        pass
+
+    def on_event(self, event: Event):
+        pass
+
+    def on_stop(self):
+        pass
+
+    def on_reset(self):
+        pass
+
+
 class TestStrategy1(TradeStrategy):
     """"
     A simple strategy for unit testing.
