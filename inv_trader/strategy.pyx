@@ -317,7 +317,7 @@ cdef class TradeStrategy:
         :return: The list of bars (List[Bar]).
         :raises KeyError: If the strategies bars dictionary does not contain the bar type.
         """
-        Precondition.true(bar_type in self._bars, 'bar_type in self._bars')
+        Precondition.is_in(bar_type, self._bars, 'bar_type', 'bars')
 
         return list(self._bars[bar_type])
 
@@ -333,7 +333,7 @@ cdef class TradeStrategy:
         :raises ValueError: If the index is negative.
         :raises IndexError: If the strategies bars dictionary does not contain a bar at the given index.
         """
-        Precondition.true(bar_type in self._bars, 'bar_type in self._bars')
+        Precondition.is_in(bar_type, self._bars, 'bar_type', 'bars')
         Precondition.not_negative(index, 'index')
 
         return self._bars[bar_type][len(self._bars[bar_type]) - 1 - index]
@@ -347,7 +347,7 @@ cdef class TradeStrategy:
         :raises ValueError: If the strategies bars dictionary does not contain the bar type.
         :raises IndexError: If the strategies bars dictionary does not contain a bar at the given index.
         """
-        Precondition.true(bar_type in self._bars, 'bar_type in self._bars')
+        Precondition.is_in(bar_type, self._bars, 'bar_type', 'bars')
 
         return self._bars[bar_type][len(self._bars[bar_type]) - 1]
 
@@ -359,7 +359,7 @@ cdef class TradeStrategy:
         :return: The tick object.
         :raises KeyError: If the strategies tick dictionary does not contain a tick for the given symbol.
         """
-        Precondition.true(symbol in self._ticks, 'symbol in self._ticks')
+        Precondition.is_in(symbol, self._ticks, 'symbol', 'ticks')
 
         return self._ticks[symbol]
 
@@ -397,7 +397,7 @@ cdef class TradeStrategy:
         :return: The internally held indicators for the given bar type.
         :raises ValueError: If the strategies indicators dictionary does not contain the given bar_type.
         """
-        Precondition.true(bar_type in self._indicators, 'bar_type in self._indicators')
+        Precondition.is_in(bar_type, self._indicators, 'bar_type', 'indicators')
 
         return self._indicators[bar_type].copy()
 
@@ -406,7 +406,7 @@ cdef class TradeStrategy:
         :return: A value indicating whether all indicators for the given bar type are initialized.
         :raises ValueError: If the strategies indicators dictionary does not contain the given bar_type.
         """
-        Precondition.true(bar_type in self._indicators, 'bar_type in self._indicators')
+        Precondition.is_in(bar_type, self._indicators, 'bar_type', 'indicators')
 
         # Closures not yet supported so can't do one liner
         cpdef bint initialized = True
@@ -470,7 +470,7 @@ cdef class TradeStrategy:
         :raises ValueError: If the order_id is not a valid string.
         :raises KeyError: If the strategies order book does not contain the order with the given id.
         """
-        Precondition.true(order_id in self._order_book, 'order_id in self._order_book')
+        Precondition.is_in(order_id, self._order_book, 'order.id', 'order_book')
 
         return self._order_book[order_id]
 
@@ -483,7 +483,7 @@ cdef class TradeStrategy:
         :raises ValueError: If the position_id is not a valid string.
         :raises ValueError: If the strategies positions dictionary does not contain the given position_id.
         """
-        Precondition.true(position_id in self._position_book, 'position_id in self._position_book')
+        Precondition.is_in(position_id, self._position_book, 'order.id', 'position_book')
 
         return self._position_book[position_id]
 
@@ -593,7 +593,7 @@ cdef class TradeStrategy:
         :raises ValueError: If the order_id is already contained in the order book (must be unique).
         """
         Precondition.not_none(self._exec_client, 'exec_client')
-        Precondition.true(order.id not in self._order_book, 'order.id NOT in self._order_book')
+        Precondition.not_in(order.id, self._order_book, 'order.id', 'order_book')
 
         self._order_book[order.id] = order
         self._order_position_index[order.id] = position_id
@@ -614,7 +614,7 @@ cdef class TradeStrategy:
         """
         Precondition.not_none(self._exec_client, 'exec_client')
         Precondition.positive(new_price, 'new_price')
-        Precondition.true(order.id in self._order_book, 'order.id in self._order_book')
+        Precondition.is_in(order.id, self._order_book, 'order.id', 'order_book')
 
         self.log.info(f"Modifying {order} with new price {new_price}")
         self._exec_client.modify_order(order, new_price)
@@ -632,7 +632,7 @@ cdef class TradeStrategy:
         """
         Precondition.not_none(self._exec_client, 'exec_client')
         Precondition.valid_string(cancel_reason, 'cancel_reason')
-        Precondition.true(order.id in self._order_book, 'order.id in self._order_book')
+        Precondition.is_in(order.id, self._order_book, 'order.id', 'order_book')
 
         self.log.info(f"Cancelling {order}")
         self._exec_client.cancel_order(order, cancel_reason)
@@ -665,7 +665,7 @@ cdef class TradeStrategy:
         :raises ValueError: If the position_id is not found in the position book.
         """
         Precondition.not_none(self._exec_client, 'exec_client')
-        Precondition.true(position_id in self._position_book, 'position_id in self._position_book')
+        Precondition.is_in(position_id, self._position_book, 'position_id', 'position_book')
 
         cdef Position position = self._position_book[position_id]
 
@@ -821,7 +821,6 @@ cdef class TradeStrategy:
 
         :param tick: The tick received.
         """
-        # Update the internal ticks.
         self._ticks[tick.symbol] = tick
 
         if self.is_running:
@@ -835,12 +834,10 @@ cdef class TradeStrategy:
         :param bar_type: The bar type received.
         :param bar: The bar received.
         """
-        # Update the bars.
         if bar_type not in self._bars:
             self._bars[bar_type] = deque(maxlen=self.bar_capacity)  # type: Deque[Bar]
         self._bars[bar_type].append(bar)
 
-        # Update the indicators.
         if bar_type in self._indicators:
             self._update_indicators(bar_type, bar)
 
@@ -870,41 +867,37 @@ cdef class TradeStrategy:
         """
         self.log.info(str(event))
 
-        # Order events.
+        # Order events
         if isinstance(event, OrderEvent):
-            order_id = event.order_id
-            if order_id in self._order_book:
-                order = self._order_book[order_id]
-                order.apply(event)
-            else:
-                self.log.warning("The events order id was not found in the order book.")
+            Precondition.is_in(event.order_id, self._order_book, 'order_id', 'order_book')
 
-            # Position events.
+            order = self._order_book[event.order_id]
+            order.apply(event)
+
+            # Position events
             if isinstance(event, OrderFilled) or isinstance(event, OrderPartiallyFilled):
-                if event.order_id in self._order_position_index:
-                    position_id = self._order_position_index[event.order_id]
+                Precondition.is_in(event.order_id, self._order_position_index, 'order_id', 'order_position_index')
 
-                    if position_id not in self._position_book:
-                        opened_position = Position(
-                            event.symbol,
-                            position_id,
-                            event.execution_time)
-                        opened_position.apply(event)
-                        self._position_book[position_id] = opened_position
-                        self.log.info(f"Opened {opened_position}")
-                    else:
-                        position = self._position_book[position_id]
-                        position.apply(event)
+                position_id = self._order_position_index[event.order_id]
 
-                        if position.is_exited:
-                            self.log.info(f"Closed {position}")
-                        else:
-                            self.log.info(f"Modified {self._position_book[position_id]}")
+                if position_id not in self._position_book:
+                    opened_position = Position(
+                        event.symbol,
+                        position_id,
+                        event.execution_time)
+                    opened_position.apply(event)
+                    self._position_book[position_id] = opened_position
+                    self.log.info(f"Opened {opened_position}")
                 else:
-                    self.log.warning(
-                        "The events order id was not found in the order position index.")
+                    position = self._position_book[position_id]
+                    position.apply(event)
 
-        # Account Events.
+                    if position.is_exited:
+                            self.log.info(f"Closed {position}")
+                    else:
+                        self.log.info(f"Modified {self._position_book[position_id]}")
+
+        # Account events
         elif isinstance(event, AccountEvent):
             self.account.apply(event)
 

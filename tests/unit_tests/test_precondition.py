@@ -56,6 +56,32 @@ class PreconditionTests(unittest.TestCase):
         PyPrecondition.type_or_none(None, str, "param_name")
         self.assertTrue(True)  # ValueError not raised.
 
+    def test_precondition_is_in_when_key_not_in_dictionary_raises_value_error(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertRaises(ValueError, PyPrecondition.is_in, 'a', {'b': 1}, 'key', 'dict')
+
+    def test_precondition_is_in_when_key_is_in_dictionary_does_nothing(self):
+        # Arrange
+        # Act
+        # Assert
+        PyPrecondition.is_in('a', {'a': 1}, 'key', 'dict')
+        self.assertTrue(True)  # ValueError not raised.
+
+    def test_precondition_not_in_when_key_is_in_dictionary_raises_value_error(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertRaises(ValueError, PyPrecondition.not_in, 'a', {'a': 1}, 'key', 'dict')
+
+    def test_precondition_not_in_when_key_not_in_dictionary_does_nothing(self):
+        # Arrange
+        # Act
+        # Assert
+        PyPrecondition.not_in('b', {'a': 1}, 'key', 'dict')
+        self.assertTrue(True)  # ValueError not raised.
+
     def test_precondition_list_type_when_contains_incorrect_types_raises_value_error(self):
         # arrange
         # act

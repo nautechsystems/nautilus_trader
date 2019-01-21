@@ -23,7 +23,7 @@ cdef class Precondition:
     @staticmethod
     cdef true(bint predicate, str description):
         """
-        Check the preconditions predicate is true.
+        Check the preconditions predicate is True.
 
         :param predicate: The predicate condition to check.
         :param description: The description of the predicate condition.
@@ -62,6 +62,38 @@ cdef class Precondition:
         if not isinstance(argument, is_type):
             raise ValueError(f"{PRE_FAILED} (the {param_name} argument was not of type {is_type}). "
                              f"type = {type(argument)}")
+
+    @staticmethod
+    cdef is_in(object key, dict dictionary, str param_name, str dict_name):
+        """
+        Check the preconditions key argument is contained within the keys of the 
+        specified dictionary.
+    
+        :param key: The key argument to check.
+        :param dictionary: The dictionary which should contain the key argument.
+        :param param_name: The key parameter name.
+        :param dict_name: The dictionary name.
+        :raises ValueError: If the key is not contained in the dictionary.
+        """
+        if key not in dictionary:
+            raise ValueError(f"{PRE_FAILED} (the {param_name} {key} was not contained within the "
+                             f"keys of {dict_name}.)")
+
+    @staticmethod
+    cdef not_in(object key, dict dictionary, str param_name, str dict_name):
+        """
+        Check the preconditions key argument is NOT contained within the keys of 
+        the specified dictionary.
+    
+        :param key: The key argument to check.
+        :param dictionary: The dictionary which should NOT contain the key argument.
+        :param param_name: The key parameter name.
+        :param dict_name: The dictionary name.
+        :raises ValueError: If the key is not contained in the dictionary.
+        """
+        if key in dictionary:
+            raise ValueError(f"{PRE_FAILED} (the {param_name} {key} was already contained within the "
+                             f"keys of {dict_name}.)")
 
     @staticmethod
     cdef list_type(list argument, type element_type, str param_name):
@@ -255,6 +287,14 @@ class PyPrecondition:
     @staticmethod
     def type_or_none(argument, is_type, param_name):
         Precondition.type_or_none(argument, is_type, param_name)
+
+    @staticmethod
+    def is_in(object key, dict dictionary, str param_name, str dict_name):
+        Precondition.is_in(key, dictionary, param_name, dict_name)
+
+    @staticmethod
+    def not_in(object key, dict dictionary, str param_name, str dict_name):
+        Precondition.not_in(key, dictionary, param_name, dict_name)
 
     @staticmethod
     def list_type(argument, element_type, param_name):
