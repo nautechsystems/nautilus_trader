@@ -46,3 +46,4 @@ cdef class BacktestEngine:
     cdef readonly list minute_data_index
 
     cpdef void run(self, datetime start, datetime stop, int time_step_mins=*)
+    cpdef void reset(self)

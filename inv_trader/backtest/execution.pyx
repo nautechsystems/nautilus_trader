@@ -252,7 +252,6 @@ cdef class BacktestExecClient(ExecutionClient):
                 self._fill_order(order, current_ask)
                 return
             elif order.type is OrderType.STOP_MARKET or order.type is OrderType.STOP_LIMIT or order.type is OrderType.MIT:
-                print(order.type)
                 if order.price < current_ask:
                     self._reject_order(order,  f'Buy stop order price of {order.price} is below the ask {current_ask}')
                     return
