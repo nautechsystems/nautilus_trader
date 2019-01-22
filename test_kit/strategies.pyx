@@ -292,8 +292,8 @@ cdef class EMACross(TradeStrategy):
                 if order.price < temp_price:
                     self.modify_order(order, temp_price)
             elif order.side is OrderSide.BUY:
-                temp_price = price(self.last_bar(self.bar_type).low
-                                   - self.atr.value * self.SL_atr_multiple,
+                temp_price = price(self.last_bar(self.bar_type).high
+                                   + self.atr.value * self.SL_atr_multiple,
                                    self.tick_precision)
                 if order.price > temp_price:
                     self.modify_order(order, temp_price)
