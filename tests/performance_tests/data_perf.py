@@ -10,8 +10,6 @@
 import unittest
 import timeit
 
-import pandas as pd
-
 from time import time
 from datetime import timedelta
 
