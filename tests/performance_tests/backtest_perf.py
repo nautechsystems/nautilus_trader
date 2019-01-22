@@ -12,6 +12,7 @@
 import cProfile
 import pstats
 import pandas as pd
+import unittest
 
 from datetime import datetime, timezone
 
@@ -20,7 +21,7 @@ from inv_trader.model.enums import Venue
 from inv_trader.model.objects import Symbol
 from inv_trader.backtest.engine import BacktestConfig, BacktestEngine
 from test_kit.strategies import EMACross
-from test_kit.strategies import EmptyStrategyCython
+from test_kit.strategies import EmptyStrategy, EmptyStrategyCython
 from test_kit.data import TestDataProvider
 from test_kit.stubs import TestStubs
 
@@ -28,9 +29,10 @@ UNIX_EPOCH = TestStubs.unix_epoch()
 USDJPY_FXCM = Symbol('USDJPY', Venue.FXCM)
 
 
-cdef class BacktestEnginePerformanceTests:
+class BacktestEnginePerformanceTests(unittest.TestCase):
 
-    cpdef void test_running_blank_strategy(self):
+    @staticmethod
+    def test_running_blank_strategy():
         # Arrange
         usdjpy = TestStubs.instrument_usdjpy()
         bid_data_1min = TestDataProvider.usdjpy_1min_bid()
@@ -41,26 +43,25 @@ cdef class BacktestEnginePerformanceTests:
         bid_data = {usdjpy.symbol: {Resolution.MINUTE: bid_data_1min}}
         ask_data = {usdjpy.symbol: {Resolution.MINUTE: ask_data_1min}}
 
-        strategies = [EmptyStrategyCython()]
+        strategies = [EmptyStrategy()]
 
         config = BacktestConfig(console_prints=True)
         engine = BacktestEngine(instruments=instruments,
-                                tick_data=tick_data,
-                                bar_data_bid=bid_data,
-                                bar_data_ask=ask_data,
+                                data_ticks=tick_data,
+                                data_bars_bid=bid_data,
+                                data_bars_ask=ask_data,
                                 strategies=strategies,
                                 config=config)
 
         start = datetime(2013, 1, 1, 22, 0, 0, 0, tzinfo=timezone.utc)
         stop = datetime(2013, 2, 10, 0, 0, 0, 0, tzinfo=timezone.utc)
 
-        engine.run(start, stop)
-        # cProfile.runctx('engine.run(start, stop)', globals(), locals(), 'Profile.prof')
-        # s = pstats.Stats("Profile.prof")
-        # s.strip_dirs().sort_stats("time").print_stats()
+        cProfile.runctx('engine.run(start, stop)', globals(), locals(), 'Profile.prof')
+        s = pstats.Stats("Profile.prof")
+        s.strip_dirs().sort_stats("time").print_stats()
 
     @staticmethod
-    def test_can_run(self):
+    def test_can_run():
         # Arrange
         usdjpy = TestStubs.instrument_usdjpy()
         bid_data_1min = TestDataProvider.usdjpy_1min_bid()
@@ -71,7 +72,7 @@ cdef class BacktestEnginePerformanceTests:
         bid_data = {usdjpy.symbol: {Resolution.MINUTE: bid_data_1min}}
         ask_data = {usdjpy.symbol: {Resolution.MINUTE: ask_data_1min}}
 
-        strategies = [EMACross(label='EMACross_Test',
+        strategies = [EMACross(label='001',
                                order_id_tag='01',
                                instrument=usdjpy,
                                bar_type=TestStubs.bartype_usdjpy_1min_bid(),
@@ -83,9 +84,9 @@ cdef class BacktestEnginePerformanceTests:
 
         config = BacktestConfig(console_prints=True)
         engine = BacktestEngine(instruments=instruments,
-                                tick_data=tick_data,
-                                bar_data_bid=bid_data,
-                                bar_data_ask=ask_data,
+                                data_ticks=tick_data,
+                                data_bars_bid=bid_data,
+                                data_bars_ask=ask_data,
                                 strategies=strategies,
                                 config=config)
 
@@ -95,7 +96,3 @@ cdef class BacktestEnginePerformanceTests:
         cProfile.runctx('engine.run(start, stop)', globals(), locals(), 'Profile.prof')
         s = pstats.Stats("Profile.prof")
         s.strip_dirs().sort_stats("time").print_stats()
-
-if __name__ == "__main__":
-    tests = BacktestEnginePerformanceTests()
-    tests.test_running_blank_strategy()

@@ -23,7 +23,7 @@ from inv_trader.model.price cimport price
 from inv_trader.model.events cimport Event
 from inv_trader.model.identifiers cimport Label, OrderId, PositionId
 from inv_trader.model.order cimport Order
-from inv_trader.model.events cimport OrderFilled, OrderExpired, OrderRejected, OrderWorking
+from inv_trader.model.events cimport OrderFilled, OrderExpired, OrderRejected, OrderCancelReject, OrderWorking
 from inv_trader.strategy cimport TradeStrategy
 from inv_indicators.average.ema import ExponentialMovingAverage
 from inv_indicators.atr import AverageTrueRange
@@ -306,12 +306,6 @@ cdef class EMACross(TradeStrategy):
 
         :param event: The received event.
         """
-        # If an entry order is rejected them remove it
-        if isinstance(event, OrderRejected):
-            if event.order_id in self.entry_orders:
-                del self.entry_orders[event.order_id]
-                self.position_id = None
-
         if isinstance(event, OrderFilled):
             # A real strategy should also cover the OrderPartiallyFilled case...
 
@@ -341,13 +335,12 @@ cdef class EMACross(TradeStrategy):
                 del self.stop_loss_orders[event.order_id]
                 self.position_id = None
 
-        if isinstance(event, OrderExpired):
+        elif isinstance(event, OrderExpired):
             if event.order_id in self.entry_orders:
                 del self.entry_orders[event.order_id]
                 self.position_id = None
 
-        if isinstance(event, OrderRejected):
-            print(f"OrderRejected({event.order_id}): {event.rejected_reason}")
+        elif isinstance(event, OrderRejected):
             if event.order_id in self.entry_orders:
                 del self.entry_orders[event.order_id]
                 self.position_id = None

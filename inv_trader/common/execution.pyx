@@ -129,11 +129,6 @@ cdef class ExecutionClient:
         self._log.debug(f"Received {event}")
 
         if isinstance(event, OrderEvent):
-            if isinstance(event, OrderRejected):
-                self._log.warning(f"{event} {event.rejected_reason}")
-            elif isinstance(event, OrderCancelReject):
-                self._log.warning(f"{event} {event.cancel_reject_reason} {event.cancel_reject_response}")
-
             if event.order_id not in self._order_index:
                 self._log.warning(
                     f"The given event order id {event.order_id} was not contained in the order index.")

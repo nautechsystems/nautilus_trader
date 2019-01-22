@@ -19,6 +19,16 @@ from inv_trader.core.precondition cimport Precondition
 from inv_trader.common.clock cimport Clock, LiveClock
 
 
+cdef str HEADER = '\033[95m'
+cdef str OKBLUE = '\033[94m'
+cdef str OKGREEN = '\033[92m'
+cdef str WARNING = '\033[1;33m'
+cdef str FAIL = '\033[01;31m'
+cdef str ENDC = '\033[0m'
+cdef str BOLD = '\033[1m'
+cdef str UNDERLINE = '\033[4m'
+
+
 cdef class Logger:
     """
     Provides a logger for the trader client which wraps the Python logging module.
@@ -111,7 +121,7 @@ cdef class Logger:
         """
         Precondition.valid_string(message, 'message')
 
-        log_message = self._format_message('WRN', message)
+        log_message = self._format_message(WARNING + 'WRN' + ENDC, WARNING + message + ENDC)
         self._console_print_handler(log_message, logging.WARNING)
 
         if self._log_to_file:
@@ -128,7 +138,7 @@ cdef class Logger:
         """
         Precondition.valid_string(message, 'message')
 
-        log_message = self._format_message('FTL', message)
+        log_message = self._format_message(FAIL + 'FTL' + ENDC, FAIL + message + ENDC)
         self._console_print_handler(log_message, logging.CRITICAL)
 
         if self._log_to_file:
@@ -139,7 +149,7 @@ cdef class Logger:
 
     cdef str _format_message(self, str log_level, str message):
         cdef str time = self._clock.time_now().isoformat(timespec='milliseconds') + 'Z'
-        return (f'{time} [{threading.current_thread().ident}][{log_level}] '
+        return (f'{BOLD}{time}{ENDC} [{threading.current_thread().ident}][{log_level}] '
                 f'{message}')
 
     cdef void _console_print_handler(self, str message, log_level: logging):
