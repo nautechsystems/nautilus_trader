@@ -51,4 +51,4 @@ cdef class DataProvider:
     cpdef void register_bar_type(self, BarType bar_type)
     cpdef void deregister_bar_type(self, BarType bar_type)
     cpdef void set_initial_iterations(self, datetime from_time, datetime to_time, timedelta time_step)
-    cpdef dict iterate_bars(self, datetime time)
+    cpdef list iterate_bars(self, datetime time)
