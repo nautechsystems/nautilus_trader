@@ -308,7 +308,7 @@ class BacktestEngineTests(unittest.TestCase):
         bid_data = {usdjpy.symbol: {Resolution.MINUTE: bid_data_1min}}
         ask_data = {usdjpy.symbol: {Resolution.MINUTE: ask_data_1min}}
 
-        strategies = [EMACross(label='EMACross_Test',
+        strategies = [EMACross(label='001',
                                order_id_tag='01',
                                instrument=usdjpy,
                                bar_type=TestStubs.bartype_usdjpy_1min_bid(),

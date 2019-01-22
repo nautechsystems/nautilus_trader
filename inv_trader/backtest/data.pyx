@@ -300,22 +300,20 @@ cdef class DataProvider:
         self.instrument = instrument
         self._dataframes_bars_bid = data_bars_bid  # type: Dict[Resolution, DataFrame]
         self._dataframes_bars_ask = data_bars_ask  # type: Dict[Resolution, DataFrame]
-        self.bars = dict()                   # type: Dict[BarType, List[Bar]]
-        self.iterations = dict()             # type: Dict[BarType, int]
+        self.bars = dict()                         # type: Dict[BarType, List[Bar]]
+        self.iterations = dict()                   # type: Dict[BarType, int]
 
         # Prepare 1 minute bid bars
         self.minute_bid = BarType(instrument.symbol, 1, Resolution.MINUTE, QuoteType.BID)
         cdef BarBuilder builder_bid = BarBuilder(data=data_bars_bid[Resolution.MINUTE],
                                                  decimal_precision=instrument.tick_precision)
         self.bars[self.minute_bid] = builder_bid.build_bars_all()
-        self.iterations[self.minute_bid] = 0
 
         # Prepare 1 minute ask bars
         self.minute_ask = BarType(instrument.symbol, 1, Resolution.MINUTE, QuoteType.ASK)
         cdef BarBuilder builder_ask = BarBuilder(data=data_bars_ask[Resolution.MINUTE],
                                                  decimal_precision=instrument.tick_precision)
         self.bars[self.minute_ask] = builder_ask.build_bars_all()
-        self.iterations[self.minute_ask] = 0
 
     cpdef void register_bar_type(self, BarType bar_type):
         """
@@ -353,11 +351,8 @@ cdef class DataProvider:
         """
         Precondition.true(bar_type.symbol == self.instrument.symbol, 'bar_type.symbol == self.instrument.symbol')
 
-        if bar_type in self.bars and bar_type is not self.minute_bid and bar_type is not self.minute_ask:
-            del self.bars[bar_type]
-
-            if bar_type in self.iterations:
-                del self.iterations[bar_type]
+        if bar_type in self.iterations:
+            del self.iterations[bar_type]
 
     cpdef void set_initial_iterations(
             self,
@@ -370,9 +365,8 @@ cdef class DataProvider:
         cdef datetime current = from_time
 
         while current < to_time:
-            for bar_type, bars in self.bars.items():
-                next_index = self.iterations[bar_type]
-                if self.bars[bar_type][next_index].timestamp == current:
+            for bar_type, iterations in self.iterations.items():
+                if self.bars[bar_type][iterations].timestamp == current:
                     self.iterations[bar_type] += 1
             current += time_step
 
@@ -386,10 +380,9 @@ cdef class DataProvider:
         cdef list bars_list = list()
         cdef int next_index = 0
 
-        for bar_type, bars in self.bars.items():
-            next_index = self.iterations[bar_type]
-            if self.bars[bar_type][next_index].timestamp == time:
-                bars_list.append((bar_type, bars[next_index]))
+        for bar_type, iterations in self.iterations.items():
+            if self.bars[bar_type][iterations].timestamp == time:
+                bars_list.append((bar_type, self.bars[bar_type][next_index]))
                 self.iterations[bar_type] += 1
 
         return bars_list
