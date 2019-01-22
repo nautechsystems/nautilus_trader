@@ -300,9 +300,6 @@ cdef class OrderIdGenerator:
                                        + self.separator + order_count
                                        + self.separator + ms_since_ux)
 
-        if is_in(order_id, self._order_ids):
-            # Order id is not unique so regenerate
-            return self.generate(order_symbol)
         self._order_ids.append(order_id)
         return order_id
 

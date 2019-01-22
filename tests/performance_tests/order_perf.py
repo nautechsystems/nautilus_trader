@@ -34,7 +34,7 @@ class OrderPerformanceTests(unittest.TestCase):
     def test_order_id_generator():
         # Arrange
         tests = 3
-        number = 5000
+        number = 10000
         test = OrderIdGeneratorPerformanceTest()
 
         total_elapsed = 0
@@ -48,4 +48,4 @@ class OrderPerformanceTests(unittest.TestCase):
         print('\n' + f'OrderIdGeneratorPerformanceTest({number} iterations)')
         print(f'{round(total_elapsed / tests)}ms')
 
-        # ~700ms
+        # ~25ms for 10000 ids

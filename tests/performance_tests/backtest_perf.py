@@ -89,10 +89,10 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
                                 config=config)
 
         start = datetime(2013, 1, 1, 22, 0, 0, 0, tzinfo=timezone.utc)
-        stop = datetime(2013, 2, 10, 0, 0, 0, 0, tzinfo=timezone.utc)
+        stop = datetime(2013, 1, 10, 0, 0, 0, 0, tzinfo=timezone.utc)
 
         cProfile.runctx('engine.run(start, stop)', globals(), locals(), 'Profile.prof')
         s = pstats.Stats("Profile.prof")
         s.strip_dirs().sort_stats("time").print_stats()
 
-        # ~11s 43ms
+        # ~10s
