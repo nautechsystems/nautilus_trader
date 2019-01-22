@@ -36,6 +36,7 @@ cdef class Logger:
 
     def __init__(self,
                  str name=None,
+                 bint bypass_logging=False,
                  level_console: logging=INFO,
                  level_file: logging=DEBUG,
                  bint console_prints=True,
@@ -62,6 +63,7 @@ cdef class Logger:
 
         Precondition.valid_string(log_file_path, 'log_file_path')
 
+        self.bypass_logging = bypass_logging
         self._clock = clock
         self._log_level_console = level_console
         self._log_level_file = level_file
@@ -178,6 +180,7 @@ cdef class LoggerAdapter:
 
         self._logger = logger
         self.component_name = component_name
+        self.bypassed = logger.bypass_logging
 
     cpdef void debug(self, str message):
         """
@@ -187,7 +190,8 @@ cdef class LoggerAdapter:
         """
         Precondition.valid_string(message, 'message')
 
-        self._logger.debug(self._format_message(message))
+        if not self.bypassed:
+            self._logger.debug(self._format_message(message))
 
     cpdef void info(self, str message):
         """
@@ -197,7 +201,8 @@ cdef class LoggerAdapter:
         """
         Precondition.valid_string(message, 'message')
 
-        self._logger.info(self._format_message(message))
+        if not self.bypassed:
+            self._logger.info(self._format_message(message))
 
     cpdef void warning(self, str message):
         """
@@ -207,7 +212,8 @@ cdef class LoggerAdapter:
         """
         Precondition.valid_string(message, 'message')
 
-        self._logger.warning(self._format_message(message))
+        if not self.bypassed:
+            self._logger.warning(self._format_message(message))
 
     cpdef void critical(self, str message):
         """
@@ -217,7 +223,8 @@ cdef class LoggerAdapter:
         """
         Precondition.valid_string(message, 'message')
 
-        self._logger.critical(self._format_message(message))
+        if not self.bypassed:
+            self._logger.critical(self._format_message(message))
 
     cdef str _format_message(self, str message):
         return f"{self.component_name}: {message}"

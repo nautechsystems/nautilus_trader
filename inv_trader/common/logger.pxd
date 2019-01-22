@@ -24,6 +24,8 @@ cdef class Logger:
     cdef object _logger
     cdef Clock _clock
 
+    cdef readonly bint bypass_logging
+
     cpdef void debug(self, str message)
     cpdef void info(self, str message)
     cpdef void warning(self, str message)
@@ -37,6 +39,8 @@ cdef class LoggerAdapter:
     Provides a logger adapter adapter for a components logger.
     """
     cdef Logger _logger
+
+    cdef readonly bint bypassed
     cdef readonly str component_name
 
     cpdef void debug(self, str message)
