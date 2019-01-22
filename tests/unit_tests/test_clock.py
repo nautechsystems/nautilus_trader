@@ -139,7 +139,7 @@ class TestClockTests(unittest.TestCase):
         self.clock.set_time_alert(Label("test_alert2"), alert_time2, receiver.append)
 
         # Act
-        self.clock.iterate_time(self.clock.unix_epoch() + timedelta(minutes=1))
+        self.clock.iterate_time(self.clock.unix_epoch() + timedelta(minutes=2))
 
         # Assert
         self.assertEqual(2, len(receiver))
@@ -168,7 +168,7 @@ class TestClockTests(unittest.TestCase):
         # Arrange
         receiver = []
         start_time = self.clock.unix_epoch()
-        stop_time = self.clock.unix_epoch() + timedelta(minutes=5)
+        stop_time = self.clock.unix_epoch() + timedelta(minutes=2)
         interval = timedelta(minutes=1)
 
         test_timer = TestTimer(
@@ -183,7 +183,7 @@ class TestClockTests(unittest.TestCase):
         test_timer.advance(stop_time)
 
         # Assert
-        self.assertEqual(1, len(receiver))
+        self.assertEqual(2, len(receiver))
         self.assertEqual(0, len(self.clock.get_labels()))
 
     def test_timer_raises_multiple_time_alerts(self):
