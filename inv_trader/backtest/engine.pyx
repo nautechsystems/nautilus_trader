@@ -161,12 +161,12 @@ cdef class BacktestEngine:
         Precondition.true(stop <= self.data_minute_index[- 1], 'stop <= self.last_timestamp')
         Precondition.positive(time_step_mins, 'time_step_mins')
 
-        cdef time_step = timedelta(minutes=time_step_mins)
-
         self.test_log.info("-------------------------------------------------------------------------------------------")
         self.test_log.info("------------------------------------ BACKTEST ---------------------------------------------")
         self.test_log.info(f"OS System Name: {os.name}")
         self.test_log.info(f"Running backtest from {start} to {stop} with {time_step_mins} minute time steps.")
+
+        cdef time_step = timedelta(minutes=time_step_mins)
         cdef datetime time = start
         self.test_clock.set_time(time)
 
