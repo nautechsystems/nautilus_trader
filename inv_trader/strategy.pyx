@@ -24,6 +24,7 @@ from inv_trader.common.logger cimport Logger, LoggerAdapter
 from inv_trader.common.execution cimport ExecutionClient
 from inv_trader.common.data cimport DataClient
 from inv_trader.model.events cimport Event, AccountEvent, OrderEvent
+from inv_trader.model.events cimport OrderSubmitted, OrderAccepted
 from inv_trader.model.events cimport OrderRejected, OrderCancelReject, OrderFilled, OrderPartiallyFilled
 from inv_trader.model.identifiers cimport GUID, Label, OrderId, PositionId
 from inv_trader.model.objects cimport Symbol, Tick, BarType, Bar, Instrument
@@ -862,8 +863,6 @@ cdef class TradeStrategy:
 
         :param event: The event received.
         """
-        self.log.info(str(event))
-
         # Order events
         if isinstance(event, OrderEvent):
             Precondition.is_in(event.order_id, self._order_book, 'order_id', 'order_book')
@@ -881,6 +880,7 @@ cdef class TradeStrategy:
             elif isinstance(event, OrderFilled) or isinstance(event, OrderPartiallyFilled):
                 Precondition.is_in(event.order_id, self._order_position_index, 'order_id', 'order_position_index')
 
+                self.log.info(str(event))
                 position_id = self._order_position_index[event.order_id]
 
                 if position_id not in self._position_book:
@@ -899,10 +899,13 @@ cdef class TradeStrategy:
                             self.log.info(f"Closed {position}")
                     else:
                         self.log.info(f"Modified {self._position_book[position_id]}")
+            else:
+                self.log.info(str(event))
 
         # Account events
         elif isinstance(event, AccountEvent):
             self.account.apply(event)
+            self.log.info(str(event))
 
         if self.is_running:
             self.on_event(event)

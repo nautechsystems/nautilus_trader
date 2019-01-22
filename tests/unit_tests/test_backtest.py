@@ -316,7 +316,7 @@ class BacktestEngineTests(unittest.TestCase):
                                fast_ema=10,
                                slow_ema=20,
                                atr_period=20,
-                               sl_atr_multiple=2.0)]
+                               sl_atr_multiple=3.0)]
 
         config = BacktestConfig(bypass_logging=False,
                                 console_prints=True)
