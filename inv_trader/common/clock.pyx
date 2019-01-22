@@ -315,12 +315,11 @@ cdef class TestTimer:
         
         :param time: The time to wind the timer to.
         """
-        if time >= self.next_alert:
+        while time >= self.next_alert and self.expired is False:
             self.handler(TimeEvent(self.label, GUID(uuid4()), self.next_alert))
-
-        self.next_alert += self.interval
-        if not self.repeating or self.next_alert > self.stop:
-            self.expired = True
+            self.next_alert += self.interval
+            if not self.repeating or self.next_alert > self.stop:
+                self.expired = True
 
 
 cdef class TestClock(Clock):
@@ -328,16 +327,13 @@ cdef class TestClock(Clock):
     Implements a clock for backtesting and unit testing.
     """
 
-    def __init__(self,
-                 timedelta time_step=timedelta(seconds=1),
-                 datetime initial_time=UNIX_EPOCH):
+    def __init__(self, datetime initial_time=UNIX_EPOCH):
         """
         Initializes a new instance of the TestClock class.
 
         :param initial_time: The initial time for the clock.
         """
         super().__init__()
-        self.time_step = time_step
         self._time = initial_time
         self._timers = {}  # type: Dict[Label, object]
 
@@ -364,26 +360,25 @@ cdef class TestClock(Clock):
         """
         Precondition.true(time.tzinfo == self.timezone, 'time.tzinfo == self.timezone')
 
-        cdef list expired = []
-        while self._time < time:
-            for label, timer in self._timers.items():
-                # Time alerts
-                if isinstance(timer, tuple):
-                    if time >= timer[0]:
-                        timer[1](TimeEvent(label, GUID(uuid4()), timer[0]))
-                        expired.append(label)
-                else:
-                # Timers
-                    timer.advance(time)
-                    if timer.expired:
-                        expired.append(label)
+        cdef list expired = list()
 
-            # Remove expired timers
-            for timer in expired:
-                del self._timers[label]
-            expired = []
+        for label, timer in self._timers.items():
+            # Time alerts
+            if isinstance(timer, tuple):
+                if time >= timer[0]:
+                    timer[1](TimeEvent(label, GUID(uuid4()), timer[0]))
+                    expired.append(label)
+            else:
+            # Timers
+                timer.advance(time)
+                if timer.expired:
+                     expired.append(label)
 
-            self._time += self.time_step
+        # Remove expired timers
+        for label in expired:
+            del self._timers[label]
+
+        self._time = time
 
     cpdef set_time_alert(
             self,
