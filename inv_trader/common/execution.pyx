@@ -18,7 +18,7 @@ from inv_trader.common.clock cimport Clock, LiveClock
 from inv_trader.common.logger cimport Logger, LoggerAdapter
 from inv_trader.model.account cimport Account
 from inv_trader.model.order cimport Order
-from inv_trader.model.events cimport Event, OrderEvent, AccountEvent, OrderRejected, OrderCancelReject
+from inv_trader.model.events cimport Event, OrderEvent, AccountEvent
 from inv_trader.model.identifiers cimport GUID, OrderId
 from inv_trader.strategy cimport TradeStrategy
 

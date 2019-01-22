@@ -10,6 +10,7 @@
 # cython: language_level=3, boundscheck=False
 
 import logging
+import os
 
 from cpython.datetime cimport datetime, timedelta
 from pandas import DataFrame
@@ -162,6 +163,9 @@ cdef class BacktestEngine:
 
         cdef time_step = timedelta(minutes=time_step_mins)
 
+        self.test_log.info("-------------------------------------------------------------------------------------------")
+        self.test_log.info("------------------------------------ BACKTEST ---------------------------------------------")
+        self.test_log.info(f"OS System Name: {os.name}")
         self.test_log.info(f"Running backtest from {start} to {stop} with {time_step_mins} minute time steps.")
         cdef datetime time = start
         self.test_clock.set_time(time)
