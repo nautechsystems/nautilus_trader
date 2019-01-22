@@ -9,8 +9,11 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False
 
+import numpy as np
+import pandas as pd
 import uuid
 
+from functools import partial
 from pandas import DataFrame
 from typing import List, Dict
 
@@ -41,9 +44,8 @@ cdef class BacktestExecClient(ExecutionClient):
     def __init__(self,
                  list instruments: List[Instrument],
                  dict data_ticks: Dict[Symbol, DataFrame],
-                 dict data_bars_bid: Dict[Symbol, List[Bar]],
-                 dict data_bars_ask: Dict[Symbol, List[Bar]],
-                 list data_minute_index: List[datetime],
+                 dict data_bars_bid: Dict[Symbol, DataFrame],
+                 dict data_bars_ask: Dict[Symbol, DataFrame],
                  int starting_capital,
                  int slippage_ticks,
                  TestClock clock,
@@ -53,9 +55,8 @@ cdef class BacktestExecClient(ExecutionClient):
 
         :param instruments: The instruments needed for the backtest.
         :param data_ticks: The historical tick market data needed for the backtest.
-        :param data_bars_bid: The historical bid bars data needed for the backtest.
-        :param data_bars_ask: The historical ask bars data needed for the backtest.
-        :param data_minute_index: The historical minute bars index.
+        :param data_bars_bid: The historical minute bid bars data needed for the backtest.
+        :param data_bars_ask: The historical minute ask bars data needed for the backtest.
         :param starting_capital: The starting capital for the backtest account (> 0).
         :param slippage_ticks: The slippage for each order fill in ticks (>= 0).
         :param clock: The clock for the component.
@@ -63,8 +64,8 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         Precondition.list_type(instruments, Instrument, 'instruments')
         Precondition.dict_types(data_ticks, Symbol, DataFrame, 'data_ticks')
-        Precondition.dict_types(data_bars_bid, Symbol, list, 'data_bars_bid')
-        Precondition.dict_types(data_bars_ask, Symbol, list, 'data_bars_ask')
+        Precondition.dict_types(data_bars_bid, Symbol, DataFrame, 'data_bars_bid')
+        Precondition.dict_types(data_bars_ask, Symbol, DataFrame, 'data_bars_ask')
         Precondition.positive(starting_capital, 'starting_capital')
         Precondition.not_negative(slippage_ticks, 'slippage_ticks')
         Precondition.not_none(clock, 'clock')
@@ -78,10 +79,17 @@ cdef class BacktestExecClient(ExecutionClient):
             instruments_dict[instrument.symbol] = instrument
 
         self.instruments = instruments_dict         # type: Dict[Symbol, Instrument]
-        self.data_ticks = data_ticks                # type: Dict[Symbol, DataFrame]
-        self.data_bars_bid = data_bars_bid          # type: Dict[Symbol, List[Bar]]
-        self.data_bars_ask = data_bars_ask          # type: Dict[Symbol, List[Bar]]
-        self.data_minute_index = data_minute_index  # type: List[datetime]
+
+        # Prepare data
+        self.data_ticks = data_ticks                                           # type: Dict[Symbol, List]
+        self.data_bars_bid = self._prepare_minute_data(data_bars_bid, 'bid')   # type: Dict[Symbol, List]
+        self.data_bars_ask = self._prepare_minute_data(data_bars_ask, 'ask')   # type: Dict[Symbol, List]
+
+        # Set minute data index
+        first_dataframe = data_bars_bid[next(iter(data_bars_bid))]
+        cdef list minute_index = list(pd.to_datetime(first_dataframe.index, utc=True))
+        self.data_minute_index = minute_index       # type: List[datetime]
+
         self.iteration = 0
         self.account_cash_start_day = money(starting_capital)
         self.account_cash_activity_day = money_zero()
@@ -144,32 +152,32 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         Iterate the data client one time step.
         """
-        cdef Decimal current_ask
-        cdef Decimal current_bid
+        cdef Decimal highest_ask
+        cdef Decimal lowest_bid
 
         for order_id, order in self.working_orders.copy().items():  # Copy dict to avoid resize during loop
             # Check for order fill
             if order.side is OrderSide.BUY:
-                current_ask = self.data_bars_ask[order.symbol][self.iteration].high
+                highest_ask = self._get_highest_ask(order.symbol)
                 if order.type is OrderType.STOP_MARKET or OrderType.STOP_LIMIT or OrderType.MIT:
-                    if current_ask >= order.price:
+                    if highest_ask >= order.price:
                         del self.working_orders[order.id]
                         self._fill_order(order, order.price + self.slippage_index[order.symbol])
                         continue
                 elif order.type is OrderType.LIMIT:
-                    if current_ask < order.price:
+                    if highest_ask < order.price:
                         del self.working_orders[order.id]
                         self._fill_order(order, order.price + self.slippage_index[order.symbol])
                         continue
             elif order.side is OrderSide.SELL:
-                current_bid = self.data_bars_bid[order.symbol][self.iteration].low
+                lowest_bid = self._get_lowest_bid(order.symbol)
                 if order.type is OrderType.STOP_MARKET or OrderType.STOP_LIMIT or OrderType.MIT:
-                    if current_bid <= order.price:
+                    if lowest_bid <= order.price:
                         del self.working_orders[order.id]
                         self._fill_order(order, order.price - self.slippage_index[order.symbol])
                         continue
                 elif order.type is OrderType.LIMIT:
-                    if current_bid > order.price:
+                    if lowest_bid > order.price:
                         del self.working_orders[order.id]
                         self._fill_order(order, order.price - self.slippage_index[order.symbol])
                         continue
@@ -227,35 +235,35 @@ cdef class BacktestExecClient(ExecutionClient):
             self._clock.time_now())
         self._on_event(accepted)
 
-        cdef Decimal current_ask
-        cdef Decimal current_bid
+        cdef Decimal closing_ask
+        cdef Decimal closing_bid
 
         # Check order price is valid or reject
         if order.side is OrderSide.BUY:
-            current_ask = self.data_bars_ask[order.symbol][self.iteration].close
+            closing_ask = self._get_closing_ask(order.symbol)
             if order.type is OrderType.MARKET:
-                self._fill_order(order, current_ask + self.slippage_index[order.symbol])
+                self._fill_order(order, closing_ask + self.slippage_index[order.symbol])
                 return
             elif order.type is OrderType.STOP_MARKET or order.type is OrderType.STOP_LIMIT or order.type is OrderType.MIT:
-                if order.price < current_ask:
-                    self._reject_order(order,  f'Buy stop order price of {order.price} is below the ask {current_ask}')
+                if order.price < closing_ask:
+                    self._reject_order(order,  f'Buy stop order price of {order.price} is below the ask {closing_ask}')
                     return
             elif order.type is OrderType.LIMIT:
-                if order.price > current_ask:
-                    self._reject_order(order,  f'Buy limit order price of {order.price} is above the ask {current_ask}')
+                if order.price > closing_ask:
+                    self._reject_order(order,  f'Buy limit order price of {order.price} is above the ask {closing_ask}')
                     return
         elif order.side is OrderSide.SELL:
-            current_bid = self.data_bars_bid[order.symbol][self.iteration].close
+            closing_bid = self._get_closing_bid(order.symbol)
             if order.type is OrderType.MARKET:
-                self._fill_order(order, current_bid - self.slippage_index[order.symbol])
+                self._fill_order(order, closing_bid - self.slippage_index[order.symbol])
                 return
             elif order.type is OrderType.STOP_MARKET or order.type is OrderType.STOP_LIMIT or order.type is OrderType.MIT:
-                if order.price > current_bid:
-                    self._reject_order(order,  f'Sell stop order price of {order.price} is above the bid {current_bid}')
+                if order.price > closing_bid:
+                    self._reject_order(order,  f'Sell stop order price of {order.price} is above the bid {closing_bid}')
                     return
             elif order.type is OrderType.LIMIT:
-                if order.price < current_bid:
-                    self._reject_order(order,  f'Sell limit order price of {order.price} is below the bid {current_bid}')
+                if order.price < closing_bid:
+                    self._reject_order(order,  f'Sell limit order price of {order.price} is below the bid {closing_bid}')
                     return
 
         # Order now becomes working
@@ -304,7 +312,7 @@ cdef class BacktestExecClient(ExecutionClient):
         cdef Decimal current_bid
 
         if order.side is OrderSide.BUY:
-            current_ask = self.data_bars_ask[order.symbol][self.iteration].close
+            current_ask = self._get_closing_ask(order.symbol)
             if order.type is OrderType.STOP_MARKET or order.type is OrderType.STOP_LIMIT or order.type is OrderType.MIT:
                 if order.price < current_ask:
                     self._reject_modify_order(order,  f'Buy stop order price of {order.price} is below the ask {current_ask}')
@@ -314,7 +322,7 @@ cdef class BacktestExecClient(ExecutionClient):
                     self._reject_modify_order(order,  f'Buy limit order price of {order.price} is above the ask {current_ask}')
                     return
         elif order.side is OrderSide.SELL:
-            current_bid = self.data_bars_bid[order.symbol][self.iteration].close
+            current_bid = self._get_closing_bid(order.symbol)
             if order.type is OrderType.STOP_MARKET or order.type is OrderType.STOP_LIMIT or order.type is OrderType.MIT:
                 if order.price > current_bid:
                     self._reject_modify_order(order,  f'Sell stop order price of {order.price} is above the bid {current_bid}')
@@ -335,6 +343,37 @@ cdef class BacktestExecClient(ExecutionClient):
 
         self._on_event(modified)
 
+    cdef dict _prepare_minute_data(self, dict bar_data, str quote_type):
+        """
+        Prepare the given minute bars data by converting the dataframes of each
+        symbol in the dictionary to a list of arrays of Decimal.
+        
+        :param bar_data: The data to prepare.
+        :param quote_type: The quote type of data (bid or ask).
+        :return: The Dict[Symbol, List] of prepared data.
+        """
+        cdef dict minute_data = dict()  # type: Dict[Symbol, List]
+        for symbol, data in bar_data.items():
+            self._log.info(f"Preparing minute {quote_type} prices for {symbol}...")
+            map_func = partial(self._convert_to_decimals, precision=self.instruments[symbol].tick_precision)
+            minute_data[symbol] = list(map(map_func, data.values))
+
+        return minute_data
+
+    cpdef Decimal[:] _convert_to_decimals(self, double[:] values, int precision):
+        """
+        Convert the given array of double values to an array of Decimals with
+        the given precision.
+        
+        :param values: THe values to convert.
+        :param precision: The decimal precision.
+        :return: The array of Decimal.
+        """
+        return np.array([Decimal(values[0], precision),
+                         Decimal(values[1], precision),
+                         Decimal(values[2], precision),
+                         Decimal(values[3], precision)])
+
     cdef void _set_slippage_index(self, int slippage_ticks):
         """
         Set the slippage index based on the given integer.
@@ -345,6 +384,42 @@ cdef class BacktestExecClient(ExecutionClient):
             slippage_index[symbol] = Decimal(instrument.tick_size * slippage_ticks)
 
         self.slippage_index = slippage_index
+
+    cdef Decimal _get_highest_bid(self, Symbol symbol):
+        """
+        :return: Return the highest bid price of the current iteration.
+        """
+        return self.data_bars_bid[symbol][self.iteration][1]
+
+    cdef Decimal _get_lowest_bid(self, Symbol symbol):
+        """
+        :return: Return the lowest bid price of the current iteration.
+        """
+        return self.data_bars_bid[symbol][self.iteration][2]
+
+    cdef Decimal _get_closing_bid(self, Symbol symbol):
+        """
+        :return: Return the closing bid price of the current iteration.
+        """
+        return self.data_bars_bid[symbol][self.iteration][3]
+
+    cdef Decimal _get_highest_ask(self, Symbol symbol):
+        """
+        :return: Return the highest ask price of the current iteration.
+        """
+        return self.data_bars_ask[symbol][self.iteration][1]
+
+    cdef Decimal _get_lowest_ask(self, Symbol symbol):
+        """
+        :return: Return the lowest ask price of the current iteration.
+        """
+        return self.data_bars_ask[symbol][self.iteration][2]
+
+    cdef Decimal _get_closing_ask(self, Symbol symbol):
+        """
+        :return: Return the closing ask price of the current iteration.
+        """
+        return self.data_bars_ask[symbol][self.iteration][3]
 
     cdef void _reject_order(self, Order order, str reason):
         """
