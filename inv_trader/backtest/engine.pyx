@@ -168,7 +168,7 @@ cdef class BacktestEngine:
 
         # Set all strategy clocks to the start of the backtest period
         for strategy in self.trader.strategies:
-            strategy._set_time(start)
+            strategy._set_time(start)  # Access of protected method ok here
 
         self.trader.start()
 
@@ -184,7 +184,7 @@ cdef class BacktestEngine:
             # Order fills should occur before the bar closes
             self.exec_client.iterate(time)
             for strategy in self.trader.strategies:
-                strategy._iterate(time)
+                strategy._iterate(time)  # Access of protected method ok here
             self.data_client.iterate(time)
             time += time_step
             self.test_clock.set_time(time)

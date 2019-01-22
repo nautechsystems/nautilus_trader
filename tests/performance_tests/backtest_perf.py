@@ -59,6 +59,9 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
 
         self.assertTrue(True)
 
+        # to datetime(2013, 8, 10, 0, 0, 0, 0, tzinfo=timezone.utc)
+        # 3174154 function calls in 0.607 seconds
+
     def test_run_with_ema_cross_strategy(self):
         # Arrange
         usdjpy = TestStubs.instrument_usdjpy()
@@ -80,7 +83,8 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
                                atr_period=20,
                                sl_atr_multiple=2.0)]
 
-        config = BacktestConfig(console_prints=False)
+        config = BacktestConfig(slippage_ticks=1,
+                                console_prints=False)
         engine = BacktestEngine(instruments=instruments,
                                 data_ticks=tick_data,
                                 data_bars_bid=bid_data,
@@ -97,5 +101,6 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
 
         # to datetime(2013, 3, 10, 0, 0, 0, 0, tzinfo=timezone.utc)
         # 21205652 function calls (21205400 primitive calls) in 13.884 seconds
+        # 16356163 function calls (16351987 primitive calls) in 10.330 seconds
 
         self.assertTrue(True)

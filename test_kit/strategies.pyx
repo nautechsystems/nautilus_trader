@@ -264,9 +264,9 @@ cdef class EMACross(TradeStrategy):
                     time_in_force=TimeInForce.GTD,
                     expire_time=self.time_now() + timedelta(minutes=1))
                 self.entry_orders[entry_order.id] = entry_order
+                self.log.info(f"Added {entry_order.id} to entry orders.")
                 self.position_id = PositionId(str(entry_order.id))
                 self.submit_order(entry_order, self.position_id)
-                self.log.info(f"Added {entry_order.id} to entry orders.")
 
             # SELL LOGIC
             elif self.fast_ema.value < self.slow_ema.value:
@@ -280,9 +280,9 @@ cdef class EMACross(TradeStrategy):
                     time_in_force=TimeInForce.GTD,
                     expire_time=self.time_now() + timedelta(minutes=1))
                 self.entry_orders[entry_order.id] = entry_order
+                self.log.info(f"Added {entry_order.id} to entry orders.")
                 self.position_id = PositionId(str(entry_order.id))
                 self.submit_order(entry_order, self.position_id)
-                self.log.info(f"Added {entry_order.id} to entry orders.")
 
         for order_id, order in self.stop_loss_orders.items():
             if order.side is OrderSide.SELL:
@@ -331,6 +331,7 @@ cdef class EMACross(TradeStrategy):
                 self.stop_loss_orders[stop_order.id] = stop_order
                 self.submit_order(stop_order, self.position_id)
                 self.log.info(f"Added {stop_order.id} to stop-loss orders.")
+
             elif event.order_id in self.stop_loss_orders:
                 del self.stop_loss_orders[event.order_id]
                 self.position_id = None
@@ -338,14 +339,16 @@ cdef class EMACross(TradeStrategy):
         elif isinstance(event, OrderExpired):
             if event.order_id in self.entry_orders:
                 del self.entry_orders[event.order_id]
+                self.log.info(f"Removed {event.order_id} from entry orders due expiration.")
                 self.position_id = None
 
         elif isinstance(event, OrderRejected):
             if event.order_id in self.entry_orders:
                 del self.entry_orders[event.order_id]
+                self.log.info(f"Removed {event.order_id} from entry orders due rejection.")
                 self.position_id = None
             # If a stop-loss order is rejected then flatten the entered position
-            if event.order_id in self.stop_loss_orders:
+            elif event.order_id in self.stop_loss_orders:
                 self.flatten_all_positions()
                 self.entry_orders = {}      # type: Dict[OrderId, Order]
                 self.stop_loss_orders = {}  # type: Dict[OrderId, Order]
