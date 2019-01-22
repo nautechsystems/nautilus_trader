@@ -318,7 +318,8 @@ class BacktestEngineTests(unittest.TestCase):
                                atr_period=20,
                                sl_atr_multiple=2.0)]
 
-        config = BacktestConfig(console_prints=True)
+        config = BacktestConfig(bypass_logging=False,
+                                console_prints=True)
         engine = BacktestEngine(instruments=instruments,
                                 data_ticks=tick_data,
                                 data_bars_bid=bid_data,
