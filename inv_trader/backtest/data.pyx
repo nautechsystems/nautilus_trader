@@ -105,34 +105,15 @@ cdef class BacktestDataClient(DataClient):
                 assert(dataframe.shape == shapes[resolution], f'{dataframe} shape is not equal')
                 assert(dataframe.index == indexs[resolution], f'{dataframe} index is not equal')
 
-        # Prepare data providers
-        for symbol in data_symbols:
+    cpdef void create_data_providers(self):
+        """
+        Create the data providers for the client based on the given instruments.
+        """
+        for symbol, instrument in self._instruments.items():
             self._log.info(f'Creating data provider for {symbol}...')
-            self.data_providers[symbol] = DataProvider(instrument=self._instruments[symbol],
-                                                       data_bars_bid=data_bars_bid[symbol],
-                                                       data_bars_ask=data_bars_ask[symbol])
-
-    cpdef dict get_minute_bid_bars(self):
-        """
-        Get the dictionary of all built one minute bid bars.
-        """
-        cdef dict minute_bid_bars = dict()  # type: Dict[BarType, List[Bar]]
-
-        for symbol, data_provider in self.data_providers.items():
-            minute_bid_bars[symbol] = data_provider.bars[data_provider.minute_bid]
-
-        return minute_bid_bars
-
-    cpdef dict get_minute_ask_bars(self):
-        """
-        Get the dictionary of all built one minute ask bars.
-        """
-        cdef dict minute_ask_bars = dict()  # type: Dict[BarType, List[Bar]]
-
-        for symbol, data_provider in self.data_providers.items():
-            minute_ask_bars[symbol] = data_provider.bars[data_provider.minute_ask]
-
-        return minute_ask_bars
+            self.data_providers[symbol] = DataProvider(instrument=instrument,
+                                                       data_bars_bid=self.data_bars_bid[symbol],
+                                                       data_bars_ask=self.data_bars_ask[symbol])
 
     cpdef void set_initial_iteration(
             self,

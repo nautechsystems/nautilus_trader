@@ -93,17 +93,9 @@ cdef class BacktestEngine:
         self.config = config
         self.clock = LiveClock()
         self.test_clock = TestClock()
-        self.log = Logger()
 
-        self.test_log = Logger(
-            name='backtest',
-            bypass_logging=config.bypass_logging,
-            level_console=config.level_console,
-            level_file=config.level_file,
-            console_prints=config.console_prints,
-            log_to_file=config.log_to_file,
-            log_file_path=config.log_file_path,
-            clock=self.test_clock)
+        cdef Logger logger = Logger()
+        self.log = LoggerAdapter(component_name='BacktestEngine', logger=logger)
 
         self.data_client = BacktestDataClient(
             instruments=instruments,
@@ -111,7 +103,7 @@ cdef class BacktestEngine:
             data_bars_bid=data_bars_bid,
             data_bars_ask=data_bars_ask,
             clock=TestClock(),
-            logger=self.test_log)
+            logger=logger)
 
         cdef dict minute_bars_bid = {}
         for symbol, data in data_bars_bid.items():
@@ -129,12 +121,24 @@ cdef class BacktestEngine:
             starting_capital=config.starting_capital,
             slippage_ticks=config.slippage_ticks,
             clock=TestClock(),
-            logger=self.test_log)
+            logger=logger)
 
         self.data_minute_index = self.data_client.data_minute_index
 
         assert(self.data_minute_index == self.data_client.data_minute_index)
         assert(self.data_minute_index == self.exec_client.data_minute_index)
+
+        self.data_client.create_data_providers()
+
+        self.test_log = Logger(
+            name='backtest',
+            bypass_logging=config.bypass_logging,
+            level_console=config.level_console,
+            level_file=config.level_file,
+            console_prints=config.console_prints,
+            log_to_file=config.log_to_file,
+            log_file_path=config.log_file_path,
+            clock=self.test_clock)
 
         for strategy in strategies:
             # Replace strategies clocks with test clocks
@@ -170,11 +174,12 @@ cdef class BacktestEngine:
         Precondition.true(stop <= self.data_minute_index[- 1], 'stop <= self.last_timestamp')
         Precondition.positive(time_step_mins, 'time_step_mins')
 
-        self.test_log.info("------------------------------------------------------------------------------------------")
-        self.test_log.info("---------------------------------------- BACKTEST ----------------------------------------")
-        self.test_log.info("------------------------------------------------------------------------------------------")
-        self.test_log.info(f"OS System Name: {os.name}")
-        self.test_log.info(f"Running backtest from {start} to {stop} with {time_step_mins} minute time steps.")
+        self.log.info("#----------------------------------------------------------------------------------------------------#")
+        self.log.info("#--------------------------------------------- BACKTEST ---------------------------------------------#")
+        self.log.info("#----------------------------------------------------------------------------------------------------#")
+        self.log.info(f"OS System Name: {os.name}")
+        self.log.info(f"Running backtest from {start} to {stop} with {time_step_mins} minute time steps.")
+        self.log.info("#----------------------------------------------------------------------------------------------------#")
 
         cdef time_step = timedelta(minutes=time_step_mins)
         cdef datetime time = start

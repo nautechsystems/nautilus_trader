@@ -53,6 +53,8 @@ class BacktestDataClientTests(unittest.TestCase):
             clock=TestClock(),
             logger=Logger())
 
+        self.client.create_data_providers()
+
     def test_can_initialize_client_with_data(self):
         # Arrange
         # Act
@@ -60,22 +62,6 @@ class BacktestDataClientTests(unittest.TestCase):
         self.assertEqual(all(self.bid_data_1min), all(self.client.data_bars_bid[self.usdjpy.symbol][Resolution.MINUTE]))
         self.assertEqual(all(self.ask_data_1min), all(self.client.data_bars_bid[self.usdjpy.symbol][Resolution.MINUTE]))
         self.assertEqual(all(self.bid_data_1min.index), all(self.client.data_minute_index))
-
-    def test_can_get_one_minute_bid_bars(self):
-        # Arrange
-        # Act
-        bars = self.client.get_minute_bid_bars()
-
-        # Assert
-        self.assertEqual(2000, len(bars[self.usdjpy.symbol]))
-
-    def test_can_get_one_minute_ask_bars(self):
-        # Arrange
-        # Act
-        bars = self.client.get_minute_ask_bars()
-
-        # Assert
-        self.assertEqual(2000, len(bars[self.usdjpy.symbol]))
 
     def test_can_set_initial_iteration(self):
         # Arrange

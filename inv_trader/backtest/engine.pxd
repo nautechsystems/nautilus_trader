@@ -12,7 +12,7 @@
 from cpython.datetime cimport datetime
 
 from inv_trader.common.clock cimport Clock
-from inv_trader.common.logger cimport Logger
+from inv_trader.common.logger cimport Logger, LoggerAdapter
 from inv_trader.backtest.data cimport BacktestDataClient
 from inv_trader.backtest.execution cimport BacktestExecClient
 from inv_trader.trader cimport Trader
@@ -39,7 +39,7 @@ cdef class BacktestEngine:
     cdef readonly Clock clock
     cdef readonly Clock test_clock
     cdef readonly BacktestConfig config
-    cdef readonly Logger log
+    cdef readonly LoggerAdapter log
     cdef readonly Logger test_log
     cdef readonly BacktestDataClient data_client
     cdef readonly BacktestExecClient exec_client

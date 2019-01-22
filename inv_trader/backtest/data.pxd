@@ -26,8 +26,7 @@ cdef class BacktestDataClient(DataClient):
     cdef readonly dict data_providers
     cdef readonly int iteration
 
-    cpdef dict get_minute_bid_bars(self)
-    cpdef dict get_minute_ask_bars(self)
+    cpdef void create_data_providers(self)
     cpdef void set_initial_iteration(self, datetime to_time, timedelta time_step)
     cpdef void iterate(self, datetime time)
     cpdef void subscribe_bars(self, BarType bar_type, handler)
