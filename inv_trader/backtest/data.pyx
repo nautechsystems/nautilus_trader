@@ -164,10 +164,10 @@ cdef class BacktestDataClient(DataClient):
         """
         # TODO: Iterate tick data.
 
-        cdef dict bars = {}
+        cdef list bars = list()
         for data_provider in self.data_providers.values():
             bars = data_provider.iterate_bars(time)
-            for bar_type, bar in bars.items():
+            for bar_type, bar in bars:
                 if bar_type in self._bar_handlers:
                     for handler in self._bar_handlers[bar_type]:
                         handler(bar_type, bar)
@@ -376,20 +376,20 @@ cdef class DataProvider:
                     self.iterations[bar_type] += 1
             current += time_step
 
-    cpdef dict iterate_bars(self, datetime time):
+    cpdef list iterate_bars(self, datetime time):
         """
         Build a list of bars which have closed based on the held historical data
         and the given datetime.
 
         :return: The list of built bars.
         """
-        cdef dict bars_dict = dict()
+        cdef list bars_list = list()
         cdef int next_index = 0
 
         for bar_type, bars in self.bars.items():
             next_index = self.iterations[bar_type]
             if self.bars[bar_type][next_index].timestamp == time:
-                bars_dict[bar_type] = bars[next_index]
+                bars_list.append((bar_type, bars[next_index]))
                 self.iterations[bar_type] += 1
 
-        return bars_dict
+        return bars_list
