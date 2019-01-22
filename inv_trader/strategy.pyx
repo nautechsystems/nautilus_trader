@@ -24,7 +24,7 @@ from inv_trader.common.logger cimport Logger, LoggerAdapter
 from inv_trader.common.execution cimport ExecutionClient
 from inv_trader.common.data cimport DataClient
 from inv_trader.model.events cimport Event, AccountEvent, OrderEvent
-from inv_trader.model.events cimport OrderFilled, OrderPartiallyFilled
+from inv_trader.model.events cimport OrderRejected, OrderCancelReject, OrderFilled, OrderPartiallyFilled
 from inv_trader.model.identifiers cimport GUID, Label, OrderId, PositionId
 from inv_trader.model.objects cimport Symbol, Tick, BarType, Bar, Instrument
 from inv_trader.model.order cimport Order, OrderIdGenerator, OrderFactory
@@ -871,8 +871,14 @@ cdef class TradeStrategy:
             order = self._order_book[event.order_id]
             order.apply(event)
 
+            if isinstance(event, OrderRejected):
+                self.log.warning(f"{event} {event.rejected_reason}")
+
+            elif isinstance(event, OrderCancelReject):
+                self.log.warning(f"{event} {event.cancel_reject_reason} {event.cancel_reject_response}")
+
             # Position events
-            if isinstance(event, OrderFilled) or isinstance(event, OrderPartiallyFilled):
+            elif isinstance(event, OrderFilled) or isinstance(event, OrderPartiallyFilled):
                 Precondition.is_in(event.order_id, self._order_position_index, 'order_id', 'order_position_index')
 
                 position_id = self._order_position_index[event.order_id]
