@@ -14,7 +14,6 @@ from typing import Dict, List
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.core.decimal cimport Decimal
-from inv_trader.core.functions cimport is_in
 from inv_trader.common.clock cimport Clock, LiveClock
 from inv_trader.enums.order_side cimport OrderSide, order_side_string
 from inv_trader.enums.order_type cimport OrderType, order_type_string
