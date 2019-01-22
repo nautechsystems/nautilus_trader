@@ -14,6 +14,7 @@ from typing import Dict, List
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.core.decimal cimport Decimal
+from inv_trader.core.functions cimport is_in, symbol_is_in
 from inv_trader.common.clock cimport Clock, LiveClock
 from inv_trader.enums.order_side cimport OrderSide, order_side_string
 from inv_trader.enums.order_type cimport OrderType, order_type_string
@@ -287,19 +288,21 @@ cdef class OrderIdGenerator:
         :param order_symbol: The order symbol for the unique identifier.
         :return: The unique OrderIdentifier.
         """
-        if order_symbol not in self._order_symbol_counts:
+        if not symbol_is_in(order_symbol, list(self._order_symbol_counts.keys())):
+        #if order_symbol not in self._order_symbol_counts:
             self._order_symbol_counts[order_symbol] = 0
 
         self._order_symbol_counts[order_symbol] += 1
-        cdef str milliseconds = str(self._clock.milliseconds_since_unix_epoch())
+        cdef str ms_since_ux = str(self._clock.milliseconds_since_unix_epoch())
         cdef str order_count = str(self._order_symbol_counts[order_symbol])
         cdef OrderId order_id = OrderId(str(order_symbol.code)
                                        + self.separator + order_symbol.venue_string()
                                        + self.separator + self.order_id_tag
                                        + self.separator + order_count
-                                       + self.separator + milliseconds)
+                                       + self.separator + ms_since_ux)
 
-        if order_id in self._order_ids:
+        if is_in(order_id, self._order_ids):
+        #if order_id in self._order_ids:
             # TODO: Consider re-try counter
             return self.generate(order_symbol)
         self._order_ids.append(order_id)

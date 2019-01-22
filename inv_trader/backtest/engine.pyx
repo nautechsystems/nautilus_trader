@@ -10,7 +10,6 @@
 # cython: language_level=3, boundscheck=False
 
 import logging
-import pandas as pd
 
 from cpython.datetime cimport datetime, timedelta
 from pandas import DataFrame
@@ -34,6 +33,7 @@ cdef class BacktestConfig:
     def __init__(self,
                  int starting_capital=1000000,
                  int slippage_ticks=0,
+                 bint bypass_logging=True,
                  level_console: logging=INFO,
                  level_file: logging=DEBUG,
                  bint console_prints=False,
@@ -54,6 +54,8 @@ cdef class BacktestConfig:
         Precondition.not_negative(slippage_ticks, 'slippage_ticks')
 
         self.starting_capital = starting_capital
+        self.slippage_ticks = slippage_ticks
+        self.bypass_logging = bypass_logging
         self.level_console = level_console
         self.level_file = level_file
         self.console_prints = console_prints
@@ -93,6 +95,7 @@ cdef class BacktestEngine:
 
         self.test_log = Logger(
             name='backtest',
+            bypass_logging=config.bypass_logging,
             level_console=config.level_console,
             level_file=config.level_file,
             console_prints=config.console_prints,

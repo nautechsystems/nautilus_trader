@@ -7,8 +7,6 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-# cython: language_level=3, boundscheck=False
-
 import cProfile
 import pstats
 import pandas as pd
@@ -32,7 +30,7 @@ USDJPY_FXCM = Symbol('USDJPY', Venue.FXCM)
 class BacktestEnginePerformanceTests(unittest.TestCase):
 
     @staticmethod
-    def test_running_blank_strategy():
+    def test_run_with_empty_strategy():
         # Arrange
         usdjpy = TestStubs.instrument_usdjpy()
         bid_data_1min = TestDataProvider.usdjpy_1min_bid()
@@ -61,7 +59,7 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         s.strip_dirs().sort_stats("time").print_stats()
 
     @staticmethod
-    def test_can_run():
+    def test_run_with_ema_cross_strategy():
         # Arrange
         usdjpy = TestStubs.instrument_usdjpy()
         bid_data_1min = TestDataProvider.usdjpy_1min_bid()
@@ -82,7 +80,7 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
                                atr_period=20,
                                sl_atr_multiple=2.0)]
 
-        config = BacktestConfig(console_prints=True)
+        config = BacktestConfig(console_prints=False)
         engine = BacktestEngine(instruments=instruments,
                                 data_ticks=tick_data,
                                 data_bars_bid=bid_data,
@@ -91,8 +89,10 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
                                 config=config)
 
         start = datetime(2013, 1, 1, 22, 0, 0, 0, tzinfo=timezone.utc)
-        stop = datetime(2013, 1, 10, 0, 0, 0, 0, tzinfo=timezone.utc)
+        stop = datetime(2013, 2, 10, 0, 0, 0, 0, tzinfo=timezone.utc)
 
         cProfile.runctx('engine.run(start, stop)', globals(), locals(), 'Profile.prof')
         s = pstats.Stats("Profile.prof")
         s.strip_dirs().sort_stats("time").print_stats()
+
+        # ~11s 43ms
