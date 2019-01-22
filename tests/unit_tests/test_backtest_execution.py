@@ -38,7 +38,7 @@ class BacktestExecClientTests(unittest.TestCase):
         self.bid_data_1min = TestDataProvider.usdjpy_1min_bid()[:2000]
         self.ask_data_1min = TestDataProvider.usdjpy_1min_ask()[:2000]
 
-        self.instruments = [TestStubs.instrument_usdjpy()]
+        self.instruments = [self.usdjpy]
         self.data_ticks = {self.usdjpy.symbol: pd.DataFrame()}
         self.data_bars_bid = {self.usdjpy.symbol: self.bid_data_1min}
         self.data_bars_ask = {self.usdjpy.symbol: self.ask_data_1min}
