@@ -35,7 +35,6 @@ class DataProviderPerformanceTest:
 
         self.start = self.data_provider.bars[TestStubs.bartype_usdjpy_1min_bid()][0].timestamp
         self.time = self.start
-        print(len(self.data_provider.bars))
 
     def iterate_bars(self):
 
@@ -60,7 +59,7 @@ class DataProviderPerformanceTests(unittest.TestCase):
             end_time = time()
             total_elapsed += round((end_time - srt_time) * MILLISECONDS_IN_SECOND)
 
-        print('\n' + f'OrderIdGeneratorPerformanceTest({number} iterations)')
+        print('\n' + f'test_iterate_bars({number} iterations)')
         print(f'{round(total_elapsed / tests)}ms')
 
-        # ~40ms for 10000 bars
+        # ~30ms for 10000 bars
