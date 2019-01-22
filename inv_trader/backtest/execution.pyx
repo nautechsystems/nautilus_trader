@@ -49,7 +49,7 @@ cdef class BacktestExecClient(ExecutionClient):
                  TestClock clock,
                  Logger logger):
         """
-        Initializes a new instance of the BacktestDataClient class.
+        Initializes a new instance of the BacktestExecClient class.
 
         :param instruments: The instruments needed for the backtest.
         :param data_ticks: The historical tick market data needed for the backtest.

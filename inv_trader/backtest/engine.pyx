@@ -65,7 +65,8 @@ cdef class BacktestConfig:
 
 cdef class BacktestEngine:
     """
-    Provides a backtest engine to run a trader on historical data.
+    Provides a backtest engine to run a portfolio of strategies inside a Trader
+    on historical data.
     """
 
     def __init__(self,
