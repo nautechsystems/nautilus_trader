@@ -29,8 +29,7 @@ USDJPY_FXCM = Symbol('USDJPY', Venue.FXCM)
 
 class BacktestEnginePerformanceTests(unittest.TestCase):
 
-    @staticmethod
-    def test_run_with_empty_strategy():
+    def test_run_with_empty_strategy(self):
         # Arrange
         usdjpy = TestStubs.instrument_usdjpy()
         bid_data_1min = TestDataProvider.usdjpy_1min_bid()
@@ -58,8 +57,9 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         s = pstats.Stats("Profile.prof")
         s.strip_dirs().sort_stats("time").print_stats()
 
-    @staticmethod
-    def test_run_with_ema_cross_strategy():
+        self.assertTrue(True)
+
+    def test_run_with_ema_cross_strategy(self):
         # Arrange
         usdjpy = TestStubs.instrument_usdjpy()
         bid_data_1min = TestDataProvider.usdjpy_1min_bid()
@@ -89,10 +89,13 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
                                 config=config)
 
         start = datetime(2013, 1, 1, 22, 0, 0, 0, tzinfo=timezone.utc)
-        stop = datetime(2013, 2, 10, 0, 0, 0, 0, tzinfo=timezone.utc)
+        stop = datetime(2013, 3, 10, 0, 0, 0, 0, tzinfo=timezone.utc)
 
         cProfile.runctx('engine.run(start, stop)', globals(), locals(), 'Profile.prof')
         s = pstats.Stats("Profile.prof")
         s.strip_dirs().sort_stats("time").print_stats()
 
-        # ~16.17s to datetime(2013, 2, 10, 0, 0, 0, 0, tzinfo=timezone.utc)
+        # to datetime(2013, 3, 10, 0, 0, 0, 0, tzinfo=timezone.utc)
+        # 21205652 function calls (21205400 primitive calls) in 13.884 seconds
+
+        self.assertTrue(True)
