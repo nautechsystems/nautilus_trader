@@ -47,9 +47,9 @@ class BacktestDataClientTests(unittest.TestCase):
 
         self.client = BacktestDataClient(
             instruments=self.instruments,
-            dataframes_ticks=self.data_ticks,
-            dataframes_bars_bid=self.data_bars_bid,
-            dataframes_bars_ask=self.data_bars_ask,
+            data_ticks=self.data_ticks,
+            data_bars_bid=self.data_bars_bid,
+            data_bars_ask=self.data_bars_ask,
             clock=TestClock(),
             logger=Logger())
 
@@ -57,8 +57,8 @@ class BacktestDataClientTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(all(self.bid_data_1min), all(self.client.dataframes_bars_bid[self.usdjpy.symbol][Resolution.MINUTE]))
-        self.assertEqual(all(self.ask_data_1min), all(self.client.dataframes_bars_bid[self.usdjpy.symbol][Resolution.MINUTE]))
+        self.assertEqual(all(self.bid_data_1min), all(self.client.data_bars_bid[self.usdjpy.symbol][Resolution.MINUTE]))
+        self.assertEqual(all(self.ask_data_1min), all(self.client.data_bars_bid[self.usdjpy.symbol][Resolution.MINUTE]))
         self.assertEqual(all(self.bid_data_1min.index), all(self.client.data_minute_index))
 
     def test_can_get_one_minute_bid_bars(self):

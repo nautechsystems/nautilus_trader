@@ -106,19 +106,26 @@ cdef class BacktestEngine:
             clock=self.test_clock)
 
         self.data_client = BacktestDataClient(
-            instruments,
-            data_ticks,
-            data_bars_bid,
-            data_bars_ask,
+            instruments=instruments,
+            data_ticks=data_ticks,
+            data_bars_bid=data_bars_bid,
+            data_bars_ask=data_bars_ask,
             clock=TestClock(),
             logger=self.test_log)
 
+        cdef dict minute_bars_bid = {}
+        for symbol, data in data_bars_bid.items():
+            minute_bars_bid[symbol] = data[Resolution.MINUTE]
+
+        cdef dict minute_bars_ask = {}
+        for symbol, data in data_bars_ask.items():
+            minute_bars_ask[symbol] = data[Resolution.MINUTE]
+
         self.exec_client = BacktestExecClient(
-            instruments,
-            data_ticks,
-            self.data_client.get_minute_bid_bars(),
-            self.data_client.get_minute_ask_bars(),
-            data_minute_index=self.data_client.data_minute_index,
+            instruments=instruments,
+            data_ticks=data_ticks,
+            data_bars_bid=minute_bars_bid,
+            data_bars_ask=minute_bars_ask,
             starting_capital=config.starting_capital,
             slippage_ticks=config.slippage_ticks,
             clock=TestClock(),
@@ -142,6 +149,8 @@ cdef class BacktestEngine:
             self.exec_client,
             self.test_clock)
 
+        self.log.info('Initialized.')
+
     cpdef void run(
             self,
             datetime start,
@@ -161,8 +170,9 @@ cdef class BacktestEngine:
         Precondition.true(stop <= self.data_minute_index[- 1], 'stop <= self.last_timestamp')
         Precondition.positive(time_step_mins, 'time_step_mins')
 
-        self.test_log.info("-------------------------------------------------------------------------------------------")
-        self.test_log.info("------------------------------------ BACKTEST ---------------------------------------------")
+        self.test_log.info("------------------------------------------------------------------------------------------")
+        self.test_log.info("---------------------------------------- BACKTEST ----------------------------------------")
+        self.test_log.info("------------------------------------------------------------------------------------------")
         self.test_log.info(f"OS System Name: {os.name}")
         self.test_log.info(f"Running backtest from {start} to {stop} with {time_step_mins} minute time steps.")
 

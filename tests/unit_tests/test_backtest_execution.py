@@ -40,24 +40,15 @@ class BacktestExecClientTests(unittest.TestCase):
 
         self.instruments = [TestStubs.instrument_usdjpy()]
         self.data_ticks = {self.usdjpy.symbol: pd.DataFrame()}
-        self.data_bars_bid = {self.usdjpy.symbol: {Resolution.MINUTE: self.bid_data_1min}}
-        self.data_bars_ask = {self.usdjpy.symbol: {Resolution.MINUTE: self.ask_data_1min}}
+        self.data_bars_bid = {self.usdjpy.symbol: self.bid_data_1min}
+        self.data_bars_ask = {self.usdjpy.symbol: self.ask_data_1min}
 
         self.strategies = [TestStrategy1(TestStubs.bartype_usdjpy_1min_bid())]
 
-        self.data_client = BacktestDataClient(
-            instruments=self.instruments,
-            dataframes_ticks=self.data_ticks,
-            dataframes_bars_bid=self.data_bars_bid,
-            dataframes_bars_ask=self.data_bars_ask,
-            clock=TestClock(),
-            logger=Logger())
-
         self.client = BacktestExecClient(instruments=self.instruments,
                                          data_ticks=self.data_ticks,
-                                         data_bars_bid=self.data_client.get_minute_bid_bars(),
-                                         data_bars_ask=self.data_client.get_minute_ask_bars(),
-                                         data_minute_index=self.data_client.data_minute_index,
+                                         data_bars_bid=self.data_bars_bid,
+                                         data_bars_ask=self.data_bars_ask,
                                          starting_capital=1000000,
                                          slippage_ticks=1,
                                          clock=TestClock(),
@@ -67,8 +58,6 @@ class BacktestExecClientTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(all(self.data_bars_bid), all(self.client.data_bars_bid[self.usdjpy.symbol]))
-        self.assertEqual(all(self.data_bars_ask), all(self.client.data_bars_ask[self.usdjpy.symbol]))
         self.assertEqual(all(self.bid_data_1min.index), all(self.client.data_minute_index))
         self.assertEqual(Decimal(1000000), self.client.account.cash_balance)
         self.assertEqual(Decimal(1000000), self.client.account.free_equity)
