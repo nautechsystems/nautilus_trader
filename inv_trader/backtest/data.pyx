@@ -360,7 +360,7 @@ cdef class DataProvider:
             datetime to_time,
             timedelta time_step):
         """
-        Set the iteration based on the given time.
+        Set the initial bar iterations based on the given datetimes and time_step.
         """
         cdef datetime current = from_time
 
@@ -372,10 +372,10 @@ cdef class DataProvider:
 
     cpdef list iterate_bars(self, datetime time):
         """
-        Build a list of bars which have closed based on the held historical data
-        and the given datetime.
+        Build a list of bars which have closed based on the given datetime.
 
-        :return: The list of built bars.
+        :param time: The time to build iteration list to.
+        :return: The list of closed bars.
         """
         cdef list bars_list = list()
 
