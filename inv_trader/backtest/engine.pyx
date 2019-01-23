@@ -10,10 +10,8 @@
 # cython: language_level=3, boundscheck=False
 
 import logging
-import sys
 import psutil
 import platform
-import os
 
 from cpython.datetime cimport datetime, timedelta
 from pandas import DataFrame
