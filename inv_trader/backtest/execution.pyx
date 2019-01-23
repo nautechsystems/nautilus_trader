@@ -26,6 +26,7 @@ from inv_trader.enums.order_side cimport OrderSide
 from inv_trader.model.money import money_zero, money
 from inv_trader.model.objects cimport Symbol, Bar, BarType, Instrument
 from inv_trader.model.order cimport Order
+from inv_trader.model.position cimport Position
 from inv_trader.model.events cimport Event, OrderEvent, AccountEvent, OrderCancelReject
 from inv_trader.model.events cimport OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
 from inv_trader.model.events cimport OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
@@ -81,9 +82,9 @@ cdef class BacktestExecClient(ExecutionClient):
         self.instruments = instruments_dict         # type: Dict[Symbol, Instrument]
 
         # Prepare data
-        self.data_ticks = data_ticks                                           # type: Dict[Symbol, List]
-        self.data_bars_bid = self._prepare_minute_data(data_bars_bid, 'bid')   # type: Dict[Symbol, List]
-        self.data_bars_ask = self._prepare_minute_data(data_bars_ask, 'ask')   # type: Dict[Symbol, List]
+        self.data_ticks = data_ticks                                          # type: Dict[Symbol, List]
+        self.data_bars_bid = self._prepare_minute_data(data_bars_bid, 'bid')  # type: Dict[Symbol, List]
+        self.data_bars_ask = self._prepare_minute_data(data_bars_ask, 'ask')  # type: Dict[Symbol, List]
 
         # Set minute data index
         first_dataframe = data_bars_bid[next(iter(data_bars_bid))]
@@ -95,6 +96,7 @@ cdef class BacktestExecClient(ExecutionClient):
         self.account_cash_activity_day = money_zero()
         self.slippage_index = dict()                # type: Dict[Symbol, Decimal]
         self.working_orders = dict()                # type: Dict[OrderId, Order]
+        self.positions = dict()                     # type: Dict[Symbol, Position]
 
         self._set_slippage_index(slippage_ticks)
 
