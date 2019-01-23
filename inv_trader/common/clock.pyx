@@ -56,6 +56,16 @@ cdef class Clock:
         """
         return self._unix_epoch
 
+    cpdef double get_elapsed(self, datetime start):
+        """
+        :return: The number of seconds elapsed since the given start time rounded
+        to two decimal places. 
+        """
+        Precondition.true(start.tzinfo == self.timezone, 'time.tzinfo == self.timezone')
+        Precondition.true(start <= self.time_now(), 'start >= self.time_now()')
+
+        return round((self.time_now() - start).total_seconds(), 2)
+
     cdef long milliseconds_since_unix_epoch(self):
         """
         :return:  Returns the number of ticks of the given time now since the Unix Epoch.

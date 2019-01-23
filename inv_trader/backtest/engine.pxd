@@ -36,11 +36,13 @@ cdef class BacktestEngine:
     """
     Provides a backtest engine to run a trader on historical data.
     """
+    cdef readonly datetime created_time
     cdef readonly Clock clock
     cdef readonly Clock test_clock
     cdef readonly BacktestConfig config
     cdef readonly LoggerAdapter log
     cdef readonly Logger test_log
+    cdef readonly list instruments
     cdef readonly BacktestDataClient data_client
     cdef readonly BacktestExecClient exec_client
     cdef readonly Trader trader
