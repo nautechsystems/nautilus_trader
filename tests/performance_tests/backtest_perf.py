@@ -42,7 +42,7 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
 
         strategies = [EmptyStrategy()]
 
-        config = BacktestConfig(console_prints=True)
+        config = BacktestConfig()
         engine = BacktestEngine(instruments=instruments,
                                 data_ticks=tick_data,
                                 data_bars_bid=bid_data,
@@ -84,6 +84,7 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
                                sl_atr_multiple=2.0)]
 
         config = BacktestConfig(slippage_ticks=1,
+                                bypass_logging=True,
                                 console_prints=False)
         engine = BacktestEngine(instruments=instruments,
                                 data_ticks=tick_data,

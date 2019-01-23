@@ -42,7 +42,7 @@ DIRECTORIES = [INV_TRADER, 'test_kit']
 Options.embed_pos_in_docstring = True  # Embed docstrings in extensions
 Options.warning_errors = True  # Treat compiler warnings as errors
 Options.cimport_from_pyx = True  # Allows cimporting from a pyx file without a pxd file
-Profile_Hooks = False  # Write profiling hooks into methods (some overhead, use for profiling)
+Profile_Hooks = True  # Write profiling hooks into methods (some overhead, use for profiling)
 
 
 # Recursively scan given directories

@@ -39,14 +39,11 @@ class BacktestEngineTests(unittest.TestCase):
     def test_initialization(self):
         strategies = [EmptyStrategy()]
 
-        config = BacktestConfig(bypass_logging=False,
-                                console_prints=True)
         engine = BacktestEngine(instruments=self.instruments,
                                 data_ticks=self.tick_data,
                                 data_bars_bid=self.bid_data,
                                 data_bars_ask=self.ask_data,
-                                strategies=strategies,
-                                config=config)
+                                strategies=strategies)
 
         self.assertEqual(self.usdjpy, engine.instruments[0])
         self.assertEqual(strategies[0], engine.trader.strategies[0])
@@ -55,14 +52,11 @@ class BacktestEngineTests(unittest.TestCase):
         # Arrange
         strategies = [EmptyStrategy()]
 
-        config = BacktestConfig(bypass_logging=False,
-                                console_prints=True)
         engine = BacktestEngine(instruments=self.instruments,
                                 data_ticks=self.tick_data,
                                 data_bars_bid=self.bid_data,
                                 data_bars_ask=self.ask_data,
-                                strategies=strategies,
-                                config=config)
+                                strategies=strategies)
 
         start = datetime(2013, 1, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
         stop = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
@@ -74,7 +68,7 @@ class BacktestEngineTests(unittest.TestCase):
         self.assertEqual(44640, engine.data_client.iteration)
         self.assertEqual(44640, engine.exec_client.iteration)
 
-    def test_can_run(self):
+    def test_can_run_ema_cross_strategy(self):
         # Arrange
         strategies = [EMACross(label='001',
                                order_id_tag='01',
@@ -86,9 +80,7 @@ class BacktestEngineTests(unittest.TestCase):
                                atr_period=20,
                                sl_atr_multiple=2.0)]
 
-        config = BacktestConfig(slippage_ticks=1,
-                                bypass_logging=False,
-                                console_prints=True)
+        config = BacktestConfig(slippage_ticks=1)
         engine = BacktestEngine(instruments=self.instruments,
                                 data_ticks=self.tick_data,
                                 data_bars_bid=self.bid_data,
