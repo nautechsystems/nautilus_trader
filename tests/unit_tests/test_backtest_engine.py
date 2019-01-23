@@ -55,7 +55,8 @@ class BacktestEngineTests(unittest.TestCase):
         # Arrange
         strategies = [EmptyStrategy()]
 
-        config = BacktestConfig(console_prints=True)
+        config = BacktestConfig(bypass_logging=False,
+                                console_prints=True)
         engine = BacktestEngine(instruments=self.instruments,
                                 data_ticks=self.tick_data,
                                 data_bars_bid=self.bid_data,

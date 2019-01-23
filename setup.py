@@ -23,8 +23,6 @@ VERSION = '0.75.0'
 AUTHOR = 'Invariance'
 INV_TRADER = 'inv_trader'
 DESCRIPTION = 'The python trading client for Invariance.'
-TEST_KIT = 'test_kit'
-TESTS = 'tests'
 LICENSE = 'Invariance Software License, April 2018'
 REQUIREMENTS = ['cython',
                 'numpy',
@@ -35,6 +33,7 @@ REQUIREMENTS = ['cython',
                 'redis',
                 'pyfolio',
                 'pyzmq']
+DIRECTORIES = [INV_TRADER, 'test_kit']
 
 
 # Cython compiler options
@@ -42,7 +41,7 @@ REQUIREMENTS = ['cython',
 Options.embed_pos_in_docstring = True  # Embed docstrings in extensions
 Options.warning_errors = True  # Treat compiler warnings as errors
 Options.cimport_from_pyx = True  # Allows cimporting from a pyx file without a pxd file
-Profile_Hooks = True  # Write profiling hooks into methods (some overhead, use for profiling)
+Profile_Hooks = False  # Write profiling hooks into methods (some overhead, use for profiling)
 
 
 # Recursively scan given directories
@@ -76,9 +75,7 @@ def make_extension(ext_name) -> Extension:
 
 
 # Generate list of extensions
-extensions = [make_extension(name) for name in scan_directories([INV_TRADER,
-                                                                 TEST_KIT,
-                                                                 TESTS])]
+extensions = [make_extension(name) for name in scan_directories(DIRECTORIES)]
 
 setup(
     name=INV_TRADER,

@@ -10,6 +10,9 @@
 # cython: language_level=3, boundscheck=False
 
 import logging
+import sys
+import psutil
+import platform
 import os
 
 from cpython.datetime cimport datetime, timedelta
@@ -97,14 +100,26 @@ cdef class BacktestEngine:
         cdef Logger logger = Logger()
         self.log = LoggerAdapter(component_name='BacktestEngine', logger=logger)
 
+        self.test_clock = TestClock()
+        self.test_clock.set_time(self.clock.time_now())
+        self.test_log = Logger(
+            name='backtest',
+            bypass_logging=config.bypass_logging,
+            level_console=config.level_console,
+            level_file=config.level_file,
+            console_prints=config.console_prints,
+            log_to_file=config.log_to_file,
+            log_file_path=config.log_file_path,
+            clock=self.test_clock)
+
         self.instruments = instruments
         self.data_client = BacktestDataClient(
             instruments=instruments,
             data_ticks=data_ticks,
             data_bars_bid=data_bars_bid,
             data_bars_ask=data_bars_ask,
-            clock=TestClock(),
-            logger=logger)
+            clock=TestClock(),  # Separate test clock to iterate independently
+            logger=self.test_log)
 
         cdef dict minute_bars_bid = {}
         for symbol, data in data_bars_bid.items():
@@ -121,8 +136,8 @@ cdef class BacktestEngine:
             data_bars_ask=minute_bars_ask,
             starting_capital=config.starting_capital,
             slippage_ticks=config.slippage_ticks,
-            clock=TestClock(),
-            logger=logger)
+            clock=TestClock(),  # Separate test clock to iterate independently
+            logger=self.test_log)
 
         self.data_minute_index = self.data_client.data_minute_index
 
@@ -131,20 +146,9 @@ cdef class BacktestEngine:
 
         self.data_client.create_data_providers()
 
-        self.test_clock = TestClock()
-        self.test_log = Logger(
-            name='backtest',
-            bypass_logging=config.bypass_logging,
-            level_console=config.level_console,
-            level_file=config.level_file,
-            console_prints=config.console_prints,
-            log_to_file=config.log_to_file,
-            log_file_path=config.log_file_path,
-            clock=self.test_clock)
-
         for strategy in strategies:
             # Replace strategies clocks with test clocks
-            strategy._change_clock(TestClock())
+            strategy._change_clock(TestClock())  # Separate test clock to iterate independently
             # Replace strategies loggers with test loggers
             strategy._change_logger(self.test_log)
 
@@ -176,15 +180,23 @@ cdef class BacktestEngine:
         Precondition.true(stop <= self.data_minute_index[- 1], 'stop <= self.last_timestamp')
         Precondition.positive(time_step_mins, 'time_step_mins')
 
+        cdef datetime run_started = self.clock.time_now()
+
         self.log.info("#----------------------------------------------------------------------------------------------------#")
         self.log.info("#--------------------------------------------- BACKTEST ---------------------------------------------#")
         self.log.info("#----------------------------------------------------------------------------------------------------#")
-        self.log.info(f"OS System Name: {os.name}")
-        self.log.info(f"Running backtest from {start} to {stop} with {time_step_mins} minute time steps.")
+        self.log.info(f"OS: {platform.platform()}")
+        self.log.info(f"Processors: {platform.processor()}")
+        self.log.info(f"RAM-Total: {round(psutil.virtual_memory()[0] / 1000000)}MB")
+        self.log.info(f"RAM-Used:  {round(psutil.virtual_memory()[3] / 1000000)}MB")
+        self.log.info(f"RAM-Avail: {round(psutil.virtual_memory()[1] / 1000000)}MB ({100 - psutil.virtual_memory()[2]}%)")
+        self.log.info(f"Time-step: {time_step_mins} minute.")
+        self.log.info(f"Running backtest from {start} to {stop}...")
         self.log.info("#----------------------------------------------------------------------------------------------------#")
 
         cdef time_step = timedelta(minutes=time_step_mins)
         cdef datetime time = start
+
         self.test_clock.set_time(time)
 
         # Set all strategy clocks to the start of the backtest period
@@ -211,6 +223,12 @@ cdef class BacktestEngine:
             self.test_clock.set_time(time)
 
         self.trader.stop()
+        self.log.info("#----------------------------------------------------------------------------------------------------#")
+        self.log.info("#-- BACKTEST DIAGNOSTICS ----------------------------------------------------------------------------#")
+        self.log.info("#----------------------------------------------------------------------------------------------------#")
+        self.log.info(f"Ran backtest in {self.clock.get_elapsed(run_started)}s.")
+        self.log.info(f"Time-step iterations: {self.exec_client.iteration}")
+        self.log.info("#----------------------------------------------------------------------------------------------------#")
 
     cpdef void reset(self):
         """
