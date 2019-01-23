@@ -15,12 +15,10 @@ from datetime import datetime, timezone, timedelta
 from inv_trader.core.decimal import Decimal
 from inv_trader.common.clock import TestClock
 from inv_trader.common.logger import Logger
-from inv_trader.model.enums import Resolution
 from inv_trader.model.enums import Venue, OrderSide
 from inv_trader.model.identifiers import Label, OrderId, PositionId
 from inv_trader.model.objects import Symbol
 from inv_trader.model.events import OrderRejected, OrderWorking, OrderModified, OrderFilled
-from inv_trader.backtest.data import BacktestDataClient
 from inv_trader.backtest.execution import BacktestExecClient
 from test_kit.strategies import TestStrategy1
 from test_kit.data import TestDataProvider

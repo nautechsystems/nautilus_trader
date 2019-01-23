@@ -35,10 +35,10 @@ cdef class BacktestConfig:
     def __init__(self,
                  int starting_capital=1000000,
                  int slippage_ticks=0,
-                 bint bypass_logging=True,
+                 bint bypass_logging=False,
                  level_console: logging=INFO,
                  level_file: logging=DEBUG,
-                 bint console_prints=False,
+                 bint console_prints=True,
                  bint log_to_file=False,
                  str log_file_path='backtests/'):
         """
