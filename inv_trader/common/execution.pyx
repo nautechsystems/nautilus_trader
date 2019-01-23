@@ -14,7 +14,8 @@ from typing import Dict
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.core.decimal cimport Decimal
-from inv_trader.common.clock cimport Clock, LiveClock
+from inv_trader.common.clock cimport Clock
+from inv_trader.common.guid cimport GuidFactory
 from inv_trader.common.logger cimport Logger, LoggerAdapter
 from inv_trader.model.account cimport Account
 from inv_trader.model.order cimport Order
@@ -31,15 +32,18 @@ cdef class ExecutionClient:
     """
 
     def __init__(self,
-                 Clock clock=LiveClock(),
-                 Logger logger=None):
+                 Clock clock,
+                 GuidFactory guid_factory,
+                 Logger logger):
         """
         Initializes a new instance of the ExecutionClient class.
 
         :param clock: The internal clock.
+        :param clock: The internal GUID factory.
         :param logger: The internal logger.
         """
         self._clock = clock
+        self._guid_factory = guid_factory
         if logger is None:
             self._log = LoggerAdapter(f"ExecClient")
         else:
@@ -51,7 +55,7 @@ cdef class ExecutionClient:
 
     cpdef datetime time_now(self):
         """
-        :return: The current time of the internal clock. 
+        :return: The current time of the execution client. 
         """
         return self._clock.time_now()
 

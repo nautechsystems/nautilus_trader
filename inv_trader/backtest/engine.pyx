@@ -22,6 +22,7 @@ from inv_trader.core.precondition cimport Precondition
 from inv_trader.backtest.data cimport BacktestDataClient
 from inv_trader.backtest.execution cimport BacktestExecClient
 from inv_trader.common.clock cimport LiveClock, TestClock
+from inv_trader.common.guid cimport TestGuidFactory
 from inv_trader.common.logger cimport Logger
 from inv_trader.enums.resolution cimport Resolution
 from inv_trader.model.objects cimport Symbol, Instrument
@@ -135,6 +136,7 @@ cdef class BacktestEngine:
             starting_capital=config.starting_capital,
             slippage_ticks=config.slippage_ticks,
             clock=TestClock(),  # Separate test clock to iterate independently
+            guid_factory=TestGuidFactory(),
             logger=self.test_log)
 
         self.data_minute_index = self.data_client.data_minute_index

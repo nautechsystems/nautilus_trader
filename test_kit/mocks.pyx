@@ -20,6 +20,9 @@ from cpython.datetime cimport datetime
 
 from inv_trader.core.decimal cimport Decimal
 from inv_trader.common.execution cimport ExecutionClient
+from inv_trader.common.clock cimport TestClock
+from inv_trader.common.guid cimport TestGuidFactory
+from inv_trader.common.logger cimport Logger
 from inv_trader.model.price import price
 from inv_trader.model.order cimport Order
 from inv_trader.model.events cimport Event, OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
@@ -197,7 +200,7 @@ cdef class MockExecClient(ExecutionClient):
         """
         Initializes a new instance of the MockExecClient class.
         """
-        super().__init__()
+        super().__init__(TestClock(), TestGuidFactory(), Logger())
         self._working_orders = []
 
     cpdef void connect(self):

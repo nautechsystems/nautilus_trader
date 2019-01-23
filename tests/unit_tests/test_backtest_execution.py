@@ -14,6 +14,7 @@ from datetime import datetime, timezone, timedelta
 
 from inv_trader.core.decimal import Decimal
 from inv_trader.common.clock import TestClock
+from inv_trader.common.guid import TestGuidFactory
 from inv_trader.common.logger import Logger
 from inv_trader.model.enums import Venue, OrderSide
 from inv_trader.model.identifiers import Label, OrderId, PositionId
@@ -50,6 +51,7 @@ class BacktestExecClientTests(unittest.TestCase):
                                          starting_capital=1000000,
                                          slippage_ticks=1,
                                          clock=TestClock(),
+                                         guid_factory=TestGuidFactory(),
                                          logger=Logger())
 
     def test_can_initialize_client_with_data(self):
