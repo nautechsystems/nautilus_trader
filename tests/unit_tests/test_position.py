@@ -47,6 +47,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(None, position.last_execution_ticket)
         self.assertFalse(position.is_entered)
         self.assertFalse(position.is_exited)
+        self.assertEqual(Decimal(), position.realized_pnl)
 
     def test_position_filled_with_buy_order_returns_expected_attributes(self):
         # Arrange
