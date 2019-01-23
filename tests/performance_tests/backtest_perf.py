@@ -103,5 +103,6 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # to datetime(2013, 3, 10, 0, 0, 0, 0, tzinfo=timezone.utc)
         # 51112051 function calls (51107866 primitive calls) in 22.586 seconds
         # 52912808 function calls (52908623 primitive calls) in 25.232 seconds
+        # 49193278 function calls (49189089 primitive calls) in 19.121 seconds
 
         self.assertTrue(True)

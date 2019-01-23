@@ -26,8 +26,8 @@ cdef class DataClient:
     """
 
     def __init__(self,
-                 Clock clock=LiveClock(),
-                 Logger logger=None):
+                 Clock clock,
+                 Logger logger):
         """
         Initializes a new instance of the DataClient class.
 
@@ -50,7 +50,7 @@ cdef class DataClient:
 
     cpdef datetime time_now(self):
         """
-        :return: The current time of the internal clock. 
+        :return: The current time of the data client. 
         """
         return self._clock.time_now()
 

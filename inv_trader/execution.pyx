@@ -9,12 +9,12 @@
 
 # cython: language_level=3, boundscheck=False
 
-import uuid
 import zmq
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.core.decimal cimport Decimal
 from inv_trader.common.clock cimport Clock, LiveClock
+from inv_trader.common.guid cimport GuidFactory, LiveGuidFactory
 from inv_trader.common.logger cimport Logger
 from inv_trader.common.execution cimport ExecutionClient
 from inv_trader.commands cimport Command, OrderCommand, CollateralInquiry
@@ -49,6 +49,7 @@ cdef class LiveExecClient(ExecutionClient):
             CommandSerializer command_serializer=MsgPackCommandSerializer(),
             EventSerializer event_serializer=MsgPackEventSerializer(),
             Clock clock=LiveClock(),
+            GuidFactory guid_factory=LiveGuidFactory(),
             Logger logger=None):
         """
         Initializes a new instance of the LiveExecClient class.
@@ -59,6 +60,7 @@ cdef class LiveExecClient(ExecutionClient):
         :param command_serializer: The command serializer for the client.
         :param event_serializer: The event serializer for the client.
         :param clock: The internal clock for the component.
+        :param guid_factory: The internal GUID factory for the component.
         :param logger: The logger for the component (can be None).
         :raises ValueError: If the host is not a valid string.
         :raises ValueError: If the commands_port is not in range [0, 65535]
@@ -68,7 +70,7 @@ cdef class LiveExecClient(ExecutionClient):
         Precondition.in_range(commands_port, 'commands_port', 0, 65535)
         Precondition.in_range(events_port, 'events_port', 0, 65535)
 
-        super().__init__(clock, logger)
+        super().__init__(clock, guid_factory, logger)
         self._command_serializer = command_serializer
         self._event_serializer = event_serializer
         self.zmq_context = zmq.Context()
@@ -111,7 +113,8 @@ cdef class LiveExecClient(ExecutionClient):
         """
         Send a collateral inquiry command to the execution service.
         """
-        cdef Command command = CollateralInquiry(GUID(uuid.uuid4()), self._clock.time_now())
+        cdef Command command = CollateralInquiry(self._guid_factory.generate(),
+                                                 self._clock.time_now())
         cdef bytes message = self._command_serializer.serialize(command)
 
         self._commands_worker.send(message)
@@ -129,7 +132,7 @@ cdef class LiveExecClient(ExecutionClient):
 
         cdef OrderCommand command = SubmitOrder(
             order,
-            GUID(uuid.uuid4()),
+            self._guid_factory.generate(),
             self._clock.time_now())
         cdef bytes message = self._command_serializer.serialize(command)
 
@@ -150,7 +153,7 @@ cdef class LiveExecClient(ExecutionClient):
         cdef OrderCommand command = CancelOrder(
             order,
             cancel_reason,
-            GUID(uuid.uuid4()),
+            self._guid_factory.generate(),
             self._clock.time_now())
         cdef bytes message = self._command_serializer.serialize(command)
 
@@ -171,7 +174,7 @@ cdef class LiveExecClient(ExecutionClient):
         cdef OrderCommand command = ModifyOrder(
             order,
             new_price,
-            GUID(uuid.uuid4()),
+            self._guid_factory.generate(),
             self._clock.time_now())
         cdef bytes message = self._command_serializer.serialize(command)
 

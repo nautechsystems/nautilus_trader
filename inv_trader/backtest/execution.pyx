@@ -32,8 +32,9 @@ from inv_trader.model.events cimport OrderSubmitted, OrderAccepted, OrderRejecte
 from inv_trader.model.events cimport OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
 from inv_trader.model.events cimport OrderFilled, OrderPartiallyFilled
 from inv_trader.model.identifiers cimport GUID, OrderId, ExecutionId, ExecutionTicket, AccountNumber
-from inv_trader.common.clock cimport Clock, TestClock
-from inv_trader.common.logger cimport Logger, LoggerAdapter
+from inv_trader.common.clock cimport TestClock
+from inv_trader.common.guid cimport TestGuidFactory
+from inv_trader.common.logger cimport Logger
 from inv_trader.common.execution cimport ExecutionClient
 
 
@@ -50,6 +51,7 @@ cdef class BacktestExecClient(ExecutionClient):
                  int starting_capital,
                  int slippage_ticks,
                  TestClock clock,
+                 TestGuidFactory guid_factory,
                  Logger logger):
         """
         Initializes a new instance of the BacktestExecClient class.
@@ -61,6 +63,7 @@ cdef class BacktestExecClient(ExecutionClient):
         :param starting_capital: The starting capital for the backtest account (> 0).
         :param slippage_ticks: The slippage for each order fill in ticks (>= 0).
         :param clock: The clock for the component.
+        :param clock: The GUID factory for the component.
         :param logger: The logger for the component.
         """
         Precondition.list_type(instruments, Instrument, 'instruments')
@@ -69,10 +72,8 @@ cdef class BacktestExecClient(ExecutionClient):
         Precondition.dict_types(data_bars_ask, Symbol, DataFrame, 'data_bars_ask')
         Precondition.positive(starting_capital, 'starting_capital')
         Precondition.not_negative(slippage_ticks, 'slippage_ticks')
-        Precondition.not_none(clock, 'clock')
-        Precondition.not_none(logger, 'logger')
 
-        super().__init__(clock, logger)
+        super().__init__(clock, guid_factory, logger)
 
         # Convert instruments list to dictionary indexed by symbol
         cdef dict instruments_dict = {}             # type: Dict[Symbol, Instrument]
@@ -111,7 +112,7 @@ cdef class BacktestExecClient(ExecutionClient):
                                                           money_zero(),
                                                           Decimal(0),
                                                           'NONE',
-                                                          GUID(uuid.uuid4()),
+                                                          self._guid_factory.generate(),
                                                           self._clock.time_now())
 
         self.account.apply(initial_starting)
@@ -206,7 +207,7 @@ cdef class BacktestExecClient(ExecutionClient):
                                                self.account.margin_used_maintenance,
                                                self.account.margin_ratio,
                                                self.account.margin_call_status,
-                                               GUID(uuid.uuid4()),
+                                               self._guid_factory.generate(),
                                                self._clock.time_now())
         self._on_event(event)
 
@@ -225,7 +226,7 @@ cdef class BacktestExecClient(ExecutionClient):
             order.symbol,
             order.id,
             self._clock.time_now(),
-            GUID(uuid.uuid4()),
+            self._guid_factory.generate(),
             self._clock.time_now())
         self._on_event(submitted)
 
@@ -233,7 +234,7 @@ cdef class BacktestExecClient(ExecutionClient):
             order.symbol,
             order.id,
             self._clock.time_now(),
-            GUID(uuid.uuid4()),
+            self._guid_factory.generate(),
             self._clock.time_now())
         self._on_event(accepted)
 
@@ -283,7 +284,7 @@ cdef class BacktestExecClient(ExecutionClient):
             order.price,
             order.time_in_force,
             self._clock.time_now(),
-            GUID(uuid.uuid4()),
+            self._guid_factory.generate(),
             self._clock.time_now(),
             order.expire_time)
         self._on_event(working)
@@ -298,7 +299,7 @@ cdef class BacktestExecClient(ExecutionClient):
             order.symbol,
             order.id,
             self._clock.time_now(),
-            GUID(uuid.uuid4()),
+            self._guid_factory.generate(),
             self._clock.time_now())
 
         del self.working_orders[order.id]
@@ -340,7 +341,7 @@ cdef class BacktestExecClient(ExecutionClient):
             order.broker_id,
             new_price,
             self._clock.time_now(),
-            GUID(uuid.uuid4()),
+            self._guid_factory.generate(),
             self._clock.time_now())
 
         self._on_event(modified)
@@ -434,7 +435,7 @@ cdef class BacktestExecClient(ExecutionClient):
             order.id,
             self._clock.time_now(),
             reason,
-            GUID(uuid.uuid4()),
+            self._guid_factory.generate(),
             self._clock.time_now())
 
         self._on_event(rejected)
@@ -450,7 +451,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._clock.time_now(),
             'INVALID PRICE',
             reason,
-            GUID(uuid.uuid4()),
+            self._guid_factory.generate(),
             self._clock.time_now())
 
         self._on_event(cancel_reject)
@@ -464,7 +465,7 @@ cdef class BacktestExecClient(ExecutionClient):
             order.symbol,
             order.id,
             order.expire_time,
-            GUID(uuid.uuid4()),
+            self._guid_factory.generate(),
             self._clock.time_now())
 
         self._on_event(expired)
@@ -483,7 +484,7 @@ cdef class BacktestExecClient(ExecutionClient):
             order.quantity,
             fill_price,
             self._clock.time_now(),
-            GUID(uuid.uuid4()),
+            self._guid_factory.generate(),
             self._clock.time_now())
 
         self._on_event(filled)
