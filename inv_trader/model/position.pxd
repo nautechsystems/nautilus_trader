@@ -31,8 +31,8 @@ cdef class Position:
 
     cdef readonly Symbol symbol
     cdef readonly PositionId id
-    cdef readonly ExecutionId execution_id
-    cdef readonly ExecutionTicket execution_ticket
+    cdef readonly ExecutionId last_execution_id
+    cdef readonly ExecutionTicket last_execution_ticket
     cdef readonly OrderId from_order_id
     cdef readonly long quantity
     cdef readonly MarketPosition market_position
@@ -45,6 +45,7 @@ cdef class Position:
     cdef readonly bint is_exited
     cdef readonly int event_count
     cdef readonly OrderEvent last_event
+    cdef readonly Decimal realized_pnl
 
     cdef bint equals(self, Position other)
     cpdef list get_from_order_ids(self)
