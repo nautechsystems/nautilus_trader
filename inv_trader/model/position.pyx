@@ -45,8 +45,8 @@ cdef class Position:
         self.symbol = symbol
         self.id = position_id
         self.from_order_id = None
-        self.execution_id = None
-        self.execution_ticket = None
+        self.last_execution_id = None
+        self.last_execution_ticket = None
         self.quantity = 0
         self.market_position = MarketPosition.FLAT
         self.timestamp = timestamp
@@ -58,6 +58,7 @@ cdef class Position:
         self.is_exited = False
         self.event_count = 0
         self.last_event = None
+        self.realized_pnl = Decimal()
 
     cdef bint equals(self, Position other):
         """
@@ -122,7 +123,8 @@ cdef class Position:
 
     cpdef void apply(self, OrderEvent event):
         """
-        Applies the given order event to the position.
+        Applies the given order event to the position. The given event type must
+        be either OrderFilled or OrderPartiallyFilled.
 
         :param event: The order event to apply.
         """
@@ -131,15 +133,12 @@ cdef class Position:
         self.last_event = event
 
         # Handle event
-        if not (isinstance(event, OrderFilled) or isinstance(event, OrderPartiallyFilled)):
-            raise TypeError("Cannot apply event (unrecognized event).")
-
         self._from_order_ids.add(event.order_id)
         self._execution_ids.append(event.execution_id)
         self._execution_tickets.append(event.execution_ticket)
         self.from_order_id = event.order_id
-        self.execution_id = event.execution_id
-        self.execution_ticket = event.execution_ticket
+        self.last_execution_id = event.execution_id
+        self.last_execution_ticket = event.execution_ticket
 
         # Quantity logic
         if event.order_side is OrderSide.BUY:
@@ -154,6 +153,7 @@ cdef class Position:
 
         # Entry logic
         if self.entry_time is None:
+            self.from_order_id = event.order_id
             self.entry_time = event.timestamp
             self.average_entry_price = event.average_price
             self.is_entered = True
