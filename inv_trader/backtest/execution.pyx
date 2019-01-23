@@ -354,9 +354,10 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         cdef dict minute_data = dict()  # type: Dict[Symbol, List]
         for symbol, data in bar_data.items():
-            self._log.info(f"Preparing minute {quote_type} prices for {symbol}...")
+            start = datetime.utcnow()
             map_func = partial(self._convert_to_decimals, precision=self.instruments[symbol].tick_precision)
             minute_data[symbol] = list(map(map_func, data.values))
+            self._log.info(f"Prepared minute {quote_type} prices for {symbol} in {round((datetime.utcnow() - start).total_seconds(), 2)}s.")
 
         return minute_data
 

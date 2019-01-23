@@ -23,6 +23,7 @@ cdef class Clock:
 
     cpdef datetime time_now(self)
     cpdef datetime unix_epoch(self)
+    cpdef double get_elapsed(self, datetime start)
     cdef long milliseconds_since_unix_epoch(self)
     cpdef set_time_alert(
             self,

@@ -92,11 +92,12 @@ cdef class BacktestEngine:
 
         self.config = config
         self.clock = LiveClock()
-        self.test_clock = TestClock()
+        self.created_time = self.clock.time_now()
 
         cdef Logger logger = Logger()
         self.log = LoggerAdapter(component_name='BacktestEngine', logger=logger)
 
+        self.instruments = instruments
         self.data_client = BacktestDataClient(
             instruments=instruments,
             data_ticks=data_ticks,
@@ -130,6 +131,7 @@ cdef class BacktestEngine:
 
         self.data_client.create_data_providers()
 
+        self.test_clock = TestClock()
         self.test_log = Logger(
             name='backtest',
             bypass_logging=config.bypass_logging,
@@ -153,7 +155,7 @@ cdef class BacktestEngine:
             self.exec_client,
             self.test_clock)
 
-        self.log.info('Initialized.')
+        self.log.info(f'Initialized in {self.clock.get_elapsed(self.created_time)}s.')
 
     cpdef void run(
             self,

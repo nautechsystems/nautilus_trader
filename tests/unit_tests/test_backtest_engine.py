@@ -10,20 +10,12 @@
 import pandas as pd
 import unittest
 
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 
-from inv_trader.core.decimal import Decimal
-from inv_trader.common.clock import TestClock
-from inv_trader.common.logger import Logger
 from inv_trader.model.enums import Resolution
-from inv_trader.model.enums import Venue, OrderSide
-from inv_trader.model.identifiers import Label, OrderId, PositionId
+from inv_trader.model.enums import Venue
 from inv_trader.model.objects import Symbol
-from inv_trader.model.events import OrderRejected, OrderWorking, OrderModified, OrderFilled
-from inv_trader.backtest.data import BacktestDataClient
-from inv_trader.backtest.execution import BacktestExecClient
 from inv_trader.backtest.engine import BacktestConfig, BacktestEngine
-from test_kit.objects import ObjectStorer
 from test_kit.strategies import EmptyStrategy, TestStrategy1, EMACross
 from test_kit.data import TestDataProvider
 from test_kit.stubs import TestStubs
@@ -34,24 +26,40 @@ USDJPY_FXCM = Symbol('USDJPY', Venue.FXCM)
 
 class BacktestEngineTests(unittest.TestCase):
 
+    def setUp(self):
+        self.usdjpy = TestStubs.instrument_usdjpy()
+        self.bid_data_1min = TestDataProvider.usdjpy_1min_bid()
+        self.ask_data_1min = TestDataProvider.usdjpy_1min_ask()
+
+        self.instruments = [TestStubs.instrument_usdjpy()]
+        self.tick_data = {self.usdjpy.symbol: pd.DataFrame()}
+        self.bid_data = {self.usdjpy.symbol: {Resolution.MINUTE: self.bid_data_1min}}
+        self.ask_data = {self.usdjpy.symbol: {Resolution.MINUTE: self.ask_data_1min}}
+
+    def test_initialization(self):
+        strategies = [EmptyStrategy()]
+
+        config = BacktestConfig(bypass_logging=False,
+                                console_prints=True)
+        engine = BacktestEngine(instruments=self.instruments,
+                                data_ticks=self.tick_data,
+                                data_bars_bid=self.bid_data,
+                                data_bars_ask=self.ask_data,
+                                strategies=strategies,
+                                config=config)
+
+        self.assertEqual(self.usdjpy, engine.instruments[0])
+        self.assertEqual(strategies[0], engine.trader.strategies[0])
+
     def test_can_run_empty_strategy(self):
         # Arrange
-        usdjpy = TestStubs.instrument_usdjpy()
-        bid_data_1min = TestDataProvider.usdjpy_1min_bid()
-        ask_data_1min = TestDataProvider.usdjpy_1min_ask()
-
-        instruments = [TestStubs.instrument_usdjpy()]
-        tick_data = {usdjpy.symbol: pd.DataFrame()}
-        bid_data = {usdjpy.symbol: {Resolution.MINUTE: bid_data_1min}}
-        ask_data = {usdjpy.symbol: {Resolution.MINUTE: ask_data_1min}}
-
         strategies = [EmptyStrategy()]
 
         config = BacktestConfig(console_prints=True)
-        engine = BacktestEngine(instruments=instruments,
-                                data_ticks=tick_data,
-                                data_bars_bid=bid_data,
-                                data_bars_ask=ask_data,
+        engine = BacktestEngine(instruments=self.instruments,
+                                data_ticks=self.tick_data,
+                                data_bars_bid=self.bid_data,
+                                data_bars_ask=self.ask_data,
                                 strategies=strategies,
                                 config=config)
 
@@ -67,18 +75,9 @@ class BacktestEngineTests(unittest.TestCase):
 
     def test_can_run(self):
         # Arrange
-        usdjpy = TestStubs.instrument_usdjpy()
-        bid_data_1min = TestDataProvider.usdjpy_1min_bid()
-        ask_data_1min = TestDataProvider.usdjpy_1min_ask()
-
-        instruments = [TestStubs.instrument_usdjpy()]
-        tick_data = {usdjpy.symbol: pd.DataFrame()}
-        bid_data = {usdjpy.symbol: {Resolution.MINUTE: bid_data_1min}}
-        ask_data = {usdjpy.symbol: {Resolution.MINUTE: ask_data_1min}}
-
         strategies = [EMACross(label='001',
                                order_id_tag='01',
-                               instrument=usdjpy,
+                               instrument=self.usdjpy,
                                bar_type=TestStubs.bartype_usdjpy_1min_bid(),
                                position_size=100000,
                                fast_ema=10,
@@ -89,10 +88,10 @@ class BacktestEngineTests(unittest.TestCase):
         config = BacktestConfig(slippage_ticks=1,
                                 bypass_logging=False,
                                 console_prints=True)
-        engine = BacktestEngine(instruments=instruments,
-                                data_ticks=tick_data,
-                                data_bars_bid=bid_data,
-                                data_bars_ask=ask_data,
+        engine = BacktestEngine(instruments=self.instruments,
+                                data_ticks=self.tick_data,
+                                data_bars_bid=self.bid_data,
+                                data_bars_ask=self.ask_data,
                                 strategies=strategies,
                                 config=config)
 
@@ -103,5 +102,5 @@ class BacktestEngineTests(unittest.TestCase):
         engine.run(start, stop)
 
         # Assert
-        self.assertEqual(2880, engine.data_client.data_providers[usdjpy.symbol].iterations[TestStubs.bartype_usdjpy_1min_bid()])
+        self.assertEqual(2880, engine.data_client.data_providers[self.usdjpy.symbol].iterations[TestStubs.bartype_usdjpy_1min_bid()])
         self.assertEqual(1440, strategies[0].fast_ema.count)

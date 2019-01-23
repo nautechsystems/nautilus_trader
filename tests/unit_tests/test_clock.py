@@ -7,6 +7,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+import time
 import unittest
 
 from datetime import datetime, timezone, timedelta
@@ -54,6 +55,18 @@ class LiveClockTests(unittest.TestCase):
         # Assert
         self.assertEqual(timezone.utc, result.tzinfo)
 
+    def test_get_elapsed(self):
+        # Arrange
+        start = datetime.now(timezone.utc)
+        time.sleep(0.1)
+
+        # Act
+        result = self.clock.get_elapsed(start)
+
+        # Assert
+        self.assertTrue(result > 0.0)
+        self.assertEqual(float, type(result))
+
 
 class TestClockTests(unittest.TestCase):
 
@@ -82,6 +95,18 @@ class TestClockTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(new_time, result)
+
+    def test_get_elapsed(self):
+        # Arrange
+        start = datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc)
+        self.clock.set_time(start + timedelta(seconds=1))
+
+        # Act
+        result = self.clock.get_elapsed(start)
+
+        # Assert
+        self.assertEqual(1.00, result)
+        self.assertEqual(float, type(result))
 
     def test_iterate_time(self):
         # Arrange
