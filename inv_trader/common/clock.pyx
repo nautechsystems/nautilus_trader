@@ -42,7 +42,7 @@ cdef class Clock:
         :return: The current time of the clock.
         """
         # Raise exception if not overridden in implementation.
-        raise NotImplementedError("Method must be implemented in the clock.")
+        raise NotImplementedError("Method must be implemented.")
 
     cpdef datetime unix_epoch(self):
         """
