@@ -9,7 +9,6 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False
 
-from cpython cimport array
 from cpython.datetime cimport datetime, timedelta
 
 from inv_trader.core.decimal cimport Decimal
@@ -32,6 +31,7 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef readonly Decimal account_cash_activity_day
     cdef readonly dict slippage_index
     cdef readonly dict working_orders
+    cdef readonly dict positions
 
     cpdef void set_initial_iteration(self, datetime to_time, timedelta time_step)
     cpdef void iterate(self, datetime time)

@@ -28,12 +28,14 @@ REQUIREMENTS = ['cython',
                 'numpy',
                 'pandas',
                 'iso8601',
-                'psutil',
-                'inv_indicators',
+                'pyzmq',
                 'msgpack',
+                'psutil',
                 'redis',
+                'inv_indicators',
                 'pyfolio',
-                'pyzmq']
+                'pymc3',
+                'theano']
 DIRECTORIES = [INV_TRADER, 'test_kit']
 
 

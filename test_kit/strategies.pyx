@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-# <copyright file="strategies.py" company="Invariance Pte">
+# <copyright file="strategies.pyx" company="Invariance Pte">
 #  Copyright (C) 2018-2019 Invariance Pte. All rights reserved.
 #  The use of this source code is governed by the license as found in the LICENSE.md file.
 #  http://www.invariance.com
@@ -15,7 +15,6 @@ from typing import Dict
 from inv_trader.core.decimal cimport Decimal
 from inv_trader.common.clock cimport Clock, LiveClock
 from inv_trader.common.logger cimport Logger
-from inv_trader.enums.venue cimport Venue
 from inv_trader.enums.order_side cimport OrderSide
 from inv_trader.enums.time_in_force cimport TimeInForce
 from inv_trader.model.objects cimport Symbol, Tick, BarType, Bar, Instrument
@@ -27,37 +26,12 @@ from inv_trader.model.events cimport OrderFilled, OrderExpired, OrderRejected, O
 from inv_trader.strategy cimport TradeStrategy
 from inv_indicators.average.ema import ExponentialMovingAverage
 from inv_indicators.atr import AverageTrueRange
-from test_kit.objects import ObjectStorer
-
-GBPUSD_FXCM = Symbol('GBPUSD', Venue.FXCM)
+from test_kit.objects cimport ObjectStorer
 
 
-class EmptyStrategy(TradeStrategy):
+cdef class EmptyStrategy(TradeStrategy):
     """
     A strategy which is empty and does nothing.
-    """
-    def on_start(self):
-        pass
-
-    def on_tick(self, Tick tick):
-        pass
-
-    def on_bar(self, BarType bar_type, Bar bar):
-        pass
-
-    def on_event(self, Event event):
-        pass
-
-    def on_stop(self):
-        pass
-
-    def on_reset(self):
-        pass
-
-
-cdef class EmptyStrategyCython(TradeStrategy):
-    """
-    A Cython strategy which is empty and does nothing.
     """
     cpdef void on_start(self):
         pass
@@ -78,10 +52,15 @@ cdef class EmptyStrategyCython(TradeStrategy):
         pass
 
 
-class TestStrategy1(TradeStrategy):
+cdef class TestStrategy1(TradeStrategy):
     """"
     A simple strategy for unit testing.
     """
+    cdef readonly ObjectStorer object_storer
+    cdef readonly BarType bar_type
+    cdef readonly object ema1
+    cdef readonly object ema2
+    cdef readonly PositionId position_id
 
     def __init__(self, bar_type: BarType, clock: Clock=LiveClock()):
         """
@@ -103,20 +82,20 @@ class TestStrategy1(TradeStrategy):
 
         self.position_id = None
 
-    def on_start(self):
+    cpdef void on_start(self):
         self.object_storer.store('custom start logic')
 
-    def on_tick(self, tick: Tick):
+    cpdef void on_tick(self, Tick tick):
         self.object_storer.store(tick)
 
-    def on_bar(self, bar_type: BarType, bar: Bar):
+    cpdef void on_bar(self, BarType bar_type, Bar bar):
 
         self.object_storer.store((bar_type, Bar))
 
         if bar_type == self.bar_type:
             if self.ema1.value > self.ema2.value:
                 buy_order = self.order_factory.market(
-                    self.bar_type.symbol, Venue.FXCM,
+                    self.bar_type.symbol,
                     self.generate_order_id(self.bar_type.symbol),
                     Label('TestStrategy1_E'),
                     OrderSide.BUY,
@@ -127,7 +106,7 @@ class TestStrategy1(TradeStrategy):
 
             elif self.ema1.value < self.ema2.value:
                 sell_order = self.order_factory.market(
-                    self.bar_type.symbol, Venue.FXCM,
+                    self.bar_type.symbol,
                     self.generate_order_id(self.bar_type.symbol),
                     Label('TestStrategy1_E'),
                     OrderSide.SELL,
@@ -136,13 +115,13 @@ class TestStrategy1(TradeStrategy):
                 self.submit_order(sell_order, PositionId(str(sell_order.id)))
                 self.position_id = sell_order.id
 
-    def on_event(self, event: Event):
+    cpdef void on_event(self, Event event):
         self.object_storer.store(event)
 
-    def on_stop(self):
+    cpdef void on_stop(self):
         self.object_storer.store('custom stop logic')
 
-    def on_reset(self):
+    cpdef void on_reset(self):
         self.object_storer.store('custom reset logic')
 
 
