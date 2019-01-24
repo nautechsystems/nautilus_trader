@@ -16,7 +16,6 @@ from cpython.datetime cimport datetime
 from typing import Callable, List
 from pandas.core.frame import DataFrame
 
-from inv_trader.core.decimal cimport Decimal
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.model.objects cimport Bar, DataBar
 from inv_trader.model.price cimport price
@@ -62,7 +61,7 @@ cdef class BarBuilder:
         """
         Build a list of DataBars from all data.
         
-        :return: The list of bars.
+        :return: The list of DataBars.
         """
         return list(map(self._build_databar,
                         self._data.values,
@@ -72,7 +71,7 @@ cdef class BarBuilder:
         """
         Build a list of DataBars from the given index.
         
-        :return: The list of bars.
+        :return: The list of DatBars.
         """
         Precondition.not_negative(index, 'index')
 
@@ -84,7 +83,7 @@ cdef class BarBuilder:
         """
         Build a list of DataBars within the given range.
         
-        :return: The list of bars.
+        :return: The list of Bars.
         """
         Precondition.not_negative(start, 'start')
 
@@ -96,7 +95,7 @@ cdef class BarBuilder:
         """
         Build a list of Bars from all data.
 
-        :return: The list of bars.
+        :return: The list of Bars.
         """
         return list(map(self._build_bar,
                         self._data.values,
@@ -106,7 +105,7 @@ cdef class BarBuilder:
         """
         Build a list of Bars from the given index (>= 0).
 
-        :return: The list of bars.
+        :return: The list of Bars.
         """
         Precondition.not_negative(index, 'index')
 
@@ -118,7 +117,7 @@ cdef class BarBuilder:
         """
         Build a list of Bars within the given range.
 
-        :return: The list of bars.
+        :return: The list of Bars.
         """
         Precondition.not_negative(start, 'start')
 
