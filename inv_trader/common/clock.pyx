@@ -78,11 +78,11 @@ cdef class Clock:
             datetime alert_time,
             handler: Callable):
         # Raise exception if not overridden in implementation.
-        raise NotImplementedError("Method must be implemented in the clock.")
+        raise NotImplementedError("Method must be implemented in the subclass.")
 
     cpdef cancel_time_alert(self, Label label):
         # Raise exception if not overridden in implementation.
-        raise NotImplementedError("Method must be implemented in the clock.")
+        raise NotImplementedError("Method must be implemented in the subclass.")
 
     cpdef set_timer(
             self,
@@ -93,24 +93,25 @@ cdef class Clock:
             bint repeat,
             handler: Callable):
         # Raise exception if not overridden in implementation.
-        raise NotImplementedError("Method must be implemented in the clock.")
+        raise NotImplementedError("Method must be implemented in the subclass.")
 
     cpdef cancel_timer(self, Label label):
         # Raise exception if not overridden in implementation.
-        raise NotImplementedError("Method must be implemented in the clock.")
+        raise NotImplementedError("Method must be implemented in the subclass.")
 
     cpdef list get_labels(self):
         """
         :return: The timer labels held by the clock.
         """
-        return list(self._timers)
+        # Raise exception if not overridden in implementation.
+        raise NotImplementedError("Method must be implemented in the subclass.")
 
     cpdef stop_all_timers(self):
         """
-        TBA
+        Stop all alerts and timers inside the clock.
         """
         # Raise exception if not overridden in implementation.
-        raise NotImplementedError("Method must be implemented in the clock.")
+        raise NotImplementedError("Method must be implemented in the subclass.")
 
 
 cdef class LiveClock(Clock):
@@ -248,9 +249,15 @@ cdef class LiveClock(Clock):
         self._timers[label][0].cancel()
         del self._timers[label]
 
+    cpdef list get_labels(self):
+        """
+        :return: The timer labels held by the clock.
+        """
+        return list(self._timers)
+
     cpdef stop_all_timers(self):
         """
-        TBA
+        Stop all alerts and timers inside the clock.
         """
         for label, timer in self._timers.items():
             timer[0].cancel()
@@ -345,7 +352,8 @@ cdef class TestClock(Clock):
         """
         super().__init__()
         self._time = initial_time
-        self._timers = {}  # type: Dict[Label, object]
+        self._time_alerts = {}  # type: Dict[Label, tuple]
+        self._timers = {}       # type: Dict[Label, Timer]
 
     cpdef datetime time_now(self):
         """
@@ -370,22 +378,27 @@ cdef class TestClock(Clock):
         """
         Precondition.true(time.tzinfo == self.timezone, 'time.tzinfo == self.timezone')
 
-        cdef list expired = []
+        cdef list expired_alerts = []
+        cdef list expired_timers = []
 
+        # Time alerts
+        for label, alert in self._time_alerts.items():
+            if time >= alert[0]:
+                alert[1](TimeEvent(label, GUID(uuid4()), alert[0]))
+                expired_alerts.append(label)
+
+        # Remove expired time alerts
+        for label in expired_alerts:
+            del self._time_alerts[label]
+
+        # Timers
         for label, timer in self._timers.items():
-            # Time alerts
-            if isinstance(timer, tuple):
-                if time >= timer[0]:
-                    timer[1](TimeEvent(label, GUID(uuid4()), timer[0]))
-                    expired.append(label)
-            else:
-            # Timers
-                timer.advance(time)
-                if timer.expired:
-                     expired.append(label)
+            timer.advance(time)
+            if timer.expired:
+                expired_timers.append(label)
 
         # Remove expired timers
-        for label in expired:
+        for label in expired_timers:
             del self._timers[label]
 
         self._time = time
@@ -409,9 +422,9 @@ cdef class TestClock(Clock):
         :raises ValueError: If the alert_time is not > than the clocks current time.
         """
         Precondition.true(alert_time > self.time_now(), 'self.time_now()')
-        Precondition.not_in(label, self._timers, 'label', 'timers')
+        Precondition.not_in(label, self._time_alerts, 'label', 'time_alerts')
 
-        self._timers[label] = (alert_time, handler)
+        self._time_alerts[label] = (alert_time, handler)
 
     cpdef cancel_time_alert(self, Label label):
         """
@@ -420,9 +433,9 @@ cdef class TestClock(Clock):
         :param label: The label for the alert to cancel.
         :raises ValueError: If the label is not found in the internal timers.
         """
-        Precondition.is_in(label, self._timers, 'label', 'timers')
+        Precondition.is_in(label, self._time_alerts, 'label', 'time_alerts')
 
-        del self._timers[label]
+        del self._time_alerts[label]
 
     cpdef set_timer(
             self,
@@ -472,8 +485,8 @@ cdef class TestClock(Clock):
             raise KeyError(
                 f"Cannot set timer (the label {label} was not unique for this strategy).")
 
-        cdef datetime alert_time = start_time + interval
-        cdef float delay = (alert_time - self.time_now()).total_seconds()
+        # cdef datetime alert_time = start_time + interval
+        # cdef float delay = (alert_time - self.time_now()).total_seconds()
 
         cdef TestTimer timer = TestTimer(label,
                                          interval,
@@ -495,8 +508,15 @@ cdef class TestClock(Clock):
 
         del self._timers[label]
 
+    cpdef list get_labels(self):
+        """
+        :return: The timer labels held by the clock.
+        """
+        return list(self._time_alerts) + list(self._timers)
+
     cpdef stop_all_timers(self):
         """
         Clears all alerts and timers.
         """
-        self._timers = {}  # type: Dict[Label, object]
+        self._time_alerts = {}  # type: Dict[Label, tuple]
+        self._timers = {}       # type: Dict[Label, Timer]
