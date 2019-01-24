@@ -141,8 +141,8 @@ cdef class BacktestEngine:
 
         self.data_minute_index = self.data_client.data_minute_index
 
-        assert(self.data_minute_index == self.data_client.data_minute_index)
-        assert(self.data_minute_index == self.exec_client.data_minute_index)
+        assert(all(self.data_minute_index) == all(self.data_client.data_minute_index))
+        assert(all(self.data_minute_index) == all(self.exec_client.data_minute_index))
 
         self.data_client.create_data_providers()
 
@@ -209,8 +209,8 @@ cdef class BacktestEngine:
         self.exec_client.set_initial_iteration(start, time_step)  # Also sets clock to start time
 
         assert(self.data_client.iteration == self.exec_client.iteration)
-        assert(self.data_client._clock.time_now() == start)  # Access of protected method ok here
-        assert(self.exec_client._clock.time_now() == start)  # Access of protected method ok here
+        assert(self.data_client.time_now() == start)
+        assert(self.exec_client.time_now() == start)
 
         while time < stop:
             # Iterate execution first to simulate correct order of events

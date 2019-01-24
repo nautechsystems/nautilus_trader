@@ -59,8 +59,8 @@ cdef class Trader:
         self.name = Label(name)
         self.id = GUID(uuid.uuid4())
         self.strategies = strategies
-        self.started_datetimes = list()  # type: List[datetime]
-        self.stopped_datetimes = list()  # type: List[datetime]
+        self.started_datetimes = []  # type: List[datetime]
+        self.stopped_datetimes = []  # type: List[datetime]
 
         for strategy in strategies:
             self._data_client.register_strategy(strategy)

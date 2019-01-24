@@ -19,7 +19,7 @@ cdef class ObjectStorer:
         """
         Initializes a new instance of the ObjectStorer class.
         """
-        self._store = list()
+        self._store = []
 
     cpdef list get_store(self):
         """"

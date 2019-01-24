@@ -9,13 +9,12 @@
 
 # cython: language_level=3, boundscheck=False
 
-import pandas as pd
-
 from cpython.datetime cimport datetime, timedelta
 from pandas import DataFrame
 from typing import Set, List, Dict, Callable
 
 from inv_trader.core.precondition cimport Precondition
+from inv_trader.core.functions cimport pd_index_to_datetime_list
 from inv_trader.enums.quote_type cimport QuoteType
 from inv_trader.enums.resolution cimport Resolution
 from inv_trader.common.clock cimport TestClock
@@ -62,10 +61,9 @@ cdef class BacktestDataClient(DataClient):
 
         # Set minute data index
         first_dataframe = data_bars_bid[next(iter(data_bars_bid))][Resolution.MINUTE]
-        cdef list minute_index = list(pd.to_datetime(first_dataframe.index, utc=True))
-        self.data_minute_index = minute_index  # type: List[datetime]
+        self.data_minute_index = pd_index_to_datetime_list(first_dataframe.index)  # type: List[datetime]
 
-        self.data_providers = dict()           # type: Dict[Symbol, DataProvider]
+        self.data_providers = {}               # type: Dict[Symbol, DataProvider]
         self.iteration = 0
 
         # Convert instruments list to dictionary indexed by symbol
@@ -284,8 +282,8 @@ cdef class DataProvider:
         self.instrument = instrument
         self._dataframes_bars_bid = data_bars_bid  # type: Dict[Resolution, DataFrame]
         self._dataframes_bars_ask = data_bars_ask  # type: Dict[Resolution, DataFrame]
-        self.bars = dict()                         # type: Dict[BarType, List[Bar]]
-        self.iterations = dict()                   # type: Dict[BarType, int]
+        self.bars = {}                             # type: Dict[BarType, List[Bar]]
+        self.iterations = {}                       # type: Dict[BarType, int]
 
     cpdef void register_bar_type(self, BarType bar_type):
         """
@@ -349,7 +347,7 @@ cdef class DataProvider:
         :param time: The time to build iteration list to.
         :return: The list of closed bars.
         """
-        cdef list bars_list = list()
+        cdef list bars_list = []
 
         for bar_type, iterations in self.iterations.items():
             if self.bars[bar_type][iterations].timestamp == time:

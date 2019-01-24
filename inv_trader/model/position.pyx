@@ -15,7 +15,7 @@ from typing import Set, List
 from inv_trader.enums.market_position cimport MarketPosition, market_position_string
 from inv_trader.enums.order_side cimport OrderSide
 from inv_trader.model.objects cimport Symbol
-from inv_trader.model.events cimport OrderEvent, OrderPartiallyFilled, OrderFilled
+from inv_trader.model.events cimport OrderEvent
 from inv_trader.model.identifiers cimport PositionId, ExecutionId, ExecutionTicket
 
 
@@ -37,10 +37,10 @@ cdef class Position:
         """
         self._relative_quantity = 0
         self._peak_quantity = 0
-        self._from_order_ids = set()      # type: Set[OrderId]
-        self._execution_ids = list()      # type: List[ExecutionId]
-        self._execution_tickets = list()  # type: List[ExecutionTicket]
-        self._events = list()             # type: List[OrderEvent]
+        self._from_order_ids = set()   # type: Set[OrderId]
+        self._execution_ids = []       # type: List[ExecutionId]
+        self._execution_tickets = []   # type: List[ExecutionTicket]
+        self._events = []              # type: List[OrderEvent]
 
         self.symbol = symbol
         self.id = position_id

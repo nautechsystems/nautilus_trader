@@ -24,7 +24,7 @@ cdef class Account:
         """
         Initializes a new instance of the Account class.
         """
-        self._events = list()
+        self._events = []
 
         self.initialized = False
         self.id = None

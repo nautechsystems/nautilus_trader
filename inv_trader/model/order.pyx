@@ -82,10 +82,10 @@ cdef class Order:
         if time_in_force is TimeInForce.GTD:
             Precondition.not_none(expire_time, 'expire_time')
 
-        self._order_ids_broker = list()   # type: List[OrderId]
-        self._execution_ids = list()      # type: List[ExecutionId]
-        self._execution_tickets = list()  # type: List[ExecutionTicket]
-        self._events = list()             # type: List[OrderEvent]
+        self._order_ids_broker = []   # type: List[OrderId]
+        self._execution_ids = []      # type: List[ExecutionId]
+        self._execution_tickets = []  # type: List[ExecutionTicket]
+        self._events = []             # type: List[OrderEvent]
 
         self.symbol = symbol
         self.id = order_id

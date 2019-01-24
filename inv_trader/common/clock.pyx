@@ -42,7 +42,7 @@ cdef class Clock:
         :return: The current time of the clock.
         """
         # Raise exception if not overridden in implementation.
-        raise NotImplementedError("Method must be implemented.")
+        raise NotImplementedError("Method must be implemented in the subclass.")
 
     cpdef datetime unix_epoch(self):
         """
@@ -370,7 +370,7 @@ cdef class TestClock(Clock):
         """
         Precondition.true(time.tzinfo == self.timezone, 'time.tzinfo == self.timezone')
 
-        cdef list expired = list()
+        cdef list expired = []
 
         for label, timer in self._timers.items():
             # Time alerts
