@@ -10,8 +10,6 @@
 # cython: language_level=3, boundscheck=False, wraparound=False
 
 import numpy as np
-import pandas as pd
-import uuid
 
 from functools import partial
 from pandas import DataFrame
@@ -19,6 +17,7 @@ from typing import List, Dict
 
 from inv_trader.core.decimal cimport Decimal
 from inv_trader.core.precondition cimport Precondition
+from inv_trader.core.functions cimport pd_index_to_datetime_list
 from inv_trader.enums.brokerage cimport Broker
 from inv_trader.enums.currency_code cimport CurrencyCode
 from inv_trader.enums.order_type cimport OrderType
@@ -89,15 +88,14 @@ cdef class BacktestExecClient(ExecutionClient):
 
         # Set minute data index
         first_dataframe = data_bars_bid[next(iter(data_bars_bid))]
-        cdef list minute_index = list(pd.to_datetime(first_dataframe.index, utc=True))
-        self.data_minute_index = minute_index       # type: List[datetime]
+        self.data_minute_index = pd_index_to_datetime_list(first_dataframe.index)  # type: List[datetime]
 
         self.iteration = 0
         self.account_cash_start_day = money(starting_capital)
         self.account_cash_activity_day = money_zero()
-        self.slippage_index = dict()                # type: Dict[Symbol, Decimal]
-        self.working_orders = dict()                # type: Dict[OrderId, Order]
-        self.positions = dict()                     # type: Dict[Symbol, Position]
+        self.slippage_index = {}                    # type: Dict[Symbol, Decimal]
+        self.working_orders = {}                    # type: Dict[OrderId, Order]
+        self.positions = {}                         # type: Dict[Symbol, Position]
 
         self._set_slippage_index(slippage_ticks)
 
@@ -355,7 +353,7 @@ cdef class BacktestExecClient(ExecutionClient):
         :param quote_type: The quote type of data (bid or ask).
         :return: The Dict[Symbol, List] of prepared data.
         """
-        cdef dict minute_data = dict()  # type: Dict[Symbol, List]
+        cdef dict minute_data = {}    # type: Dict[Symbol, List]
         for symbol, data in bar_data.items():
             start = datetime.utcnow()
             map_func = partial(self._convert_to_decimals, precision=self.instruments[symbol].tick_precision)
@@ -382,7 +380,7 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         Set the slippage index based on the given integer.
         """
-        cdef dict slippage_index = dict()
+        cdef dict slippage_index = {}
 
         for symbol, instrument in self.instruments.items():
             slippage_index[symbol] = Decimal(instrument.tick_size * slippage_ticks)
