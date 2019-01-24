@@ -12,7 +12,6 @@ import unittest
 
 from datetime import datetime, timezone, timedelta
 
-from inv_trader.core.decimal import Decimal
 from inv_trader.common.clock import TestClock
 from inv_trader.common.logger import Logger
 from inv_trader.model.enums import Resolution
