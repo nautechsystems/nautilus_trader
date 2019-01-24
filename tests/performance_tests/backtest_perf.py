@@ -105,5 +105,6 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 52912808 function calls (52908623 primitive calls) in 25.232 seconds
         # 49193278 function calls (49189089 primitive calls) in 19.121 seconds
         # 49193280 function calls (49189091 primitive calls) in 18.735 seconds
+        # 42052320 function calls (42048131 primitive calls) in 17.642 seconds
 
         self.assertTrue(True)

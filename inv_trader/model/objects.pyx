@@ -242,7 +242,8 @@ cdef class Bar:
                  Decimal low_price,
                  Decimal close_price,
                  long volume,
-                 datetime timestamp):
+                 datetime timestamp,
+                 bint checked=False):
         """
         Initializes a new instance of the Bar class.
 
@@ -252,6 +253,7 @@ cdef class Bar:
         :param close_price: The bars close price.
         :param volume: The bars volume.
         :param timestamp: The bars timestamp (UTC).
+        :param checked: A value indicating whether the bar was checked valid.
         :raises ValueError: If the open_price is not positive (> 0).
         :raises ValueError: If the high_price is not positive (> 0).
         :raises ValueError: If the low_price is not positive (> 0).
@@ -261,14 +263,15 @@ cdef class Bar:
         :raises ValueError: If the high_price is not >= close_price.
         :raises ValueError: If the low_price is not <= close_price.
         """
-        Precondition.positive(open_price, 'open_price')
-        Precondition.positive(high_price, 'high_price')
-        Precondition.positive(low_price, 'low_price')
-        Precondition.positive(close_price, 'close_price')
-        Precondition.not_negative(volume, 'volume')
-        Precondition.true(high_price >= low_price, 'high_price >= low_price')
-        Precondition.true(high_price >= close_price, 'high_price >= close_price')
-        Precondition.true(low_price <= close_price, 'low_price <= close_price')
+        if checked:
+            Precondition.positive(open_price, 'open_price')
+            Precondition.positive(high_price, 'high_price')
+            Precondition.positive(low_price, 'low_price')
+            Precondition.positive(close_price, 'close_price')
+            Precondition.not_negative(volume, 'volume')
+            Precondition.true(high_price >= low_price, 'high_price >= low_price')
+            Precondition.true(high_price >= close_price, 'high_price >= close_price')
+            Precondition.true(low_price <= close_price, 'low_price <= close_price')
 
         self.open = open_price
         self.high = high_price
@@ -276,6 +279,7 @@ cdef class Bar:
         self.close = close_price
         self.volume = volume
         self.timestamp = timestamp
+        self.checked = checked
 
     def __eq__(self, Bar other) -> bool:
         """
