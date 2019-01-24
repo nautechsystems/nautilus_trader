@@ -190,7 +190,7 @@ cdef class BacktestEngine:
         self.log.info(f"RAM-Total: {round(psutil.virtual_memory()[0] / 1000000)}MB")
         self.log.info(f"RAM-Used:  {round(psutil.virtual_memory()[3] / 1000000)}MB")
         self.log.info(f"RAM-Avail: {round(psutil.virtual_memory()[1] / 1000000)}MB ({100 - psutil.virtual_memory()[2]}%)")
-        self.log.info(f"Time-step: {time_step_mins} minute.")
+        self.log.info(f"Time-step: {time_step_mins} minute")
         self.log.info(f"Running backtest from {start} to {stop}...")
         self.log.info("#----------------------------------------------------------------------------------------------------#")
 
