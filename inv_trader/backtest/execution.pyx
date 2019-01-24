@@ -10,6 +10,7 @@
 # cython: language_level=3, boundscheck=False, wraparound=False
 
 import numpy as np
+import pandas as pd
 
 from functools import partial
 from pandas import DataFrame
@@ -17,7 +18,6 @@ from typing import List, Dict
 
 from inv_trader.core.decimal cimport Decimal
 from inv_trader.core.precondition cimport Precondition
-from inv_trader.core.functions cimport pd_index_to_datetime_list
 from inv_trader.enums.brokerage cimport Broker
 from inv_trader.enums.currency_code cimport CurrencyCode
 from inv_trader.enums.order_type cimport OrderType
@@ -88,7 +88,9 @@ cdef class BacktestExecClient(ExecutionClient):
 
         # Set minute data index
         first_dataframe = data_bars_bid[next(iter(data_bars_bid))]
-        self.data_minute_index = pd_index_to_datetime_list(first_dataframe.index)  # type: List[datetime]
+        self.data_minute_index = list(pd.to_datetime(first_dataframe.index, utc=True))  # type: List[datetime]
+
+        assert(isinstance(self.data_minute_index[0], datetime))
 
         self.iteration = 0
         self.account_cash_start_day = money(starting_capital)
