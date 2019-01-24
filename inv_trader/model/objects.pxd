@@ -28,6 +28,7 @@ cdef class Symbol:
     cdef str venue_string(self)
     cdef bint equals(self, Symbol other)
 
+
 cdef class Tick:
     """
     Represents a single tick in a financial market.
@@ -50,6 +51,7 @@ cdef class BarType:
     cdef str resolution_string(self)
     cdef str quote_type_string(self)
 
+
 cdef class Bar:
     """
     Represents a financial market trade bar.
@@ -60,6 +62,7 @@ cdef class Bar:
     cdef readonly Decimal close
     cdef readonly long volume
     cdef readonly datetime timestamp
+    cdef readonly bint checked
 
 
 cdef class DataBar:
