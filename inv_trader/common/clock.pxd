@@ -82,6 +82,7 @@ cdef class TestClock(Clock):
     """
     cdef readonly timedelta time_step
     cdef datetime _time
+    cdef dict _time_alerts
 
     cpdef void set_time(self, datetime time)
     cpdef void iterate_time(self, datetime time)
