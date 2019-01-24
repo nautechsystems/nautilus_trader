@@ -368,10 +368,10 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         Convert the given array of double values to an array of Decimals with
         the given precision.
-        
-        :param values: THe values to convert.
+
+        :param values: The values to convert.
         :param precision: The decimal precision.
-        :return: The array of Decimal.
+        :return: The array of Decimals.
         """
         return np.array([Decimal(values[0], precision),
                          Decimal(values[1], precision),
@@ -385,7 +385,7 @@ cdef class BacktestExecClient(ExecutionClient):
         cdef dict slippage_index = {}
 
         for symbol, instrument in self.instruments.items():
-            slippage_index[symbol] = Decimal(instrument.tick_size * slippage_ticks)
+            slippage_index[symbol] = instrument.tick_size * slippage_ticks
 
         self.slippage_index = slippage_index
 
