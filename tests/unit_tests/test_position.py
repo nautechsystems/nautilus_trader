@@ -47,7 +47,6 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(None, position.last_execution_ticket)
         self.assertFalse(position.is_entered)
         self.assertFalse(position.is_exited)
-        self.assertEqual(Decimal(), position.realized_pnl)
 
     def test_position_filled_with_buy_order_returns_expected_attributes(self):
         # Arrange
@@ -85,7 +84,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(UNIX_EPOCH, position.entry_time)
         self.assertEqual(Decimal('1.00001'), position.average_entry_price)
         self.assertEqual(1, position.event_count)
-        self.assertEqual([order.id], position.get_from_order_ids())
+        self.assertEqual([order.id], position.get_order_ids())
         self.assertEqual([ExecutionId('E123456')], position.get_execution_ids())
         self.assertEqual([ExecutionTicket('T123456')], position.get_execution_tickets())
         self.assertEqual(ExecutionId('E123456'), position.last_execution_id)
@@ -320,7 +319,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(UNIX_EPOCH, position.entry_time)
         self.assertEqual(Decimal('1.00000'), position.average_entry_price)
         self.assertEqual(2, position.event_count)
-        self.assertEqual([order.id], position.get_from_order_ids())
+        self.assertEqual([order.id], position.get_order_ids())
         self.assertEqual(ExecutionId('E123456'), position.last_execution_id)
         self.assertEqual(ExecutionTicket('T123456'), position.last_execution_ticket)
         self.assertEqual(UNIX_EPOCH, position.exit_time)

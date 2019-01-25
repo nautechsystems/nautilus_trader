@@ -24,7 +24,6 @@ from inv_trader.common.logger cimport Logger, LoggerAdapter
 from inv_trader.common.execution cimport ExecutionClient
 from inv_trader.common.data cimport DataClient
 from inv_trader.model.events cimport Event, AccountEvent, OrderEvent
-from inv_trader.model.events cimport OrderSubmitted, OrderAccepted
 from inv_trader.model.events cimport OrderRejected, OrderCancelReject, OrderFilled, OrderPartiallyFilled
 from inv_trader.model.identifiers cimport GUID, Label, OrderId, PositionId
 from inv_trader.model.objects cimport Symbol, Tick, BarType, Bar, Instrument

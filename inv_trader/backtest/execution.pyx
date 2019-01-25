@@ -30,7 +30,7 @@ from inv_trader.model.events cimport Event, OrderEvent, AccountEvent, OrderCance
 from inv_trader.model.events cimport OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
 from inv_trader.model.events cimport OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
 from inv_trader.model.events cimport OrderFilled, OrderPartiallyFilled
-from inv_trader.model.identifiers cimport GUID, OrderId, ExecutionId, ExecutionTicket, AccountNumber
+from inv_trader.model.identifiers cimport GUID, OrderId, PositionId, ExecutionId, ExecutionTicket, AccountNumber
 from inv_trader.common.clock cimport TestClock
 from inv_trader.common.guid cimport TestGuidFactory
 from inv_trader.common.logger cimport Logger
@@ -93,27 +93,31 @@ cdef class BacktestExecClient(ExecutionClient):
         assert(isinstance(self.data_minute_index[0], datetime))
 
         self.iteration = 0
+        self.day_number = 0
         self.account_cash_start_day = money(starting_capital)
         self.account_cash_activity_day = money_zero()
         self.slippage_index = {}                    # type: Dict[Symbol, Decimal]
         self.working_orders = {}                    # type: Dict[OrderId, Order]
+        self.positions_count = {}                   # type: Dict[Symbol, int]
         self.positions = {}                         # type: Dict[Symbol, Position]
+        self.completed_positions = {}               # type: Dict[PositionId, Position]
 
         self._set_slippage_index(slippage_ticks)
 
-        cdef AccountEvent initial_starting = AccountEvent(self.account.id,
-                                                          Broker.SIMULATED,
-                                                          AccountNumber('9999'),
-                                                          CurrencyCode.USD,
-                                                          money(starting_capital),
-                                                          money(starting_capital),
-                                                          money_zero(),
-                                                          money_zero(),
-                                                          money_zero(),
-                                                          Decimal(0),
-                                                          'NONE',
-                                                          self._guid_factory.generate(),
-                                                          self._clock.time_now())
+        cdef AccountEvent initial_starting = AccountEvent(
+            self.account.id,
+            Broker.SIMULATED,
+            AccountNumber('9999'),
+            CurrencyCode.USD,
+            money(starting_capital),
+            money(starting_capital),
+            money_zero(),
+            money_zero(),
+            money_zero(),
+            Decimal(0),
+            'NONE',
+            self._guid_factory.generate(),
+            self._clock.time_now())
 
         self.account.apply(initial_starting)
 
@@ -155,6 +159,14 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         Iterate the data client one time step.
         """
+        # Set account statistics
+        if self.day_number is not time.day:
+            self.day_number = time.day
+            self.account_cash_start_day = self.account.cash_balance
+            self.account_cash_activity_day = money_zero()
+            self.collateral_inquiry()
+
+        # Simulate market dynamics
         cdef Decimal highest_ask
         cdef Decimal lowest_bid
 
@@ -196,19 +208,20 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         Send a collateral inquiry command to the execution service.
         """
-        cdef AccountEvent event = AccountEvent(self.account.id,
-                                               self.account.broker,
-                                               self.account.account_number,
-                                               self.account.currency,
-                                               self.account.cash_balance,
-                                               self.account_cash_start_day,
-                                               self.account_cash_activity_day,
-                                               self.account.margin_used_liquidation,
-                                               self.account.margin_used_maintenance,
-                                               self.account.margin_ratio,
-                                               self.account.margin_call_status,
-                                               self._guid_factory.generate(),
-                                               self._clock.time_now())
+        cdef AccountEvent event = AccountEvent(
+            self.account.id,
+            self.account.broker,
+            self.account.account_number,
+            self.account.currency,
+            self.account.cash_balance,
+            self.account_cash_start_day,
+            self.account_cash_activity_day,
+            self.account.margin_used_liquidation,
+            self.account.margin_used_maintenance,
+            self.account.margin_ratio,
+            self.account.margin_call_status,
+            self._guid_factory.generate(),
+            self._clock.time_now())
         self._on_event(event)
 
     cpdef void submit_order(self, Order order, GUID strategy_id):
@@ -488,3 +501,45 @@ cdef class BacktestExecClient(ExecutionClient):
             self._clock.time_now())
 
         self._on_event(filled)
+        self._adjust_positions(filled)
+
+    cdef void _adjust_positions(self, OrderEvent event):
+        """
+        Adjust the positions based on the order fill event.
+        
+        :param event: The order fill event.
+        """
+        cdef Position subject_position
+
+        # Increment positions count
+        if event.symbol not in self.positions_count:
+            self.positions_count[event.symbol] = 0
+
+        # Apply event to position
+        if event.symbol not in self.positions:
+            self.positions_count[event.symbol] += 1
+            self.positions[event.symbol] = Position(event.symbol,
+                                                    PositionId(str(event.symbol) + '-' + str(self.positions_count[event.symbol])),
+                                                    event.timestamp)
+
+        subject_position = self.positions[event.symbol]
+        subject_position.apply(event)
+
+        if subject_position.is_exited:
+            self.completed_positions[subject_position.id] = subject_position
+            del self.positions[event.symbol]
+
+        cdef AccountEvent initial_starting = AccountEvent(
+            self.account.id,
+            self.account.broker,
+            self.account.account_number,
+            self.account.currency,
+            self.account.cash_balance,
+            self.account_cash_start_day,
+            self.account_cash_activity_day,
+            margin_used_liquidation=money_zero(),
+            margin_used_maintenance=money_zero(),
+            margin_ratio=Decimal(0),
+            margin_call_status='NONE',
+            event_id=self._guid_factory.generate(),
+            event_timestamp=self._clock.time_now())

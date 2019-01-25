@@ -14,7 +14,7 @@ from cpython.datetime cimport datetime, timedelta
 from inv_trader.core.decimal cimport Decimal
 from inv_trader.common.execution cimport ExecutionClient
 from inv_trader.model.objects cimport Symbol
-from inv_trader.model.order cimport Order
+from inv_trader.model.order cimport Order, OrderEvent
 
 
 cdef class BacktestExecClient(ExecutionClient):
@@ -27,11 +27,14 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef readonly dict data_bars_ask
     cdef readonly list data_minute_index
     cdef readonly int iteration
+    cdef readonly int day_number
     cdef readonly Decimal account_cash_start_day
     cdef readonly Decimal account_cash_activity_day
     cdef readonly dict slippage_index
     cdef readonly dict working_orders
+    cdef readonly dict positions_count
     cdef readonly dict positions
+    cdef readonly dict completed_positions
 
     cpdef void set_initial_iteration(self, datetime to_time, timedelta time_step)
     cpdef void iterate(self, datetime time)
@@ -49,3 +52,4 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef void _reject_modify_order(self, Order order, str reason)
     cdef void _expire_order(self, Order order)
     cdef void _fill_order(self, Order order, Decimal market_price)
+    cdef void _adjust_positions(self, OrderEvent event)
