@@ -18,8 +18,7 @@ from inv_trader.model.enums import Resolution
 from inv_trader.model.enums import Venue
 from inv_trader.model.objects import Symbol
 from inv_trader.backtest.engine import BacktestConfig, BacktestEngine
-from test_kit.strategies import EMACross
-from test_kit.strategies import EmptyStrategy, EmptyStrategyCython
+from test_kit.strategies import EmptyStrategy, EMACross
 from test_kit.data import TestDataProvider
 from test_kit.stubs import TestStubs
 

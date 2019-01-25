@@ -7,13 +7,13 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-# cython: language_level=3, boundscheck=False
+# cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
 from cpython.datetime cimport datetime
 from typing import List, Dict, Callable
 
 from inv_trader.core.precondition cimport Precondition
-from inv_trader.common.clock cimport Clock, LiveClock
+from inv_trader.common.clock cimport Clock
 from inv_trader.common.logger cimport Logger, LoggerAdapter
 from inv_trader.model.objects cimport Symbol, BarType, Instrument
 from inv_trader.strategy cimport TradeStrategy

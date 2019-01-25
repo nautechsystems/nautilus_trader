@@ -100,7 +100,6 @@ cdef class LiveExecClient(ExecutionClient):
         """
         self._events_worker.start()
         self._commands_worker.start()
-        self.collateral_inquiry()
 
     cpdef void disconnect(self):
         """

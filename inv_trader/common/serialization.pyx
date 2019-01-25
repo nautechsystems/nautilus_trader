@@ -7,9 +7,10 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-# cython: language_level=3, boundscheck=False
+# cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
 import ast
+import cython
 import iso8601
 import json
 
@@ -243,6 +244,8 @@ cdef class EventSerializer:
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented.")
 
+
+@cython.wraparound(True)
 cdef class InstrumentSerializer:
     """
     Provides an instrument deserializer.
