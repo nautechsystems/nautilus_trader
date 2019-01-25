@@ -22,7 +22,7 @@ from inv_trader.core.precondition cimport Precondition
 from inv_trader.common.clock cimport Clock, LiveClock
 from inv_trader.common.logger cimport Logger
 from inv_trader.common.data cimport DataClient
-from inv_trader.common.serialization import InstrumentSerializer
+from inv_trader.common.serialization cimport InstrumentSerializer
 from inv_trader.model.enums import Resolution, QuoteType, Venue
 from inv_trader.enums.resolution cimport Resolution
 from inv_trader.enums.quote_type cimport QuoteType
@@ -42,6 +42,7 @@ cdef class LiveDataClient(DataClient):
     cdef object _redis_client
     cdef object _pubsub
     cdef object _pubsub_thread
+    cdef InstrumentSerializer _instrument_serializer
 
     def __init__(self,
                  str host='localhost',
@@ -67,8 +68,7 @@ cdef class LiveDataClient(DataClient):
         self._redis_client = None
         self._pubsub = None
         self._pubsub_thread = None
-
-        self._log.info("Initialized.")
+        self._instrument_serializer = InstrumentSerializer()
 
     cpdef bint is_connected(self):
         """
@@ -147,9 +147,10 @@ cdef class LiveDataClient(DataClient):
         Update all instruments from the live database.
         """
         cdef list keys = self._redis_client.keys('instruments*')
+        cdef Instrument instrument
 
         for key in keys:
-            instrument = InstrumentSerializer.deserialize(self._redis_client.get(key))
+            instrument = self._instrument_serializer.deserialize(self._redis_client.get(key))
             self._instruments[instrument.symbol] = instrument
             self._log.info(f"Updated instrument for {instrument.symbol}.")
 
@@ -167,7 +168,7 @@ cdef class LiveDataClient(DataClient):
                 f"Cannot update instrument (symbol {symbol}not found in live database).")
             return
 
-        cdef Instrument instrument = InstrumentSerializer.deserialize(self._redis_client.get(key))
+        cdef Instrument instrument = self._instrument_serializer.deserialize(self._redis_client.get(key))
         self._instruments[symbol] = instrument
         self._log.info(f"Updated instrument for {symbol}.")
 

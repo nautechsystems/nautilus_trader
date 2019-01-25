@@ -17,7 +17,7 @@ from cpython.datetime cimport datetime
 
 # Do not reorder imports (enums need to be in below order)
 from inv_trader.core.decimal cimport Decimal
-from inv_trader.model.enums import Venue, CurrencyCode
+from inv_trader.model.enums import Venue, CurrencyCode, SecurityType
 from inv_trader.enums.venue cimport Venue
 from inv_trader.enums.security_type cimport SecurityType
 from inv_trader.enums.currency_code cimport CurrencyCode

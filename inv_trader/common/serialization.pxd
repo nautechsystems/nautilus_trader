@@ -12,7 +12,7 @@
 from cpython.datetime cimport datetime
 
 from inv_trader.core.decimal cimport Decimal
-from inv_trader.model.objects cimport Symbol
+from inv_trader.model.objects cimport Symbol, Instrument
 from inv_trader.model.identifiers cimport GUID
 from inv_trader.model.order cimport Order
 from inv_trader.model.events cimport Event, OrderEvent
@@ -60,3 +60,11 @@ cdef class EventSerializer:
             GUID event_id,
             datetime event_timestamp,
             dict unpacked)
+
+
+cdef class InstrumentSerializer:
+    """
+    Provides an instrument deserializer.
+    """
+
+    cpdef Instrument deserialize(self, bytes instrument_bytes)
