@@ -70,7 +70,7 @@ cdef class ExecutionClient:
         self._registered_strategies[strategy.id] = strategy
         strategy._register_execution_client(self)  # Access to protected member ok here
 
-        self._log.info(f"Registered strategy {strategy}.")
+        self._log.info(f"Registered strategy {strategy} with unique id {strategy.id}.")
 
     cpdef void connect(self):
         """
@@ -122,7 +122,7 @@ cdef class ExecutionClient:
         :param strategy_id: The strategy id to register with the order.
         :raises ValueError: If the order.id is already in the order_index.
         """
-        Precondition.true(order.id not in self._order_index, 'order.id NOT in self._order_index')
+        Precondition.is_in(order.id, self._order_index, 'order.id', 'order_index')
 
         self._order_index[order.id] = strategy_id
 
