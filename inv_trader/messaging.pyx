@@ -15,14 +15,14 @@ from typing import Callable
 from threading import Thread
 from zmq import Context
 
-from inv_trader.core.precondition import PyPrecondition
+from inv_trader.core.precondition cimport Precondition
 from inv_trader.common.logger cimport Logger, LoggerAdapter
 
 cdef str UTF8 = 'utf-8'
 cdef bytes DELIMITER = b' '
 
 
-class MQWorker(Thread):
+cdef class MQWorker:
     """
     The abstract base class for all MQ workers.
     """
@@ -49,13 +49,13 @@ class MQWorker(Thread):
         :raises ValueError: If the host is not a valid string.
         :raises ValueError: If the port is not in range [0, 65535]
         """
-        PyPrecondition.valid_string(name, 'name')
-        PyPrecondition.valid_string(host, 'host')
-        PyPrecondition.in_range(port, 'port', 0, 65535)
+        Precondition.valid_string(name, 'name')
+        Precondition.valid_string(host, 'host')
+        Precondition.in_range(port, 'port', 0, 65535)
 
         super().__init__()
-        self.daemon = True
-        self._name = name
+        self._thread = Thread(target=self._open_connection, daemon=True)
+        self.name = name
         self._context = context
         self._service_address = f'tcp://{host}:{port}'
         self._handler = handler
@@ -66,45 +66,43 @@ class MQWorker(Thread):
         self._socket = self._context.socket(socket_type)
         self._cycles = 0
 
-    def run(self):
+    cpdef void start(self):
         """
         Overrides the threads run method (.start() should be called to run this
         in a separate thread).
 
         Starts the worker and opens a connection.
         """
-        self._open_connection()
+        self._thread.start()
 
-    def send(self, bytes message):
+    cpdef void send(self, bytes message):
         """
         Send the message to the service socket.
 
         :param message: The message bytes to send.
         """
-        PyPrecondition.not_empty(message, 'message')
-
         self._socket.send(message)
         self._cycles += 1
         self._log.debug(f"Sending message[{self._cycles}] {message}")
 
-        response = self._socket.recv()
+        cdef bytes response = self._socket.recv()
         self._log.debug(f"Received {response.decode(UTF8)}[{self._cycles}] response.")
 
-    def stop(self):
+    cpdef void stop(self):
         """
         Close the connection and stop the worker.
         """
         self._close_connection()
         self._log.debug(f"Stopped.")
 
-    def _open_connection(self):
+    cpdef void _open_connection(self):
         """
         Open a new connection to the service.
         """
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    def _close_connection(self):
+    cpdef void _close_connection(self):
         """
         Close the connection with the service.
         """
@@ -112,7 +110,7 @@ class MQWorker(Thread):
         raise NotImplementedError("Method must be implemented in the subclass.")
 
 
-class RequestWorker(MQWorker):
+cdef class RequestWorker(MQWorker):
     """
     Provides an asynchronous worker thread for ZMQ request messaging.
     """
@@ -137,9 +135,9 @@ class RequestWorker(MQWorker):
         :raises ValueError: If the host is not a valid string.
         :raises ValueError: If the port is not in range [0, 65535]
         """
-        PyPrecondition.valid_string(name, 'name')
-        PyPrecondition.valid_string(host, 'host')
-        PyPrecondition.in_range(port, 'port', 0, 65535)
+        Precondition.valid_string(name, 'name')
+        Precondition.valid_string(host, 'host')
+        Precondition.in_range(port, 'port', 0, 65535)
 
         super().__init__(
             name,
@@ -150,14 +148,14 @@ class RequestWorker(MQWorker):
             handler,
             logger)
 
-    def _open_connection(self):
+    cpdef void _open_connection(self):
         """
         Open a new connection to the service.
         """
         self._socket.connect(self._service_address)
         self._log.info(f"Connected to {self._service_address}")
 
-    def _close_connection(self):
+    cpdef void _close_connection(self):
         """
         Close the connection with the service.
         """
@@ -165,7 +163,7 @@ class RequestWorker(MQWorker):
         self._log.info(f"Disconnected from {self._service_address}")
 
 
-class SubscriberWorker(MQWorker):
+cdef class SubscriberWorker(MQWorker):
     """
     Provides an asynchronous worker thread for ZMQ subscriber messaging.
     """
@@ -193,10 +191,10 @@ class SubscriberWorker(MQWorker):
         :raises ValueError: If the port is not in range [0, 65535]
         :raises ValueError: If the topic is not a valid string.
         """
-        PyPrecondition.valid_string(name, 'name')
-        PyPrecondition.valid_string(host, 'host')
-        PyPrecondition.in_range(port, 'port', 0, 65535)
-        PyPrecondition.valid_string(topic, 'topic')
+        Precondition.valid_string(name, 'name')
+        Precondition.valid_string(host, 'host')
+        Precondition.in_range(port, 'port', 0, 65535)
+        Precondition.valid_string(topic, 'topic')
 
         super().__init__(
             name,
@@ -208,14 +206,7 @@ class SubscriberWorker(MQWorker):
             logger)
         self._topic = topic
 
-    def run(self):
-        """
-        Overrides the threads run method (call .start() to run in a separate thread).
-        Starts the worker and opens a connection.
-        """
-        self._open_connection()
-
-    def _open_connection(self):
+    cpdef void _open_connection(self):
         """
         Open a new connection to the service.
         """
@@ -225,11 +216,15 @@ class SubscriberWorker(MQWorker):
         self._log.info(f"Subscribed to topic {self._topic}.")
         self._consume_messages()
 
-    def _consume_messages(self):
+    cpdef void _consume_messages(self):
         """
         Start the consumption loop to receive published messages.
         """
         self._log.info("Ready to consume messages...")
+
+        cdef bytes message
+        cdef bytes topic
+        cdef bytes data
 
         while True:
             message = self._socket.recv()
@@ -240,7 +235,7 @@ class SubscriberWorker(MQWorker):
             self._cycles += 1
             self._log.debug(f"Received message[{self._cycles}] from {topic.decode(UTF8)}: {data}")
 
-    def _close_connection(self):
+    cpdef void _close_connection(self):
         """
         Close the connection with the service.
         """
