@@ -23,8 +23,7 @@ cdef class Position:
     Represents a position in a financial market.
     """
     cdef long _relative_quantity
-    cdef long _peak_quantity
-    cdef set _from_order_ids
+    cdef set _order_ids
     cdef list _execution_ids
     cdef list _execution_tickets
     cdef list _events
@@ -34,6 +33,7 @@ cdef class Position:
     cdef readonly ExecutionId last_execution_id
     cdef readonly ExecutionTicket last_execution_ticket
     cdef readonly OrderId from_order_id
+    cdef readonly OrderId last_order_id
     cdef readonly long quantity
     cdef readonly MarketPosition market_position
     cdef readonly datetime timestamp
@@ -43,12 +43,12 @@ cdef class Position:
     cdef readonly Decimal average_exit_price
     cdef readonly bint is_entered
     cdef readonly bint is_exited
+    cdef readonly long peak_quantity
     cdef readonly int event_count
     cdef readonly OrderEvent last_event
-    cdef readonly Decimal realized_pnl
 
     cdef bint equals(self, Position other)
-    cpdef list get_from_order_ids(self)
+    cpdef list get_order_ids(self)
     cpdef list get_execution_ids(self)
     cpdef list get_execution_tickets(self)
     cpdef list get_events(self)

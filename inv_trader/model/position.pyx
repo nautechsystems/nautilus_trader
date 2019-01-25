@@ -16,6 +16,7 @@ from inv_trader.enums.market_position cimport MarketPosition, market_position_st
 from inv_trader.enums.order_side cimport OrderSide
 from inv_trader.model.objects cimport Symbol
 from inv_trader.model.events cimport OrderEvent
+from inv_trader.model.money cimport money_zero, money
 from inv_trader.model.identifiers cimport PositionId, ExecutionId, ExecutionTicket
 
 
@@ -36,15 +37,15 @@ cdef class Position:
         :param timestamp: The positions initialization timestamp.
         """
         self._relative_quantity = 0
-        self._peak_quantity = 0
-        self._from_order_ids = set()   # type: Set[OrderId]
-        self._execution_ids = []       # type: List[ExecutionId]
-        self._execution_tickets = []   # type: List[ExecutionTicket]
-        self._events = []              # type: List[OrderEvent]
+        self._order_ids = set()  # type: Set[OrderId]
+        self._execution_ids = []      # type: List[ExecutionId]
+        self._execution_tickets = []  # type: List[ExecutionTicket]
+        self._events = []             # type: List[OrderEvent]
 
         self.symbol = symbol
         self.id = position_id
         self.from_order_id = None
+        self.last_order_id = None
         self.last_execution_id = None
         self.last_execution_ticket = None
         self.quantity = 0
@@ -56,9 +57,9 @@ cdef class Position:
         self.average_exit_price = None
         self.is_entered = False
         self.is_exited = False
+        self.peak_quantity = 0
         self.event_count = 0
         self.last_event = None
-        self.realized_pnl = Decimal()
 
     cdef bint equals(self, Position other):
         """
@@ -97,11 +98,11 @@ cdef class Position:
         cdef str props = ', '.join("%s=%s" % item for item in attrs.items()).replace(', _', ', ')
         return f"<{self.__class__.__name__}({props[1:]}) object at {id(self)}>"
 
-    cpdef list get_from_order_ids(self):
+    cpdef list get_order_ids(self):
         """
         :return: A copy of the list of internally held from order ids. 
         """
-        return list(self._from_order_ids)
+        return list(self._order_ids.copy())
 
     cpdef list get_execution_ids(self):
         """
@@ -133,14 +134,21 @@ cdef class Position:
         self.last_event = event
 
         # Handle event
-        self._from_order_ids.add(event.order_id)
+        self._order_ids.add(event.order_id)
         self._execution_ids.append(event.execution_id)
         self._execution_tickets.append(event.execution_ticket)
-        self.from_order_id = event.order_id
+        self.last_order_id = event.order_id
         self.last_execution_id = event.execution_id
         self.last_execution_ticket = event.execution_ticket
 
-        # Quantity logic
+        # Entry logic
+        if not self.is_entered:
+            self.from_order_id = event.order_id
+            self.entry_time = event.timestamp
+            self.average_entry_price = event.average_price
+            self.is_entered = True
+
+        # Fill logic
         if event.order_side is OrderSide.BUY:
             self._relative_quantity += event.filled_quantity
         elif event.order_side is OrderSide.SELL:
@@ -148,18 +156,11 @@ cdef class Position:
 
         self.quantity = abs(self._relative_quantity)
 
-        if abs(self._relative_quantity) > self._peak_quantity:
-            self._peak_quantity = abs(self._relative_quantity)
-
-        # Entry logic
-        if self.entry_time is None:
-            self.from_order_id = event.order_id
-            self.entry_time = event.timestamp
-            self.average_entry_price = event.average_price
-            self.is_entered = True
+        if self.quantity > self.peak_quantity:
+            self.peak_quantity = self.quantity
 
         # Exit logic
-        if self.is_entered and self._relative_quantity == 0:
+        if self._relative_quantity == 0:
             self.exit_time = event.timestamp
             self.average_exit_price = event.average_price
             self.is_exited = True

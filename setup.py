@@ -16,8 +16,6 @@ from Cython.Compiler import Options
 from typing import List
 from setuptools import setup, Extension
 
-# Command to compile c extensions
-# python setup.py build_ext --inplace
 
 VERSION = '0.75.0'
 AUTHOR = 'Invariance'
@@ -38,6 +36,9 @@ REQUIREMENTS = ['cython',
                 'theano']
 DIRECTORIES = [INV_TRADER, 'test_kit']
 
+
+# Command to compile c extensions
+# python setup.py build_ext --inplace
 
 # Cython compiler options
 # -----------------------
@@ -86,6 +87,8 @@ setup(
     author=AUTHOR,
     description=DESCRIPTION,
     packages=setuptools.find_packages(),
+    include_package_data=True,
+    package_data={'': ['*.pyx', '*.pxd']},
     license=LICENSE,
     requires=REQUIREMENTS,
     ext_modules=cythonize(extensions, compiler_directives={'profile': Profile_Hooks}),
