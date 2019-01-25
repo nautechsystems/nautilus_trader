@@ -77,42 +77,42 @@ cdef class ExecutionClient:
         Connect to the execution service.
         """
         # Raise exception if not overridden in implementation.
-        raise NotImplementedError("Method must be implemented in the execution client.")
+        raise NotImplementedError("Method must be implemented in the subclass.")
 
     cpdef void disconnect(self):
         """
         Disconnect from the execution service.
         """
         # Raise exception if not overridden in implementation.
-        raise NotImplementedError("Method must be implemented in the execution client.")
+        raise NotImplementedError("Method must be implemented in the subclass.")
 
     cpdef void collateral_inquiry(self):
         """
         Send a collateral inquiry command to the execution service.
         """
         # Raise exception if not overridden in implementation.
-        raise NotImplementedError("Method must be implemented in the execution client.")
+        raise NotImplementedError("Method must be implemented in the subclass.")
 
     cpdef void submit_order(self, Order order, GUID strategy_id):
         """
         Send a submit order request to the execution service.
         """
         # Raise exception if not overridden in implementation.
-        raise NotImplementedError("Method must be implemented in the execution client.")
+        raise NotImplementedError("Method must be implemented in the subclass.")
 
     cpdef void cancel_order(self, Order order, str cancel_reason):
         """
         Send a cancel order request to the execution service.
         """
         # Raise exception if not overridden in implementation.
-        raise NotImplementedError("Method must be implemented in the execution client.")
+        raise NotImplementedError("Method must be implemented in the subclass.")
 
     cpdef void modify_order(self, Order order, Decimal new_price):
         """
         Send a modify order request to the execution service.
         """
         # Raise exception if not overridden in implementation.
-        raise NotImplementedError("Method must be implemented in the execution client.")
+        raise NotImplementedError("Method must be implemented in the subclass.")
 
     cdef void _register_order(self, Order order, GUID strategy_id):
         """

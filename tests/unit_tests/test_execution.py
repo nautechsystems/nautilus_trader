@@ -173,7 +173,7 @@ class LiveExecClientTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(order, self.strategy.order(order_id))
-        self.assertEqual(2, len(self.response_list))
+        self.assertEqual(1, len(self.response_list))
 
     def test_can_send_cancel_order_command(self):
         # Arrange
@@ -192,7 +192,7 @@ class LiveExecClientTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(order, self.strategy.order(order_id))
-        self.assertEqual(3, len(self.response_list))
+        self.assertEqual(2, len(self.response_list))
 
     def test_can_send_modify_order_command(self):
         # Arrange
@@ -214,7 +214,7 @@ class LiveExecClientTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(order, self.strategy.order(order_id))
-        self.assertEqual(3, len(self.response_list))
+        self.assertEqual(2, len(self.response_list))
 
     def test_can_send_collateral_inquiry(self):
         # Arrange
@@ -222,4 +222,4 @@ class LiveExecClientTests(unittest.TestCase):
         self.strategy.collateral_inquiry()
 
         # Assert
-        self.assertEqual(2, len(self.response_list))
+        self.assertEqual(1, len(self.response_list))
