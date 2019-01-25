@@ -55,6 +55,7 @@ cdef class TradeStrategy:
     cdef Account account
 
     cdef bint equals(self, TradeStrategy other)
+
 # -- ABSTRACT METHODS ---------------------------------------------------------------------------- #
     cpdef void on_start(self)
     cpdef void on_tick(self, Tick tick)

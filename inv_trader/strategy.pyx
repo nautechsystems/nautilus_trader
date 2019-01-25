@@ -125,8 +125,9 @@ cdef class TradeStrategy:
         """
         return f"<{str(self)} object at {id(self)}>"
 
+
 # -- ABSTRACT METHODS ---------------------------------------------------------------------------- #
-    # @abc.abstractmethod
+
     cpdef void on_start(self):
         """
         Called when the strategy is started.
@@ -134,7 +135,6 @@ cdef class TradeStrategy:
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
 
-    # @abc.abstractmethod
     cpdef void on_tick(self, Tick tick):
         """
         Called when a tick is received by the strategy.
@@ -144,7 +144,6 @@ cdef class TradeStrategy:
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
 
-    # @abc.abstractmethod
     cpdef void on_bar(self, BarType bar_type, Bar bar):
         """
         Called when a bar is received by the strategy.
@@ -155,7 +154,6 @@ cdef class TradeStrategy:
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
 
-    # @abc.abstractmethod
     cpdef void on_event(self, Event event):
         """
         Called when an event is received by the strategy.
@@ -165,7 +163,6 @@ cdef class TradeStrategy:
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
 
-    # @abc.abstractmethod
     cpdef void on_stop(self):
         """
         Called when the strategy is stopped.
@@ -173,7 +170,6 @@ cdef class TradeStrategy:
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
 
-    # @abc.abstractmethod
     cpdef void on_reset(self):
         """
         Called when the strategy is reset.
@@ -181,7 +177,9 @@ cdef class TradeStrategy:
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
 
+
 # -- DATA METHODS -------------------------------------------------------------------------------- #
+
     cpdef datetime time_now(self):
         """
         :return: The current time from the strategies internal clock (UTC). 
@@ -362,7 +360,9 @@ cdef class TradeStrategy:
 
         return self._ticks[symbol]
 
+
 # -- INDICATOR METHODS --------------------------------------------------------------------------- #
+
     cpdef register_indicator(
             self,
             BarType bar_type,
@@ -426,7 +426,9 @@ cdef class TradeStrategy:
                     initialized = False
         return initialized
 
+
 # -- ORDER MANAGEMENT METHODS -------------------------------------------------------------------- #
+
     cpdef OrderId generate_order_id(self, Symbol symbol):
         """
         Generates a unique order identifier with the given symbol.
@@ -525,7 +527,9 @@ cdef class TradeStrategy:
                 is_flat = False
         return is_flat
 
+
 # -- COMMAND METHODS ----------------------------------------------------------------------------- #
+
     cpdef void start(self):
         """
         Starts the trade strategy and calls on_start().
@@ -785,7 +789,9 @@ cdef class TradeStrategy:
         self._clock.cancel_timer(label)
         self.log.info(f"Cancelled timer for {label}.")
 
+
 # -- INTERNAL METHODS ---------------------------------------------------------------------------- #
+
     cpdef _register_data_client(self, DataClient client):
         """
         Register the strategy with the given data client.
