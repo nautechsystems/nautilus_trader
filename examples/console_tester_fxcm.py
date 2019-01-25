@@ -7,37 +7,38 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from decimal import Decimal
-
-from inv_trader.core.logger import Logger
+from inv_trader.common.logger import Logger
 from inv_trader.data import LiveDataClient
 from inv_trader.execution import LiveExecClient
 from inv_trader.model.enums import Venue, Resolution, QuoteType
 from inv_trader.model.objects import Symbol, BarType
-from examples.strategies.ema_cross import EMACrossLimitEntry
+from test_kit.strategies import EMACross
 
 AUDUSD_FXCM = Symbol('AUDUSD', Venue.FXCM)
 AUDUSD_FXCM_1_SEC_MID = BarType(AUDUSD_FXCM, 1, Resolution.SECOND, QuoteType.MID)
 
 if __name__ == "__main__":
 
-    logger = Logger(log_to_file=True)
+    logger = Logger(log_to_file=False)
     data_client = LiveDataClient(logger=logger)
     exec_client = LiveExecClient(logger=logger)
     data_client.connect()
     exec_client.connect()
 
+    data_client.update_all_instruments()
+
     instrument = data_client.get_instrument(AUDUSD_FXCM)
-    strategy = EMACrossLimitEntry(
+    strategy = EMACross(
         'AUDUSD-01',
         '001',
-        AUDUSD_FXCM,
-        5,
-        Decimal('0.00001'),
+        instrument,
         AUDUSD_FXCM_1_SEC_MID,
         100000,
         10,
         20,
+        20,
+        2.0,
+        1000,
         logger=logger)
 
     data_client.register_strategy(strategy)

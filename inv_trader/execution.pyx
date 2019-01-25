@@ -92,7 +92,7 @@ cdef class LiveExecClient(ExecutionClient):
             self._event_handler,
             logger)
 
-        self._log.info(f"ZMQ v{zmq.pyzmq_version()}")
+        self._log.info(f"ZMQ v{zmq.pyzmq_version()}.")
 
     cpdef void connect(self):
         """
