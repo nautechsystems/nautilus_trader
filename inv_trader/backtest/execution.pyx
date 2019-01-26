@@ -327,7 +327,6 @@ cdef class BacktestExecClient(ExecutionClient):
         cdef Price current_ask
         cdef Price current_bid
 
-        print(new_price)
         if order.side is OrderSide.BUY:
             current_ask = self._get_closing_ask(order.symbol)
             if order.type is OrderType.STOP_MARKET or order.type is OrderType.STOP_LIMIT or order.type is OrderType.MIT:

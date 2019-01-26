@@ -59,7 +59,7 @@ class OrderTests(unittest.TestCase):
             OrderType.LIMIT,
             100000,
             UNIX_EPOCH,
-            price=Price(1.00000, 5),
+            price=Price('1.00000'),
             time_in_force=TimeInForce.GTD,
             expire_time=None)
 
@@ -76,7 +76,7 @@ class OrderTests(unittest.TestCase):
             OrderType.MARKET,
             100000,
             UNIX_EPOCH,
-            price=Price(1.00000, 5))
+            price=Price('1.00000'))
 
     def test_stop_order_with_no_price_input_raises_exception(self):
         # Arrange
@@ -116,7 +116,7 @@ class OrderTests(unittest.TestCase):
             Label('S1_E'),
             OrderSide.BUY,
             100000,
-            Price(1.00000, 5))
+            Price('1.00000'))
 
         order2 = self.order_factory.limit(
             AUDUSD_FXCM,
@@ -124,7 +124,7 @@ class OrderTests(unittest.TestCase):
             Label('S1_E'),
             OrderSide.BUY,
             100000,
-            Price(1.00000, 5))
+            Price('1.00000'))
 
         order3 = self.order_factory.limit(
             AUDUSD_FXCM,
@@ -132,7 +132,7 @@ class OrderTests(unittest.TestCase):
             Label('S1_E'),
             OrderSide.BUY,
             100000,
-            Price(1.000001, 5))
+            Price('1.00000'))
 
         order4 = self.order_factory.limit(
             AUDUSD_FXCM,
@@ -140,7 +140,7 @@ class OrderTests(unittest.TestCase):
             Label('S1_E'),
             OrderSide.BUY,
             100000,
-            Price(1.000005, 5))
+            Price('1.00001'))
 
         # Assert
         self.assertEqual(Price('1.00000'), order1.price)
@@ -173,7 +173,7 @@ class OrderTests(unittest.TestCase):
             Label('SCALPER-01'),
             OrderSide.BUY,
             100000,
-            Price(1.00000, 5))
+            Price('1.00000'))
 
         # Assert
         self.assertEqual(OrderType.LIMIT, order.type)
@@ -191,7 +191,7 @@ class OrderTests(unittest.TestCase):
             Label('SCALPER-01'),
             OrderSide.BUY,
             100000,
-            Price(1.00000, 5),
+            Price('1.00000'),
             TimeInForce.GTD,
             UNIX_EPOCH)
 
@@ -214,7 +214,7 @@ class OrderTests(unittest.TestCase):
             Label('SCALPER-01'),
             OrderSide.BUY,
             100000,
-            Price(1.00000, 5))
+            Price('1.00000'))
 
         # Assert
         self.assertEqual(OrderType.STOP_MARKET, order.type)
@@ -231,7 +231,7 @@ class OrderTests(unittest.TestCase):
             Label('SCALPER-01'),
             OrderSide.BUY,
             100000,
-            Price(1.00000, 5))
+            Price('1.00000'))
 
         # Assert
         self.assertEqual(OrderType.STOP_LIMIT, order.type)
@@ -247,7 +247,7 @@ class OrderTests(unittest.TestCase):
             Label('SCALPER-01'),
             OrderSide.BUY,
             100000,
-            Price(1.00000, 5))
+            Price('1.00000'))
 
         # Assert
         self.assertEqual(OrderType.MIT, order.type)
@@ -543,7 +543,7 @@ class OrderTests(unittest.TestCase):
             Label('SCALPER-01'),
             OrderSide.BUY,
             100000,
-            Price(1.00000, 5),
+            Price('1.00000'),
             TimeInForce.DAY,
             expire_time=None)
 
@@ -578,7 +578,7 @@ class OrderTests(unittest.TestCase):
             Label('SCALPER-01'),
             OrderSide.BUY,
             100000,
-            Price(1.00000, 5),
+            Price('1.00000'),
             TimeInForce.DAY,
             expire_time=None)
 
@@ -614,7 +614,7 @@ class OrderTests(unittest.TestCase):
             Label('SCALPER-01'),
             OrderSide.BUY,
             100000,
-            Price(1.00000, 5),
+            Price('1.00000'),
             TimeInForce.DAY,
             expire_time=None)
 

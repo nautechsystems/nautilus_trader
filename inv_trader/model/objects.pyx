@@ -100,34 +100,36 @@ cdef class Price:
         Initializes a new instance of the Price class.
 
         :param value: The value of the price (> 0).
+        :raises ValueError: If the precision is negative (< 0).
         """
-        if isinstance(value, str):
+        cdef type value_type = type(value)
+        if value_type is str:
             self.value = Decimal(value)
             self.precision = abs(self.value.as_tuple().exponent)
 
-        elif isinstance(value, float):
+        elif value_type is float:
             self.value = Decimal(_get_decimal_str(value, precision))
             self.precision = precision
 
-        elif isinstance(value, Decimal):
+        elif value_type is Decimal:
             self.value = value
             self.precision = abs(self.value.as_tuple().exponent)
         else:
             raise TypeError()
 
-        assert(self.value > 0)
+        Precondition.positive(self.value, 'value')
 
     def __eq__(self, Price other) -> bool:
         """
         Override the default equality comparison.
         """
-        return self.value == other.value
+        return self.value == other.value and self.precision == other.precision
 
     def __ne__(self, Price other) -> bool:
         """
         Override the default not-equals comparison.
         """
-        return self.value != other.value
+        return self.value != other.value or self.precision != other.precision
 
     def __str__(self) -> str:
         """
@@ -160,24 +162,26 @@ cdef class Price:
         return self.value >= other.value
 
     def __add__(self, other) -> Decimal:
-        if isinstance(other, float):
-            return Decimal(_get_decimal_str(other + float(self.value), self.precision))
-        elif isinstance(other, Decimal):
-            return Decimal(_get_decimal_str(float(other) + float(self.value), self.precision))
-        elif isinstance(other, Price):
-            return Decimal(_get_decimal_str(other.as_float() + float(self.value), self.precision))
+        cdef type other_type = type(other)
+        if other_type is float:
+            return Decimal(_get_decimal_str(float(self.value) + other, self.precision))
+        elif other_type is Decimal:
+            return Decimal(_get_decimal_str(float(self.value) + float(other), self.precision))
+        elif other_type is Price:
+            return Decimal(_get_decimal_str(float(self.value) + other.as_float(), self.precision))
         else:
             raise NotImplementedError(f"Cannot add {type(other)} to a price.")
 
     def __sub__(self, other) -> Decimal:
-        if isinstance(other, float):
-            return Decimal(_get_decimal_str(other - float(self.value), self.precision))
-        elif isinstance(other, Decimal):
-            return Decimal(_get_decimal_str(float(other) - float(self.value), self.precision))
-        elif isinstance(other, Price):
-            return Decimal(_get_decimal_str(other.as_float() - float(self.value), self.precision))
+        cdef type other_type = type(other)
+        if other_type is float:
+            return Decimal(_get_decimal_str(float(self.value) - other, self.precision))
+        elif other_type is Decimal:
+            return Decimal(_get_decimal_str(float(self.value) - float(other), self.precision))
+        elif other_type is Price:
+            return Decimal(_get_decimal_str(float(self.value) - other.as_float(), self.precision))
         else:
-            raise NotImplementedError(f"Cannot add {type(other)} to a price.")
+            raise NotImplementedError(f"Cannot subtract {type(other)} from a price.")
 
     cpdef float as_float(self):
         """

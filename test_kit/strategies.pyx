@@ -286,9 +286,9 @@ cdef class EMACross(TradeStrategy):
                 # SET TRAILING STOP
                 stop_side = self.get_opposite_side(event.order_side)
                 if stop_side is OrderSide.BUY:
-                    stop_price = self.last_bar(self.bar_type).high
+                    stop_price = Price(self.last_bar(self.bar_type).high + (self.atr.value * self.SL_atr_multiple))
                 else:
-                    stop_price = self.last_bar(self.bar_type).low
+                    stop_price = Price(self.last_bar(self.bar_type).low - (self.atr.value * self.SL_atr_multiple))
 
                 stop_order = self.order_factory.stop_market(
                     self.symbol,

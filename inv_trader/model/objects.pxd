@@ -17,8 +17,6 @@ from inv_trader.enums.venue cimport Venue
 from inv_trader.enums.resolution cimport Resolution
 from inv_trader.enums.quote_type cimport QuoteType
 
-Decimal = object
-
 
 cdef class Symbol:
     """
@@ -37,6 +35,7 @@ cdef class Price:
     cdef readonly object value
     cdef readonly int precision
     cpdef float as_float(self)
+
 
 cdef class Tick:
     """

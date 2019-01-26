@@ -159,7 +159,8 @@ cdef class BacktestEngine:
             self.exec_client,
             self.test_clock)
 
-        self.log.info(f'Initialized in {self.clock.get_elapsed(self.created_time)}s.')
+        self.time_to_initialize = self.clock.get_elapsed(self.created_time)
+        self.log.info(f'Initialized in {round(self.time_to_initialize, 2)}s.')
 
     cpdef void run(
             self,
@@ -226,7 +227,8 @@ cdef class BacktestEngine:
         self.log.info("#----------------------------------------------------------------------------------------------------#")
         self.log.info("#-- BACKTEST DIAGNOSTICS ----------------------------------------------------------------------------#")
         self.log.info("#----------------------------------------------------------------------------------------------------#")
-        self.log.info(f"Ran backtest in {self.clock.get_elapsed(run_started)}s.")
+        self.log.info(f"Initialized in {round(self.time_to_initialize, 2)}s.")
+        self.log.info(f"Ran backtest in {round(self.clock.get_elapsed(run_started), 2)}s.")
         self.log.info(f"Time-step iterations: {self.exec_client.iteration}")
         self.log.info("#----------------------------------------------------------------------------------------------------#")
 
