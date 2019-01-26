@@ -11,11 +11,11 @@
 
 import msgpack
 
+from decimal import Decimal
 from cpython.datetime cimport datetime
 from uuid import UUID
 
 from inv_trader.core.precondition cimport Precondition
-from inv_trader.core.decimal cimport Decimal
 from inv_trader.commands cimport Command, OrderCommand, SubmitOrder, CancelOrder, ModifyOrder
 from inv_trader.commands cimport CollateralInquiry
 from inv_trader.model.enums import Broker, OrderSide, OrderType, TimeInForce, CurrencyCode

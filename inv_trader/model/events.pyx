@@ -12,7 +12,6 @@
 from cpython.datetime cimport datetime
 
 from inv_trader.core.precondition cimport Precondition
-from inv_trader.core.decimal cimport Decimal
 from inv_trader.enums.brokerage cimport Broker
 from inv_trader.enums.currency_code cimport CurrencyCode
 from inv_trader.enums.order_side cimport OrderSide
@@ -84,12 +83,12 @@ cdef class AccountEvent(Event):
                  Broker broker,
                  AccountNumber account_number,
                  CurrencyCode currency,
-                 Decimal cash_balance,
-                 Decimal cash_start_day,
-                 Decimal cash_activity_day,
-                 Decimal margin_used_liquidation,
-                 Decimal margin_used_maintenance,
-                 Decimal margin_ratio,
+                 cash_balance,
+                 cash_start_day,
+                 cash_activity_day,
+                 margin_used_liquidation,
+                 margin_used_maintenance,
+                 margin_ratio,
                  str margin_call_status,
                  GUID event_id,
                  datetime event_timestamp):
@@ -276,7 +275,7 @@ cdef class OrderWorking(OrderEvent):
                  OrderSide order_side,
                  OrderType order_type,
                  int quantity,
-                 Decimal price,
+                 price,
                  TimeInForce time_in_force,
                  datetime working_time,
                  GUID event_id,
@@ -423,7 +422,7 @@ cdef class OrderModified(OrderEvent):
                  Symbol symbol,
                  OrderId order_id,
                  OrderId broker_order_id,
-                 Decimal modified_price,
+                 modified_price,
                  datetime modified_time,
                  GUID event_id,
                  datetime event_timestamp):
@@ -459,7 +458,7 @@ cdef class OrderFilled(OrderEvent):
                  ExecutionTicket execution_ticket,
                  OrderSide order_side,
                  int filled_quantity,
-                 Decimal average_price,
+                 average_price,
                  datetime execution_time,
                  GUID event_id,
                  datetime event_timestamp):
@@ -505,7 +504,7 @@ cdef class OrderPartiallyFilled(OrderEvent):
                  OrderSide order_side,
                  int filled_quantity,
                  int leaves_quantity,
-                 Decimal average_price,
+                 average_price,
                  datetime execution_time,
                  GUID event_id,
                  datetime event_timestamp):

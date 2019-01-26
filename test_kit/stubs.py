@@ -7,9 +7,9 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
 from datetime import datetime, timedelta, timezone
 
-from inv_trader.core.decimal import Decimal
 from inv_trader.model.enums import Venue, Resolution, QuoteType, CurrencyCode, SecurityType
 from inv_trader.model.objects import Symbol, BarType, Instrument
 # Unix epoch is the UTC time at 00:00:00 on 1/1/1970
@@ -43,9 +43,9 @@ class TestStubs:
                           CurrencyCode.USD,
                           SecurityType.FOREX,
                           tick_precision=5,
-                          tick_size=Decimal(0.00001, 5),
-                          tick_value=Decimal(0.01, 2),
-                          target_direct_spread=Decimal(0.00001, 5),
+                          tick_size=Decimal('0.00001'),
+                          tick_value=Decimal('0.01'),
+                          target_direct_spread=Decimal('0.00001'),
                           round_lot_size=1000,
                           contract_size=1,
                           min_stop_distance_entry=0,
@@ -54,9 +54,9 @@ class TestStubs:
                           min_limit_distance=0,
                           min_trade_size=1,
                           max_trade_size=50000000,
-                          margin_requirement=Decimal(0),
-                          rollover_interest_buy=Decimal(0),
-                          rollover_interest_sell=Decimal(0),
+                          margin_requirement=Decimal(),
+                          rollover_interest_buy=Decimal(),
+                          rollover_interest_sell=Decimal(),
                           timestamp=UNIX_EPOCH)
 
     @staticmethod
@@ -66,20 +66,20 @@ class TestStubs:
                           CurrencyCode.JPY,
                           SecurityType.FOREX,
                           tick_precision=3,
-                          tick_size=Decimal(0.001, 3),
-                          tick_value=Decimal(0.01, 2),
-                          target_direct_spread=Decimal(0.001, 3),
+                          tick_size=Decimal('0.001'),
+                          tick_value=Decimal('0.01'),
+                          target_direct_spread=Decimal('0.001'),
                           round_lot_size=1000,
                           contract_size=1,
-                          min_stop_distance_entry=Decimal(0),
-                          min_limit_distance_entry=Decimal(0),
-                          min_stop_distance=Decimal(0),
-                          min_limit_distance=Decimal(0),
+                          min_stop_distance_entry=Decimal(),
+                          min_limit_distance_entry=Decimal(),
+                          min_stop_distance=Decimal(),
+                          min_limit_distance=Decimal(),
                           min_trade_size=1,
                           max_trade_size=50000000,
-                          margin_requirement=Decimal(0),
-                          rollover_interest_buy=Decimal(0),
-                          rollover_interest_sell=Decimal(0),
+                          margin_requirement=Decimal(),
+                          rollover_interest_buy=Decimal(),
+                          rollover_interest_sell=Decimal(),
                           timestamp=UNIX_EPOCH)
 
     @staticmethod

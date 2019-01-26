@@ -13,7 +13,6 @@ from cpython.datetime cimport datetime
 from typing import Dict
 
 from inv_trader.core.precondition cimport Precondition
-from inv_trader.core.decimal cimport Decimal
 from inv_trader.common.clock cimport Clock
 from inv_trader.common.guid cimport GuidFactory
 from inv_trader.common.logger cimport Logger, LoggerAdapter
@@ -39,7 +38,7 @@ cdef class ExecutionClient:
         Initializes a new instance of the ExecutionClient class.
 
         :param clock: The internal clock.
-        :param clock: The internal GUID factory.
+        :param guid_factory: The internal GUID factory.
         :param logger: The internal logger.
         """
         self._clock = clock
@@ -50,8 +49,8 @@ cdef class ExecutionClient:
             self._log = LoggerAdapter(f"ExecClient", logger)
         self._log.info("Initialized.")
         self.account = Account()
-        self._registered_strategies = {}  # type: Dict[GUID, TradeStrategy]
-        self._order_index = {}            # type: Dict[OrderId, GUID]
+        self._registered_strategies = {}   # type: Dict[GUID, TradeStrategy]
+        self._order_strategy_index = {}    # type: Dict[OrderId, GUID]
 
     cpdef datetime time_now(self):
         """
@@ -63,7 +62,7 @@ cdef class ExecutionClient:
         """
         Register the given strategy with the execution client.
 
-        :raises ValueError: If the strategy is already registered (must have a unique UUID id).
+        :raises ValueError: If the strategy is already registered (must have a unique id).
         """
         Precondition.not_in(strategy.id, self._registered_strategies, 'strategy', 'registered_strategies')
 
@@ -107,7 +106,7 @@ cdef class ExecutionClient:
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void modify_order(self, Order order, Decimal new_price):
+    cpdef void modify_order(self, Order order, new_price):
         """
         Send a modify order request to the execution service.
         """
@@ -122,9 +121,9 @@ cdef class ExecutionClient:
         :param strategy_id: The strategy id to register with the order.
         :raises ValueError: If the order.id is already in the order_index.
         """
-        Precondition.is_in(order.id, self._order_index, 'order.id', 'order_index')
+        Precondition.not_in(order.id, self._order_strategy_index, 'order.id', 'order_index')
 
-        self._order_index[order.id] = strategy_id
+        self._order_strategy_index[order.id] = strategy_id
 
     cdef void _on_event(self, Event event):
         """
@@ -132,13 +131,15 @@ cdef class ExecutionClient:
         """
         self._log.debug(f"Received {event}")
 
+        cdef GUID strategy_id
+
         if isinstance(event, OrderEvent):
-            if event.order_id not in self._order_index:
+            if event.order_id not in self._order_strategy_index:
                 self._log.warning(
                     f"The given event order id {event.order_id} was not contained in the order index.")
                 return
 
-            strategy_id = self._order_index[event.order_id]
+            strategy_id = self._order_strategy_index[event.order_id]
             self._registered_strategies[strategy_id]._update_events(event)  # Access to protected member ok here
 
         elif isinstance(event, AccountEvent):

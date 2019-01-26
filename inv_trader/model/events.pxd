@@ -7,11 +7,10 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-# cython: language_level=3, boundscheck=False, wraparound=False
+# cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
 from cpython.datetime cimport datetime
 
-from inv_trader.core.decimal cimport Decimal
 from inv_trader.enums.brokerage cimport Broker
 from inv_trader.enums.currency_code cimport CurrencyCode
 from inv_trader.enums.order_side cimport OrderSide
@@ -38,12 +37,12 @@ cdef class AccountEvent(Event):
     cdef readonly Broker broker
     cdef readonly AccountNumber account_number
     cdef readonly CurrencyCode currency
-    cdef readonly Decimal cash_balance
-    cdef readonly Decimal cash_start_day
-    cdef readonly Decimal cash_activity_day
-    cdef readonly Decimal margin_used_liquidation
-    cdef readonly Decimal margin_used_maintenance
-    cdef readonly Decimal margin_ratio
+    cdef readonly object cash_balance
+    cdef readonly object cash_start_day
+    cdef readonly object cash_activity_day
+    cdef readonly object margin_used_liquidation
+    cdef readonly object margin_used_maintenance
+    cdef readonly object margin_ratio
     cdef readonly str margin_call_status
 
 
@@ -86,7 +85,7 @@ cdef class OrderWorking(OrderEvent):
     cdef readonly OrderSide order_side
     cdef readonly OrderType order_type
     cdef readonly int quantity
-    cdef readonly Decimal price
+    cdef readonly object price
     cdef readonly TimeInForce time_in_force
     cdef readonly datetime working_time
     cdef readonly datetime expire_time
@@ -120,7 +119,7 @@ cdef class OrderModified(OrderEvent):
     Represents an event where an order has been modified with the broker.
     """
     cdef readonly OrderId broker_order_id
-    cdef readonly Decimal modified_price
+    cdef readonly object modified_price
     cdef readonly datetime modified_time
 
 
@@ -132,7 +131,7 @@ cdef class OrderFilled(OrderEvent):
     cdef readonly ExecutionTicket execution_ticket
     cdef readonly OrderSide order_side
     cdef readonly int filled_quantity
-    cdef readonly Decimal average_price
+    cdef readonly object average_price
     cdef readonly datetime execution_time
 
 
@@ -145,7 +144,7 @@ cdef class OrderPartiallyFilled(OrderEvent):
     cdef readonly OrderSide order_side
     cdef readonly int filled_quantity
     cdef readonly int leaves_quantity
-    cdef readonly Decimal average_price
+    cdef readonly object average_price
     cdef readonly datetime execution_time
 
 

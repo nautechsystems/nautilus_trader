@@ -7,11 +7,10 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-# cython: language_level=3, boundscheck=False
+# cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
 from cpython.datetime cimport datetime
 
-from inv_trader.core.decimal cimport Decimal
 from inv_trader.common.clock cimport Clock
 from inv_trader.model.objects cimport Symbol
 from inv_trader.model.events cimport OrderEvent
@@ -42,12 +41,12 @@ cdef class Order:
     cdef readonly OrderType type
     cdef readonly int quantity
     cdef readonly datetime timestamp
-    cdef readonly Decimal price
+    cdef readonly object price
     cdef readonly TimeInForce time_in_force
     cdef readonly datetime expire_time
     cdef readonly int filled_quantity
-    cdef readonly Decimal average_price
-    cdef readonly Decimal slippage
+    cdef readonly object average_price
+    cdef readonly object slippage
     cdef readonly OrderStatus status
     cdef readonly int event_count
     cdef readonly OrderEvent last_event
@@ -98,7 +97,7 @@ cdef class OrderFactory:
             Label label,
             OrderSide order_side,
             int quantity,
-            Decimal price,
+            price,
             TimeInForce time_in_force=*,
             datetime expire_time=*)
 
@@ -109,7 +108,7 @@ cdef class OrderFactory:
             Label label,
             OrderSide order_side,
             int quantity,
-            Decimal price,
+            price,
             TimeInForce time_in_force=*,
             datetime expire_time=*)
 
@@ -120,7 +119,7 @@ cdef class OrderFactory:
             Label label,
             OrderSide order_side,
             int quantity,
-            Decimal price,
+            price,
             TimeInForce time_in_force=*,
             datetime expire_time=*)
 
@@ -131,7 +130,7 @@ cdef class OrderFactory:
             Label label,
             OrderSide order_side,
             int quantity,
-            Decimal price,
+            price,
             TimeInForce time_in_force=*,
             datetime expire_time=*)
 

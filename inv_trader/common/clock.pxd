@@ -7,7 +7,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-# cython: language_level=3, boundscheck=False
+# cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
 from cpython.datetime cimport datetime, timedelta
 from inv_trader.model.identifiers cimport Label

@@ -7,10 +7,8 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-# cython: language_level=3, boundscheck=False, wraparound=False
-
-from inv_trader.core.decimal cimport Decimal
+# cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
 
-cpdef Decimal money_zero()
-cpdef Decimal money(float amount)
+cpdef object money_zero()
+cpdef object money(float amount)

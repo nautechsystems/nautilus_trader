@@ -11,8 +11,9 @@
 
 import zmq
 
+from decimal import Decimal
+
 from inv_trader.core.precondition cimport Precondition
-from inv_trader.core.decimal cimport Decimal
 from inv_trader.common.clock cimport Clock, LiveClock
 from inv_trader.common.guid cimport GuidFactory, LiveGuidFactory
 from inv_trader.common.logger cimport Logger
@@ -159,7 +160,7 @@ cdef class LiveExecClient(ExecutionClient):
         self._commands_worker.send(message)
         self._log.debug(f"Sent {command}")
 
-    cpdef void modify_order(self, Order order, Decimal new_price):
+    cpdef void modify_order(self, Order order, new_price):
         """
         Send a modify order command to the execution service with the given
         order and new_price.

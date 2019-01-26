@@ -12,13 +12,14 @@
 import inspect
 import pandas as pd
 
+from decimal import *
 from cpython.datetime cimport datetime
 from typing import Callable, List
 from pandas.core.frame import DataFrame
 
+#from inv_trader.core.decimal cimport Decimal
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.model.objects cimport Bar, DataBar
-from inv_trader.model.price cimport price
 from inv_indicators.base.indicator import Indicator
 
 cdef str POINT = 'point'
@@ -150,10 +151,11 @@ cdef class BarBuilder:
         :param timestamp: The timestamp for the bar.
         :return: The built Bar.
         """
-        return Bar(price(values[0], self._decimal_precision),
-                   price(values[1], self._decimal_precision),
-                   price(values[2], self._decimal_precision),
-                   price(values[3], self._decimal_precision),
+        getcontext().prec = self._decimal_precision
+        return Bar(Decimal(values[0]),
+                   Decimal(values[1]),
+                   Decimal(values[2]),
+                   Decimal(values[3]),
                    int(values[4] * self._volume_multiple),
                    timestamp)
 

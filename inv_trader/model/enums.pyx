@@ -7,7 +7,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-# cython: language_level=3, boundscheck=False, wraparound=False
+# cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
 from inv_trader.enums.brokerage import Broker
 from inv_trader.enums.currency_code import CurrencyCode

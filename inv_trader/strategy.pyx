@@ -16,7 +16,6 @@ from collections import deque
 from typing import Callable, Dict, List, Deque
 
 from inv_trader.core.precondition cimport Precondition
-from inv_trader.core.decimal cimport Decimal
 from inv_trader.enums.order_side cimport OrderSide
 from inv_trader.enums.market_position cimport MarketPosition
 from inv_trader.common.clock cimport Clock, LiveClock
@@ -604,7 +603,7 @@ cdef class TradeStrategy:
         self.log.info(f"Submitting {order}")
         self._exec_client.submit_order(order, self.id)
 
-    cpdef modify_order(self, Order order, Decimal new_price):
+    cpdef modify_order(self, Order order, new_price):
         """
         Send a modify order command for the given order with the given new price
         to the execution service.

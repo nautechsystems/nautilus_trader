@@ -9,9 +9,9 @@
 
 import unittest
 
+from decimal import Decimal, getcontext
 from datetime import datetime, timezone
 
-from inv_trader.core.decimal import Decimal
 from inv_trader.model.objects import Bar, DataBar
 from inv_trader.tools import BarBuilder, IndicatorUpdater
 from inv_indicators.average.ema import ExponentialMovingAverage
@@ -176,11 +176,12 @@ class IndicatorUpdaterTests(unittest.TestCase):
         # Arrange
         ema = ExponentialMovingAverage(20)
         updater = IndicatorUpdater(ema)
+        getcontext().prec = 5
         bar = Bar(
-            Decimal('1.00001'),
-            Decimal('1.00004'),
-            Decimal('1.00002'),
-            Decimal('1.00003'),
+            Decimal(1.00001),
+            Decimal(1.00004),
+            Decimal(1.00002),
+            Decimal(1.00003),
             1000,
             datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc))
 
@@ -195,11 +196,12 @@ class IndicatorUpdaterTests(unittest.TestCase):
         # Arrange
         intrinsic = IntrinsicNetwork(0.2, 0.2)
         updater = IndicatorUpdater(intrinsic, input_method=intrinsic.update_mid)
+        getcontext().prec = 5
         bar = Bar(
-            Decimal(1.00001, 5),
-            Decimal('1.00004'),
-            Decimal('1.00002'),
-            Decimal('1.00003'),
+            Decimal(1.00001),
+            Decimal(1.00004),
+            Decimal(1.00002),
+            Decimal(1.00003),
             1000,
             datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc))
 

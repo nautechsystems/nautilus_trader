@@ -12,20 +12,20 @@
 import uuid
 import zmq
 
+from decimal import Decimal
 from threading import Thread
 from typing import Callable
 from zmq import Context
 
 from cpython.datetime cimport datetime
 
-from inv_trader.core.decimal cimport Decimal
 from inv_trader.common.execution cimport ExecutionClient
 from inv_trader.common.clock cimport TestClock
 from inv_trader.common.guid cimport TestGuidFactory
 from inv_trader.common.logger cimport Logger
 from inv_trader.model.price import price
 from inv_trader.model.order cimport Order
-from inv_trader.model.events cimport Event, OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
+from inv_trader.model.events cimport OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
 from inv_trader.model.events cimport OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
 from inv_trader.model.events cimport OrderFilled, OrderPartiallyFilled
 from inv_trader.model.identifiers cimport GUID, OrderId, ExecutionId, ExecutionTicket
@@ -269,7 +269,7 @@ cdef class MockExecClient(ExecutionClient):
 
         self._on_event(cancelled)
 
-    cpdef void modify_order(self, Order order, Decimal new_price):
+    cpdef void modify_order(self, Order order, new_price):
         """
         Send a modify order command to the mock execution service.
         """
@@ -295,7 +295,7 @@ cdef class MockExecClient(ExecutionClient):
         Fills the last order held by the execution service.
         """
         cdef Order order = self._working_orders.pop(-1)
-        cdef Decimal filled_price = price(1.00000, 5) if order.price is None else order.price
+        filled_price = price(1.00000, 5) if order.price is None else order.price
 
         cdef OrderFilled filled = OrderFilled(
             order.symbol,
