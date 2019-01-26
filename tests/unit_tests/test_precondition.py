@@ -9,7 +9,8 @@
 
 import unittest
 
-from inv_trader.core.decimal import Decimal
+from decimal import Decimal
+
 from inv_trader.core.precondition import PyPrecondition
 from inv_trader.model.identifiers import OrderId
 

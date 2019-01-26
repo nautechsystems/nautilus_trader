@@ -10,9 +10,9 @@
 import pandas as pd
 import unittest
 
+from decimal import Decimal
 from datetime import datetime, timezone, timedelta
 
-from inv_trader.core.decimal import Decimal
 from inv_trader.common.clock import TestClock
 from inv_trader.common.guid import TestGuidFactory
 from inv_trader.common.logger import Logger

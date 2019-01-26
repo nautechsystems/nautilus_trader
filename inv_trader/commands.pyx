@@ -12,7 +12,6 @@
 from cpython.datetime cimport datetime
 
 from inv_trader.core.precondition cimport Precondition
-from inv_trader.core.decimal cimport Decimal
 from inv_trader.model.identifiers cimport GUID
 from inv_trader.model.order cimport Order
 
@@ -155,7 +154,7 @@ cdef class ModifyOrder(OrderCommand):
 
     def __init__(self,
                  Order order,
-                 Decimal modified_price,
+                 modified_price,
                  GUID command_id,
                  datetime command_timestamp):
         """

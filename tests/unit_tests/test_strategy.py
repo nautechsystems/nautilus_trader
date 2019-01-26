@@ -12,9 +12,9 @@ import uuid
 import datetime
 import time
 
+from decimal import Decimal
 from datetime import datetime, timezone, timedelta
 
-from inv_trader.core.decimal import Decimal
 from inv_trader.common.clock import TestClock
 from inv_trader.model.enums import Venue, Resolution, QuoteType, OrderSide, TimeInForce, OrderStatus
 from inv_trader.model.enums import MarketPosition

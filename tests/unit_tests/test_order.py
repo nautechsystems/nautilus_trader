@@ -10,7 +10,8 @@
 import unittest
 import uuid
 
-from inv_trader.core.decimal import Decimal
+from decimal import Decimal
+
 from inv_trader.model.enums import Venue, OrderSide, OrderType, OrderStatus, TimeInForce
 from inv_trader.model.objects import Symbol
 from inv_trader.model.price import price

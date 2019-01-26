@@ -16,7 +16,6 @@ from inv_trader.enums.market_position cimport MarketPosition, market_position_st
 from inv_trader.enums.order_side cimport OrderSide
 from inv_trader.model.objects cimport Symbol
 from inv_trader.model.events cimport OrderEvent
-from inv_trader.model.money cimport money_zero, money
 from inv_trader.model.identifiers cimport PositionId, ExecutionId, ExecutionTicket
 
 

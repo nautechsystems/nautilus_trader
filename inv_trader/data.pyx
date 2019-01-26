@@ -13,11 +13,11 @@ import re
 import iso8601
 import time
 
+from decimal import Decimal
 from cpython.datetime cimport datetime
 from redis import StrictRedis, ConnectionError
 from typing import List, Callable
 
-from inv_trader.core.decimal cimport Decimal
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.common.clock cimport Clock, LiveClock
 from inv_trader.common.logger cimport Logger

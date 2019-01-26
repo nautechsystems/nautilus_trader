@@ -93,7 +93,7 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
                                 config=config)
 
         start = datetime(2013, 1, 1, 22, 0, 0, 0, tzinfo=timezone.utc)
-        stop = datetime(2013, 3, 10, 0, 0, 0, 0, tzinfo=timezone.utc)
+        stop = datetime(2013, 6, 30, 0, 0, 0, 0, tzinfo=timezone.utc)
 
         cProfile.runctx('engine.run(start, stop)', globals(), locals(), 'Profile.prof')
         s = pstats.Stats("Profile.prof")
@@ -106,5 +106,10 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 49193280 function calls (49189091 primitive calls) in 18.735 seconds
         # 42052320 function calls (42048131 primitive calls) in 17.642 seconds
         # 42098237 function calls (42094048 primitive calls) in 17.941 seconds
+        # 39091577 function calls (39087388 primitive calls) in 16.455 seconds (removed price convenience method from build bars)
+        #  6966767 function calls  (6966754 primitive calls) in  3.742 seconds (removed custom decimal type)
+        # --------------------------------------------------------------------
+        # to datetime(2013, 6, 30, 0, 0, 0, 0, tzinfo=timezone.utc)
+        # 13535519 function calls (13535506 primitive calls) in 5.903 seconds
 
         self.assertTrue(True)

@@ -12,7 +12,6 @@
 from datetime import timedelta
 from typing import Dict
 
-from inv_trader.core.decimal cimport Decimal
 from inv_trader.common.clock cimport Clock, LiveClock
 from inv_trader.common.logger cimport Logger
 from inv_trader.enums.order_side cimport OrderSide
@@ -134,9 +133,9 @@ cdef class EMACross(TradeStrategy):
     cdef readonly BarType bar_type
     cdef readonly int position_size
     cdef readonly int tick_precision
-    cdef readonly Decimal entry_buffer
+    cdef readonly object entry_buffer
     cdef readonly float SL_atr_multiple
-    cdef readonly Decimal SL_buffer
+    cdef readonly object SL_buffer
     cdef readonly object fast_ema
     cdef readonly object slow_ema
     cdef readonly object atr
@@ -265,13 +264,13 @@ cdef class EMACross(TradeStrategy):
 
         for order_id, order in self.stop_loss_orders.items():
             if order.side is OrderSide.SELL:
-                temp_price = price(self.last_bar(self.bar_type).low
+                temp_price = price(float(self.last_bar(self.bar_type).low)
                                    - self.atr.value * self.SL_atr_multiple,
                                    self.tick_precision)
                 if order.price < temp_price:
                     self.modify_order(order, temp_price)
             elif order.side is OrderSide.BUY:
-                temp_price = price(self.last_bar(self.bar_type).high
+                temp_price = price(float(self.last_bar(self.bar_type).high)
                                    + self.atr.value * self.SL_atr_multiple,
                                    self.tick_precision)
                 if order.price > temp_price:
@@ -292,11 +291,11 @@ cdef class EMACross(TradeStrategy):
                 # SET TRAILING STOP
                 stop_side = self.get_opposite_side(event.order_side)
                 if stop_side is OrderSide.BUY:
-                    stop_price = price(self.last_bar(self.bar_type).high
+                    stop_price = price(float(self.last_bar(self.bar_type).high)
                                        + self.atr.value * self.SL_atr_multiple,
                                        self.tick_precision)
                 else:
-                    stop_price = price(self.last_bar(self.bar_type).low
+                    stop_price = price(float(self.last_bar(self.bar_type).low)
                                        - self.atr.value * self.SL_atr_multiple,
                                        self.tick_precision)
 

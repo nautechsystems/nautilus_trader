@@ -11,7 +11,6 @@
 
 from cpython.datetime cimport datetime, timedelta
 
-from inv_trader.core.decimal cimport Decimal
 from inv_trader.common.clock cimport Clock
 from inv_trader.common.logger cimport Logger, LoggerAdapter
 from inv_trader.common.execution cimport ExecutionClient
@@ -108,7 +107,7 @@ cdef class TradeStrategy:
     cpdef cancel_timer(self, Label label)
     cpdef collateral_inquiry(self)
     cpdef submit_order(self, Order order, PositionId position_id)
-    cpdef modify_order(self, Order order, Decimal new_price)
+    cpdef modify_order(self, Order order, new_price)
     cpdef cancel_order(self, Order order, str cancel_reason)
     cpdef cancel_all_orders(self, str cancel_reason)
     cpdef flatten_position(self, PositionId position_id)

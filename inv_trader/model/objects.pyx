@@ -11,7 +11,6 @@
 
 from cpython.datetime cimport datetime
 
-from inv_trader.core.decimal cimport Decimal
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.enums.venue cimport Venue, venue_string
 from inv_trader.enums.resolution cimport Resolution, resolution_string
@@ -93,8 +92,8 @@ cdef class Tick:
 
     def __init__(self,
                  Symbol symbol,
-                 Decimal bid,
-                 Decimal ask,
+                 object bid,
+                 object ask,
                  datetime timestamp):
         """
         Initializes a new instance of the Tick class.
@@ -237,10 +236,10 @@ cdef class Bar:
     """
 
     def __init__(self,
-                 Decimal open_price,
-                 Decimal high_price,
-                 Decimal low_price,
-                 Decimal close_price,
+                 object open_price,
+                 object high_price,
+                 object low_price,
+                 object close_price,
                  long volume,
                  datetime timestamp,
                  bint checked=False):
@@ -390,9 +389,9 @@ cdef class Instrument:
                  CurrencyCode quote_currency,
                  SecurityType security_type,
                  int tick_precision,
-                 Decimal tick_size,
-                 Decimal tick_value,
-                 Decimal target_direct_spread,
+                 object tick_size,
+                 object tick_value,
+                 object target_direct_spread,
                  int round_lot_size,
                  int contract_size,
                  int min_stop_distance_entry,
@@ -401,9 +400,9 @@ cdef class Instrument:
                  int min_limit_distance,
                  int min_trade_size,
                  int max_trade_size,
-                 Decimal margin_requirement,
-                 Decimal rollover_interest_buy,
-                 Decimal rollover_interest_sell,
+                 object margin_requirement,
+                 object rollover_interest_buy,
+                 object rollover_interest_sell,
                  datetime timestamp):
         """
         Initializes a new instance of the Instrument class.

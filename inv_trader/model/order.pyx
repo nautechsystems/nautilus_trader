@@ -10,10 +10,10 @@
 # cython: language_level=3, boundscheck=False
 
 from cpython.datetime cimport datetime
+from decimal import Decimal
 from typing import Dict, List
 
 from inv_trader.core.precondition cimport Precondition
-from inv_trader.core.decimal cimport Decimal
 from inv_trader.common.clock cimport Clock, LiveClock
 from inv_trader.enums.order_side cimport OrderSide, order_side_string
 from inv_trader.enums.order_type cimport OrderType, order_type_string
@@ -47,7 +47,7 @@ cdef class Order:
                  OrderType order_type,
                  int quantity,
                  datetime timestamp,
-                 Decimal price=None,
+                 price=None,
                  TimeInForce time_in_force=TimeInForce.DAY,
                  datetime expire_time=None):
         """
@@ -352,7 +352,7 @@ cdef class OrderFactory:
             Label label,
             OrderSide order_side,
             int quantity,
-            Decimal price,
+            price,
             TimeInForce time_in_force=TimeInForce.DAY,
             datetime expire_time=None):
         """
@@ -390,7 +390,7 @@ cdef class OrderFactory:
             Label label,
             OrderSide order_side,
             int quantity,
-            Decimal price,
+            price,
             TimeInForce time_in_force=TimeInForce.DAY,
             datetime expire_time=None):
         """
@@ -428,7 +428,7 @@ cdef class OrderFactory:
             Label label,
             OrderSide order_side,
             int quantity,
-            Decimal price,
+            price,
             TimeInForce time_in_force=TimeInForce.DAY,
             datetime expire_time=None):
         """
@@ -466,7 +466,7 @@ cdef class OrderFactory:
             Label label,
             OrderSide order_side,
             int quantity,
-            Decimal price,
+            price,
             TimeInForce time_in_force=TimeInForce.DAY,
             datetime expire_time=None):
         """

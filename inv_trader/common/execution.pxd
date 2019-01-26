@@ -7,11 +7,10 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-# cython: language_level=3, boundscheck=False, wraparound=False
+# cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
 from cpython.datetime cimport datetime
 
-from inv_trader.core.decimal cimport Decimal
 from inv_trader.common.clock cimport Clock
 from inv_trader.common.guid cimport GuidFactory
 from inv_trader.common.logger cimport LoggerAdapter
@@ -30,7 +29,7 @@ cdef class ExecutionClient:
     cdef GuidFactory _guid_factory
     cdef LoggerAdapter _log
     cdef dict _registered_strategies
-    cdef dict _order_index
+    cdef dict _order_strategy_index
 
     cdef readonly Account account
 
@@ -41,7 +40,7 @@ cdef class ExecutionClient:
     cpdef void collateral_inquiry(self)
     cpdef void submit_order(self, Order order, GUID strategy_id)
     cpdef void cancel_order(self, Order order, str cancel_reason)
-    cpdef void modify_order(self, Order order, Decimal new_price)
+    cpdef void modify_order(self, Order order, new_price)
 
     cdef void _register_order(self, Order order, GUID strategy_id)
     cdef void _on_event(self, Event event)

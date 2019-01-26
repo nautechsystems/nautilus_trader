@@ -10,9 +10,9 @@
 import unittest
 import uuid
 
+from decimal import Decimal
 from datetime import datetime, timezone
 
-from inv_trader.core.decimal import Decimal
 from inv_trader.commands import SubmitOrder, CancelOrder, ModifyOrder
 from inv_trader.commands import CollateralInquiry
 from inv_trader.model.enums import Venue, OrderSide, OrderType, TimeInForce

@@ -9,18 +9,20 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False
 
-from inv_trader.core.decimal cimport Decimal
+from decimal import Decimal, getcontext
+
 from inv_trader.core.precondition cimport Precondition
 
 
-cpdef Decimal money_zero():
+cpdef object money_zero():
     """
     :return: A decimal representing money with value zero and precision 2.
     """
-    return Decimal(0, 2)
+    getcontext().prec = 2
+    return Decimal(0)
 
 
-cpdef Decimal money(float amount):
+cpdef object money(float amount):
     """
     Creates and returns money from the given values.
     The money is rounded to two decimal digits.
@@ -31,4 +33,5 @@ cpdef Decimal money(float amount):
     """
     Precondition.not_negative(amount, 'amount')
 
-    return Decimal(amount, 2)
+    getcontext().prec = 2
+    return Decimal(amount)
