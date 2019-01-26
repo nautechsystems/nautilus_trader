@@ -12,14 +12,12 @@ import uuid
 import datetime
 import time
 
-from decimal import Decimal
 from datetime import datetime, timezone, timedelta
 
 from inv_trader.common.clock import TestClock
 from inv_trader.model.enums import Venue, Resolution, QuoteType, OrderSide, TimeInForce, OrderStatus
 from inv_trader.model.enums import MarketPosition
-from inv_trader.model.objects import Symbol, Tick, BarType, Bar
-from inv_trader.model.price import price
+from inv_trader.model.objects import Symbol, Price, Tick, BarType, Bar
 from inv_trader.model.order import OrderFactory
 from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
 from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
@@ -199,10 +197,10 @@ class TradeStrategyTests(unittest.TestCase):
                            QuoteType.MID)
 
         bar = Bar(
-            Decimal('1.00001'),
-            Decimal('1.00004'),
-            Decimal('1.00002'),
-            Decimal('1.00003'),
+            Price('1.00001'),
+            Price('1.00004'),
+            Price('1.00002'),
+            Price('1.00003'),
             100000,
             datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc))
 
@@ -238,10 +236,10 @@ class TradeStrategyTests(unittest.TestCase):
                            QuoteType.MID)
 
         bar = Bar(
-            Decimal('1.00001'),
-            Decimal('1.00004'),
-            Decimal('1.00002'),
-            Decimal('1.00003'),
+            Price('1.00001'),
+            Price('1.00004'),
+            Price('1.00002'),
+            Price('1.00003'),
             100000,
             datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc))
 
@@ -261,10 +259,10 @@ class TradeStrategyTests(unittest.TestCase):
                            QuoteType.MID)
 
         bar = Bar(
-            Decimal('1.00001'),
-            Decimal('1.00004'),
-            Decimal('1.00002'),
-            Decimal('1.00003'),
+            Price('1.00001'),
+            Price('1.00004'),
+            Price('1.00002'),
+            Price('1.00003'),
             100000,
             datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc))
 
@@ -286,10 +284,10 @@ class TradeStrategyTests(unittest.TestCase):
                            QuoteType.MID)
 
         bar = Bar(
-            Decimal('1.00001'),
-            Decimal('1.00004'),
-            Decimal('1.00002'),
-            Decimal('1.00003'),
+            Price('1.00001'),
+            Price('1.00004'),
+            Price('1.00002'),
+            Price('1.00003'),
             100000,
             datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc))
 
@@ -314,8 +312,8 @@ class TradeStrategyTests(unittest.TestCase):
         strategy = TestStrategy1(bar_type)
 
         tick = Tick(Symbol('AUDUSD', Venue.FXCM),
-                    Decimal('1.00000'),
-                    Decimal('1.00001'),
+                    Price('1.00000'),
+                    Price('1.00001'),
                     datetime(2018, 1, 1, 19, 59, 1, 0, timezone.utc))
 
         strategy._update_ticks(tick)
@@ -424,10 +422,10 @@ class TradeStrategyTests(unittest.TestCase):
                            QuoteType.MID)
 
         bar = Bar(
-            Decimal('1.00001'),
-            Decimal('1.00004'),
-            Decimal('1.00002'),
-            Decimal('1.00003'),
+            Price('1.00001'),
+            Price('1.00004'),
+            Price('1.00002'),
+            Price('1.00003'),
             100000,
             datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc))
 
@@ -798,7 +796,7 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(ValueError, strategy.modify_order, order, price(1.00001, 5))
+        self.assertRaises(ValueError, strategy.modify_order, order, Price(1.00001, 5))
 
     def test_can_modify_order(self):
         # Arrange
@@ -812,19 +810,19 @@ class TradeStrategyTests(unittest.TestCase):
             Label('S1'),
             OrderSide.BUY,
             100000,
-            price(1.00000, 5),
+            Price(1.00000, 5),
             TimeInForce.DAY,
             None)
 
         strategy.submit_order(order, PositionId(str(order.id)))
 
         # Act
-        strategy.modify_order(order, price(1.00001, 5))
+        strategy.modify_order(order, Price(1.00001, 5))
 
         # Assert
         self.assertEqual(order, strategy._order_book[order.id])
         self.assertEqual(OrderStatus.WORKING, strategy._order_book[order.id].status)
-        self.assertEqual(price(1.00001, 5), strategy._order_book[order.id].price)
+        self.assertEqual(Price(1.00001, 5), strategy._order_book[order.id].price)
         self.assertTrue(strategy.is_flat())
 
     def test_can_cancel_all_orders(self):
@@ -839,7 +837,7 @@ class TradeStrategyTests(unittest.TestCase):
             Label('S1'),
             OrderSide.BUY,
             100000,
-            price(1.00000, 5),
+            Price(1.00000, 5),
             TimeInForce.DAY,
             None)
 
@@ -849,7 +847,7 @@ class TradeStrategyTests(unittest.TestCase):
             Label('S1'),
             OrderSide.BUY,
             100000,
-            price(1.00010, 5),
+            Price(1.00010, 5),
             TimeInForce.DAY,
             None)
 
@@ -975,10 +973,10 @@ class TradeStrategyTests(unittest.TestCase):
                            QuoteType.MID)
 
         bar = Bar(
-            Decimal('1.00001'),
-            Decimal('1.00004'),
-            Decimal('1.00002'),
-            Decimal('1.00003'),
+            Price('1.00001'),
+            Price('1.00004'),
+            Price('1.00002'),
+            Price('1.00003'),
             100000,
             datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc))
 

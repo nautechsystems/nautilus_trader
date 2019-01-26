@@ -12,6 +12,7 @@
 from cpython.datetime cimport datetime
 
 from inv_trader.core.precondition cimport Precondition
+from inv_trader.model.objects cimport Price
 from inv_trader.model.identifiers cimport GUID
 from inv_trader.model.order cimport Order
 
@@ -154,7 +155,7 @@ cdef class ModifyOrder(OrderCommand):
 
     def __init__(self,
                  Order order,
-                 modified_price,
+                 Price modified_price,
                  GUID command_id,
                  datetime command_timestamp):
         """
@@ -165,8 +166,6 @@ cdef class ModifyOrder(OrderCommand):
         :param command_id: The commands identifier.
         :param command_timestamp: The commands timestamp.
         """
-        Precondition.positive(modified_price, 'modified_price')
-
         super().__init__(order,
                          command_id,
                          command_timestamp)

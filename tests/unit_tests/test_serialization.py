@@ -18,8 +18,7 @@ from inv_trader.commands import CollateralInquiry
 from inv_trader.model.enums import Venue, OrderSide, OrderType, TimeInForce
 from inv_trader.model.enums import CurrencyCode, SecurityType
 from inv_trader.model.identifiers import GUID, Label, OrderId, ExecutionId, ExecutionTicket
-from inv_trader.model.objects import Symbol, Instrument
-from inv_trader.model.price import price
+from inv_trader.model.objects import Symbol, Price, Instrument
 from inv_trader.model.order import Order, OrderFactory
 from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
 from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
@@ -50,7 +49,7 @@ class SerializationFunctionTests(unittest.TestCase):
     def test_can_convert_price_to_string_from_decimal(self):
         # Arrange
         # Act
-        result = convert_price_to_string(Decimal('1.00000'))
+        result = convert_price_to_string(Price('1.00000'))
 
         # Assert
         self.assertEqual('1.00000', result)
@@ -69,7 +68,7 @@ class SerializationFunctionTests(unittest.TestCase):
         result = convert_string_to_price('1.00000')
 
         # Assert
-        self.assertEqual(Decimal('1.00000'), result)
+        self.assertEqual(Price('1.00000'), result)
 
     def test_can_convert_expire_time_to_string_from_none(self):
         # Arrange
@@ -140,7 +139,7 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
             Label('S1_SL'),
             OrderSide.BUY,
             100000,
-            price(1.00000, 5),
+            Price(1.00000, 5),
             TimeInForce.DAY,
             expire_time=None)
 
@@ -164,7 +163,7 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
             OrderType.LIMIT,
             100000,
             UNIX_EPOCH,
-            Decimal('1.00000'),
+            Price('1.00000'),
             time_in_force=TimeInForce.GTD,
             expire_time=UNIX_EPOCH)
 
@@ -188,7 +187,7 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
             OrderType.STOP_LIMIT,
             100000,
             UNIX_EPOCH,
-            Decimal('1.00000'))
+            Price('1.00000'))
 
         # Act
         serialized = serializer.serialize(order)
@@ -210,7 +209,7 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
             OrderType.STOP_LIMIT,
             100000,
             UNIX_EPOCH,
-            Decimal('1.00000'),
+            Price('1.00000'),
             time_in_force=TimeInForce.GTD,
             expire_time=UNIX_EPOCH)
 
@@ -266,7 +265,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             OrderType.LIMIT,
             100000,
             UNIX_EPOCH,
-            Decimal('1.00000'),
+            Price('1.00000'),
             time_in_force=TimeInForce.GTD,
             expire_time=UNIX_EPOCH)
 
@@ -296,12 +295,12 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             OrderType.LIMIT,
             100000,
             UNIX_EPOCH,
-            Decimal('1.00000'),
+            Price('1.00000'),
             time_in_force=TimeInForce.GTD,
             expire_time=UNIX_EPOCH)
 
         command = ModifyOrder(order,
-                              Decimal('1.00001'),
+                              Price('1.00001'),
                               GUID(uuid.uuid4()),
                               UNIX_EPOCH)
 
@@ -395,7 +394,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             OrderSide.SELL,
             OrderType.STOP_LIMIT,
             100000,
-            Decimal('1.50000'),
+            Price('1.50000'),
             TimeInForce.DAY,
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
@@ -421,7 +420,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             OrderSide.SELL,
             OrderType.STOP_LIMIT,
             100000,
-            Decimal('1.50000'),
+            Price('1.50000'),
             TimeInForce.DAY,
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
@@ -481,7 +480,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderId('O123456'),
             OrderId('B123456'),
-            Decimal('0.80010'),
+            Price('0.80010'),
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -523,7 +522,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             OrderSide.SELL,
             50000,
             50000,
-            Decimal('1.00000'),
+            Price('1.00000'),
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -546,7 +545,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             ExecutionTicket('T123456'),
             OrderSide.SELL,
             100000,
-            Decimal('1.00000'),
+            Price('1.00000'),
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -673,7 +672,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertEqual(Label('O123456_E'), result.label)
         self.assertEqual(OrderType.STOP_MARKET, result.order_type)
         self.assertEqual(1, result.quantity)
-        self.assertEqual(Decimal('1'), result.price)
+        self.assertEqual(Price('1'), result.price)
         self.assertEqual(TimeInForce.DAY, result.time_in_force)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.working_time)
         self.assertTrue(isinstance(result.id, GUID))
@@ -713,7 +712,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertEqual(Label('O123456_E'), result.label)
         self.assertEqual(OrderType.STOP_MARKET, result.order_type)
         self.assertEqual(1, result.quantity)
-        self.assertEqual(Decimal('1'), result.price)
+        self.assertEqual(Price('1'), result.price)
         self.assertEqual(TimeInForce.GTD, result.time_in_force)
         self.assertEqual(datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc), result.working_time)
         self.assertTrue(isinstance(result.id, GUID))
@@ -805,7 +804,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual(OrderId('StubOrderId'), result.order_id)
         self.assertEqual(OrderId('B123456'), result.broker_order_id)
-        self.assertEqual(Decimal('2'), result.modified_price)
+        self.assertEqual(Price('2'), result.modified_price)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.modified_time)
         self.assertTrue(isinstance(result.id, GUID))
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.timestamp)
@@ -870,7 +869,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertEqual(OrderSide.BUY, result.order_side)
         self.assertEqual(50000, result.filled_quantity)
         self.assertEqual(50000, result.leaves_quantity)
-        self.assertEqual(Decimal('2'), result.average_price)
+        self.assertEqual(Price('2'), result.average_price)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.execution_time)
         self.assertTrue(isinstance(result.id, GUID))
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.timestamp)
@@ -906,7 +905,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertEqual(ExecutionTicket('P123456'), result.execution_ticket)
         self.assertEqual(OrderSide.BUY, result.order_side)
         self.assertEqual(100000, result.filled_quantity)
-        self.assertEqual(Decimal('2'), result.average_price)
+        self.assertEqual(Price('2'), result.average_price)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.execution_time)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.timestamp)
 

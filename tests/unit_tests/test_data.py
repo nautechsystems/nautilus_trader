@@ -11,11 +11,10 @@ import unittest
 import redis
 import time
 
-from decimal import Decimal
 from datetime import datetime, timezone
 
 from inv_trader.data import LiveDataClient
-from inv_trader.model.objects import Symbol, Tick, BarType, Bar
+from inv_trader.model.objects import Symbol, Price, Tick, BarType, Bar
 from inv_trader.model.enums import Venue, Resolution, QuoteType
 from test_kit.objects import ObjectStorer
 
@@ -172,8 +171,8 @@ class LiveDataClientTests(unittest.TestCase):
         # Arrange
         symbol = Symbol('AUDUSD', Venue.FXCM)
         tick = Tick(symbol,
-                    Decimal('1.00000'),
-                    Decimal('1.00001'),
+                    Price('1.00000'),
+                    Price('1.00001'),
                     datetime(2018, 1, 1, 19, 59, 1, 0, timezone.utc))
 
         # Act
@@ -185,10 +184,10 @@ class LiveDataClientTests(unittest.TestCase):
 
     def test_can_parse_bars(self):
         # Arrange
-        bar = Bar(Decimal('1.00001'),
-                  Decimal('1.00004'),
-                  Decimal('1.00002'),
-                  Decimal('1.00003'),
+        bar = Bar(Price('1.00001'),
+                  Price('1.00004'),
+                  Price('1.00002'),
+                  Price('1.00003'),
                   100000,
                   datetime(2018, 1, 1, 19, 59, 1, 0, timezone.utc))
 
@@ -241,8 +240,8 @@ class LiveDataClientTests(unittest.TestCase):
         self.data_client.subscribe_ticks(symbol, storer.store)
 
         tick = Tick(symbol,
-                    Decimal('1.00000'),
-                    Decimal('1.00001'),
+                    Price('1.00000'),
+                    Price('1.00001'),
                     datetime(2018, 1, 1, 19, 59, 1, 0, timezone.utc))
 
         # Act
@@ -309,10 +308,10 @@ class LiveDataClientTests(unittest.TestCase):
         self.data_client.subscribe_bars(BarType(Symbol('AUDUSD', Venue.FXCM), 1, Resolution.SECOND, QuoteType.BID), storer.store_2)
 
         bar = Bar(
-            Decimal('1.00001'),
-            Decimal('1.00004'),
-            Decimal('1.00002'),
-            Decimal('1.00003'),
+            Price('1.00001'),
+            Price('1.00004'),
+            Price('1.00002'),
+            Price('1.00003'),
             100000,
             datetime(2018, 1, 1, 19, 59, 1, 0, timezone.utc))
 
@@ -381,10 +380,10 @@ class LiveDataClientTests(unittest.TestCase):
                            QuoteType.MID)
 
         bar = Bar(
-            Decimal('1.00001'),
-            Decimal('1.00004'),
-            Decimal('1.00002'),
-            Decimal('1.00003'),
+            Price('1.00001'),
+            Price('1.00004'),
+            Price('1.00002'),
+            Price('1.00003'),
             100000,
             datetime(2018, 1, 1, 19, 59, 1, 0, timezone.utc))
 

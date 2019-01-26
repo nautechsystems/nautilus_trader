@@ -13,8 +13,7 @@ import uuid
 from decimal import Decimal
 
 from inv_trader.model.enums import Venue, OrderSide, OrderType, OrderStatus, TimeInForce
-from inv_trader.model.objects import Symbol
-from inv_trader.model.price import price
+from inv_trader.model.objects import Symbol, Price
 from inv_trader.model.identifiers import GUID, Label, OrderId, ExecutionId, ExecutionTicket
 from inv_trader.model.order import Order, OrderFactory
 from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
@@ -60,7 +59,7 @@ class OrderTests(unittest.TestCase):
             OrderType.LIMIT,
             100000,
             UNIX_EPOCH,
-            price=price(1.00000, 5),
+            price=Price(1.00000, 5),
             time_in_force=TimeInForce.GTD,
             expire_time=None)
 
@@ -77,7 +76,7 @@ class OrderTests(unittest.TestCase):
             OrderType.MARKET,
             100000,
             UNIX_EPOCH,
-            price=price(1.00000, 5))
+            price=Price(1.00000, 5))
 
     def test_stop_order_with_no_price_input_raises_exception(self):
         # Arrange
@@ -117,7 +116,7 @@ class OrderTests(unittest.TestCase):
             Label('S1_E'),
             OrderSide.BUY,
             100000,
-            price(1.00000, 5))
+            Price(1.00000, 5))
 
         order2 = self.order_factory.limit(
             AUDUSD_FXCM,
@@ -125,7 +124,7 @@ class OrderTests(unittest.TestCase):
             Label('S1_E'),
             OrderSide.BUY,
             100000,
-            price(1.00000, 5))
+            Price(1.00000, 5))
 
         order3 = self.order_factory.limit(
             AUDUSD_FXCM,
@@ -133,7 +132,7 @@ class OrderTests(unittest.TestCase):
             Label('S1_E'),
             OrderSide.BUY,
             100000,
-            price(1.000001, 5))
+            Price(1.000001, 5))
 
         order4 = self.order_factory.limit(
             AUDUSD_FXCM,
@@ -141,13 +140,13 @@ class OrderTests(unittest.TestCase):
             Label('S1_E'),
             OrderSide.BUY,
             100000,
-            price(1.000005, 5))
+            Price(1.000005, 5))
 
         # Assert
-        self.assertEqual(Decimal('1.00000'), order1.price)
-        self.assertEqual(Decimal('1.00000'), order2.price)
-        self.assertEqual(Decimal('1.00000'), order3.price)
-        self.assertEqual(Decimal('1.00001'), order4.price)
+        self.assertEqual(Price('1.00000'), order1.price)
+        self.assertEqual(Price('1.00000'), order2.price)
+        self.assertEqual(Price('1.00000'), order3.price)
+        self.assertEqual(Price('1.00001'), order4.price)
 
     def test_can_initialize_market_order(self):
         # Arrange
@@ -174,7 +173,7 @@ class OrderTests(unittest.TestCase):
             Label('SCALPER-01'),
             OrderSide.BUY,
             100000,
-            price(1.00000, 5))
+            Price(1.00000, 5))
 
         # Assert
         self.assertEqual(OrderType.LIMIT, order.type)
@@ -192,14 +191,14 @@ class OrderTests(unittest.TestCase):
             Label('SCALPER-01'),
             OrderSide.BUY,
             100000,
-            price(1.00000, 5),
+            Price(1.00000, 5),
             TimeInForce.GTD,
             UNIX_EPOCH)
 
         # Assert
         self.assertEqual(AUDUSD_FXCM, order.symbol)
         self.assertEqual(OrderType.LIMIT, order.type)
-        self.assertEqual(Decimal('1.00000'), order.price)
+        self.assertEqual(Price('1.00000'), order.price)
         self.assertEqual(OrderStatus.INITIALIZED, order.status)
         self.assertEqual(TimeInForce.GTD, order.time_in_force)
         self.assertEqual(UNIX_EPOCH, order.expire_time)
@@ -215,7 +214,7 @@ class OrderTests(unittest.TestCase):
             Label('SCALPER-01'),
             OrderSide.BUY,
             100000,
-            price(1.00000, 5))
+            Price(1.00000, 5))
 
         # Assert
         self.assertEqual(OrderType.STOP_MARKET, order.type)
@@ -232,7 +231,7 @@ class OrderTests(unittest.TestCase):
             Label('SCALPER-01'),
             OrderSide.BUY,
             100000,
-            price(1.00000, 5))
+            Price(1.00000, 5))
 
         # Assert
         self.assertEqual(OrderType.STOP_LIMIT, order.type)
@@ -248,7 +247,7 @@ class OrderTests(unittest.TestCase):
             Label('SCALPER-01'),
             OrderSide.BUY,
             100000,
-            price(1.00000, 5))
+            Price(1.00000, 5))
 
         # Assert
         self.assertEqual(OrderType.MIT, order.type)
@@ -376,7 +375,7 @@ class OrderTests(unittest.TestCase):
             order.side,
             order.type,
             order.quantity,
-            Decimal('1'),
+            Price('1'),
             order.time_in_force,
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
@@ -479,7 +478,7 @@ class OrderTests(unittest.TestCase):
             order.side,
             order.type,
             order.quantity,
-            Decimal('1.00000'),
+            Price('1.00000'),
             order.time_in_force,
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
@@ -490,7 +489,7 @@ class OrderTests(unittest.TestCase):
             order.symbol,
             order.id,
             OrderId('SOME_BROKER_ID_2'),
-            Decimal('1.00001'),
+            Price('1.00001'),
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -503,7 +502,7 @@ class OrderTests(unittest.TestCase):
         # Assert
         self.assertEqual(OrderStatus.WORKING, order.status)
         self.assertEqual(OrderId('SOME_BROKER_ID_2'), order.broker_id)
-        self.assertEqual(Decimal('1.00001'), order.price)
+        self.assertEqual(Price('1.00001'), order.price)
         self.assertFalse(order.is_complete)
 
     def test_can_apply_order_filled_event_to_market_order(self):
@@ -522,7 +521,7 @@ class OrderTests(unittest.TestCase):
             ExecutionTicket('SOME_EXEC_TICKET_1'),
             order.side,
             order.quantity,
-            Decimal('1.00001'),
+            Price('1.00001'),
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -533,7 +532,7 @@ class OrderTests(unittest.TestCase):
         # Assert
         self.assertEqual(OrderStatus.FILLED, order.status)
         self.assertEqual(100000, order.filled_quantity)
-        self.assertEqual(Decimal('1.00001'), order.average_price)
+        self.assertEqual(Price('1.00001'), order.average_price)
         self.assertTrue(order.is_complete)
 
     def test_can_apply_order_filled_event_to_buy_limit_order(self):
@@ -544,7 +543,7 @@ class OrderTests(unittest.TestCase):
             Label('SCALPER-01'),
             OrderSide.BUY,
             100000,
-            price(1.00000, 5),
+            Price(1.00000, 5),
             TimeInForce.DAY,
             expire_time=None)
 
@@ -555,7 +554,7 @@ class OrderTests(unittest.TestCase):
             ExecutionTicket('SOME_EXEC_TICKET_1'),
             order.side,
             order.quantity,
-            Decimal('1.00001'),
+            Price('1.00001'),
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -566,8 +565,8 @@ class OrderTests(unittest.TestCase):
         # Assert
         self.assertEqual(OrderStatus.FILLED, order.status)
         self.assertEqual(100000, order.filled_quantity)
-        self.assertEqual(Decimal('1.00000'), order.price)
-        self.assertEqual(Decimal('1.00001'), order.average_price)
+        self.assertEqual(Price('1.00000'), order.price)
+        self.assertEqual(Price('1.00001'), order.average_price)
         self.assertEqual(Decimal('0.00001'), order.slippage)
         self.assertTrue(order.is_complete)
 
@@ -579,7 +578,7 @@ class OrderTests(unittest.TestCase):
             Label('SCALPER-01'),
             OrderSide.BUY,
             100000,
-            price(1.00000, 5),
+            Price(1.00000, 5),
             TimeInForce.DAY,
             expire_time=None)
 
@@ -591,7 +590,7 @@ class OrderTests(unittest.TestCase):
             order.side,
             50000,
             50000,
-            Decimal('0.99999'),
+            Price('0.99999'),
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -602,8 +601,8 @@ class OrderTests(unittest.TestCase):
         # Assert
         self.assertEqual(OrderStatus.PARTIALLY_FILLED, order.status)
         self.assertEqual(50000, order.filled_quantity)
-        self.assertEqual(Decimal('1.00000'), order.price)
-        self.assertEqual(Decimal('0.99999'), order.average_price)
+        self.assertEqual(Price('1.00000'), order.price)
+        self.assertEqual(Price('0.99999'), order.average_price)
         self.assertEqual(Decimal('-0.00001'), order.slippage)
         self.assertFalse(order.is_complete)
 
@@ -615,7 +614,7 @@ class OrderTests(unittest.TestCase):
             Label('SCALPER-01'),
             OrderSide.BUY,
             100000,
-            price(1.00000, 5),
+            Price(1.00000, 5),
             TimeInForce.DAY,
             expire_time=None)
 
@@ -626,7 +625,7 @@ class OrderTests(unittest.TestCase):
             ExecutionTicket('SOME_EXEC_TICKET_1'),
             order.side,
             150000,
-            Decimal('0.99999'),
+            Price('0.99999'),
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)

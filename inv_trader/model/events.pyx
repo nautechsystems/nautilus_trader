@@ -524,7 +524,6 @@ cdef class OrderPartiallyFilled(OrderEvent):
         """
         Precondition.positive(filled_quantity, 'filled_quantity')
         Precondition.positive(leaves_quantity, 'leaves_quantity')
-        Precondition.positive(average_price, 'average_price')
 
         super().__init__(symbol,
                          order_id,

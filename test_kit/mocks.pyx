@@ -245,7 +245,7 @@ cdef class MockExecClient(ExecutionClient):
             order.side,
             order.type,
             order.quantity,
-            Decimal('1'),
+            Price('1.00000'),
             order.time_in_force,
             datetime.utcnow(),
             GUID(uuid.uuid4()),
