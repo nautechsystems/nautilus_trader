@@ -12,6 +12,7 @@
 from cpython.datetime cimport datetime
 
 from inv_trader.model.identifiers cimport GUID
+from inv_trader.model.objects cimport Price
 from inv_trader.model.order cimport Order
 
 
@@ -47,7 +48,7 @@ cdef class ModifyOrder(OrderCommand):
     """
     Represents a command to modify the given order with the given modified price.
     """
-    cdef readonly object modified_price
+    cdef readonly Price modified_price
 
 
 cdef class CollateralInquiry(Command):

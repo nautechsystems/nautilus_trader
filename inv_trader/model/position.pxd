@@ -11,7 +11,7 @@
 
 from cpython.datetime cimport datetime
 
-from inv_trader.model.objects cimport Symbol
+from inv_trader.model.objects cimport Symbol, Price
 from inv_trader.model.events cimport OrderEvent
 from inv_trader.model.identifiers cimport PositionId, OrderId, ExecutionId, ExecutionTicket
 from inv_trader.enums.market_position cimport MarketPosition
@@ -38,8 +38,8 @@ cdef class Position:
     cdef readonly datetime timestamp
     cdef readonly datetime entry_time
     cdef readonly datetime exit_time
-    cdef readonly object average_entry_price
-    cdef readonly object average_exit_price
+    cdef readonly Price average_entry_price
+    cdef readonly Price average_exit_price
     cdef readonly bint is_entered
     cdef readonly bint is_exited
     cdef readonly long peak_quantity

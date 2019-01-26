@@ -13,7 +13,7 @@ import uuid
 from decimal import Decimal
 
 from inv_trader.model.enums import Venue, OrderSide, MarketPosition
-from inv_trader.model.objects import Symbol
+from inv_trader.model.objects import Symbol, Price
 from inv_trader.model.identifiers import GUID, Label, OrderId, PositionId, ExecutionId, ExecutionTicket
 from inv_trader.model.order import OrderFactory
 from inv_trader.model.position import Position
@@ -70,7 +70,7 @@ class PositionTests(unittest.TestCase):
             ExecutionTicket('T123456'),
             order.side,
             order.quantity,
-            Decimal('1.00001'),
+            Price('1.00001'),
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -83,7 +83,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(100000, position.quantity)
         self.assertEqual(MarketPosition.LONG, position.market_position)
         self.assertEqual(UNIX_EPOCH, position.entry_time)
-        self.assertEqual(Decimal('1.00001'), position.average_entry_price)
+        self.assertEqual(Price('1.00001'), position.average_entry_price)
         self.assertEqual(1, position.event_count)
         self.assertEqual([order.id], position.get_order_ids())
         self.assertEqual([ExecutionId('E123456')], position.get_execution_ids())
@@ -95,7 +95,7 @@ class PositionTests(unittest.TestCase):
 
     def test_position_filled_with_sell_order_returns_expected_attributes(self):
         # Arrange
-        order =  self.order_factory.market(
+        order = self.order_factory.market(
             AUDUSD_FXCM,
             OrderId('AUDUSD-123456-1'),
             Label('SCALPER-01'),
@@ -114,7 +114,7 @@ class PositionTests(unittest.TestCase):
             ExecutionTicket('T123456'),
             order.side,
             order.quantity,
-            Decimal('1.00001'),
+            Price('1.00001'),
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -126,7 +126,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(100000, position.quantity)
         self.assertEqual(MarketPosition.SHORT, position.market_position)
         self.assertEqual(UNIX_EPOCH, position.entry_time)
-        self.assertEqual(Decimal('1.00001'), position.average_entry_price)
+        self.assertEqual(Price('1.00001'), position.average_entry_price)
         self.assertEqual(1, position.event_count)
         self.assertEqual(ExecutionId('E123456'), position.last_execution_id)
         self.assertEqual(ExecutionTicket('T123456'), position.last_execution_ticket)
@@ -155,7 +155,7 @@ class PositionTests(unittest.TestCase):
             order.side,
             50000,
             50000,
-            Decimal('1.00001'),
+            Price('1.00001'),
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -168,7 +168,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(100000, position.quantity)
         self.assertEqual(MarketPosition.LONG, position.market_position)
         self.assertEqual(UNIX_EPOCH, position.entry_time)
-        self.assertEqual(Decimal('1.00001'), position.average_entry_price)
+        self.assertEqual(Price('1.00001'), position.average_entry_price)
         self.assertEqual(2, position.event_count)
         self.assertEqual(ExecutionId('E123456'), position.last_execution_id)
         self.assertEqual(ExecutionTicket('T123456'), position.last_execution_ticket)
@@ -177,7 +177,7 @@ class PositionTests(unittest.TestCase):
 
     def test_position_partial_fills_with_sell_order_returns_expected_attributes(self):
         # Arrange
-        order =  self.order_factory.market(
+        order = self.order_factory.market(
             AUDUSD_FXCM,
             OrderId('AUDUSD-123456-1'),
             Label('SCALPER-01'),
@@ -197,7 +197,7 @@ class PositionTests(unittest.TestCase):
             order.side,
             50000,
             50000,
-            Decimal('1.00001'),
+            Price('1.00001'),
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -210,7 +210,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(100000, position.quantity)
         self.assertEqual(MarketPosition.SHORT, position.market_position)
         self.assertEqual(UNIX_EPOCH, position.entry_time)
-        self.assertEqual(Decimal('1.00001'), position.average_entry_price)
+        self.assertEqual(Price('1.00001'), position.average_entry_price)
         self.assertEqual(2, position.event_count)
         self.assertEqual(ExecutionId('E123456'), position.last_execution_id)
         self.assertEqual(ExecutionTicket('T123456'), position.last_execution_ticket)
@@ -219,7 +219,7 @@ class PositionTests(unittest.TestCase):
 
     def test_position_filled_with_buy_order_then_sell_order_returns_expected_attributes(self):
         # Arrange
-        order =  self.order_factory.market(
+        order = self.order_factory.market(
             AUDUSD_FXCM,
             OrderId('AUDUSD-123456-1'),
             Label('SCALPER-01'),
@@ -238,7 +238,7 @@ class PositionTests(unittest.TestCase):
             ExecutionTicket('T123456'),
             OrderSide.BUY,
             order.quantity,
-            Decimal('1.00001'),
+            Price('1.00001'),
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -250,7 +250,7 @@ class PositionTests(unittest.TestCase):
             ExecutionTicket('T123456'),
             OrderSide.SELL,
             order.quantity,
-            Decimal('1.00001'),
+            Price('1.00001'),
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -263,12 +263,12 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(0, position.quantity)
         self.assertEqual(MarketPosition.FLAT, position.market_position)
         self.assertEqual(UNIX_EPOCH, position.entry_time)
-        self.assertEqual(Decimal('1.00001'), position.average_entry_price)
+        self.assertEqual(Price('1.00001'), position.average_entry_price)
         self.assertEqual(2, position.event_count)
         self.assertEqual(ExecutionId('E123456'), position.last_execution_id)
         self.assertEqual(ExecutionTicket('T123456'), position.last_execution_ticket)
         self.assertEqual(UNIX_EPOCH, position.exit_time)
-        self.assertEqual(Decimal('1.00001'), position.average_exit_price)
+        self.assertEqual(Price('1.00001'), position.average_exit_price)
         self.assertTrue(position.is_entered)
         self.assertTrue(position.is_exited)
 
@@ -293,7 +293,7 @@ class PositionTests(unittest.TestCase):
             ExecutionTicket('T123456'),
             OrderSide.SELL,
             order.quantity,
-            Decimal('1.00000'),
+            Price('1.00000'),
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -305,7 +305,7 @@ class PositionTests(unittest.TestCase):
             ExecutionTicket('T123456'),
             OrderSide.BUY,
             order.quantity,
-            Decimal('1.00001'),
+            Price('1.00001'),
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -318,12 +318,12 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(0, position.quantity)
         self.assertEqual(MarketPosition.FLAT, position.market_position)
         self.assertEqual(UNIX_EPOCH, position.entry_time)
-        self.assertEqual(Decimal('1.00000'), position.average_entry_price)
+        self.assertEqual(Price('1.00000'), position.average_entry_price)
         self.assertEqual(2, position.event_count)
         self.assertEqual([order.id], position.get_order_ids())
         self.assertEqual(ExecutionId('E123456'), position.last_execution_id)
         self.assertEqual(ExecutionTicket('T123456'), position.last_execution_ticket)
         self.assertEqual(UNIX_EPOCH, position.exit_time)
-        self.assertEqual(Decimal('1.00001'), position.average_exit_price)
+        self.assertEqual(Price('1.00001'), position.average_exit_price)
         self.assertTrue(position.is_entered)
         self.assertTrue(position.is_exited)

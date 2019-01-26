@@ -25,7 +25,7 @@ from inv_trader.enums.order_side cimport OrderSide, order_side_string
 from inv_trader.enums.order_type cimport OrderType, order_type_string
 from inv_trader.enums.currency_code cimport CurrencyCode
 from inv_trader.model.identifiers cimport GUID, Label, OrderId, ExecutionId, ExecutionTicket, AccountId, AccountNumber
-from inv_trader.model.objects cimport Symbol
+from inv_trader.model.objects cimport Symbol, Price
 from inv_trader.model.order cimport Order
 from inv_trader.model.events cimport Event, OrderEvent, AccountEvent
 from inv_trader.model.events cimport OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
@@ -274,7 +274,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         elif order_command == MODIFY_ORDER:
             return ModifyOrder(
                 order,
-                Decimal(unpacked[MODIFIED_PRICE]),
+                Price(unpacked[MODIFIED_PRICE]),
                 command_id,
                 command_timestamp)
         else:
@@ -481,7 +481,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 OrderSide[unpacked[ORDER_SIDE]],
                 OrderType[unpacked[ORDER_TYPE]],
                 unpacked[QUANTITY],
-                Decimal(unpacked[PRICE]),
+                Price(unpacked[PRICE]),
                 TimeInForce[unpacked[TIME_IN_FORCE]],
                 convert_string_to_datetime(unpacked[WORKING_TIME]),
                 event_id,
@@ -508,7 +508,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 order_symbol,
                 order_id,
                 OrderId(unpacked[ORDER_ID_BROKER]),
-                Decimal(unpacked[MODIFIED_PRICE]),
+                Price(unpacked[MODIFIED_PRICE]),
                 convert_string_to_datetime(unpacked[MODIFIED_TIME]),
                 event_id,
                 event_timestamp)
@@ -528,7 +528,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 OrderSide[unpacked[ORDER_SIDE]],
                 int(unpacked[FILLED_QUANTITY]),
                 int(unpacked[LEAVES_QUANTITY]),
-                Decimal(unpacked[AVERAGE_PRICE]),
+                Price(unpacked[AVERAGE_PRICE]),
                 convert_string_to_datetime(unpacked[EXECUTION_TIME]),
                 event_id,
                 event_timestamp)
@@ -540,7 +540,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 ExecutionTicket(unpacked[EXECUTION_TICKET]),
                 OrderSide[unpacked[ORDER_SIDE]],
                 int(unpacked[FILLED_QUANTITY]),
-                Decimal(unpacked[AVERAGE_PRICE]),
+                Price(unpacked[AVERAGE_PRICE]),
                 convert_string_to_datetime(unpacked[EXECUTION_TIME]),
                 event_id,
                 event_timestamp)

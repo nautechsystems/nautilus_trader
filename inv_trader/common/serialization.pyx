@@ -23,7 +23,7 @@ from inv_trader.enums.venue cimport Venue
 from inv_trader.enums.security_type cimport SecurityType
 from inv_trader.enums.currency_code cimport CurrencyCode
 from inv_trader.model.identifiers cimport GUID
-from inv_trader.model.objects cimport Symbol, Instrument
+from inv_trader.model.objects cimport Symbol, Price, Instrument
 from inv_trader.model.order cimport Order
 from inv_trader.model.events cimport Event
 from inv_trader.commands cimport Command
@@ -107,7 +107,7 @@ cpdef Symbol parse_symbol(str symbol_string):
     return Symbol(split_symbol[0], Venue[split_symbol[1].upper()])
 
 
-cpdef str convert_price_to_string(object price):
+cpdef str convert_price_to_string(Price price):
     """
     Convert the given object to a decimal or 'NONE' string.
 
@@ -117,14 +117,14 @@ cpdef str convert_price_to_string(object price):
     return NONE if price is None else str(price)
 
 
-cpdef object convert_string_to_price(str price_string):
+cpdef Price convert_string_to_price(str price_string):
     """
     Convert the given price string to a Decimal or None.
 
     :param price_string: The price string to convert.
     :return: The converted price, or None.
     """
-    return None if price_string == NONE else Decimal(price_string)
+    return None if price_string == NONE else Price(price_string)
 
 
 cpdef str convert_datetime_to_string(datetime expire_time):

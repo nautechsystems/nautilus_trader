@@ -240,9 +240,9 @@ cdef class Order:
             return
 
         if self.side is OrderSide.BUY:
-            self.slippage = Decimal(self.average_price.as_float() - self.price.as_float())
+            self.slippage = Decimal(f'{round(self.average_price.as_float() - self.price.as_float(), self.price.precision):.{self.price.precision}f}')
         else:  # side is OrderSide.SELL:
-            self.slippage = Decimal(self.price.as_float() - self.average_price.as_float())
+            self.slippage = Decimal(f'{round(self.price.as_float() - self.average_price.as_float(), self.price.precision):.{self.price.precision}f}')
 
     cdef void _set_fill_status(self):
         if self.filled_quantity < self.quantity:

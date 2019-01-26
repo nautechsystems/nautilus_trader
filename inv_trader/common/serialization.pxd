@@ -11,7 +11,7 @@
 
 from cpython.datetime cimport datetime
 
-from inv_trader.model.objects cimport Symbol, Instrument
+from inv_trader.model.objects cimport Symbol, Price, Instrument
 from inv_trader.model.identifiers cimport GUID
 from inv_trader.model.order cimport Order
 from inv_trader.model.events cimport Event, OrderEvent
@@ -19,8 +19,8 @@ from inv_trader.commands cimport Command, OrderCommand
 
 
 cpdef Symbol parse_symbol(str symbol_string)
-cpdef str convert_price_to_string(price)
-cpdef object convert_string_to_price(str price_string)
+cpdef str convert_price_to_string(Price price)
+cpdef Price convert_string_to_price(str price_string)
 cpdef str convert_datetime_to_string(datetime expire_time)
 cpdef datetime convert_string_to_datetime(str expire_time_string)
 

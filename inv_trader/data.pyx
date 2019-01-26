@@ -13,7 +13,6 @@ import re
 import iso8601
 import time
 
-from decimal import Decimal
 from cpython.datetime cimport datetime
 from redis import StrictRedis, ConnectionError
 from typing import List, Callable
@@ -27,7 +26,7 @@ from inv_trader.model.enums import Resolution, QuoteType, Venue
 from inv_trader.enums.resolution cimport Resolution
 from inv_trader.enums.quote_type cimport QuoteType
 from inv_trader.enums.venue cimport Venue
-from inv_trader.model.objects cimport Symbol, Tick, BarType, Bar, Instrument
+from inv_trader.model.objects cimport Symbol, Price, Tick, BarType, Bar, Instrument
 from inv_trader.strategy cimport TradeStrategy
 
 cdef str UTF8 = 'utf-8'
@@ -419,8 +418,8 @@ cdef class LiveDataClient(DataClient):
         cdef list split_tick = tick_string.split(',')
 
         return Tick(symbol,
-                    Decimal(split_tick[0]),
-                    Decimal(split_tick[1]),
+                    Price(split_tick[0]),
+                    Price(split_tick[1]),
                     iso8601.parse_date(split_tick[2]))
 
     cpdef BarType _parse_bar_type(self, str bar_type_string):
@@ -448,10 +447,10 @@ cdef class LiveDataClient(DataClient):
         """
         cdef list split_bar = bar_string.split(',')
 
-        return Bar(Decimal(split_bar[0]),
-                   Decimal(split_bar[1]),
-                   Decimal(split_bar[2]),
-                   Decimal(split_bar[3]),
+        return Bar(Price(split_bar[0]),
+                   Price(split_bar[1]),
+                   Price(split_bar[2]),
+                   Price(split_bar[3]),
                    int(split_bar[4]),
                    iso8601.parse_date(split_bar[5]))
 

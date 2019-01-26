@@ -206,9 +206,6 @@ cdef class Tick:
         :raises ValueError: If the bid is not positive (> 0).
         :raises ValueError: If the ask is not positive (> 0).
         """
-        Precondition.positive(bid, 'bid')
-        Precondition.positive(ask, 'ask')
-
         self.symbol = symbol
         self.bid = bid
         self.ask = ask
@@ -364,10 +361,6 @@ cdef class Bar:
         :raises ValueError: If the low_price is not <= close_price.
         """
         if checked:
-            Precondition.positive(open_price, 'open_price')
-            Precondition.positive(high_price, 'high_price')
-            Precondition.positive(low_price, 'low_price')
-            Precondition.positive(close_price, 'close_price')
             Precondition.not_negative(volume, 'volume')
             Precondition.true(high_price >= low_price, 'high_price >= low_price')
             Precondition.true(high_price >= close_price, 'high_price >= close_price')

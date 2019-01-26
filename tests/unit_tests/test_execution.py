@@ -11,8 +11,7 @@ import unittest
 
 from inv_trader.model.enums import Venue, OrderSide, OrderStatus, TimeInForce
 from inv_trader.model.identifiers import Label, PositionId
-from inv_trader.model.objects import Symbol
-from inv_trader.model.price import price
+from inv_trader.model.objects import Symbol, Price
 from inv_trader.model.order import OrderFactory
 from inv_trader.execution import LiveExecClient
 from test_kit.stubs import TestStubs
@@ -106,18 +105,18 @@ class ExecutionClientTests(unittest.TestCase):
             Label('S1_E'),
             OrderSide.BUY,
             100000,
-            price(1.00000, 5),
+            Price('1.00000'),
             TimeInForce.DAY,
             expire_time=None)
 
         # Act
         self.strategy.submit_order(order, PositionId(str(order.id)))
-        self.strategy.modify_order(order, price(1.00001, 5))
+        self.strategy.modify_order(order, Price('1.00001'))
 
         # Assert
         self.assertEqual(order, self.strategy.order(order_id))
         self.assertEqual(OrderStatus.WORKING, order.status)
-        self.assertEqual(price(1.00001, 5), order.price)
+        self.assertEqual(Price('1.00001'), order.price)
 
 
 class LiveExecClientTests(unittest.TestCase):
@@ -204,13 +203,13 @@ class LiveExecClientTests(unittest.TestCase):
             Label('S1_E'),
             OrderSide.BUY,
             100000,
-            price(1.00000, 5),
+            Price('1.00000'),
             TimeInForce.DAY,
             expire_time=None)
 
         # Act
         self.strategy.submit_order(order, PositionId('some-position'))
-        self.strategy.modify_order(order, price(1.00001, 5))
+        self.strategy.modify_order(order, Price('1.00001'))
 
         # Assert
         self.assertEqual(order, self.strategy.order(order_id))
