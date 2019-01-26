@@ -18,7 +18,7 @@ from inv_trader.common.guid import TestGuidFactory
 from inv_trader.common.logger import Logger
 from inv_trader.model.enums import Venue, OrderSide
 from inv_trader.model.identifiers import Label, OrderId, PositionId
-from inv_trader.model.objects import Symbol
+from inv_trader.model.objects import Symbol, Price
 from inv_trader.model.events import OrderRejected, OrderWorking, OrderModified, OrderFilled
 from inv_trader.backtest.execution import BacktestExecClient
 from test_kit.strategies import TestStrategy1
@@ -101,7 +101,7 @@ class BacktestExecClientTests(unittest.TestCase):
         # Assert
         self.assertEqual(4, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[3], OrderFilled))
-        self.assertEqual(Decimal('86.711'), order.average_price)
+        self.assertEqual(Price('86.711'), order.average_price)
 
     def test_can_submit_limit_order(self):
         # Arrange
@@ -115,7 +115,7 @@ class BacktestExecClientTests(unittest.TestCase):
             Label('S1_E'),
             OrderSide.BUY,
             100000,
-            Decimal('80.000'))
+            Price('80.000'))
 
         # Act
         strategy.submit_order(order, PositionId(str(order.id)))
@@ -124,7 +124,7 @@ class BacktestExecClientTests(unittest.TestCase):
         print(strategy.object_storer.get_store())
         self.assertEqual(4, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[3], OrderWorking))
-        self.assertEqual(Decimal('80.000'), order.price)
+        self.assertEqual(Price('80.000'), order.price)
 
     def test_can_modify_stop_order(self):
         # Arrange
@@ -138,15 +138,15 @@ class BacktestExecClientTests(unittest.TestCase):
             Label('S1_E'),
             OrderSide.BUY,
             100000,
-            Decimal('86.711'))
+            Price('86.711'))
 
         strategy.submit_order(order, PositionId(str(order.id)))
 
         # Act
-        strategy.modify_order(order, Decimal('86.712'))
+        strategy.modify_order(order, Price('86.712'))
 
         # Assert
-        self.assertEqual(Decimal('86.712'), order.price)
+        self.assertEqual(Price('86.712'), order.price)
         self.assertEqual(5, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[4], OrderModified))
 
@@ -162,7 +162,7 @@ class BacktestExecClientTests(unittest.TestCase):
             Label('S1_E'),
             OrderSide.BUY,
             100000,
-            Decimal('80.000'))
+            Price('80.000'))
 
         # Act
         strategy.submit_order(order, PositionId(str(order.id)))

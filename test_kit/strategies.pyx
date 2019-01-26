@@ -16,8 +16,7 @@ from inv_trader.common.clock cimport Clock, LiveClock
 from inv_trader.common.logger cimport Logger
 from inv_trader.enums.order_side cimport OrderSide
 from inv_trader.enums.time_in_force cimport TimeInForce
-from inv_trader.model.objects cimport Symbol, Tick, BarType, Bar, Instrument
-from inv_trader.model.price cimport price
+from inv_trader.model.objects cimport Symbol, Price, Tick, BarType, Bar, Instrument
 from inv_trader.model.events cimport Event
 from inv_trader.model.identifiers cimport Label, OrderId, PositionId
 from inv_trader.model.order cimport Order
@@ -144,17 +143,17 @@ cdef class EMACross(TradeStrategy):
     cdef readonly PositionId position_id
 
     def __init__(self,
-                 label: str,
-                 order_id_tag: str,
-                 instrument: Instrument,
-                 bar_type: BarType,
-                 position_size: int=100000,
-                 fast_ema: int=10,
-                 slow_ema: int=20,
-                 atr_period: int=20,
-                 sl_atr_multiple: float=2,
-                 bar_capacity: int=1000,
-                 logger: Logger=None):
+                 str label,
+                 str order_id_tag,
+                 Instrument instrument,
+                 BarType bar_type,
+                 int position_size=100000,
+                 int fast_ema=10,
+                 int slow_ema=20,
+                 int atr_period=20,
+                 float sl_atr_multiple=2,
+                 int bar_capacity=1000,
+                 Logger logger=None):
         """
         Initializes a new instance of the EMACrossLimitEntry class.
 
@@ -238,7 +237,7 @@ cdef class EMACross(TradeStrategy):
                     Label('S1_E'),
                     OrderSide.BUY,
                     self.position_size,
-                    price(self.last_bar(self.bar_type).high + self.entry_buffer, self.tick_precision),
+                    Price(self.last_bar(self.bar_type).high + self.entry_buffer),
                     time_in_force=TimeInForce.GTD,
                     expire_time=self.time_now() + timedelta(minutes=1))
                 self.entry_orders[entry_order.id] = entry_order
@@ -254,7 +253,7 @@ cdef class EMACross(TradeStrategy):
                     Label('S1_E'),
                     OrderSide.SELL,
                     self.position_size,
-                    price(self.last_bar(self.bar_type).low - self.entry_buffer, self.tick_precision),
+                    Price(self.last_bar(self.bar_type).low - self.entry_buffer),
                     time_in_force=TimeInForce.GTD,
                     expire_time=self.time_now() + timedelta(minutes=1))
                 self.entry_orders[entry_order.id] = entry_order
@@ -264,15 +263,11 @@ cdef class EMACross(TradeStrategy):
 
         for order_id, order in self.stop_loss_orders.items():
             if order.side is OrderSide.SELL:
-                temp_price = price(float(self.last_bar(self.bar_type).low)
-                                   - self.atr.value * self.SL_atr_multiple,
-                                   self.tick_precision)
+                temp_price = Price(self.last_bar(self.bar_type).low - (self.atr.value * self.SL_atr_multiple))
                 if order.price < temp_price:
                     self.modify_order(order, temp_price)
             elif order.side is OrderSide.BUY:
-                temp_price = price(float(self.last_bar(self.bar_type).high)
-                                   + self.atr.value * self.SL_atr_multiple,
-                                   self.tick_precision)
+                temp_price = Price(self.last_bar(self.bar_type).high + (self.atr.value * self.SL_atr_multiple))
                 if order.price > temp_price:
                     self.modify_order(order, temp_price)
 
@@ -291,13 +286,9 @@ cdef class EMACross(TradeStrategy):
                 # SET TRAILING STOP
                 stop_side = self.get_opposite_side(event.order_side)
                 if stop_side is OrderSide.BUY:
-                    stop_price = price(float(self.last_bar(self.bar_type).high)
-                                       + self.atr.value * self.SL_atr_multiple,
-                                       self.tick_precision)
+                    stop_price = self.last_bar(self.bar_type).high
                 else:
-                    stop_price = price(float(self.last_bar(self.bar_type).low)
-                                       - self.atr.value * self.SL_atr_multiple,
-                                       self.tick_precision)
+                    stop_price = self.last_bar(self.bar_type).low
 
                 stop_order = self.order_factory.stop_market(
                     self.symbol,

@@ -16,7 +16,7 @@ from inv_trader.enums.currency_code cimport CurrencyCode
 from inv_trader.enums.order_side cimport OrderSide
 from inv_trader.enums.order_type cimport OrderType
 from inv_trader.enums.time_in_force cimport TimeInForce
-from inv_trader.model.objects cimport Symbol
+from inv_trader.model.objects cimport Symbol, Price
 from inv_trader.model.identifiers cimport GUID, Label, AccountId, AccountNumber
 from inv_trader.model.identifiers cimport OrderId, ExecutionId, ExecutionTicket
 
@@ -85,7 +85,7 @@ cdef class OrderWorking(OrderEvent):
     cdef readonly OrderSide order_side
     cdef readonly OrderType order_type
     cdef readonly int quantity
-    cdef readonly object price
+    cdef readonly Price price
     cdef readonly TimeInForce time_in_force
     cdef readonly datetime working_time
     cdef readonly datetime expire_time
@@ -119,7 +119,7 @@ cdef class OrderModified(OrderEvent):
     Represents an event where an order has been modified with the broker.
     """
     cdef readonly OrderId broker_order_id
-    cdef readonly object modified_price
+    cdef readonly Price modified_price
     cdef readonly datetime modified_time
 
 
@@ -131,7 +131,7 @@ cdef class OrderFilled(OrderEvent):
     cdef readonly ExecutionTicket execution_ticket
     cdef readonly OrderSide order_side
     cdef readonly int filled_quantity
-    cdef readonly object average_price
+    cdef readonly Price average_price
     cdef readonly datetime execution_time
 
 
@@ -144,7 +144,7 @@ cdef class OrderPartiallyFilled(OrderEvent):
     cdef readonly OrderSide order_side
     cdef readonly int filled_quantity
     cdef readonly int leaves_quantity
-    cdef readonly object average_price
+    cdef readonly Price average_price
     cdef readonly datetime execution_time
 
 

@@ -17,6 +17,7 @@ from inv_trader.common.clock cimport Clock
 from inv_trader.common.guid cimport GuidFactory
 from inv_trader.common.logger cimport Logger, LoggerAdapter
 from inv_trader.model.account cimport Account
+from inv_trader.model.objects cimport Price
 from inv_trader.model.order cimport Order
 from inv_trader.model.events cimport Event, OrderEvent, AccountEvent
 from inv_trader.model.identifiers cimport GUID, OrderId
@@ -106,7 +107,7 @@ cdef class ExecutionClient:
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void modify_order(self, Order order, new_price):
+    cpdef void modify_order(self, Order order, Price new_price):
         """
         Send a modify order request to the execution service.
         """

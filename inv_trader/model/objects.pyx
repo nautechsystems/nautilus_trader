@@ -9,6 +9,7 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
+from decimal import Decimal
 from cpython.datetime cimport datetime
 
 from inv_trader.core.precondition cimport Precondition
@@ -85,6 +86,106 @@ cdef class Symbol:
         return str(f"<{str(self)} object at {id(self)}>")
 
 
+cdef inline str _get_decimal_str(float value, int precision):
+        return f'{round(value, precision):.{precision}f}'
+
+
+cdef class Price:
+    """
+    Represents a financial market price
+    """
+
+    def __init__(self, object value, int precision=0):
+        """
+        Initializes a new instance of the Price class.
+
+        :param value: The value of the price (> 0).
+        """
+        if isinstance(value, str):
+            self.value = Decimal(value)
+            self.precision = abs(self.value.as_tuple().exponent)
+
+        elif isinstance(value, float):
+            self.value = Decimal(_get_decimal_str(value, precision))
+            self.precision = precision
+
+        elif isinstance(value, Decimal):
+            self.value = value
+            self.precision = abs(self.value.as_tuple().exponent)
+        else:
+            raise TypeError()
+
+        assert(self.value > 0)
+
+    def __eq__(self, Price other) -> bool:
+        """
+        Override the default equality comparison.
+        """
+        return self.value == other.value
+
+    def __ne__(self, Price other) -> bool:
+        """
+        Override the default not-equals comparison.
+        """
+        return self.value != other.value
+
+    def __str__(self) -> str:
+        """
+        :return: The str() string representation of the price.
+        """
+        return str(self.value)
+
+    def __repr__(self) -> str:
+        """
+        :return: The repr() string representation of the symbol.
+        """
+        return str(f"<Price({str(self)}) object at {id(self)}>")
+
+    def __lt__(self, Price other) -> bool:
+        return self.value < other.value
+
+    def __le__(self, Price other) -> bool:
+        return self.value <= other.value
+
+    def __eq__(self, Price other) -> bool:
+        return self.value == other.value
+
+    def __ne__(self, Price other) -> bool:
+        return self.value != other.value
+
+    def __gt__(self, Price other) -> bool:
+        return self.value > other.value
+
+    def __ge__(self, Price other) -> bool:
+        return self.value >= other.value
+
+    def __add__(self, other) -> Decimal:
+        if isinstance(other, float):
+            return Decimal(_get_decimal_str(other + float(self.value), self.precision))
+        elif isinstance(other, Decimal):
+            return Decimal(_get_decimal_str(float(other) + float(self.value), self.precision))
+        elif isinstance(other, Price):
+            return Decimal(_get_decimal_str(other.as_float() + float(self.value), self.precision))
+        else:
+            raise NotImplementedError(f"Cannot add {type(other)} to a price.")
+
+    def __sub__(self, other) -> Decimal:
+        if isinstance(other, float):
+            return Decimal(_get_decimal_str(other - float(self.value), self.precision))
+        elif isinstance(other, Decimal):
+            return Decimal(_get_decimal_str(float(other) - float(self.value), self.precision))
+        elif isinstance(other, Price):
+            return Decimal(_get_decimal_str(other.as_float() - float(self.value), self.precision))
+        else:
+            raise NotImplementedError(f"Cannot add {type(other)} to a price.")
+
+    cpdef float as_float(self):
+        """
+        :return: A float representation of the price. 
+        """
+        return float(self.value)
+
+
 cdef class Tick:
     """
     Represents a single tick in a financial market.
@@ -92,8 +193,8 @@ cdef class Tick:
 
     def __init__(self,
                  Symbol symbol,
-                 object bid,
-                 object ask,
+                 Price bid,
+                 Price ask,
                  datetime timestamp):
         """
         Initializes a new instance of the Tick class.
@@ -236,10 +337,10 @@ cdef class Bar:
     """
 
     def __init__(self,
-                 object open_price,
-                 object high_price,
-                 object low_price,
-                 object close_price,
+                 Price open_price,
+                 Price high_price,
+                 Price low_price,
+                 Price close_price,
                  long volume,
                  datetime timestamp,
                  bint checked=False):
