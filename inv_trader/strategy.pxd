@@ -20,7 +20,7 @@ from inv_trader.enums.order_side cimport OrderSide
 from inv_trader.enums.market_position cimport MarketPosition
 from inv_trader.model.events cimport Event
 from inv_trader.model.identifiers cimport GUID, Label, OrderId, PositionId
-from inv_trader.model.objects cimport Symbol, Tick, BarType, Bar, Instrument
+from inv_trader.model.objects cimport Symbol, Price, Tick, BarType, Bar, Instrument
 from inv_trader.model.order cimport Order
 from inv_trader.model.order cimport OrderIdGenerator, OrderFactory
 from inv_trader.model.position cimport Position
@@ -107,7 +107,7 @@ cdef class TradeStrategy:
     cpdef cancel_timer(self, Label label)
     cpdef collateral_inquiry(self)
     cpdef submit_order(self, Order order, PositionId position_id)
-    cpdef modify_order(self, Order order, new_price)
+    cpdef modify_order(self, Order order, Price new_price)
     cpdef cancel_order(self, Order order, str cancel_reason)
     cpdef cancel_all_orders(self, str cancel_reason)
     cpdef flatten_position(self, PositionId position_id)

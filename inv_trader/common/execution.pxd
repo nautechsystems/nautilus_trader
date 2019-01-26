@@ -16,6 +16,7 @@ from inv_trader.common.guid cimport GuidFactory
 from inv_trader.common.logger cimport LoggerAdapter
 from inv_trader.model.account cimport Account
 from inv_trader.model.events cimport Event
+from inv_trader.model.objects cimport Price
 from inv_trader.model.identifiers cimport GUID
 from inv_trader.model.order cimport Order
 from inv_trader.strategy cimport TradeStrategy
@@ -40,7 +41,7 @@ cdef class ExecutionClient:
     cpdef void collateral_inquiry(self)
     cpdef void submit_order(self, Order order, GUID strategy_id)
     cpdef void cancel_order(self, Order order, str cancel_reason)
-    cpdef void modify_order(self, Order order, new_price)
+    cpdef void modify_order(self, Order order, Price new_price)
 
     cdef void _register_order(self, Order order, GUID strategy_id)
     cdef void _on_event(self, Event event)

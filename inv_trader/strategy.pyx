@@ -25,7 +25,7 @@ from inv_trader.common.data cimport DataClient
 from inv_trader.model.events cimport Event, AccountEvent, OrderEvent
 from inv_trader.model.events cimport OrderRejected, OrderCancelReject, OrderFilled, OrderPartiallyFilled
 from inv_trader.model.identifiers cimport GUID, Label, OrderId, PositionId
-from inv_trader.model.objects cimport Symbol, Tick, BarType, Bar, Instrument
+from inv_trader.model.objects cimport Symbol, Price, Tick, BarType, Bar, Instrument
 from inv_trader.model.order cimport Order, OrderIdGenerator, OrderFactory
 from inv_trader.model.position cimport Position
 from inv_trader.tools cimport IndicatorUpdater
@@ -603,7 +603,7 @@ cdef class TradeStrategy:
         self.log.info(f"Submitting {order}")
         self._exec_client.submit_order(order, self.id)
 
-    cpdef modify_order(self, Order order, new_price):
+    cpdef modify_order(self, Order order, Price new_price):
         """
         Send a modify order command for the given order with the given new price
         to the execution service.
@@ -615,7 +615,6 @@ cdef class TradeStrategy:
         :raises ValueError: If order_id is not found in the order book.
         """
         Precondition.not_none(self._exec_client, 'exec_client')
-        Precondition.positive(new_price, 'new_price')
         Precondition.is_in(order.id, self._order_book, 'order.id', 'order_book')
 
         self.log.info(f"Modifying {order} with new price {new_price}")

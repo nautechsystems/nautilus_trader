@@ -30,13 +30,21 @@ cdef class Symbol:
     cdef bint equals(self, Symbol other)
 
 
+cdef class Price:
+    """
+    Represents a financial market price
+    """
+    cdef readonly object value
+    cdef readonly int precision
+    cpdef float as_float(self)
+
 cdef class Tick:
     """
     Represents a single tick in a financial market.
     """
     cdef readonly Symbol symbol
-    cdef readonly object bid
-    cdef readonly object ask
+    cdef readonly Price bid
+    cdef readonly Price ask
     cdef readonly datetime timestamp
 
 
@@ -57,10 +65,10 @@ cdef class Bar:
     """
     Represents a financial market trade bar.
     """
-    cdef readonly object open
-    cdef readonly object high
-    cdef readonly object low
-    cdef readonly object close
+    cdef readonly Price open
+    cdef readonly Price high
+    cdef readonly Price low
+    cdef readonly Price close
     cdef readonly long volume
     cdef readonly datetime timestamp
     cdef readonly bint checked

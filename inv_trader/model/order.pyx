@@ -47,7 +47,7 @@ cdef class Order:
                  OrderType order_type,
                  int quantity,
                  datetime timestamp,
-                 price=None,
+                 Price price=None,
                  TimeInForce time_in_force=TimeInForce.DAY,
                  datetime expire_time=None):
         """
@@ -74,7 +74,6 @@ cdef class Order:
         # Orders with prices
         if order_type in PRICED_ORDER_TYPES:
             Precondition.not_none(price, 'price')
-            Precondition.positive(price, 'price')
         # Orders without prices
         else:
             Precondition.none(price, 'price')
@@ -101,7 +100,7 @@ cdef class Order:
         self.time_in_force = time_in_force  # Can be None
         self.expire_time = expire_time      # Can be None
         self.filled_quantity = 0
-        self.average_price = Decimal(0.0)
+        self.average_price = None
         self.slippage = Decimal(0.0)
         self.status = OrderStatus.INITIALIZED
         self.event_count = 0
@@ -241,9 +240,9 @@ cdef class Order:
             return
 
         if self.side is OrderSide.BUY:
-            self.slippage = self.average_price - self.price
+            self.slippage = Decimal(self.average_price.as_float() - self.price.as_float())
         else:  # side is OrderSide.SELL:
-            self.slippage = (self.price - self.average_price)
+            self.slippage = Decimal(self.price.as_float() - self.average_price.as_float())
 
     cdef void _set_fill_status(self):
         if self.filled_quantity < self.quantity:
@@ -352,7 +351,7 @@ cdef class OrderFactory:
             Label label,
             OrderSide order_side,
             int quantity,
-            price,
+            Price price,
             TimeInForce time_in_force=TimeInForce.DAY,
             datetime expire_time=None):
         """
@@ -390,7 +389,7 @@ cdef class OrderFactory:
             Label label,
             OrderSide order_side,
             int quantity,
-            price,
+            Price price,
             TimeInForce time_in_force=TimeInForce.DAY,
             datetime expire_time=None):
         """
@@ -428,7 +427,7 @@ cdef class OrderFactory:
             Label label,
             OrderSide order_side,
             int quantity,
-            price,
+            Price price,
             TimeInForce time_in_force=TimeInForce.DAY,
             datetime expire_time=None):
         """
@@ -466,7 +465,7 @@ cdef class OrderFactory:
             Label label,
             OrderSide order_side,
             int quantity,
-            price,
+            Price price,
             TimeInForce time_in_force=TimeInForce.DAY,
             datetime expire_time=None):
         """

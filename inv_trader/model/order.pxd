@@ -12,7 +12,7 @@
 from cpython.datetime cimport datetime
 
 from inv_trader.common.clock cimport Clock
-from inv_trader.model.objects cimport Symbol
+from inv_trader.model.objects cimport Symbol, Price
 from inv_trader.model.events cimport OrderEvent
 from inv_trader.model.identifiers cimport Label, OrderId, ExecutionId, ExecutionTicket
 from inv_trader.enums.order_side cimport OrderSide
@@ -41,11 +41,11 @@ cdef class Order:
     cdef readonly OrderType type
     cdef readonly int quantity
     cdef readonly datetime timestamp
-    cdef readonly object price
+    cdef readonly Price price
     cdef readonly TimeInForce time_in_force
     cdef readonly datetime expire_time
     cdef readonly int filled_quantity
-    cdef readonly object average_price
+    cdef readonly Price average_price
     cdef readonly object slippage
     cdef readonly OrderStatus status
     cdef readonly int event_count
@@ -97,7 +97,7 @@ cdef class OrderFactory:
             Label label,
             OrderSide order_side,
             int quantity,
-            price,
+            Price price,
             TimeInForce time_in_force=*,
             datetime expire_time=*)
 
@@ -108,7 +108,7 @@ cdef class OrderFactory:
             Label label,
             OrderSide order_side,
             int quantity,
-            price,
+            Price price,
             TimeInForce time_in_force=*,
             datetime expire_time=*)
 
@@ -119,7 +119,7 @@ cdef class OrderFactory:
             Label label,
             OrderSide order_side,
             int quantity,
-            price,
+            Price price,
             TimeInForce time_in_force=*,
             datetime expire_time=*)
 
@@ -130,7 +130,7 @@ cdef class OrderFactory:
             Label label,
             OrderSide order_side,
             int quantity,
-            price,
+            Price price,
             TimeInForce time_in_force=*,
             datetime expire_time=*)
 

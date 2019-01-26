@@ -23,7 +23,7 @@ from inv_trader.common.execution cimport ExecutionClient
 from inv_trader.common.clock cimport TestClock
 from inv_trader.common.guid cimport TestGuidFactory
 from inv_trader.common.logger cimport Logger
-from inv_trader.model.price import price
+from inv_trader.model.objects cimport Price
 from inv_trader.model.order cimport Order
 from inv_trader.model.events cimport OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
 from inv_trader.model.events cimport OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
@@ -269,7 +269,7 @@ cdef class MockExecClient(ExecutionClient):
 
         self._on_event(cancelled)
 
-    cpdef void modify_order(self, Order order, new_price):
+    cpdef void modify_order(self, Order order, Price new_price):
         """
         Send a modify order command to the mock execution service.
         """
@@ -295,7 +295,7 @@ cdef class MockExecClient(ExecutionClient):
         Fills the last order held by the execution service.
         """
         cdef Order order = self._working_orders.pop(-1)
-        filled_price = price(1.00000, 5) if order.price is None else order.price
+        filled_price = Price('1.00000') if order.price is None else order.price
 
         cdef OrderFilled filled = OrderFilled(
             order.symbol,

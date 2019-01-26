@@ -11,8 +11,6 @@
 
 import zmq
 
-from decimal import Decimal
-
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.common.clock cimport Clock, LiveClock
 from inv_trader.common.guid cimport GuidFactory, LiveGuidFactory
@@ -21,6 +19,7 @@ from inv_trader.common.execution cimport ExecutionClient
 from inv_trader.commands cimport Command, OrderCommand, CollateralInquiry
 from inv_trader.commands cimport SubmitOrder, CancelOrder, ModifyOrder
 from inv_trader.model.order cimport Order
+from inv_trader.model.objects cimport Price
 from inv_trader.model.events cimport Event
 from inv_trader.model.identifiers cimport GUID
 from inv_trader.messaging import RequestWorker, SubscriberWorker
@@ -160,7 +159,7 @@ cdef class LiveExecClient(ExecutionClient):
         self._commands_worker.send(message)
         self._log.debug(f"Sent {command}")
 
-    cpdef void modify_order(self, Order order, new_price):
+    cpdef void modify_order(self, Order order, Price new_price):
         """
         Send a modify order command to the execution service with the given
         order and new_price.
@@ -169,8 +168,6 @@ cdef class LiveExecClient(ExecutionClient):
         :param new_price: The new modified price for the order.
         :raises ValueError: If the new_price is not positive (> 0).
         """
-        Precondition.positive(new_price, 'new_price')
-
         cdef OrderCommand command = ModifyOrder(
             order,
             new_price,

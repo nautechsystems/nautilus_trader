@@ -19,7 +19,7 @@ from inv_trader.enums.order_type cimport OrderType
 from inv_trader.enums.time_in_force cimport TimeInForce
 from inv_trader.model.identifiers cimport GUID, Label, AccountNumber, AccountId
 from inv_trader.model.identifiers cimport OrderId, ExecutionId, ExecutionTicket
-from inv_trader.model.objects cimport Symbol
+from inv_trader.model.objects cimport Symbol, Price
 
 
 cdef class Event:
@@ -275,7 +275,7 @@ cdef class OrderWorking(OrderEvent):
                  OrderSide order_side,
                  OrderType order_type,
                  int quantity,
-                 price,
+                 Price price,
                  TimeInForce time_in_force,
                  datetime working_time,
                  GUID event_id,
@@ -422,7 +422,7 @@ cdef class OrderModified(OrderEvent):
                  Symbol symbol,
                  OrderId order_id,
                  OrderId broker_order_id,
-                 modified_price,
+                 Price modified_price,
                  datetime modified_time,
                  GUID event_id,
                  datetime event_timestamp):
@@ -458,7 +458,7 @@ cdef class OrderFilled(OrderEvent):
                  ExecutionTicket execution_ticket,
                  OrderSide order_side,
                  int filled_quantity,
-                 average_price,
+                 Price average_price,
                  datetime execution_time,
                  GUID event_id,
                  datetime event_timestamp):
@@ -477,7 +477,6 @@ cdef class OrderFilled(OrderEvent):
         :param event_timestamp: The events timestamp.
         """
         Precondition.positive(filled_quantity, 'filled_quantity')
-        Precondition.positive(average_price, 'average_price')
 
         super().__init__(symbol,
                          order_id,
@@ -504,7 +503,7 @@ cdef class OrderPartiallyFilled(OrderEvent):
                  OrderSide order_side,
                  int filled_quantity,
                  int leaves_quantity,
-                 average_price,
+                 Price average_price,
                  datetime execution_time,
                  GUID event_id,
                  datetime event_timestamp):
