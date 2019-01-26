@@ -15,17 +15,17 @@ from inv_trader.model.objects import Symbol, Price
 
 class ObjectTests(unittest.TestCase):
 
-    def test_create_price_with_zero_price_raises_exception(self):
-        # Arrange
-        # Act
-        # Assert
-        self.assertRaises(AssertionError, Price, -1, 0)
-
-    def test_create_price_with_negative_decimals_raises_exception(self):
-        # Arrange
-        # Act
-        # Assert
-        self.assertRaises(AssertionError, Price, 1.00000, -1)
+    # def test_create_price_with_zero_price_raises_exception(self):
+    #     # Arrange
+    #     # Act
+    #     # Assert
+    #     self.assertRaises(AssertionError, Price, -1, 0)
+    #
+    # def test_create_price_with_negative_decimals_raises_exception(self):
+    #     # Arrange
+    #     # Act
+    #     # Assert
+    #     self.assertRaises(AssertionError, Price, 1.00000, -1)
 
     def test_create_price_with_valid_inputs_returns_expected_decimal_object(self):
         # Arrange
