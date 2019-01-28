@@ -21,8 +21,8 @@ from inv_trader.commands cimport Command, OrderCommand
 cpdef Symbol parse_symbol(str symbol_string)
 cpdef str convert_price_to_string(Price price)
 cpdef Price convert_string_to_price(str price_string)
-cpdef str convert_datetime_to_string(datetime expire_time)
-cpdef datetime convert_string_to_datetime(str expire_time_string)
+cpdef str convert_datetime_to_string(datetime time)
+cpdef datetime convert_string_to_datetime(str time_string)
 
 
 cdef class OrderSerializer:

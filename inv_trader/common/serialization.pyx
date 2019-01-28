@@ -103,8 +103,8 @@ cpdef Symbol parse_symbol(str symbol_string):
     :param symbol_string: The symbol string to parse.
     :return: The parsed symbol.
     """
-    cdef list split_symbol = symbol_string.split('.')
-    return Symbol(split_symbol[0], Venue[split_symbol[1].upper()])
+    cdef tuple split_symbol = symbol_string.partition('.')
+    return Symbol(split_symbol[0], Venue[split_symbol[2].upper()])
 
 
 cpdef str convert_price_to_string(Price price):
@@ -127,25 +127,28 @@ cpdef Price convert_string_to_price(str price_string):
     return None if price_string == NONE else Price(price_string)
 
 
-cpdef str convert_datetime_to_string(datetime expire_time):
+cpdef str convert_datetime_to_string(datetime time):
     """
     Convert the given object to a valid ISO8601 string, or 'NONE'.
 
-    :param expire_time: The datetime string to convert
+    :param time: The datetime to convert
     :return: The converted string.
     """
-    return (NONE if expire_time is None
-            else expire_time.isoformat(timespec='milliseconds').replace('+00:00', 'Z'))
+    try:
+        return NONE if time is None else time.isoformat(timespec='milliseconds').replace('+00:00', 'Z')
+    except Exception as ex:
+        print(f"Cannot convert {time} to string.")
 
 
-cpdef datetime convert_string_to_datetime(str expire_time_string):
+
+cpdef datetime convert_string_to_datetime(str time_string):
     """
     Convert the given string to a datetime object, or None.
 
-    :param expire_time_string: The string to convert.
+    :param time_string: The time string to convert.
     :return: The converted datetime, or None.
     """
-    return None if expire_time_string == NONE else iso8601.parse_date(expire_time_string)
+    return None if time_string == NONE else iso8601.parse_date(time_string)
 
 
 cdef class OrderSerializer:
@@ -161,7 +164,7 @@ cdef class OrderSerializer:
         :return: The serialized order.
         """
         # Raise exception if not overridden in implementation.
-        raise NotImplementedError("Method must be implemented.")
+        raise NotImplementedError("Method must be implemented in the subclass.")
 
     cpdef Order deserialize(self, bytes order_bytes):
         """
@@ -171,7 +174,7 @@ cdef class OrderSerializer:
         :return: The deserialized order.
         """
         # Raise exception if not overridden in implementation.
-        raise NotImplementedError("Method must be implemented.")
+        raise NotImplementedError("Method must be implemented in the subclass. ")
 
 
 cdef class CommandSerializer:
@@ -187,7 +190,7 @@ cdef class CommandSerializer:
         :return: The serialized command.
         """
         # Raise exception if not overridden in implementation.
-        raise NotImplementedError("Method must be implemented.")
+        raise NotImplementedError("Method must be implemented in the subclass.")
 
     cpdef Command deserialize(self, bytes command_bytes):
         """
@@ -197,10 +200,12 @@ cdef class CommandSerializer:
         :return: The deserialized command.
         """
         # Raise exception if not overridden in implementation.
-        raise NotImplementedError("Method must be implemented.")
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
     cdef bytes _serialize_order_command(self, OrderCommand order_command):
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented.")
+
     cdef OrderCommand _deserialize_order_command(
             self,
             GUID command_id,
@@ -208,6 +213,7 @@ cdef class CommandSerializer:
             dict unpacked):
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented.")
+
 
 cdef class EventSerializer:
     """
@@ -233,9 +239,11 @@ cdef class EventSerializer:
         """
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented.")
+
     cdef bytes _serialize_order_event(self, OrderEvent order_event):
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented.")
+
     cdef OrderEvent _deserialize_order_event(
             self,
             GUID event_id,
