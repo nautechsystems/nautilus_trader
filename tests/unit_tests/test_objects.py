@@ -9,11 +9,10 @@
 
 import unittest
 
-from decimal import Decimal, getcontext
+from decimal import Decimal
 
 from inv_trader.model.enums import Venue
 from inv_trader.model.objects import Symbol, Price
-from test_kit.data import TestDataProvider
 
 
 class ObjectTests(unittest.TestCase):
@@ -117,7 +116,7 @@ class ObjectTests(unittest.TestCase):
     def test_price_repr(self):
         # Arrange
         price = Price(1.00000, 5)
-
+        print(price)
         # Act
         result = repr(price)
 
