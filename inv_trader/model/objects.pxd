@@ -30,10 +30,18 @@ cdef class Symbol:
 
 cdef class Price:
     """
-    Represents a financial market price
+    Represents a financial market price.
     """
     cdef readonly object value
     cdef readonly int precision
+    cpdef float as_float(self)
+
+
+cdef class Money:
+    """
+    Represents money.
+    """
+    cdef readonly object value
     cpdef float as_float(self)
 
 

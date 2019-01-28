@@ -109,8 +109,9 @@ cdef class Price:
         Initializes a new instance of the Price class.
 
         :param value: The value of the price (> 0).
-        Note: Can be str, float or Decimal only.
-        :raises TypeError: If the value is not a str, float or Decimal.
+        Note: Can be str, float, int or Decimal only.
+        :raises TypeError: If the value is not a str, float, int or Decimal.
+        :raises InvalidOperation: If the value str is malformed.
         :raises AssertionError: If the value is not positive (> 0).
         :raises AssertionError: If the precision is not positive (> 0).
         """
@@ -124,12 +125,16 @@ cdef class Price:
             self.value = Decimal(_get_decimal_str(value, precision))
             self.precision = precision
 
+        elif isinstance(value, int):
+            self.value = Decimal(_get_decimal_str(float(value), precision))
+            self.precision = precision
+
         elif isinstance(value, Decimal):
             self.value = value
             self.precision = _get_precision(str(value))
 
         else:
-            raise TypeError()
+            raise TypeError(f'Cannot initialize a Price with a {type(value)}.')
 
         assert(self.value > 0)
 
@@ -176,23 +181,21 @@ cdef class Price:
         return self.value >= other.value
 
     def __add__(self, other) -> Decimal:
-        cdef type other_type = type(other)
-        if other_type is float:
+        if isinstance(other, float):
             return Decimal(_get_decimal_str(float(self.value) + other, self.precision))
-        elif other_type is Decimal:
+        elif isinstance(other, Decimal):
             return Decimal(_get_decimal_str(float(self.value) + float(other), self.precision))
-        elif other_type is Price:
+        elif isinstance(other, Price):
             return Decimal(_get_decimal_str(float(self.value) + other.as_float(), self.precision))
         else:
             raise NotImplementedError(f"Cannot add {type(other)} to a price.")
 
     def __sub__(self, other) -> Decimal:
-        cdef type other_type = type(other)
-        if other_type is float:
+        if isinstance(other, float):
             return Decimal(_get_decimal_str(float(self.value) - other, self.precision))
-        elif other_type is Decimal:
+        elif isinstance(other, Decimal):
             return Decimal(_get_decimal_str(float(self.value) - float(other), self.precision))
-        elif other_type is Price:
+        elif isinstance(other, Price):
             return Decimal(_get_decimal_str(float(self.value) - other.as_float(), self.precision))
         else:
             raise NotImplementedError(f"Cannot subtract {type(other)} from a price.")
@@ -200,6 +203,121 @@ cdef class Price:
     cpdef float as_float(self):
         """
         :return: A float representation of the price. 
+        """
+        return float(self.value)
+
+
+cdef inline str _get_money_str(str value):
+    cdef tuple partitioned
+    cdef int cents_length
+
+    if not value.__contains__('.'):
+        return value + '.00'
+    else:
+        partitioned = value.partition('.')
+        cents_length = len(partitioned[2])
+        assert(cents_length <= 2)
+
+        return value + ('0' * (2 - cents_length))
+
+
+cdef class Money:
+    """
+    Represents money.
+    """
+
+    def __init__(self, object value):
+        """
+        Initializes a new instance of the Money class.
+
+        :param value: The value of the money (>= 0).
+        Note: Can be str, float or Decimal only.
+        :raises TypeError: If the value is not a str, float or Decimal.
+        :raises AssertionError: If the value is negative (< 0).
+        :raises AssertionError: If the str or Decimal value has a precision > 2.
+        """
+        if isinstance(value, str):
+            self.value = Decimal(_get_money_str(value))
+
+        elif isinstance(value, Decimal):
+            self.value = Decimal(_get_money_str(str(value)))
+
+        elif isinstance(value, float):
+            self.value = Decimal(_get_decimal_str(value, 2))
+
+        elif isinstance(value, int):
+            self.value = Decimal(_get_decimal_str(float(value), 2))
+
+        else:
+            raise TypeError(f'Cannot initialize Money with a {type(value)}.')
+
+        assert(self.value >= 0)
+
+    @staticmethod
+    def zero():
+        return Money(Decimal('0.00'))
+
+    def __eq__(self, Money other) -> bool:
+        """
+        Override the default equality comparison.
+        """
+        return self.value == other.value
+
+    def __ne__(self, Money other) -> bool:
+        """
+        Override the default not-equals comparison.
+        """
+        return self.value != other.value
+
+    def __str__(self) -> str:
+        """
+        :return: The str() string representation of the price.
+        """
+        return str(self.value)
+
+    def __repr__(self) -> str:
+        """
+        :return: The repr() string representation of the symbol.
+        """
+        return str(f"<Money({str(self)}) object at {id(self)}>")
+
+    def __lt__(self, Money other) -> bool:
+        return self.value < other.value
+
+    def __le__(self, Money other) -> bool:
+        return self.value <= other.value
+
+    def __eq__(self, Money other) -> bool:
+        return self.value == other.value
+
+    def __ne__(self, Money other) -> bool:
+        return self.value != other.value
+
+    def __gt__(self, Money other) -> bool:
+        return self.value > other.value
+
+    def __ge__(self, Money other) -> bool:
+        return self.value >= other.value
+
+    def __add__(self, other) -> Money:
+        if isinstance(other, Decimal):
+            return Money(self.value + other)
+        elif isinstance(other, Money):
+            return Money(self.value + other.value)
+        else:
+            raise NotImplementedError(f"Cannot add {type(other)} to money.")
+
+    def __sub__(self, other) -> Decimal:
+        if isinstance(other, Decimal):
+            return Money(self.value - other)
+        elif isinstance(other, Money):
+            return Money(self.value - other.value)
+        else:
+            raise NotImplementedError(f"Cannot subtract {type(other)} from money.")
+
+    cpdef float as_float(self):
+        """
+        :return: A float representation of the money. 
         """
         return float(self.value)
 
