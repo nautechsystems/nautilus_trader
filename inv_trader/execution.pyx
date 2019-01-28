@@ -178,7 +178,7 @@ cdef class LiveExecClient(ExecutionClient):
         self._commands_worker.send(message)
         self._log.debug(f"Sent {command}")
 
-    cdef void _event_handler(self, bytes body):
+    cpdef void _event_handler(self, bytes body):
         """"
         Handle the event message by parsing to an Event and sending
         to the registered strategy.
@@ -193,7 +193,7 @@ cdef class LiveExecClient(ExecutionClient):
 
         self._on_event(event)
 
-    cdef void _command_ack_handler(self, bytes body):
+    cpdef void _command_ack_handler(self, bytes body):
         """"
         Handle the command acknowledgement message.
 
