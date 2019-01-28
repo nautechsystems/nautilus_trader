@@ -12,7 +12,7 @@
 from inv_trader.enums.brokerage cimport Broker
 from inv_trader.enums.currency_code cimport CurrencyCode
 from inv_trader.model.events cimport AccountEvent
-from inv_trader.model.money import money, money_zero
+from inv_trader.model.objects import Money
 
 
 cdef class Account:
@@ -31,7 +31,7 @@ cdef class Account:
         self.broker = Broker.UNKNOWN
         self.account_number = None
         self.currency = CurrencyCode.UNKNOWN
-        self.cash_balance = money_zero()
+        self.cash_balance = Money.zero()
         self.cash_start_day = money_zero()
         self.cash_activity_day = money_zero()
         self.margin_used_liquidation = money_zero()

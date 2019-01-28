@@ -180,6 +180,16 @@ class ObjectTests(unittest.TestCase):
         self.assertEqual(Decimal, type(result6))
         self.assertEqual(Decimal('2.0000'), result6)
 
+    def test_price_as_float(self):
+        # Arrange
+        price = Price(1.00000, 5)
+
+        # Act
+        result = price.as_float()
+
+        # Assert
+        self.assertEqual(1.0, result)
+
     def test_money_initialized_with_invalid_type_raises_exception(self):
         # Arrange
         # Act
@@ -203,6 +213,15 @@ class ObjectTests(unittest.TestCase):
         # Act
         # Assert
         self.assertRaises(AssertionError, Money, Decimal('9.999'))
+
+    def test_money_zero_returns_money_with_zero_value(self):
+        # Arrange
+        # Act
+        result = Money.zero()
+
+        # Assert
+        self.assertEqual(Money(Decimal('0')), result)
+        self.assertEqual('0.00', str(result))
 
     def test_money_from_string_with_no_decimal(self):
         # Arrange
@@ -293,3 +312,13 @@ class ObjectTests(unittest.TestCase):
         self.assertEqual(Money('2.00'), result3)
         self.assertEqual(Money, type(result4))
         self.assertEqual(Money('2.00'), result4)
+
+    def test_money_as_float(self):
+        # Arrange
+        money = Money(1)
+
+        # Act
+        result = money.as_float()
+
+        # Assert
+        self.assertEqual(1.0, result)
