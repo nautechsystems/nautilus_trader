@@ -74,7 +74,7 @@ class ObjectTests(unittest.TestCase):
     def test_price_initialized_with_valid_inputs(self):
         # Arrange
         # Act
-        print(type(Decimal('1.01').quantize(Decimal('1.0'))))
+        result0 = Price('1')
         result1 = Price(1.0)
         result2 = Price(1.00000, 5)
         result3 = Price(1.001, 2)
@@ -84,6 +84,7 @@ class ObjectTests(unittest.TestCase):
         result7 = Price(87.1, 3)
 
         # Assert
+        self.assertEqual(Price('1.0'), result0)
         self.assertEqual(Price('1.0'), result1)
         self.assertEqual(Price('1.00000'), result2)
         self.assertEqual(Price('1.00'), result3)
