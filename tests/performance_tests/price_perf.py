@@ -37,10 +37,6 @@ class PriceInitializations:
     def from_decimal():
         Price(Decimal('1.00000'))
 
-    @staticmethod
-    def from_string_add_pad():
-        Price.from_string_add_pad('1.0000', 5)
-
 
 class PricePerformanceTests(unittest.TestCase):
 
