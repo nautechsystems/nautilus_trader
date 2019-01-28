@@ -375,7 +375,7 @@ class OrderTests(unittest.TestCase):
             order.side,
             order.type,
             order.quantity,
-            Price('1'),
+            Price('1.0'),
             order.time_in_force,
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
