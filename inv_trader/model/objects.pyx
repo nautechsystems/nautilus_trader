@@ -9,7 +9,7 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
-from decimal import Decimal, getcontext, setcontext, InvalidOperation
+from decimal import Decimal
 from cpython.datetime cimport datetime
 
 from inv_trader.core.precondition cimport Precondition
@@ -89,6 +89,7 @@ cdef class Symbol:
 cdef inline str _get_decimal_str(float value, int precision):
     return f'{round(value, precision):.{precision}f}'
 
+
 cdef inline int _get_precision(str value):
     cdef tuple partitioned
     if value.__contains__('.'):
@@ -100,7 +101,7 @@ cdef inline int _get_precision(str value):
 
 cdef class Price:
     """
-    Represents a financial market price
+    Represents a financial market price.
     """
 
     def __init__(self, object value, int precision=1):
@@ -109,7 +110,6 @@ cdef class Price:
 
         :param value: The value of the price (> 0).
         Note: Can be str, float or Decimal only.
-        Note: value strings must contain a decimal (.).
         :raises TypeError: If the value is not a str, float or Decimal.
         :raises AssertionError: If the value is not positive (> 0).
         :raises AssertionError: If the precision is not positive (> 0).
