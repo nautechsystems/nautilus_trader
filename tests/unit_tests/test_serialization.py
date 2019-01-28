@@ -11,7 +11,7 @@ import unittest
 import uuid
 
 from decimal import Decimal
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from inv_trader.commands import SubmitOrder, CancelOrder, ModifyOrder
 from inv_trader.commands import CollateralInquiry
@@ -70,7 +70,7 @@ class SerializationFunctionTests(unittest.TestCase):
         # Assert
         self.assertEqual(Price('1.00000'), result)
 
-    def test_can_convert_expire_time_to_string_from_none(self):
+    def test_can_convert_datetime_to_string_from_none(self):
         # Arrange
         # Act
         result = convert_datetime_to_string(None)
@@ -78,7 +78,7 @@ class SerializationFunctionTests(unittest.TestCase):
         # Assert
         self.assertEqual('NONE', result)
 
-    def test_can_convert_expire_time_to_string_from_datetime(self):
+    def test_can_convert_datetime_to_string(self):
         # Arrange
         # Act
         result = convert_datetime_to_string(UNIX_EPOCH)
@@ -86,7 +86,7 @@ class SerializationFunctionTests(unittest.TestCase):
         # Assert
         self.assertEqual('1970-01-01T00:00:00.000Z', result)
 
-    def test_can_convert_string_to_expire_time_from_datetime(self):
+    def test_can_convert_string_to_time_from_datetime(self):
         # Arrange
         # Act
         result = convert_string_to_datetime('1970-01-01T00:00:00.000Z')
@@ -94,13 +94,21 @@ class SerializationFunctionTests(unittest.TestCase):
         # Assert
         self.assertEqual(UNIX_EPOCH, result)
 
-    def test_can_convert_string_to_expire_time_from_none(self):
+    def test_can_convert_string_to_time_from_none(self):
         # Arrange
         # Act
         result = convert_string_to_datetime('NONE')
 
         # Assert
         self.assertEqual(None, result)
+
+    def test_convert_datetime_to_string_stress_test(self):
+
+        stop_time = datetime.utcnow() + timedelta(seconds=1)
+        while datetime.utcnow() < stop_time:
+            convert_datetime_to_string(datetime.utcnow())
+
+        self.assertTrue(True)  # No exceptions thrown
 
 
 class MsgPackOrderSerializerTests(unittest.TestCase):
