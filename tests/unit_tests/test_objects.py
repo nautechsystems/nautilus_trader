@@ -62,30 +62,37 @@ class ObjectTests(unittest.TestCase):
     def test_price_from_float(self):
         # Arrange
         # Act
-        price = Price(1.00000, 5)
+        price1 = Price(1.00000, 5)
+        price2 = Price(1.0001, 3)
 
         # Assert
-        self.assertEqual(Price('1.00000'), price)
+        self.assertEqual(Price('1.00000'), price1)
+        self.assertEqual('1.00000',  str(price1))
+        self.assertEqual(Price('1.000'), price2)
+        self.assertEqual('1.000', str(price2))
 
     def test_price_initialized_with_valid_inputs(self):
         # Arrange
         # Act
+        print(type(Decimal('1.01').quantize(Decimal('1.0'))))
         result1 = Price(1.0)
         result2 = Price(1.00000, 5)
         result3 = Price(1.001, 2)
-        result4 = Price(1.15)  # Rounding half down
+        result4 = Price(1.2)  # Rounding half up
         result5 = Price(1.000001, 5)
         result6 = Price(Decimal('1.000'))
+        result7 = Price(87.1, 3)
 
         # Assert
         self.assertEqual(Price('1.0'), result1)
         self.assertEqual(Price('1.00000'), result2)
         self.assertEqual(Price('1.00'), result3)
-        self.assertEqual(Price('1.1'), result4)
+        self.assertEqual(Price('1.2'), result4)
         self.assertEqual(Price('1.0'), result5)
         self.assertEqual(1.0, result5.as_float())
         self.assertEqual(Price('1.000'), result6)
         self.assertEqual(1.000, result6.as_float())
+        self.assertEqual(Price('87.100'), result7)
 
     def test_price_equality(self):
         # Arrange

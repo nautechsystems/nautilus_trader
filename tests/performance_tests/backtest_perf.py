@@ -108,5 +108,6 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 42098237 function calls (42094048 primitive calls) in 17.941 seconds
         # 39091577 function calls (39087388 primitive calls) in 16.455 seconds (removed price convenience method from build bars)
         # 21541910 function calls (21537721 primitive calls) in 11.654 seconds (added Price type)
+        # 19915492 function calls (19911303 primitive calls) in 11.036 seconds
 
         self.assertTrue(True)
