@@ -9,10 +9,10 @@
 
 import unittest
 
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from inv_trader.model.enums import Venue
-from inv_trader.model.objects import Symbol, Price
+from inv_trader.model.objects import Symbol, Price, Money
 
 
 class ObjectTests(unittest.TestCase):
@@ -37,6 +37,18 @@ class ObjectTests(unittest.TestCase):
         # Assert
         self.assertEqual("AUDUSD.FXCM", str(symbol))
         self.assertTrue(repr(symbol).startswith("<AUDUSD.FXCM object at"))
+
+    def test_price_initialized_with_invalid_type_raises_exception(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertRaises(TypeError, Price, Money(1.0))
+
+    def test_price_initialized_with_malformed_string_raises_exception(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertRaises(InvalidOperation, Price, 'a')
 
     def test_price_initialized_with_negative_value_raises_exception(self):
         # Arrange
@@ -74,7 +86,7 @@ class ObjectTests(unittest.TestCase):
     def test_price_initialized_with_valid_inputs(self):
         # Arrange
         # Act
-        result0 = Price('1')
+        result0 = Price(1, 1)
         result1 = Price(1.0)
         result2 = Price(1.00000, 5)
         result3 = Price(1.001, 2)
@@ -103,13 +115,10 @@ class ObjectTests(unittest.TestCase):
         price3 = Price('2.00000')
         price4 = Price('1.01')
 
-        result1 = price1 != price4
-
         # Assert
         self.assertEqual(price1, price2)
         self.assertNotEqual(price1, price3)
         self.assertNotEqual(price1, price4)
-        self.assertTrue(result1)
 
     def test_price_str(self):
         # Arrange
@@ -124,7 +133,7 @@ class ObjectTests(unittest.TestCase):
     def test_price_repr(self):
         # Arrange
         price = Price(1.00000, 5)
-        print(price)
+
         # Act
         result = repr(price)
 
@@ -170,3 +179,117 @@ class ObjectTests(unittest.TestCase):
         self.assertEqual(Decimal('2.0000'), result5)
         self.assertEqual(Decimal, type(result6))
         self.assertEqual(Decimal('2.0000'), result6)
+
+    def test_money_initialized_with_invalid_type_raises_exception(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertRaises(TypeError, Money, Price(1.0))
+
+    def test_money_initialized_with_malformed_string_raises_exception(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertRaises(InvalidOperation, Money, 'a')
+
+    def test_money_initialized_with_negative_value_raises_exception(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertRaises(AssertionError, Money, Decimal(-1.0))
+
+    def test_money_initialized_with_decimal_with_precision_3_raises_exception(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertRaises(AssertionError, Money, Decimal('9.999'))
+
+    def test_money_from_string_with_no_decimal(self):
+        # Arrange
+        # Act
+        money = Money(Decimal('1'))
+
+        # Assert
+        self.assertEqual(Decimal('1.00'), money.value)
+        self.assertEqual('1.00', str(money))
+
+    def test_money_initialized_with_valid_inputs(self):
+        # Arrange
+        # Act
+        result1 = Money(Decimal('1.00'))
+        result2 = Money(Decimal('1000.0'))
+        result3 = Money(2)
+        result4 = Money(1.01)
+
+        # Assert
+        self.assertEqual(Decimal('1.00'), result1.value)
+        self.assertEqual(Decimal('1000.00'), result2.value)
+        self.assertEqual(Decimal('2.00'), result3.value)
+        self.assertEqual(Decimal('1.01'), result4.value)
+
+    def test_money_equality(self):
+        # Arrange
+        # Act
+        money1 = Money('1.00')
+        money2 = Money('1.00')
+        money3 = Money('2.00')
+        money4 = Money('1.01')
+
+        # Assert
+        self.assertEqual(money1, money2)
+        self.assertNotEqual(money1, money3)
+        self.assertNotEqual(money1, money4)
+
+    def test_money_str(self):
+        # Arrange
+        money = Money(1)
+
+        # Act
+        result = str(money)
+
+        # Assert
+        self.assertEqual('1.00', result)
+
+    def test_money_repr(self):
+        # Arrange
+        money = Money(1)
+
+        # Act
+        result = repr(money)
+
+        # Assert
+        self.assertTrue(result.startswith('<Money(1.00) object at'))
+
+    def test_money_operators(self):
+        # Arrange
+        money1 = Price('0.50')
+        money2 = Price('1.00')
+        money3 = Price('1.50')
+
+        # Act
+        # Assert
+        self.assertTrue(money1 < money2)
+        self.assertTrue(money1 <= money2)
+        self.assertTrue(money2 <= money2)
+        self.assertTrue(money3 > money2)
+        self.assertTrue(money3 >= money3)
+
+    def test_money_arithmetic(self):
+        # Arrange
+        # Act
+        result1 = Money('1.00') + Decimal('1.00')
+        result2 = Money('1.00') + Money('1.00')
+
+        result3 = Money('3.00') - Decimal('1.00')
+        result4 = Money('3.00') - Money('1.00')
+
+        # Assert
+        self.assertEqual(Money, type(result1))
+        self.assertEqual(Money('2.00'), result1)
+        self.assertEqual(Money, type(result2))
+        self.assertEqual(Money('2.00'), result2)
+
+        self.assertEqual(Money, type(result3))
+        self.assertEqual(Money('2.00'), result3)
+        self.assertEqual(Money, type(result4))
+        self.assertEqual(Money('2.00'), result4)
