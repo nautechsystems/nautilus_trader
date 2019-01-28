@@ -103,7 +103,7 @@ cdef class Price:
     Represents a financial market price
     """
 
-    def __init__(self, object value, int precision=1, bint calculate_prec=True):
+    def __init__(self, object value, int precision=1):
         """
         Initializes a new instance of the Price class.
 
@@ -118,10 +118,7 @@ cdef class Price:
 
         if isinstance(value, str):
             self.value = Decimal(value)
-            if calculate_prec:
-                self.precision = _get_precision(value)
-            else:
-                self.precision = precision
+            self.precision = _get_precision(value)
 
         elif isinstance(value, float):
             self.value = Decimal(_get_decimal_str(value, precision))
@@ -135,17 +132,6 @@ cdef class Price:
             raise TypeError()
 
         assert(self.value > 0)
-
-    # @staticmethod
-    # def from_string_add_pad(str value, int precision):
-    #     cdef tuple partitioned = value.rpartition('.')
-    #     cdef int difference = precision - len(partitioned[2])
-    #
-    #     if difference == 0:
-    #         return Price(value, precision=precision, calculate_prec=False)
-    #     else:
-    #         value += '0' * difference
-    #         return Price(value, precision=precision, calculate_prec=False)
 
     def __eq__(self, Price other) -> bool:
         """
