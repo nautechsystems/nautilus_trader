@@ -9,7 +9,7 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
-from decimal import Decimal
+from decimal import Decimal, getcontext
 from cpython.datetime cimport datetime
 
 from inv_trader.core.precondition cimport Precondition
@@ -87,7 +87,15 @@ cdef class Symbol:
 
 
 cdef inline str _get_decimal_str(float value, int precision):
-        return f'{round(value, precision):.{precision}f}'
+    return f'{round(value, precision):.{precision}f}'
+
+cdef inline int _get_precision(str value):
+    cdef tuple partitioned
+    if value.__contains__('.'):
+        partitioned = value.rpartition('.')
+        return len(partitioned[2])
+    else:
+        return 0
 
 
 cdef class Price:
@@ -95,29 +103,49 @@ cdef class Price:
     Represents a financial market price
     """
 
-    def __init__(self, object value, int precision=0):
+    def __init__(self, object value, int precision=1, bint calculate_prec=True):
         """
         Initializes a new instance of the Price class.
 
         :param value: The value of the price (> 0).
-        :raises ValueError: If the precision is negative (< 0).
+        Note: Can be str, float or Decimal only.
+        Note: value strings must contain a decimal (.).
+        :raises TypeError: If the value is not a str, float or Decimal.
+        :raises AssertionError: If the value is not positive (> 0).
+        :raises AssertionError: If the precision is not positive (> 0).
         """
-        cdef type value_type = type(value)
-        if value_type is str:
-            self.value = Decimal(value)
-            self.precision = abs(self.value.as_tuple().exponent)
+        assert(precision > 0)
 
-        elif value_type is float:
+        if isinstance(value, str):
+            self.value = Decimal(value)
+            if calculate_prec:
+                self.precision = _get_precision(value)
+            else:
+                self.precision = precision
+
+        elif isinstance(value, float):
             self.value = Decimal(_get_decimal_str(value, precision))
             self.precision = precision
 
-        elif value_type is Decimal:
+        elif isinstance(value, Decimal):
             self.value = value
-            self.precision = abs(self.value.as_tuple().exponent)
+            self.precision = _get_precision(str(value))
+
         else:
             raise TypeError()
 
-        Precondition.positive(self.value, 'value')
+        assert(self.value > 0)
+
+    # @staticmethod
+    # def from_string_add_pad(str value, int precision):
+    #     cdef tuple partitioned = value.rpartition('.')
+    #     cdef int difference = precision - len(partitioned[2])
+    #
+    #     if difference == 0:
+    #         return Price(value, precision=precision, calculate_prec=False)
+    #     else:
+    #         value += '0' * difference
+    #         return Price(value, precision=precision, calculate_prec=False)
 
     def __eq__(self, Price other) -> bool:
         """

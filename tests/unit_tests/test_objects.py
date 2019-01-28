@@ -9,10 +9,11 @@
 
 import unittest
 
-from decimal import Decimal
+from decimal import Decimal, getcontext
 
 from inv_trader.model.enums import Venue
 from inv_trader.model.objects import Symbol, Price
+from test_kit.data import TestDataProvider
 
 
 class ObjectTests(unittest.TestCase):
@@ -42,29 +43,46 @@ class ObjectTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ValueError, Price, -1.0, 0)
+        self.assertRaises(AssertionError, Price, -1.0)
 
     def test_price_initialized_with_negative_precision_raises_exception(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ValueError, Price, 1.00000, -1)
+        self.assertRaises(AssertionError, Price, 1.00000, -1)
+
+    def test_price_from_string_with_no_decimal(self):
+        # Arrange
+        # Act
+        price = Price('1')
+
+        # Assert
+        self.assertEqual(Decimal('1.0'), price.value)
+        self.assertEqual(0, price.precision)
+
+    def test_price_from_float(self):
+        # Arrange
+        # Act
+        price = Price(1.00000, 5)
+
+        # Assert
+        self.assertEqual(Price('1.00000'), price)
 
     def test_price_initialized_with_valid_inputs(self):
         # Arrange
         # Act
-        result1 = Price(1.00000, 5)
-        result2 = Price(1.0, 0)
+        result1 = Price(1.0)
+        result2 = Price(1.00000, 5)
         result3 = Price(1.001, 2)
-        result4 = Price(1.1, 0)
+        result4 = Price(1.15)  # Rounding half down
         result5 = Price(1.000001, 5)
         result6 = Price(Decimal('1.000'))
 
         # Assert
-        self.assertEqual(Price('1.00000'), result1)
-        self.assertEqual(Price('1'), result2)
+        self.assertEqual(Price('1.0'), result1)
+        self.assertEqual(Price('1.00000'), result2)
         self.assertEqual(Price('1.00'), result3)
-        self.assertEqual(Price('1.0'), result4)
+        self.assertEqual(Price('1.1'), result4)
         self.assertEqual(Price('1.0'), result5)
         self.assertEqual(1.0, result5.as_float())
         self.assertEqual(Price('1.000'), result6)

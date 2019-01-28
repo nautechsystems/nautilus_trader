@@ -12,6 +12,7 @@
 import inspect
 import pandas as pd
 
+from cpython.array cimport array
 from cpython.datetime cimport datetime
 from typing import Callable, List
 from pandas.core.frame import DataFrame
