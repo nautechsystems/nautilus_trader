@@ -32,13 +32,13 @@ cdef class Account:
         self.account_number = None
         self.currency = CurrencyCode.UNKNOWN
         self.cash_balance = Money.zero()
-        self.cash_start_day = money_zero()
-        self.cash_activity_day = money_zero()
-        self.margin_used_liquidation = money_zero()
-        self.margin_used_maintenance = money_zero()
-        self.margin_ratio = money_zero()
+        self.cash_start_day = Money.zero()
+        self.cash_activity_day = Money.zero()
+        self.margin_used_liquidation = Money.zero()
+        self.margin_used_maintenance = Money.zero()
+        self.margin_ratio = Money.zero()
         self.margin_call_status = ""
-        self.free_equity = money_zero()
+        self.free_equity = Money.zero()
         self.last_updated = None
         self.event_count = 0
         self.last_event = None
@@ -99,7 +99,7 @@ cdef class Account:
         self.margin_used_maintenance = event.margin_used_maintenance
         self.margin_ratio = event.margin_ratio
         self.margin_call_status = event.margin_call_status
-        self.free_equity = money(max(self.cash_balance - (self.margin_used_maintenance + self.margin_used_liquidation), 0))
+        self.free_equity = Money(max((self.cash_balance.value - (self.margin_used_maintenance.value + self.margin_used_liquidation.value)), 0))
 
         self.last_updated = event.timestamp
 

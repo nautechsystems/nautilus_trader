@@ -83,12 +83,12 @@ cdef class AccountEvent(Event):
                  Broker broker,
                  AccountNumber account_number,
                  CurrencyCode currency,
-                 cash_balance,
-                 cash_start_day,
-                 cash_activity_day,
-                 margin_used_liquidation,
-                 margin_used_maintenance,
-                 margin_ratio,
+                 Money cash_balance,
+                 Money cash_start_day,
+                 Money cash_activity_day,
+                 Money margin_used_liquidation,
+                 Money margin_used_maintenance,
+                 object margin_ratio,
                  str margin_call_status,
                  GUID event_id,
                  datetime event_timestamp):
@@ -106,11 +106,6 @@ cdef class AccountEvent(Event):
         :param event_id: The events identifier.
         :param event_timestamp: The order events timestamp.
         """
-        Precondition.not_negative(cash_balance, 'cash_balance')
-        Precondition.not_negative(cash_start_day, 'cash_start_day')
-        Precondition.not_negative(cash_activity_day, 'cash_activity_day')
-        Precondition.not_negative(margin_used_liquidation, 'margin_used_liquidation')
-        Precondition.not_negative(margin_used_maintenance, 'margin_used_maintenance')
         Precondition.not_negative(margin_ratio, 'margin_ratio')
 
         super().__init__(event_id, event_timestamp)
