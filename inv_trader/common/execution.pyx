@@ -20,8 +20,10 @@ from inv_trader.model.account cimport Account
 from inv_trader.model.objects cimport Price
 from inv_trader.model.order cimport Order
 from inv_trader.model.events cimport Event, OrderEvent, AccountEvent
+from inv_trader.model.events cimport OrderRejected, OrderCancelReject, OrderFilled, OrderPartiallyFilled
 from inv_trader.model.identifiers cimport GUID, OrderId
 from inv_trader.strategy cimport TradeStrategy
+from inv_trader.portfolio.portfolio cimport Portfolio
 
 cdef str UTF8 = 'utf-8'
 
@@ -32,6 +34,8 @@ cdef class ExecutionClient:
     """
 
     def __init__(self,
+                 Account account,
+                 Portfolio portfolio,
                  Clock clock,
                  GuidFactory guid_factory,
                  Logger logger):
@@ -49,8 +53,10 @@ cdef class ExecutionClient:
         else:
             self._log = LoggerAdapter(f"ExecClient", logger)
         self._log.info("Initialized.")
-        self.account = Account()
+        self._account = account
+        self._portfolio = portfolio
         self._registered_strategies = {}   # type: Dict[GUID, TradeStrategy]
+        self._order_book = {}              # type: Dict[OrderId, Order]
         self._order_strategy_index = {}    # type: Dict[OrderId, GUID]
 
     cpdef datetime time_now(self):
@@ -58,6 +64,18 @@ cdef class ExecutionClient:
         :return: The current time of the execution client. 
         """
         return self._clock.time_now()
+
+    cpdef Account get_account(self):
+        """
+        :return: The account associated with the execution client. 
+        """
+        return self._account
+
+    cpdef Portfolio get_portfolio(self):
+        """
+        :return: The portfolio associated with the execution client. 
+        """
+        return self._portfolio
 
     cpdef void register_strategy(self, TradeStrategy strategy):
         """
@@ -68,9 +86,10 @@ cdef class ExecutionClient:
         Precondition.not_in(strategy.id, self._registered_strategies, 'strategy', 'registered_strategies')
 
         self._registered_strategies[strategy.id] = strategy
+        self._portfolio._register_strategy(self)   # Access to protected member ok here
         strategy._register_execution_client(self)  # Access to protected member ok here
 
-        self._log.info(f"Registered strategy {strategy} with unique id {strategy.id}.")
+        self._log.info(f"Registered strategy {strategy} with id {strategy.id}.")
 
     cpdef void connect(self):
         """
@@ -124,6 +143,7 @@ cdef class ExecutionClient:
         """
         Precondition.not_in(order.id, self._order_strategy_index, 'order.id', 'order_index')
 
+        self._order_book[order.id] = order
         self._order_strategy_index[order.id] = strategy_id
 
     cdef void _on_event(self, Event event):
@@ -132,15 +152,28 @@ cdef class ExecutionClient:
         """
         self._log.debug(f"Received {event}")
 
+        cdef Order order
         cdef GUID strategy_id
 
+        # Order events
         if isinstance(event, OrderEvent):
-            if event.order_id not in self._order_strategy_index:
-                self._log.warning(
-                    f"The given event order id {event.order_id} was not contained in the order index.")
-                return
+            Precondition.is_in(event.order_id, self._order_book, 'order_id', 'order_book')
+            Precondition.is_in(event.order_id, self._order_strategy_index, 'order_id', 'order_strategy_index')
+
+            order = self._order_book[event.order_id]
+            order.apply(event)
 
             strategy_id = self._order_strategy_index[event.order_id]
+
+            # Position events
+            if isinstance(event, OrderFilled) or isinstance(event, OrderPartiallyFilled):
+                self._portfolio._on_event(event, strategy_id)  # Access to protected member ok here
+            # Warning Events
+            elif isinstance(event, OrderRejected):
+                self._log.warning(f"{event} {event.rejected_reason}")
+            elif isinstance(event, OrderCancelReject):
+                self._log.warning(f"{event} {event.cancel_reject_reason} {event.cancel_reject_response}")
+
             self._registered_strategies[strategy_id]._update_events(event)  # Access to protected member ok here
 
         elif isinstance(event, AccountEvent):

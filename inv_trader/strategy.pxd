@@ -24,6 +24,7 @@ from inv_trader.model.objects cimport Symbol, Price, Tick, BarType, Bar, Instrum
 from inv_trader.model.order cimport Order
 from inv_trader.model.order cimport OrderIdGenerator, OrderFactory
 from inv_trader.model.position cimport Position
+from inv_trader.portfolio.portfolio cimport Portfolio
 
 
 cdef class TradeStrategy:
@@ -52,6 +53,7 @@ cdef class TradeStrategy:
     cdef readonly DataClient _data_client
     cdef readonly ExecutionClient _exec_client
     cdef Account account
+    cdef Portfolio portfolio
 
     cdef bint equals(self, TradeStrategy other)
 
