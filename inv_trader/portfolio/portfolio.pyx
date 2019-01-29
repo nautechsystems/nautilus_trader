@@ -49,6 +49,14 @@ cdef class Portfolio:
         self._active_positions = {}         # type: Dict[GUID, Dict[PositionId, Position]]
         self._closed_positions = {}         # type: Dict[GUID, Dict[PositionId, Position]]
 
+    cpdef Position get_position(self, PositionId position_id):
+        """
+        TBA
+        """
+        Precondition.is_in(position_id, self._position_book, 'position_id', 'position_book')
+
+        return self._position_book[position_id]
+
     cpdef dict get_positions_all(self):
         """
         :return: A copy of the list of all positions held by the portfolio.
@@ -99,6 +107,25 @@ cdef class Portfolio:
         Precondition.is_in(strategy_id, self._strategy_position_index, 'strategy_id', 'strategy_position_index')
 
         return self._closed_positions[strategy_id].copy()
+
+    cpdef bint is_strategy_flat(self, GUID strategy_id):
+        """
+        TBA
+        :param strategy_id: 
+        :return: 
+        """
+        return len(self._active_positions[strategy_id]) == 0
+
+    cpdef bint is_flat(self):
+        """
+        TBA
+        :return: 
+        """
+        for position in self._position_book.values():
+            if not position.is_exited:
+                return False
+
+        return True
 
     cpdef void _register_strategy(self, GUID strategy_id):
         """

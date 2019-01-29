@@ -13,6 +13,7 @@ from cpython.datetime cimport datetime
 from typing import Dict
 
 from inv_trader.core.precondition cimport Precondition
+from inv_trader.enums.market_position cimport MarketPosition
 from inv_trader.common.clock cimport Clock
 from inv_trader.common.guid cimport GuidFactory
 from inv_trader.common.logger cimport Logger, LoggerAdapter
@@ -22,6 +23,7 @@ from inv_trader.model.order cimport Order
 from inv_trader.model.events cimport Event, OrderEvent, AccountEvent, OrderModified
 from inv_trader.model.events cimport OrderRejected, OrderCancelReject, OrderFilled, OrderPartiallyFilled
 from inv_trader.model.identifiers cimport GUID, OrderId, PositionId
+from inv_trader.model.position cimport Position
 from inv_trader.strategy cimport TradeStrategy
 from inv_trader.portfolio.portfolio cimport Portfolio
 
@@ -123,6 +125,13 @@ cdef class ExecutionClient:
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the subclass.")
 
+    cpdef void modify_order(self, Order order, Price new_price):
+        """
+        Send a modify order request to the execution service.
+        """
+        # Raise exception if not overridden in implementation.
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
     cpdef void cancel_order(self, Order order, str cancel_reason):
         """
         Send a cancel order request to the execution service.
@@ -130,12 +139,30 @@ cdef class ExecutionClient:
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void modify_order(self, Order order, Price new_price):
+    cpdef void cancel_all_orders(self, GUID strategy_id, str cancel_reason):
         """
-        Send a modify order request to the execution service.
+        Send a cancel order command for all currently working orders in the
+        order book with the given cancel_reason - to the execution service.
+
+        :param strategy_id: The strategy id to cancel all orders for.
+        :param cancel_reason: The reason for cancellation (will be logged).
+        :raises ValueError: If the strategy has not been registered with an execution client.
+        :raises ValueError: If the cancel_reason is not a valid string.
         """
-        # Raise exception if not overridden in implementation.
-        raise NotImplementedError("Method must be implemented in the subclass.")
+        Precondition.valid_string(cancel_reason, 'cancel_reason')
+
+        for order_id, strategy_id in self._order_strategy_index:
+            if strategy_id.equals(strategy_id):
+                if not self._order_book[order_id].is_complete:
+                    self.cancel_order(self._order_book[order_id], cancel_reason)
+
+    cpdef Order get_order(self, OrderId order_id):
+        """
+        TBA
+        """
+        Precondition.is_in(order_id, self._order_book, 'order_id', 'order_book')
+
+        return self._order_book[order_id]
 
     cdef void _register_order(self, Order order, PositionId position_id, GUID strategy_id):
         """
