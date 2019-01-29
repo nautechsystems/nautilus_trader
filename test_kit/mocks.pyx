@@ -12,7 +12,6 @@
 import uuid
 import zmq
 
-from decimal import Decimal
 from threading import Thread
 from typing import Callable
 from zmq import Context
@@ -23,12 +22,14 @@ from inv_trader.common.execution cimport ExecutionClient
 from inv_trader.common.clock cimport TestClock
 from inv_trader.common.guid cimport TestGuidFactory
 from inv_trader.common.logger cimport Logger
+from inv_trader.model.account cimport Account
 from inv_trader.model.objects cimport Price
 from inv_trader.model.order cimport Order
 from inv_trader.model.events cimport OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
 from inv_trader.model.events cimport OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
 from inv_trader.model.events cimport OrderFilled, OrderPartiallyFilled
 from inv_trader.model.identifiers cimport GUID, OrderId, PositionId, ExecutionId, ExecutionTicket
+from inv_trader.portfolio.portfolio cimport Portfolio
 
 cdef str UTF8 = 'utf-8'
 
@@ -200,7 +201,13 @@ cdef class MockExecClient(ExecutionClient):
         """
         Initializes a new instance of the MockExecClient class.
         """
-        super().__init__(TestClock(), TestGuidFactory(), Logger())
+        super().__init__(
+            Account(),
+            Portfolio(),
+            TestClock(),
+            TestGuidFactory(),
+            Logger())
+
         self._working_orders = []
 
     cpdef void connect(self):

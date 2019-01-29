@@ -53,7 +53,7 @@ cdef class TradeStrategy:
     cdef readonly DataClient _data_client
     cdef readonly ExecutionClient _exec_client
     cdef Account account
-    cdef Portfolio portfolio
+    cdef Portfolio _portfolio
 
     cdef bint equals(self, TradeStrategy other)
 

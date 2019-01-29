@@ -78,7 +78,7 @@ cdef class TradeStrategy:
         self._data_client = None  # Initialized when registered with data client.
         self._exec_client = None  # Initialized when registered with execution client.
         self.account = None       # Initialized when registered with execution client.
-        self.portfolio = None     # Initialized when registered with execution client.
+        self._portfolio = None     # Initialized when registered with execution client.
 
         self.log.info(f"Initialized.")
 
@@ -463,40 +463,32 @@ cdef class TradeStrategy:
         Get the order from the order book with the given order_id.
 
         :param order_id: The order identifier.
-        :return: The order (if found).
-        :raises ValueError: If the order_id is not a valid string.
-        :raises KeyError: If the strategies order book does not contain the order with the given id.
+        :return: The order with the given id.
+        :raises ValueError: If the execution client does not contain an order with the given id.
         """
-        Precondition.is_in(order_id, self._order_book, 'order.id', 'order_book')
-
-        return self._order_book[order_id]
+        return self._exec_client.get_order(order_id)
 
     cpdef Position position(self, PositionId position_id):
         """
         Get the position from the positions dictionary for the given position id.
 
         :param position_id: The positions identifier.
-        :return: The position (if found).
-        :raises ValueError: If the position_id is not a valid string.
-        :raises ValueError: If the strategies positions dictionary does not contain the given position_id.
+        :return: The position with the given id.
+        :raises ValueError: If the portfolio does not contain a position with the given id.
         """
-        Precondition.is_in(position_id, self._position_book, 'order.id', 'position_book')
-
-        return self._position_book[position_id]
+        return self.portfolio.get_position(position_id)
 
     cpdef dict active_orders(self):
         """
         :return: All active orders for the strategy.
         """
-        return ({order.id : order for order in self._order_book.values()
-                 if not order.is_complete})
+        return self._exec_client.get
 
     cpdef dict active_positions(self):
         """
         :return: All active positions for the strategy.
         """
-        return ({position.id: position for position in self._position_book.values()
-                 if not position.is_exited})
+        return self._portfolio.get_active_positions(self.id)
 
     cpdef dict completed_orders(self):
         """
@@ -509,19 +501,14 @@ cdef class TradeStrategy:
         """
         :return: All completed positions for the strategy.
         """
-        return ({position.id: position for position in self._position_book.values()
-                 if position.is_exited})
+        return self._portfolio.get_closed_positions(self.id)
 
     cpdef bint is_flat(self):
         """
         :return: A value indicating whether this strategy is completely flat
         (no positions other than FLAT) across all instruments.
         """
-        cdef bint is_flat = True
-        for position in self._position_book.values():
-            if position.market_position != MarketPosition.FLAT:
-                is_flat = False
-        return is_flat
+        return self._portfolio.is_strategy_flat(self.id)
 
 
 # -- COMMAND METHODS ----------------------------------------------------------------------------- #
@@ -564,10 +551,6 @@ cdef class TradeStrategy:
         # Reset all indicators.
         for indicator_list in self._indicators.values():
             [indicator.reset() for indicator in indicator_list]
-
-        self._order_book = {}            # type: Dict[OrderId, Order]
-        self._order_position_index = {}  # type: Dict[OrderId, PositionId]
-        self._position_book = {}         # type: Dict[PositionId, Position or None]
 
         self.on_reset()
         self.log.info(f"Reset.")
@@ -641,9 +624,7 @@ cdef class TradeStrategy:
         Precondition.not_none(self._exec_client, 'exec_client')
         Precondition.valid_string(cancel_reason, 'cancel_reason')
 
-        for order in self._order_book.values():
-            if not order.is_complete:
-                self.cancel_order(order, cancel_reason)
+        self._exec_client.cancel_all_orders(self.id, cancel_reason)
 
     cpdef flatten_position(self, PositionId position_id):
         """
@@ -657,13 +638,8 @@ cdef class TradeStrategy:
         :raises ValueError: If the position_id is not found in the position book.
         """
         Precondition.not_none(self._exec_client, 'exec_client')
-        Precondition.is_in(position_id, self._position_book, 'position_id', 'position_book')
 
-        cdef Position position = self._position_book[position_id]
-
-        if position is None:
-            self.log.warning(f"Cannot flatten position (the position {position_id} was None).")
-            return
+        cdef Position position = self._exec_client.get_position(position_id)
 
         if position.market_position == MarketPosition.FLAT:
             self.log.warning(
@@ -685,15 +661,15 @@ cdef class TradeStrategy:
         them to the execution service. If no positions found or a position is None
         then will log a warning.
         """
-        if len(self.active_positions()) == 0:
+        cdef dict positions = self._exec_client.get_active_positions(self.id)
+
+        if len(positions) == 0:
             self.log.warning("Cannot flatten positions (no active positions to flatten).")
             return
 
-        for position_id, position in self._position_book.items():
-            if position is None:
-                self.log.warning(f"Cannot flatten position (the position {position_id} was None.")
-                continue
+        for position_id, position in positions.items():
             if position.market_position == MarketPosition.FLAT:
+                self.log.warning(f"Cannot flatten position (the position {position_id} was already FLAT.")
                 continue
 
             self.log.info(f"Flattening {position}.")
