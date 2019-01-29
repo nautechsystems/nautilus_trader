@@ -102,14 +102,6 @@ class SerializationFunctionTests(unittest.TestCase):
         # Assert
         self.assertEqual(None, result)
 
-    def test_convert_datetime_to_string_stress_test(self):
-
-        stop_time = datetime.utcnow() + timedelta(seconds=1)
-        while datetime.utcnow() < stop_time:
-            convert_datetime_to_string(datetime.utcnow())
-
-        self.assertTrue(True)  # No exceptions thrown
-
 
 class MsgPackOrderSerializerTests(unittest.TestCase):
 
