@@ -44,15 +44,10 @@ cdef class Portfolio:
             self._log = LoggerAdapter(self.__class__.__name__, logger)
 
         self._position_book = {}            # type: Dict[PositionId, Position]
-        self._strategy_position_index = {}  # type: Dict[GUID, List[PositionId]]
-        self._active_positions = {}         # type: Dict[GUID, Dict[Symbol, Position]]
-        self._closed_positions = {}         # type: Dict[GUID, List[Position]]
-
-    cpdef list get_position_ids_all(self):
-        """
-        :return: A copy of the portfolios strategy position index.
-        """
-        return [self._position_book.keys()]
+        self._order_position_index = {}     # type: Dict[OrderId, PositionId]
+        self._strategy_position_index = {}  # type: Dict[GUID, Dict[PositionId, Position]]
+        self._active_positions = {}         # type: Dict[GUID, Dict[PositionId, Position]]
+        self._closed_positions = {}         # type: Dict[GUID, Dict[PositionId, Position]]
 
     cpdef dict get_positions_all(self):
         """
@@ -72,7 +67,7 @@ cdef class Portfolio:
         """
         return self._closed_positions.copy()
 
-    cpdef list get_positions(self, GUID strategy_id):
+    cpdef dict get_positions(self, GUID strategy_id):
         """
         Create and return a list of all positions associated with the strategy id.
         
@@ -81,9 +76,9 @@ cdef class Portfolio:
         """
         Precondition.is_in(strategy_id, self._strategy_position_index, 'strategy_id', 'strategy_position_index')
 
-        return self._position_book[strategy_id]
+        return self._strategy_position_index[strategy_id].copy()
 
-    cpdef list get_active_positions(self, GUID strategy_id):
+    cpdef dict get_active_positions(self, GUID strategy_id):
         """
         Create and return a list of all active positions associated with the strategy id.
         
@@ -92,9 +87,9 @@ cdef class Portfolio:
         """
         Precondition.is_in(strategy_id, self._strategy_position_index, 'strategy_id', 'strategy_position_index')
 
-        return self._active_positions[strategy_id]
+        return self._active_positions[strategy_id].copy()
 
-    cpdef list get_closed_positions(self, GUID strategy_id):
+    cpdef dict get_closed_positions(self, GUID strategy_id):
         """
         Create and return a list of all active positions associated with the strategy id.
         
@@ -103,7 +98,7 @@ cdef class Portfolio:
         """
         Precondition.is_in(strategy_id, self._strategy_position_index, 'strategy_id', 'strategy_position_index')
 
-        return self._closed_positions[strategy_id]
+        return self._closed_positions[strategy_id].copy()
 
     cpdef void _register_strategy(self, GUID strategy_id):
         """
@@ -113,34 +108,63 @@ cdef class Portfolio:
         """
         Precondition.not_in(strategy_id, self._strategy_position_index, 'strategy_id', 'strategy_position_index')
 
-        self._strategy_position_index[strategy_id] = []
-        self._active_positions[strategy_id] = {}
-        self._closed_positions[strategy_id] = []
+        self._strategy_position_index[strategy_id] = {}  # type: Dict[PositionId, Position]
+        self._active_positions[strategy_id] = {}         # type: Dict[PositionId, Position]
+        self._closed_positions[strategy_id] = {}         # type: Dict[PositionId, Position]
+
+    cpdef void _register_order(self, OrderId order_id, PositionId position_id):
+        """
+        TBA
+        """
+        Precondition.not_in(order_id, self._order_position_index, 'order_id', 'order_position_index')
+
+        self._order_position_index[order_id] = position_id
 
     cpdef void _on_event(self, Event event, GUID strategy_id):
         """
         TBA
         """
+        Precondition.is_in(event.order_id, self._order_position_index, 'event.order_id', 'order_position_index')
+
+        cdef PositionId position_id = self._order_position_index[event.order_id]
         cdef Position position
 
-        if event.symbol not in self._active_positions[strategy_id]:
+        # Position does not exist yet
+        if position_id not in self._position_book:
             position = Position(
                 event.symbol,
-                event.order_id,
+                position_id,
                 event.execution_time)
             position.apply(event)
-            self._position_book[position.id] = position
 
-            self._strategy_position_index[strategy_id].append(position.id)
-            self._active_positions[strategy_id][event.symbol] = position
+            # Add position to position book
+            self._position_book[position_id] = position
+
+            # Add position to active positions
+            assert(position_id not in self._active_positions[strategy_id])
+            self._active_positions[strategy_id][position_id] = position
+
+            # Add position to strategy position index
+            assert(position_id not in self._strategy_position_index[strategy_id])
+            self._strategy_position_index[strategy_id][event.symbol] = position
+
             self._log.info(f"Opened {position}")
+
+        # Position exists
         else:
-            position = self._active_positions[strategy_id][event.symbol]
+            position = self._position_book[position_id]
             position.apply(event)
 
             if position.is_exited:
                 self._log.info(f"Closed {position}")
-                self._closed_positions[strategy_id].append(position)
-                del self._active_positions[strategy_id][event.symbol]
+
+                # Move to closed positions
+                if position_id in self._active_positions[strategy_id]:
+                    self._closed_positions[strategy_id][position_id] = position
+                    del self._active_positions[strategy_id][position_id]
             else:
+                # Check for overfill
+                if position_id in self._closed_positions[strategy_id]:
+                    self._active_positions[strategy_id][position_id] = position
+                    del self._closed_positions[strategy_id][position_id]
                 self._log.info(f"Modified {position}")

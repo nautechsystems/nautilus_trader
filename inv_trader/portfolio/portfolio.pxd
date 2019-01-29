@@ -9,7 +9,7 @@
 
 from inv_trader.common.clock cimport Clock
 from inv_trader.common.logger cimport LoggerAdapter
-from inv_trader.model.identifiers cimport GUID
+from inv_trader.model.identifiers cimport GUID, OrderId, PositionId
 from inv_trader.model.events cimport Event
 
 
@@ -21,17 +21,18 @@ cdef class Portfolio:
     cdef LoggerAdapter _log
 
     cdef dict _position_book
+    cdef dict _order_position_index
     cdef dict _strategy_position_index
     cdef dict _active_positions
     cdef dict _closed_positions
 
-    cpdef list get_position_ids_all(self)
     cpdef dict get_positions_all(self)
     cpdef dict get_active_positions_all(self)
     cpdef dict get_closed_positions_all(self)
-    cpdef list get_positions(self, GUID strategy_id)
-    cpdef list get_active_positions(self, GUID strategy_id)
-    cpdef list get_closed_positions(self, GUID strategy_id)
+    cpdef dict get_positions(self, GUID strategy_id)
+    cpdef dict get_active_positions(self, GUID strategy_id)
+    cpdef dict get_closed_positions(self, GUID strategy_id)
 
     cpdef void _register_strategy(self, GUID strategy_id)
+    cpdef void _register_order(self, OrderId order_id, PositionId position_id)
     cpdef void _on_event(self, Event event, GUID strategy_id)

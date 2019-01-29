@@ -207,22 +207,22 @@ cdef class BacktestExecClient(ExecutionClient):
         Send a collateral inquiry command to the execution service.
         """
         cdef AccountEvent event = AccountEvent(
-            self.account.id,
-            self.account.broker,
-            self.account.account_number,
-            self.account.currency,
-            self.account.cash_balance,
+            self._account.id,
+            self._account.broker,
+            self._account.account_number,
+            self._account.currency,
+            self._account.cash_balance,
             self.account_cash_start_day,
             self.account_cash_activity_day,
-            self.account.margin_used_liquidation,
-            self.account.margin_used_maintenance,
-            self.account.margin_ratio,
-            self.account.margin_call_status,
+            self._account.margin_used_liquidation,
+            self._account.margin_used_maintenance,
+            self._account.margin_ratio,
+            self._account.margin_call_status,
             self._guid_factory.generate(),
             self._clock.time_now())
         self._on_event(event)
 
-    cpdef void submit_order(self, Order order, GUID strategy_id):
+    cpdef void submit_order(self, Order order, PositionId position_id, GUID strategy_id):
         """
         Send a submit order request to the execution service.
         
@@ -231,7 +231,7 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         Precondition.not_in(order.id, self.working_orders, 'order.id', 'working_orders')
 
-        self._register_order(order, strategy_id)
+        self._register_order(order, position_id, strategy_id)
 
         cdef OrderSubmitted submitted = OrderSubmitted(
             order.symbol,

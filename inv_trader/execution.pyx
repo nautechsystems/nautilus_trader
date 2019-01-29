@@ -21,7 +21,7 @@ from inv_trader.commands cimport SubmitOrder, CancelOrder, ModifyOrder
 from inv_trader.model.order cimport Order
 from inv_trader.model.objects cimport Price
 from inv_trader.model.events cimport Event
-from inv_trader.model.identifiers cimport GUID
+from inv_trader.model.identifiers cimport GUID, PositionId
 from inv_trader.messaging import RequestWorker, SubscriberWorker
 from inv_trader.common.serialization cimport CommandSerializer, EventSerializer
 from inv_trader.serialization cimport MsgPackCommandSerializer
@@ -119,7 +119,7 @@ cdef class LiveExecClient(ExecutionClient):
         self._commands_worker.send(message)
         self._log.debug(f"Sent {command}")
 
-    cpdef void submit_order(self, Order order, GUID strategy_id):
+    cpdef void submit_order(self, Order order, PositionId position_id, GUID strategy_id):
         """
         Send a submit order command to the execution service with the given
         order and strategy_id.
@@ -127,7 +127,7 @@ cdef class LiveExecClient(ExecutionClient):
         :param order: The order to submit.
         :param strategy_id: The strategy identifier to register the order with.
         """
-        self._register_order(order, strategy_id)
+        self._register_order(order, position_id, strategy_id)
 
         cdef OrderCommand command = SubmitOrder(
             order,

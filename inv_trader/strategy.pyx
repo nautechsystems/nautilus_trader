@@ -592,13 +592,9 @@ cdef class TradeStrategy:
         :raises ValueError: If the order_id is already contained in the order book (must be unique).
         """
         Precondition.not_none(self._exec_client, 'exec_client')
-        Precondition.not_in(order.id, self._order_book, 'order.id', 'order_book')
-
-        self._order_book[order.id] = order
-        self._order_position_index[order.id] = position_id
 
         self.log.info(f"Submitting {order}")
-        self._exec_client.submit_order(order, self.id)
+        self._exec_client.submit_order(order, position_id, self.id)
 
     cpdef modify_order(self, Order order, Price new_price):
         """
@@ -612,7 +608,6 @@ cdef class TradeStrategy:
         :raises ValueError: If order_id is not found in the order book.
         """
         Precondition.not_none(self._exec_client, 'exec_client')
-        Precondition.is_in(order.id, self._order_book, 'order.id', 'order_book')
 
         self.log.info(f"Modifying {order} with new price {new_price}")
         self._exec_client.modify_order(order, new_price)
@@ -630,7 +625,6 @@ cdef class TradeStrategy:
         """
         Precondition.not_none(self._exec_client, 'exec_client')
         Precondition.valid_string(cancel_reason, 'cancel_reason')
-        Precondition.is_in(order.id, self._order_book, 'order.id', 'order_book')
 
         self.log.info(f"Cancelling {order}")
         self._exec_client.cancel_order(order, cancel_reason)
