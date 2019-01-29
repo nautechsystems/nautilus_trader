@@ -43,11 +43,11 @@ cdef class Portfolio:
         else:
             self._log = LoggerAdapter(self.__class__.__name__, logger)
 
-        self._position_book = {}            # type: Dict[PositionId, Position]
-        self._order_position_index = {}     # type: Dict[OrderId, PositionId]
-        self._strategy_position_index = {}  # type: Dict[GUID, Dict[PositionId, Position]]
-        self._active_positions = {}         # type: Dict[GUID, Dict[PositionId, Position]]
-        self._closed_positions = {}         # type: Dict[GUID, Dict[PositionId, Position]]
+        self._position_book = {}     # type: Dict[PositionId, Position]
+        self._order_p_index = {}     # type: Dict[OrderId, PositionId]
+        self._strategy_p_index = {}  # type: Dict[GUID, Dict[PositionId, Position]]
+        self._active_positions = {}  # type: Dict[GUID, Dict[PositionId, Position]]
+        self._closed_positions = {}  # type: Dict[GUID, Dict[PositionId, Position]]
 
     cpdef Position get_position(self, PositionId position_id):
         """
@@ -82,9 +82,9 @@ cdef class Portfolio:
         :param strategy_id: The strategy id associated with the positions.
         :return: The list of positions.
         """
-        Precondition.is_in(strategy_id, self._strategy_position_index, 'strategy_id', 'strategy_position_index')
+        Precondition.is_in(strategy_id, self._strategy_p_index, 'strategy_id', 'strategy_p_index')
 
-        return self._strategy_position_index[strategy_id].copy()
+        return self._strategy_p_index[strategy_id].copy()
 
     cpdef dict get_active_positions(self, GUID strategy_id):
         """
@@ -93,7 +93,7 @@ cdef class Portfolio:
         :param strategy_id: The strategy id associated with the positions.
         :return: The list of positions.
         """
-        Precondition.is_in(strategy_id, self._strategy_position_index, 'strategy_id', 'strategy_position_index')
+        Precondition.is_in(strategy_id, self._strategy_p_index, 'strategy_id', 'strategy_p_index')
 
         return self._active_positions[strategy_id].copy()
 
@@ -104,7 +104,7 @@ cdef class Portfolio:
         :param strategy_id: The strategy id associated with the positions.
         :return: The list of positions.
         """
-        Precondition.is_in(strategy_id, self._strategy_position_index, 'strategy_id', 'strategy_position_index')
+        Precondition.is_in(strategy_id, self._strategy_p_index, 'strategy_id', 'strategy_p_index')
 
         return self._closed_positions[strategy_id].copy()
 
@@ -133,27 +133,29 @@ cdef class Portfolio:
         :param strategy_id: 
         :return: 
         """
-        Precondition.not_in(strategy_id, self._strategy_position_index, 'strategy_id', 'strategy_position_index')
+        Precondition.not_in(strategy_id, self._strategy_p_index, 'strategy_id', 'strategy_p_index')
+        Precondition.not_in(strategy_id, self._active_positions, 'strategy_id', 'active_positions')
+        Precondition.not_in(strategy_id, self._closed_positions, 'strategy_id', 'closed_positions')
 
-        self._strategy_position_index[strategy_id] = {}  # type: Dict[PositionId, Position]
-        self._active_positions[strategy_id] = {}         # type: Dict[PositionId, Position]
-        self._closed_positions[strategy_id] = {}         # type: Dict[PositionId, Position]
+        self._strategy_p_index[strategy_id] = {}  # type: Dict[PositionId, Position]
+        self._active_positions[strategy_id] = {}  # type: Dict[PositionId, Position]
+        self._closed_positions[strategy_id] = {}  # type: Dict[PositionId, Position]
 
     cpdef void _register_order(self, OrderId order_id, PositionId position_id):
         """
         TBA
         """
-        Precondition.not_in(order_id, self._order_position_index, 'order_id', 'order_position_index')
+        Precondition.not_in(order_id, self._order_p_index, 'order_id', 'order_position_index')
 
-        self._order_position_index[order_id] = position_id
+        self._order_p_index[order_id] = position_id
 
     cpdef void _on_event(self, Event event, GUID strategy_id):
         """
         TBA
         """
-        Precondition.is_in(event.order_id, self._order_position_index, 'event.order_id', 'order_position_index')
+        Precondition.is_in(event.order_id, self._order_p_index, 'event.order_id', 'order_position_index')
 
-        cdef PositionId position_id = self._order_position_index[event.order_id]
+        cdef PositionId position_id = self._order_p_index[event.order_id]
         cdef Position position
 
         # Position does not exist yet
@@ -172,8 +174,8 @@ cdef class Portfolio:
             self._active_positions[strategy_id][position_id] = position
 
             # Add position to strategy position index
-            assert(position_id not in self._strategy_position_index[strategy_id])
-            self._strategy_position_index[strategy_id][event.symbol] = position
+            assert(position_id not in self._strategy_p_index[strategy_id])
+            self._strategy_p_index[strategy_id][position_id] = position
 
             self._log.info(f"Opened {position}")
 

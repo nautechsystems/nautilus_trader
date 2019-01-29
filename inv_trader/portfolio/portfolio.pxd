@@ -22,8 +22,8 @@ cdef class Portfolio:
     cdef LoggerAdapter _log
 
     cdef dict _position_book
-    cdef dict _order_position_index
-    cdef dict _strategy_position_index
+    cdef dict _order_p_index
+    cdef dict _strategy_p_index
     cdef dict _active_positions
     cdef dict _closed_positions
 
