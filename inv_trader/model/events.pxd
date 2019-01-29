@@ -16,7 +16,7 @@ from inv_trader.enums.currency_code cimport CurrencyCode
 from inv_trader.enums.order_side cimport OrderSide
 from inv_trader.enums.order_type cimport OrderType
 from inv_trader.enums.time_in_force cimport TimeInForce
-from inv_trader.model.objects cimport Symbol, Price
+from inv_trader.model.objects cimport Symbol, Price, Money
 from inv_trader.model.identifiers cimport GUID, Label, AccountId, AccountNumber
 from inv_trader.model.identifiers cimport OrderId, ExecutionId, ExecutionTicket
 
@@ -37,11 +37,11 @@ cdef class AccountEvent(Event):
     cdef readonly Broker broker
     cdef readonly AccountNumber account_number
     cdef readonly CurrencyCode currency
-    cdef readonly object cash_balance
-    cdef readonly object cash_start_day
-    cdef readonly object cash_activity_day
-    cdef readonly object margin_used_liquidation
-    cdef readonly object margin_used_maintenance
+    cdef readonly Money cash_balance
+    cdef readonly Money cash_start_day
+    cdef readonly Money cash_activity_day
+    cdef readonly Money margin_used_liquidation
+    cdef readonly Money margin_used_maintenance
     cdef readonly object margin_ratio
     cdef readonly str margin_call_status
 
