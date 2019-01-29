@@ -19,6 +19,7 @@ from inv_trader.model.events cimport Event
 from inv_trader.model.objects cimport Price
 from inv_trader.model.identifiers cimport GUID
 from inv_trader.model.order cimport Order
+from inv_trader.portfolio.portfolio cimport Portfolio
 from inv_trader.strategy cimport TradeStrategy
 
 
@@ -29,12 +30,15 @@ cdef class ExecutionClient:
     cdef Clock _clock
     cdef GuidFactory _guid_factory
     cdef LoggerAdapter _log
+    cdef Account account
+    cdef Portfolio portfolio
     cdef dict _registered_strategies
     cdef dict _order_strategy_index
-
-    cdef readonly Account account
+    cdef dict _order_book
 
     cpdef datetime time_now(self)
+    cpdef Account get_account(self)
+    cpdef Portfolio get_portfolio(self)
     cpdef void register_strategy(self, TradeStrategy strategy)
     cpdef void connect(self)
     cpdef void disconnect(self)

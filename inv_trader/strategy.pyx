@@ -22,8 +22,7 @@ from inv_trader.common.clock cimport Clock, LiveClock
 from inv_trader.common.logger cimport Logger, LoggerAdapter
 from inv_trader.common.execution cimport ExecutionClient
 from inv_trader.common.data cimport DataClient
-from inv_trader.model.events cimport Event, AccountEvent, OrderEvent
-from inv_trader.model.events cimport OrderRejected, OrderCancelReject, OrderFilled, OrderPartiallyFilled
+from inv_trader.model.events cimport Event
 from inv_trader.model.identifiers cimport GUID, Label, OrderId, PositionId
 from inv_trader.model.objects cimport Symbol, Price, Tick, BarType, Bar, Instrument
 from inv_trader.model.order cimport Order, OrderIdGenerator, OrderFactory
@@ -60,11 +59,11 @@ cdef class TradeStrategy:
         Precondition.positive(bar_capacity, 'bar_capacity')
 
         self._clock = clock
+        self.name = self.__class__.__name__
         if logger is None:
             self.log = LoggerAdapter(f"{self.name}-{self.label}")
         else:
             self.log = LoggerAdapter(f"{self.name}-{self.label}", logger)
-        self.name = self.__class__.__name__
         self.label = label
         self.order_id_tag = order_id_tag
         self.id = GUID(uuid.uuid4())
@@ -76,12 +75,10 @@ cdef class TradeStrategy:
         self._bars = {}                  # type: Dict[BarType, Deque[Bar]]
         self._indicators = {}            # type: Dict[BarType, List[Indicator]]
         self._indicator_updaters = {}    # type: Dict[BarType, List[IndicatorUpdater]]
-        self._order_book = {}            # type: Dict[OrderId, Order]
-        self._order_position_index = {}  # type: Dict[OrderId, PositionId]
-        self._position_book = {}         # type: Dict[PositionId, Position or None]
-        self._data_client = None
-        self._exec_client = None
-        self.account = None  # Initialized when registered with execution client.
+        self._data_client = None  # Initialized when registered with data client.
+        self._exec_client = None  # Initialized when registered with execution client.
+        self.account = None       # Initialized when registered with execution client.
+        self.portfolio = None     # Initialized when registered with execution client.
 
         self.log.info(f"Initialized.")
 
@@ -813,7 +810,8 @@ cdef class TradeStrategy:
         Precondition.not_none(client, 'client')
 
         self._exec_client = client
-        self.account = client.account
+        self.account = client.get_account()
+        self.portfolio = client.get_portfolio()
 
     cpdef void _update_ticks(self, Tick tick):
         """"
@@ -866,50 +864,6 @@ cdef class TradeStrategy:
 
         :param event: The event received.
         """
-        # Order events
-        if isinstance(event, OrderEvent):
-            Precondition.is_in(event.order_id, self._order_book, 'order_id', 'order_book')
-
-            order = self._order_book[event.order_id]
-            order.apply(event)
-
-            if isinstance(event, OrderRejected):
-                self.log.warning(f"{event} {event.rejected_reason}")
-
-            elif isinstance(event, OrderCancelReject):
-                self.log.warning(f"{event} {event.cancel_reject_reason} {event.cancel_reject_response}")
-
-            # Position events
-            elif isinstance(event, OrderFilled) or isinstance(event, OrderPartiallyFilled):
-                Precondition.is_in(event.order_id, self._order_position_index, 'order_id', 'order_position_index')
-
-                self.log.info(str(event))
-                position_id = self._order_position_index[event.order_id]
-
-                if position_id not in self._position_book:
-                    opened_position = Position(
-                        event.symbol,
-                        position_id,
-                        event.execution_time)
-                    opened_position.apply(event)
-                    self._position_book[position_id] = opened_position
-                    self.log.info(f"Opened {opened_position}")
-                else:
-                    position = self._position_book[position_id]
-                    position.apply(event)
-
-                    if position.is_exited:
-                            self.log.info(f"Closed {position}")
-                    else:
-                        self.log.info(f"Modified {self._position_book[position_id]}")
-            else:
-                self.log.info(str(event))
-
-        # Account events
-        elif isinstance(event, AccountEvent):
-            self.account.apply(event)
-            self.log.info(str(event))
-
         if self.is_running:
             self.on_event(event)
 
