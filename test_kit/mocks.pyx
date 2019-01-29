@@ -297,7 +297,7 @@ cdef class MockExecClient(ExecutionClient):
         """
         # Does nothing.
 
-    cpdef void fill_last_order(self):
+    cpdef void fill_last_order(self, GUID strategy_id):
         """
         Fills the last order held by the execution service.
         """
@@ -316,4 +316,5 @@ cdef class MockExecClient(ExecutionClient):
             GUID(uuid.uuid4()),
             datetime.utcnow())
 
+        self._portfolio._on_event(filled, strategy_id)
         self._on_event(filled)

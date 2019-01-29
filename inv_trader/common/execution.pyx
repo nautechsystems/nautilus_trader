@@ -13,7 +13,6 @@ from cpython.datetime cimport datetime
 from typing import Dict
 
 from inv_trader.core.precondition cimport Precondition
-from inv_trader.enums.market_position cimport MarketPosition
 from inv_trader.common.clock cimport Clock
 from inv_trader.common.guid cimport GuidFactory
 from inv_trader.common.logger cimport Logger, LoggerAdapter
@@ -23,7 +22,6 @@ from inv_trader.model.order cimport Order
 from inv_trader.model.events cimport Event, OrderEvent, AccountEvent, OrderModified
 from inv_trader.model.events cimport OrderRejected, OrderCancelReject, OrderFilled, OrderPartiallyFilled
 from inv_trader.model.identifiers cimport GUID, OrderId, PositionId
-from inv_trader.model.position cimport Position
 from inv_trader.strategy cimport TradeStrategy
 from inv_trader.portfolio.portfolio cimport Portfolio
 
@@ -54,12 +52,15 @@ cdef class ExecutionClient:
             self._log = LoggerAdapter(f"ExecClient")
         else:
             self._log = LoggerAdapter(f"ExecClient", logger)
-        self._log.info("Initialized.")
         self._account = account
         self._portfolio = portfolio
-        self._registered_strategies = {}   # type: Dict[GUID, TradeStrategy]
-        self._order_book = {}              # type: Dict[OrderId, Order]
-        self._order_strategy_index = {}    # type: Dict[OrderId, GUID]
+        self._registered_strategies = {}  # type: Dict[GUID, TradeStrategy]
+        self._order_book = {}             # type: Dict[OrderId, Order]
+        self._order_strategy_index = {}   # type: Dict[OrderId, GUID]
+        self._orders_active = {}          # type: Dict[GUID, Dict[OrderId, Order]]
+        self._orders_completed = {}       # type: Dict[GUID, Dict[OrderId, Order]]
+
+        self._log.info("Initialized.")
 
     cpdef datetime time_now(self):
         """
@@ -86,10 +87,15 @@ cdef class ExecutionClient:
         :raises ValueError: If the strategy is already registered (must have a unique id).
         """
         Precondition.not_in(strategy.id, self._registered_strategies, 'strategy', 'registered_strategies')
+        Precondition.not_in(strategy.id, self._orders_active, 'strategy', 'orders_active')
+        Precondition.not_in(strategy.id, self._orders_completed, 'strategy', 'orders_completed')
 
         self._registered_strategies[strategy.id] = strategy
-        self._portfolio._register_strategy(self)   # Access to protected member ok here
-        strategy._register_execution_client(self)  # Access to protected member ok here
+        self._orders_active[strategy.id] = {}      # type: Dict[OrderId, Order]
+        self._orders_completed[strategy.id] = {}   # type: Dict[OrderId, Order]
+
+        self._portfolio._register_strategy(strategy.id)  # Access to protected member ok here
+        strategy._register_execution_client(self)        # Access to protected member ok here
 
         self._log.info(f"Registered strategy {strategy} with id {strategy.id}.")
 
@@ -151,7 +157,7 @@ cdef class ExecutionClient:
         """
         Precondition.valid_string(cancel_reason, 'cancel_reason')
 
-        for order_id, strategy_id in self._order_strategy_index:
+        for order_id, strategy_id in self._order_strategy_index.items():
             if strategy_id.equals(strategy_id):
                 if not self._order_book[order_id].is_complete:
                     self.cancel_order(self._order_book[order_id], cancel_reason)
@@ -163,6 +169,62 @@ cdef class ExecutionClient:
         Precondition.is_in(order_id, self._order_book, 'order_id', 'order_book')
 
         return self._order_book[order_id]
+
+    cpdef dict get_orders_all(self):
+        """
+        TBA
+        :return: 
+        """
+        return self._order_book.copy()
+
+    cpdef dict get_orders_active_all(self):
+        """
+        TBA
+        :param strategy_id: 
+        :return: 
+        """
+        return self._orders_active.copy()
+
+    cpdef dict get_orders_completed_all(self):
+        """
+        :return: A copy of the list of all closed positions held by the portfolio.
+        """
+        return self._orders_completed.copy()
+
+    cpdef dict get_orders(self, GUID strategy_id):
+        """
+        Return a dictionary of all positions associated with the strategy identifier.
+        
+        :param strategy_id: The strategy identifier.
+        :return: Dict[OrderId, Order].
+        """
+        Precondition.is_in(strategy_id, self._orders_active, 'strategy_id', 'orders_active')
+        Precondition.is_in(strategy_id, self._orders_completed, 'strategy_id', 'orders_completed')
+
+        cpdef dict orders = {**self._orders_active[strategy_id], **self._orders_completed[strategy_id]}
+        return orders  # type: Dict[OrderId, Order]
+
+    cpdef dict get_orders_active(self, GUID strategy_id):
+        """
+        Create and return a list of all active positions associated with the strategy id.
+        
+        :param strategy_id: The strategy id associated with the positions.
+        :return: The list of positions.
+        """
+        Precondition.is_in(strategy_id, self._orders_active, 'strategy_id', 'orders_active')
+
+        return self._orders_active[strategy_id].copy()
+
+    cpdef dict get_orders_completed(self, GUID strategy_id):
+        """
+        Create and return a list of all active positions associated with the strategy id.
+        
+        :param strategy_id: The strategy id associated with the positions.
+        :return: The list of positions.
+        """
+        Precondition.is_in(strategy_id, self._orders_completed, 'strategy_id', 'orders_completed')
+
+        return self._orders_completed[strategy_id].copy()
 
     cdef void _register_order(self, Order order, PositionId position_id, GUID strategy_id):
         """
@@ -179,7 +241,7 @@ cdef class ExecutionClient:
         self._order_strategy_index[order.id] = strategy_id
         self._portfolio._register_order(order.id, position_id)
 
-    cdef void _on_event(self, Event event):
+    cdef _on_event(self, Event event):
         """
         Handle events received from the execution service.
         """
@@ -198,6 +260,17 @@ cdef class ExecutionClient:
 
             strategy_id = self._order_strategy_index[event.order_id]
 
+            # Active orders
+            if not order.is_complete:
+                if order.id not in self._orders_active[strategy_id]:
+                    self._orders_active[strategy_id][order.id] = order
+            else:
+                # Completed orders
+                if order.id not in self._orders_completed[strategy_id]:
+                    self._orders_completed[strategy_id][order.id] = order
+                    if order.id in self._orders_active[strategy_id]:
+                        del self._orders_active[strategy_id][order.id]
+
             # Position events
             if isinstance(event, OrderFilled) or isinstance(event, OrderPartiallyFilled):
                 self._portfolio._on_event(event, strategy_id)  # Access to protected member ok here
@@ -209,6 +282,7 @@ cdef class ExecutionClient:
             elif isinstance(event, OrderCancelReject):
                 self._log.warning(f"{event} {event.cancel_reject_reason} {event.cancel_reject_response}")
 
+            # Send event to strategy
             self._registered_strategies[strategy_id]._update_events(event)  # Access to protected member ok here
 
         elif isinstance(event, AccountEvent):

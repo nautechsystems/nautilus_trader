@@ -19,7 +19,6 @@ from inv_trader.model.events cimport Event
 from inv_trader.model.objects cimport Price
 from inv_trader.model.identifiers cimport GUID, OrderId, PositionId
 from inv_trader.model.order cimport Order
-from inv_trader.model.position cimport Position
 from inv_trader.portfolio.portfolio cimport Portfolio
 from inv_trader.strategy cimport TradeStrategy
 
@@ -36,6 +35,8 @@ cdef class ExecutionClient:
     cdef dict _registered_strategies
     cdef dict _order_strategy_index
     cdef dict _order_book
+    cdef dict _orders_active
+    cdef dict _orders_completed
 
     cpdef datetime time_now(self)
     cpdef Account get_account(self)
@@ -49,6 +50,12 @@ cdef class ExecutionClient:
     cpdef void cancel_order(self, Order order, str cancel_reason)
     cpdef void cancel_all_orders(self, GUID strategy_id, str cancel_reason)
     cpdef Order get_order(self, OrderId order_id)
+    cpdef dict get_orders_all(self)
+    cpdef dict get_orders_active_all(self)
+    cpdef dict get_orders_completed_all(self)
+    cpdef dict get_orders(self, GUID strategy_id)
+    cpdef dict get_orders_active(self, GUID strategy_id)
+    cpdef dict get_orders_completed(self, GUID strategy_id)
 
     cdef void _register_order(self, Order order, PositionId position_id, GUID strategy_id)
-    cdef void _on_event(self, Event event)
+    cdef _on_event(self, Event event)

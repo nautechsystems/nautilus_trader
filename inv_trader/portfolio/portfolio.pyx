@@ -45,13 +45,16 @@ cdef class Portfolio:
 
         self._position_book = {}     # type: Dict[PositionId, Position]
         self._order_p_index = {}     # type: Dict[OrderId, PositionId]
-        self._strategy_p_index = {}  # type: Dict[GUID, Dict[PositionId, Position]]
-        self._active_positions = {}  # type: Dict[GUID, Dict[PositionId, Position]]
-        self._closed_positions = {}  # type: Dict[GUID, Dict[PositionId, Position]]
+        self._positions_active = {}  # type: Dict[GUID, Dict[PositionId, Position]]
+        self._positions_closed = {}  # type: Dict[GUID, Dict[PositionId, Position]]
 
     cpdef Position get_position(self, PositionId position_id):
         """
-        TBA
+        Return the position associated with the given id.
+        
+        :param position_id: The position id.
+        :return: The position associated with the given id.
+        :raises ValueError: If the position is not found.
         """
         Precondition.is_in(position_id, self._position_book, 'position_id', 'position_book')
 
@@ -59,62 +62,71 @@ cdef class Portfolio:
 
     cpdef dict get_positions_all(self):
         """
-        :return: A copy of the list of all positions held by the portfolio.
+         Return a dictionary of all positions held by the portfolio.
+        
+        :return: Dict[PositionId, Position].
         """
         return self._position_book.copy()
 
-    cpdef dict get_active_positions_all(self):
+    cpdef dict get_positions_active_all(self):
         """
-        :return: A copy of the list of all active positions held by the portfolio.
+        Return a dictionary of all active positions held by the portfolio.
+        
+        :return: Dict[PositionId, Position].
         """
-        return self._active_positions.copy()
+        return self._positions_active.copy()
 
-    cpdef dict get_closed_positions_all(self):
+    cpdef dict get_positions_closed_all(self):
         """
-        :return: A copy of the list of all closed positions held by the portfolio.
+        Return a dictionary of all closed positions held by the portfolio.
+        
+        :return: Dict[PositionId, Position].
         """
-        return self._closed_positions.copy()
+        return self._positions_closed.copy()
 
     cpdef dict get_positions(self, GUID strategy_id):
         """
         Create and return a list of all positions associated with the strategy id.
         
         :param strategy_id: The strategy id associated with the positions.
-        :return: The list of positions.
+        :return: Dict[PositionId, Position].
         """
-        Precondition.is_in(strategy_id, self._strategy_p_index, 'strategy_id', 'strategy_p_index')
+        Precondition.is_in(strategy_id, self._positions_active, 'strategy_id', 'positions_active')
+        Precondition.is_in(strategy_id, self._positions_closed, 'strategy_id', 'positions_closed')
 
-        return self._strategy_p_index[strategy_id].copy()
+        cpdef dict positions = {**self._positions_active[strategy_id], **self._positions_closed[strategy_id]}
+        return positions  # type: Dict[PositionId, Position]
 
-    cpdef dict get_active_positions(self, GUID strategy_id):
-        """
-        Create and return a list of all active positions associated with the strategy id.
-        
-        :param strategy_id: The strategy id associated with the positions.
-        :return: The list of positions.
-        """
-        Precondition.is_in(strategy_id, self._strategy_p_index, 'strategy_id', 'strategy_p_index')
-
-        return self._active_positions[strategy_id].copy()
-
-    cpdef dict get_closed_positions(self, GUID strategy_id):
+    cpdef dict get_positions_active(self, GUID strategy_id):
         """
         Create and return a list of all active positions associated with the strategy id.
         
         :param strategy_id: The strategy id associated with the positions.
-        :return: The list of positions.
+        :return: Dict[PositionId, Position].
         """
-        Precondition.is_in(strategy_id, self._strategy_p_index, 'strategy_id', 'strategy_p_index')
+        Precondition.is_in(strategy_id, self._positions_active, 'strategy_id', 'positions_active')
 
-        return self._closed_positions[strategy_id].copy()
+        return self._positions_active[strategy_id].copy()
+
+    cpdef dict get_positions_closed(self, GUID strategy_id):
+        """
+        Create and return a list of all active positions associated with the strategy id.
+        
+        :param strategy_id: The strategy id associated with the positions.
+        :return: Dict[PositionId, Position].
+        """
+        Precondition.is_in(strategy_id, self._positions_closed, 'strategy_id', 'positions_closed')
+
+        return self._positions_closed[strategy_id].copy()
 
     cpdef bint is_strategy_flat(self, GUID strategy_id):
         """
-        TBA
-        :param strategy_id: 
-        :return: 
+        Return a value indicating whether the strategy is flat (all associated positions FLAT).
+        
+        :param strategy_id: The strategy identifier.
+        :return: True if the strategy is flat, else False.
         """
-        return len(self._active_positions[strategy_id]) == 0
+        return len(self._positions_active[strategy_id]) == 0
 
     cpdef bint is_flat(self):
         """
@@ -133,13 +145,11 @@ cdef class Portfolio:
         :param strategy_id: 
         :return: 
         """
-        Precondition.not_in(strategy_id, self._strategy_p_index, 'strategy_id', 'strategy_p_index')
-        Precondition.not_in(strategy_id, self._active_positions, 'strategy_id', 'active_positions')
-        Precondition.not_in(strategy_id, self._closed_positions, 'strategy_id', 'closed_positions')
+        Precondition.not_in(strategy_id, self._positions_active, 'strategy_id', 'active_positions')
+        Precondition.not_in(strategy_id, self._positions_closed, 'strategy_id', 'closed_positions')
 
-        self._strategy_p_index[strategy_id] = {}  # type: Dict[PositionId, Position]
-        self._active_positions[strategy_id] = {}  # type: Dict[PositionId, Position]
-        self._closed_positions[strategy_id] = {}  # type: Dict[PositionId, Position]
+        self._positions_active[strategy_id] = {}  # type: Dict[PositionId, Position]
+        self._positions_closed[strategy_id] = {}  # type: Dict[PositionId, Position]
 
     cpdef void _register_order(self, OrderId order_id, PositionId position_id):
         """
@@ -170,12 +180,8 @@ cdef class Portfolio:
             self._position_book[position_id] = position
 
             # Add position to active positions
-            assert(position_id not in self._active_positions[strategy_id])
-            self._active_positions[strategy_id][position_id] = position
-
-            # Add position to strategy position index
-            assert(position_id not in self._strategy_p_index[strategy_id])
-            self._strategy_p_index[strategy_id][position_id] = position
+            assert(position_id not in self._positions_active[strategy_id])
+            self._positions_active[strategy_id][position_id] = position
 
             self._log.info(f"Opened {position}")
 
@@ -188,12 +194,12 @@ cdef class Portfolio:
                 self._log.info(f"Closed {position}")
 
                 # Move to closed positions
-                if position_id in self._active_positions[strategy_id]:
-                    self._closed_positions[strategy_id][position_id] = position
-                    del self._active_positions[strategy_id][position_id]
+                if position_id in self._positions_active[strategy_id]:
+                    self._positions_closed[strategy_id][position_id] = position
+                    del self._positions_active[strategy_id][position_id]
             else:
                 # Check for overfill
-                if position_id in self._closed_positions[strategy_id]:
-                    self._active_positions[strategy_id][position_id] = position
-                    del self._closed_positions[strategy_id][position_id]
+                if position_id in self._positions_closed[strategy_id]:
+                    self._positions_active[strategy_id][position_id] = position
+                    del self._positions_closed[strategy_id][position_id]
                 self._log.info(f"Modified {position}")
