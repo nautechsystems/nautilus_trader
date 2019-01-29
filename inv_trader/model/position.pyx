@@ -171,3 +171,7 @@ cdef class Position:
             self.market_position = MarketPosition.SHORT
         else:
             self.market_position = MarketPosition.FLAT
+
+        # Check overfill
+        if self.is_exited and self._relative_quantity != 0:
+            self.is_exited = False

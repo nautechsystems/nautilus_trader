@@ -19,9 +19,9 @@ from inv_trader.common.logger cimport Logger, LoggerAdapter
 from inv_trader.model.account cimport Account
 from inv_trader.model.objects cimport Price
 from inv_trader.model.order cimport Order
-from inv_trader.model.events cimport Event, OrderEvent, AccountEvent
+from inv_trader.model.events cimport Event, OrderEvent, AccountEvent, OrderModified
 from inv_trader.model.events cimport OrderRejected, OrderCancelReject, OrderFilled, OrderPartiallyFilled
-from inv_trader.model.identifiers cimport GUID, OrderId
+from inv_trader.model.identifiers cimport GUID, OrderId, PositionId
 from inv_trader.strategy cimport TradeStrategy
 from inv_trader.portfolio.portfolio cimport Portfolio
 
@@ -112,7 +112,11 @@ cdef class ExecutionClient:
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void submit_order(self, Order order, GUID strategy_id):
+    cpdef void submit_order(
+            self,
+            Order order,
+            PositionId position_id,
+            GUID strategy_id):
         """
         Send a submit order request to the execution service.
         """
@@ -133,7 +137,7 @@ cdef class ExecutionClient:
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cdef void _register_order(self, Order order, GUID strategy_id):
+    cdef void _register_order(self, Order order, PositionId position_id, GUID strategy_id):
         """
         Register the given order with the execution client.
 
@@ -141,10 +145,12 @@ cdef class ExecutionClient:
         :param strategy_id: The strategy id to register with the order.
         :raises ValueError: If the order.id is already in the order_index.
         """
+        Precondition.not_in(order.id, self._order_book, 'order.id', 'order_book')
         Precondition.not_in(order.id, self._order_strategy_index, 'order.id', 'order_index')
 
         self._order_book[order.id] = order
         self._order_strategy_index[order.id] = strategy_id
+        self._portfolio._register_order(order.id, position_id)
 
     cdef void _on_event(self, Event event):
         """
@@ -168,6 +174,8 @@ cdef class ExecutionClient:
             # Position events
             if isinstance(event, OrderFilled) or isinstance(event, OrderPartiallyFilled):
                 self._portfolio._on_event(event, strategy_id)  # Access to protected member ok here
+            elif isinstance(event, OrderModified):
+                self._log.info(f"{event} price to {event.modified_price}")
             # Warning Events
             elif isinstance(event, OrderRejected):
                 self._log.warning(f"{event} {event.rejected_reason}")
@@ -177,4 +185,4 @@ cdef class ExecutionClient:
             self._registered_strategies[strategy_id]._update_events(event)  # Access to protected member ok here
 
         elif isinstance(event, AccountEvent):
-            self.account.apply(event)
+            self._account.apply(event)

@@ -28,7 +28,7 @@ from inv_trader.model.order cimport Order
 from inv_trader.model.events cimport OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
 from inv_trader.model.events cimport OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
 from inv_trader.model.events cimport OrderFilled, OrderPartiallyFilled
-from inv_trader.model.identifiers cimport GUID, OrderId, ExecutionId, ExecutionTicket
+from inv_trader.model.identifiers cimport GUID, OrderId, PositionId, ExecutionId, ExecutionTicket
 
 cdef str UTF8 = 'utf-8'
 
@@ -215,11 +215,11 @@ cdef class MockExecClient(ExecutionClient):
         """
         self._log.info("MockExecClient disconnected.")
 
-    cpdef void submit_order(self, Order order, GUID strategy_id):
+    cpdef void submit_order(self, Order order, PositionId position_id, GUID strategy_id):
         """
         Send a submit order command to the mock execution service.
         """
-        self._register_order(order, strategy_id)
+        self._register_order(order, position_id, strategy_id)
 
         cdef OrderSubmitted submitted = OrderSubmitted(
             order.symbol,
