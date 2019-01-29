@@ -22,8 +22,7 @@ from inv_trader.enums.brokerage cimport Broker
 from inv_trader.enums.currency_code cimport CurrencyCode
 from inv_trader.enums.order_type cimport OrderType
 from inv_trader.enums.order_side cimport OrderSide
-from inv_trader.model.money import money_zero, money
-from inv_trader.model.objects cimport Symbol, Price, Instrument
+from inv_trader.model.objects cimport Symbol, Price, Money, Instrument
 from inv_trader.model.order cimport Order
 from inv_trader.model.position cimport Position
 from inv_trader.model.events cimport OrderEvent, AccountEvent
@@ -47,7 +46,7 @@ cdef class BacktestExecClient(ExecutionClient):
                  dict data_ticks: Dict[Symbol, DataFrame],
                  dict data_bars_bid: Dict[Symbol, DataFrame],
                  dict data_bars_ask: Dict[Symbol, DataFrame],
-                 int starting_capital,
+                 Money starting_capital,
                  int slippage_ticks,
                  TestClock clock,
                  TestGuidFactory guid_factory,
@@ -69,7 +68,6 @@ cdef class BacktestExecClient(ExecutionClient):
         Precondition.dict_types(data_ticks, Symbol, DataFrame, 'data_ticks')
         Precondition.dict_types(data_bars_bid, Symbol, DataFrame, 'data_bars_bid')
         Precondition.dict_types(data_bars_ask, Symbol, DataFrame, 'data_bars_ask')
-        Precondition.positive(starting_capital, 'starting_capital')
         Precondition.not_negative(slippage_ticks, 'slippage_ticks')
 
         super().__init__(clock, guid_factory, logger)
@@ -94,8 +92,8 @@ cdef class BacktestExecClient(ExecutionClient):
 
         self.iteration = 0
         self.day_number = 0
-        self.account_cash_start_day = money(starting_capital)
-        self.account_cash_activity_day = money_zero()
+        self.account_cash_start_day = starting_capital
+        self.account_cash_activity_day = Money(0)
         self.slippage_index = {}                    # type: Dict[Symbol, Decimal]
         self.working_orders = {}                    # type: Dict[OrderId, Order]
         self.positions_count = {}                   # type: Dict[Symbol, int]
@@ -109,11 +107,11 @@ cdef class BacktestExecClient(ExecutionClient):
             Broker.SIMULATED,
             AccountNumber('9999'),
             CurrencyCode.USD,
-            money(starting_capital),
-            money(starting_capital),
-            money_zero(),
-            money_zero(),
-            money_zero(),
+            starting_capital,
+            starting_capital,
+            Money(0),
+            Money(0),
+            Money(0),
             Decimal(0),
             'NONE',
             self._guid_factory.generate(),
@@ -163,7 +161,7 @@ cdef class BacktestExecClient(ExecutionClient):
         if self.day_number is not time.day:
             self.day_number = time.day
             self.account_cash_start_day = self.account.cash_balance
-            self.account_cash_activity_day = money_zero()
+            self.account_cash_activity_day = Money(0)
             self.collateral_inquiry()
 
         # Simulate market dynamics
@@ -536,8 +534,8 @@ cdef class BacktestExecClient(ExecutionClient):
             self.account.cash_balance,
             self.account_cash_start_day,
             self.account_cash_activity_day,
-            margin_used_liquidation=money_zero(),
-            margin_used_maintenance=money_zero(),
+            margin_used_liquidation=Money(0),
+            margin_used_maintenance=Money(0),
             margin_ratio=Decimal(0),
             margin_call_status='NONE',
             event_id=self._guid_factory.generate(),

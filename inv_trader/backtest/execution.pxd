@@ -12,7 +12,7 @@
 from cpython.datetime cimport datetime, timedelta
 
 from inv_trader.common.execution cimport ExecutionClient
-from inv_trader.model.objects cimport Symbol, Price
+from inv_trader.model.objects cimport Symbol, Price, Money
 from inv_trader.model.order cimport Order, OrderEvent
 
 
@@ -27,8 +27,8 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef readonly list data_minute_index
     cdef readonly int iteration
     cdef readonly int day_number
-    cdef readonly object account_cash_start_day
-    cdef readonly object account_cash_activity_day
+    cdef readonly Money account_cash_start_day
+    cdef readonly Money account_cash_activity_day
     cdef readonly dict slippage_index
     cdef readonly dict working_orders
     cdef readonly dict positions_count

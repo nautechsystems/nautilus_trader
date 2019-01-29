@@ -25,7 +25,7 @@ from inv_trader.common.clock cimport LiveClock, TestClock
 from inv_trader.common.guid cimport TestGuidFactory
 from inv_trader.common.logger cimport Logger
 from inv_trader.enums.resolution cimport Resolution
-from inv_trader.model.objects cimport Symbol, Instrument
+from inv_trader.model.objects cimport Symbol, Instrument, Money
 from inv_trader.strategy cimport TradeStrategy
 
 
@@ -56,7 +56,7 @@ cdef class BacktestConfig:
         Precondition.positive(starting_capital, 'starting_capital')
         Precondition.not_negative(slippage_ticks, 'slippage_ticks')
 
-        self.starting_capital = starting_capital
+        self.starting_capital = Money(starting_capital)
         self.slippage_ticks = slippage_ticks
         self.bypass_logging = bypass_logging
         self.level_console = level_console

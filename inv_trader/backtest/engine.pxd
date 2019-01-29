@@ -11,6 +11,7 @@
 
 from cpython.datetime cimport datetime
 
+from inv_trader.model.objects cimport Money
 from inv_trader.common.clock cimport Clock
 from inv_trader.common.logger cimport Logger, LoggerAdapter
 from inv_trader.backtest.data cimport BacktestDataClient
@@ -22,7 +23,7 @@ cdef class BacktestConfig:
     """
     Represents a configuration for a BacktestEngine.
     """
-    cdef readonly int starting_capital
+    cdef readonly Money starting_capital
     cdef readonly int slippage_ticks
     cdef readonly bint bypass_logging
     cdef readonly object level_console

@@ -25,7 +25,7 @@ from inv_trader.enums.order_side cimport OrderSide, order_side_string
 from inv_trader.enums.order_type cimport OrderType, order_type_string
 from inv_trader.enums.currency_code cimport CurrencyCode
 from inv_trader.model.identifiers cimport GUID, Label, OrderId, ExecutionId, ExecutionTicket, AccountId, AccountNumber
-from inv_trader.model.objects cimport Symbol, Price
+from inv_trader.model.objects cimport Symbol, Price, Money
 from inv_trader.model.order cimport Order
 from inv_trader.model.events cimport Event, OrderEvent, AccountEvent
 from inv_trader.model.events cimport OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
@@ -327,11 +327,11 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 Broker[unpacked[BROKER]],
                 AccountNumber(unpacked[ACCOUNT_NUMBER]),
                 CurrencyCode[unpacked[CURRENCY]],
-                Decimal(unpacked[CASH_BALANCE]),
-                Decimal(unpacked[CASH_START_DAY]),
-                Decimal(unpacked[CASH_ACTIVITY_DAY]),
-                Decimal(unpacked[MARGIN_USED_LIQUIDATION]),
-                Decimal(unpacked[MARGIN_USED_MAINTENANCE]),
+                Money(unpacked[CASH_BALANCE]),
+                Money(unpacked[CASH_START_DAY]),
+                Money(unpacked[CASH_ACTIVITY_DAY]),
+                Money(unpacked[MARGIN_USED_LIQUIDATION]),
+                Money(unpacked[MARGIN_USED_MAINTENANCE]),
                 Decimal(unpacked[MARGIN_RATIO]),
                 unpacked[MARGIN_CALL_STATUS],
                 event_id,
