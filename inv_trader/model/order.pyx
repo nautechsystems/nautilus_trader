@@ -139,10 +139,10 @@ cdef class Order:
         :return: The str() string representation of the order.
         """
         cdef str quantity = '{:,}'.format(self.quantity)
-        cdef str price = '' if self.price is None else f' {self.price}'
+        cdef str price = '' if self.price is None else f'@ {self.price} '
         cdef str expire_time = '' if self.expire_time is None else f' {self.expire_time}'
         return (f"Order(id={self.id}, label={self.label}) "
-                f"{order_side_string(self.side)} {quantity} {self.symbol} @ {order_type_string(self.type)}{price} "
+                f"{order_side_string(self.side)} {quantity} {self.symbol} {order_type_string(self.type)} {price}"
                 f"{time_in_force_string(self.time_in_force)}{expire_time}")
 
     def __repr__(self) -> str:

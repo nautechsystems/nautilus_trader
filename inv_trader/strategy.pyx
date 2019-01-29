@@ -77,8 +77,8 @@ cdef class TradeStrategy:
         self._indicator_updaters = {}    # type: Dict[BarType, List[IndicatorUpdater]]
         self._data_client = None  # Initialized when registered with data client.
         self._exec_client = None  # Initialized when registered with execution client.
+        self._portfolio = None    # Initialized when registered with execution client.
         self.account = None       # Initialized when registered with execution client.
-        self._portfolio = None     # Initialized when registered with execution client.
 
         self.log.info(f"Initialized.")
 
@@ -423,7 +423,7 @@ cdef class TradeStrategy:
         return initialized
 
 
-# -- ORDER MANAGEMENT METHODS -------------------------------------------------------------------- #
+# -- MANAGEMENT METHODS -------------------------------------------------------------------------- #
 
     cpdef OrderId generate_order_id(self, Symbol symbol):
         """
@@ -468,40 +468,53 @@ cdef class TradeStrategy:
         """
         return self._exec_client.get_order(order_id)
 
+    cpdef dict orders_all(self):
+        """
+        TBA
+        :return: 
+        """
+        return self._exec_client.get_orders(self.id)
+
+    cpdef dict orders_active(self):
+        """
+        :return: All active orders for the strategy.
+        """
+        return self._exec_client.get_orders_active(self.id)
+
+    cpdef dict orders_completed(self):
+        """
+        :return: All completed orders for the strategy.
+        """
+        return self._exec_client.get_orders_completed(self.id)
+
     cpdef Position position(self, PositionId position_id):
         """
-        Get the position from the positions dictionary for the given position id.
+        Get the position associated with the given id.
 
         :param position_id: The positions identifier.
         :return: The position with the given id.
         :raises ValueError: If the portfolio does not contain a position with the given id.
         """
-        return self.portfolio.get_position(position_id)
+        return self._portfolio.get_position(position_id)
 
-    cpdef dict active_orders(self):
+    cpdef dict positions_all(self):
         """
-        :return: All active orders for the strategy.
+        TBA
+        :return: 
         """
-        return self._exec_client.get
+        return self._portfolio.get_positions(self.id)
 
-    cpdef dict active_positions(self):
+    cpdef dict positions_active(self):
         """
         :return: All active positions for the strategy.
         """
-        return self._portfolio.get_active_positions(self.id)
+        return self._portfolio.get_positions_active(self.id)
 
-    cpdef dict completed_orders(self):
-        """
-        :return: All completed orders for the strategy.
-        """
-        return ({order.id: order for order in self._order_book.values()
-                 if order.is_complete})
-
-    cpdef dict completed_positions(self):
+    cpdef dict positions_closed(self):
         """
         :return: All completed positions for the strategy.
         """
-        return self._portfolio.get_closed_positions(self.id)
+        return self._portfolio.get_positions_closed(self.id)
 
     cpdef bint is_flat(self):
         """
@@ -555,17 +568,15 @@ cdef class TradeStrategy:
         self.on_reset()
         self.log.info(f"Reset.")
 
-    cpdef collateral_inquiry(self):
+    cpdef void collateral_inquiry(self):
         """
         Send a collateral inquiry command to the execution service.
 
         :raises ValueError: If the strategy has not been registered with an execution client.
         """
-        Precondition.not_none(self._exec_client, 'exec_client')
-
         self._exec_client.collateral_inquiry()
 
-    cpdef submit_order(self, Order order, PositionId position_id):
+    cpdef void submit_order(self, Order order, PositionId position_id):
         """
         Send a submit order command with the given order to the execution service.
 
@@ -574,12 +585,10 @@ cdef class TradeStrategy:
         :raises ValueError: If the strategy has not been registered with an execution client.
         :raises ValueError: If the order_id is already contained in the order book (must be unique).
         """
-        Precondition.not_none(self._exec_client, 'exec_client')
-
         self.log.info(f"Submitting {order}")
         self._exec_client.submit_order(order, position_id, self.id)
 
-    cpdef modify_order(self, Order order, Price new_price):
+    cpdef void modify_order(self, Order order, Price new_price):
         """
         Send a modify order command for the given order with the given new price
         to the execution service.
@@ -590,12 +599,10 @@ cdef class TradeStrategy:
         :raises ValueError: If the new_price is not positive (> 0).
         :raises ValueError: If order_id is not found in the order book.
         """
-        Precondition.not_none(self._exec_client, 'exec_client')
-
         self.log.info(f"Modifying {order} with new price {new_price}")
         self._exec_client.modify_order(order, new_price)
 
-    cpdef cancel_order(self, Order order, str cancel_reason):
+    cpdef void cancel_order(self, Order order, str cancel_reason):
         """
         Send a cancel order command for the given order and cancel_reason to the
         execution service.
@@ -606,13 +613,12 @@ cdef class TradeStrategy:
         :raises ValueError: If the cancel_reason is not a valid string.
         :raises ValueError: If the order_id is not found in the order book.
         """
-        Precondition.not_none(self._exec_client, 'exec_client')
         Precondition.valid_string(cancel_reason, 'cancel_reason')
 
         self.log.info(f"Cancelling {order}")
         self._exec_client.cancel_order(order, cancel_reason)
 
-    cpdef cancel_all_orders(self, str cancel_reason):
+    cpdef void cancel_all_orders(self, str cancel_reason):
         """
         Send a cancel order command for all currently working orders in the
         order book with the given cancel_reason - to the execution service.
@@ -621,12 +627,11 @@ cdef class TradeStrategy:
         :raises ValueError: If the strategy has not been registered with an execution client.
         :raises ValueError: If the cancel_reason is not a valid string.
         """
-        Precondition.not_none(self._exec_client, 'exec_client')
         Precondition.valid_string(cancel_reason, 'cancel_reason')
 
         self._exec_client.cancel_all_orders(self.id, cancel_reason)
 
-    cpdef flatten_position(self, PositionId position_id):
+    cpdef void flatten_position(self, PositionId position_id):
         """
         Flatten the position corresponding to the given identifier by generating
         the required market order, and sending it to the execution service.
@@ -637,9 +642,7 @@ cdef class TradeStrategy:
         :raises ValueError: If the position_id is not a valid string.
         :raises ValueError: If the position_id is not found in the position book.
         """
-        Precondition.not_none(self._exec_client, 'exec_client')
-
-        cdef Position position = self._exec_client.get_position(position_id)
+        cdef Position position = self._portfolio.get_position(position_id)
 
         if position.market_position == MarketPosition.FLAT:
             self.log.warning(
@@ -655,13 +658,13 @@ cdef class TradeStrategy:
 
         self.submit_order(order, position_id)
 
-    cpdef flatten_all_positions(self):
+    cpdef void flatten_all_positions(self):
         """
         Flatten all positions by generating the required market orders and sending
         them to the execution service. If no positions found or a position is None
         then will log a warning.
         """
-        cdef dict positions = self._exec_client.get_active_positions(self.id)
+        cdef dict positions = self._portfolio.get_active_positions(self.id)
 
         if len(positions) == 0:
             self.log.warning("Cannot flatten positions (no active positions to flatten).")
@@ -681,7 +684,7 @@ cdef class TradeStrategy:
                 position.quantity)
             self.submit_order(order, position_id)
 
-    cpdef set_time_alert(
+    cpdef void set_time_alert(
             self,
             Label label,
             datetime alert_time):
@@ -700,7 +703,7 @@ cdef class TradeStrategy:
         self._clock.set_time_alert(label, alert_time, self._update_events)
         self.log.info(f"Set time alert for {label} at {alert_time}.")
 
-    cpdef cancel_time_alert(self, Label label):
+    cpdef void cancel_time_alert(self, Label label):
         """
         Cancel the time alert corresponding to the given label.
 
@@ -710,7 +713,7 @@ cdef class TradeStrategy:
         self._clock.cancel_time_alert(label)
         self.log.info(f"Cancelled time alert for {label}.")
 
-    cpdef set_timer(
+    cpdef void set_timer(
             self,
             Label label,
             timedelta interval,
@@ -744,7 +747,7 @@ cdef class TradeStrategy:
             (f"Set timer for {label} with interval {interval}, "
              f"starting at {start_time}, stopping at {stop_time}, repeat={repeat}."))
 
-    cpdef cancel_timer(self, Label label):
+    cpdef void cancel_timer(self, Label label):
         """
         Cancel the timer corresponding to the given unique label.
 
@@ -765,8 +768,6 @@ cdef class TradeStrategy:
         :raises ValueError: If client is None.
         :raises TypeError: If client does not inherit from DataClient.
         """
-        Precondition.not_none(client, 'client')
-
         self._data_client = client
 
     cpdef _register_execution_client(self, ExecutionClient client):
@@ -777,11 +778,9 @@ cdef class TradeStrategy:
         :raises ValueError: If client is None.
         :raises TypeError: If client does not inherit from ExecutionClient.
         """
-        Precondition.not_none(client, 'client')
-
         self._exec_client = client
+        self._portfolio = client.get_portfolio()
         self.account = client.get_account()
-        self.portfolio = client.get_portfolio()
 
     cpdef void _update_ticks(self, Tick tick):
         """"

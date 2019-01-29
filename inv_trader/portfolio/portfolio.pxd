@@ -23,17 +23,16 @@ cdef class Portfolio:
 
     cdef dict _position_book
     cdef dict _order_p_index
-    cdef dict _strategy_p_index
-    cdef dict _active_positions
-    cdef dict _closed_positions
+    cdef dict _positions_active
+    cdef dict _positions_closed
 
     cpdef Position get_position(self, PositionId position_id)
     cpdef dict get_positions_all(self)
-    cpdef dict get_active_positions_all(self)
-    cpdef dict get_closed_positions_all(self)
+    cpdef dict get_positions_active_all(self)
+    cpdef dict get_positions_closed_all(self)
     cpdef dict get_positions(self, GUID strategy_id)
-    cpdef dict get_active_positions(self, GUID strategy_id)
-    cpdef dict get_closed_positions(self, GUID strategy_id)
+    cpdef dict get_positions_active(self, GUID strategy_id)
+    cpdef dict get_positions_closed(self, GUID strategy_id)
     cpdef bint is_strategy_flat(self, GUID strategy_id)
     cpdef bint is_flat(self)
 

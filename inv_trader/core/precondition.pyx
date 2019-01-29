@@ -77,7 +77,7 @@ cdef class Precondition:
         """
         if key not in dictionary:
             raise ValueError(f"{PRE_FAILED} (the {param_name} {key} key was not contained within the "
-                             f" {dict_name} dictionary).")
+                             f"{dict_name} dictionary).")
 
     @staticmethod
     cdef not_in(object key, dict dictionary, str param_name, str dict_name):
