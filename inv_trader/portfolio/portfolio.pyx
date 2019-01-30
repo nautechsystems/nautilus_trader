@@ -9,7 +9,7 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
-from typing import Dict
+from typing import List, Dict
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.common.clock cimport Clock, LiveClock
@@ -36,12 +36,31 @@ cdef class Portfolio:
         else:
             self._log = LoggerAdapter(self.__class__.__name__, logger)
 
-        self._position_book = {}     # type: Dict[PositionId, Position]
-        self._order_p_index = {}     # type: Dict[OrderId, PositionId]
-        self._positions_active = {}  # type: Dict[GUID, Dict[PositionId, Position]]
-        self._positions_closed = {}  # type: Dict[GUID, Dict[PositionId, Position]]
+        self._position_book = {}          # type: Dict[PositionId, Position]
+        self._order_p_index = {}          # type: Dict[OrderId, PositionId]
+        self._registered_strategies = []  # type: List[GUID]
+        self._positions_active = {}       # type: Dict[GUID, Dict[PositionId, Position]]
+        self._positions_closed = {}       # type: Dict[GUID, Dict[PositionId, Position]]
 
         self._log.info("Initialized.")
+
+    cpdef list registered_strategies(self):
+        """
+        :return: A list of strategy identifiers registered with the portfolio.
+        """
+        return self._registered_strategies
+
+    cpdef list registered_order_ids(self):
+        """
+        :return: A list of order identifiers registered with the portfolio.
+        """
+        return list(self._order_p_index.keys())
+
+    cpdef list registered_position_ids(self):
+        """
+        :return: A list of position identifiers registered with the portfolio.
+        """
+        return list(self._order_p_index.values())
 
     cpdef Position get_position(self, PositionId position_id):
         """
@@ -141,9 +160,11 @@ cdef class Portfolio:
         
         :param strategy_id: The strategy identifier to register.
         """
+        Precondition.true(strategy_id not in self._registered_strategies, 'strategy_id not in self._registered_strategies')
         Precondition.not_in(strategy_id, self._positions_active, 'strategy_id', 'active_positions')
         Precondition.not_in(strategy_id, self._positions_closed, 'strategy_id', 'closed_positions')
 
+        self._registered_strategies.append(strategy_id)
         self._positions_active[strategy_id] = {}  # type: Dict[PositionId, Position]
         self._positions_closed[strategy_id] = {}  # type: Dict[PositionId, Position]
 

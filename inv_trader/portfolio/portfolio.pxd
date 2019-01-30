@@ -25,9 +25,13 @@ cdef class Portfolio:
 
     cdef dict _position_book
     cdef dict _order_p_index
+    cdef list _registered_strategies
     cdef dict _positions_active
     cdef dict _positions_closed
 
+    cpdef list registered_strategies(self)
+    cpdef list registered_order_ids(self)
+    cpdef list registered_position_ids(self)
     cpdef Position get_position(self, PositionId position_id)
     cpdef dict get_positions_all(self)
     cpdef dict get_positions_active_all(self)
