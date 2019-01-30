@@ -15,9 +15,9 @@ from decimal import Decimal
 from inv_trader.model.enums import Broker
 from inv_trader.model.enums import CurrencyCode
 from inv_trader.model.objects import Money
-from inv_trader.model.account import Account
 from inv_trader.model.events import AccountEvent
 from inv_trader.model.identifiers import GUID, AccountId, AccountNumber
+from inv_trader.common.account import Account
 from test_kit.stubs import TestStubs
 
 UNIX_EPOCH = TestStubs.unix_epoch()

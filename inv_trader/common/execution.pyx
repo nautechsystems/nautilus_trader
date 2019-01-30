@@ -16,7 +16,7 @@ from inv_trader.core.precondition cimport Precondition
 from inv_trader.common.clock cimport Clock
 from inv_trader.common.guid cimport GuidFactory
 from inv_trader.common.logger cimport Logger, LoggerAdapter
-from inv_trader.model.account cimport Account
+from inv_trader.common.account cimport Account
 from inv_trader.model.order cimport Order
 from inv_trader.model.events cimport Event, OrderEvent, AccountEvent, OrderModified
 from inv_trader.model.events cimport OrderRejected, OrderCancelReject, OrderFilled, OrderPartiallyFilled

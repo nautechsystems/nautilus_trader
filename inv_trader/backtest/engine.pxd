@@ -12,7 +12,7 @@
 from cpython.datetime cimport datetime
 
 from inv_trader.model.objects cimport Money
-from inv_trader.model.account cimport Account
+from inv_trader.common.account cimport Account
 from inv_trader.common.clock cimport Clock
 from inv_trader.common.logger cimport Logger, LoggerAdapter
 from inv_trader.backtest.data cimport BacktestDataClient

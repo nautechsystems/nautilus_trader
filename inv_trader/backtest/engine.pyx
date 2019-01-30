@@ -25,7 +25,7 @@ from inv_trader.common.clock cimport LiveClock, TestClock
 from inv_trader.common.guid cimport TestGuidFactory
 from inv_trader.common.logger cimport Logger
 from inv_trader.enums.resolution cimport Resolution
-from inv_trader.model.account cimport Account
+from inv_trader.common.account cimport Account
 from inv_trader.model.objects cimport Symbol, Instrument, Money
 from inv_trader.portfolio.portfolio cimport Portfolio
 from inv_trader.strategy cimport TradeStrategy

@@ -11,12 +11,12 @@
 
 from cpython.datetime cimport datetime, timedelta
 
+from inv_trader.common.account cimport Account
 from inv_trader.common.clock cimport Clock
 from inv_trader.common.guid cimport GuidFactory
 from inv_trader.common.logger cimport Logger, LoggerAdapter
 from inv_trader.common.execution cimport ExecutionClient
 from inv_trader.common.data cimport DataClient
-from inv_trader.model.account cimport Account
 from inv_trader.enums.order_side cimport OrderSide
 from inv_trader.enums.market_position cimport MarketPosition
 from inv_trader.model.events cimport Event
