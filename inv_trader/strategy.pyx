@@ -664,7 +664,7 @@ cdef class TradeStrategy:
         them to the execution service. If no positions found or a position is None
         then will log a warning.
         """
-        cdef dict positions = self._portfolio.get_active_positions(self.id)
+        cdef dict positions = self._portfolio.get_positions_active(self.id)
 
         if len(positions) == 0:
             self.log.warning("Cannot flatten positions (no active positions to flatten).")

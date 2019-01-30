@@ -10,8 +10,6 @@
 import unittest
 import uuid
 
-from decimal import Decimal
-
 from inv_trader.model.enums import Venue, OrderSide, MarketPosition
 from inv_trader.model.objects import Symbol, Price
 from inv_trader.model.identifiers import GUID, Label, OrderId, PositionId, ExecutionId, ExecutionTicket
