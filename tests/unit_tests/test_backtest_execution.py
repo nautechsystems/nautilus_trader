@@ -17,10 +17,12 @@ from inv_trader.common.clock import TestClock
 from inv_trader.common.guid import TestGuidFactory
 from inv_trader.common.logger import Logger
 from inv_trader.model.enums import Venue, OrderSide
+from inv_trader.model.account import Account
 from inv_trader.model.identifiers import Label, OrderId, PositionId
 from inv_trader.model.objects import Symbol, Price, Money
 from inv_trader.model.events import OrderRejected, OrderWorking, OrderModified, OrderFilled
 from inv_trader.backtest.execution import BacktestExecClient
+from inv_trader.portfolio.portfolio import Portfolio
 from test_kit.strategies import TestStrategy1
 from test_kit.data import TestDataProvider
 from test_kit.stubs import TestStubs
@@ -44,12 +46,16 @@ class BacktestExecClientTests(unittest.TestCase):
 
         self.strategies = [TestStrategy1(TestStubs.bartype_usdjpy_1min_bid())]
 
+        self.account = Account()
+        self.portfolio = Portfolio()
         self.client = BacktestExecClient(instruments=self.instruments,
                                          data_ticks=self.data_ticks,
                                          data_bars_bid=self.data_bars_bid,
                                          data_bars_ask=self.data_bars_ask,
                                          starting_capital=Money(1000000),
                                          slippage_ticks=1,
+                                         account=self.account,
+                                         portfolio=self.portfolio,
                                          clock=TestClock(),
                                          guid_factory=TestGuidFactory(),
                                          logger=Logger())
@@ -59,8 +65,6 @@ class BacktestExecClientTests(unittest.TestCase):
         # Act
         # Assert
         self.assertEqual(all(self.bid_data_1min.index), all(self.client.data_minute_index))
-        self.assertEqual(Money(1000000), self.client.account.cash_balance)
-        self.assertEqual(Money(1000000), self.client.account.free_equity)
         self.assertEqual(Decimal('0.001'), self.client.slippage_index[self.usdjpy.symbol])
 
     def test_can_set_initial_iteration(self):
@@ -80,7 +84,7 @@ class BacktestExecClientTests(unittest.TestCase):
         self.client.collateral_inquiry()
 
         # Assert
-        self.assertEqual(2, self.client.account.event_count)
+        self.assertEqual(2, self.account.event_count)
 
     def test_can_submit_market_order(self):
         # Arrange

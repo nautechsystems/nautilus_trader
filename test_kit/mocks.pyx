@@ -274,7 +274,7 @@ cdef class MockExecClient(ExecutionClient):
             command.order.symbol,
             command.order.id,
             OrderId('B' + str(command.order.id)),
-            command.new_price,
+            command.modified_price,
             datetime.utcnow(),
             GUID(uuid.uuid4()),
             datetime.utcnow())
@@ -294,7 +294,7 @@ cdef class MockExecClient(ExecutionClient):
 
         self._on_event(cancelled)
 
-    cpdef void collateral_inquiry(self, CollateralInquiry command):
+    cpdef void collateral_inquiry(self):
         """
         Send a collateral inquiry command to the mock execution service.
         """

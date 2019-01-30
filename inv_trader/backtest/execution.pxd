@@ -31,9 +31,6 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef readonly Money account_cash_activity_day
     cdef readonly dict slippage_index
     cdef readonly dict working_orders
-    cdef readonly dict positions_count
-    cdef readonly dict positions
-    cdef readonly dict completed_positions
 
     cpdef void set_initial_iteration(self, datetime to_time, timedelta time_step)
     cpdef void iterate(self, datetime time)
@@ -51,4 +48,4 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef void _reject_modify_order(self, Order order, str reason)
     cdef void _expire_order(self, Order order)
     cdef void _fill_order(self, Order order, Price fill_price)
-    cdef void _adjust_positions(self, OrderEvent event)
+    cdef void _adjust_account(self, OrderEvent event)

@@ -18,11 +18,13 @@ from inv_trader.common.logger cimport Logger
 from inv_trader.common.execution cimport ExecutionClient
 from inv_trader.commands cimport Command, CollateralInquiry
 from inv_trader.commands cimport SubmitOrder, CancelOrder, ModifyOrder
+from inv_trader.model.account cimport Account
 from inv_trader.model.events cimport Event
 from inv_trader.messaging import RequestWorker, SubscriberWorker
 from inv_trader.common.serialization cimport CommandSerializer, EventSerializer
 from inv_trader.serialization cimport MsgPackCommandSerializer
 from inv_trader.serialization cimport MsgPackEventSerializer
+from inv_trader.portfolio.portfolio cimport Portfolio
 
 cdef str UTF8 = 'utf-8'
 
@@ -45,6 +47,8 @@ cdef class LiveExecClient(ExecutionClient):
             int events_port=5556,
             CommandSerializer command_serializer=MsgPackCommandSerializer(),
             EventSerializer event_serializer=MsgPackEventSerializer(),
+            Account account=Account(),
+            Portfolio portfolio=Portfolio(),
             Clock clock=LiveClock(),
             GuidFactory guid_factory=LiveGuidFactory(),
             Logger logger=None):
@@ -67,7 +71,12 @@ cdef class LiveExecClient(ExecutionClient):
         Precondition.in_range(commands_port, 'commands_port', 0, 65535)
         Precondition.in_range(events_port, 'events_port', 0, 65535)
 
-        super().__init__(clock, guid_factory, logger)
+        super().__init__(account,
+                         portfolio,
+                         clock,
+                         guid_factory,
+                         logger)
+
         self._command_serializer = command_serializer
         self._event_serializer = event_serializer
         self.zmq_context = zmq.Context()
@@ -105,12 +114,14 @@ cdef class LiveExecClient(ExecutionClient):
         self._commands_worker.stop()
         self._events_worker.stop()
 
-    cpdef void collateral_inquiry(self, CollateralInquiry command):
+    cpdef void collateral_inquiry(self):
         """
         Send a collateral inquiry command to the execution service.
-        
-        :param command: The command to execute.
         """
+        cdef CollateralInquiry command = CollateralInquiry(
+            self._guid_factory.generate(),
+            self._clock.time_now())
+
         cdef bytes message = self._command_serializer.serialize(command)
 
         self._commands_worker.send(message)

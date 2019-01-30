@@ -44,7 +44,7 @@ cdef class ExecutionClient:
     cpdef void register_strategy(self, TradeStrategy strategy)
     cpdef void connect(self)
     cpdef void disconnect(self)
-    cpdef void collateral_inquiry(self, CollateralInquiry command)
+    cpdef void collateral_inquiry(self)
     cpdef void submit_order(self, SubmitOrder command)
     cpdef void modify_order(self, ModifyOrder command)
     cpdef void cancel_order(self, CancelOrder command)

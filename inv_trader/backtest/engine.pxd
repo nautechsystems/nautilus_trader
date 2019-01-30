@@ -12,10 +12,12 @@
 from cpython.datetime cimport datetime
 
 from inv_trader.model.objects cimport Money
+from inv_trader.model.account cimport Account
 from inv_trader.common.clock cimport Clock
 from inv_trader.common.logger cimport Logger, LoggerAdapter
 from inv_trader.backtest.data cimport BacktestDataClient
 from inv_trader.backtest.execution cimport BacktestExecClient
+from inv_trader.portfolio.portfolio cimport Portfolio
 from inv_trader.trader cimport Trader
 
 
@@ -44,6 +46,8 @@ cdef class BacktestEngine:
     cdef readonly Logger test_log
     cdef readonly datetime created_time
     cdef readonly float time_to_initialize
+    cdef readonly Account account
+    cdef readonly Portfolio portfolio
     cdef readonly list instruments
     cdef readonly BacktestDataClient data_client
     cdef readonly BacktestExecClient exec_client

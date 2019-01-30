@@ -30,10 +30,13 @@ from inv_trader.model.events cimport OrderSubmitted, OrderAccepted, OrderRejecte
 from inv_trader.model.events cimport OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
 from inv_trader.model.events cimport OrderFilled, OrderPartiallyFilled
 from inv_trader.model.identifiers cimport GUID, OrderId, PositionId, ExecutionId, ExecutionTicket, AccountNumber
+from inv_trader.model.account cimport Account
 from inv_trader.common.clock cimport TestClock
 from inv_trader.common.guid cimport TestGuidFactory
 from inv_trader.common.logger cimport Logger
 from inv_trader.common.execution cimport ExecutionClient
+from inv_trader.commands cimport CollateralInquiry, SubmitOrder, ModifyOrder, CancelOrder
+from inv_trader.portfolio.portfolio cimport Portfolio
 
 
 cdef class BacktestExecClient(ExecutionClient):
@@ -48,6 +51,8 @@ cdef class BacktestExecClient(ExecutionClient):
                  dict data_bars_ask: Dict[Symbol, DataFrame],
                  Money starting_capital,
                  int slippage_ticks,
+                 Account account,
+                 Portfolio portfolio,
                  TestClock clock,
                  TestGuidFactory guid_factory,
                  Logger logger):
@@ -70,7 +75,11 @@ cdef class BacktestExecClient(ExecutionClient):
         Precondition.dict_types(data_bars_ask, Symbol, DataFrame, 'data_bars_ask')
         Precondition.not_negative(slippage_ticks, 'slippage_ticks')
 
-        super().__init__(clock, guid_factory, logger)
+        super().__init__(account,
+                         portfolio,
+                         clock,
+                         guid_factory,
+                         logger)
 
         # Convert instruments list to dictionary indexed by symbol
         cdef dict instruments_dict = {}             # type: Dict[Symbol, Instrument]
@@ -96,14 +105,11 @@ cdef class BacktestExecClient(ExecutionClient):
         self.account_cash_activity_day = Money(0)
         self.slippage_index = {}                    # type: Dict[Symbol, Decimal]
         self.working_orders = {}                    # type: Dict[OrderId, Order]
-        self.positions_count = {}                   # type: Dict[Symbol, int]
-        self.positions = {}                         # type: Dict[Symbol, Position]
-        self.completed_positions = {}               # type: Dict[PositionId, Position]
 
         self._set_slippage_index(slippage_ticks)
 
         cdef AccountEvent initial_starting = AccountEvent(
-            self.account.id,
+            self._account.id,
             Broker.SIMULATED,
             AccountNumber('9999'),
             CurrencyCode.USD,
@@ -117,7 +123,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._guid_factory.generate(),
             self._clock.time_now())
 
-        self.account.apply(initial_starting)
+        self._account.apply(initial_starting)
 
     cpdef void connect(self):
         """
@@ -157,10 +163,11 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         Iterate the data client one time step.
         """
+        cdef CollateralInquiry command
         # Set account statistics
         if self.day_number is not time.day:
             self.day_number = time.day
-            self.account_cash_start_day = self.account.cash_balance
+            self.account_cash_start_day = self._account.cash_balance
             self.account_cash_activity_day = Money(0)
             self.collateral_inquiry()
 
@@ -222,16 +229,17 @@ cdef class BacktestExecClient(ExecutionClient):
             self._clock.time_now())
         self._on_event(event)
 
-    cpdef void submit_order(self, Order order, PositionId position_id, GUID strategy_id):
+    cpdef void submit_order(self, SubmitOrder command):
         """
         Send a submit order request to the execution service.
         
-        :param order: The order to submit.
-        :param strategy_id: The strategy identifier to register the order with.
+        :param command: The command to execute.
         """
-        Precondition.not_in(order.id, self.working_orders, 'order.id', 'working_orders')
+        Precondition.not_in(command.order.id, self.working_orders, 'order.id', 'working_orders')
 
-        self._register_order(order, position_id, strategy_id)
+        cdef Order order = command.order
+
+        self._register_order(order, command.position_id, command.strategy_id)
 
         cdef OrderSubmitted submitted = OrderSubmitted(
             order.symbol,
@@ -300,28 +308,13 @@ cdef class BacktestExecClient(ExecutionClient):
             order.expire_time)
         self._on_event(working)
 
-    cpdef void cancel_order(self, Order order, str cancel_reason):
-        """
-        Send a cancel order request to the execution service.
-        """
-        Precondition.is_in(order.id, self.working_orders, 'order.id', 'working_orders')
-
-        cdef OrderCancelled cancelled = OrderCancelled(
-            order.symbol,
-            order.id,
-            self._clock.time_now(),
-            self._guid_factory.generate(),
-            self._clock.time_now())
-
-        del self.working_orders[order.id]
-        self._on_event(cancelled)
-
-    cpdef void modify_order(self, Order order, Price new_price):
+    cpdef void modify_order(self, ModifyOrder command):
         """
         Send a modify order request to the execution service.
         """
-        Precondition.is_in(order.id, self.working_orders, 'order.id', 'working_orders')
+        Precondition.is_in(command.order.id, self.working_orders, 'order.id', 'working_orders')
 
+        cdef Order order = command.order
         cdef Price current_ask
         cdef Price current_bid
 
@@ -350,12 +343,28 @@ cdef class BacktestExecClient(ExecutionClient):
             order.symbol,
             order.id,
             order.broker_id,
-            new_price,
+            command.modified_price,
             self._clock.time_now(),
             self._guid_factory.generate(),
             self._clock.time_now())
 
         self._on_event(modified)
+
+    cpdef void cancel_order(self, CancelOrder command):
+        """
+        Send a cancel order request to the execution service.
+        """
+        Precondition.is_in(command.order.id, self.working_orders, 'order.id', 'working_orders')
+
+        cdef OrderCancelled cancelled = OrderCancelled(
+            command.order.symbol,
+            command.order.id,
+            self._clock.time_now(),
+            self._guid_factory.generate(),
+            self._clock.time_now())
+
+        del self.working_orders[command.order.id]
+        self._on_event(cancelled)
 
     cdef dict _prepare_minute_data(self, dict bar_data, str quote_type):
         """
@@ -498,40 +507,20 @@ cdef class BacktestExecClient(ExecutionClient):
             self._clock.time_now())
 
         self._on_event(filled)
-        self._adjust_positions(filled)
+        self._adjust_account(filled)
 
-    cdef void _adjust_positions(self, OrderEvent event):
+    cdef void _adjust_account(self, OrderEvent event):
         """
         Adjust the positions based on the order fill event.
         
         :param event: The order fill event.
         """
-        cdef Position subject_position
-
-        # Increment positions count
-        if event.symbol not in self.positions_count:
-            self.positions_count[event.symbol] = 0
-
-        # Apply event to position
-        if event.symbol not in self.positions:
-            self.positions_count[event.symbol] += 1
-            self.positions[event.symbol] = Position(event.symbol,
-                                                    PositionId(str(event.symbol) + '-' + str(self.positions_count[event.symbol])),
-                                                    event.timestamp)
-
-        subject_position = self.positions[event.symbol]
-        subject_position.apply(event)
-
-        if subject_position.is_exited:
-            self.completed_positions[subject_position.id] = subject_position
-            del self.positions[event.symbol]
-
-        cdef AccountEvent initial_starting = AccountEvent(
-            self.account.id,
-            self.account.broker,
-            self.account.account_number,
-            self.account.currency,
-            self.account.cash_balance,
+        cdef AccountEvent account_event = AccountEvent(
+            self._account.id,
+            self._account.broker,
+            self._account.account_number,
+            self._account.currency,
+            self._account.cash_balance,
             self.account_cash_start_day,
             self.account_cash_activity_day,
             margin_used_liquidation=Money(0),
@@ -540,3 +529,5 @@ cdef class BacktestExecClient(ExecutionClient):
             margin_call_status='NONE',
             event_id=self._guid_factory.generate(),
             event_timestamp=self._clock.time_now())
+
+        self._account.apply(account_event)
