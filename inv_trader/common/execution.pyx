@@ -94,8 +94,8 @@ cdef class ExecutionClient:
         self._orders_active[strategy.id] = {}      # type: Dict[OrderId, Order]
         self._orders_completed[strategy.id] = {}   # type: Dict[OrderId, Order]
 
-        self._portfolio._register_strategy(strategy.id)  # Access to protected member ok here
-        strategy._register_execution_client(self)        # Access to protected member ok here
+        self._portfolio.register_strategy(strategy.id)
+        strategy.register_execution_client(self)
 
         self._log.info(f"Registered strategy {strategy} with id {strategy.id}.")
 
@@ -242,7 +242,7 @@ cdef class ExecutionClient:
 
         self._order_book[order.id] = order
         self._order_strategy_index[order.id] = strategy_id
-        self._portfolio._register_order(order.id, position_id)
+        self._portfolio.register_order(order.id, position_id)
 
     cdef _on_event(self, Event event):
         """
@@ -276,7 +276,7 @@ cdef class ExecutionClient:
 
             # Position events
             if isinstance(event, OrderFilled) or isinstance(event, OrderPartiallyFilled):
-                self._portfolio._on_event(event, strategy_id)  # Access to protected member ok here
+                self._portfolio.on_event(event, strategy_id)
             elif isinstance(event, OrderModified):
                 self._log.info(f"{event} price to {event.modified_price}")
             # Warning Events
@@ -286,7 +286,7 @@ cdef class ExecutionClient:
                 self._log.warning(f"{event} {event.cancel_reject_reason} {event.cancel_reject_response}")
 
             # Send event to strategy
-            self._registered_strategies[strategy_id]._update_events(event)  # Access to protected member ok here
+            self._registered_strategies[strategy_id].update_events(event)
 
         elif isinstance(event, AccountEvent):
             self._account.apply(event)

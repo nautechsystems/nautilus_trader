@@ -67,6 +67,11 @@ cdef class TradeStrategy:
     cpdef void on_stop(self)
     cpdef void on_reset(self)
 
+# -- REGISTRATION METHODS ------------------------------------------------------------------------ #
+    cpdef void register_data_client(self, DataClient client)
+    cpdef void register_execution_client(self, ExecutionClient client)
+    cpdef void update_events(self, Event event)
+
 # -- DATA METHODS -------------------------------------------------------------------------------- #
     cpdef readonly datetime time_now(self)
     cpdef readonly list symbols(self)
@@ -119,15 +124,14 @@ cdef class TradeStrategy:
     cpdef void set_timer(self, Label label, timedelta interval, datetime start_time, datetime stop_time, bint repeat)
     cpdef void cancel_timer(self, Label label)
 
+# -- BACKTEST METHODS ---------------------------------------------------------------------------- #
+    cpdef void change_clock(self, Clock clock)
+    cpdef void change_guid_factory(self, GuidFactory guid_factory)
+    cpdef void change_logger(self, Logger logger)
+    cpdef void set_time(self, datetime time)
+    cpdef void iterate(self, datetime time)
+
 # -- INTERNAL METHODS ---------------------------------------------------------------------------- #
-    cpdef _register_data_client(self, DataClient client)
-    cpdef _register_execution_client(self, ExecutionClient client)
     cpdef void _update_ticks(self, Tick tick)
     cpdef void _update_bars(self, BarType bar_type, Bar bar)
     cpdef void _update_indicators(self, BarType bar_type, Bar bar)
-    cpdef void _update_events(self, Event event)
-    cpdef void _change_clock(self, Clock clock)
-    cpdef void _change_guid_factory(self, GuidFactory guid_factory)
-    cpdef void _change_logger(self, Logger logger)
-    cpdef void _set_time(self, datetime time)
-    cpdef void _iterate(self, datetime time)

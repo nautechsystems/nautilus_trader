@@ -42,6 +42,6 @@ cdef class Portfolio:
     cpdef bint is_strategy_flat(self, GUID strategy_id)
     cpdef bint is_flat(self)
 
-    cpdef void _register_strategy(self, GUID strategy_id)
-    cpdef void _register_order(self, OrderId order_id, PositionId position_id)
-    cpdef void _on_event(self, Event event, GUID strategy_id)
+    cpdef void register_strategy(self, GUID strategy_id)
+    cpdef void register_order(self, OrderId order_id, PositionId position_id)
+    cpdef void on_event(self, Event event, GUID strategy_id)

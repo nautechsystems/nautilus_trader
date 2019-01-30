@@ -708,7 +708,7 @@ class TradeStrategyTests(unittest.TestCase):
         strategy = TradeStrategy()
 
         # Act
-        strategy._change_clock(clock)
+        strategy.change_clock(clock)
 
         # Assert
         self.assertEqual(clock.unix_epoch(), strategy.time_now())

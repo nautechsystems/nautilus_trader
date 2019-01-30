@@ -154,7 +154,7 @@ cdef class Portfolio:
 
         return True
 
-    cpdef void _register_strategy(self, GUID strategy_id):
+    cpdef void register_strategy(self, GUID strategy_id):
         """
         Register the given strategy identifier with the portfolio.
         
@@ -168,7 +168,7 @@ cdef class Portfolio:
         self._positions_active[strategy_id] = {}  # type: Dict[PositionId, Position]
         self._positions_closed[strategy_id] = {}  # type: Dict[PositionId, Position]
 
-    cpdef void _register_order(self, OrderId order_id, PositionId position_id):
+    cpdef void register_order(self, OrderId order_id, PositionId position_id):
         """
         Register the given order identifier with the given position identifier.
         
@@ -179,7 +179,7 @@ cdef class Portfolio:
 
         self._order_p_index[order_id] = position_id
 
-    cpdef void _on_event(self, Event event, GUID strategy_id):
+    cpdef void on_event(self, Event event, GUID strategy_id):
         """
         Handle the given event associated with the given strategy identifier.
         
