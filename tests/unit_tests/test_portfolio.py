@@ -52,7 +52,7 @@ class PortfolioTestsTests(unittest.TestCase):
         strategy = TradeStrategy()
 
         # Act
-        self.portfolio._register_strategy(strategy.id)
+        self.portfolio.register_strategy(strategy.id)
 
         # Assert
         self.assertTrue(strategy.id in self.portfolio.registered_strategies())
@@ -69,7 +69,7 @@ class PortfolioTestsTests(unittest.TestCase):
         position_id = PositionId('AUDUSD-1-123456')
 
         # Act
-        self.portfolio._register_order(order.id, position_id)
+        self.portfolio.register_order(order.id, position_id)
 
         # Assert
         self.assertTrue(order.id in self.portfolio.registered_order_ids())

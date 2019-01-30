@@ -28,7 +28,7 @@ from inv_trader.model.identifiers cimport GUID, Label, OrderId, PositionId
 from inv_trader.model.objects cimport Symbol, Price, Tick, BarType, Bar, Instrument
 from inv_trader.model.order cimport Order, OrderIdGenerator, OrderFactory
 from inv_trader.model.position cimport Position
-from inv_trader.commands cimport CollateralInquiry, SubmitOrder, ModifyOrder, CancelOrder
+from inv_trader.commands cimport SubmitOrder, ModifyOrder, CancelOrder
 from inv_trader.tools cimport IndicatorUpdater
 Indicator = object
 
@@ -178,6 +178,39 @@ cdef class TradeStrategy:
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
 
+# -- REGISTRATION METHODS ------------------------------------------------------------------------ #
+
+    cpdef void register_data_client(self, DataClient client):
+        """
+        Register the strategy with the given data client.
+
+        :param client: The data service client to register.
+        :raises ValueError: If client is None.
+        :raises TypeError: If client does not inherit from DataClient.
+        """
+        self._data_client = client
+
+    cpdef void register_execution_client(self, ExecutionClient client):
+        """
+        Register the strategy with the given execution client.
+
+        :param client: The execution client to register.
+        :raises ValueError: If client is None.
+        :raises TypeError: If client does not inherit from ExecutionClient.
+        """
+        self._exec_client = client
+        self._portfolio = client.get_portfolio()
+        self.account = client.get_account()
+
+    cpdef void update_events(self, Event event):
+        """
+        Updates the strategy with the given event, then calls on_event() if the
+        strategy is running.
+
+        :param event: The event received.
+        """
+        if self.is_running:
+            self.on_event(event)
 
 # -- DATA METHODS -------------------------------------------------------------------------------- #
 
@@ -728,7 +761,7 @@ cdef class TradeStrategy:
         :raises ValueError: If the label is not unique for this strategy.
         :raises ValueError: If the alert_time is not > than the current time (UTC).
         """
-        self._clock.set_time_alert(label, alert_time, self._update_events)
+        self._clock.set_time_alert(label, alert_time, self.update_events)
         self.log.info(f"Set time alert for {label} at {alert_time}.")
 
     cpdef void cancel_time_alert(self, Label label):
@@ -770,7 +803,7 @@ cdef class TradeStrategy:
         :raises ValueError: If the stop_time is not None and start_time plus interval is greater
         than the stop_time.
         """
-        self._clock.set_timer(label, interval, start_time, stop_time, repeat, self._update_events)
+        self._clock.set_timer(label, interval, start_time, stop_time, repeat, self.update_events)
         self.log.info(
             (f"Set timer for {label} with interval {interval}, "
              f"starting at {start_time}, stopping at {stop_time}, repeat={repeat}."))
@@ -785,30 +818,50 @@ cdef class TradeStrategy:
         self._clock.cancel_timer(label)
         self.log.info(f"Cancelled timer for {label}.")
 
+# -- BACKTEST METHODS ---------------------------------------------------------------------------- #
+
+    cpdef void change_clock(self, Clock clock):
+        """
+        Backtest method. Change the strategies internal clock with the given clock
+        
+        :param clock: The clock to change to.
+        """
+        self._clock = clock
+        self._order_id_generator = OrderIdGenerator(self.order_id_tag, clock=self._clock)
+
+    cpdef void change_guid_factory(self, GuidFactory guid_factory):
+        """
+        Backtest method. Change the strategies internal GUID factory with the given GUID factory.
+        
+        :param guid_factory: The GUID factory to change to.
+        """
+        self._guid_factory = guid_factory
+
+    cpdef void change_logger(self, Logger logger):
+        """
+        Backtest method. Change the strategies internal logger with the given logger.
+        
+        :param logger: The logger to change to.
+        """
+        self.log = LoggerAdapter(f"{self.name}-{self.label}", logger)
+
+    cpdef void set_time(self, datetime time):
+        """
+        Backtest method. Set the strategies clock time to the given time.
+        
+        :param time: The time to set the clock to.
+        """
+        self._clock.set_time(time)
+
+    cpdef void iterate(self, datetime time):
+        """
+        Backtest method. Iterate the strategies clock to the given time.
+        
+        :param time: The time to iterate the clock to.
+        """
+        self._clock.iterate_time(time)
 
 # -- INTERNAL METHODS ---------------------------------------------------------------------------- #
-
-    cpdef _register_data_client(self, DataClient client):
-        """
-        Register the strategy with the given data client.
-
-        :param client: The data service client to register.
-        :raises ValueError: If client is None.
-        :raises TypeError: If client does not inherit from DataClient.
-        """
-        self._data_client = client
-
-    cpdef _register_execution_client(self, ExecutionClient client):
-        """
-        Register the strategy with the given execution client.
-
-        :param client: The execution client to register.
-        :raises ValueError: If client is None.
-        :raises TypeError: If client does not inherit from ExecutionClient.
-        """
-        self._exec_client = client
-        self._portfolio = client.get_portfolio()
-        self.account = client.get_account()
 
     cpdef void _update_ticks(self, Tick tick):
         """"
@@ -853,54 +906,3 @@ cdef class TradeStrategy:
 
         for updater in self._indicator_updaters[bar_type]:
             updater.update_bar(bar)
-
-    cpdef void _update_events(self, Event event):
-        """
-        Updates the strategy with the given event, then calls on_event() if the
-        strategy is running.
-
-        :param event: The event received.
-        """
-        if self.is_running:
-            self.on_event(event)
-
-    cpdef void _change_clock(self, Clock clock):
-        """
-        Change the strategies internal clock with the given clock
-        
-        :param clock: The clock to change to.
-        """
-        self._clock = clock
-        self._order_id_generator = OrderIdGenerator(self.order_id_tag, clock=self._clock)
-
-    cpdef void _change_guid_factory(self, GuidFactory guid_factory):
-        """
-        Change the strategies internal GUID factory with the given GUID factory.
-        
-        :param guid_factory: The GUID factory to change to.
-        """
-        self._guid_factory = guid_factory
-
-    cpdef void _change_logger(self, Logger logger):
-        """
-        Change the strategies internal logger with the given logger.
-        
-        :param logger: The logger to change to.
-        """
-        self.log = LoggerAdapter(f"{self.name}-{self.label}", logger)
-
-    cpdef void _set_time(self, datetime time):
-        """
-        Set the strategies clock time to the given time.
-        
-        :param time: The time to set the clock to.
-        """
-        self._clock.set_time(time)
-
-    cpdef void _iterate(self, datetime time):
-        """
-        Iterate the strategies clock to the given time.
-        
-        :param time: The time to iterate the clock to.
-        """
-        self._clock.iterate_time(time)
