@@ -573,17 +573,15 @@ cdef class TradeStrategy:
         self.on_reset()
         self.log.info(f"Reset.")
 
-    cpdef void collateral_inquiry(self, CollateralInquiry command):
+    cpdef void collateral_inquiry(self):
         """
         Send a collateral inquiry command to the execution service.
 
         :raises ValueError: If the strategy has not been registered with an execution client.
         """
-        cdef CollateralInquiry command = CollateralInquiry(
-            self._guid_factory.generate(),
-            self._clock.time_now())
+        Precondition.not_none(self._exec_client, 'exec_client')
 
-        self._exec_client.collateral_inquiry(command)
+        self._exec_client.collateral_inquiry()
 
     cpdef void submit_order(self, Order order, PositionId position_id):
         """

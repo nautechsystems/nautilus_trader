@@ -14,6 +14,8 @@ from inv_trader.common.logger cimport LoggerAdapter
 from inv_trader.common.data cimport DataClient
 from inv_trader.common.execution cimport ExecutionClient
 from inv_trader.model.identifiers cimport Label, GUID
+from inv_trader.model.account cimport Account
+from inv_trader.portfolio.portfolio cimport Portfolio
 
 
 cdef class Trader:
@@ -27,6 +29,8 @@ cdef class Trader:
 
     cdef readonly Label name
     cdef readonly GUID id
+    cdef readonly Account account
+    cdef readonly Portfolio portfolio
     cdef readonly list strategies
     cdef readonly list started_datetimes
     cdef readonly list stopped_datetimes
@@ -35,6 +39,3 @@ cdef class Trader:
     cpdef void stop(self)
     cpdef void reset(self)
     cpdef void dispose(self)
-
-
-

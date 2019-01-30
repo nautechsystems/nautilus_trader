@@ -15,12 +15,12 @@ from cpython.datetime cimport datetime
 from typing import List
 
 from inv_trader.core.precondition cimport Precondition
+from inv_trader.model.account cimport Account
 from inv_trader.common.clock cimport LiveClock
 from inv_trader.common.logger cimport Logger, LoggerAdapter
 from inv_trader.common.data cimport DataClient
 from inv_trader.common.execution cimport ExecutionClient
-from inv_trader.data import LiveDataClient
-from inv_trader.execution import LiveExecClient
+from inv_trader.portfolio.portfolio cimport Portfolio
 from inv_trader.strategy cimport TradeStrategy
 
 
@@ -30,10 +30,12 @@ cdef class Trader:
     """
 
     def __init__(self,
-                 str name='TRADER',
-                 list strategies=[],
-                 DataClient data_client=LiveDataClient(),
-                 ExecutionClient exec_client=LiveExecClient(),
+                 str name,
+                 list strategies,
+                 DataClient data_client,
+                 ExecutionClient exec_client,
+                 Account account,
+                 Portfolio portfolio,
                  Clock clock=LiveClock(),
                  Logger logger=None):
         """
@@ -54,10 +56,12 @@ cdef class Trader:
             self._log = LoggerAdapter(f"{self.__class__.__name__}-{self.name}")
         else:
             self._log = LoggerAdapter(f"{self.__class__.__name__}-{self.name}", logger)
-        self._data_client = data_client
-        self._exec_client = exec_client
         self.name = Label(name)
         self.id = GUID(uuid.uuid4())
+        self._data_client = data_client
+        self._exec_client = exec_client
+        self.account = account
+        self.portfolio = portfolio
         self.strategies = strategies
         self.started_datetimes = []  # type: List[datetime]
         self.stopped_datetimes = []  # type: List[datetime]

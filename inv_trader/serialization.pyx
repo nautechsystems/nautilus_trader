@@ -260,12 +260,12 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         cdef str order_command = unpacked[ORDER_COMMAND]
         cdef Order order = self.order_serializer.deserialize(bytes.fromhex(unpacked[ORDER]))
 
-        if order_command == SUBMIT_ORDER:
-            return SubmitOrder(
-                order,
-                command_id,
-                command_timestamp)
-        elif order_command == CANCEL_ORDER:
+        # if order_command == SUBMIT_ORDER:
+        #     return SubmitOrder(
+        #         order,
+        #         command_id,
+        #         command_timestamp)
+        if order_command == CANCEL_ORDER:
             return CancelOrder(
                 order,
                 unpacked[CANCEL_REASON],

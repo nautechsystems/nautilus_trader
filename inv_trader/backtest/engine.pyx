@@ -25,7 +25,9 @@ from inv_trader.common.clock cimport LiveClock, TestClock
 from inv_trader.common.guid cimport TestGuidFactory
 from inv_trader.common.logger cimport Logger
 from inv_trader.enums.resolution cimport Resolution
+from inv_trader.model.account cimport Account
 from inv_trader.model.objects cimport Symbol, Instrument, Money
+from inv_trader.portfolio.portfolio cimport Portfolio
 from inv_trader.strategy cimport TradeStrategy
 
 
@@ -111,6 +113,8 @@ cdef class BacktestEngine:
             log_file_path=config.log_file_path,
             clock=self.test_clock)
 
+        self.account = Account()
+        self.portfolio = Portfolio()
         self.instruments = instruments
         self.data_client = BacktestDataClient(
             instruments=instruments,
@@ -135,6 +139,8 @@ cdef class BacktestEngine:
             data_bars_ask=minute_bars_ask,
             starting_capital=config.starting_capital,
             slippage_ticks=config.slippage_ticks,
+            account=self.account,
+            portfolio=self.portfolio,
             clock=TestClock(),  # Separate test clock to iterate independently
             guid_factory=TestGuidFactory(),
             logger=self.test_log)
@@ -157,6 +163,8 @@ cdef class BacktestEngine:
             strategies,
             self.data_client,
             self.exec_client,
+            self.account,
+            self.portfolio,
             self.test_clock)
 
         self.time_to_initialize = self.clock.get_elapsed(self.created_time)

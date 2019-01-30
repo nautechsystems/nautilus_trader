@@ -113,7 +113,7 @@ cdef class ExecutionClient:
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void collateral_inquiry(self, CollateralInquiry command):
+    cpdef void collateral_inquiry(self):
         """
         Send a collateral inquiry command to the execution service.
         """
@@ -153,10 +153,17 @@ cdef class ExecutionClient:
         """
         Precondition.valid_string(cancel_reason, 'cancel_reason')
 
+        cdef CancelOrder command
+
         for order_id, strategy_id in self._order_strategy_index.items():
             if strategy_id.equals(strategy_id):
                 if not self._order_book[order_id].is_complete:
-                    self.cancel_order(self._order_book[order_id], cancel_reason)
+                    command = CancelOrder(
+                        self._order_book[order_id],
+                        cancel_reason,
+                        self._guid_factory.generate(),
+                        self._clock.time_now())
+                    self.cancel_order(command)
 
     cpdef Order get_order(self, OrderId order_id):
         """
