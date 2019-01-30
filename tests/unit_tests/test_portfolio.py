@@ -27,6 +27,7 @@ from inv_trader.model.position import Position
 from inv_trader.data import LiveDataClient
 from inv_trader.strategy import TradeStrategy
 from inv_trader.tools import IndicatorUpdater
+from inv_trader.portfolio.portfolio import Portfolio
 from inv_indicators.average.ema import ExponentialMovingAverage
 from inv_indicators.intrinsic_network import IntrinsicNetwork
 from test_kit.stubs import TestStubs
@@ -42,6 +43,34 @@ class PortfolioTestsTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
-        self.order_factory = OrderFactory()
+        self.order_factory = OrderFactory(clock=TestClock())
+        self.portfolio = Portfolio()
         print('\n')
 
+    def test_can_register_strategy(self):
+        # Arrange
+        strategy = TradeStrategy()
+
+        # Act
+        self.portfolio._register_strategy(strategy.id)
+
+        # Assert
+        self.assertTrue(strategy.id in self.portfolio.registered_strategies())
+
+    def test_can_register_order(self):
+        # Arrange
+        order = self.order_factory.market(
+            AUDUSD_FXCM,
+            OrderId('AUDUSD-1-123456'),
+            Label('S1'),
+            OrderSide.BUY,
+            100000)
+
+        position_id = PositionId('AUDUSD-1-123456')
+
+        # Act
+        self.portfolio._register_order(order.id, position_id)
+
+        # Assert
+        self.assertTrue(order.id in self.portfolio.registered_order_ids())
+        self.assertTrue(position_id in self.portfolio.registered_position_ids())
