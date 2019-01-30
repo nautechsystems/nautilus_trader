@@ -9,22 +9,13 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
-from cpython.datetime cimport datetime, timedelta
-from collections import deque
-from typing import Callable, Dict, List, Deque
+from typing import Dict
 
 from inv_trader.core.precondition cimport Precondition
-from inv_trader.enums.order_side cimport OrderSide
-from inv_trader.enums.market_position cimport MarketPosition
 from inv_trader.common.clock cimport Clock, LiveClock
 from inv_trader.common.logger cimport Logger, LoggerAdapter
-from inv_trader.common.execution cimport ExecutionClient
-from inv_trader.common.data cimport DataClient
-from inv_trader.model.events cimport Event, OrderEvent
-from inv_trader.model.events cimport OrderRejected, OrderCancelReject, OrderFilled, OrderPartiallyFilled
-from inv_trader.model.identifiers cimport GUID, Label, OrderId, PositionId
-from inv_trader.model.objects cimport Symbol, Price, Tick, BarType, Bar, Instrument
-from inv_trader.model.order cimport Order, OrderIdGenerator, OrderFactory
+from inv_trader.model.events cimport Event
+from inv_trader.model.identifiers cimport GUID, OrderId, PositionId
 from inv_trader.model.position cimport Position
 
 
@@ -88,9 +79,9 @@ cdef class Portfolio:
 
     cpdef dict get_positions(self, GUID strategy_id):
         """
-        Create and return a list of all positions associated with the strategy id.
+        Return a list of all positions associated with the strategy id.
         
-        :param strategy_id: The strategy id associated with the positions.
+        :param strategy_id: The strategy identifier associated with the positions.
         :return: Dict[PositionId, Position].
         """
         Precondition.is_in(strategy_id, self._positions_active, 'strategy_id', 'positions_active')
@@ -101,9 +92,9 @@ cdef class Portfolio:
 
     cpdef dict get_positions_active(self, GUID strategy_id):
         """
-        Create and return a list of all active positions associated with the strategy id.
+        Return a list of all active positions associated with the strategy id.
         
-        :param strategy_id: The strategy id associated with the positions.
+        :param strategy_id: The strategy identifier associated with the positions.
         :return: Dict[PositionId, Position].
         """
         Precondition.is_in(strategy_id, self._positions_active, 'strategy_id', 'positions_active')
@@ -112,9 +103,9 @@ cdef class Portfolio:
 
     cpdef dict get_positions_closed(self, GUID strategy_id):
         """
-        Create and return a list of all active positions associated with the strategy id.
+        Return a list of all active positions associated with the strategy id.
         
-        :param strategy_id: The strategy id associated with the positions.
+        :param strategy_id: The strategy identifier associated with the positions.
         :return: Dict[PositionId, Position].
         """
         Precondition.is_in(strategy_id, self._positions_closed, 'strategy_id', 'positions_closed')
@@ -132,8 +123,9 @@ cdef class Portfolio:
 
     cpdef bint is_flat(self):
         """
-        TBA
-        :return: 
+        Return a value indicating whether the entire portfolio is flat.
+        
+        :return: True if the portfolio is flat, else False.
         """
         for position in self._position_book.values():
             if not position.is_exited:
@@ -143,9 +135,9 @@ cdef class Portfolio:
 
     cpdef void _register_strategy(self, GUID strategy_id):
         """
-        TBA
-        :param strategy_id: 
-        :return: 
+        Register the given strategy identifier with the portfolio.
+        
+        :param strategy_id: The strategy identifier to register.
         """
         Precondition.not_in(strategy_id, self._positions_active, 'strategy_id', 'active_positions')
         Precondition.not_in(strategy_id, self._positions_closed, 'strategy_id', 'closed_positions')
@@ -155,7 +147,10 @@ cdef class Portfolio:
 
     cpdef void _register_order(self, OrderId order_id, PositionId position_id):
         """
-        TBA
+        Register the given order identifier with the given position identifier.
+        
+        :param order_id: The order identifier to register.
+        :param position_id: The position identifier to register.
         """
         Precondition.not_in(order_id, self._order_p_index, 'order_id', 'order_position_index')
 
@@ -163,7 +158,10 @@ cdef class Portfolio:
 
     cpdef void _on_event(self, Event event, GUID strategy_id):
         """
-        TBA
+        Handle the given event associated with the given strategy identifier.
+        
+        :param event: The event to handle.
+        :param strategy_id: The strategy identifier.
         """
         Precondition.is_in(event.order_id, self._order_p_index, 'event.order_id', 'order_position_index')
 
