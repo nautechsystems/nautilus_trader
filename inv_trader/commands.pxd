@@ -11,7 +11,7 @@
 
 from cpython.datetime cimport datetime
 
-from inv_trader.model.identifiers cimport GUID
+from inv_trader.model.identifiers cimport GUID, PositionId
 from inv_trader.model.objects cimport Price
 from inv_trader.model.order cimport Order
 
@@ -22,6 +22,12 @@ cdef class Command:
     """
     cdef readonly GUID id
     cdef readonly datetime timestamp
+
+
+cdef class CollateralInquiry(Command):
+    """
+    Represents a request for a FIX collateral inquiry of all connected accounts.
+    """
 
 
 cdef class OrderCommand(Command):
@@ -35,13 +41,8 @@ cdef class SubmitOrder(OrderCommand):
     """
     Represents a command to submit the given order.
     """
-
-
-cdef class CancelOrder(OrderCommand):
-    """
-    Represents a command to cancel the given order.
-    """
-    cdef readonly str cancel_reason
+    cdef readonly PositionId position_id
+    cdef readonly GUID strategy_id
 
 
 cdef class ModifyOrder(OrderCommand):
@@ -51,7 +52,8 @@ cdef class ModifyOrder(OrderCommand):
     cdef readonly Price modified_price
 
 
-cdef class CollateralInquiry(Command):
+cdef class CancelOrder(OrderCommand):
     """
-    Represents a request for a FIX collateral inquiry of all connected accounts.
+    Represents a command to cancel the given order.
     """
+    cdef readonly str cancel_reason

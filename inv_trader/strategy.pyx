@@ -22,11 +22,13 @@ from inv_trader.common.clock cimport Clock, LiveClock
 from inv_trader.common.logger cimport Logger, LoggerAdapter
 from inv_trader.common.execution cimport ExecutionClient
 from inv_trader.common.data cimport DataClient
+from inv_trader.common.guid cimport GuidFactory, LiveGuidFactory
 from inv_trader.model.events cimport Event
 from inv_trader.model.identifiers cimport GUID, Label, OrderId, PositionId
 from inv_trader.model.objects cimport Symbol, Price, Tick, BarType, Bar, Instrument
 from inv_trader.model.order cimport Order, OrderIdGenerator, OrderFactory
 from inv_trader.model.position cimport Position
+from inv_trader.commands cimport CollateralInquiry, SubmitOrder, ModifyOrder, CancelOrder
 from inv_trader.tools cimport IndicatorUpdater
 Indicator = object
 
@@ -41,6 +43,7 @@ cdef class TradeStrategy:
                  str order_id_tag='0',
                  int bar_capacity=1000,
                  Clock clock=LiveClock(),
+                 GuidFactory guid_factory=LiveGuidFactory(),
                  Logger logger=None):
         """
         Initializes a new instance of the TradeStrategy abstract class.
@@ -49,6 +52,7 @@ cdef class TradeStrategy:
         :param order_id_tag: The optional unique order identifier tag for the strategy.
         :param bar_capacity: The capacity for the internal bar deque(s).
         :param clock: The internal clock for the strategy.
+        :param guid_factory: internal The GUID factory for the strategy.
         :param logger: The logger (can be None, and will print).
         :raises ValueError: If the label is not a valid string.
         :raises ValueError: If the order_id_tag is not a valid string.
@@ -59,6 +63,7 @@ cdef class TradeStrategy:
         Precondition.positive(bar_capacity, 'bar_capacity')
 
         self._clock = clock
+        self._guid_factory = guid_factory
         self.name = self.__class__.__name__
         if logger is None:
             self.log = LoggerAdapter(f"{self.name}-{self.label}")
@@ -568,13 +573,17 @@ cdef class TradeStrategy:
         self.on_reset()
         self.log.info(f"Reset.")
 
-    cpdef void collateral_inquiry(self):
+    cpdef void collateral_inquiry(self, CollateralInquiry command):
         """
         Send a collateral inquiry command to the execution service.
 
         :raises ValueError: If the strategy has not been registered with an execution client.
         """
-        self._exec_client.collateral_inquiry()
+        cdef CollateralInquiry command = CollateralInquiry(
+            self._guid_factory.generate(),
+            self._clock.time_now())
+
+        self._exec_client.collateral_inquiry(command)
 
     cpdef void submit_order(self, Order order, PositionId position_id):
         """
@@ -586,7 +595,15 @@ cdef class TradeStrategy:
         :raises ValueError: If the order_id is already contained in the order book (must be unique).
         """
         self.log.info(f"Submitting {order}")
-        self._exec_client.submit_order(order, position_id, self.id)
+
+        cdef SubmitOrder command = SubmitOrder(
+            order,
+            position_id,
+            self.id,
+            self._guid_factory.generate(),
+            self._clock.time_now())
+
+        self._exec_client.submit_order(command)
 
     cpdef void modify_order(self, Order order, Price new_price):
         """
@@ -600,7 +617,14 @@ cdef class TradeStrategy:
         :raises ValueError: If order_id is not found in the order book.
         """
         self.log.info(f"Modifying {order} with new price {new_price}")
-        self._exec_client.modify_order(order, new_price)
+
+        cdef ModifyOrder command = ModifyOrder(
+            order,
+            new_price,
+            self._guid_factory.generate(),
+            self._clock.time_now())
+
+        self._exec_client.modify_order(command)
 
     cpdef void cancel_order(self, Order order, str cancel_reason):
         """
@@ -613,10 +637,16 @@ cdef class TradeStrategy:
         :raises ValueError: If the cancel_reason is not a valid string.
         :raises ValueError: If the order_id is not found in the order book.
         """
-        Precondition.valid_string(cancel_reason, 'cancel_reason')
-
+        # Precondition cancel_reason string checked in command
         self.log.info(f"Cancelling {order}")
-        self._exec_client.cancel_order(order, cancel_reason)
+
+        cdef CancelOrder command = CancelOrder(
+            order,
+            cancel_reason,
+            self._guid_factory.generate(),
+            self._clock.time_now())
+
+        self._exec_client.cancel_order(command)
 
     cpdef void cancel_all_orders(self, str cancel_reason):
         """
@@ -844,6 +874,14 @@ cdef class TradeStrategy:
         """
         self._clock = clock
         self._order_id_generator = OrderIdGenerator(self.order_id_tag, clock=self._clock)
+
+    cpdef void _change_guid_factory(self, GuidFactory guid_factory):
+        """
+        Change the strategies internal GUID factory with the given GUID factory.
+        
+        :param guid_factory: The GUID factory to change to.
+        """
+        self._guid_factory = guid_factory
 
     cpdef void _change_logger(self, Logger logger):
         """

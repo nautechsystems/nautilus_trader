@@ -16,12 +16,9 @@ from inv_trader.common.clock cimport Clock, LiveClock
 from inv_trader.common.guid cimport GuidFactory, LiveGuidFactory
 from inv_trader.common.logger cimport Logger
 from inv_trader.common.execution cimport ExecutionClient
-from inv_trader.commands cimport Command, OrderCommand, CollateralInquiry
+from inv_trader.commands cimport Command, CollateralInquiry
 from inv_trader.commands cimport SubmitOrder, CancelOrder, ModifyOrder
-from inv_trader.model.order cimport Order
-from inv_trader.model.objects cimport Price
 from inv_trader.model.events cimport Event
-from inv_trader.model.identifiers cimport GUID, PositionId
 from inv_trader.messaging import RequestWorker, SubscriberWorker
 from inv_trader.common.serialization cimport CommandSerializer, EventSerializer
 from inv_trader.serialization cimport MsgPackCommandSerializer
@@ -108,71 +105,50 @@ cdef class LiveExecClient(ExecutionClient):
         self._commands_worker.stop()
         self._events_worker.stop()
 
-    cpdef void collateral_inquiry(self):
+    cpdef void collateral_inquiry(self, CollateralInquiry command):
         """
         Send a collateral inquiry command to the execution service.
+        
+        :param command: The command to execute.
         """
-        cdef Command command = CollateralInquiry(self._guid_factory.generate(),
-                                                 self._clock.time_now())
         cdef bytes message = self._command_serializer.serialize(command)
 
         self._commands_worker.send(message)
         self._log.debug(f"Sent {command}")
 
-    cpdef void submit_order(self, Order order, PositionId position_id, GUID strategy_id):
+    cpdef void submit_order(self, SubmitOrder command):
         """
         Send a submit order command to the execution service with the given
         order and strategy_id.
 
-        :param order: The order to submit.
-        :param strategy_id: The strategy identifier to register the order with.
+        :param command: The command to execute.
         """
-        self._register_order(order, position_id, strategy_id)
+        self._register_order(command.order, command.position_id, command.strategy_id)
 
-        cdef OrderCommand command = SubmitOrder(
-            order,
-            self._guid_factory.generate(),
-            self._clock.time_now())
         cdef bytes message = self._command_serializer.serialize(command)
 
         self._commands_worker.send(message)
         self._log.debug(f"Sent {command}")
 
-    cpdef void cancel_order(self, Order order, str cancel_reason):
-        """
-        Send a cancel order command to the execution service with the given
-        order and cancel_reason.
-
-        :param order: The order identifier to cancel.
-        :param cancel_reason: The reason for cancellation (will be logged).
-        :raises ValueError: If the cancel_reason is not a valid string.
-        """
-        Precondition.valid_string(cancel_reason, 'cancel_reason')
-
-        cdef OrderCommand command = CancelOrder(
-            order,
-            cancel_reason,
-            self._guid_factory.generate(),
-            self._clock.time_now())
-        cdef bytes message = self._command_serializer.serialize(command)
-
-        self._commands_worker.send(message)
-        self._log.debug(f"Sent {command}")
-
-    cpdef void modify_order(self, Order order, Price new_price):
+    cpdef void modify_order(self, ModifyOrder command):
         """
         Send a modify order command to the execution service with the given
         order and new_price.
 
-        :param order: The order identifier to modify.
-        :param new_price: The new modified price for the order.
-        :raises ValueError: If the new_price is not positive (> 0).
+        :param command: The command to execute.
         """
-        cdef OrderCommand command = ModifyOrder(
-            order,
-            new_price,
-            self._guid_factory.generate(),
-            self._clock.time_now())
+        cdef bytes message = self._command_serializer.serialize(command)
+
+        self._commands_worker.send(message)
+        self._log.debug(f"Sent {command}")
+
+    cpdef void cancel_order(self, CancelOrder command):
+        """
+        Send a cancel order command to the execution service with the given
+        order and cancel_reason.
+
+        :param command: The command to execute.
+        """
         cdef bytes message = self._command_serializer.serialize(command)
 
         self._commands_worker.send(message)

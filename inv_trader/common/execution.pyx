@@ -17,11 +17,11 @@ from inv_trader.common.clock cimport Clock
 from inv_trader.common.guid cimport GuidFactory
 from inv_trader.common.logger cimport Logger, LoggerAdapter
 from inv_trader.model.account cimport Account
-from inv_trader.model.objects cimport Price
 from inv_trader.model.order cimport Order
 from inv_trader.model.events cimport Event, OrderEvent, AccountEvent, OrderModified
 from inv_trader.model.events cimport OrderRejected, OrderCancelReject, OrderFilled, OrderPartiallyFilled
 from inv_trader.model.identifiers cimport GUID, OrderId, PositionId
+from inv_trader.commands cimport SubmitOrder, ModifyOrder, CancelOrder
 from inv_trader.strategy cimport TradeStrategy
 from inv_trader.portfolio.portfolio cimport Portfolio
 
@@ -113,32 +113,28 @@ cdef class ExecutionClient:
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void collateral_inquiry(self):
+    cpdef void collateral_inquiry(self, CollateralInquiry command):
         """
         Send a collateral inquiry command to the execution service.
         """
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void submit_order(
-            self,
-            Order order,
-            PositionId position_id,
-            GUID strategy_id):
+    cpdef void submit_order(self, SubmitOrder command):
         """
         Send a submit order request to the execution service.
         """
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void modify_order(self, Order order, Price new_price):
+    cpdef void modify_order(self, ModifyOrder command):
         """
         Send a modify order request to the execution service.
         """
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void cancel_order(self, Order order, str cancel_reason):
+    cpdef void cancel_order(self, CancelOrder command):
         """
         Send a cancel order request to the execution service.
         """
