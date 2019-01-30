@@ -12,12 +12,10 @@
 import inspect
 import pandas as pd
 
-from cpython.array cimport array
 from cpython.datetime cimport datetime
 from typing import Callable, List
 from pandas.core.frame import DataFrame
 
-#from inv_trader.core.decimal cimport Decimal
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.model.objects cimport Price, Bar, DataBar
 from inv_indicators.base.indicator import Indicator
