@@ -13,11 +13,11 @@ import unittest
 from decimal import Decimal
 from datetime import datetime, timezone, timedelta
 
+from inv_trader.common.account import Account
 from inv_trader.common.clock import TestClock
 from inv_trader.common.guid import TestGuidFactory
 from inv_trader.common.logger import Logger
 from inv_trader.model.enums import Venue, OrderSide
-from inv_trader.model.account import Account
 from inv_trader.model.identifiers import Label, OrderId, PositionId
 from inv_trader.model.objects import Symbol, Price, Money
 from inv_trader.model.events import OrderRejected, OrderWorking, OrderModified, OrderFilled

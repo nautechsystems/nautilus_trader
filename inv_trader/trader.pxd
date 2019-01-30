@@ -14,7 +14,7 @@ from inv_trader.common.logger cimport LoggerAdapter
 from inv_trader.common.data cimport DataClient
 from inv_trader.common.execution cimport ExecutionClient
 from inv_trader.model.identifiers cimport Label, GUID
-from inv_trader.model.account cimport Account
+from inv_trader.common.account cimport Account
 from inv_trader.portfolio.portfolio cimport Portfolio
 
 

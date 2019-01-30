@@ -41,6 +41,8 @@ cdef class Portfolio:
         self._positions_active = {}  # type: Dict[GUID, Dict[PositionId, Position]]
         self._positions_closed = {}  # type: Dict[GUID, Dict[PositionId, Position]]
 
+        self._log.info("Initialized.")
+
     cpdef Position get_position(self, PositionId position_id):
         """
         Return the position associated with the given id.
