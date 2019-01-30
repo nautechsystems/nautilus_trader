@@ -12,6 +12,7 @@
 from cpython.datetime cimport datetime, timedelta
 
 from inv_trader.common.clock cimport Clock
+from inv_trader.common.guid cimport GuidFactory
 from inv_trader.common.logger cimport Logger, LoggerAdapter
 from inv_trader.common.execution cimport ExecutionClient
 from inv_trader.common.data cimport DataClient
@@ -32,6 +33,7 @@ cdef class TradeStrategy:
     The abstract base class for all trade strategies.
     """
     cdef Clock _clock
+    cdef GuidFactory _guid_factory
     cdef dict _timers
     cdef dict _ticks
     cdef dict _bars
@@ -125,6 +127,7 @@ cdef class TradeStrategy:
     cpdef void _update_indicators(self, BarType bar_type, Bar bar)
     cpdef void _update_events(self, Event event)
     cpdef void _change_clock(self, Clock clock)
+    cpdef void _change_guid_factory(self, GuidFactory guid_factory)
     cpdef void _change_logger(self, Logger logger)
     cpdef void _set_time(self, datetime time)
     cpdef void _iterate(self, datetime time)

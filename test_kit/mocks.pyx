@@ -29,6 +29,7 @@ from inv_trader.model.events cimport OrderSubmitted, OrderAccepted, OrderRejecte
 from inv_trader.model.events cimport OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
 from inv_trader.model.events cimport OrderFilled, OrderPartiallyFilled
 from inv_trader.model.identifiers cimport GUID, OrderId, PositionId, ExecutionId, ExecutionTicket
+from inv_trader.commands cimport CollateralInquiry, SubmitOrder, ModifyOrder, CancelOrder
 from inv_trader.portfolio.portfolio cimport Portfolio
 
 cdef str UTF8 = 'utf-8'
@@ -222,11 +223,13 @@ cdef class MockExecClient(ExecutionClient):
         """
         self._log.info("MockExecClient disconnected.")
 
-    cpdef void submit_order(self, Order order, PositionId position_id, GUID strategy_id):
+    cpdef void submit_order(self, SubmitOrder command):
         """
         Send a submit order command to the mock execution service.
         """
-        self._register_order(order, position_id, strategy_id)
+        self._register_order(command.order, command.position_id, command.strategy_id)
+
+        cdef Order order = command.order
 
         cdef OrderSubmitted submitted = OrderSubmitted(
             order.symbol,
@@ -242,7 +245,7 @@ cdef class MockExecClient(ExecutionClient):
             GUID(uuid.uuid4()),
             datetime.utcnow())
 
-        self._working_orders.append(order)
+        self._working_orders.append(command.order)
 
         cdef OrderWorking working = OrderWorking(
             order.symbol,
@@ -263,35 +266,35 @@ cdef class MockExecClient(ExecutionClient):
         self._on_event(accepted)
         self._on_event(working)
 
-    cpdef void cancel_order(self, Order order, str cancel_reason):
-        """
-        Send a cancel order command to the mock execution service.
-        """
-        cdef OrderCancelled cancelled = OrderCancelled(
-            order.symbol,
-            order.id,
-            datetime.utcnow(),
-            GUID(uuid.uuid4()),
-            datetime.utcnow())
-
-        self._on_event(cancelled)
-
-    cpdef void modify_order(self, Order order, Price new_price):
+    cpdef void modify_order(self, ModifyOrder command):
         """
         Send a modify order command to the mock execution service.
         """
         cdef OrderModified modified = OrderModified(
-            order.symbol,
-            order.id,
-            OrderId('B' + str(order.id)),
-            new_price,
+            command.order.symbol,
+            command.order.id,
+            OrderId('B' + str(command.order.id)),
+            command.new_price,
             datetime.utcnow(),
             GUID(uuid.uuid4()),
             datetime.utcnow())
 
         self._on_event(modified)
 
-    cpdef void collateral_inquiry(self):
+    cpdef void cancel_order(self, CancelOrder command):
+        """
+        Send a cancel order command to the mock execution service.
+        """
+        cdef OrderCancelled cancelled = OrderCancelled(
+            command.order.symbol,
+            command.order.id,
+            datetime.utcnow(),
+            GUID(uuid.uuid4()),
+            datetime.utcnow())
+
+        self._on_event(cancelled)
+
+    cpdef void collateral_inquiry(self, CollateralInquiry command):
         """
         Send a collateral inquiry command to the mock execution service.
         """
