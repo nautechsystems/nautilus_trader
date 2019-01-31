@@ -179,7 +179,7 @@ cdef class Portfolio:
 
         self._order_p_index[order_id] = position_id
 
-    cpdef void on_event(self, Event event, GUID strategy_id):
+    cpdef void handle_event(self, Event event, GUID strategy_id):
         """
         Handle the given event associated with the given strategy identifier.
         
@@ -205,6 +205,7 @@ cdef class Portfolio:
             # Add position to active positions
             assert(position_id not in self._positions_active[strategy_id])
             self._positions_active[strategy_id][position_id] = position
+            self._log.debug(f"Position(id={position.id}) added to active positions.")
 
             self._log.info(f"Opened {position}")
 
@@ -220,9 +221,11 @@ cdef class Portfolio:
                 if position_id in self._positions_active[strategy_id]:
                     self._positions_closed[strategy_id][position_id] = position
                     del self._positions_active[strategy_id][position_id]
+                    self._log.debug(f"Position(id={position.id}) moved to closed positions.")
             else:
                 # Check for overfill
                 if position_id in self._positions_closed[strategy_id]:
                     self._positions_active[strategy_id][position_id] = position
                     del self._positions_closed[strategy_id][position_id]
+                    self._log.debug(f"Position(id={position.id}) moved BACK to active positions due overfill.")
                 self._log.info(f"Modified {position}")

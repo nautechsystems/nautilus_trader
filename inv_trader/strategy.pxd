@@ -70,7 +70,7 @@ cdef class TradeStrategy:
 # -- REGISTRATION METHODS ------------------------------------------------------------------------ #
     cpdef void register_data_client(self, DataClient client)
     cpdef void register_execution_client(self, ExecutionClient client)
-    cpdef void update_events(self, Event event)
+    cpdef void handle_event(self, Event event)
 
 # -- DATA METHODS -------------------------------------------------------------------------------- #
     cpdef readonly datetime time_now(self)

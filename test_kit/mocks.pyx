@@ -262,9 +262,9 @@ cdef class MockExecClient(ExecutionClient):
             datetime.utcnow(),
             order.expire_time)
 
-        self._on_event(submitted)
-        self._on_event(accepted)
-        self._on_event(working)
+        self._handle_event(submitted)
+        self._handle_event(accepted)
+        self._handle_event(working)
 
     cpdef void modify_order(self, ModifyOrder command):
         """
@@ -279,7 +279,7 @@ cdef class MockExecClient(ExecutionClient):
             GUID(uuid.uuid4()),
             datetime.utcnow())
 
-        self._on_event(modified)
+        self._handle_event(modified)
 
     cpdef void cancel_order(self, CancelOrder command):
         """
@@ -292,7 +292,7 @@ cdef class MockExecClient(ExecutionClient):
             GUID(uuid.uuid4()),
             datetime.utcnow())
 
-        self._on_event(cancelled)
+        self._handle_event(cancelled)
 
     cpdef void collateral_inquiry(self):
         """
@@ -302,7 +302,7 @@ cdef class MockExecClient(ExecutionClient):
 
     cpdef void fill_last_order(self):
         """
-        Fills the last order held by the execution service.
+        Fills the last working order.
         """
         cdef Order order = self._working_orders.pop(-1)
         filled_price = Price('1.00000') if order.price is None else order.price
@@ -319,4 +319,4 @@ cdef class MockExecClient(ExecutionClient):
             GUID(uuid.uuid4()),
             datetime.utcnow())
 
-        self._on_event(filled)
+        self._handle_event(filled)

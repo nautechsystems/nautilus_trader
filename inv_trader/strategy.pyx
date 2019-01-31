@@ -202,7 +202,7 @@ cdef class TradeStrategy:
         self._portfolio = client.get_portfolio()
         self.account = client.get_account()
 
-    cpdef void update_events(self, Event event):
+    cpdef void handle_event(self, Event event):
         """
         Updates the strategy with the given event, then calls on_event() if the
         strategy is running.
@@ -761,7 +761,7 @@ cdef class TradeStrategy:
         :raises ValueError: If the label is not unique for this strategy.
         :raises ValueError: If the alert_time is not > than the current time (UTC).
         """
-        self._clock.set_time_alert(label, alert_time, self.update_events)
+        self._clock.set_time_alert(label, alert_time, self.handle_event)
         self.log.info(f"Set time alert for {label} at {alert_time}.")
 
     cpdef void cancel_time_alert(self, Label label):
@@ -803,7 +803,7 @@ cdef class TradeStrategy:
         :raises ValueError: If the stop_time is not None and start_time plus interval is greater
         than the stop_time.
         """
-        self._clock.set_timer(label, interval, start_time, stop_time, repeat, self.update_events)
+        self._clock.set_timer(label, interval, start_time, stop_time, repeat, self.handle_event)
         self.log.info(
             (f"Set timer for {label} with interval {interval}, "
              f"starting at {start_time}, stopping at {stop_time}, repeat={repeat}."))

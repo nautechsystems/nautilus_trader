@@ -44,4 +44,4 @@ cdef class Portfolio:
 
     cpdef void register_strategy(self, GUID strategy_id)
     cpdef void register_order(self, OrderId order_id, PositionId position_id)
-    cpdef void on_event(self, Event event, GUID strategy_id)
+    cpdef void handle_event(self, Event event, GUID strategy_id)
