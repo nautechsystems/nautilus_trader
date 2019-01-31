@@ -100,15 +100,16 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         s.strip_dirs().sort_stats("time").print_stats()
 
         # to datetime(2013, 3, 10, 0, 0, 0, 0, tzinfo=timezone.utc)
-        # 51112051 function calls (51107866 primitive calls) in 22.586 seconds
-        # 52912808 function calls (52908623 primitive calls) in 25.232 seconds
-        # 49193278 function calls (49189089 primitive calls) in 19.121 seconds
-        # 49193280 function calls (49189091 primitive calls) in 18.735 seconds
-        # 42052320 function calls (42048131 primitive calls) in 17.642 seconds
-        # 42098237 function calls (42094048 primitive calls) in 17.941 seconds
-        # 39091577 function calls (39087388 primitive calls) in 16.455 seconds (removed price convenience method from build bars)
-        # 21541910 function calls (21537721 primitive calls) in 11.654 seconds (added Price type)
-        # 19915492 function calls (19911303 primitive calls) in 11.036 seconds
-        # 22743234 function calls (22739045 primitive calls) in 12.844 seconds (implemented more sophisticated portfolio)
+        #          51112051 function calls (51107866 primitive calls) in 22.586 seconds
+        #          52912808 function calls (52908623 primitive calls) in 25.232 seconds
+        #          49193278 function calls (49189089 primitive calls) in 19.121 seconds
+        #          49193280 function calls (49189091 primitive calls) in 18.735 seconds
+        #          42052320 function calls (42048131 primitive calls) in 17.642 seconds
+        #          42098237 function calls (42094048 primitive calls) in 17.941 seconds
+        #          39091577 function calls (39087388 primitive calls) in 16.455 seconds (removed price convenience method from build bars)
+        #          21541910 function calls (21537721 primitive calls) in 11.654 seconds (added Price type)
+        #          19915492 function calls (19911303 primitive calls) in 11.036 seconds
+        #          22743234 function calls (22739045 primitive calls) in 12.844 seconds (implemented more sophisticated portfolio)
+        # 31/01/19 22751226 function calls (22747037 primitive calls) in 12.830 seconds
 
         self.assertTrue(True)

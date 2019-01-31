@@ -58,4 +58,4 @@ cdef class ExecutionClient:
     cpdef dict get_orders_completed(self, GUID strategy_id)
 
     cdef void _register_order(self, Order order, PositionId position_id, GUID strategy_id)
-    cdef _on_event(self, Event event)
+    cdef void _handle_event(self, Event event)

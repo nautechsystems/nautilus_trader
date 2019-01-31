@@ -33,6 +33,7 @@ class DataProviderPerformanceTest:
                                           bid_data,
                                           ask_data)
 
+        self.data_provider.register_bar_type(TestStubs.bartype_usdjpy_1min_bid())
         self.start = self.data_provider.bars[TestStubs.bartype_usdjpy_1min_bid()][0].timestamp
         self.time = self.start
 

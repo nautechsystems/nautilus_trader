@@ -36,7 +36,7 @@ cdef class Position:
         :param timestamp: The positions initialization timestamp.
         """
         self._relative_quantity = 0
-        self._order_ids = set()  # type: Set[OrderId]
+        self._order_ids = set()       # type: Set[OrderId]
         self._execution_ids = []      # type: List[ExecutionId]
         self._execution_tickets = []  # type: List[ExecutionTicket]
         self._events = []             # type: List[OrderEvent]
