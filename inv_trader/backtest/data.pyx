@@ -141,7 +141,7 @@ cdef class BacktestDataClient(DataClient):
 
         self._clock.set_time(current)
 
-    cpdef void iterate(self, datetime time):
+    cpdef void iterate(self):
         """
         Iterate the data client one time step.
         """
@@ -149,7 +149,7 @@ cdef class BacktestDataClient(DataClient):
 
         cdef list bars = list()
         for data_provider in self.data_providers.values():
-            bars = data_provider.iterate_bars(time)
+            bars = data_provider.iterate_bars(self._clock.time_now())
             for bar_type, bar in bars:
                 if bar_type in self._bar_handlers:
                     for handler in self._bar_handlers[bar_type]:

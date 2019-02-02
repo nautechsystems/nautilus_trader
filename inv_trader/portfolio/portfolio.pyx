@@ -24,13 +24,10 @@ cdef class Portfolio:
     Represents a trading portfolio of positions.
     """
 
-    def __init__(self,
-                 Clock clock=LiveClock(),
-                 Logger logger=None):
+    def __init__(self, Logger logger=None):
         """
         Initializes a new instance of the Portfolio class.
         """
-        self._clock = clock
         if logger is None:
             self._log = LoggerAdapter(self.__class__.__name__)
         else:
