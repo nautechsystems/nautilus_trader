@@ -47,7 +47,8 @@ cdef class TradeStrategy:
     cdef readonly bint is_running
     cdef readonly str name
     cdef readonly str label
-    cdef readonly str order_id_tag
+    cdef readonly str order_tag_trader
+    cdef readonly str order_tag_strategy
     cdef readonly GUID id
     cdef readonly dict _order_position_index
     cdef readonly dict _order_book

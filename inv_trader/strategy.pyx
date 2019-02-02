@@ -40,7 +40,8 @@ cdef class TradeStrategy:
 
     def __init__(self,
                  str label='0',
-                 str order_id_tag='0',
+                 str order_tag_trader='001',
+                 str order_tag_strategy='001',
                  int bar_capacity=1000,
                  Clock clock=LiveClock(),
                  GuidFactory guid_factory=LiveGuidFactory(),
@@ -59,7 +60,8 @@ cdef class TradeStrategy:
         :raises ValueError: If the bar_capacity is not positive (> 0).
         """
         Precondition.valid_string(label, 'label')
-        Precondition.valid_string(order_id_tag, 'order_id_tag')
+        Precondition.valid_string(order_tag_trader, 'order_tag_trader')
+        Precondition.valid_string(order_tag_strategy, 'order_tag_strategy')
         Precondition.positive(bar_capacity, 'bar_capacity')
 
         self._clock = clock
@@ -70,9 +72,12 @@ cdef class TradeStrategy:
         else:
             self.log = LoggerAdapter(f"{self.name}-{self.label}", logger)
         self.label = label
-        self.order_id_tag = order_id_tag
+        self.order_tag_trader = order_tag_trader
+        self.order_tag_strategy = order_tag_strategy
         self.id = GUID(uuid.uuid4())
-        self._order_id_generator = OrderIdGenerator(order_id_tag=order_id_tag, clock=self._clock)
+        self._order_id_generator = OrderIdGenerator(order_tag_trader=order_tag_trader,
+                                                    order_tag_strategy=order_tag_strategy,
+                                                    clock=self._clock)
         self.order_factory = OrderFactory()
         self.bar_capacity = bar_capacity
         self.is_running = False
@@ -827,7 +832,9 @@ cdef class TradeStrategy:
         :param clock: The clock to change to.
         """
         self._clock = clock
-        self._order_id_generator = OrderIdGenerator(self.order_id_tag, clock=self._clock)
+        self._order_id_generator = OrderIdGenerator(self.order_tag_trader,
+                                                    self.order_tag_strategy,
+                                                    clock=self._clock)
 
     cpdef void change_guid_factory(self, GuidFactory guid_factory):
         """

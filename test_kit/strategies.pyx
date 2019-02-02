@@ -64,7 +64,10 @@ cdef class TestStrategy1(TradeStrategy):
         """
         Initializes a new instance of the TestStrategy1 class.
         """
-        super().__init__(label='UnitTests', order_id_tag='TS01', clock=clock)
+        super().__init__(label='UnitTests',
+                         order_tag_trader='TS01',
+                         order_tag_strategy='001',
+                         clock=clock)
         self.object_storer = ObjectStorer()
         self.bar_type = bar_type
 
@@ -144,7 +147,8 @@ cdef class EMACross(TradeStrategy):
 
     def __init__(self,
                  str label,
-                 str order_id_tag,
+                 str order_tag_trader,
+                 str order_tag_strategy,
                  Instrument instrument,
                  BarType bar_type,
                  int position_size=100000,
@@ -167,7 +171,8 @@ cdef class EMACross(TradeStrategy):
         :param logger: The logger for the strategy (can be None, will just print).
         """
         super().__init__(label,
-                         order_id_tag=order_id_tag,
+                         order_tag_trader=order_tag_trader,
+                         order_tag_strategy=order_tag_strategy,
                          bar_capacity=bar_capacity,
                          logger=logger)
 
