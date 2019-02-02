@@ -20,7 +20,6 @@ cdef class Portfolio:
     """
     Represents a trading portfolio of positions.
     """
-    cdef Clock _clock
     cdef LoggerAdapter _log
 
     cdef dict _position_book

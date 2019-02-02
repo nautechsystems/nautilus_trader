@@ -115,14 +115,14 @@ cdef class BacktestEngine:
             clock=self.test_clock)
 
         self.account = Account()
-        self.portfolio = Portfolio()
+        self.portfolio = Portfolio(logger=self.test_log)
         self.instruments = instruments
         self.data_client = BacktestDataClient(
             instruments=instruments,
             data_ticks=data_ticks,
             data_bars_bid=data_bars_bid,
             data_bars_ask=data_bars_ask,
-            clock=TestClock(),  # Separate test clock to iterate independently
+            clock=self.test_clock,
             logger=self.test_log)
 
         cdef dict minute_bars_bid = {}
@@ -142,7 +142,7 @@ cdef class BacktestEngine:
             slippage_ticks=config.slippage_ticks,
             account=self.account,
             portfolio=self.portfolio,
-            clock=TestClock(),  # Separate test clock to iterate independently
+            clock=self.test_clock,
             guid_factory=TestGuidFactory(),
             logger=self.test_log)
 
@@ -225,12 +225,12 @@ cdef class BacktestEngine:
         while time < stop:
             # Iterate execution first to simulate correct order of events
             # Order fills should occur before the bar closes
-            self.exec_client.iterate(time)
+            self.test_clock.set_time(time)
+            self.exec_client.iterate()
             for strategy in self.trader.strategies:
                 strategy.iterate(time)
-            self.data_client.iterate(time)
+            self.data_client.iterate()
             time += time_step
-            self.test_clock.set_time(time)
 
         self.trader.stop()
         self.log.info("#----------------------------------------------------------------------------------------------------#")

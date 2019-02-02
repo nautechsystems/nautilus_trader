@@ -158,14 +158,16 @@ cdef class BacktestExecClient(ExecutionClient):
 
         self._clock.set_time(current)
 
-    cpdef void iterate(self, datetime time):
+    cpdef void iterate(self):
         """
         Iterate the data client one time step.
         """
         cdef CollateralInquiry command
         # Set account statistics
-        if self.day_number is not time.day:
-            self.day_number = time.day
+
+        cdef datetime time_now = self._clock.time_now()
+        if self.day_number is not time_now.day:
+            self.day_number = time_now.day
             self.account_cash_start_day = self._account.cash_balance
             self.account_cash_activity_day = Money(0)
             self.collateral_inquiry()
@@ -202,7 +204,7 @@ cdef class BacktestExecClient(ExecutionClient):
                         continue
 
             # Check for order expiry
-            if order.expire_time is not None and time >= order.expire_time:
+            if order.expire_time is not None and time_now >= order.expire_time:
                 del self.working_orders[order.id]
                 self._expire_order(order)
 
