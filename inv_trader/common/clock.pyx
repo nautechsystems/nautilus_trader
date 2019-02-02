@@ -66,6 +66,19 @@ cdef class Clock:
 
         return (self.time_now() - start).total_seconds()
 
+    cdef str get_datetime_tag(self):
+        """
+        :return: The datetime tag string for the current time. 
+        """
+        cdef datetime time_now = self.time_now()
+        return (f'{time_now.year}'
+                f'{time_now.month:02d}'
+                f'{time_now.day:02d}'
+                f'-'
+                f'{time_now.hour:02d}'
+                f'{time_now.minute:02d}'
+                f'{time_now.second:02d}')
+
     cdef long milliseconds_since_unix_epoch(self):
         """
         :return:  Returns the number of ticks of the given time now since the Unix Epoch.

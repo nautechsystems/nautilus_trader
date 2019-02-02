@@ -13,7 +13,7 @@ from cpython.datetime cimport datetime
 
 from inv_trader.common.clock cimport Clock
 from inv_trader.model.objects cimport Symbol, Price
-from inv_trader.model.events cimport OrderEvent
+from inv_trader.model.events cimport OrderEvent, OrderSubmitted, OrderFilled
 from inv_trader.model.identifiers cimport Label, OrderId, ExecutionId, ExecutionTicket
 from inv_trader.enums.order_side cimport OrderSide
 from inv_trader.enums.order_type cimport OrderType
@@ -68,10 +68,9 @@ cdef class OrderIdGenerator:
     """
     cdef Clock _clock
     cdef dict _order_symbol_counts
-    cdef list _order_ids
 
-    cdef readonly str separator
-    cdef readonly str order_id_tag
+    cdef readonly str order_tag_trader
+    cdef readonly str order_tag_strategy
 
     cpdef OrderId generate(self, Symbol order_symbol)
 

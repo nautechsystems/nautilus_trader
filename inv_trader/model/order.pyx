@@ -253,31 +253,34 @@ cdef class Order:
             self.status = OrderStatus.OVER_FILLED
 
 
+cdef str SEPARATOR = '-'
+
+
 cdef class OrderIdGenerator:
     """
     Provides a generator for unique order identifiers.
     """
 
     def __init__(self,
-                 str order_id_tag,
-                 str separator='-',
+                 str order_tag_trader,
+                 str order_tag_strategy,
                  Clock clock=LiveClock()):
         """
         Initializes a new instance of the OrderIdGenerator class.
 
-        :param order_id_tag: The generators unique order identifier tag.
-        :param separator: The separator symbol for order ids.
+        :param order_tag_trader: The order identifier tag for the trader.
+        :param order_tag_strategy: The order identifier tag for the strategy.
         :param clock: The internal clock.
-        :raises ValueError: If the order_id_tag is not a valid string.
+        :raises ValueError: If the order_tag_trader is not a valid string.
+        :raises ValueError: If the order_tag_strategy is not a valid string.
         """
-        Precondition.valid_string(order_id_tag, 'order_id_tag')
-        Precondition.valid_string(separator, 'separator')
+        Precondition.valid_string(order_tag_trader, 'order_tag_trader')
+        Precondition.valid_string(order_tag_strategy, 'order_tag_strategy')
 
         self._clock = clock
         self._order_symbol_counts = {}  # type: Dict[Symbol, int]
-        self._order_ids = []            # type: List[OrderId]
-        self.separator = separator
-        self.order_id_tag = order_id_tag
+        self.order_tag_trader = order_tag_trader
+        self.order_tag_strategy = order_tag_strategy
 
     cpdef OrderId generate(self, Symbol order_symbol):
         """
@@ -290,16 +293,13 @@ cdef class OrderIdGenerator:
             self._order_symbol_counts[order_symbol] = 0
 
         self._order_symbol_counts[order_symbol] += 1
-        cdef str ms_since_ux = str(self._clock.milliseconds_since_unix_epoch())
-        cdef str order_count = str(self._order_symbol_counts[order_symbol])
-        cdef OrderId order_id = OrderId(str(order_symbol.code)
-                                       + self.separator + order_symbol.venue_string()
-                                       + self.separator + self.order_id_tag
-                                       + self.separator + order_count
-                                       + self.separator + ms_since_ux)
 
-        self._order_ids.append(order_id)
-        return order_id
+        return OrderId(self._clock.get_datetime_tag()
+                       + SEPARATOR + self.order_tag_trader
+                       + SEPARATOR + self.order_tag_strategy
+                       + SEPARATOR + order_symbol.code
+                       + SEPARATOR + order_symbol.venue_string()
+                       + SEPARATOR + str(self._order_symbol_counts[order_symbol]))
 
 
 cdef class OrderFactory:

@@ -661,14 +661,13 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_generate_order_id(self):
         # Arrange
-        strategy = TradeStrategy()
+        strategy = TradeStrategy(clock=TestClock())
 
         # Act
         result = strategy.generate_order_id(AUDUSD_FXCM)
 
         # Assert
-        print(result)
-        self.assertTrue(result.value.startswith('AUDUSD-FXCM-0-1-'))
+        self.assertEqual(OrderId('19700101-000000-001-001-AUDUSD-FXCM-1'), result)
 
     def test_get_opposite_side_returns_expected_sides(self):
         # Arrange
@@ -712,7 +711,7 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(clock.unix_epoch(), strategy.time_now())
-        self.assertEqual(OrderId('AUDUSD-FXCM-0-1-0'), strategy.generate_order_id(AUDUSD_FXCM))
+        self.assertEqual(OrderId('19700101-000000-001-001-AUDUSD-FXCM-1'), strategy.generate_order_id(AUDUSD_FXCM))
 
     # def test_submitting_order_with_identical_id_raises_ex(self):
     #     # Arrange
