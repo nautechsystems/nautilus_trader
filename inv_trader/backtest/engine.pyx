@@ -47,8 +47,9 @@ cdef class BacktestConfig:
         """
         Initializes a new instance of the BacktestEngine class.
 
-        :param level_console: The minimum log level for logging messages to the console.
-        :param level_console: The minimum log level for logging messages to the console.
+        :param starting_capital: The starting capital for the engine.
+        :param slippage_ticks: The slippage ticks for the engine.
+        :param bypass_logging: The flag indicating whether logging should be bypassed.
         :param level_console: The minimum log level for logging messages to the console.
         :param level_file: The minimum log level for logging messages to the log file.
         :param console_prints: The boolean flag indicating whether log messages should print.
