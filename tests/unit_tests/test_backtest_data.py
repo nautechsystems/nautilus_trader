@@ -44,12 +44,13 @@ class BacktestDataClientTests(unittest.TestCase):
         self.data_bars_bid = {self.usdjpy.symbol: {Resolution.MINUTE: self.bid_data_1min}}
         self.data_bars_ask = {self.usdjpy.symbol: {Resolution.MINUTE: self.ask_data_1min}}
 
+        self.test_clock = TestClock()
         self.client = BacktestDataClient(
             instruments=self.instruments,
             data_ticks=self.data_ticks,
             data_bars_bid=self.data_bars_bid,
             data_bars_ask=self.data_bars_ask,
-            clock=TestClock(),
+            clock=self.test_clock,
             logger=Logger())
 
         self.client.create_data_providers()
@@ -86,7 +87,8 @@ class BacktestDataClientTests(unittest.TestCase):
 
         # Act
         for x in range(1000):
-            self.client.iterate(start_datetime + timedelta(minutes=x))
+            self.test_clock.set_time(start_datetime + timedelta(minutes=x))
+            self.client.iterate()
 
         # Assert
         self.assertEqual(1000, len(receiver.get_store()))
