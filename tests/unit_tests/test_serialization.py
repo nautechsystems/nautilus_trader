@@ -120,9 +120,9 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
 
         order = self.order_factory.market(
             AUDUSD_FXCM,
-            Label('SCALPER01_SL'),
             OrderSide.BUY,
-            100000)
+            100000,
+            Label('U1_E'),)
 
         # Act
         serialized = serializer.serialize(order)
@@ -138,10 +138,10 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
 
         order = self.order_factory.limit(
             AUDUSD_FXCM,
-            Label('S1_SL'),
             OrderSide.BUY,
             100000,
             Price(1.00000, 5),
+            Label('S1_SL'),
             TimeInForce.DAY,
             expire_time=None)
 
@@ -160,12 +160,12 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
         order = Order(
             AUDUSD_FXCM,
             OrderId('O123456'),
-            Label('S1_SL'),
             OrderSide.BUY,
             OrderType.LIMIT,
             100000,
             UNIX_EPOCH,
             Price('1.00000'),
+            label=None,
             time_in_force=TimeInForce.GTD,
             expire_time=UNIX_EPOCH)
 
@@ -184,12 +184,12 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
         order = Order(
             AUDUSD_FXCM,
             OrderId('O123456'),
-            Label('S1_SL'),
             OrderSide.BUY,
             OrderType.STOP_LIMIT,
             100000,
             UNIX_EPOCH,
-            Price('1.00000'))
+            Price('1.00000'),
+            Label('S1_SL'))
 
         # Act
         serialized = serializer.serialize(order)
@@ -206,12 +206,12 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
         order = Order(
             AUDUSD_FXCM,
             OrderId('O123456'),
-            Label('S1_SL'),
             OrderSide.BUY,
             OrderType.STOP_LIMIT,
             100000,
             UNIX_EPOCH,
             Price('1.00000'),
+            label=None,
             time_in_force=TimeInForce.GTD,
             expire_time=UNIX_EPOCH)
 
@@ -269,12 +269,12 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         order = Order(
             AUDUSD_FXCM,
             OrderId('O123456'),
-            Label('S1_SL'),
             OrderSide.BUY,
             OrderType.LIMIT,
             100000,
             UNIX_EPOCH,
             Price('1.00000'),
+            Label('S1_SL'),
             time_in_force=TimeInForce.GTD,
             expire_time=UNIX_EPOCH)
 
@@ -299,12 +299,12 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         order = Order(
             AUDUSD_FXCM,
             OrderId('O123456'),
-            Label('S1_SL'),
             OrderSide.BUY,
             OrderType.LIMIT,
             100000,
             UNIX_EPOCH,
             Price('1.00000'),
+            Label('S1_SL'),
             time_in_force=TimeInForce.GTD,
             expire_time=UNIX_EPOCH)
 

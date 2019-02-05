@@ -761,10 +761,11 @@ cdef class TradeStrategy:
 
         cdef Order order = self.order_factory.market(
             position.symbol,
-            Label("FLATTEN"),
             self.get_flatten_side(position.market_position),
-            position.quantity)
+            position.quantity,
+            Label("EXIT"),)
 
+        self.log.info(f"Flattening {position}.")
         self.submit_order(order, position_id)
 
     cpdef void flatten_all_positions(self):
@@ -779,17 +780,19 @@ cdef class TradeStrategy:
             self.log.warning("Cannot flatten positions (no active positions to flatten).")
             return
 
+        cdef Order order
         for position_id, position in positions.items():
             if position.market_position == MarketPosition.FLAT:
                 self.log.warning(f"Cannot flatten position (the position {position_id} was already FLAT.")
                 continue
 
-            self.log.info(f"Flattening {position}.")
             order = self.order_factory.market(
                 position.symbol,
-                Label("FLATTEN"),
                 self.get_flatten_side(position.market_position),
-                position.quantity)
+                position.quantity,
+                Label("EXIT"))
+
+            self.log.info(f"Flattening {position}.")
             self.submit_order(order, position_id)
 
     cpdef void set_time_alert(

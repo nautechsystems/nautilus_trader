@@ -55,7 +55,6 @@ class PositionTests(unittest.TestCase):
         # Arrange
         order = self.order_factory.market(
             AUDUSD_FXCM,
-            Label('SCALPER-01'),
             OrderSide.BUY,
             100000)
 
@@ -98,7 +97,6 @@ class PositionTests(unittest.TestCase):
         # Arrange
         order = self.order_factory.market(
             AUDUSD_FXCM,
-            Label('SCALPER-01'),
             OrderSide.SELL,
             100000)
 
@@ -137,7 +135,6 @@ class PositionTests(unittest.TestCase):
         # Arrange
         order = self.order_factory.market(
             AUDUSD_FXCM,
-            Label('SCALPER-01'),
             OrderSide.BUY,
             100000)
 
@@ -178,7 +175,6 @@ class PositionTests(unittest.TestCase):
         # Arrange
         order = self.order_factory.market(
             AUDUSD_FXCM,
-            Label('SCALPER-01'),
             OrderSide.SELL,
             100000)
 
@@ -219,7 +215,6 @@ class PositionTests(unittest.TestCase):
         # Arrange
         order = self.order_factory.market(
             AUDUSD_FXCM,
-            Label('SCALPER-01'),
             OrderSide.BUY,
             100000)
 
@@ -273,7 +268,6 @@ class PositionTests(unittest.TestCase):
         # Arrange
         order = self.order_factory.market(
             AUDUSD_FXCM,
-            Label('SCALPER-01'),
             OrderSide.SELL,
             100000)
 

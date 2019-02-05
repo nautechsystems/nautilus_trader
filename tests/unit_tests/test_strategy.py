@@ -313,7 +313,6 @@ class TradeStrategyTests(unittest.TestCase):
 
         order = strategy.order_factory.market(
             AUDUSD_FXCM,
-            Label('S1'),
             OrderSide.BUY,
             100000)
 
@@ -342,7 +341,6 @@ class TradeStrategyTests(unittest.TestCase):
 
         order = strategy.order_factory.market(
             AUDUSD_FXCM,
-            Label('S1'),
             OrderSide.BUY,
             100000)
 
@@ -713,7 +711,6 @@ class TradeStrategyTests(unittest.TestCase):
 
         order = strategy.order_factory.market(
             AUDUSD_FXCM,
-            Label('S1'),
             OrderSide.BUY,
             100000)
 
@@ -751,7 +748,6 @@ class TradeStrategyTests(unittest.TestCase):
 
         order = strategy.order_factory.market(
             AUDUSD_FXCM,
-            Label('S1'),
             OrderSide.BUY,
             100000)
 
@@ -791,12 +787,9 @@ class TradeStrategyTests(unittest.TestCase):
 
         order = strategy.order_factory.limit(
             AUDUSD_FXCM,
-            Label('S1'),
             OrderSide.BUY,
             100000,
-            Price(1.00000, 5),
-            TimeInForce.DAY,
-            None)
+            Price(1.00000, 5))
 
         strategy.submit_order(order, PositionId(str(order.id)))
 
@@ -817,24 +810,20 @@ class TradeStrategyTests(unittest.TestCase):
 
         order1 = strategy.order_factory.stop_market(
             AUDUSD_FXCM,
-            Label('S1'),
             OrderSide.BUY,
             100000,
-            Price(1.00000, 5),
-            TimeInForce.DAY,
-            None)
+            Price(1.00000, 5))
 
         order2 = strategy.order_factory.stop_market(
             AUDUSD_FXCM,
-            Label('S1'),
             OrderSide.BUY,
             100000,
-            Price(1.00010, 5),
-            TimeInForce.DAY,
-            None)
+            Price(1.00010, 5))
 
-        strategy.submit_order(order1, PositionId('some-position'))
-        strategy.submit_order(order2, PositionId('some-position'))
+        position_id = strategy.generate_position_id(AUDUSD_FXCM)
+
+        strategy.submit_order(order1, position_id)
+        strategy.submit_order(order2, position_id)
 
         # Act
         strategy.cancel_all_orders('TEST')
@@ -855,23 +844,24 @@ class TradeStrategyTests(unittest.TestCase):
 
         order = strategy.order_factory.market(
             AUDUSD_FXCM,
-            Label('S1'),
             OrderSide.BUY,
             100000)
 
-        strategy.submit_order(order, PositionId('some-position'))
+        position_id = strategy.generate_position_id(AUDUSD_FXCM)
+
+        strategy.submit_order(order, position_id)
         exec_client.fill_last_order()
 
         # Act
-        strategy.flatten_position(PositionId('some-position'))
+        strategy.flatten_position(position_id)
         exec_client.fill_last_order()
 
         # Assert
         self.assertEqual(order, strategy.orders_all()[order.id])
         self.assertEqual(OrderStatus.FILLED, strategy.orders_all()[order.id].status)
-        self.assertEqual(MarketPosition.FLAT, strategy.positions_all()[PositionId('some-position')].market_position)
-        self.assertTrue(strategy.positions_all()[PositionId('some-position')].is_exited)
-        self.assertTrue(PositionId('some-position') in strategy.positions_closed())
+        self.assertEqual(MarketPosition.FLAT, strategy.positions_all()[position_id].market_position)
+        self.assertTrue(strategy.positions_all()[position_id].is_exited)
+        self.assertTrue(position_id in strategy.positions_closed())
         self.assertTrue(strategy.is_flat())
 
     # def test_flatten_position_which_does_not_exist_raises_exception(self):
@@ -892,13 +882,11 @@ class TradeStrategyTests(unittest.TestCase):
 
         order1 = strategy.order_factory.market(
             AUDUSD_FXCM,
-            Label('S1'),
             OrderSide.BUY,
             100000)
 
         order2 = strategy.order_factory.market(
             AUDUSD_FXCM,
-            Label('S1'),
             OrderSide.BUY,
             100000)
 
@@ -961,7 +949,6 @@ class TradeStrategyTests(unittest.TestCase):
 
         order = strategy.order_factory.market(
             AUDUSD_FXCM,
-            Label('S1'),
             OrderSide.BUY,
             100000)
 
@@ -990,13 +977,11 @@ class TradeStrategyTests(unittest.TestCase):
         position1 = PositionId('position1')
         order1 = strategy.order_factory.market(
             AUDUSD_FXCM,
-            Label('S1'),
             OrderSide.BUY,
             100000)
 
         order2 = strategy.order_factory.market(
             AUDUSD_FXCM,
-            Label('S1'),
             OrderSide.SELL,
             100000)
 
