@@ -13,11 +13,12 @@ import uuid
 from decimal import Decimal
 from datetime import datetime, timezone, timedelta
 
+from inv_trader.common.clock import TestClock
 from inv_trader.commands import SubmitOrder, CancelOrder, ModifyOrder
 from inv_trader.commands import CollateralInquiry
 from inv_trader.model.enums import Venue, OrderSide, OrderType, TimeInForce
 from inv_trader.model.enums import CurrencyCode, SecurityType
-from inv_trader.model.identifiers import GUID, Label, OrderId, PositionId, ExecutionId, ExecutionTicket
+from inv_trader.model.identifiers import GUID, Label, OrderId, ExecutionId, ExecutionTicket
 from inv_trader.model.objects import Symbol, Price, Instrument
 from inv_trader.model.order import Order, OrderFactory
 from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
@@ -107,7 +108,10 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
-        self.order_factory = OrderFactory()
+        self.order_factory = OrderFactory(
+            id_tag_trader='001',
+            id_tag_strategy='001',
+            clock=TestClock())
         print('\n')
 
     def test_can_serialize_and_deserialize_market_orders(self):
@@ -116,7 +120,6 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
 
         order = self.order_factory.market(
             AUDUSD_FXCM,
-            OrderId('O123456'),
             Label('SCALPER01_SL'),
             OrderSide.BUY,
             100000)
@@ -135,7 +138,6 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
 
         order = self.order_factory.limit(
             AUDUSD_FXCM,
-            OrderId('O123456'),
             Label('S1_SL'),
             OrderSide.BUY,
             100000,
@@ -225,7 +227,10 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
-        self.order_factory = OrderFactory()
+        self.order_factory = OrderFactory(
+            id_tag_trader='001',
+            id_tag_strategy='001',
+            clock=TestClock())
         print('\n')
 
     # TEMPORARILY CANNOT DESERIALIZE SUBMIT ORDER

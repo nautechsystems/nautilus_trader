@@ -21,9 +21,9 @@ from inv_trader.enums.order_side cimport OrderSide
 from inv_trader.enums.market_position cimport MarketPosition
 from inv_trader.model.events cimport Event
 from inv_trader.model.identifiers cimport GUID, Label, OrderId, PositionId
+from inv_trader.model.identifiers cimport PositionIdGenerator
 from inv_trader.model.objects cimport Symbol, Price, Tick, BarType, Bar, Instrument
-from inv_trader.model.order cimport Order
-from inv_trader.model.order cimport OrderIdGenerator, OrderFactory
+from inv_trader.model.order cimport Order, OrderFactory
 from inv_trader.model.position cimport Position
 from inv_trader.portfolio.portfolio cimport Portfolio
 
@@ -39,24 +39,20 @@ cdef class TradeStrategy:
     cdef dict _bars
     cdef dict _indicators
     cdef dict _indicator_updaters
-    cdef OrderIdGenerator _order_id_generator
+    cdef Account account
+    cdef Portfolio _portfolio
 
     cdef readonly LoggerAdapter log
     cdef readonly OrderFactory order_factory
+    cdef readonly PositionIdGenerator position_id_generator
     cdef readonly int bar_capacity
     cdef readonly bint is_running
-    cdef readonly str name
-    cdef readonly str label
-    cdef readonly str order_tag_trader
-    cdef readonly str order_tag_strategy
+    cdef readonly Label name
+    cdef readonly str id_tag_trader
+    cdef readonly str id_tag_strategy
     cdef readonly GUID id
-    cdef readonly dict _order_position_index
-    cdef readonly dict _order_book
-    cdef readonly dict _position_book
     cdef readonly DataClient _data_client
     cdef readonly ExecutionClient _exec_client
-    cdef Account account
-    cdef Portfolio _portfolio
 
     cdef bint equals(self, TradeStrategy other)
 
@@ -68,9 +64,11 @@ cdef class TradeStrategy:
     cpdef void on_stop(self)
     cpdef void on_reset(self)
 
-# -- REGISTRATION METHODS ------------------------------------------------------------------------ #
+# -- HANDLER METHODS ----------------------------------------------------------------------------- #
     cpdef void register_data_client(self, DataClient client)
     cpdef void register_execution_client(self, ExecutionClient client)
+    cpdef void handle_tick(self, Tick tick)
+    cpdef void handle_bar(self, BarType bar_type, Bar bar)
     cpdef void handle_event(self, Event event)
 
 # -- DATA METHODS -------------------------------------------------------------------------------- #
@@ -90,15 +88,15 @@ cdef class TradeStrategy:
     cpdef Tick last_tick(self, Symbol symbol)
 
 # -- INDICATOR METHODS --------------------------------------------------------------------------- #
-    cpdef register_indicator(self, BarType bar_type, indicator, update_method)
+    cpdef void register_indicator(self, BarType bar_type, indicator, update_method)
     cpdef list indicators(self, BarType bar_type)
     cpdef readonly bint indicators_initialized(self, BarType bar_type)
     cpdef readonly bint all_indicators_initialized(self)
 
 # -- MANAGEMENT METHODS -------------------------------------------------------------------------- #
-    cpdef OrderId generate_order_id(self, Symbol symbol)
+    cpdef PositionId generate_position_id(self, Symbol symbol)
     cpdef OrderSide get_opposite_side(self, OrderSide side)
-    cpdef get_flatten_side(self, MarketPosition market_position)
+    cpdef OrderSide get_flatten_side(self, MarketPosition market_position)
     cpdef Order order(self, OrderId order_id)
     cpdef dict orders_all(self)
     cpdef dict orders_active(self)
@@ -131,8 +129,3 @@ cdef class TradeStrategy:
     cpdef void change_logger(self, Logger logger)
     cpdef void set_time(self, datetime time)
     cpdef void iterate(self, datetime time)
-
-# -- INTERNAL METHODS ---------------------------------------------------------------------------- #
-    cpdef void _update_ticks(self, Tick tick)
-    cpdef void _update_bars(self, BarType bar_type, Bar bar)
-    cpdef void _update_indicators(self, BarType bar_type, Bar bar)

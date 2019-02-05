@@ -10,6 +10,7 @@
 import unittest
 import uuid
 
+from inv_trader.common.clock import TestClock
 from inv_trader.model.enums import Venue, OrderSide, MarketPosition
 from inv_trader.model.objects import Symbol, Price
 from inv_trader.model.identifiers import GUID, Label, OrderId, PositionId, ExecutionId, ExecutionTicket
@@ -27,7 +28,10 @@ class PositionTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
-        self.order_factory = OrderFactory()
+        self.order_factory = OrderFactory(
+            id_tag_trader='001',
+            id_tag_strategy='001',
+            clock=TestClock())
         print('\n')
 
     def test_initialized_position_returns_expected_attributes(self):
@@ -51,7 +55,6 @@ class PositionTests(unittest.TestCase):
         # Arrange
         order = self.order_factory.market(
             AUDUSD_FXCM,
-            OrderId('AUDUSD-123456-1'),
             Label('SCALPER-01'),
             OrderSide.BUY,
             100000)
@@ -77,7 +80,7 @@ class PositionTests(unittest.TestCase):
         position.apply(order_filled)
 
         # Assert
-        self.assertEqual(OrderId('AUDUSD-123456-1'), position.from_order_id)
+        self.assertEqual(OrderId('19700101-000000-001-001-AUDUSD-FXCM-1'), position.from_order_id)
         self.assertEqual(100000, position.quantity)
         self.assertEqual(MarketPosition.LONG, position.market_position)
         self.assertEqual(UNIX_EPOCH, position.entry_time)
@@ -95,7 +98,6 @@ class PositionTests(unittest.TestCase):
         # Arrange
         order = self.order_factory.market(
             AUDUSD_FXCM,
-            OrderId('AUDUSD-123456-1'),
             Label('SCALPER-01'),
             OrderSide.SELL,
             100000)
@@ -135,7 +137,6 @@ class PositionTests(unittest.TestCase):
         # Arrange
         order = self.order_factory.market(
             AUDUSD_FXCM,
-            OrderId('AUDUSD-123456-1'),
             Label('SCALPER-01'),
             OrderSide.BUY,
             100000)
@@ -177,7 +178,6 @@ class PositionTests(unittest.TestCase):
         # Arrange
         order = self.order_factory.market(
             AUDUSD_FXCM,
-            OrderId('AUDUSD-123456-1'),
             Label('SCALPER-01'),
             OrderSide.SELL,
             100000)
@@ -219,7 +219,6 @@ class PositionTests(unittest.TestCase):
         # Arrange
         order = self.order_factory.market(
             AUDUSD_FXCM,
-            OrderId('AUDUSD-123456-1'),
             Label('SCALPER-01'),
             OrderSide.BUY,
             100000)
@@ -274,7 +273,6 @@ class PositionTests(unittest.TestCase):
         # Arrange
         order = self.order_factory.market(
             AUDUSD_FXCM,
-            OrderId('AUDUSD-123456-1'),
             Label('SCALPER-01'),
             OrderSide.SELL,
             100000)

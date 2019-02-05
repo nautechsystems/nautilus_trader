@@ -71,8 +71,8 @@ class BacktestEngineTests(unittest.TestCase):
     def test_can_run_ema_cross_strategy(self):
         # Arrange
         strategies = [EMACross(label='001',
-                               order_tag_trader='001',
-                               order_tag_strategy='001',
+                               id_tag_trader='001',
+                               id_tag_strategy='001',
                                instrument=self.usdjpy,
                                bar_type=TestStubs.bartype_usdjpy_1min_bid(),
                                position_size=100000,
