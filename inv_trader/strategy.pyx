@@ -7,7 +7,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-# cython: language_level=3, boundscheck=False, wraparound=False
+# cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
 import uuid
 
@@ -193,10 +193,11 @@ cdef class TradeStrategy:
         """
         Register the strategy with the given data client.
 
-        :param client: The data service client to register.
+        :param client: The data client to register.
         :raises ValueError: If client is None.
-        :raises TypeError: If client does not inherit from DataClient.
         """
+        Precondition.not_none(client, 'client')
+
         self._data_client = client
 
     cpdef void register_execution_client(self, ExecutionClient client):
@@ -205,8 +206,9 @@ cdef class TradeStrategy:
 
         :param client: The execution client to register.
         :raises ValueError: If client is None.
-        :raises TypeError: If client does not inherit from ExecutionClient.
         """
+        Precondition.not_none(client, 'client')
+
         self._exec_client = client
         self._portfolio = client.get_portfolio()
         self.account = client.get_account()
@@ -214,7 +216,7 @@ cdef class TradeStrategy:
     cpdef void handle_tick(self, Tick tick):
         """"
         Updates the last held tick with the given tick, then calls on_tick()
-        for the inheriting class.
+        and passes the tick (if the strategy is running).
 
         :param tick: The tick received.
         """
@@ -225,8 +227,8 @@ cdef class TradeStrategy:
 
     cpdef void handle_bar(self, BarType bar_type, Bar bar):
         """"
-        Updates the internal dictionary of bars with the given bar, then calls the
-        on_bar method for the subclass.
+        Updates the internal dictionary of bars with the given bar, then calls
+        on_bar() and passes the arguments (if the strategy is running).
 
         :param bar_type: The bar type received.
         :param bar: The bar received.
@@ -244,7 +246,7 @@ cdef class TradeStrategy:
 
     cpdef void handle_event(self, Event event):
         """
-        Calls on_event() if the strategy is running.
+        Calls on_event() and passes the event (if the strategy is running).
 
         :param event: The event received.
         """
