@@ -201,7 +201,7 @@ cdef class EMACross(TradeStrategy):
         This method is called when self.start() is called, and after internal
         start logic.
         """
-        # Subscribe to the necessary data.
+        self.historical_bars(self.bar_type)
         self.subscribe_bars(self.bar_type)
 
     cpdef void on_tick(self, Tick tick):

@@ -294,7 +294,7 @@ cdef class TradeStrategy:
 
         return self._data_client.get_instrument(symbol)
 
-    cpdef void historical_bars(self, BarType bar_type, int quantity):
+    cpdef void historical_bars(self, BarType bar_type, int quantity=0):
         """
         Download the historical bars for the given parameters from the data service.
         Then pass them to all registered strategies.
@@ -302,15 +302,16 @@ cdef class TradeStrategy:
         Note: Logs warning if the downloaded bars does not equal the requested quantity.
 
         :param bar_type: The historical bar type to download.
-        :param quantity: The number of historical bars to download
-        (if None then will download to bar_capacity).
+        :param quantity: The number of historical bars to download (>= 0)
+        Note: If zero then will download bar capacity.
         :raises ValueError: If strategy has not been registered with a data client.
-        :raises ValueError: If the amount is not positive (> 0).
+        :raises ValueError: If the quantity is negative (< 0).
         """
         Precondition.not_none(self._data_client, 'data_client')
-        if quantity <= 0:
+        Precondition.not_negative(quantity, 'quantity')
+
+        if quantity == 0:
             quantity = self.bar_capacity
-        Precondition.positive(quantity, 'quantity')
 
         self._data_client.historical_bars(bar_type, quantity, self.handle_bar)
 
