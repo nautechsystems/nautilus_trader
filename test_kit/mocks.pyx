@@ -305,7 +305,6 @@ cdef class MockExecClient(ExecutionClient):
         Fills the last working order.
         """
         cdef Order order = self._working_orders.pop(-1)
-        filled_price = Price('1.00000') if order.price is None else order.price
 
         cdef OrderFilled filled = OrderFilled(
             order.symbol,
@@ -314,7 +313,7 @@ cdef class MockExecClient(ExecutionClient):
             ExecutionTicket('ET' + str(order.id)),
             order.side,
             order.quantity,
-            filled_price,
+            Price('1.00000') if order.price is None else order.price,
             datetime.utcnow(),
             GUID(uuid.uuid4()),
             datetime.utcnow())
