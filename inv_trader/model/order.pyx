@@ -44,12 +44,12 @@ cdef class Order:
     def __init__(self,
                  Symbol symbol,
                  OrderId order_id,
-                 Label label,
                  OrderSide order_side,
                  OrderType order_type,
                  int quantity,
                  datetime timestamp,
                  Price price=None,
+                 Label label=None,
                  TimeInForce time_in_force=TimeInForce.DAY,
                  datetime expire_time=None):
         """
@@ -57,14 +57,14 @@ cdef class Order:
 
         :param symbol: The orders symbol.
         :param order_id: The orders identifier.
-        :param label: The orders label.
         :param order_side: The orders side.
         :param order_type: The orders type.
         :param quantity: The orders quantity (> 0).
         :param timestamp: The orders initialization timestamp.
-        :param price: The orders price (can be None for market orders > 0).
-        :param time_in_force: The orders time in force (optional.
-        :param expire_time: The orders expire time (optional.
+        :param price: The orders price (must be None for non priced orders).
+        :param label: The orders label / secondary identifier (can be None).
+        :param time_in_force: The orders time in force.
+        :param expire_time: The orders expire time (can be None).
         :raises ValueError: If the quantity is not positive (> 0).
         :raises ValueError: If the order type has no price and the price is not None.
         :raises ValueError: If the order type has a price and the price is None.
@@ -93,12 +93,12 @@ cdef class Order:
         self.broker_id = None
         self.execution_id = None
         self.execution_ticket = None
-        self.label = label
         self.side = order_side
         self.type = order_type
         self.quantity = quantity
         self.timestamp = timestamp
         self.price = price                  # Can be None
+        self.label = label                  # Can be None
         self.time_in_force = time_in_force  # Can be None
         self.expire_time = expire_time      # Can be None
         self.filled_quantity = 0
@@ -141,9 +141,10 @@ cdef class Order:
         :return: The str() string representation of the order.
         """
         cdef str quantity = '{:,}'.format(self.quantity)
+        cdef str label = '' if self.label is None else f', label={self.label.value}'
         cdef str price = '' if self.price is None else f'@ {self.price} '
         cdef str expire_time = '' if self.expire_time is None else f' {self.expire_time}'
-        return (f"Order(id={self.id}, label={self.label}) "
+        return (f"Order(id={self.id}{label}) "
                 f"{order_side_string(self.side)} {quantity} {self.symbol} {order_type_string(self.type)} {price}"
                 f"{time_in_force_string(self.time_in_force)}{expire_time}")
 
@@ -280,37 +281,37 @@ cdef class OrderFactory:
     cpdef Order market(
             self,
             Symbol symbol,
-            Label label,
             OrderSide order_side,
-            int quantity):
+            int quantity,
+            Label label=None):
         """
         Creates and returns a new market order with the given parameters.
 
         :param symbol: The orders symbol.
-        :param label: The orders label.
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
+        :param label: The orders label (can be None).
         :return: The market order.
         :raises ValueError: If the quantity is not positive (> 0).
         """
         return Order(symbol,
                      self._id_generator.generate(symbol),
-                     label,
                      order_side,
                      OrderType.MARKET,
                      quantity,
                      self._clock.time_now(),
                      price=None,
+                     label=label,
                      time_in_force=TimeInForce.DAY,
                      expire_time=None)
 
     cpdef Order limit(
             self,
             Symbol symbol,
-            Label label,
             OrderSide order_side,
             int quantity,
             Price price,
+            Label label=None,
             TimeInForce time_in_force=TimeInForce.DAY,
             datetime expire_time=None):
         """
@@ -318,10 +319,10 @@ cdef class OrderFactory:
         If the time in force is GTD then a valid expire time must be given.
 
         :param symbol: The orders symbol.
-        :param label: The orders label.
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
         :param price: The orders price (> 0).
+        :param label: The orders label (can be None).
         :param time_in_force: The orders time in force (can be None).
         :param expire_time: The orders expire time (can be None unless time_in_force is GTD).
         :return: The limit order.
@@ -331,22 +332,22 @@ cdef class OrderFactory:
         """
         return Order(symbol,
                      self._id_generator.generate(symbol),
-                     label,
                      order_side,
                      OrderType.LIMIT,
                      quantity,
                      self._clock.time_now(),
                      price,
+                     label,
                      time_in_force,
                      expire_time)
 
     cpdef Order stop_market(
             self,
             Symbol symbol,
-            Label label,
             OrderSide order_side,
             int quantity,
             Price price,
+            Label label=None,
             TimeInForce time_in_force=TimeInForce.DAY,
             datetime expire_time=None):
         """
@@ -354,10 +355,10 @@ cdef class OrderFactory:
         If the time in force is GTD then a valid expire time must be given.
 
         :param symbol: The orders symbol.
-        :param label: The orders label.
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
         :param price: The orders price (> 0).
+        :param label: The orders label (can be None).
         :param time_in_force: The orders time in force (can be None).
         :param expire_time: The orders expire time (can be None unless time_in_force is GTD).
         :return: The stop-market order.
@@ -367,22 +368,22 @@ cdef class OrderFactory:
         """
         return Order(symbol,
                      self._id_generator.generate(symbol),
-                     label,
                      order_side,
                      OrderType.STOP_MARKET,
                      quantity,
                      self._clock.time_now(),
                      price,
+                     label,
                      time_in_force,
                      expire_time)
 
     cpdef Order stop_limit(
             self,
             Symbol symbol,
-            Label label,
             OrderSide order_side,
             int quantity,
             Price price,
+            Label label=None,
             TimeInForce time_in_force=TimeInForce.DAY,
             datetime expire_time=None):
         """
@@ -390,10 +391,10 @@ cdef class OrderFactory:
         If the time in force is GTD then a valid expire time must be given.
 
         :param symbol: The orders symbol.
-        :param label: The orders label.
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
         :param price: The orders price (> 0).
+        :param label: The orders label (can be None).
         :param time_in_force: The orders time in force (can be None).
         :param expire_time: The orders expire time (can be None unless time_in_force is GTD).
         :return: The stop-limit order.
@@ -403,22 +404,23 @@ cdef class OrderFactory:
         """
         return Order(symbol,
                      self._id_generator.generate(symbol),
-                     label,
+
                      order_side,
                      OrderType.STOP_LIMIT,
                      quantity,
                      self._clock.time_now(),
                      price,
+                     label,
                      time_in_force,
                      expire_time)
 
     cpdef Order market_if_touched(
             self,
             Symbol symbol,
-            Label label,
             OrderSide order_side,
             int quantity,
             Price price,
+            Label label=None,
             TimeInForce time_in_force=TimeInForce.DAY,
             datetime expire_time=None):
         """
@@ -426,10 +428,10 @@ cdef class OrderFactory:
         If the time in force is GTD then a valid expire time must be given.
 
         :param symbol: The orders symbol.
-        :param label: The orders label.
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
         :param price: The orders price (> 0).
+        :param label: The orders label (can be None).
         :param time_in_force: The orders time in force (can be None).
         :param expire_time: The orders expire time (can be None unless time_in_force is GTD).
         :return: The market-if-touched order.
@@ -439,65 +441,65 @@ cdef class OrderFactory:
         """
         return Order(symbol,
                      self._id_generator.generate(symbol),
-                     label,
                      order_side,
                      OrderType.MIT,
                      quantity,
                      self._clock.time_now(),
                      price,
+                     label,
                      time_in_force,
                      expire_time)
 
     cpdef Order fill_or_kill(
             self,
             Symbol symbol,
-            Label label,
             OrderSide order_side,
-            int quantity):
+            int quantity,
+            Label label=None):
         """
         Creates and returns a new fill-or-kill order with the given parameters.
 
         :param symbol: The orders symbol.
-        :param label: The orders label.
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
+        :param label: The orders label (can be None).
         :return: The fill or kill order.
         :raises ValueError: If the quantity is not positive (> 0).
         """
         return Order(symbol,
                      self._id_generator.generate(symbol),
-                     label,
                      order_side,
                      OrderType.MARKET,
                      quantity,
                      self._clock.time_now(),
                      price=None,
+                     label=label,
                      time_in_force=TimeInForce.FOC,
                      expire_time=None)
 
     cpdef Order immediate_or_cancel(
             self,
             Symbol symbol,
-            Label label,
             OrderSide order_side,
-            int quantity):
+            int quantity,
+            Label label=None):
         """
         Creates and returns a new immediate-or-cancel order with the given parameters.
 
         :param symbol: The orders symbol.
-        :param label: The orders label.
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
+        :param label: The orders label (can be None).
         :return: The immediate or cancel order.
         :raises ValueError: If the quantity is not positive (> 0).
         """
         return Order(symbol,
                      self._id_generator.generate(symbol),
-                     label,
                      order_side,
                      OrderType.MARKET,
                      quantity,
                      self._clock.time_now(),
                      price=None,
+                     label=label,
                      time_in_force=TimeInForce.IOC,
                      expire_time=None)

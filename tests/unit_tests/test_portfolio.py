@@ -51,7 +51,6 @@ class PortfolioTestsTests(unittest.TestCase):
         # Arrange
         order = self.order_factory.market(
             AUDUSD_FXCM,
-            Label('S1'),
             OrderSide.BUY,
             100000)
 

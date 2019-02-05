@@ -31,8 +31,14 @@ from inv_trader.model.events cimport Event, OrderEvent, AccountEvent
 from inv_trader.model.events cimport OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
 from inv_trader.model.events cimport OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
 from inv_trader.model.events cimport OrderPartiallyFilled, OrderFilled
-from inv_trader.common.serialization cimport (parse_symbol, convert_price_to_string, convert_string_to_price,
-                                             convert_datetime_to_string, convert_string_to_datetime)
+from inv_trader.common.serialization cimport (
+parse_symbol,
+convert_price_to_string,
+convert_string_to_price,
+convert_label_to_string,
+convert_string_to_label,
+convert_datetime_to_string,
+convert_string_to_datetime)
 from inv_trader.common.serialization cimport OrderSerializer, EventSerializer, CommandSerializer
 
 
@@ -117,13 +123,13 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
         """
         return msgpack.packb({
             SYMBOL: str(order.symbol),
-            ORDER_ID: str(order.id),
-            LABEL: str(order.label),
+            ORDER_ID: order.id.value,
             ORDER_SIDE: order_side_string(order.side),
             ORDER_TYPE: order_type_string(order.type),
             QUANTITY: order.quantity,
             TIMESTAMP: convert_datetime_to_string(order.timestamp),
             PRICE: convert_price_to_string(order.price),
+            LABEL: convert_label_to_string(order.label),
             TIME_IN_FORCE: time_in_force_string(order.time_in_force),
             EXPIRE_TIME: convert_datetime_to_string(order.expire_time)
             })
@@ -142,12 +148,12 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
 
         return Order(symbol=parse_symbol(unpacked[SYMBOL]),
                      order_id=OrderId(unpacked[ORDER_ID]),
-                     label=Label(unpacked[LABEL]),
                      order_side=OrderSide[unpacked[ORDER_SIDE]],
                      order_type=OrderType[unpacked[ORDER_TYPE]],
                      quantity=unpacked[QUANTITY],
                      timestamp=convert_string_to_datetime(unpacked[TIMESTAMP]),
                      price=convert_string_to_price(unpacked[PRICE]),
+                     label=convert_string_to_label(unpacked[LABEL]),
                      time_in_force=TimeInForce[unpacked[TIME_IN_FORCE]],
                      expire_time=convert_string_to_datetime(unpacked[EXPIRE_TIME]))
 

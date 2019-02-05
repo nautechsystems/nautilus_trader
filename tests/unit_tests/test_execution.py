@@ -55,7 +55,6 @@ class ExecutionClientTests(unittest.TestCase):
 
         order = self.strategy.order_factory.market(
             AUDUSD_FXCM,
-            Label('S1_E'),
             OrderSide.BUY,
             100000)
 
@@ -75,7 +74,6 @@ class ExecutionClientTests(unittest.TestCase):
 
         order = self.strategy.order_factory.market(
             AUDUSD_FXCM,
-            Label('S1_E'),
             OrderSide.BUY,
             100000)
 
@@ -96,12 +94,9 @@ class ExecutionClientTests(unittest.TestCase):
 
         order = self.strategy.order_factory.limit(
             AUDUSD_FXCM,
-            Label('S1_E'),
             OrderSide.BUY,
             100000,
-            Price('1.00000'),
-            TimeInForce.DAY,
-            expire_time=None)
+            Price('1.00000'))
 
         order_id = order.id
 
@@ -155,7 +150,6 @@ class LiveExecClientTests(unittest.TestCase):
         # Arrange
         order = self.strategy.order_factory.market(
             AUDUSD_FXCM,
-            Label('S1_E'),
             OrderSide.BUY,
             100000)
 
@@ -172,7 +166,6 @@ class LiveExecClientTests(unittest.TestCase):
         # Arrange
         order = self.strategy.order_factory.market(
             AUDUSD_FXCM,
-            Label('S1_E'),
             OrderSide.BUY,
             100000)
 
@@ -190,12 +183,9 @@ class LiveExecClientTests(unittest.TestCase):
         # Arrange
         order = self.strategy.order_factory.limit(
             AUDUSD_FXCM,
-            Label('S1_E'),
             OrderSide.BUY,
             100000,
-            Price('1.00000'),
-            TimeInForce.DAY,
-            expire_time=None)
+            Price('1.00000'))
 
         order_id = order.id
 

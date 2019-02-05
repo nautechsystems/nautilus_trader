@@ -37,12 +37,12 @@ cdef class Order:
     cdef readonly OrderId broker_id
     cdef readonly ExecutionId execution_id
     cdef readonly ExecutionTicket execution_ticket
-    cdef readonly Label label
     cdef readonly OrderSide side
     cdef readonly OrderType type
     cdef readonly int quantity
     cdef readonly datetime timestamp
     cdef readonly Price price
+    cdef readonly Label label
     cdef readonly TimeInForce time_in_force
     cdef readonly datetime expire_time
     cdef readonly int filled_quantity
@@ -73,60 +73,60 @@ cdef class OrderFactory:
     cpdef Order market(
             self,
             Symbol symbol,
-            Label label,
             OrderSide order_side,
-            int quantity)
+            int quantity,
+            Label label=*)
 
     cpdef Order limit(
             self,
             Symbol symbol,
-            Label label,
             OrderSide order_side,
             int quantity,
             Price price,
+            Label label=*,
             TimeInForce time_in_force=*,
             datetime expire_time=*)
 
     cpdef Order stop_market(
             self,
             Symbol symbol,
-            Label label,
             OrderSide order_side,
             int quantity,
             Price price,
+            Label label=*,
             TimeInForce time_in_force=*,
             datetime expire_time=*)
 
     cpdef Order stop_limit(
             self,
             Symbol symbol,
-            Label label,
             OrderSide order_side,
             int quantity,
             Price price,
+            Label label=*,
             TimeInForce time_in_force=*,
             datetime expire_time=*)
 
     cpdef Order market_if_touched(
             self,
             Symbol symbol,
-            Label label,
             OrderSide order_side,
             int quantity,
             Price price,
+            Label label=*,
             TimeInForce time_in_force=*,
             datetime expire_time=*)
 
     cpdef Order fill_or_kill(
             self,
             Symbol symbol,
-            Label label,
             OrderSide order_side,
-            int quantity)
+            int quantity,
+            Label label=*)
 
     cpdef Order immediate_or_cancel(
             self,
             Symbol symbol,
-            Label label,
             OrderSide order_side,
-            int quantity)
+            int quantity,
+            Label label=*)

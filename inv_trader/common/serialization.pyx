@@ -22,7 +22,7 @@ from inv_trader.model.enums import Venue, CurrencyCode, SecurityType
 from inv_trader.enums.venue cimport Venue
 from inv_trader.enums.security_type cimport SecurityType
 from inv_trader.enums.currency_code cimport CurrencyCode
-from inv_trader.model.identifiers cimport GUID
+from inv_trader.model.identifiers cimport GUID, Label
 from inv_trader.model.objects cimport Symbol, Price, Instrument
 from inv_trader.model.order cimport Order
 from inv_trader.model.events cimport Event
@@ -126,6 +126,23 @@ cpdef Price convert_string_to_price(str price_string):
     """
     return None if price_string == NONE else Price(price_string)
 
+cpdef str convert_label_to_string(Label label):
+    """
+    Convert the given object to a label or 'NONE' string.
+
+    :param label: The label to convert.
+    :return: The converted string.
+    """
+    return NONE if label is None else label.value
+
+cpdef Label convert_string_to_label(str label):
+    """
+    Convert the given label string to a Label or None.
+
+    :param label: The label string to convert.
+    :return: The converted Label, or None.
+    """
+    return None if label == NONE else Label(label)
 
 cpdef str convert_datetime_to_string(datetime time):
     """
@@ -136,10 +153,8 @@ cpdef str convert_datetime_to_string(datetime time):
     """
     try:
         return NONE if time is None else time.isoformat(timespec='milliseconds').replace('+00:00', 'Z')
-    except Exception as ex:
+    except Exception as ex: # TODO: Decrease exception scope.
         print(f"Cannot convert {time} to string.")
-
-
 
 cpdef datetime convert_string_to_datetime(str time_string):
     """

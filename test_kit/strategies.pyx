@@ -234,10 +234,10 @@ cdef class EMACross(TradeStrategy):
             if self.fast_ema.value >= self.slow_ema.value:
                 entry_order = self.order_factory.stop_market(
                     self.symbol,
-                    Label('S1_E'),
                     OrderSide.BUY,
                     self.position_size,
                     Price(self.last_bar(self.bar_type).high + self.entry_buffer),
+                    Label('S1_E'),
                     time_in_force=TimeInForce.GTD,
                     expire_time=self.time_now() + timedelta(minutes=1))
                 self.entry_orders[entry_order.id] = entry_order
@@ -249,10 +249,10 @@ cdef class EMACross(TradeStrategy):
             elif self.fast_ema.value < self.slow_ema.value:
                 entry_order = self.order_factory.stop_market(
                     self.symbol,
-                    Label('S1_E'),
                     OrderSide.SELL,
                     self.position_size,
                     Price(self.last_bar(self.bar_type).low - self.entry_buffer),
+                    Label('S1_E'),
                     time_in_force=TimeInForce.GTD,
                     expire_time=self.time_now() + timedelta(minutes=1))
                 self.entry_orders[entry_order.id] = entry_order
@@ -291,10 +291,10 @@ cdef class EMACross(TradeStrategy):
 
                 stop_order = self.order_factory.stop_market(
                     self.symbol,
-                    Label('S1_SL'),
                     stop_side,
                     event.filled_quantity,
-                    stop_price)
+                    stop_price,
+                    Label('S1_SL'),)
                 self.stop_loss_orders[stop_order.id] = stop_order
                 self.submit_order(stop_order, self.position_id)
                 self.log.info(f"Added {stop_order.id} to stop-loss orders.")
