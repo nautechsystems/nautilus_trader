@@ -94,7 +94,6 @@ class BacktestExecClientTests(unittest.TestCase):
 
         order = strategy.order_factory.market(
             USDJPY_FXCM,
-            OrderId('123456'),
             Label('S1_E'),
             OrderSide.BUY,
             100000)
@@ -115,7 +114,6 @@ class BacktestExecClientTests(unittest.TestCase):
 
         order = strategy.order_factory.limit(
             USDJPY_FXCM,
-            OrderId('123456'),
             Label('S1_E'),
             OrderSide.BUY,
             100000,
@@ -138,7 +136,6 @@ class BacktestExecClientTests(unittest.TestCase):
 
         order = strategy.order_factory.stop_market(
             USDJPY_FXCM,
-            OrderId('123456'),
             Label('S1_E'),
             OrderSide.BUY,
             100000,
@@ -162,7 +159,6 @@ class BacktestExecClientTests(unittest.TestCase):
 
         order = strategy.order_factory.stop_market(
             USDJPY_FXCM,
-            OrderId('123456'),
             Label('S1_E'),
             OrderSide.BUY,
             100000,

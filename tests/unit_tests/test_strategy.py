@@ -8,27 +8,19 @@
 # -------------------------------------------------------------------------------------------------
 
 import unittest
-import uuid
 import datetime
 import time
 
 from datetime import datetime, timezone, timedelta
 
-from inv_trader.common.clock import TestClock
+from inv_trader.common.clock import TestClock, LiveClock
 from inv_trader.model.enums import Venue, Resolution, QuoteType, OrderSide, TimeInForce, OrderStatus
 from inv_trader.model.enums import MarketPosition
 from inv_trader.model.objects import Symbol, Price, Tick, BarType, Bar
-from inv_trader.model.order import OrderFactory
-from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
-from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
 from inv_trader.model.events import TimeEvent
 from inv_trader.model.identifiers import GUID, Label, OrderId, PositionId
 from inv_trader.model.position import Position
-from inv_trader.data import LiveDataClient
 from inv_trader.strategy import TradeStrategy
-from inv_trader.tools import IndicatorUpdater
-from inv_indicators.average.ema import ExponentialMovingAverage
-from inv_indicators.intrinsic_network import IntrinsicNetwork
 from test_kit.stubs import TestStubs
 from test_kit.mocks import MockExecClient
 from test_kit.strategies import TestStrategy1
@@ -39,11 +31,6 @@ GBPUSD_FXCM = Symbol('gbpusd', Venue.FXCM)
 
 
 class TradeStrategyTests(unittest.TestCase):
-
-    def setUp(self):
-        # Fixture Setup
-        self.order_factory = OrderFactory()
-        print('\n')
 
     def test_strategy_equality(self):
         # Arrange
@@ -99,22 +86,7 @@ class TradeStrategyTests(unittest.TestCase):
         result = strategy.name
 
         # Assert
-        self.assertEqual('TradeStrategy', result)
-
-    def test_can_get_strategy_label(self):
-        # Arrange
-        strategy1 = TradeStrategy()
-        strategy2 = TradeStrategy('EURUSD-Scalper')
-
-        # Act
-        result1 = strategy1.label
-        result2 = strategy2.label
-
-        # Assert
-        self.assertEqual('0', result1)
-        self.assertEqual('EURUSD-Scalper', result2)
-        self.assertEqual('TradeStrategy-0', str(strategy1))
-        self.assertEqual('TradeStrategy-EURUSD-Scalper', str(strategy2))
+        self.assertEqual(Label('TradeStrategy-001'), result)
 
     def test_can_get_strategy_id(self):
         # Arrange
@@ -204,7 +176,7 @@ class TradeStrategyTests(unittest.TestCase):
             100000,
             datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc))
 
-        strategy._update_bars(bar_type, bar)
+        strategy.handle_bar(bar_type, bar)
 
         # Act
         result = strategy.bars(bar_type)
@@ -243,7 +215,7 @@ class TradeStrategyTests(unittest.TestCase):
             100000,
             datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc))
 
-        strategy._update_bars(bar_type, bar)
+        strategy.handle_bar(bar_type, bar)
 
         # Act
         # Assert
@@ -266,7 +238,7 @@ class TradeStrategyTests(unittest.TestCase):
             100000,
             datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc))
 
-        strategy._update_bars(bar_type, bar)
+        strategy.handle_bar(bar_type, bar)
 
         # Act
         result = strategy.bar(bar_type, 0)
@@ -291,7 +263,7 @@ class TradeStrategyTests(unittest.TestCase):
             100000,
             datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc))
 
-        strategy._update_bars(bar_type, bar)
+        strategy.handle_bar(bar_type, bar)
 
         # Act
         result = strategy.last_bar(bar_type)
@@ -316,7 +288,7 @@ class TradeStrategyTests(unittest.TestCase):
                     Price('1.00001'),
                     datetime(2018, 1, 1, 19, 59, 1, 0, timezone.utc))
 
-        strategy._update_ticks(tick)
+        strategy.handle_tick(tick)
 
         # Act
         result = strategy.last_tick(AUDUSD_FXCM)
@@ -339,9 +311,8 @@ class TradeStrategyTests(unittest.TestCase):
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
-        order = self.order_factory.market(
+        order = strategy.order_factory.market(
             AUDUSD_FXCM,
-            OrderId('AUDUSD-123456-1'),
             Label('S1'),
             OrderSide.BUY,
             100000)
@@ -369,9 +340,8 @@ class TradeStrategyTests(unittest.TestCase):
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
-        order = self.order_factory.market(
+        order = strategy.order_factory.market(
             AUDUSD_FXCM,
-            OrderId('AUDUSD-1-123456'),
             Label('S1'),
             OrderSide.BUY,
             100000)
@@ -436,7 +406,7 @@ class TradeStrategyTests(unittest.TestCase):
             100000,
             datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc))
 
-        strategy._update_bars(bar_type, bar)
+        strategy.handle_bar(bar_type, bar)
 
         # Act
         strategy.reset()
@@ -466,11 +436,13 @@ class TradeStrategyTests(unittest.TestCase):
         # Act
         exec_client.register_strategy(strategy)
 
+        # Assert
+        self.assertTrue(True)  # No exceptions thrown
 
     def test_can_set_time_alert(self):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
-        strategy = TestStrategy1(bar_type)
+        strategy = TestStrategy1(bar_type, clock=LiveClock())
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
@@ -526,7 +498,7 @@ class TradeStrategyTests(unittest.TestCase):
     def test_can_set_multiple_time_alerts(self):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
-        strategy = TestStrategy1(bar_type)
+        strategy = TestStrategy1(bar_type, clock=LiveClock())
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
@@ -547,7 +519,7 @@ class TradeStrategyTests(unittest.TestCase):
     def test_can_set_timer(self):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
-        strategy = TestStrategy1(bar_type)
+        strategy = TestStrategy1(bar_type, clock=LiveClock())
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
@@ -565,7 +537,7 @@ class TradeStrategyTests(unittest.TestCase):
     def test_can_cancel_timer(self):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
-        strategy = TestStrategy1(bar_type)
+        strategy = TestStrategy1(bar_type, clock=LiveClock())
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
@@ -603,7 +575,7 @@ class TradeStrategyTests(unittest.TestCase):
     def test_can_set_repeating_timer(self):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
-        strategy = TestStrategy1(bar_type)
+        strategy = TestStrategy1(bar_type, clock=LiveClock())
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
@@ -623,7 +595,7 @@ class TradeStrategyTests(unittest.TestCase):
     def test_can_cancel_repeating_timer(self):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
-        strategy = TestStrategy1(bar_type)
+        strategy = TestStrategy1(bar_type, clock=LiveClock())
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
@@ -643,7 +615,7 @@ class TradeStrategyTests(unittest.TestCase):
     def test_can_set_two_repeating_timers(self):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
-        strategy = TestStrategy1(bar_type)
+        strategy = TestStrategy1(bar_type, clock=LiveClock())
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
@@ -659,15 +631,15 @@ class TradeStrategyTests(unittest.TestCase):
         # Assert
         self.assertEqual(10, strategy.object_storer.count)
 
-    def test_can_generate_order_id(self):
+    def test_can_generate_position_id(self):
         # Arrange
         strategy = TradeStrategy(clock=TestClock())
 
         # Act
-        result = strategy.generate_order_id(AUDUSD_FXCM)
+        result = strategy.generate_position_id(AUDUSD_FXCM)
 
         # Assert
-        self.assertEqual(OrderId('19700101-000000-001-001-AUDUSD-FXCM-1'), result)
+        self.assertEqual(PositionId('19700101-000000-001-001-AUDUSD-FXCM-1'), result)
 
     def test_get_opposite_side_returns_expected_sides(self):
         # Arrange
@@ -681,13 +653,13 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertEqual(OrderSide.SELL, result1)
         self.assertEqual(OrderSide.BUY, result2)
 
-    def test_get_flatten_side_with_flat_market_position_raises_exception(self):
-        # Arrange
-        strategy = TradeStrategy()
-
-        # Act
-        # Assert
-        self.assertRaises(ValueError, strategy.get_flatten_side, MarketPosition.FLAT)
+    # def test_get_flatten_side_with_flat_market_position_raises_exception(self):
+    #     # Arrange
+    #     strategy = TradeStrategy()
+    #
+    #     # Act
+    #     # Assert
+    #     self.assertRaises(ValueError, strategy.get_flatten_side, MarketPosition.FLAT)
 
     def test_get_flatten_side_with_long_or_short_market_position_returns_expected_sides(self):
         # Arrange
@@ -711,7 +683,7 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(clock.unix_epoch(), strategy.time_now())
-        self.assertEqual(OrderId('19700101-000000-001-001-AUDUSD-FXCM-1'), strategy.generate_order_id(AUDUSD_FXCM))
+        self.assertEqual(PositionId('19700101-000000-001-001-AUDUSD-FXCM-1'), strategy.generate_position_id(AUDUSD_FXCM))
 
     # def test_submitting_order_with_identical_id_raises_ex(self):
     #     # Arrange
@@ -739,9 +711,8 @@ class TradeStrategyTests(unittest.TestCase):
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
-        order = self.order_factory.market(
+        order = strategy.order_factory.market(
             AUDUSD_FXCM,
-            OrderId('AUDUSD-123456-1'),
             Label('S1'),
             OrderSide.BUY,
             100000)
@@ -778,9 +749,8 @@ class TradeStrategyTests(unittest.TestCase):
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
-        order = self.order_factory.market(
+        order = strategy.order_factory.market(
             AUDUSD_FXCM,
-            OrderId('AUDUSD-123456-1'),
             Label('S1'),
             OrderSide.BUY,
             100000)
@@ -819,9 +789,8 @@ class TradeStrategyTests(unittest.TestCase):
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
-        order = self.order_factory.limit(
+        order = strategy.order_factory.limit(
             AUDUSD_FXCM,
-            OrderId('AUDUSD-123456-1'),
             Label('S1'),
             OrderSide.BUY,
             100000,
@@ -846,9 +815,8 @@ class TradeStrategyTests(unittest.TestCase):
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
-        order1 = self.order_factory.stop_market(
+        order1 = strategy.order_factory.stop_market(
             AUDUSD_FXCM,
-            OrderId('AUDUSD-123456-1'),
             Label('S1'),
             OrderSide.BUY,
             100000,
@@ -856,9 +824,8 @@ class TradeStrategyTests(unittest.TestCase):
             TimeInForce.DAY,
             None)
 
-        order2 = self.order_factory.stop_market(
+        order2 = strategy.order_factory.stop_market(
             AUDUSD_FXCM,
-            OrderId('AUDUSD-123456-2'),
             Label('S1'),
             OrderSide.BUY,
             100000,
@@ -886,9 +853,8 @@ class TradeStrategyTests(unittest.TestCase):
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
-        order = self.order_factory.market(
+        order = strategy.order_factory.market(
             AUDUSD_FXCM,
-            OrderId('AUDUSD-123456-1'),
             Label('S1'),
             OrderSide.BUY,
             100000)
@@ -924,16 +890,14 @@ class TradeStrategyTests(unittest.TestCase):
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
-        order1 = self.order_factory.market(
+        order1 = strategy.order_factory.market(
             AUDUSD_FXCM,
-            OrderId('AUDUSD-123456-1'),
             Label('S1'),
             OrderSide.BUY,
             100000)
 
-        order2 = self.order_factory.market(
+        order2 = strategy.order_factory.market(
             AUDUSD_FXCM,
-            OrderId('AUDUSD-123456-2'),
             Label('S1'),
             OrderSide.BUY,
             100000)
@@ -980,7 +944,7 @@ class TradeStrategyTests(unittest.TestCase):
             datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc))
 
         # Act
-        strategy._update_bars(bar_type, bar)
+        strategy.handle_bar(bar_type, bar)
 
         # Assert
         self.assertEqual(1, len(strategy.bars(bar_type)))
@@ -995,25 +959,25 @@ class TradeStrategyTests(unittest.TestCase):
         exec_client = MockExecClient()
         exec_client.register_strategy(strategy)
 
-        order = self.order_factory.market(
+        order = strategy.order_factory.market(
             AUDUSD_FXCM,
-            OrderId('AUDUSD-123456-1'),
             Label('S1'),
             OrderSide.BUY,
             100000)
 
-        strategy.submit_order(order, PositionId('AUDUSD-123456-1'))
+        strategy.submit_order(order, strategy.generate_position_id(AUDUSD_FXCM))
         exec_client.fill_last_order()
 
         # Act
         # Assert
-        self.assertTrue(OrderId('AUDUSD-123456-1') in strategy.orders_all())
-        self.assertTrue(PositionId('AUDUSD-123456-1') in strategy.positions_all())
+        print(strategy.orders_all())
+        self.assertTrue(OrderId('19700101-000000-001-001-AUDUSD-FXCM-1') in strategy.orders_all())
+        self.assertTrue(PositionId('19700101-000000-001-001-AUDUSD-FXCM-1') in strategy.positions_all())
         self.assertEqual(0, len(strategy.orders_active()))
         self.assertEqual(order, strategy.orders_completed()[order.id])
         self.assertEqual(0, len(strategy.positions_closed()))
-        self.assertTrue(OrderId('AUDUSD-123456-1') in strategy.orders_completed())
-        self.assertTrue(PositionId('AUDUSD-123456-1') in strategy.positions_active())
+        self.assertTrue(OrderId('19700101-000000-001-001-AUDUSD-FXCM-1') in strategy.orders_completed())
+        self.assertTrue(PositionId('19700101-000000-001-001-AUDUSD-FXCM-1') in strategy.positions_active())
         self.assertFalse(strategy.is_flat())
 
     def test_can_track_orders_for_a_closing_position(self):
@@ -1024,16 +988,14 @@ class TradeStrategyTests(unittest.TestCase):
         exec_client.register_strategy(strategy)
 
         position1 = PositionId('position1')
-        order1 = self.order_factory.market(
+        order1 = strategy.order_factory.market(
             AUDUSD_FXCM,
-            OrderId('AUDUSD-123456-1'),
             Label('S1'),
             OrderSide.BUY,
             100000)
 
-        order2 = self.order_factory.market(
+        order2 = strategy.order_factory.market(
             AUDUSD_FXCM,
-            OrderId('AUDUSD-123456-2'),
             Label('S1'),
             OrderSide.SELL,
             100000)

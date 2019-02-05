@@ -30,7 +30,10 @@ class PortfolioTestsTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
-        self.order_factory = OrderFactory(clock=TestClock())
+        self.order_factory = OrderFactory(
+            id_tag_trader='001',
+            id_tag_strategy='001',
+            clock=TestClock())
         self.portfolio = Portfolio()
         print('\n')
 
@@ -48,7 +51,6 @@ class PortfolioTestsTests(unittest.TestCase):
         # Arrange
         order = self.order_factory.market(
             AUDUSD_FXCM,
-            OrderId('AUDUSD-1-123456'),
             Label('S1'),
             OrderSide.BUY,
             100000)

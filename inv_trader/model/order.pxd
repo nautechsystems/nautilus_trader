@@ -13,8 +13,9 @@ from cpython.datetime cimport datetime
 
 from inv_trader.common.clock cimport Clock
 from inv_trader.model.objects cimport Symbol, Price
-from inv_trader.model.events cimport OrderEvent, OrderSubmitted, OrderFilled
+from inv_trader.model.events cimport OrderEvent
 from inv_trader.model.identifiers cimport Label, OrderId, ExecutionId, ExecutionTicket
+from inv_trader.model.identifiers cimport OrderIdGenerator
 from inv_trader.enums.order_side cimport OrderSide
 from inv_trader.enums.order_type cimport OrderType
 from inv_trader.enums.order_status cimport OrderStatus
@@ -62,29 +63,16 @@ cdef class Order:
     cdef void _set_fill_status(self)
 
 
-cdef class OrderIdGenerator:
-    """
-    Provides a generator for unique order identifiers.
-    """
-    cdef Clock _clock
-    cdef dict _order_symbol_counts
-
-    cdef readonly str order_tag_trader
-    cdef readonly str order_tag_strategy
-
-    cpdef OrderId generate(self, Symbol order_symbol)
-
-
 cdef class OrderFactory:
     """
     A factory class which provides different order types.
     """
     cdef Clock _clock
+    cdef OrderIdGenerator _id_generator
 
     cpdef Order market(
             self,
             Symbol symbol,
-            OrderId order_id,
             Label label,
             OrderSide order_side,
             int quantity)
@@ -92,7 +80,6 @@ cdef class OrderFactory:
     cpdef Order limit(
             self,
             Symbol symbol,
-            OrderId order_id,
             Label label,
             OrderSide order_side,
             int quantity,
@@ -103,7 +90,6 @@ cdef class OrderFactory:
     cpdef Order stop_market(
             self,
             Symbol symbol,
-            OrderId order_id,
             Label label,
             OrderSide order_side,
             int quantity,
@@ -114,7 +100,6 @@ cdef class OrderFactory:
     cpdef Order stop_limit(
             self,
             Symbol symbol,
-            OrderId order_id,
             Label label,
             OrderSide order_side,
             int quantity,
@@ -125,7 +110,6 @@ cdef class OrderFactory:
     cpdef Order market_if_touched(
             self,
             Symbol symbol,
-            OrderId order_id,
             Label label,
             OrderSide order_side,
             int quantity,
@@ -136,7 +120,6 @@ cdef class OrderFactory:
     cpdef Order fill_or_kill(
             self,
             Symbol symbol,
-            OrderId order_id,
             Label label,
             OrderSide order_side,
             int quantity)
@@ -144,7 +127,6 @@ cdef class OrderFactory:
     cpdef Order immediate_or_cancel(
             self,
             Symbol symbol,
-            OrderId order_id,
             Label label,
             OrderSide order_side,
             int quantity)

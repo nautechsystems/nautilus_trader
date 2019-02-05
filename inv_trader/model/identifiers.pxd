@@ -9,6 +9,9 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
+from inv_trader.common.clock cimport Clock
+from inv_trader.model.objects cimport Symbol
+
 
 cdef class Identifier:
     cdef readonly str value
@@ -37,3 +40,30 @@ cdef class ExecutionId(Identifier):
 
 cdef class ExecutionTicket(Identifier):
     pass
+
+
+cdef class IdentifierGenerator:
+    """
+    Provides a generator for unique order identifiers.
+    """
+    cdef Clock _clock
+    cdef dict _symbol_counts
+
+    cdef readonly str id_tag_trader
+    cdef readonly str id_tag_strategy
+
+    cdef str _generate(self, Symbol symbol)
+
+
+cdef class OrderIdGenerator(IdentifierGenerator):
+    """
+    Provides a generator for unique OrderIds.
+    """
+    cpdef OrderId generate(self, Symbol symbol)
+
+
+cdef class PositionIdGenerator(IdentifierGenerator):
+    """
+    Provides a generator for unique PositionIds.
+    """
+    cpdef PositionId generate(self, Symbol symbol)

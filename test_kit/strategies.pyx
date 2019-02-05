@@ -12,7 +12,7 @@
 from datetime import timedelta
 from typing import Dict
 
-from inv_trader.common.clock cimport Clock, LiveClock
+from inv_trader.common.clock cimport Clock, TestClock
 from inv_trader.common.logger cimport Logger
 from inv_trader.enums.order_side cimport OrderSide
 from inv_trader.enums.time_in_force cimport TimeInForce
@@ -20,7 +20,7 @@ from inv_trader.model.objects cimport Symbol, Price, Tick, BarType, Bar, Instrum
 from inv_trader.model.events cimport Event
 from inv_trader.model.identifiers cimport Label, OrderId, PositionId
 from inv_trader.model.order cimport Order
-from inv_trader.model.events cimport OrderFilled, OrderExpired, OrderRejected, OrderCancelReject, OrderWorking
+from inv_trader.model.events cimport OrderFilled, OrderExpired, OrderRejected
 from inv_trader.strategy cimport TradeStrategy
 from inv_indicators.average.ema import ExponentialMovingAverage
 from inv_indicators.atr import AverageTrueRange
@@ -60,14 +60,11 @@ cdef class TestStrategy1(TradeStrategy):
     cdef readonly object ema2
     cdef readonly PositionId position_id
 
-    def __init__(self, bar_type: BarType, clock: Clock=LiveClock()):
+    def __init__(self, bar_type: BarType, clock: Clock=TestClock()):
         """
         Initializes a new instance of the TestStrategy1 class.
         """
-        super().__init__(label='UnitTests',
-                         order_tag_trader='TS01',
-                         order_tag_strategy='001',
-                         clock=clock)
+        super().__init__(clock=clock)
         self.object_storer = ObjectStorer()
         self.bar_type = bar_type
 
@@ -97,7 +94,6 @@ cdef class TestStrategy1(TradeStrategy):
             if self.ema1.value > self.ema2.value:
                 buy_order = self.order_factory.market(
                     self.bar_type.symbol,
-                    self.generate_order_id(self.bar_type.symbol),
                     Label('TestStrategy1_E'),
                     OrderSide.BUY,
                     100000)
@@ -108,7 +104,6 @@ cdef class TestStrategy1(TradeStrategy):
             elif self.ema1.value < self.ema2.value:
                 sell_order = self.order_factory.market(
                     self.bar_type.symbol,
-                    self.generate_order_id(self.bar_type.symbol),
                     Label('TestStrategy1_E'),
                     OrderSide.SELL,
                     100000)
@@ -147,8 +142,8 @@ cdef class EMACross(TradeStrategy):
 
     def __init__(self,
                  str label,
-                 str order_tag_trader,
-                 str order_tag_strategy,
+                 str id_tag_trader,
+                 str id_tag_strategy,
                  Instrument instrument,
                  BarType bar_type,
                  int position_size=100000,
@@ -161,8 +156,9 @@ cdef class EMACross(TradeStrategy):
         """
         Initializes a new instance of the EMACrossLimitEntry class.
 
-        :param label: The unique label for this instance of the strategy.
-        :param order_id_tag: The unique order id tag for this instance of the strategy.
+        :param label: The optional unique label for the strategy.
+        :param id_tag_trader: The unique order identifier tag for the trader.
+        :param id_tag_strategy: The unique order identifier tag for the strategy.
         :param bar_type: The bar type for the strategy (could also input any number of them)
         :param position_size: The position unit size.
         :param fast_ema: The fast EMA period.
@@ -171,8 +167,8 @@ cdef class EMACross(TradeStrategy):
         :param logger: The logger for the strategy (can be None, will just print).
         """
         super().__init__(label,
-                         order_tag_trader=order_tag_trader,
-                         order_tag_strategy=order_tag_strategy,
+                         id_tag_trader=id_tag_trader,
+                         id_tag_strategy=id_tag_strategy,
                          bar_capacity=bar_capacity,
                          logger=logger)
 
@@ -238,7 +234,6 @@ cdef class EMACross(TradeStrategy):
             if self.fast_ema.value >= self.slow_ema.value:
                 entry_order = self.order_factory.stop_market(
                     self.symbol,
-                    self.generate_order_id(self.symbol),
                     Label('S1_E'),
                     OrderSide.BUY,
                     self.position_size,
@@ -254,7 +249,6 @@ cdef class EMACross(TradeStrategy):
             elif self.fast_ema.value < self.slow_ema.value:
                 entry_order = self.order_factory.stop_market(
                     self.symbol,
-                    self.generate_order_id(self.symbol),
                     Label('S1_E'),
                     OrderSide.SELL,
                     self.position_size,
@@ -297,7 +291,6 @@ cdef class EMACross(TradeStrategy):
 
                 stop_order = self.order_factory.stop_market(
                     self.symbol,
-                    self.generate_order_id(self.symbol),
                     Label('S1_SL'),
                     stop_side,
                     event.filled_quantity,

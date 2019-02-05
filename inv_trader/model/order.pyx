@@ -11,7 +11,7 @@
 
 from cpython.datetime cimport datetime
 from decimal import Decimal
-from typing import Dict, List
+from typing import List
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.common.clock cimport Clock, LiveClock
@@ -25,8 +25,10 @@ from inv_trader.model.events cimport OrderSubmitted, OrderAccepted, OrderRejecte
 from inv_trader.model.events cimport OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
 from inv_trader.model.events cimport OrderPartiallyFilled, OrderFilled
 from inv_trader.model.identifiers cimport Label, OrderId, ExecutionId, ExecutionTicket
+from inv_trader.model.identifiers cimport OrderIdGenerator
 
-# Order types which require prices to be valid.
+
+# Order types which require prices to be valid
 cdef list PRICED_ORDER_TYPES = [
     OrderType.LIMIT,
     OrderType.STOP_MARKET,
@@ -149,9 +151,7 @@ cdef class Order:
         """
         :return: The repr() string representation of the order.
         """
-        cdef object attrs = vars(self)
-        cdef str props = ', '.join("%s=%s" % item for item in attrs.items()).replace(', _', ', ')
-        return f"<{self.__class__.__name__}({props[1:]}) object at {id(self)}>"
+        return f"<{str(self)} object at {id(self)}>"
 
     cpdef list get_order_ids_broker(self):
         """
@@ -253,72 +253,33 @@ cdef class Order:
             self.status = OrderStatus.OVER_FILLED
 
 
-cdef str SEPARATOR = '-'
-
-
-cdef class OrderIdGenerator:
-    """
-    Provides a generator for unique order identifiers.
-    """
-
-    def __init__(self,
-                 str order_tag_trader,
-                 str order_tag_strategy,
-                 Clock clock=LiveClock()):
-        """
-        Initializes a new instance of the OrderIdGenerator class.
-
-        :param order_tag_trader: The order identifier tag for the trader.
-        :param order_tag_strategy: The order identifier tag for the strategy.
-        :param clock: The internal clock.
-        :raises ValueError: If the order_tag_trader is not a valid string.
-        :raises ValueError: If the order_tag_strategy is not a valid string.
-        """
-        Precondition.valid_string(order_tag_trader, 'order_tag_trader')
-        Precondition.valid_string(order_tag_strategy, 'order_tag_strategy')
-
-        self._clock = clock
-        self._order_symbol_counts = {}  # type: Dict[Symbol, int]
-        self.order_tag_trader = order_tag_trader
-        self.order_tag_strategy = order_tag_strategy
-
-    cpdef OrderId generate(self, Symbol order_symbol):
-        """
-        Create a unique order identifier for the strategy using the given symbol.
-
-        :param order_symbol: The order symbol for the unique identifier.
-        :return: The unique OrderIdentifier.
-        """
-        if order_symbol not in self._order_symbol_counts:
-            self._order_symbol_counts[order_symbol] = 0
-
-        self._order_symbol_counts[order_symbol] += 1
-
-        return OrderId(self._clock.get_datetime_tag()
-                       + SEPARATOR + self.order_tag_trader
-                       + SEPARATOR + self.order_tag_strategy
-                       + SEPARATOR + order_symbol.code
-                       + SEPARATOR + order_symbol.venue_string()
-                       + SEPARATOR + str(self._order_symbol_counts[order_symbol]))
-
-
 cdef class OrderFactory:
     """
     A factory class which provides different order types.
     """
 
-    def __init__(self, Clock clock=LiveClock()):
+    def __init__(self,
+                 str id_tag_trader,
+                 str id_tag_strategy,
+                 Clock clock=LiveClock()):
         """
         Initializes a new instance of the OrderFactory class.
 
+        :param id_tag_trader: The identifier tag for the trader.
+        :param id_tag_strategy: The identifier tag for the strategy.
         :param clock: The internal clock.
+        :raises ValueError: If the id_tag_trader is not a valid string.
+        :raises ValueError: If the id_tag_strategy is not a valid string.
         """
         self._clock = clock
+        self._id_generator = OrderIdGenerator(
+            id_tag_trader=id_tag_trader,
+            id_tag_strategy=id_tag_strategy,
+            clock=clock)
 
     cpdef Order market(
             self,
             Symbol symbol,
-            OrderId order_id,
             Label label,
             OrderSide order_side,
             int quantity):
@@ -326,7 +287,6 @@ cdef class OrderFactory:
         Creates and returns a new market order with the given parameters.
 
         :param symbol: The orders symbol.
-        :param order_id: The orders identifier (must be unique).
         :param label: The orders label.
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
@@ -334,7 +294,7 @@ cdef class OrderFactory:
         :raises ValueError: If the quantity is not positive (> 0).
         """
         return Order(symbol,
-                     order_id,
+                     self._id_generator.generate(symbol),
                      label,
                      order_side,
                      OrderType.MARKET,
@@ -347,7 +307,6 @@ cdef class OrderFactory:
     cpdef Order limit(
             self,
             Symbol symbol,
-            OrderId order_id,
             Label label,
             OrderSide order_side,
             int quantity,
@@ -359,7 +318,6 @@ cdef class OrderFactory:
         If the time in force is GTD then a valid expire time must be given.
 
         :param symbol: The orders symbol.
-        :param order_id: The orders identifier (must be unique).
         :param label: The orders label.
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
@@ -372,7 +330,7 @@ cdef class OrderFactory:
         :raises ValueError: If the time_in_force is GTD and the expire_time is None.
         """
         return Order(symbol,
-                     order_id,
+                     self._id_generator.generate(symbol),
                      label,
                      order_side,
                      OrderType.LIMIT,
@@ -385,7 +343,6 @@ cdef class OrderFactory:
     cpdef Order stop_market(
             self,
             Symbol symbol,
-            OrderId order_id,
             Label label,
             OrderSide order_side,
             int quantity,
@@ -397,7 +354,6 @@ cdef class OrderFactory:
         If the time in force is GTD then a valid expire time must be given.
 
         :param symbol: The orders symbol.
-        :param order_id: The orders identifier (must be unique).
         :param label: The orders label.
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
@@ -410,7 +366,7 @@ cdef class OrderFactory:
         :raises ValueError: If the time_in_force is GTD and the expire_time is None.
         """
         return Order(symbol,
-                     order_id,
+                     self._id_generator.generate(symbol),
                      label,
                      order_side,
                      OrderType.STOP_MARKET,
@@ -423,7 +379,6 @@ cdef class OrderFactory:
     cpdef Order stop_limit(
             self,
             Symbol symbol,
-            OrderId order_id,
             Label label,
             OrderSide order_side,
             int quantity,
@@ -435,7 +390,6 @@ cdef class OrderFactory:
         If the time in force is GTD then a valid expire time must be given.
 
         :param symbol: The orders symbol.
-        :param order_id: The orders identifier (must be unique).
         :param label: The orders label.
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
@@ -448,7 +402,7 @@ cdef class OrderFactory:
         :raises ValueError: If the time_in_force is GTD and the expire_time is None.
         """
         return Order(symbol,
-                     order_id,
+                     self._id_generator.generate(symbol),
                      label,
                      order_side,
                      OrderType.STOP_LIMIT,
@@ -461,7 +415,6 @@ cdef class OrderFactory:
     cpdef Order market_if_touched(
             self,
             Symbol symbol,
-            OrderId order_id,
             Label label,
             OrderSide order_side,
             int quantity,
@@ -473,7 +426,6 @@ cdef class OrderFactory:
         If the time in force is GTD then a valid expire time must be given.
 
         :param symbol: The orders symbol.
-        :param order_id: The orders identifier (must be unique).
         :param label: The orders label.
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
@@ -486,7 +438,7 @@ cdef class OrderFactory:
         :raises ValueError: If the time_in_force is GTD and the expire_time is None.
         """
         return Order(symbol,
-                     order_id,
+                     self._id_generator.generate(symbol),
                      label,
                      order_side,
                      OrderType.MIT,
@@ -499,7 +451,6 @@ cdef class OrderFactory:
     cpdef Order fill_or_kill(
             self,
             Symbol symbol,
-            OrderId order_id,
             Label label,
             OrderSide order_side,
             int quantity):
@@ -507,7 +458,6 @@ cdef class OrderFactory:
         Creates and returns a new fill-or-kill order with the given parameters.
 
         :param symbol: The orders symbol.
-        :param order_id: The orders identifier (must be unique).
         :param label: The orders label.
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
@@ -515,7 +465,7 @@ cdef class OrderFactory:
         :raises ValueError: If the quantity is not positive (> 0).
         """
         return Order(symbol,
-                     order_id,
+                     self._id_generator.generate(symbol),
                      label,
                      order_side,
                      OrderType.MARKET,
@@ -528,7 +478,6 @@ cdef class OrderFactory:
     cpdef Order immediate_or_cancel(
             self,
             Symbol symbol,
-            OrderId order_id,
             Label label,
             OrderSide order_side,
             int quantity):
@@ -536,7 +485,6 @@ cdef class OrderFactory:
         Creates and returns a new immediate-or-cancel order with the given parameters.
 
         :param symbol: The orders symbol.
-        :param order_id: The orders identifier (must be unique).
         :param label: The orders label.
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
@@ -544,7 +492,7 @@ cdef class OrderFactory:
         :raises ValueError: If the quantity is not positive (> 0).
         """
         return Order(symbol,
-                     order_id,
+                     self._id_generator.generate(symbol),
                      label,
                      order_side,
                      OrderType.MARKET,

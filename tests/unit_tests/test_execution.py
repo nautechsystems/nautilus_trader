@@ -31,7 +31,6 @@ class ExecutionClientTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
         self.bar_type = TestStubs.bartype_gbpusd_1min_bid()
-        self.order_factory = OrderFactory()
         self.strategy = TestStrategy1(self.bar_type)
         self.exec_client = MockExecClient()
         self.exec_client.connect()
@@ -54,14 +53,13 @@ class ExecutionClientTests(unittest.TestCase):
         # Arrange
         self.exec_client.register_strategy(self.strategy)
 
-        order_id = self.strategy.generate_order_id(AUDUSD_FXCM)
-
-        order = self.order_factory.market(
+        order = self.strategy.order_factory.market(
             AUDUSD_FXCM,
-            order_id,
             Label('S1_E'),
             OrderSide.BUY,
             100000)
+
+        order_id = order.id
 
         # Act
         self.strategy.submit_order(order, PositionId(str(order.id)))
@@ -75,14 +73,13 @@ class ExecutionClientTests(unittest.TestCase):
         self.exec_client.register_strategy(self.strategy)
         self.exec_client.connect()
 
-        order_id = self.strategy.generate_order_id(AUDUSD_FXCM)
-
-        order = self.order_factory.market(
+        order = self.strategy.order_factory.market(
             AUDUSD_FXCM,
-            order_id,
             Label('S1_E'),
             OrderSide.BUY,
             100000)
+
+        order_id = order.id
 
         # Act
         self.strategy.submit_order(order, PositionId(str(order_id)))
@@ -97,17 +94,16 @@ class ExecutionClientTests(unittest.TestCase):
         self.exec_client.register_strategy(self.strategy)
         self.exec_client.connect()
 
-        order_id = self.strategy.generate_order_id(AUDUSD_FXCM)
-
-        order = self.order_factory.limit(
+        order = self.strategy.order_factory.limit(
             AUDUSD_FXCM,
-            order_id,
             Label('S1_E'),
             OrderSide.BUY,
             100000,
             Price('1.00000'),
             TimeInForce.DAY,
             expire_time=None)
+
+        order_id = order.id
 
         # Act
         self.strategy.submit_order(order, PositionId(str(order.id)))
@@ -126,7 +122,6 @@ class LiveExecClientTests(unittest.TestCase):
         print("\n")
 
         self.bar_type = TestStubs.bartype_audusd_1min_bid()
-        self.order_factory = OrderFactory()
         self.strategy = TestStrategy1(bar_type=self.bar_type)
         self.exec_client = LiveExecClient()
         self.exec_client.register_strategy(self.strategy)
@@ -158,14 +153,13 @@ class LiveExecClientTests(unittest.TestCase):
 
     def test_can_send_submit_order_command(self):
         # Arrange
-        order_id = self.strategy.generate_order_id(AUDUSD_FXCM)
-
-        order = self.order_factory.market(
+        order = self.strategy.order_factory.market(
             AUDUSD_FXCM,
-            order_id,
             Label('S1_E'),
             OrderSide.BUY,
             100000)
+
+        order_id = order.id
 
         # Act
         self.strategy.submit_order(order, PositionId(str(order.id)))
@@ -176,14 +170,13 @@ class LiveExecClientTests(unittest.TestCase):
 
     def test_can_send_cancel_order_command(self):
         # Arrange
-        order_id = self.strategy.generate_order_id(AUDUSD_FXCM)
-
-        order = self.order_factory.market(
+        order = self.strategy.order_factory.market(
             AUDUSD_FXCM,
-            order_id,
             Label('S1_E'),
             OrderSide.BUY,
             100000)
+
+        order_id = order.id
 
         # Act
         self.strategy.submit_order(order, PositionId('some-position'))
@@ -195,17 +188,16 @@ class LiveExecClientTests(unittest.TestCase):
 
     def test_can_send_modify_order_command(self):
         # Arrange
-        order_id = self.strategy.generate_order_id(AUDUSD_FXCM)
-
-        order = self.order_factory.limit(
+        order = self.strategy.order_factory.limit(
             AUDUSD_FXCM,
-            order_id,
             Label('S1_E'),
             OrderSide.BUY,
             100000,
             Price('1.00000'),
             TimeInForce.DAY,
             expire_time=None)
+
+        order_id = order.id
 
         # Act
         self.strategy.submit_order(order, PositionId('some-position'))

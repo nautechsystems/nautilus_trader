@@ -24,9 +24,9 @@ from inv_trader.common.execution cimport ExecutionClient
 from inv_trader.common.data cimport DataClient
 from inv_trader.common.guid cimport GuidFactory, LiveGuidFactory
 from inv_trader.model.events cimport Event
-from inv_trader.model.identifiers cimport GUID, Label, OrderId, PositionId
+from inv_trader.model.identifiers cimport GUID, Label, OrderId, PositionId, PositionIdGenerator
 from inv_trader.model.objects cimport Symbol, Price, Tick, BarType, Bar, Instrument
-from inv_trader.model.order cimport Order, OrderIdGenerator, OrderFactory
+from inv_trader.model.order cimport Order, OrderFactory
 from inv_trader.model.position cimport Position
 from inv_trader.commands cimport SubmitOrder, ModifyOrder, CancelOrder
 from inv_trader.tools cimport IndicatorUpdater
@@ -39,9 +39,9 @@ cdef class TradeStrategy:
     """
 
     def __init__(self,
-                 str label='0',
-                 str order_tag_trader='001',
-                 str order_tag_strategy='001',
+                 str label='001',
+                 str id_tag_trader='001',
+                 str id_tag_strategy='001',
                  int bar_capacity=1000,
                  Clock clock=LiveClock(),
                  GuidFactory guid_factory=LiveGuidFactory(),
@@ -50,7 +50,8 @@ cdef class TradeStrategy:
         Initializes a new instance of the TradeStrategy abstract class.
 
         :param label: The optional unique label for the strategy.
-        :param order_id_tag: The optional unique order identifier tag for the strategy.
+        :param id_tag_trader: The unique order identifier tag for the trader.
+        :param id_tag_strategy: The unique order identifier tag for the strategy.
         :param bar_capacity: The capacity for the internal bar deque(s).
         :param clock: The internal clock for the strategy.
         :param guid_factory: internal The GUID factory for the strategy.
@@ -60,35 +61,38 @@ cdef class TradeStrategy:
         :raises ValueError: If the bar_capacity is not positive (> 0).
         """
         Precondition.valid_string(label, 'label')
-        Precondition.valid_string(order_tag_trader, 'order_tag_trader')
-        Precondition.valid_string(order_tag_strategy, 'order_tag_strategy')
+        Precondition.valid_string(id_tag_trader, 'order_tag_trader')
+        Precondition.valid_string(id_tag_strategy, 'order_tag_strategy')
         Precondition.positive(bar_capacity, 'bar_capacity')
 
         self._clock = clock
         self._guid_factory = guid_factory
-        self.name = self.__class__.__name__
+        self.name = Label(self.__class__.__name__ + '-' + label)
         if logger is None:
-            self.log = LoggerAdapter(f"{self.name}-{self.label}")
+            self.log = LoggerAdapter(f"{self.name.value}")
         else:
-            self.log = LoggerAdapter(f"{self.name}-{self.label}", logger)
-        self.label = label
-        self.order_tag_trader = order_tag_trader
-        self.order_tag_strategy = order_tag_strategy
+            self.log = LoggerAdapter(f"{self.name.value}", logger)
+        self.id_tag_trader = id_tag_trader
+        self.id_tag_strategy = id_tag_strategy
         self.id = GUID(uuid.uuid4())
-        self._order_id_generator = OrderIdGenerator(order_tag_trader=order_tag_trader,
-                                                    order_tag_strategy=order_tag_strategy,
-                                                    clock=self._clock)
-        self.order_factory = OrderFactory()
+        self.position_id_generator = PositionIdGenerator(
+            id_tag_trader=id_tag_trader,
+            id_tag_strategy=id_tag_strategy,
+            clock=self._clock)
+        self.order_factory = OrderFactory(
+            id_tag_trader=id_tag_trader,
+            id_tag_strategy=id_tag_strategy,
+            clock=self._clock)
         self.bar_capacity = bar_capacity
         self.is_running = False
-        self._ticks = {}                 # type: Dict[Symbol, Tick]
-        self._bars = {}                  # type: Dict[BarType, Deque[Bar]]
-        self._indicators = {}            # type: Dict[BarType, List[Indicator]]
-        self._indicator_updaters = {}    # type: Dict[BarType, List[IndicatorUpdater]]
-        self._data_client = None  # Initialized when registered with data client.
-        self._exec_client = None  # Initialized when registered with execution client.
-        self._portfolio = None    # Initialized when registered with execution client.
-        self.account = None       # Initialized when registered with execution client.
+        self._ticks = {}               # type: Dict[Symbol, Tick]
+        self._bars = {}                # type: Dict[BarType, Deque[Bar]]
+        self._indicators = {}          # type: Dict[BarType, List[Indicator]]
+        self._indicator_updaters = {}  # type: Dict[BarType, List[IndicatorUpdater]]
+        self._data_client = None       # Initialized when registered with data client.
+        self._exec_client = None       # Initialized when registered with execution client.
+        self._portfolio = None         # Initialized when registered with execution client.
+        self.account = None            # Initialized when registered with execution client.
 
         self.log.info(f"Initialized.")
 
@@ -117,13 +121,13 @@ cdef class TradeStrategy:
         """"
         Override the default hash implementation.
         """
-        return hash((self.name, self.label))
+        return hash(self.name)
 
     def __str__(self) -> str:
         """
         :return: The str() string representation of the strategy.
         """
-        return f"{self.name}-{self.label}"
+        return f"{self.name}"
 
     def __repr__(self) -> str:
         """
@@ -183,7 +187,7 @@ cdef class TradeStrategy:
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
 
-# -- REGISTRATION METHODS ------------------------------------------------------------------------ #
+# -- HANDLER METHODS ------------------------------------------------------------------------ #
 
     cpdef void register_data_client(self, DataClient client):
         """
@@ -207,10 +211,40 @@ cdef class TradeStrategy:
         self._portfolio = client.get_portfolio()
         self.account = client.get_account()
 
+    cpdef void handle_tick(self, Tick tick):
+        """"
+        Updates the last held tick with the given tick, then calls on_tick()
+        for the inheriting class.
+
+        :param tick: The tick received.
+        """
+        self._ticks[tick.symbol] = tick
+
+        if self.is_running:
+            self.on_tick(tick)
+
+    cpdef void handle_bar(self, BarType bar_type, Bar bar):
+        """"
+        Updates the internal dictionary of bars with the given bar, then calls the
+        on_bar method for the subclass.
+
+        :param bar_type: The bar type received.
+        :param bar: The bar received.
+        """
+        if bar_type not in self._bars:
+            self._bars[bar_type] = deque(maxlen=self.bar_capacity)  # type: Deque[Bar]
+        self._bars[bar_type].append(bar)
+
+        if bar_type in self._indicators:
+            for updater in self._indicator_updaters[bar_type]:
+                updater.update_bar(bar)
+
+        if self.is_running:
+            self.on_bar(bar_type, bar)
+
     cpdef void handle_event(self, Event event):
         """
-        Updates the strategy with the given event, then calls on_event() if the
-        strategy is running.
+        Calls on_event() if the strategy is running.
 
         :param event: The event received.
         """
@@ -278,7 +312,7 @@ cdef class TradeStrategy:
             quantity = self.bar_capacity
         Precondition.positive(quantity, 'quantity')
 
-        self._data_client.historical_bars(bar_type, quantity, self._update_bars)
+        self._data_client.historical_bars(bar_type, quantity, self.handle_bar)
 
     cpdef void historical_bars_from(self, BarType bar_type, datetime from_datetime):
         """
@@ -295,7 +329,7 @@ cdef class TradeStrategy:
         Precondition.true(from_datetime < self._clock.time_now(),
                           'from_datetime < self.clock.time_now()')
 
-        self._data_client.historical_bars_from(bar_type, from_datetime, self._update_bars)
+        self._data_client.historical_bars_from(bar_type, from_datetime, self.handle_bar)
 
     cpdef void subscribe_bars(self, BarType bar_type):
         """
@@ -306,7 +340,7 @@ cdef class TradeStrategy:
         """
         Precondition.not_none(self._data_client, 'data_client')
 
-        self._data_client.subscribe_bars(bar_type, self._update_bars)
+        self._data_client.subscribe_bars(bar_type, self.handle_bar)
         self.log.info(f"Subscribed to bar data for {bar_type}.")
 
     cpdef void unsubscribe_bars(self, BarType bar_type):
@@ -318,7 +352,7 @@ cdef class TradeStrategy:
         """
         Precondition.not_none(self._data_client, 'data_client')
 
-        self._data_client.unsubscribe_bars(bar_type, self._update_bars)
+        self._data_client.unsubscribe_bars(bar_type, self.handle_bar)
         self.log.info(f"Unsubscribed from bar data for {bar_type}.")
 
     cpdef void subscribe_ticks(self, Symbol symbol):
@@ -330,7 +364,7 @@ cdef class TradeStrategy:
         """
         Precondition.not_none(self._data_client, 'data_client')
 
-        self._data_client.subscribe_ticks(symbol, self._update_ticks)
+        self._data_client.subscribe_ticks(symbol, self.handle_tick)
         self.log.info(f"Subscribed to tick data for {symbol}.")
 
     cpdef void unsubscribe_ticks(self, Symbol symbol):
@@ -342,7 +376,7 @@ cdef class TradeStrategy:
         """
         Precondition.not_none(self._data_client, 'data_client')
 
-        self._data_client.unsubscribe_ticks(symbol, self._update_ticks)
+        self._data_client.unsubscribe_ticks(symbol, self.handle_tick)
         self.log.info(f"Unsubscribed from tick data for {symbol}.")
 
     cpdef list bars(self, BarType bar_type):
@@ -402,7 +436,7 @@ cdef class TradeStrategy:
 
 # -- INDICATOR METHODS --------------------------------------------------------------------------- #
 
-    cpdef register_indicator(
+    cpdef void register_indicator(
             self,
             BarType bar_type,
             indicator: Indicator,
@@ -468,14 +502,14 @@ cdef class TradeStrategy:
 
 # -- MANAGEMENT METHODS -------------------------------------------------------------------------- #
 
-    cpdef OrderId generate_order_id(self, Symbol symbol):
+    cpdef PositionId generate_position_id(self, Symbol symbol):
         """
-        Generates a unique order identifier with the given symbol.
+        Generates a unique position identifier with the given symbol.
 
-        :param symbol: The order symbol.
-        :return: The unique order identifier.
+        :param symbol: The symbol.
+        :return: The unique PositionId.
         """
-        return self._order_id_generator.generate(symbol)
+        return self.position_id_generator.generate(symbol)
 
     cpdef OrderSide get_opposite_side(self, OrderSide side):
         """
@@ -486,7 +520,7 @@ cdef class TradeStrategy:
         """
         return OrderSide.BUY if side is OrderSide.SELL else OrderSide.SELL
 
-    cpdef get_flatten_side(self, MarketPosition market_position):
+    cpdef OrderSide get_flatten_side(self, MarketPosition market_position):
         """
         Get the order side needed to flatten a position from the given market position.
 
@@ -503,7 +537,7 @@ cdef class TradeStrategy:
 
     cpdef Order order(self, OrderId order_id):
         """
-        Get the order from the order book with the given order_id.
+        Return the order with the given order_id.
 
         :param order_id: The order identifier.
         :return: The order with the given id.
@@ -513,26 +547,31 @@ cdef class TradeStrategy:
 
     cpdef dict orders_all(self):
         """
-        TBA
-        :return: 
+        Return a dictionary of all orders associated with this strategy.
+        
+        :return: Dict[OrderId, Order]
         """
         return self._exec_client.get_orders(self.id)
 
     cpdef dict orders_active(self):
         """
-        :return: All active orders for the strategy.
+        Return a dictionary of all active orders associated with this strategy.
+        
+        :return: Dict[OrderId, Order]
         """
         return self._exec_client.get_orders_active(self.id)
 
     cpdef dict orders_completed(self):
         """
-        :return: All completed orders for the strategy.
+        Return a dictionary of all completed orders associated with this strategy.
+        
+        :return: Dict[OrderId, Order]
         """
         return self._exec_client.get_orders_completed(self.id)
 
     cpdef Position position(self, PositionId position_id):
         """
-        Get the position associated with the given id.
+        Return the position associated with the given id.
 
         :param position_id: The positions identifier.
         :return: The position with the given id.
@@ -542,20 +581,25 @@ cdef class TradeStrategy:
 
     cpdef dict positions_all(self):
         """
-        TBA
-        :return: 
+        Return a dictionary of all positions associated with this strategy.
+        
+        :return: Dict[PositionId, Position]
         """
         return self._portfolio.get_positions(self.id)
 
     cpdef dict positions_active(self):
         """
-        :return: All active positions for the strategy.
+        Return a dictionary of all active positions associated with this strategy.
+        
+        :return: Dict[PositionId, Position]
         """
         return self._portfolio.get_positions_active(self.id)
 
     cpdef dict positions_closed(self):
         """
-        :return: All completed positions for the strategy.
+        Return a dictionary of all closed positions associated with this strategy.
+        
+        :return: Dict[PositionId, Position]
         """
         return self._portfolio.get_positions_closed(self.id)
 
@@ -717,7 +761,6 @@ cdef class TradeStrategy:
 
         cdef Order order = self.order_factory.market(
             position.symbol,
-            self.generate_order_id(position.symbol),
             Label("FLATTEN"),
             self.get_flatten_side(position.market_position),
             position.quantity)
@@ -744,7 +787,6 @@ cdef class TradeStrategy:
             self.log.info(f"Flattening {position}.")
             order = self.order_factory.market(
                 position.symbol,
-                self.generate_order_id(position.symbol),
                 Label("FLATTEN"),
                 self.get_flatten_side(position.market_position),
                 position.quantity)
@@ -832,9 +874,14 @@ cdef class TradeStrategy:
         :param clock: The clock to change to.
         """
         self._clock = clock
-        self._order_id_generator = OrderIdGenerator(self.order_tag_trader,
-                                                    self.order_tag_strategy,
-                                                    clock=self._clock)
+        self.order_factory = OrderFactory(
+            id_tag_trader=self.id_tag_trader,
+            id_tag_strategy=self.id_tag_strategy,
+            clock=clock)
+        self.position_id_generator = PositionIdGenerator(
+            id_tag_trader=self.id_tag_trader,
+            id_tag_strategy=self.id_tag_strategy,
+            clock=clock)
 
     cpdef void change_guid_factory(self, GuidFactory guid_factory):
         """
@@ -850,7 +897,7 @@ cdef class TradeStrategy:
         
         :param logger: The logger to change to.
         """
-        self.log = LoggerAdapter(f"{self.name}-{self.label}", logger)
+        self.log = LoggerAdapter(f"{self.name.value}", logger)
 
     cpdef void set_time(self, datetime time):
         """
@@ -867,49 +914,3 @@ cdef class TradeStrategy:
         :param time: The time to iterate the clock to.
         """
         self._clock.iterate_time(time)
-
-# -- INTERNAL METHODS ---------------------------------------------------------------------------- #
-
-    cpdef void _update_ticks(self, Tick tick):
-        """"
-        Updates the last held tick with the given tick, then calls on_tick()
-        for the inheriting class.
-
-        :param tick: The tick received.
-        """
-        self._ticks[tick.symbol] = tick
-
-        if self.is_running:
-            self.on_tick(tick)
-
-    cpdef void _update_bars(self, BarType bar_type, Bar bar):
-        """"
-        Updates the internal dictionary of bars with the given bar, then calls the
-        on_bar method for the inheriting class.
-
-        :param bar_type: The bar type received.
-        :param bar: The bar received.
-        """
-        if bar_type not in self._bars:
-            self._bars[bar_type] = deque(maxlen=self.bar_capacity)  # type: Deque[Bar]
-        self._bars[bar_type].append(bar)
-
-        if bar_type in self._indicators:
-            self._update_indicators(bar_type, bar)
-
-        if self.is_running:
-            self.on_bar(bar_type, bar)
-
-    cpdef void _update_indicators(self, BarType bar_type, Bar bar):
-        """
-        Updates the internal indicators of the given bar type with the given bar.
-
-        :param bar_type: The bar type to update.
-        :param bar: The bar for update.
-        """
-        if bar_type not in self._indicators:
-            # No indicators to update with this bar.
-            return
-
-        for updater in self._indicator_updaters[bar_type]:
-            updater.update_bar(bar)
