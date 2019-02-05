@@ -178,7 +178,7 @@ cdef class LiveExecClient(ExecutionClient):
         if len(self._registered_strategies) == 0:
             self._log.debug(f"Received {event}")
 
-        self._on_event(event)
+        self._handle_event(event)
 
     cpdef void _command_ack_handler(self, bytes body):
         """"

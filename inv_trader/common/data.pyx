@@ -267,7 +267,7 @@ cdef class DataClient:
             self._log.debug(f"Added tick {handler}.")
             self._log.info(f"Subscribed to {symbol} ticks.")
 
-    cdef void _unsubscribe_ticks(self, Symbol symbol, handler):
+    cdef void _unsubscribe_ticks(self, Symbol symbol, handler: Callable):
         """
         Unsubscribes from tick data for the given symbol and venue.
 
