@@ -93,9 +93,7 @@ cdef class Position:
         """
         :return: The repr() string representation of the position.
         """
-        cdef object attrs = vars(self)
-        cdef str props = ', '.join("%s=%s" % item for item in attrs.items()).replace(', _', ', ')
-        return f"<{self.__class__.__name__}({props[1:]}) object at {id(self)}>"
+        return f"<{str(self)} object at {id(self)}>"
 
     cpdef list get_order_ids(self):
         """
