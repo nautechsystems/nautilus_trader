@@ -12,8 +12,9 @@
 from cpython.datetime cimport datetime
 
 from inv_trader.core.precondition cimport Precondition
+from inv_trader.enums.order_type cimport OrderType
 from inv_trader.model.objects cimport Price
-from inv_trader.model.identifiers cimport GUID, PositionId
+from inv_trader.model.identifiers cimport GUID, Label, PositionId
 from inv_trader.model.order cimport Order
 
 
@@ -126,6 +127,7 @@ cdef class SubmitOrder(OrderCommand):
                  Order order,
                  PositionId position_id,
                  GUID strategy_id,
+                 Label strategy_name,
                  GUID command_id,
                  datetime command_timestamp):
         """
@@ -134,6 +136,7 @@ cdef class SubmitOrder(OrderCommand):
         :param order: The commands order to submit.
         :param position_id: The command position identifier.
         :param strategy_id: The strategy identifier to associate with the order.
+        :param strategy_name: The name of the strategy associated with the order.
         :param command_id: The commands identifier.
         :param command_timestamp: The commands timestamp.
         """
@@ -142,6 +145,48 @@ cdef class SubmitOrder(OrderCommand):
                          command_timestamp)
         self.position_id = position_id
         self.strategy_id = strategy_id
+        self.strategy_name = strategy_name
+
+
+cdef class SubmitAtomicOrder(Command):
+    """
+    Represents a command to submit an atomic order consisting of parent and child orders.
+    """
+
+    def __init__(self,
+                 Order order_e,
+                 Order order_sl,
+                 Order order_pt,
+                 PositionId position_id,
+                 GUID strategy_id,
+                 Label strategy_name,
+                 GUID command_id,
+                 datetime command_timestamp):
+        """
+        Initializes a new instance of the SubmitOrder class.
+
+        :param order_e: The commands entry (parent) order to submit.
+        :param order_sl: The commands stop-loss (child) order to submit.
+        :param order_pt: The commands profit-target (child) order to submit (can be None).
+        :param position_id: The command position identifier.
+        :param strategy_id: The strategy identifier to associate with the order.
+        :param strategy_name: The name of the strategy associated with the order.
+        :param command_id: The commands identifier.
+        :param command_timestamp: The commands timestamp.
+        :raises: ValueError: If the stop-loss order type is not STOP_MARKET.
+        """
+        super().__init__(command_id,
+                         command_timestamp)
+        Precondition.not_none(order_e, 'entry order')
+        Precondition.not_none(order_sl, 'stop-loss order')
+        Precondition.true(order_sl.type == OrderType.STOP_MARKET, 'order_sl.type == OrderType.STOP_MARKET')
+
+        self.order_e = order_e
+        self.order_sl = order_sl
+        self.order_pt = order_pt
+        self.position_id = position_id
+        self.strategy_id = strategy_id
+        self.strategy_name = strategy_name
 
 
 cdef class ModifyOrder(OrderCommand):
