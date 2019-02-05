@@ -227,7 +227,6 @@ cdef class EMACross(TradeStrategy):
         if not self.fast_ema.initialized or not self.slow_ema.initialized:
             return
 
-        # print(f"LAST BAR: {self.last_bar(self.bar_type)}")
         # TODO: Account for the spread, using bid bars only at the moment
         if self.position_id is None:
             # BUY LOGIC
@@ -238,7 +237,7 @@ cdef class EMACross(TradeStrategy):
                     self.position_size,
                     Price(self.last_bar(self.bar_type).high + self.entry_buffer),
                     Label('S1_E'),
-                    time_in_force=TimeInForce.GTD,
+                    TimeInForce.GTD,
                     expire_time=self.time_now() + timedelta(minutes=1))
                 self.entry_orders[entry_order.id] = entry_order
                 self.log.info(f"Added {entry_order.id} to entry orders.")
@@ -253,7 +252,7 @@ cdef class EMACross(TradeStrategy):
                     self.position_size,
                     Price(self.last_bar(self.bar_type).low - self.entry_buffer),
                     Label('S1_E'),
-                    time_in_force=TimeInForce.GTD,
+                    TimeInForce.GTD,
                     expire_time=self.time_now() + timedelta(minutes=1))
                 self.entry_orders[entry_order.id] = entry_order
                 self.log.info(f"Added {entry_order.id} to entry orders.")
@@ -294,7 +293,7 @@ cdef class EMACross(TradeStrategy):
                     stop_side,
                     event.filled_quantity,
                     stop_price,
-                    Label('S1_SL'),)
+                    Label('S1_SL'))
                 self.stop_loss_orders[stop_order.id] = stop_order
                 self.submit_order(stop_order, self.position_id)
                 self.log.info(f"Added {stop_order.id} to stop-loss orders.")
