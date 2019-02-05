@@ -7,7 +7,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-# cython: language_level=3, boundscheck=False
+# cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
 import re
 import iso8601
@@ -178,7 +178,7 @@ cdef class LiveDataClient(DataClient):
         :param strategy: The strategy to register.
         :raise ValueError: If the strategy does not inherit from TradeStrategy.
         """
-        strategy._register_data_client(self)
+        strategy.register_data_client(self)
 
         self._log.info(f"Registered strategy {strategy} with the data client.")
 

@@ -79,11 +79,11 @@ cdef class Clock:
                 f'{time_now.minute:02d}'
                 f'{time_now.second:02d}')
 
-    cdef long milliseconds_since_unix_epoch(self):
-        """
-        :return:  Returns the number of ticks of the given time now since the Unix Epoch.
-        """
-        return (self.time_now() - self._unix_epoch).total_seconds() * MILLISECONDS_PER_SECOND
+    # cdef long milliseconds_since_unix_epoch(self):
+    #     """
+    #     :return:  Returns the number of ticks of the given time now since the Unix Epoch.
+    #     """
+    #     return (self.time_now() - self._unix_epoch).total_seconds() * MILLISECONDS_PER_SECOND
 
     cpdef set_time_alert(
             self,
@@ -497,9 +497,6 @@ cdef class TestClock(Clock):
         if label in self._timers:
             raise KeyError(
                 f"Cannot set timer (the label {label} was not unique for this strategy).")
-
-        # cdef datetime alert_time = start_time + interval
-        # cdef float delay = (alert_time - self.time_now()).total_seconds()
 
         cdef TestTimer timer = TestTimer(label,
                                          interval,
