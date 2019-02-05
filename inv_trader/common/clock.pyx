@@ -22,7 +22,6 @@ from inv_trader.model.events cimport TimeEvent
 
 # Unix epoch is the UTC time at 00:00:00 on 1/1/1970
 cdef datetime UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc)
-cdef int MILLISECONDS_PER_SECOND = 1000
 
 
 cdef class Clock:
@@ -62,7 +61,7 @@ cdef class Clock:
         to two decimal places. 
         """
         Precondition.true(start.tzinfo == self.timezone, 'time.tzinfo == self.timezone')
-        Precondition.true(start <= self.time_now(), 'start >= self.time_now()')
+        Precondition.true(start <= self.time_now(), 'start <= self.time_now()')
 
         return (self.time_now() - start).total_seconds()
 
@@ -78,12 +77,6 @@ cdef class Clock:
                 f'{time_now.hour:02d}'
                 f'{time_now.minute:02d}'
                 f'{time_now.second:02d}')
-
-    # cdef long milliseconds_since_unix_epoch(self):
-    #     """
-    #     :return:  Returns the number of ticks of the given time now since the Unix Epoch.
-    #     """
-    #     return (self.time_now() - self._unix_epoch).total_seconds() * MILLISECONDS_PER_SECOND
 
     cpdef set_time_alert(
             self,

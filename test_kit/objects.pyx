@@ -27,18 +27,17 @@ cdef class ObjectStorer:
         """
         return self._store
 
-    cpdef void store(self, object obj):
+    cpdef void store(self, object obj, bint print_storage=True):
         """"
         Store the given object.
         """
-        print(f"Storing {obj}")
+        if print_storage:
+            print(f"Storing {obj}")
         self.count += 1
         self._store.append(obj)
 
-    cpdef void store_2(self, object obj1, object obj2):
+    cpdef void store_2(self, object obj1, object obj2, bint print_storage=True):
         """"
         Store the given objects as a tuple.
         """
-        print(f"Storing {(obj1, obj2)}")
-        self.count += 1
-        self._store.append((obj1, obj2))
+        self.store((obj1, obj2), print_storage)
