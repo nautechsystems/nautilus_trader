@@ -14,7 +14,7 @@ from cpython.datetime cimport datetime
 from inv_trader.common.clock cimport Clock
 from inv_trader.model.objects cimport Symbol, Price
 from inv_trader.model.events cimport OrderEvent
-from inv_trader.model.identifiers cimport Label, OrderId, ExecutionId, ExecutionTicket
+from inv_trader.model.identifiers cimport Label, GUID, OrderId, ExecutionId, ExecutionTicket
 from inv_trader.model.identifiers cimport OrderIdGenerator
 from inv_trader.enums.order_side cimport OrderSide
 from inv_trader.enums.order_type cimport OrderType
@@ -71,7 +71,11 @@ cdef class AtomicOrder:
     cdef readonly Order entry
     cdef readonly Order stop_loss
     cdef readonly Order profit_target
+    cdef readonly OrderId id
+    cdef readonly datetime timestamp
     cdef readonly bint has_profit_target
+
+    cdef bint equals(self, AtomicOrder other)
 
 
 cdef class OrderFactory:

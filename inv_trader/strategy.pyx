@@ -26,7 +26,7 @@ from inv_trader.common.guid cimport GuidFactory, LiveGuidFactory
 from inv_trader.model.events cimport Event
 from inv_trader.model.identifiers cimport GUID, Label, OrderId, PositionId, PositionIdGenerator
 from inv_trader.model.objects cimport Symbol, Price, Tick, BarType, Bar, Instrument
-from inv_trader.model.order cimport Order, OrderFactory
+from inv_trader.model.order cimport Order, AtomicOrder, OrderFactory
 from inv_trader.model.position cimport Position
 from inv_trader.commands cimport SubmitOrder, ModifyOrder, CancelOrder
 from inv_trader.tools cimport IndicatorUpdater
@@ -670,13 +670,15 @@ cdef class TradeStrategy:
 
     cpdef void submit_order(self, Order order, PositionId position_id):
         """
-        Send a submit order command with the given order to the execution service.
+        Send a submit order command with the given order and position identifier to the execution 
+        service.
 
         :param order: The order to submit.
-        :param position_id: The position id to associate with this order.
+        :param position_id: The position identifier to associate with this order.
         :raises ValueError: If the strategy has not been registered with an execution client.
-        :raises ValueError: If the order_id is already contained in the order book (must be unique).
         """
+        Precondition.not_none(self._exec_client, 'exec_client')
+
         self.log.info(f"Submitting {order}")
 
         cdef SubmitOrder command = SubmitOrder(
@@ -689,6 +691,17 @@ cdef class TradeStrategy:
 
         self._exec_client.submit_order(command)
 
+    cpdef void submit_atomic_order(self, AtomicOrder order, PositionId position_id):
+        """
+        Send a submit atomic order command with the given order and position identifier to the 
+        execution service.
+        
+        :param order: The atomic order to submit.
+        :param position_id: The position identifier to associate with this order.
+        """
+
+        self.log.info(f"Submitting {order}")
+
     cpdef void modify_order(self, Order order, Price new_price):
         """
         Send a modify order command for the given order with the given new price
@@ -696,9 +709,6 @@ cdef class TradeStrategy:
 
         :param order: The order to modify.
         :param new_price: The new price for the given order.
-        :raises ValueError: If the strategy has not been registered with an execution client.
-        :raises ValueError: If the new_price is not positive (> 0).
-        :raises ValueError: If order_id is not found in the order book.
         """
         self.log.info(f"Modifying {order} with new price {new_price}")
 
@@ -717,9 +727,6 @@ cdef class TradeStrategy:
 
         :param order: The order to cancel.
         :param cancel_reason: The reason for cancellation (will be logged).
-        :raises ValueError: If the strategy has not been registered with an execution client.
-        :raises ValueError: If the cancel_reason is not a valid string.
-        :raises ValueError: If the order_id is not found in the order book.
         """
         # Precondition cancel_reason string checked in command
         self.log.info(f"Cancelling {order}")
