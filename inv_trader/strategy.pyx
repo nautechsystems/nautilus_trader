@@ -661,11 +661,7 @@ cdef class TradeStrategy:
     cpdef void collateral_inquiry(self):
         """
         Send a collateral inquiry command to the execution service.
-
-        :raises ValueError: If the strategy has not been registered with an execution client.
         """
-        Precondition.not_none(self._exec_client, 'exec_client')
-
         self._exec_client.collateral_inquiry()
 
     cpdef void submit_order(self, Order order, PositionId position_id):
@@ -675,11 +671,8 @@ cdef class TradeStrategy:
 
         :param order: The order to submit.
         :param position_id: The position identifier to associate with this order.
-        :raises ValueError: If the strategy has not been registered with an execution client.
         """
-        Precondition.not_none(self._exec_client, 'exec_client')
-
-        self.log.info(f"Submitting {order}")
+        self.log.info(f"Submitting {order} for {position_id}")
 
         cdef SubmitOrder command = SubmitOrder(
             order,
@@ -699,8 +692,7 @@ cdef class TradeStrategy:
         :param order: The atomic order to submit.
         :param position_id: The position identifier to associate with this order.
         """
-
-        self.log.info(f"Submitting {order}")
+        self.log.info(f"Submitting {order} for {position_id}")
 
     cpdef void modify_order(self, Order order, Price new_price):
         """

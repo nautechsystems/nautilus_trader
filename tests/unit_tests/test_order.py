@@ -153,6 +153,18 @@ class OrderTests(unittest.TestCase):
         self.assertFalse(order.is_complete)
         print(order)
 
+    def test_order_str_and_repr(self):
+        # Arrange
+        # Act
+        order = self.order_factory.market(
+            AUDUSD_FXCM,
+            OrderSide.BUY,
+            100000)
+
+        # Assert
+        self.assertEqual('Order(id=19700101-000000-001-001-AUDUSD-FXCM-1) BUY 100,000 AUDUSD.FXCM MARKET DAY', str(order))
+        self.assertTrue(repr(order).startswith('<Order(id=19700101-000000-001-001-AUDUSD-FXCM-1) BUY 100,000 AUDUSD.FXCM MARKET DAY object at'))
+
     def test_can_initialize_limit_order(self):
         # Arrange
         # Act
@@ -322,6 +334,21 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(None, atomic_order.profit_target.expire_time)
         self.assertEqual(OrderId('19700101-000000-001-001-AUDUSD-FXCM-1-A'), atomic_order.id)
         self.assertEqual(UNIX_EPOCH, atomic_order.timestamp)
+
+    def test_atomic_order_str_and_repr(self):
+        # Arrange
+        # Act
+        atomic_order = self.order_factory.atomic_order_market(
+            AUDUSD_FXCM,
+            OrderSide.BUY,
+            100000,
+            Price('0.99990'),
+            Price('1.00010'),
+            Label('U1'))
+
+        # Assert
+        self.assertEqual('AtomicOrder(EntryOrder(id=19700101-000000-001-001-AUDUSD-FXCM-1, label=U1_E) BUY 100,000 AUDUSD.FXCM MARKET DAY, has_profit_target=True)', str(atomic_order))
+        self.assertTrue(repr(atomic_order).startswith('<AtomicOrder(EntryOrder(id=19700101-000000-001-001-AUDUSD-FXCM-1, label=U1_E) BUY 100,000 AUDUSD.FXCM MARKET DAY, has_profit_target=True) object at'))
 
     def test_can_apply_order_submitted_event_to_order(self):
         # Arrange
