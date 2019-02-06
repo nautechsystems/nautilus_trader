@@ -66,8 +66,7 @@ cdef class Order:
 cdef class AtomicOrder:
     """
     Represents an order for a financial market instrument consisting of a 'parent'
-    entry order and 'child' OCO orders representing a stop-loss and optional
-    profit target.
+    entry order and 'child' OCO orders being a stop-loss and optional profit target.
     """
     cdef readonly Order entry
     cdef readonly Order stop_loss
@@ -77,7 +76,8 @@ cdef class AtomicOrder:
 
 cdef class OrderFactory:
     """
-    A factory class which provides different order types.
+    Provides creation of different order types. Holds an internal OrderIdGenerator
+    to handle order identifiers.
     """
     cdef Clock _clock
     cdef OrderIdGenerator _id_generator
@@ -143,7 +143,8 @@ cdef class OrderFactory:
             int quantity,
             Label label=*)
 
-    cpdef AtomicOrder atomic_order_market(self,
+    cpdef AtomicOrder atomic_order_market(
+            self,
             Symbol symbol,
             OrderSide order_side,
             int quantity,
