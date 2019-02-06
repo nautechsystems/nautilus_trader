@@ -38,7 +38,7 @@ cdef list PRICED_ORDER_TYPES = [
 
 cdef class Order:
     """
-    Represents an order in a financial market.
+    Represents an order for a financial market instrument.
     """
 
     def __init__(self,
@@ -254,6 +254,29 @@ cdef class Order:
             self.status = OrderStatus.OVER_FILLED
 
 
+cdef class AtomicOrder:
+    """
+    Represents an order for a financial market instrument consisting of a 'parent'
+    entry order and 'child' OCO orders representing a stop-loss and optional
+    profit target.
+    """
+    def __init__(self,
+                 Order entry,
+                 Order stop_loss,
+                 Order profit_target=None):
+        """
+        Initializes a new instance of the AtomicOrder class.
+
+        :param entry: The entry 'parent' order.
+        :param stop_loss: The stop-loss 'child' order.
+        :param profit_target: The optional profit-target 'child' order (can be None).
+        """
+        self.entry = entry
+        self.stop_loss = stop_loss
+        self.profit_target = profit_target
+        self.has_profit_target = profit_target is not None
+
+
 cdef class OrderFactory:
     """
     A factory class which provides different order types.
@@ -294,16 +317,17 @@ cdef class OrderFactory:
         :return: The market order.
         :raises ValueError: If the quantity is not positive (> 0).
         """
-        return Order(symbol,
-                     self._id_generator.generate(symbol),
-                     order_side,
-                     OrderType.MARKET,
-                     quantity,
-                     self._clock.time_now(),
-                     price=None,
-                     label=label,
-                     time_in_force=TimeInForce.DAY,
-                     expire_time=None)
+        return Order(
+            symbol,
+            self._id_generator.generate(symbol),
+            order_side,
+            OrderType.MARKET,
+            quantity,
+            self._clock.time_now(),
+            price=None,
+            label=label,
+            time_in_force=TimeInForce.DAY,
+            expire_time=None)
 
     cpdef Order limit(
             self,
@@ -330,16 +354,17 @@ cdef class OrderFactory:
         :raises ValueError: If the price is not positive (> 0).
         :raises ValueError: If the time_in_force is GTD and the expire_time is None.
         """
-        return Order(symbol,
-                     self._id_generator.generate(symbol),
-                     order_side,
-                     OrderType.LIMIT,
-                     quantity,
-                     self._clock.time_now(),
-                     price,
-                     label,
-                     time_in_force,
-                     expire_time)
+        return Order(
+            symbol,
+            self._id_generator.generate(symbol),
+            order_side,
+            OrderType.LIMIT,
+            quantity,
+            self._clock.time_now(),
+            price,
+            label,
+            time_in_force,
+            expire_time)
 
     cpdef Order stop_market(
             self,
@@ -366,16 +391,17 @@ cdef class OrderFactory:
         :raises ValueError: If the price is not positive (> 0).
         :raises ValueError: If the time_in_force is GTD and the expire_time is None.
         """
-        return Order(symbol,
-                     self._id_generator.generate(symbol),
-                     order_side,
-                     OrderType.STOP_MARKET,
-                     quantity,
-                     self._clock.time_now(),
-                     price,
-                     label,
-                     time_in_force,
-                     expire_time)
+        return Order(
+            symbol,
+            self._id_generator.generate(symbol),
+            order_side,
+            OrderType.STOP_MARKET,
+            quantity,
+            self._clock.time_now(),
+            price,
+            label,
+            time_in_force,
+            expire_time)
 
     cpdef Order stop_limit(
             self,
@@ -402,17 +428,17 @@ cdef class OrderFactory:
         :raises ValueError: If the price is not positive (> 0).
         :raises ValueError: If the time_in_force is GTD and the expire_time is None.
         """
-        return Order(symbol,
-                     self._id_generator.generate(symbol),
-
-                     order_side,
-                     OrderType.STOP_LIMIT,
-                     quantity,
-                     self._clock.time_now(),
-                     price,
-                     label,
-                     time_in_force,
-                     expire_time)
+        return Order(
+            symbol,
+            self._id_generator.generate(symbol),
+            order_side,
+            OrderType.STOP_LIMIT,
+            quantity,
+            self._clock.time_now(),
+            price,
+            label,
+            time_in_force,
+            expire_time)
 
     cpdef Order market_if_touched(
             self,
@@ -439,16 +465,17 @@ cdef class OrderFactory:
         :raises ValueError: If the price is not positive (> 0).
         :raises ValueError: If the time_in_force is GTD and the expire_time is None.
         """
-        return Order(symbol,
-                     self._id_generator.generate(symbol),
-                     order_side,
-                     OrderType.MIT,
-                     quantity,
-                     self._clock.time_now(),
-                     price,
-                     label,
-                     time_in_force,
-                     expire_time)
+        return Order(
+            symbol,
+            self._id_generator.generate(symbol),
+            order_side,
+            OrderType.MIT,
+            quantity,
+            self._clock.time_now(),
+            price,
+            label,
+            time_in_force,
+            expire_time)
 
     cpdef Order fill_or_kill(
             self,
@@ -466,16 +493,17 @@ cdef class OrderFactory:
         :return: The fill or kill order.
         :raises ValueError: If the quantity is not positive (> 0).
         """
-        return Order(symbol,
-                     self._id_generator.generate(symbol),
-                     order_side,
-                     OrderType.MARKET,
-                     quantity,
-                     self._clock.time_now(),
-                     price=None,
-                     label=label,
-                     time_in_force=TimeInForce.FOC,
-                     expire_time=None)
+        return Order(
+            symbol,
+            self._id_generator.generate(symbol),
+            order_side,
+            OrderType.MARKET,
+            quantity,
+            self._clock.time_now(),
+            price=None,
+            label=label,
+            time_in_force=TimeInForce.FOC,
+            expire_time=None)
 
     cpdef Order immediate_or_cancel(
             self,
@@ -493,13 +521,88 @@ cdef class OrderFactory:
         :return: The immediate or cancel order.
         :raises ValueError: If the quantity is not positive (> 0).
         """
-        return Order(symbol,
-                     self._id_generator.generate(symbol),
-                     order_side,
-                     OrderType.MARKET,
-                     quantity,
-                     self._clock.time_now(),
-                     price=None,
-                     label=label,
-                     time_in_force=TimeInForce.IOC,
-                     expire_time=None)
+        return Order(
+            symbol,
+            self._id_generator.generate(symbol),
+            order_side,
+            OrderType.MARKET,
+            quantity,
+            self._clock.time_now(),
+            price=None,
+            label=label,
+            time_in_force=TimeInForce.IOC,
+            expire_time=None)
+
+    cpdef AtomicOrder atomic_order_market(self,
+            Symbol symbol,
+            OrderSide order_side,
+            int quantity,
+            Price stop_loss,
+            Price profit_target=None,
+            Label label=None):
+        """
+        Creates and returns a new market order with the given parameters.
+
+        :param symbol: The orders symbol.
+        :param order_side: The orders side.
+        :param quantity: The orders quantity (> 0).
+        :param stop_loss: The stop-loss price.
+        :param profit_target: The optional profit_target_price (can be None).
+        :param label: The orders label (can be None).
+        :return: The AtomicOrder with a market entry.
+        :raises ValueError: If the quantity is not positive (> 0).
+        """
+        cdef Label entry_label = None
+        if label is not None:
+            entry_label = Label(label.value + '_E')
+
+        cdef Order order_entry = self.market(
+            symbol,
+            order_side,
+            quantity,
+            entry_label)
+
+        return self._create_atomic_order(
+            order_entry,
+            stop_loss,
+            profit_target,
+            label)
+
+    cdef AtomicOrder _create_atomic_order(
+        self,
+        Order entry,
+        Price price_stop_loss,
+        Price price_profit_target=None,
+        Label original_label=None):
+        cdef OrderSide child_order_side = OrderSide.BUY if entry.side is OrderSide.SELL else OrderSide.SELL
+
+        cdef Label label_stop_loss = None
+        cdef Label label_profit_target = None
+        if original_label is not None:
+            label_stop_loss = Label(original_label.value + "_SL")
+            label_profit_target = Label(original_label.value + "_PT")
+
+        cdef Order stop_loss = self.stop_market(
+            entry.symbol,
+            child_order_side,
+            entry.quantity,
+            price_stop_loss,
+            label_stop_loss,
+            TimeInForce.GTC,
+            expire_time=None)
+
+        cdef Order profit_target = None
+        if price_profit_target is not None:
+            profit_target = self.limit(
+                entry.symbol,
+                child_order_side,
+                entry.quantity,
+                price_profit_target,
+                label_profit_target,
+                TimeInForce.GTC,
+                expire_time=None)
+
+        return AtomicOrder(
+            entry,
+            stop_loss,
+            profit_target)

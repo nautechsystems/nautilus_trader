@@ -13,7 +13,7 @@ from cpython.datetime cimport datetime
 
 from inv_trader.model.identifiers cimport GUID, Label, PositionId
 from inv_trader.model.objects cimport Price
-from inv_trader.model.order cimport Order
+from inv_trader.model.order cimport Order, AtomicOrder
 
 
 cdef class Command:
@@ -39,7 +39,7 @@ cdef class OrderCommand(Command):
 
 cdef class SubmitOrder(OrderCommand):
     """
-    Represents a command to submit the given order.
+    Represents a command to submit an order.
     """
     cdef readonly PositionId position_id
     cdef readonly GUID strategy_id
@@ -48,11 +48,9 @@ cdef class SubmitOrder(OrderCommand):
 
 cdef class SubmitAtomicOrder(Command):
     """
-    Represents a command to submit an atomic order consisting of parent and child orders.
+    Represents a command to submit an atomic order.
     """
-    cdef readonly Order order_e
-    cdef readonly Order order_sl
-    cdef readonly Order order_pt
+    cdef readonly AtomicOrder atomic_order
     cdef readonly PositionId position_id
     cdef readonly GUID strategy_id
     cdef readonly Label strategy_name
@@ -60,13 +58,13 @@ cdef class SubmitAtomicOrder(Command):
 
 cdef class ModifyOrder(OrderCommand):
     """
-    Represents a command to modify the given order with the given modified price.
+    Represents a command to modify an order with the modified price.
     """
     cdef readonly Price modified_price
 
 
 cdef class CancelOrder(OrderCommand):
     """
-    Represents a command to cancel the given order.
+    Represents a command to cancel an order.
     """
     cdef readonly str cancel_reason

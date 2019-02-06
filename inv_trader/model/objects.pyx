@@ -242,9 +242,6 @@ cdef class Money:
         elif isinstance(value, Decimal):
             self.value = Decimal(_get_money_str(str(value)))
 
-        elif isinstance(value, float):
-            self.value = Decimal(_get_decimal_str(value, 2))
-
         elif isinstance(value, int):
             self.value = Decimal(_get_decimal_str(float(value), 2))
 
@@ -314,12 +311,6 @@ cdef class Money:
             return Money(self.value - other.value)
         else:
             raise NotImplementedError(f"Cannot subtract {type(other)} from money.")
-
-    cpdef float as_float(self):
-        """
-        :return: A float representation of the money. 
-        """
-        return float(self.value)
 
 
 cdef class Tick:

@@ -42,7 +42,7 @@ class ObjectTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(TypeError, Price, Money(1.0))
+        self.assertRaises(TypeError, Price, Money.zero())
 
     def test_price_initialized_with_malformed_string_raises_exception(self):
         # Arrange
@@ -238,13 +238,11 @@ class ObjectTests(unittest.TestCase):
         result1 = Money(Decimal('1.00'))
         result2 = Money(Decimal('1000.0'))
         result3 = Money(2)
-        result4 = Money(1.01)
 
         # Assert
         self.assertEqual(Decimal('1.00'), result1.value)
         self.assertEqual(Decimal('1000.00'), result2.value)
         self.assertEqual(Decimal('2.00'), result3.value)
-        self.assertEqual(Decimal('1.01'), result4.value)
 
     def test_money_equality(self):
         # Arrange
@@ -313,12 +311,3 @@ class ObjectTests(unittest.TestCase):
         self.assertEqual(Money, type(result4))
         self.assertEqual(Money('2.00'), result4)
 
-    def test_money_as_float(self):
-        # Arrange
-        money = Money(1)
-
-        # Act
-        result = money.as_float()
-
-        # Assert
-        self.assertEqual(1.0, result)
