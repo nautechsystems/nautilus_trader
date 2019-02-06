@@ -24,7 +24,7 @@ from inv_trader.model.events cimport OrderEvent
 from inv_trader.model.events cimport OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
 from inv_trader.model.events cimport OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
 from inv_trader.model.events cimport OrderPartiallyFilled, OrderFilled
-from inv_trader.model.identifiers cimport Label, GUID, OrderId, ExecutionId, ExecutionTicket
+from inv_trader.model.identifiers cimport Label, OrderId, ExecutionId, ExecutionTicket
 from inv_trader.model.identifiers cimport OrderIdGenerator
 
 
@@ -309,7 +309,7 @@ cdef class AtomicOrder:
         """
         :return: The str() string representation of the order.
         """
-        return f"AtomicOrder(id={self.id}) Entry{self.entry} has_profit_target={self.has_profit_target}"
+        return f"AtomicOrder(Entry{self.entry}, has_profit_target={self.has_profit_target})"
 
     def __repr__(self) -> str:
         """
@@ -735,5 +735,4 @@ cdef class OrderFactory:
         return AtomicOrder(
             entry,
             stop_loss,
-
             profit_target)
