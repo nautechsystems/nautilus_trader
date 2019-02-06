@@ -683,6 +683,7 @@ cdef class TradeStrategy:
             order,
             position_id,
             self.id,
+            self.name,
             self._guid_factory.generate(),
             self._clock.time_now())
 
