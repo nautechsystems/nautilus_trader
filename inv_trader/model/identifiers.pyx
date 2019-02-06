@@ -86,8 +86,6 @@ cdef class GUID(Identifier):
 
         :param value: The value of the GUID.
         """
-        Precondition.type(value, UUID, 'value')
-
         super().__init__(str(value))
 
 
