@@ -23,7 +23,7 @@ from inv_trader.model.events cimport Event
 from inv_trader.model.identifiers cimport GUID, Label, OrderId, PositionId
 from inv_trader.model.identifiers cimport PositionIdGenerator
 from inv_trader.model.objects cimport Symbol, Price, Tick, BarType, Bar, Instrument
-from inv_trader.model.order cimport Order, OrderFactory
+from inv_trader.model.order cimport Order, AtomicOrder, OrderFactory
 from inv_trader.model.position cimport Position
 from inv_trader.portfolio.portfolio cimport Portfolio
 
@@ -113,6 +113,7 @@ cdef class TradeStrategy:
     cpdef void reset(self)
     cpdef void collateral_inquiry(self)
     cpdef void submit_order(self, Order order, PositionId position_id)
+    cpdef void submit_atomic_order(self, AtomicOrder order, PositionId position_id)
     cpdef void modify_order(self, Order order, Price new_price)
     cpdef void cancel_order(self, Order order, str cancel_reason)
     cpdef void cancel_all_orders(self, str cancel_reason)

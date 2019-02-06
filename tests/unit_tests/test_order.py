@@ -285,6 +285,8 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(TimeInForce.GTC, atomic_order.stop_loss.time_in_force)
         self.assertEqual(None, atomic_order.entry.expire_time)
         self.assertEqual(None, atomic_order.stop_loss.expire_time)
+        self.assertEqual(OrderId('19700101-000000-001-001-AUDUSD-FXCM-1-A'), atomic_order.id)
+        self.assertEqual(UNIX_EPOCH, atomic_order.timestamp)
 
     def test_can_initialize_atomic_order_market_with_profit_target_and_label(self):
         # Arrange
@@ -318,6 +320,8 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(None, atomic_order.entry.expire_time)
         self.assertEqual(None, atomic_order.stop_loss.expire_time)
         self.assertEqual(None, atomic_order.profit_target.expire_time)
+        self.assertEqual(OrderId('19700101-000000-001-001-AUDUSD-FXCM-1-A'), atomic_order.id)
+        self.assertEqual(UNIX_EPOCH, atomic_order.timestamp)
 
     def test_can_apply_order_submitted_event_to_order(self):
         # Arrange

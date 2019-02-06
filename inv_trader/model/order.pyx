@@ -24,7 +24,7 @@ from inv_trader.model.events cimport OrderEvent
 from inv_trader.model.events cimport OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
 from inv_trader.model.events cimport OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
 from inv_trader.model.events cimport OrderPartiallyFilled, OrderFilled
-from inv_trader.model.identifiers cimport Label, OrderId, ExecutionId, ExecutionTicket
+from inv_trader.model.identifiers cimport Label, GUID, OrderId, ExecutionId, ExecutionTicket
 from inv_trader.model.identifiers cimport OrderIdGenerator
 
 
@@ -275,6 +275,47 @@ cdef class AtomicOrder:
         self.stop_loss = stop_loss
         self.profit_target = profit_target
         self.has_profit_target = profit_target is not None
+        self.id = OrderId(entry.id.value + '-A')
+        self.timestamp = entry.timestamp
+
+    cdef bint equals(self, AtomicOrder other):
+        """
+        Compare if the object equals the given object.
+        
+        :param other: The other object to compare
+        :return: True if the objects are equal, otherwise False.
+        """
+        return self.id.equals(other.id)
+
+    def __eq__(self, other) -> bool:
+        """
+        Override the default equality comparison.
+        """
+        return self.equals(other)
+
+    def __ne__(self, other) -> bool:
+        """
+        Override the default not-equals comparison.
+        """
+        return not self.equals(other)
+
+    def __hash__(self) -> int:
+        """"
+        Override the default hash implementation.
+        """
+        return hash(self.id)
+
+    def __str__(self) -> str:
+        """
+        :return: The str() string representation of the order.
+        """
+        return f"AtomicOrder(id={self.id}) Entry{self.entry} has_profit_target={self.has_profit_target}"
+
+    def __repr__(self) -> str:
+        """
+        :return: The repr() string representation of the order.
+        """
+        return f"<{str(self)} object at {id(self)}>"
 
 
 cdef class OrderFactory:
@@ -694,4 +735,5 @@ cdef class OrderFactory:
         return AtomicOrder(
             entry,
             stop_loss,
+
             profit_target)
