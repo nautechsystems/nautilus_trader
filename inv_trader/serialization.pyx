@@ -16,7 +16,7 @@ from cpython.datetime cimport datetime
 from uuid import UUID
 
 from inv_trader.core.precondition cimport Precondition
-from inv_trader.commands cimport Command, OrderCommand, SubmitOrder, CancelOrder, ModifyOrder
+from inv_trader.commands cimport *
 from inv_trader.commands cimport CollateralInquiry
 from inv_trader.model.enums import Broker, OrderSide, OrderType, TimeInForce, CurrencyCode
 from inv_trader.enums.brokerage cimport Broker
@@ -50,10 +50,16 @@ cdef str COMMAND_TIMESTAMP = 'command_timestamp'
 cdef str COLLATERAL_INQUIRY = 'collateral_inquiry'
 cdef str ORDER_COMMAND = 'order_command'
 cdef str SUBMIT_ORDER = 'submit_order'
+cdef str SUBMIT_ATOMIC_ORDER = 'submit_atomic_order'
+cdef str STRATEGY_ID = 'strategy_id'
+cdef str STRATEGY_NAME = 'strategy_name'
 cdef str CANCEL_ORDER = 'cancel_order'
 cdef str MODIFY_ORDER = 'modify_order'
 cdef str CANCEL_REASON = 'cancel_reason'
 cdef str ORDER = 'order'
+cdef str ENTRY = 'entry'
+cdef str STOP_LOSS = 'stop_loss'
+cdef str PROFIT_TARGET = 'profit_target'
 cdef str TIMESTAMP = 'timestamp'
 cdef str EVENT_TYPE = 'event_type'
 cdef str ORDER_EVENT = 'order_event'
@@ -61,6 +67,7 @@ cdef str ACCOUNT_EVENT = 'account_event'
 cdef str SYMBOL = 'symbol'
 cdef str ORDER_ID = 'order_id'
 cdef str ORDER_ID_BROKER = 'order_id_broker'
+cdef str POSITION_ID = 'position_id'
 cdef str EVENT_ID = 'event_id'
 cdef str EVENT_TIMESTAMP = 'event_timestamp'
 cdef str LABEL = 'label'
@@ -185,7 +192,15 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
             COMMAND_TIMESTAMP: convert_datetime_to_string(command.timestamp)
         }
 
-        if isinstance(command, CollateralInquiry):
+        if isinstance(command, SubmitAtomicOrder):
+            package[COMMAND_TYPE] = SUBMIT_ATOMIC_ORDER
+            package[ENTRY] = self.order_serializer.serialize(command.entry).hex()
+            package[STOP_LOSS] = self.order_serializer.serialize(command.stop_loss).hex()
+            package[PROFIT_TARGET] = self.order_serializer.serialize(command.profit_target).hex()
+            package[POSITION_ID] = command.position_id.value
+            package[STRATEGY_ID] = command.strategy_id.value
+            package[STRATEGY_NAME] = command.strategy_name.value
+        elif isinstance(command, CollateralInquiry):
             package[COMMAND_TYPE] = COLLATERAL_INQUIRY
             return msgpack.packb(package)
         else:
@@ -212,6 +227,16 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
                 command_id,
                 command_timestamp,
                 unpacked)
+        elif command_type == SUBMIT_ATOMIC_ORDER:
+            return SubmitAtomicOrder(
+                self.order_serializer.deserialize(bytes.fromhex(unpacked[ENTRY])),
+                self.order_serializer.deserialize(bytes.fromhex(unpacked[STOP_LOSS])),
+                self.order_serializer.deserialize(bytes.fromhex(unpacked[PROFIT_TARGET])),
+                PositionId(unpacked[POSITION_ID]),
+                GUID(unpacked[STRATEGY_ID]),
+                Label(unpacked[STRATEGY_NAME]),
+                command_id,
+                command_timestamp)
         elif command_type == COLLATERAL_INQUIRY:
             return CollateralInquiry(
                 command_id,
@@ -237,6 +262,9 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
 
         if isinstance(order_command, SubmitOrder):
             package[ORDER_COMMAND] = SUBMIT_ORDER
+            package[POSITION_ID] = order_command.position_id.value
+            package[STRATEGY_ID] = order_command.strategy_id.value
+            package[STRATEGY_NAME] = order_command.strategy_name.value
             return msgpack.packb(package)
         elif isinstance(order_command, CancelOrder):
             package[ORDER_COMMAND] = CANCEL_ORDER
@@ -266,12 +294,15 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         cdef str order_command = unpacked[ORDER_COMMAND]
         cdef Order order = self.order_serializer.deserialize(bytes.fromhex(unpacked[ORDER]))
 
-        # if order_command == SUBMIT_ORDER:
-        #     return SubmitOrder(
-        #         order,
-        #         command_id,
-        #         command_timestamp)
-        if order_command == CANCEL_ORDER:
+        if order_command == SUBMIT_ORDER:
+            return SubmitOrder(
+                order,
+                PositionId(unpacked[POSITION_ID]),
+                GUID(unpacked[STRATEGY_ID]),
+                Label(unpacked[STRATEGY_NAME]),
+                command_id,
+                command_timestamp)
+        elif order_command == CANCEL_ORDER:
             return CancelOrder(
                 order,
                 unpacked[CANCEL_REASON],

@@ -18,12 +18,6 @@ from inv_trader.model.objects import Symbol
 
 class IdentifierTests(unittest.TestCase):
 
-    def test_GUID_passed_str_raises_exceptions(self):
-        # Arrange
-        # Act
-        # Assert
-        self.assertRaises(ValueError, GUID, 'a_fake_uuid')
-
     def test_GUIDS_passed_different_UUID_are_not_equal(self):
         # Arrange
         # Act

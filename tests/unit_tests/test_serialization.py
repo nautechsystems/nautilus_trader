@@ -18,12 +18,10 @@ from inv_trader.commands import SubmitOrder, CancelOrder, ModifyOrder
 from inv_trader.commands import CollateralInquiry
 from inv_trader.model.enums import Venue, OrderSide, OrderType, TimeInForce
 from inv_trader.model.enums import CurrencyCode, SecurityType
-from inv_trader.model.identifiers import GUID, Label, OrderId, ExecutionId, ExecutionTicket
-from inv_trader.model.objects import Symbol, Price, Instrument
-from inv_trader.model.order import Order, OrderFactory
-from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
-from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
-from inv_trader.model.events import OrderPartiallyFilled, OrderFilled, AccountEvent
+from inv_trader.model.identifiers import *
+from inv_trader.model.objects import *
+from inv_trader.model.order import *
+from inv_trader.model.events import *
 from inv_trader.serialization import MsgPackOrderSerializer
 from inv_trader.serialization import MsgPackCommandSerializer
 from inv_trader.serialization import MsgPackEventSerializer
@@ -233,34 +231,31 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             clock=TestClock())
         print('\n')
 
-    # TEMPORARILY CANNOT DESERIALIZE SUBMIT ORDER
+    def test_can_serialize_and_deserialize_submit_order_commands(self):
+        # Arrange
+        serializer = MsgPackCommandSerializer()
 
-    # def test_can_serialize_and_deserialize_submit_order_commands(self):
-    #     # Arrange
-    #     serializer = MsgPackCommandSerializer()
-    #
-    #     order = self.order_factory.market(
-    #         AUDUSD_FXCM,
-    #         OrderId('O123456'),
-    #         Label('S1_SL'),
-    #         OrderSide.BUY,
-    #         100000)
-    #
-    #     command = SubmitOrder(order,
-    #                           PositionId('some-position'),
-    #                           GUID(uuid.uuid4()),
-    #                           GUID(uuid.uuid4()),
-    #                           UNIX_EPOCH)
-    #
-    #     # Act
-    #     serialized = serializer.serialize(command)
-    #     deserialized = serializer.deserialize(serialized)
-    #
-    #     # Assert - ignore warning (PyCharm doesn't know the type).
-    #     self.assertEqual(command, deserialized)
-    #     self.assertEqual(order, deserialized.order)
-    #     print(serialized.hex())
-    #     print(command)
+        order = self.order_factory.market(
+            AUDUSD_FXCM,
+            OrderSide.BUY,
+            100000)
+
+        command = SubmitOrder(order,
+                              PositionId('some-position'),
+                              GUID(uuid.uuid4()),
+                              Label('SCALPER01'),
+                              GUID(uuid.uuid4()),
+                              UNIX_EPOCH)
+
+        # Act
+        serialized = serializer.serialize(command)
+        deserialized = serializer.deserialize(serialized)
+
+        # Assert
+        self.assertEqual(command, deserialized)
+        self.assertEqual(order, deserialized.order)
+        print(serialized.hex())
+        print(command)
 
     def test_can_serialize_and_deserialize_cancel_order_commands(self):
         # Arrange
@@ -585,7 +580,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Act
         result = serializer.deserialize(body)
 
-        # Assert - Warning can be ignored (PyCharm doesn't know the type).
+        # Assert
         self.assertTrue(isinstance(result, OrderSubmitted))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual(OrderId('StubOrderId'), result.order_id)
@@ -612,7 +607,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Act
         result = serializer.deserialize(body)
 
-        # Assert - Warnings can be ignored (PyCharm doesn't know the type).
+        # Assert
         self.assertTrue(isinstance(result, OrderAccepted))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual(OrderId('StubOrderId'), result.order_id)
@@ -640,7 +635,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Act
         result = serializer.deserialize(body)
 
-        # Assert - Warnings can be ignored (PyCharm doesn't know the type).
+        # Assert
         self.assertTrue(isinstance(result, OrderRejected))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual(OrderId('StubOrderId'), result.order_id)
@@ -673,7 +668,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Act
         result = serializer.deserialize(body)
 
-        # Assert - Warnings can be ignored (PyCharm doesn't know the type).
+        # Assert
         self.assertTrue(isinstance(result, OrderWorking))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual(OrderId('StubOrderId'), result.order_id)
@@ -713,7 +708,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Act
         result = serializer.deserialize(body)
 
-        # Assert - Warnings can be ignored (PyCharm doesn't know the type).
+        # Assert
         self.assertTrue(isinstance(result, OrderWorking))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual(OrderId('StubOrderId'), result.order_id)
@@ -747,7 +742,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Act
         result = serializer.deserialize(body)
 
-        # Assert - Warning can be ignored (PyCharm doesn't know the type).
+        # Assert
         self.assertTrue(isinstance(result, OrderCancelled))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual(OrderId('StubOrderId'), result.order_id)
@@ -777,7 +772,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Act
         result = serializer.deserialize(body)
 
-        # Assert - Warnings can be ignored (PyCharm doesn't know the type).
+        # Assert
         self.assertTrue(isinstance(result, OrderCancelReject))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual(OrderId('StubOrderId'), result.order_id)
@@ -808,7 +803,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Act
         result = serializer.deserialize(body)
 
-        # Assert - Warnings can be ignored (PyCharm doesn't know the type).
+        # Assert
         self.assertTrue(isinstance(result, OrderModified))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual(OrderId('StubOrderId'), result.order_id)
@@ -837,7 +832,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Act
         result = serializer.deserialize(body)
 
-        # Assert - Warning can be ignored (PyCharm doesn't know the type).
+        # Assert
         self.assertTrue(isinstance(result, OrderExpired))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual(OrderId('StubOrderId'), result.order_id)
@@ -869,7 +864,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Act
         result = serializer.deserialize(body)
 
-        # Assert - Warnings can be ignored (PyCharm doesn't know the type).
+        # Assert
         self.assertTrue(isinstance(result, OrderPartiallyFilled))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual(OrderId('StubOrderId'), result.order_id)
@@ -906,7 +901,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Act
         result = serializer.deserialize(body)
 
-        # Assert - Warnings can be ignored (PyCharm doesn't know the type).
+        # Assert
         self.assertTrue(isinstance(result, OrderFilled))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual(OrderId('StubOrderId'), result.order_id)
@@ -941,7 +936,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Act
         result = serializer.deserialize(body)
 
-        # Assert - Warnings can be ignored (PyCharm doesn't know the type).
+        # Assert
         self.assertTrue(isinstance(result, AccountEvent))
         self.assertTrue(isinstance(result.id, GUID))
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.timestamp)
