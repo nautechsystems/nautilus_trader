@@ -19,7 +19,7 @@ from inv_trader.enums.order_side cimport OrderSide, order_side_string
 from inv_trader.enums.order_type cimport OrderType, order_type_string
 from inv_trader.enums.order_status cimport OrderStatus
 from inv_trader.enums.time_in_force cimport TimeInForce, time_in_force_string
-from inv_trader.model.objects cimport Symbol
+from inv_trader.model.objects cimport Symbol, Price
 from inv_trader.model.events cimport OrderEvent
 from inv_trader.model.events cimport OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
 from inv_trader.model.events cimport OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
@@ -62,13 +62,12 @@ cdef class Order:
         :param quantity: The orders quantity (> 0).
         :param timestamp: The orders initialization timestamp.
         :param price: The orders price (must be None for non priced orders).
-        :param label: The orders label / secondary identifier (can be None).
-        :param time_in_force: The orders time in force.
-        :param expire_time: The orders expire time (can be None).
+        :param label: The optional order label / secondary identifier (can be None).
+        :param time_in_force: The orders time in force (default DAY).
+        :param expire_time: The optional order expire time (can be None).
         :raises ValueError: If the quantity is not positive (> 0).
-        :raises ValueError: If the order type has no price and the price is not None.
-        :raises ValueError: If the order type has a price and the price is None.
-        :raises ValueError: If the order type has a price and the price is not positive (> 0).
+        :raises ValueError: If the order type should not have a price and the price is not None.
+        :raises ValueError: If the order type should have a price and the price is None.
         :raises ValueError: If the time_in_force is GTD and the expire_time is None.
         """
         Precondition.positive(quantity, 'quantity')
@@ -240,6 +239,7 @@ cdef class Order:
             # Slippage not applicable to orders with entry prices.
             return
 
+        # TODO: Refactor below logic
         if self.side is OrderSide.BUY:
             self.slippage = Decimal(f'{round(self.average_price.as_float() - self.price.as_float(), self.price.precision):.{self.price.precision}f}')
         else:  # side is OrderSide.SELL:
@@ -345,13 +345,12 @@ cdef class OrderFactory:
         :param symbol: The orders symbol.
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
-        :param price: The orders price (> 0).
+        :param price: The orders price.
         :param label: The orders label (can be None).
         :param time_in_force: The orders time in force (can be None).
         :param expire_time: The orders expire time (can be None unless time_in_force is GTD).
         :return: The limit order.
         :raises ValueError: If the quantity is not positive (> 0).
-        :raises ValueError: If the price is not positive (> 0).
         :raises ValueError: If the time_in_force is GTD and the expire_time is None.
         """
         return Order(
@@ -382,13 +381,12 @@ cdef class OrderFactory:
         :param symbol: The orders symbol.
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
-        :param price: The orders price (> 0).
+        :param price: The orders price.
         :param label: The orders label (can be None).
         :param time_in_force: The orders time in force (can be None).
         :param expire_time: The orders expire time (can be None unless time_in_force is GTD).
         :return: The stop-market order.
         :raises ValueError: If the quantity is not positive (> 0).
-        :raises ValueError: If the price is not positive (> 0).
         :raises ValueError: If the time_in_force is GTD and the expire_time is None.
         """
         return Order(
@@ -419,13 +417,12 @@ cdef class OrderFactory:
         :param symbol: The orders symbol.
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
-        :param price: The orders price (> 0).
+        :param price: The orders price.
         :param label: The orders label (can be None).
         :param time_in_force: The orders time in force (can be None).
         :param expire_time: The orders expire time (can be None unless time_in_force is GTD).
         :return: The stop-limit order.
         :raises ValueError: If the quantity is not positive (> 0).
-        :raises ValueError: If the price is not positive (> 0).
         :raises ValueError: If the time_in_force is GTD and the expire_time is None.
         """
         return Order(
@@ -456,13 +453,12 @@ cdef class OrderFactory:
         :param symbol: The orders symbol.
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
-        :param price: The orders price (> 0).
+        :param price: The orders price.
         :param label: The orders label (can be None).
         :param time_in_force: The orders time in force (can be None).
         :param expire_time: The orders expire time (can be None unless time_in_force is GTD).
         :return: The market-if-touched order.
         :raises ValueError: If the quantity is not positive (> 0).
-        :raises ValueError: If the price is not positive (> 0).
         :raises ValueError: If the time_in_force is GTD and the expire_time is None.
         """
         return Order(
@@ -533,12 +529,13 @@ cdef class OrderFactory:
             time_in_force=TimeInForce.IOC,
             expire_time=None)
 
-    cpdef AtomicOrder atomic_order_market(self,
+    cpdef AtomicOrder atomic_order_market(
+            self,
             Symbol symbol,
             OrderSide order_side,
             int quantity,
-            Price stop_loss,
-            Price profit_target=None,
+            Price price_stop_loss,
+            Price price_profit_target=None,
             Label label=None):
         """
         Creates and returns a new market order with the given parameters.
@@ -546,8 +543,8 @@ cdef class OrderFactory:
         :param symbol: The orders symbol.
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
-        :param stop_loss: The stop-loss price.
-        :param profit_target: The optional profit_target_price (can be None).
+        :param price_stop_loss: The stop-loss price.
+        :param price_profit_target: The optional profit_target_price (can be None).
         :param label: The orders label (can be None).
         :return: The AtomicOrder with a market entry.
         :raises ValueError: If the quantity is not positive (> 0).
@@ -556,17 +553,109 @@ cdef class OrderFactory:
         if label is not None:
             entry_label = Label(label.value + '_E')
 
-        cdef Order order_entry = self.market(
+        cdef Order entry_order = self.market(
             symbol,
             order_side,
             quantity,
             entry_label)
 
         return self._create_atomic_order(
-            order_entry,
-            stop_loss,
-            profit_target,
+            entry_order,
+            price_stop_loss,
+            price_profit_target,
             label)
+
+    cpdef AtomicOrder atomic_order_limit(
+            self,
+            Symbol symbol,
+            OrderSide order_side,
+            int quantity,
+            Price price_entry,
+            Price price_stop_loss,
+            Price price_profit_target=None,
+            Label label=None,
+            TimeInForce time_in_force=TimeInForce.DAY,
+            datetime expire_time=None):
+        """
+        Creates and returns a new limit order with the given parameters.
+        If the time in force is GTD then a valid expire time must be given.
+
+        :param symbol: The orders symbol.
+        :param order_side: The orders side.
+        :param quantity: The orders quantity (> 0).
+        :param price_entry: The parent orders entry price.
+        :param price_stop_loss: The stop-loss orders price.
+        :param price_profit_target: The optional profit_target orders price (can be None).
+        :param label: The optional order label (can be None).
+        :param time_in_force: The optional order time in force (can be None).
+        :param expire_time: The orders expire time (can be None unless time_in_force is GTD).
+        :return: The atomic order with a limit entry.
+        :raises ValueError: If the quantity is not positive (> 0).
+        :raises ValueError: If the time_in_force is GTD and the expire_time is None.
+        """
+        cdef Label entry_label = None
+        if label is not None:
+            entry_label = Label(label.value + '_E')
+
+        cdef Order entry_order = self.limit(
+            symbol,
+            order_side,
+            quantity,
+            price_entry,
+            label,
+            time_in_force,
+            expire_time)
+
+        return self._create_atomic_order(
+            entry_order,
+            price_stop_loss,
+            price_profit_target)
+
+    cpdef AtomicOrder atomic_order_stop_market(
+            self,
+            Symbol symbol,
+            OrderSide order_side,
+            int quantity,
+            Price price_entry,
+            Price price_stop_loss,
+            Price price_profit_target=None,
+            Label label=None,
+            TimeInForce time_in_force=TimeInForce.DAY,
+            datetime expire_time=None):
+        """
+        Creates and returns a new stop-market order with the given parameters.
+        If the time in force is GTD then a valid expire time must be given.
+
+        :param symbol: The orders symbol.
+        :param order_side: The orders side.
+        :param quantity: The orders quantity (> 0).
+        :param price_entry: The parent orders entry price.
+        :param price_stop_loss: The stop-loss orders price.
+        :param price_profit_target: The optional profit_target orders price (can be None).
+        :param label: The orders label (can be None).
+        :param time_in_force: The orders time in force (can be None).
+        :param expire_time: The orders expire time (can be None unless time_in_force is GTD).
+        :return: The stop-market order.
+        :raises ValueError: If the quantity is not positive (> 0).
+        :raises ValueError: If the time_in_force is GTD and the expire_time is None.
+        """
+        cdef Label entry_label = None
+        if label is not None:
+            entry_label = Label(label.value + '_E')
+
+        cdef Order entry_order = self.stop_market(
+            symbol,
+            order_side,
+            quantity,
+            price_entry,
+            label,
+            time_in_force,
+            expire_time)
+
+        return self._create_atomic_order(
+            entry_order,
+            price_stop_loss,
+            price_profit_target)
 
     cdef AtomicOrder _create_atomic_order(
         self,
