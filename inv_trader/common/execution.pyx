@@ -11,6 +11,7 @@
 
 from cpython.datetime cimport datetime
 from typing import Dict
+from multiprocessing import Process, SimpleQueue
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.common.clock cimport Clock
@@ -21,7 +22,7 @@ from inv_trader.model.order cimport Order
 from inv_trader.model.events cimport Event, OrderEvent, AccountEvent, OrderModified
 from inv_trader.model.events cimport OrderRejected, OrderCancelReject, OrderFilled, OrderPartiallyFilled
 from inv_trader.model.identifiers cimport GUID, OrderId, PositionId
-from inv_trader.commands cimport SubmitOrder, ModifyOrder, CancelOrder
+from inv_trader.commands cimport Command, CollateralInquiry, SubmitOrder, ModifyOrder, CancelOrder
 from inv_trader.strategy cimport TradeStrategy
 from inv_trader.portfolio.portfolio cimport Portfolio
 
@@ -52,6 +53,8 @@ cdef class ExecutionClient:
             self._log = LoggerAdapter(f"ExecClient")
         else:
             self._log = LoggerAdapter(f"ExecClient", logger)
+        self._queue = SimpleQueue()
+        self._process = Process(target=self._process_queue)
         self._account = account
         self._portfolio = portfolio
         self._registered_strategies = {}  # type: Dict[GUID, TradeStrategy]
@@ -61,6 +64,7 @@ cdef class ExecutionClient:
         self._orders_completed = {}       # type: Dict[GUID, Dict[OrderId, Order]]
 
         self._log.info("Initialized.")
+        self._process.start()
 
     cpdef datetime time_now(self):
         """
@@ -113,7 +117,23 @@ cdef class ExecutionClient:
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void collateral_inquiry(self):
+    cpdef void execute_command(self, Command command):
+        """
+        
+        :param command: 
+        :return: 
+        """
+        self._queue.put(command)
+
+    cpdef void handle_event(self, Event event):
+        """
+        
+        :param event: 
+        :return: 
+        """
+        self._queue.put(event)
+
+    cpdef void collateral_inquiry(self, CollateralInquiry command):
         """
         Send a collateral inquiry command to the execution service.
         """
@@ -243,6 +263,25 @@ cdef class ExecutionClient:
         self._order_book[order.id] = order
         self._order_strategy_index[order.id] = strategy_id
         self._portfolio.register_order(order.id, position_id)
+
+    cdef void _process_queue(self):
+        """
+        Process the queue.
+        """
+        while True:
+            if not self._queue.empty():
+                item = self._queue.get()
+
+                if isinstance(item, Event):
+                    self._handle_event(item)
+                elif isinstance(item, CollateralInquiry):
+                    self.collateral_inquiry(item)
+                elif isinstance(item, SubmitOrder):
+                    self.submit_order(item)
+                elif isinstance(item, ModifyOrder):
+                    self.modify_order(item)
+                elif isinstance(item, CancelOrder):
+                    self.cancel_order(item)
 
     cdef void _handle_event(self, Event event):
         """

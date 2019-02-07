@@ -28,7 +28,7 @@ from inv_trader.model.identifiers cimport GUID, Label, OrderId, PositionId, Posi
 from inv_trader.model.objects cimport Symbol, Price, Tick, BarType, Bar, Instrument
 from inv_trader.model.order cimport Order, AtomicOrder, OrderFactory
 from inv_trader.model.position cimport Position
-from inv_trader.commands cimport SubmitOrder, ModifyOrder, CancelOrder
+from inv_trader.commands cimport CollateralInquiry, SubmitOrder, SubmitAtomicOrder, ModifyOrder, CancelOrder
 from inv_trader.tools cimport IndicatorUpdater
 Indicator = object
 
@@ -662,7 +662,11 @@ cdef class TradeStrategy:
         """
         Send a collateral inquiry command to the execution service.
         """
-        self._exec_client.collateral_inquiry()
+        cdef CollateralInquiry command = CollateralInquiry(
+            self._guid_factory.generate(),
+            self._clock.time_now())
+
+        self._exec_client.execute_command(command)
 
     cpdef void submit_order(self, Order order, PositionId position_id):
         """
@@ -682,7 +686,7 @@ cdef class TradeStrategy:
             self._guid_factory.generate(),
             self._clock.time_now())
 
-        self._exec_client.submit_order(command)
+        self._exec_client.execute_command(command)
 
     cpdef void submit_atomic_order(self, AtomicOrder order, PositionId position_id):
         """
@@ -693,6 +697,14 @@ cdef class TradeStrategy:
         :param position_id: The position identifier to associate with this order.
         """
         self.log.info(f"Submitting {order} for {position_id}")
+
+        cdef SubmitAtomicOrder command = SubmitAtomicOrder(
+            order,
+            position_id,
+            self.id,
+            self.name,
+            self._guid_factory.generate(),
+            self._clock.time_now())
 
     cpdef void modify_order(self, Order order, Price new_price):
         """
@@ -710,7 +722,7 @@ cdef class TradeStrategy:
             self._guid_factory.generate(),
             self._clock.time_now())
 
-        self._exec_client.modify_order(command)
+        self._exec_client.execute_command(command)
 
     cpdef void cancel_order(self, Order order, str cancel_reason):
         """
@@ -729,7 +741,7 @@ cdef class TradeStrategy:
             self._guid_factory.generate(),
             self._clock.time_now())
 
-        self._exec_client.cancel_order(command)
+        self._exec_client.execute_command(command)
 
     cpdef void cancel_all_orders(self, str cancel_reason):
         """
@@ -751,8 +763,6 @@ cdef class TradeStrategy:
         If the position is None or already FLAT will log a warning.
 
         :param position_id: The position identifier to flatten.
-        :raises ValueError: If the strategy has not been registered with an execution client.
-        :raises ValueError: If the position_id is not a valid string.
         :raises ValueError: If the position_id is not found in the position book.
         """
         cdef Position position = self._portfolio.get_position(position_id)

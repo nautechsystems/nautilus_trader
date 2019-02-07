@@ -18,7 +18,7 @@ from inv_trader.common.logger cimport LoggerAdapter
 from inv_trader.model.events cimport Event
 from inv_trader.model.identifiers cimport GUID, OrderId, PositionId
 from inv_trader.model.order cimport Order
-from inv_trader.commands cimport  SubmitOrder, ModifyOrder, CancelOrder
+from inv_trader.commands cimport  Command, CollateralInquiry, SubmitOrder, ModifyOrder, CancelOrder
 from inv_trader.portfolio.portfolio cimport Portfolio
 from inv_trader.strategy cimport TradeStrategy
 
@@ -30,6 +30,8 @@ cdef class ExecutionClient:
     cdef Clock _clock
     cdef GuidFactory _guid_factory
     cdef LoggerAdapter _log
+    cdef object _queue
+    cdef object _process
     cdef Account _account
     cdef Portfolio _portfolio
     cdef dict _registered_strategies
@@ -44,7 +46,9 @@ cdef class ExecutionClient:
     cpdef void register_strategy(self, TradeStrategy strategy)
     cpdef void connect(self)
     cpdef void disconnect(self)
-    cpdef void collateral_inquiry(self)
+    cpdef void execute_command(self, Command command)
+    cpdef void handle_event(self, Event event)
+    cpdef void collateral_inquiry(self, CollateralInquiry command)
     cpdef void submit_order(self, SubmitOrder command)
     cpdef void modify_order(self, ModifyOrder command)
     cpdef void cancel_order(self, CancelOrder command)
@@ -58,4 +62,5 @@ cdef class ExecutionClient:
     cpdef dict get_orders_completed(self, GUID strategy_id)
 
     cdef void _register_order(self, Order order, PositionId position_id, GUID strategy_id)
+    cdef void _process_queue(self)
     cdef void _handle_event(self, Event event)

@@ -114,14 +114,10 @@ cdef class LiveExecClient(ExecutionClient):
         self._commands_worker.stop()
         self._events_worker.stop()
 
-    cpdef void collateral_inquiry(self):
+    cpdef void collateral_inquiry(self, CollateralInquiry command):
         """
         Send a collateral inquiry command to the execution service.
         """
-        cdef CollateralInquiry command = CollateralInquiry(
-            self._guid_factory.generate(),
-            self._clock.time_now())
-
         cdef bytes message = self._command_serializer.serialize(command)
 
         self._commands_worker.send(message)
