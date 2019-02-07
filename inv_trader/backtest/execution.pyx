@@ -210,7 +210,7 @@ cdef class BacktestExecClient(ExecutionClient):
 
         self.iteration += 1
 
-    cpdef void collateral_inquiry(self):
+    cpdef void collateral_inquiry(self, CollateralInquiry command):
         """
         Send a collateral inquiry command to the execution service.
         """
