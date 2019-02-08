@@ -7,7 +7,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-# cython: language_level=3, boundscheck=False
+# cython: language_level=3, boundscheck=False, nonecheck=False
 
 import uuid
 import zmq
@@ -29,7 +29,7 @@ from inv_trader.model.events cimport OrderSubmitted, OrderAccepted, OrderWorking
 from inv_trader.model.events cimport  OrderModified, OrderCancelled
 from inv_trader.model.events cimport OrderFilled
 from inv_trader.model.identifiers cimport GUID, OrderId, ExecutionId, ExecutionTicket
-from inv_trader.commands cimport  SubmitOrder, ModifyOrder, CancelOrder
+from inv_trader.commands cimport CollateralInquiry, SubmitOrder, ModifyOrder, CancelOrder
 from inv_trader.portfolio.portfolio cimport Portfolio
 
 cdef str UTF8 = 'utf-8'
@@ -196,7 +196,7 @@ cdef class MockExecClient(ExecutionClient):
     """
     Provides a mock execution client for trading strategies.
     """
-    cdef list _working_orders
+    cdef list working_orders
 
     def __init__(self):
         """
@@ -209,7 +209,7 @@ cdef class MockExecClient(ExecutionClient):
             TestGuidFactory(),
             Logger())
 
-        self._working_orders = []
+        self.working_orders = []
 
     cpdef void connect(self):
         """
@@ -227,6 +227,7 @@ cdef class MockExecClient(ExecutionClient):
         """
         Send a submit order command to the mock execution service.
         """
+        print("REACHED HERE")
         self._register_order(command.order, command.position_id, command.strategy_id)
 
         cdef Order order = command.order
@@ -245,7 +246,7 @@ cdef class MockExecClient(ExecutionClient):
             GUID(uuid.uuid4()),
             datetime.utcnow())
 
-        self._working_orders.append(command.order)
+        self.working_orders.append(command.order)
 
         cdef OrderWorking working = OrderWorking(
             order.symbol,
@@ -262,9 +263,9 @@ cdef class MockExecClient(ExecutionClient):
             datetime.utcnow(),
             order.expire_time)
 
-        self._handle_event(submitted)
-        self._handle_event(accepted)
-        self._handle_event(working)
+        self.handle_event(submitted)
+        self.handle_event(accepted)
+        self.handle_event(working)
 
     cpdef void modify_order(self, ModifyOrder command):
         """
@@ -279,7 +280,7 @@ cdef class MockExecClient(ExecutionClient):
             GUID(uuid.uuid4()),
             datetime.utcnow())
 
-        self._handle_event(modified)
+        self.handle_event(modified)
 
     cpdef void cancel_order(self, CancelOrder command):
         """
@@ -292,19 +293,19 @@ cdef class MockExecClient(ExecutionClient):
             GUID(uuid.uuid4()),
             datetime.utcnow())
 
-        self._handle_event(cancelled)
+        self.handle_event(cancelled)
 
-    cpdef void collateral_inquiry(self):
+    cpdef void collateral_inquiry(self, CollateralInquiry command):
         """
         Send a collateral inquiry command to the mock execution service.
         """
-        # Does nothing.
+        # Do nothing
 
     cpdef void fill_last_order(self):
         """
         Fills the last working order.
         """
-        cdef Order order = self._working_orders.pop(-1)
+        cdef Order order = self.working_orders.pop(-1)
 
         cdef OrderFilled filled = OrderFilled(
             order.symbol,
@@ -318,4 +319,4 @@ cdef class MockExecClient(ExecutionClient):
             GUID(uuid.uuid4()),
             datetime.utcnow())
 
-        self._handle_event(filled)
+        self.handle_event(filled)

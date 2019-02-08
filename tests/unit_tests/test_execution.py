@@ -8,11 +8,11 @@
 # -------------------------------------------------------------------------------------------------
 
 import unittest
+import time
 
-from inv_trader.model.enums import Venue, OrderSide, OrderStatus, TimeInForce
-from inv_trader.model.identifiers import Label, PositionId
+from inv_trader.model.enums import Venue, OrderSide, OrderStatus
+from inv_trader.model.identifiers import PositionId
 from inv_trader.model.objects import Symbol, Price
-from inv_trader.model.order import OrderFactory
 from inv_trader.execution import LiveExecClient
 from test_kit.stubs import TestStubs
 from test_kit.mocks import MockExecClient, MockServer
@@ -61,11 +61,12 @@ class ExecutionClientTests(unittest.TestCase):
         order_id = order.id
 
         # Act
-        self.strategy.submit_order(order, PositionId(str(order.id)))
+        self.strategy.submit_order(order, PositionId(order_id.value))
 
         # Assert
+        time.sleep(0.1)
         self.assertEqual(order, self.strategy.order(order_id))
-        self.assertEqual(4, order.status)  # OrderStatus.WORKING
+        self.assertEqual(OrderStatus.WORKING, order.status)  # OrderStatus.WORKING
 
     def test_can_send_cancel_order_command_to_mock_exec_clint(self):
         # Arrange
@@ -80,7 +81,7 @@ class ExecutionClientTests(unittest.TestCase):
         order_id = order.id
 
         # Act
-        self.strategy.submit_order(order, PositionId(str(order_id)))
+        self.strategy.submit_order(order, PositionId(order_id.value))
         self.strategy.cancel_order(order, 'ORDER_EXPIRED')
 
         # Assert
@@ -101,7 +102,7 @@ class ExecutionClientTests(unittest.TestCase):
         order_id = order.id
 
         # Act
-        self.strategy.submit_order(order, PositionId(str(order.id)))
+        self.strategy.submit_order(order, PositionId(order_id.value))
         self.strategy.modify_order(order, Price('1.00001'))
 
         # Assert
@@ -156,8 +157,9 @@ class LiveExecClientTests(unittest.TestCase):
         order_id = order.id
 
         # Act
-        self.strategy.submit_order(order, PositionId(str(order.id)))
+        self.strategy.submit_order(order, PositionId(order.id.value))
 
+        time.sleep(0.1)
         # Assert
         self.assertEqual(order, self.strategy.order(order_id))
         self.assertEqual(1, len(self.response_list))
@@ -172,7 +174,7 @@ class LiveExecClientTests(unittest.TestCase):
         order_id = order.id
 
         # Act
-        self.strategy.submit_order(order, PositionId('some-position'))
+        self.strategy.submit_order(order, PositionId(order_id.value))
         self.strategy.cancel_order(order, 'ORDER_EXPIRED')
 
         # Assert
@@ -190,7 +192,7 @@ class LiveExecClientTests(unittest.TestCase):
         order_id = order.id
 
         # Act
-        self.strategy.submit_order(order, PositionId('some-position'))
+        self.strategy.submit_order(order, PositionId(order_id.value))
         self.strategy.modify_order(order, Price('1.00001'))
 
         # Assert

@@ -63,7 +63,7 @@ class IdentifierTests(unittest.TestCase):
         result = str(label)
 
         # Assert
-        self.assertEqual('some-label', result)
+        self.assertEqual('Label(some-label)', result)
 
     def test_label_repr(self):
         # Arrange

@@ -9,6 +9,7 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
+from multiprocessing import Lock
 from uuid import UUID
 from typing import Dict
 
@@ -64,15 +65,15 @@ cdef class Identifier:
 
     def __str__(self) -> str:
         """
-        :return: The str() string representation of the event.
+        :return: The str() string representation of the identifier.
         """
-        return f"{self.value}"
+        return f"{str(self.__class__.__name__)}({self.value})"
 
     def __repr__(self) -> str:
         """
-        :return: The repr() string representation of the event.
+        :return: The repr() string representation of the identifier.
         """
-        return f"<{str(self.__class__.__name__)}({self.value}) object at {id(self)}>"
+        return f"<{str(self)} object at {id(self)}>"
 
 
 cdef class GUID(Identifier):
@@ -223,17 +224,21 @@ cdef class IdentifierGenerator:
         :param symbol: The symbol for the unique identifier.
         :return: The unique identifier string.
         """
-        if symbol not in self._symbol_counts:
-            self._symbol_counts[symbol] = 0
+        cdef str identifier_string
 
-        self._symbol_counts[symbol] += 1
+        with Lock():
+            if symbol not in self._symbol_counts:
+                self._symbol_counts[symbol] = 0
+            self._symbol_counts[symbol] += 1
 
-        return (self._clock.get_datetime_tag()
+            identifier_string = (self._clock.get_datetime_tag()
                 + SEPARATOR + self.id_tag_trader
                 + SEPARATOR + self.id_tag_strategy
                 + SEPARATOR + symbol.code
                 + SEPARATOR + symbol.venue_string()
                 + SEPARATOR + str(self._symbol_counts[symbol]))
+
+        return identifier_string
 
 
 cdef class OrderIdGenerator(IdentifierGenerator):
