@@ -115,7 +115,7 @@ cdef class ExecutionClient:
         self._portfolio.register_strategy(strategy.id)
         strategy.register_execution_client(self)
 
-        self._log.info(f"Registered strategy {strategy} with id {strategy.id}.")
+        self._log.info(f"Registered {strategy} with id {strategy.id}.")
 
     cpdef void execute_command(self, Command command):
         """
@@ -289,7 +289,7 @@ cdef class ExecutionClient:
         self._order_book[order.id] = order
         self._order_strategy_index[order.id] = strategy_id
         self._portfolio.register_order(order.id, position_id)
-        self._log.info(f"Registered {order.id} with {position_id} for strategy with id {strategy_id.value}.")
+        self._log.info(f"Registered {order.id} with {position_id} for strategy with id {strategy_id}.")
 
     cpdef void _handle_event(self, Event event):
         """

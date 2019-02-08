@@ -164,6 +164,7 @@ cdef class Portfolio:
         self._registered_strategies.append(strategy_id)
         self._positions_active[strategy_id] = {}  # type: Dict[PositionId, Position]
         self._positions_closed[strategy_id] = {}  # type: Dict[PositionId, Position]
+        self._log.info(f"Registered strategy with id {strategy_id}.")
 
     cpdef void register_order(self, OrderId order_id, PositionId position_id):
         """
