@@ -310,12 +310,13 @@ cdef class ExecutionClient:
 
             strategy_id = self._order_strategy_index[event.order_id]
 
-            # Active orders
-            if not order.is_complete:
+            # Active order
+            if order.is_active:
                 if order.id not in self._orders_active[strategy_id]:
                     self._orders_active[strategy_id][order.id] = order
-            else:
-                # Completed orders
+
+            # Completed order
+            if order.is_complete:
                 if order.id not in self._orders_completed[strategy_id]:
                     self._orders_completed[strategy_id][order.id] = order
                     if order.id in self._orders_active[strategy_id]:

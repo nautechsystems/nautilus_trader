@@ -51,6 +51,7 @@ cdef class Order:
     cdef readonly OrderStatus status
     cdef readonly int event_count
     cdef readonly OrderEvent last_event
+    cdef readonly bint is_active
     cdef readonly bint is_complete
 
     cdef bint equals(self, Order other)
