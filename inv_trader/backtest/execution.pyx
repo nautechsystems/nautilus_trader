@@ -170,7 +170,11 @@ cdef class BacktestExecClient(ExecutionClient):
             self.day_number = time_now.day
             self.account_cash_start_day = self._account.cash_balance
             self.account_cash_activity_day = Money(0)
-            self.collateral_inquiry()
+
+            command = CollateralInquiry(
+            self._guid_factory.generate(),
+            self._clock.time_now())
+            self.collateral_inquiry(command)
 
         # Simulate market dynamics
         cdef Price highest_ask

@@ -54,7 +54,7 @@ cdef class ExecutionClient:
         else:
             self._log = LoggerAdapter(f"ExecClient", logger)
         self._queue = SimpleQueue()
-        self._process = Process(target=self._process_queue)
+        self._process = Process(target=self._process_queue, daemon=True)
         self._account = account
         self._portfolio = portfolio
         self._registered_strategies = {}  # type: Dict[GUID, TradeStrategy]
@@ -63,8 +63,8 @@ cdef class ExecutionClient:
         self._orders_active = {}          # type: Dict[GUID, Dict[OrderId, Order]]
         self._orders_completed = {}       # type: Dict[GUID, Dict[OrderId, Order]]
 
-        self._log.info("Initialized.")
         self._process.start()
+        self._log.info(f"Initialized.")
 
     cpdef datetime time_now(self):
         """
@@ -83,6 +83,20 @@ cdef class ExecutionClient:
         :return: The portfolio associated with the execution client. 
         """
         return self._portfolio
+
+    cpdef void connect(self):
+        """
+        Connect to the execution service.
+        """
+        # Raise exception if not overridden in implementation.
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
+    cpdef void disconnect(self):
+        """
+        Disconnect from the execution service.
+        """
+        # Raise exception if not overridden in implementation.
+        raise NotImplementedError("Method must be implemented in the subclass.")
 
     cpdef void register_strategy(self, TradeStrategy strategy):
         """
@@ -103,33 +117,19 @@ cdef class ExecutionClient:
 
         self._log.info(f"Registered strategy {strategy} with id {strategy.id}.")
 
-    cpdef void connect(self):
-        """
-        Connect to the execution service.
-        """
-        # Raise exception if not overridden in implementation.
-        raise NotImplementedError("Method must be implemented in the subclass.")
-
-    cpdef void disconnect(self):
-        """
-        Disconnect from the execution service.
-        """
-        # Raise exception if not overridden in implementation.
-        raise NotImplementedError("Method must be implemented in the subclass.")
-
     cpdef void execute_command(self, Command command):
         """
+        Execute the given command by adding it to the internal processing queue.
         
-        :param command: 
-        :return: 
+        :param command: The command to execute.
         """
         self._queue.put(command)
 
     cpdef void handle_event(self, Event event):
         """
+        Handle the given event by adding it to the internal processing queue.
         
-        :param event: 
-        :return: 
+        :param event: The event to handle
         """
         self._queue.put(event)
 
@@ -183,11 +183,14 @@ cdef class ExecutionClient:
                         cancel_reason,
                         self._guid_factory.generate(),
                         self._clock.time_now())
-                    self.cancel_order(command)
+                    self.execute_command(command)
 
     cpdef Order get_order(self, OrderId order_id):
         """
-        TBA
+        Return the order with the given identifier (if found).
+        
+        :return: Order.
+        :raises ValueError: If the order is not found.
         """
         Precondition.is_in(order_id, self._order_book, 'order_id', 'order_book')
 
@@ -195,30 +198,33 @@ cdef class ExecutionClient:
 
     cpdef dict get_orders_all(self):
         """
-        TBA
-        :return: 
+        Return a dictionary of all orders in the execution clients order book.
+        
+        :return: Dict[OrderId, Order].
         """
         return self._order_book.copy()
 
     cpdef dict get_orders_active_all(self):
         """
-        TBA
-        :param strategy_id: 
-        :return: 
+        Return a dictionary of all active orders in the execution clients order book.
+        
+        :return: Dict[OrderId, Order].
         """
         return self._orders_active.copy()
 
     cpdef dict get_orders_completed_all(self):
         """
-        :return: A copy of the list of all closed positions held by the portfolio.
+        Return a dictionary of all completed orders in the execution clients order book.
+        
+        :return: Dict[OrderId, Order].
         """
         return self._orders_completed.copy()
 
     cpdef dict get_orders(self, GUID strategy_id):
         """
-        Return a dictionary of all positions associated with the strategy identifier.
+        Return a dictionary of all orders associated with the strategy identifier.
         
-        :param strategy_id: The strategy identifier.
+        :param strategy_id: The strategy identifier associated with the orders.
         :return: Dict[OrderId, Order].
         """
         Precondition.is_in(strategy_id, self._orders_active, 'strategy_id', 'orders_active')
@@ -229,10 +235,10 @@ cdef class ExecutionClient:
 
     cpdef dict get_orders_active(self, GUID strategy_id):
         """
-        Create and return a list of all active positions associated with the strategy id.
+        Return a dictionary of all active orders associated with the strategy identifier.
         
-        :param strategy_id: The strategy id associated with the positions.
-        :return: The list of positions.
+        :param strategy_id: The strategy identifier associated with the orders.
+        :return: Dict[OrderId, Order].
         """
         Precondition.is_in(strategy_id, self._orders_active, 'strategy_id', 'orders_active')
 
@@ -240,31 +246,16 @@ cdef class ExecutionClient:
 
     cpdef dict get_orders_completed(self, GUID strategy_id):
         """
-        Create and return a list of all active positions associated with the strategy id.
+        Return a list of all completed orders associated with the strategy identifier.
         
-        :param strategy_id: The strategy id associated with the positions.
-        :return: The list of positions.
+        :param strategy_id: The strategy identifier associated with the orders.
+        :return: Dict[OrderId, Order].
         """
         Precondition.is_in(strategy_id, self._orders_completed, 'strategy_id', 'orders_completed')
 
         return self._orders_completed[strategy_id].copy()
 
-    cdef void _register_order(self, Order order, PositionId position_id, GUID strategy_id):
-        """
-        Register the given order with the execution client.
-
-        :param order: The order to register.
-        :param strategy_id: The strategy id to register with the order.
-        :raises ValueError: If the order.id is already in the order_index.
-        """
-        Precondition.not_in(order.id, self._order_book, 'order.id', 'order_book')
-        Precondition.not_in(order.id, self._order_strategy_index, 'order.id', 'order_index')
-
-        self._order_book[order.id] = order
-        self._order_strategy_index[order.id] = strategy_id
-        self._portfolio.register_order(order.id, position_id)
-
-    cdef void _process_queue(self):
+    cpdef void _process_queue(self):
         """
         Process the queue.
         """
@@ -283,7 +274,24 @@ cdef class ExecutionClient:
                 elif isinstance(item, CancelOrder):
                     self.cancel_order(item)
 
-    cdef void _handle_event(self, Event event):
+    cpdef void _register_order(self, Order order, PositionId position_id, GUID strategy_id):
+        """
+        Register the given order with the execution client.
+
+        :param order: The order to register.
+        :param position_id: The order identifier to associate with the order.
+        :param strategy_id: The strategy identifier to associate with the order.
+        :raises ValueError: If the order.id is already in the order_index.
+        """
+        Precondition.not_in(order.id, self._order_book, 'order.id', 'order_book')
+        Precondition.not_in(order.id, self._order_strategy_index, 'order.id', 'order_index')
+
+        self._order_book[order.id] = order
+        self._order_strategy_index[order.id] = strategy_id
+        self._portfolio.register_order(order.id, position_id)
+        self._log.info(f"Registered {order.id} with {position_id} for strategy with id {strategy_id.value}.")
+
+    cpdef void _handle_event(self, Event event):
         """
         Handle events received from the execution service.
         """
