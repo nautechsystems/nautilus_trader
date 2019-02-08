@@ -11,6 +11,7 @@
 
 import uuid
 import zmq
+import time
 
 from threading import Thread
 from typing import Callable
@@ -196,7 +197,7 @@ cdef class MockExecClient(ExecutionClient):
     """
     Provides a mock execution client for trading strategies.
     """
-    cdef list working_orders
+    cdef readonly list working_orders
 
     def __init__(self):
         """
@@ -227,7 +228,6 @@ cdef class MockExecClient(ExecutionClient):
         """
         Send a submit order command to the mock execution service.
         """
-        print("REACHED HERE")
         self._register_order(command.order, command.position_id, command.strategy_id)
 
         cdef Order order = command.order
@@ -246,6 +246,8 @@ cdef class MockExecClient(ExecutionClient):
             GUID(uuid.uuid4()),
             datetime.utcnow())
 
+        if self.working_orders is None:
+            self.working_orders = []
         self.working_orders.append(command.order)
 
         cdef OrderWorking working = OrderWorking(

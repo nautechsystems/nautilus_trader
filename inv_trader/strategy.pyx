@@ -127,7 +127,7 @@ cdef class TradeStrategy:
         """
         :return: The str() string representation of the strategy.
         """
-        return f"{self.name}"
+        return f"TradeStrategy({self.name.value})"
 
     def __repr__(self) -> str:
         """
@@ -676,7 +676,7 @@ cdef class TradeStrategy:
         :param order: The order to submit.
         :param position_id: The position identifier to associate with this order.
         """
-        self.log.info(f"Submitting {order} for {position_id}")
+        self.log.info(f"Submitting {order} with {position_id}")
 
         cdef SubmitOrder command = SubmitOrder(
             order,
