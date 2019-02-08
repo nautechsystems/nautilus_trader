@@ -106,6 +106,7 @@ cdef class Order:
         self.status = OrderStatus.INITIALIZED
         self.event_count = 0
         self.last_event = None
+        self.is_active = False
         self.is_complete = False
 
     cdef bint equals(self, Order other):
@@ -205,9 +206,11 @@ cdef class Order:
             self.status = OrderStatus.WORKING
             self._order_ids_broker.append(event.broker_order_id)
             self.broker_id = event.broker_order_id
+            self.is_active = True
 
         elif isinstance(event, OrderCancelled):
             self.status = OrderStatus.CANCELLED
+            self.is_active = False
             self.is_complete = True
 
         elif isinstance(event, OrderCancelReject):
@@ -215,6 +218,7 @@ cdef class Order:
 
         elif isinstance(event, OrderExpired):
             self.status = OrderStatus.EXPIRED
+            self.is_active = False
             self.is_complete = True
 
         elif isinstance(event, OrderModified):
@@ -232,6 +236,7 @@ cdef class Order:
             self._set_slippage()
             self._set_fill_status()
             if self.status == OrderStatus.FILLED:
+                self.is_active = False
                 self.is_complete = True
 
     cdef void _set_slippage(self):
