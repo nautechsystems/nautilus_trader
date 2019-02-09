@@ -87,7 +87,7 @@ class ExecutionClientTests(unittest.TestCase):
         # Assert
         time.sleep(0.1)
         self.assertEqual(order, self.strategy.order(order_id))
-        self.assertEqual(OrderStatus.CANCELLED, self.strategy.order(order_id).status)
+        self.assertEqual(OrderStatus.CANCELLED, order.status)
 
     def test_can_send_modify_order_command_to_mock_exec_client(self):
         # Arrange
@@ -110,7 +110,7 @@ class ExecutionClientTests(unittest.TestCase):
         time.sleep(0.1)
         self.assertEqual(order, self.strategy.order(order_id))
         self.assertEqual(OrderStatus.WORKING, self.strategy.order(order_id).status)
-        self.assertEqual(Price('1.00001'), self.strategy.order(order_id).price)
+        self.assertEqual(Price('1.00001'), order.price)
 
 
 class LiveExecClientTests(unittest.TestCase):

@@ -12,14 +12,13 @@
 from cpython.datetime cimport datetime
 from typing import Dict
 from threading import Thread
-from multiprocessing import Queue
+from queue import Queue
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.common.clock cimport Clock
 from inv_trader.common.guid cimport GuidFactory
 from inv_trader.common.logger cimport Logger, LoggerAdapter
 from inv_trader.common.account cimport Account
-from inv_trader.enums.order_status cimport order_status_string
 from inv_trader.model.order cimport Order
 from inv_trader.model.events cimport Event, OrderEvent, AccountEvent, OrderModified
 from inv_trader.model.events cimport OrderRejected, OrderCancelled, OrderCancelReject, OrderFilled, OrderPartiallyFilled
