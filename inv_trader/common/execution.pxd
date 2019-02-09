@@ -17,6 +17,7 @@ from inv_trader.common.guid cimport GuidFactory
 from inv_trader.common.logger cimport LoggerAdapter
 from inv_trader.model.events cimport Event
 from inv_trader.model.identifiers cimport GUID, OrderId, PositionId
+from inv_trader.model.objects cimport ValidString
 from inv_trader.model.order cimport Order
 from inv_trader.commands cimport  Command, CollateralInquiry, SubmitOrder, ModifyOrder, CancelOrder
 from inv_trader.portfolio.portfolio cimport Portfolio
@@ -52,7 +53,7 @@ cdef class ExecutionClient:
     cpdef void submit_order(self, SubmitOrder command)
     cpdef void modify_order(self, ModifyOrder command)
     cpdef void cancel_order(self, CancelOrder command)
-    cpdef void cancel_all_orders(self, GUID strategy_id, str cancel_reason)
+    cpdef void cancel_all_orders(self, GUID strategy_id, ValidString cancel_reason)
     cpdef Order get_order(self, OrderId order_id)
     cpdef dict get_orders_all(self)
     cpdef dict get_orders_active_all(self)

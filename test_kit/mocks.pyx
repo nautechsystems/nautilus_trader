@@ -11,7 +11,6 @@
 
 import uuid
 import zmq
-import time
 
 from threading import Thread
 from typing import Callable

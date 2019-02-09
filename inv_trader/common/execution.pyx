@@ -163,7 +163,7 @@ cdef class ExecutionClient:
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void cancel_all_orders(self, GUID strategy_id, str cancel_reason):
+    cpdef void cancel_all_orders(self, GUID strategy_id, ValidString cancel_reason):
         """
         Send a cancel order command for all currently working orders in the
         order book with the given cancel_reason - to the execution service.
@@ -180,7 +180,7 @@ cdef class ExecutionClient:
                 if not self._order_book[order_id].is_complete:
                     command = CancelOrder(
                         self._order_book[order_id],
-                        ValidString(cancel_reason),
+                        cancel_reason,
                         self._guid_factory.generate(),
                         self._clock.time_now())
                     self.execute_command(command)
