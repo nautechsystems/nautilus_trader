@@ -18,6 +18,14 @@ from inv_trader.enums.resolution cimport Resolution
 from inv_trader.enums.quote_type cimport QuoteType
 
 
+cdef class ValidString:
+    """
+    Represents a previously validated string (validated with Precondition.valid_string()).
+    """
+    cdef readonly str value
+    cdef bint equals(self, ValidString other)
+
+
 cdef class Symbol:
     """
     Represents the symbol for a financial market tradeable instrument.

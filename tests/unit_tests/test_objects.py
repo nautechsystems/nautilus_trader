@@ -12,10 +12,32 @@ import unittest
 from decimal import Decimal, InvalidOperation
 
 from inv_trader.model.enums import Venue
-from inv_trader.model.objects import Symbol, Price, Money
+from inv_trader.model.objects import ValidString, Symbol, Price, Money
 
 
 class ObjectTests(unittest.TestCase):
+
+    def test_valid_string_equality(self):
+        # Arrange
+        string1 = ValidString('abc123')
+        string2 = ValidString('abc123')
+        string3 = ValidString('def456')
+
+        # Act
+        # Assert
+        self.assertTrue('abc123', string1.value)
+        self.assertTrue(string1 == string1)
+        self.assertTrue(string1 == string2)
+        self.assertTrue(string1 != string3)
+
+    def test_valid_string_str_and_repr(self):
+        # Arrange
+        string = ValidString("abc123")
+
+        # Act
+        # Assert
+        self.assertEqual("abc123", str(string))
+        self.assertTrue(repr(string).startswith("<ValidString(abc123) object at"))
 
     def test_symbol_equality(self):
         # Arrange
