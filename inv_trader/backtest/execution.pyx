@@ -244,8 +244,6 @@ cdef class BacktestExecClient(ExecutionClient):
 
         cdef Order order = command.order
 
-        self._register_order(order, command.position_id, command.strategy_id)
-
         cdef OrderSubmitted submitted = OrderSubmitted(
             order.symbol,
             order.id,
