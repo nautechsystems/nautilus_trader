@@ -12,7 +12,6 @@
 import msgpack
 
 from decimal import Decimal
-from cpython.datetime cimport datetime
 from uuid import UUID
 
 from inv_trader.core.precondition cimport Precondition
@@ -188,7 +187,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
             return self._serialize_order_command(command)
 
         cdef dict package = {
-            COMMAND_ID: str(command.id),
+            COMMAND_ID: command.id.value,
             COMMAND_TIMESTAMP: convert_datetime_to_string(command.timestamp)
         }
 
@@ -253,7 +252,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         :raises ValueError: If the order command cannot be serialized.
         """
         cdef dict package = {
-            COMMAND_ID: str(order_command.id),
+            COMMAND_ID: order_command.id.value,
             COMMAND_TIMESTAMP: convert_datetime_to_string(order_command.timestamp)
         }
 
@@ -387,8 +386,8 @@ cdef class MsgPackEventSerializer(EventSerializer):
         cdef dict package = {
             EVENT_TYPE: ORDER_EVENT,
             SYMBOL: str(order_event.symbol),
-            ORDER_ID: str(order_event.order_id),
-            EVENT_ID: str(order_event.id),
+            ORDER_ID: order_event.order_id.value,
+            EVENT_ID: order_event.id.value,
             EVENT_TIMESTAMP: convert_datetime_to_string(order_event.timestamp)
         }
 
@@ -410,8 +409,8 @@ cdef class MsgPackEventSerializer(EventSerializer):
 
         if isinstance(order_event, OrderWorking):
             package[ORDER_EVENT] = ORDER_WORKING
-            package[ORDER_ID_BROKER] = str(order_event.broker_order_id)
-            package[LABEL] = str(order_event.label)
+            package[ORDER_ID_BROKER] = order_event.broker_order_id.value
+            package[LABEL] = order_event.label.value
             package[ORDER_SIDE] = order_side_string(order_event.order_side)
             package[ORDER_TYPE] = order_type_string(order_event.order_type)
             package[QUANTITY] = order_event.quantity
@@ -435,7 +434,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
 
         if isinstance(order_event, OrderModified):
             package[ORDER_EVENT] = ORDER_MODIFIED
-            package[ORDER_ID_BROKER] = str(order_event.broker_order_id)
+            package[ORDER_ID_BROKER] = order_event.broker_order_id.value
             package[MODIFIED_TIME] = convert_datetime_to_string(order_event.modified_time)
             package[MODIFIED_PRICE] = str(order_event.modified_price)
             return msgpack.packb(package)
@@ -447,8 +446,8 @@ cdef class MsgPackEventSerializer(EventSerializer):
 
         if isinstance(order_event, OrderPartiallyFilled):
             package[ORDER_EVENT] = ORDER_PARTIALLY_FILLED
-            package[EXECUTION_ID] = str(order_event.execution_id)
-            package[EXECUTION_TICKET] = str(order_event.execution_ticket)
+            package[EXECUTION_ID] = order_event.execution_id.value
+            package[EXECUTION_TICKET] = order_event.execution_ticket.value
             package[ORDER_SIDE] = order_side_string(order_event.order_side)
             package[FILLED_QUANTITY] = order_event.filled_quantity
             package[LEAVES_QUANTITY] = order_event.leaves_quantity
@@ -458,8 +457,8 @@ cdef class MsgPackEventSerializer(EventSerializer):
 
         if isinstance(order_event, OrderFilled):
             package[ORDER_EVENT] = ORDER_FILLED
-            package[EXECUTION_ID] = str(order_event.execution_id)
-            package[EXECUTION_TICKET] = str(order_event.execution_ticket)
+            package[EXECUTION_ID] = order_event.execution_id.value
+            package[EXECUTION_TICKET] = order_event.execution_ticket.value
             package[ORDER_SIDE] = order_side_string(order_event.order_side)
             package[FILLED_QUANTITY] = order_event.filled_quantity
             package[AVERAGE_PRICE] = str(order_event.average_price)
