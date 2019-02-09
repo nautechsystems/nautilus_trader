@@ -19,8 +19,8 @@ from inv_trader.common.clock import TestClock
 from inv_trader.common.guid import TestGuidFactory
 from inv_trader.common.logger import Logger
 from inv_trader.model.enums import Venue, OrderSide
-from inv_trader.model.identifiers import Label, OrderId, PositionId
-from inv_trader.model.objects import Symbol, Price, Money
+from inv_trader.model.identifiers import PositionId
+from inv_trader.model.objects import Quantity, Symbol, Price, Money
 from inv_trader.model.events import OrderRejected, OrderWorking, OrderModified, OrderFilled
 from inv_trader.strategy import TradeStrategy
 from inv_trader.backtest.execution import BacktestExecClient
@@ -101,7 +101,7 @@ class BacktestExecClientTests(unittest.TestCase):
         order = strategy.order_factory.market(
             USDJPY_FXCM,
             OrderSide.BUY,
-            100000)
+            Quantity(100000))
 
         order_id = order.id
 
@@ -123,7 +123,7 @@ class BacktestExecClientTests(unittest.TestCase):
         order = strategy.order_factory.limit(
             USDJPY_FXCM,
             OrderSide.BUY,
-            100000,
+            Quantity(100000),
             Price('80.000'))
 
         # Act
@@ -145,7 +145,7 @@ class BacktestExecClientTests(unittest.TestCase):
         order = strategy.order_factory.stop_market(
             USDJPY_FXCM,
             OrderSide.BUY,
-            100000,
+            Quantity(100000),
             Price('86.711'))
 
         order_id = order.id
@@ -170,7 +170,7 @@ class BacktestExecClientTests(unittest.TestCase):
         order = strategy.order_factory.stop_market(
             USDJPY_FXCM,
             OrderSide.BUY,
-            100000,
+            Quantity(100000),
             Price('80.000'))
 
         # Act

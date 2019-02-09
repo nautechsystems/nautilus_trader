@@ -274,7 +274,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             expire_time=UNIX_EPOCH)
 
         command = CancelOrder(order,
-                              'EXPIRED',
+                              ValidString('EXPIRED'),
                               GUID(uuid.uuid4()),
                               UNIX_EPOCH)
 

@@ -940,13 +940,12 @@ class TradeStrategyTests(unittest.TestCase):
                            Resolution.SECOND,
                            QuoteType.MID)
 
-        bar = Bar(
-            Price('1.00001'),
-            Price('1.00004'),
-            Price('1.00002'),
-            Price('1.00003'),
-            100000,
-            datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc))
+        bar = Bar(Price('1.00001'),
+                  Price('1.00004'),
+                  Price('1.00002'),
+                  Price('1.00003'),
+                  100000,
+                  datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc))
 
         # Act
         strategy.handle_bar(bar_type, bar)
