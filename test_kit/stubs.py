@@ -11,7 +11,7 @@ from decimal import Decimal
 from datetime import datetime, timedelta, timezone
 
 from inv_trader.model.enums import Venue, Resolution, QuoteType, CurrencyCode, SecurityType
-from inv_trader.model.objects import Symbol, BarType, Instrument
+from inv_trader.model.objects import Quantity, Symbol, BarType, Instrument
 # Unix epoch is the UTC time at 00:00:00 on 1/1/1970
 UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc)
 AUDUSD_FXCM = Symbol('AUDUSD', Venue.FXCM)
@@ -46,14 +46,14 @@ class TestStubs:
                           tick_size=Decimal('0.00001'),
                           tick_value=Decimal('0.01'),
                           target_direct_spread=Decimal('0.00001'),
-                          round_lot_size=1000,
-                          contract_size=1,
+                          round_lot_size=Quantity(1000),
+                          contract_size=Quantity(1),
                           min_stop_distance_entry=0,
                           min_limit_distance_entry=0,
                           min_stop_distance=0,
                           min_limit_distance=0,
-                          min_trade_size=1,
-                          max_trade_size=50000000,
+                          min_trade_size=Quantity(1),
+                          max_trade_size=Quantity(50000000),
                           margin_requirement=Decimal(),
                           rollover_interest_buy=Decimal(),
                           rollover_interest_sell=Decimal(),
@@ -69,14 +69,14 @@ class TestStubs:
                           tick_size=Decimal('0.001'),
                           tick_value=Decimal('0.01'),
                           target_direct_spread=Decimal('0.001'),
-                          round_lot_size=1000,
-                          contract_size=1,
+                          round_lot_size=Quantity(1000),
+                          contract_size=Quantity(1),
                           min_stop_distance_entry=Decimal(),
                           min_limit_distance_entry=Decimal(),
                           min_stop_distance=Decimal(),
                           min_limit_distance=Decimal(),
-                          min_trade_size=1,
-                          max_trade_size=50000000,
+                          min_trade_size=Quantity(1),
+                          max_trade_size=Quantity(50000000),
                           margin_requirement=Decimal(),
                           rollover_interest_buy=Decimal(),
                           rollover_interest_sell=Decimal(),

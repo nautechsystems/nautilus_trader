@@ -12,7 +12,7 @@
 from cpython.datetime cimport datetime
 
 from inv_trader.model.identifiers cimport GUID, Label, PositionId
-from inv_trader.model.objects cimport Price
+from inv_trader.model.objects cimport ValidString, Price
 from inv_trader.model.order cimport Order, AtomicOrder
 
 
@@ -67,4 +67,4 @@ cdef class CancelOrder(OrderCommand):
     """
     Represents a command to cancel an order.
     """
-    cdef readonly str cancel_reason
+    cdef readonly ValidString cancel_reason

@@ -721,7 +721,7 @@ cdef class TradeStrategy:
 
         self._exec_client.execute_command(command)
 
-    cpdef void cancel_order(self, Order order, str cancel_reason):
+    cpdef void cancel_order(self, Order order, str cancel_reason=None):
         """
         Send a cancel order command for the given order and cancel_reason to the
         execution service.
@@ -729,18 +729,17 @@ cdef class TradeStrategy:
         :param order: The order to cancel.
         :param cancel_reason: The reason for cancellation (will be logged).
         """
-        # Precondition cancel_reason string checked in command
         self.log.info(f"Cancelling {order}")
 
         cdef CancelOrder command = CancelOrder(
             order,
-            cancel_reason,
+            ValidString(cancel_reason),
             self._guid_factory.generate(),
             self._clock.time_now())
 
         self._exec_client.execute_command(command)
 
-    cpdef void cancel_all_orders(self, str cancel_reason):
+    cpdef void cancel_all_orders(self, str cancel_reason=None):
         """
         Send a cancel order command for all currently working orders in the
         order book with the given cancel_reason - to the execution service.
@@ -749,7 +748,18 @@ cdef class TradeStrategy:
         :raises ValueError: If the strategy has not been registered with an execution client.
         :raises ValueError: If the cancel_reason is not a valid string.
         """
-        self._exec_client.cancel_all_orders(self.id, ValidString(cancel_reason))
+        cdef dict all_orders = self._exec_client.get_orders(self.id)
+        cdef CancelOrder command
+
+        for order_id, order in all_orders.items():
+            if order.is_active:
+                command = CancelOrder(
+                    order,
+                    ValidString(cancel_reason),
+                    self._guid_factory.generate(),
+                    self._clock.time_now())
+
+                self._exec_client.execute_command(command)
 
     cpdef void flatten_position(self, PositionId position_id):
         """
