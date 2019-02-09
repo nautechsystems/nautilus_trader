@@ -20,6 +20,59 @@ from inv_trader.enums.security_type cimport SecurityType
 from inv_trader.enums.currency_code cimport CurrencyCode
 
 
+cdef class ValidString:
+    """
+    Represents a previously validated string (validated with Precondition.valid_string()).
+    """
+
+    def __init__(self, str value):
+        """
+        Initializes a new instance of the ValidString class.
+
+        :param value: The string value to validate.
+        """
+        self.value = value
+
+    cdef bint equals(self, ValidString other):
+        """
+        Compare if the object equals the given object.
+        
+        :param other: The other string to compare
+        :return: True if the objects are equal, otherwise False.
+        """
+        return self.value == other.value
+
+    def __eq__(self, ValidString other) -> bool:
+        """
+        Override the default equality comparison.
+        """
+        return self.equals(other)
+
+    def __ne__(self, ValidString other) -> bool:
+        """
+        Override the default not-equals comparison.
+        """
+        return not self.equals(other)
+
+    def __hash__(self) -> int:
+        """"
+        Override the default hash implementation.
+        """
+        return hash(self.value)
+
+    def __str__(self) -> str:
+        """
+        :return: The str() string representation of the valid string.
+        """
+        return self.value
+
+    def __repr__(self) -> str:
+        """
+        :return: The repr() string representation of the valid string.
+        """
+        return f"<{self.__class__.__name__}({self.value}) object at {id(self)}>"
+
+
 cdef class Symbol:
     """
     Represents the symbol for a financial market tradeable instrument.
