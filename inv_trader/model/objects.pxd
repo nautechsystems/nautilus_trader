@@ -30,7 +30,7 @@ cdef class Quantity:
     """
     Represents a non-negative integer quantity.
     """
-    cdef readonly int value
+    cdef readonly long value
     cdef bint equals(self, Quantity other)
 
 
@@ -120,14 +120,14 @@ cdef class Instrument:
     cdef readonly object tick_size
     cdef readonly object tick_value
     cdef readonly object target_direct_spread
-    cdef readonly int round_lot_size
-    cdef readonly int contract_size
+    cdef readonly Quantity round_lot_size
+    cdef readonly Quantity contract_size
     cdef readonly int min_stop_distance_entry
     cdef readonly int min_limit_distance_entry
     cdef readonly int min_stop_distance
     cdef readonly int min_limit_distance
-    cdef readonly int min_trade_size
-    cdef readonly int max_trade_size
+    cdef readonly Quantity min_trade_size
+    cdef readonly Quantity max_trade_size
     cdef readonly object margin_requirement
     cdef readonly object rollover_interest_buy
     cdef readonly object rollover_interest_sell

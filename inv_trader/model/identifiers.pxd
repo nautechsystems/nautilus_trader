@@ -10,7 +10,7 @@
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
 from inv_trader.common.clock cimport Clock
-from inv_trader.model.objects cimport Symbol
+from inv_trader.model.objects cimport ValidString, Symbol
 
 
 cdef class Identifier:
@@ -49,8 +49,8 @@ cdef class IdentifierGenerator:
     cdef Clock _clock
     cdef dict _symbol_counts
 
-    cdef readonly str id_tag_trader
-    cdef readonly str id_tag_strategy
+    cdef readonly ValidString id_tag_trader
+    cdef readonly ValidString id_tag_strategy
 
     cdef str _generate(self, Symbol symbol)
 

@@ -15,7 +15,7 @@ from typing import Dict
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.common.clock cimport Clock, LiveClock
-from inv_trader.model.objects cimport Symbol
+from inv_trader.model.objects cimport ValidString, Symbol
 
 
 cdef class Identifier:
@@ -197,8 +197,8 @@ cdef class IdentifierGenerator:
     """
 
     def __init__(self,
-                 str id_tag_trader,
-                 str id_tag_strategy,
+                 ValidString id_tag_trader,
+                 ValidString id_tag_strategy,
                  Clock clock):
         """
         Initializes a new instance of the IdentifierGenerator class.
@@ -209,9 +209,6 @@ cdef class IdentifierGenerator:
         :raises ValueError: If the id_tag_trader is not a valid string.
         :raises ValueError: If the id_tag_strategy is not a valid string.
         """
-        Precondition.valid_string(id_tag_trader, 'id_tag_trader')
-        Precondition.valid_string(id_tag_strategy, 'id_tag_strategy')
-
         self._clock = clock
         self._symbol_counts = {}  # type: Dict[Symbol, int]
         self.id_tag_trader = id_tag_trader
@@ -232,8 +229,8 @@ cdef class IdentifierGenerator:
             self._symbol_counts[symbol] += 1
 
             identifier_string = (self._clock.get_datetime_tag()
-                + SEPARATOR + self.id_tag_trader
-                + SEPARATOR + self.id_tag_strategy
+                + SEPARATOR + self.id_tag_trader.value
+                + SEPARATOR + self.id_tag_strategy.value
                 + SEPARATOR + symbol.code
                 + SEPARATOR + symbol.venue_string()
                 + SEPARATOR + str(self._symbol_counts[symbol]))
@@ -247,8 +244,8 @@ cdef class OrderIdGenerator(IdentifierGenerator):
     """
 
     def __init__(self,
-                 str id_tag_trader,
-                 str id_tag_strategy,
+                 ValidString id_tag_trader,
+                 ValidString id_tag_strategy,
                  Clock clock=LiveClock()):
         """
         Initializes a new instance of the OrderIdGenerator class.
@@ -256,8 +253,6 @@ cdef class OrderIdGenerator(IdentifierGenerator):
         :param id_tag_trader: The identifier tag for the trader.
         :param id_tag_strategy: The identifier tag for the strategy.
         :param clock: The internal clock.
-        :raises ValueError: If the id_tag_trader is not a valid string.
-        :raises ValueError: If the id_tag_strategy is not a valid string.
         """
         super().__init__(id_tag_trader,
                          id_tag_strategy,
@@ -279,8 +274,8 @@ cdef class PositionIdGenerator(IdentifierGenerator):
     """
 
     def __init__(self,
-                 str id_tag_trader,
-                 str id_tag_strategy,
+                 ValidString id_tag_trader,
+                 ValidString id_tag_strategy,
                  Clock clock=LiveClock()):
         """
         Initializes a new instance of the PositionIdGenerator class.
@@ -288,8 +283,6 @@ cdef class PositionIdGenerator(IdentifierGenerator):
         :param id_tag_trader: The identifier tag for the trader.
         :param id_tag_strategy: The identifier tag for the strategy.
         :param clock: The internal clock.
-        :raises ValueError: If the id_tag_trader is not a valid string.
-        :raises ValueError: If the id_tag_strategy is not a valid string.
         """
         super().__init__(id_tag_trader,
                          id_tag_strategy,

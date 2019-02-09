@@ -22,7 +22,7 @@ from inv_trader.enums.market_position cimport MarketPosition
 from inv_trader.model.events cimport Event
 from inv_trader.model.identifiers cimport GUID, Label, OrderId, PositionId
 from inv_trader.model.identifiers cimport PositionIdGenerator
-from inv_trader.model.objects cimport Symbol, Price, Tick, BarType, Bar, Instrument
+from inv_trader.model.objects cimport ValidString, Symbol, Price, Tick, BarType, Bar, Instrument
 from inv_trader.model.order cimport Order, AtomicOrder, OrderFactory
 from inv_trader.model.position cimport Position
 from inv_trader.portfolio.portfolio cimport Portfolio
@@ -48,8 +48,8 @@ cdef class TradeStrategy:
     cdef readonly int bar_capacity
     cdef readonly bint is_running
     cdef readonly Label name
-    cdef readonly str id_tag_trader
-    cdef readonly str id_tag_strategy
+    cdef readonly ValidString id_tag_trader
+    cdef readonly ValidString id_tag_strategy
     cdef readonly GUID id
     cdef readonly DataClient _data_client
     cdef readonly ExecutionClient _exec_client

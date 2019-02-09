@@ -12,7 +12,7 @@ import uuid
 
 from inv_trader.common.clock import TestClock
 from inv_trader.model.enums import Venue, OrderSide, MarketPosition
-from inv_trader.model.objects import Symbol, Price
+from inv_trader.model.objects import ValidString, Quantity, Symbol, Price
 from inv_trader.model.identifiers import GUID, Label, OrderId, PositionId, ExecutionId, ExecutionTicket
 from inv_trader.model.order import OrderFactory
 from inv_trader.model.position import Position
@@ -29,8 +29,8 @@ class PositionTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
         self.order_factory = OrderFactory(
-            id_tag_trader='001',
-            id_tag_strategy='001',
+            id_tag_trader=ValidString('001'),
+            id_tag_strategy=ValidString('001'),
             clock=TestClock())
         print('\n')
 
@@ -43,7 +43,7 @@ class PositionTests(unittest.TestCase):
             UNIX_EPOCH)
 
         # Assert
-        self.assertEqual(0, position.quantity)
+        self.assertEqual(Quantity(0), position.quantity)
         self.assertEqual(MarketPosition.FLAT, position.market_position)
         self.assertEqual(0, position.event_count)
         self.assertEqual(None, position.last_execution_id)
@@ -56,7 +56,7 @@ class PositionTests(unittest.TestCase):
         order = self.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            100000)
+            Quantity(100000))
 
         position = Position(
             order.symbol,
@@ -80,7 +80,7 @@ class PositionTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(OrderId('19700101-000000-001-001-AUDUSD-FXCM-1'), position.from_order_id)
-        self.assertEqual(100000, position.quantity)
+        self.assertEqual(Quantity(100000), position.quantity)
         self.assertEqual(MarketPosition.LONG, position.market_position)
         self.assertEqual(UNIX_EPOCH, position.entry_time)
         self.assertEqual(Price('1.00001'), position.average_entry_price)
@@ -98,7 +98,7 @@ class PositionTests(unittest.TestCase):
         order = self.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.SELL,
-            100000)
+            Quantity(100000))
 
         position = Position(
             order.symbol,
@@ -121,7 +121,7 @@ class PositionTests(unittest.TestCase):
         position.apply(order_filled)
 
         # Assert
-        self.assertEqual(100000, position.quantity)
+        self.assertEqual(Quantity(100000), position.quantity)
         self.assertEqual(MarketPosition.SHORT, position.market_position)
         self.assertEqual(UNIX_EPOCH, position.entry_time)
         self.assertEqual(Price('1.00001'), position.average_entry_price)
@@ -136,7 +136,7 @@ class PositionTests(unittest.TestCase):
         order = self.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            100000)
+            Quantity(100000))
 
         position = Position(
             order.symbol,
@@ -149,8 +149,8 @@ class PositionTests(unittest.TestCase):
             ExecutionId('E123456'),
             ExecutionTicket('T123456'),
             order.side,
-            50000,
-            50000,
+            Quantity(50000),
+            Quantity(50000),
             Price('1.00001'),
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
@@ -161,7 +161,7 @@ class PositionTests(unittest.TestCase):
         position.apply(order_partially_filled)
 
         # Assert
-        self.assertEqual(100000, position.quantity)
+        self.assertEqual(Quantity(100000), position.quantity)
         self.assertEqual(MarketPosition.LONG, position.market_position)
         self.assertEqual(UNIX_EPOCH, position.entry_time)
         self.assertEqual(Price('1.00001'), position.average_entry_price)
@@ -176,7 +176,7 @@ class PositionTests(unittest.TestCase):
         order = self.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.SELL,
-            100000)
+            Quantity(100000))
 
         position = Position(
             order.symbol,
@@ -189,8 +189,8 @@ class PositionTests(unittest.TestCase):
             ExecutionId('E123456'),
             ExecutionTicket('T123456'),
             order.side,
-            50000,
-            50000,
+            Quantity(50000),
+            Quantity(50000),
             Price('1.00001'),
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
@@ -201,7 +201,7 @@ class PositionTests(unittest.TestCase):
         position.apply(order_partially_filled)
 
         # Assert
-        self.assertEqual(100000, position.quantity)
+        self.assertEqual(Quantity(100000), position.quantity)
         self.assertEqual(MarketPosition.SHORT, position.market_position)
         self.assertEqual(UNIX_EPOCH, position.entry_time)
         self.assertEqual(Price('1.00001'), position.average_entry_price)
@@ -216,7 +216,7 @@ class PositionTests(unittest.TestCase):
         order = self.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            100000)
+            Quantity(100000))
 
         position = Position(
             order.symbol,
@@ -252,7 +252,7 @@ class PositionTests(unittest.TestCase):
         position.apply(order_filled2)
 
         # Assert
-        self.assertEqual(0, position.quantity)
+        self.assertEqual(Quantity(0), position.quantity)
         self.assertEqual(MarketPosition.FLAT, position.market_position)
         self.assertEqual(UNIX_EPOCH, position.entry_time)
         self.assertEqual(Price('1.00001'), position.average_entry_price)
@@ -269,7 +269,7 @@ class PositionTests(unittest.TestCase):
         order = self.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.SELL,
-            100000)
+            Quantity(100000))
 
         position = Position(
             order.symbol,
@@ -305,7 +305,7 @@ class PositionTests(unittest.TestCase):
         position.apply(order_filled2)
 
         # Assert
-        self.assertEqual(0, position.quantity)
+        self.assertEqual(Quantity(0), position.quantity)
         self.assertEqual(MarketPosition.FLAT, position.market_position)
         self.assertEqual(UNIX_EPOCH, position.entry_time)
         self.assertEqual(Price('1.00000'), position.average_entry_price)

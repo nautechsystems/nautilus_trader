@@ -80,7 +80,7 @@ cdef class Quantity:
     Represents a non-negative integer quantity.
     """
 
-    def __init__(self, int value):
+    def __init__(self, long value):
         """
         Initializes a new instance of the Quantity class.
 
@@ -148,18 +148,18 @@ cdef class Quantity:
     def __ge__(self, Quantity other) -> bool:
         return self.value >= other.value
 
-    def __add__(self, other) -> int:
+    def __add__(self, other):
         if isinstance(other, Quantity):
             return self.value + other.value
-        elif isinstance(other, int):
-            return self.value + other
+        elif isinstance(other, long):
+            return self.value + other.value
         else:
             raise NotImplementedError(f"Cannot add {type(other)} to a quantity.")
 
-    def __sub__(self, other) -> int:
+    def __sub__(self, other):
         if isinstance(other, Quantity):
-            return self.value - other.value
-        elif isinstance(other, int):
+            return self.value - other
+        elif isinstance(other, long):
             return self.value - other
         else:
             raise NotImplementedError(f"Cannot subtract {type(other)} from a quantity.")
@@ -758,14 +758,14 @@ cdef class Instrument:
                  object tick_size,
                  object tick_value,
                  object target_direct_spread,
-                 int round_lot_size,
-                 int contract_size,
+                 Quantity round_lot_size,
+                 Quantity contract_size,
                  int min_stop_distance_entry,
                  int min_limit_distance_entry,
                  int min_stop_distance,
                  int min_limit_distance,
-                 int min_trade_size,
-                 int max_trade_size,
+                 Quantity min_trade_size,
+                 Quantity max_trade_size,
                  object margin_requirement,
                  object rollover_interest_buy,
                  object rollover_interest_sell,
@@ -799,14 +799,14 @@ cdef class Instrument:
         Precondition.positive(tick_size, 'tick_size')
         Precondition.positive(tick_value, 'tick_value')
         Precondition.not_negative(target_direct_spread, 'target_direct_spread')
-        Precondition.positive(contract_size, 'contract_size')
+        Precondition.positive(contract_size.value, 'contract_size')
         Precondition.not_negative(min_stop_distance_entry, 'min_stop_distance_entry')
         Precondition.not_negative(min_limit_distance_entry, 'min_limit_distance_entry')
         Precondition.not_negative(min_stop_distance, 'min_stop_distance')
         Precondition.not_negative(min_limit_distance, 'min_limit_distance')
         Precondition.not_negative(min_limit_distance, 'min_limit_distance')
-        Precondition.positive(min_trade_size, 'min_trade_size')
-        Precondition.positive(max_trade_size, 'max_trade_size')
+        Precondition.positive(min_trade_size.value, 'min_trade_size')
+        Precondition.positive(max_trade_size.value, 'max_trade_size')
         Precondition.not_negative(margin_requirement, 'margin_requirement')
 
         self.symbol = symbol

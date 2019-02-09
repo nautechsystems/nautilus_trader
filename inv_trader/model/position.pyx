@@ -47,7 +47,7 @@ cdef class Position:
         self.last_order_id = None
         self.last_execution_id = None
         self.last_execution_ticket = None
-        self.quantity = 0
+        self.quantity = Quantity(0)
         self.market_position = MarketPosition.FLAT
         self.timestamp = timestamp
         self.entry_time = None
@@ -56,7 +56,7 @@ cdef class Position:
         self.average_exit_price = None
         self.is_entered = False
         self.is_exited = False
-        self.peak_quantity = 0
+        self.peak_quantity = Quantity(0)
         self.event_count = 0
         self.last_event = None
 
@@ -85,7 +85,7 @@ cdef class Position:
         """
         :return: The str() string representation of the position.
         """
-        cdef str quantity = '{:,}'.format(self.quantity)
+        cdef str quantity = '{:,}'.format(self.quantity.value)
         return (f"Position(id={self.id}) "
                 f"{self.symbol} {market_position_string(self.market_position)} {quantity}")
 
@@ -147,11 +147,11 @@ cdef class Position:
 
         # Fill logic
         if event.order_side is OrderSide.BUY:
-            self._relative_quantity += event.filled_quantity
+            self._relative_quantity += event.filled_quantity.value
         elif event.order_side is OrderSide.SELL:
-            self._relative_quantity -= event.filled_quantity
+            self._relative_quantity -= event.filled_quantity.value
 
-        self.quantity = abs(self._relative_quantity)
+        self.quantity = Quantity(abs(self._relative_quantity))
 
         if self.quantity > self.peak_quantity:
             self.peak_quantity = self.quantity
