@@ -14,7 +14,7 @@ from decimal import Decimal
 
 from inv_trader.common.clock import TestClock
 from inv_trader.model.enums import Venue, OrderSide, OrderType, OrderStatus, TimeInForce
-from inv_trader.model.objects import Symbol, Price
+from inv_trader.model.objects import ValidString, Symbol, Price
 from inv_trader.model.identifiers import GUID, Label, OrderId, ExecutionId, ExecutionTicket
 from inv_trader.model.order import Order, OrderFactory
 from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
@@ -405,7 +405,7 @@ class OrderTests(unittest.TestCase):
             order.symbol,
             order.id,
             UNIX_EPOCH,
-            'ORDER ID INVALID',
+            ValidString('ORDER ID INVALID'),
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
@@ -500,8 +500,8 @@ class OrderTests(unittest.TestCase):
             order.symbol,
             order.id,
             UNIX_EPOCH,
-            'REJECT_RESPONSE',
-            'ORDER DOES NOT EXIST',
+            ValidString('REJECT_RESPONSE'),
+            ValidString('ORDER DOES NOT EXIST'),
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
 

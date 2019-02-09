@@ -12,7 +12,7 @@ import unittest
 from decimal import Decimal, InvalidOperation
 
 from inv_trader.model.enums import Venue
-from inv_trader.model.objects import ValidString, Symbol, Price, Money
+from inv_trader.model.objects import ValidString, Quantity, Symbol, Price, Money
 
 
 class ObjectTests(unittest.TestCase):
@@ -59,6 +59,87 @@ class ObjectTests(unittest.TestCase):
         # Assert
         self.assertEqual("AUDUSD.FXCM", str(symbol))
         self.assertTrue(repr(symbol).startswith("<AUDUSD.FXCM object at"))
+
+    def test_quantity_initialized_with_negative_integer_raises_exception(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertRaises(ValueError, Quantity, -1)
+
+    def test_quantity_initialized_with_valid_inputs(self):
+        # Arrange
+        # Act
+        result0 = Quantity(0)
+        result1 = Quantity(1)
+
+        # Assert
+        self.assertEqual(0, result0.value)
+        self.assertEqual(1, result1.value)
+
+    def test_quantity_equality(self):
+        # Arrange
+        # Act
+        quantity1 = Quantity(1)
+        quantity2 = Quantity(1)
+        quantity3 = Quantity(2)
+
+        # Assert
+        self.assertEqual(quantity1, quantity2)
+        self.assertNotEqual(quantity1, quantity3)
+
+    def test_quantity_str(self):
+        # Arrange
+        quantity = Quantity(1)
+
+        # Act
+        result = str(quantity)
+
+        # Assert
+        self.assertEqual('1', result)
+
+    def test_quantity_repr(self):
+        # Arrange
+        quantity = Quantity(1)
+
+        # Act
+        result = repr(quantity)
+
+        # Assert
+        self.assertTrue(result.startswith('<Quantity(1) object at'))
+
+    def test_quantity_operators(self):
+        # Arrange
+        quantity1 = Quantity(0)
+        quantity2 = Quantity(1)
+        quantity3 = Quantity(2)
+
+        # Act
+        # Assert
+        self.assertTrue(quantity1 < quantity2)
+        self.assertTrue(quantity1 <= quantity2)
+        self.assertTrue(quantity2 <= quantity2)
+        self.assertTrue(quantity3 > quantity2)
+        self.assertTrue(quantity3 >= quantity3)
+
+    def test_quantity_arithmetic(self):
+        # Arrange
+        # Act
+        result1 = Quantity(1) + 1
+        result2 = Quantity(1) + Quantity(1)
+
+        result3 = Quantity(2) - 1
+        result4 = Quantity(2) - Quantity(1)
+
+        # Assert
+        self.assertEqual(int, type(result1))
+        self.assertEqual(2, result1)
+        self.assertEqual(int, type(result2))
+        self.assertEqual(2, result2)
+
+        self.assertEqual(int, type(result3))
+        self.assertEqual(1, result3)
+        self.assertEqual(int, type(result4))
+        self.assertEqual(1, result4)
 
     def test_price_initialized_with_invalid_type_raises_exception(self):
         # Arrange

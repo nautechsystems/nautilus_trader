@@ -20,10 +20,18 @@ from inv_trader.enums.quote_type cimport QuoteType
 
 cdef class ValidString:
     """
-    Represents a previously validated string (validated with Precondition.valid_string()).
+    Represents a validated string (validated with Precondition.valid_string()).
     """
     cdef readonly str value
     cdef bint equals(self, ValidString other)
+
+
+cdef class Quantity:
+    """
+    Represents a non-negative integer quantity.
+    """
+    cdef readonly int value
+    cdef bint equals(self, Quantity other)
 
 
 cdef class Symbol:

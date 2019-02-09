@@ -19,6 +19,7 @@ from inv_trader.common.clock cimport Clock
 from inv_trader.common.guid cimport GuidFactory
 from inv_trader.common.logger cimport Logger, LoggerAdapter
 from inv_trader.common.account cimport Account
+from inv_trader.model.objects cimport ValidString
 from inv_trader.model.order cimport Order
 from inv_trader.model.events cimport Event, OrderEvent, AccountEvent, OrderModified
 from inv_trader.model.events cimport OrderRejected, OrderCancelled, OrderCancelReject, OrderFilled, OrderPartiallyFilled
@@ -172,8 +173,6 @@ cdef class ExecutionClient:
         :raises ValueError: If the strategy has not been registered with an execution client.
         :raises ValueError: If the cancel_reason is not a valid string.
         """
-        Precondition.valid_string(cancel_reason, 'cancel_reason')
-
         cdef CancelOrder command
 
         for order_id, strategy_id in self._order_strategy_index.items():
@@ -181,7 +180,7 @@ cdef class ExecutionClient:
                 if not self._order_book[order_id].is_complete:
                     command = CancelOrder(
                         self._order_book[order_id],
-                        cancel_reason,
+                        ValidString(cancel_reason),
                         self._guid_factory.generate(),
                         self._clock.time_now())
                     self.execute_command(command)
