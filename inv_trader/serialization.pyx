@@ -267,7 +267,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
             return msgpack.packb(package)
         elif isinstance(order_command, CancelOrder):
             package[ORDER_COMMAND] = CANCEL_ORDER
-            package[CANCEL_REASON] = order_command.cancel_reason
+            package[CANCEL_REASON] = order_command.cancel_reason.value
             return msgpack.packb(package)
         elif isinstance(order_command, ModifyOrder):
             package[ORDER_COMMAND] = MODIFY_ORDER
@@ -304,7 +304,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         elif order_command == CANCEL_ORDER:
             return CancelOrder(
                 order,
-                unpacked[CANCEL_REASON],
+                ValidString(unpacked[CANCEL_REASON]),
                 command_id,
                 command_timestamp)
         elif order_command == MODIFY_ORDER:

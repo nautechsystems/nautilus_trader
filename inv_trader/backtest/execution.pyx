@@ -22,7 +22,7 @@ from inv_trader.enums.brokerage cimport Broker
 from inv_trader.enums.currency_code cimport CurrencyCode
 from inv_trader.enums.order_type cimport OrderType
 from inv_trader.enums.order_side cimport OrderSide
-from inv_trader.model.objects cimport Symbol, Price, Money, Instrument
+from inv_trader.model.objects cimport ValidString, Symbol, Price, Money, Instrument
 from inv_trader.model.order cimport Order
 from inv_trader.model.events cimport OrderEvent, AccountEvent
 from inv_trader.model.events cimport OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
@@ -118,7 +118,7 @@ cdef class BacktestExecClient(ExecutionClient):
             Money(0),
             Money(0),
             Decimal(0),
-            'NONE',
+            ValidString(),
             self._guid_factory.generate(),
             self._clock.time_now())
 
@@ -456,7 +456,7 @@ cdef class BacktestExecClient(ExecutionClient):
             order.symbol,
             order.id,
             self._clock.time_now(),
-            reason,
+            ValidString(reason),
             self._guid_factory.generate(),
             self._clock.time_now())
 
