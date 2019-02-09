@@ -19,7 +19,7 @@ from inv_trader.enums.order_type cimport OrderType
 from inv_trader.enums.time_in_force cimport TimeInForce
 from inv_trader.model.identifiers cimport GUID, Label, AccountNumber, AccountId
 from inv_trader.model.identifiers cimport OrderId, ExecutionId, ExecutionTicket
-from inv_trader.model.objects cimport Symbol, Price
+from inv_trader.model.objects cimport ValidString, Quantity, Symbol, Price
 
 
 cdef class Event:
@@ -267,7 +267,7 @@ cdef class OrderWorking(OrderEvent):
                  Label label,
                  OrderSide order_side,
                  OrderType order_type,
-                 int quantity,
+                 Quantity quantity,
                  Price price,
                  TimeInForce time_in_force,
                  datetime working_time,
@@ -292,7 +292,6 @@ cdef class OrderWorking(OrderEvent):
         :param expire_time: The events order expire time (optional can be None).
         """
         Precondition.type_or_none(expire_time, datetime, 'expire_time')
-        Precondition.positive(quantity, 'quantity')
 
         super().__init__(symbol,
                          order_id,
@@ -447,7 +446,7 @@ cdef class OrderFilled(OrderEvent):
                  ExecutionId execution_id,
                  ExecutionTicket execution_ticket,
                  OrderSide order_side,
-                 int filled_quantity,
+                 Quantity filled_quantity,
                  Price average_price,
                  datetime execution_time,
                  GUID event_id,
@@ -466,8 +465,6 @@ cdef class OrderFilled(OrderEvent):
         :param event_id: The events identifier.
         :param event_timestamp: The events timestamp.
         """
-        Precondition.positive(filled_quantity, 'filled_quantity')
-
         super().__init__(symbol,
                          order_id,
                          event_id,
@@ -491,8 +488,8 @@ cdef class OrderPartiallyFilled(OrderEvent):
                  ExecutionId execution_id,
                  ExecutionTicket execution_ticket,
                  OrderSide order_side,
-                 int filled_quantity,
-                 int leaves_quantity,
+                 Quantity filled_quantity,
+                 Quantity leaves_quantity,
                  Price average_price,
                  datetime execution_time,
                  GUID event_id,
@@ -512,9 +509,6 @@ cdef class OrderPartiallyFilled(OrderEvent):
         :param event_id: The events identifier.
         :param event_timestamp: The events timestamp.
         """
-        Precondition.positive(filled_quantity, 'filled_quantity')
-        Precondition.positive(leaves_quantity, 'leaves_quantity')
-
         super().__init__(symbol,
                          order_id,
                          event_id,

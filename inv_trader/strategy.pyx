@@ -25,7 +25,7 @@ from inv_trader.common.data cimport DataClient
 from inv_trader.common.guid cimport GuidFactory, LiveGuidFactory
 from inv_trader.model.events cimport Event
 from inv_trader.model.identifiers cimport GUID, Label, OrderId, PositionId, PositionIdGenerator
-from inv_trader.model.objects cimport Symbol, Price, Tick, BarType, Bar, Instrument
+from inv_trader.model.objects cimport ValidString, Symbol, Price, Tick, BarType, Bar, Instrument
 from inv_trader.model.order cimport Order, AtomicOrder, OrderFactory
 from inv_trader.model.position cimport Position
 from inv_trader.commands cimport CollateralInquiry, SubmitOrder, SubmitAtomicOrder, ModifyOrder, CancelOrder
@@ -60,9 +60,6 @@ cdef class TradeStrategy:
         :raises ValueError: If the order_id_tag is not a valid string.
         :raises ValueError: If the bar_capacity is not positive (> 0).
         """
-        Precondition.valid_string(label, 'label')
-        Precondition.valid_string(id_tag_trader, 'order_tag_trader')
-        Precondition.valid_string(id_tag_strategy, 'order_tag_strategy')
         Precondition.positive(bar_capacity, 'bar_capacity')
 
         self._clock = clock
@@ -72,16 +69,16 @@ cdef class TradeStrategy:
             self.log = LoggerAdapter(f"{self.name.value}")
         else:
             self.log = LoggerAdapter(f"{self.name.value}", logger)
-        self.id_tag_trader = id_tag_trader
-        self.id_tag_strategy = id_tag_strategy
+        self.id_tag_trader = ValidString(id_tag_trader)
+        self.id_tag_strategy = ValidString(id_tag_strategy)
         self.id = GUID(uuid.uuid4())
         self.position_id_generator = PositionIdGenerator(
-            id_tag_trader=id_tag_trader,
-            id_tag_strategy=id_tag_strategy,
+            id_tag_trader=self.id_tag_trader,
+            id_tag_strategy=self.id_tag_strategy,
             clock=self._clock)
         self.order_factory = OrderFactory(
-            id_tag_trader=id_tag_trader,
-            id_tag_strategy=id_tag_strategy,
+            id_tag_trader=self.id_tag_trader,
+            id_tag_strategy=self.id_tag_strategy,
             clock=self._clock)
         self.bar_capacity = bar_capacity
         self.is_running = False

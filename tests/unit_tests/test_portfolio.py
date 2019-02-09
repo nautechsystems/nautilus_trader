@@ -12,8 +12,7 @@ import uuid
 
 from inv_trader.common.clock import TestClock
 from inv_trader.model.enums import Venue, OrderSide
-from inv_trader.model.enums import MarketPosition
-from inv_trader.model.objects import Symbol, Price
+from inv_trader.model.objects import ValidString, Quantity, Symbol, Price
 from inv_trader.model.order import OrderFactory
 from inv_trader.model.events import OrderFilled, OrderPartiallyFilled
 from inv_trader.model.identifiers import GUID, Label, OrderId, PositionId, ExecutionId, ExecutionTicket
@@ -31,8 +30,8 @@ class PortfolioTestsTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
         self.order_factory = OrderFactory(
-            id_tag_trader='001',
-            id_tag_strategy='001',
+            id_tag_trader=ValidString('001'),
+            id_tag_strategy=ValidString('001'),
             clock=TestClock())
         self.portfolio = Portfolio()
         print('\n')
@@ -52,7 +51,7 @@ class PortfolioTestsTests(unittest.TestCase):
         order = self.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            100000)
+            Quantity(100000))
 
         position_id = PositionId('AUDUSD-1-123456')
 
@@ -77,7 +76,7 @@ class PortfolioTestsTests(unittest.TestCase):
             ExecutionId('E123456'),
             ExecutionTicket('T123456'),
             OrderSide.SELL,
-            100000,
+            Quantity(100000),
             Price('1.00000'),
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
@@ -108,7 +107,7 @@ class PortfolioTestsTests(unittest.TestCase):
             ExecutionId('E123456'),
             ExecutionTicket('T123456'),
             OrderSide.SELL,
-            100000,
+            Quantity(100000),
             Price('1.00000'),
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
@@ -139,7 +138,7 @@ class PortfolioTestsTests(unittest.TestCase):
             ExecutionId('E123456'),
             ExecutionTicket('T123456'),
             OrderSide.BUY,
-            100000,
+            Quantity(100000),
             Price('1.00000'),
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
@@ -151,7 +150,7 @@ class PortfolioTestsTests(unittest.TestCase):
             ExecutionId('E1234567'),
             ExecutionTicket('T1234567'),
             OrderSide.SELL,
-            100000,
+            Quantity(100000),
             Price('1.00000'),
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
@@ -191,7 +190,7 @@ class PortfolioTestsTests(unittest.TestCase):
             ExecutionId('E1'),
             ExecutionTicket('T1'),
             OrderSide.BUY,
-            100000,
+            Quantity(100000),
             Price('1.00000'),
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
@@ -203,7 +202,7 @@ class PortfolioTestsTests(unittest.TestCase):
             ExecutionId('E2'),
             ExecutionTicket('T2'),
             OrderSide.BUY,
-            100000,
+            Quantity(100000),
             Price('1.00000'),
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
@@ -254,7 +253,7 @@ class PortfolioTestsTests(unittest.TestCase):
             ExecutionId('E1'),
             ExecutionTicket('T1'),
             OrderSide.BUY,
-            100000,
+            Quantity(100000),
             Price('1.00000'),
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
@@ -266,7 +265,7 @@ class PortfolioTestsTests(unittest.TestCase):
             ExecutionId('E2'),
             ExecutionTicket('T2'),
             OrderSide.BUY,
-            100000,
+            Quantity(100000),
             Price('1.00000'),
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
@@ -278,7 +277,7 @@ class PortfolioTestsTests(unittest.TestCase):
             ExecutionId('E3'),
             ExecutionTicket('T3'),
             OrderSide.SELL,
-            100000,
+            Quantity(100000),
             Price('1.00000'),
             UNIX_EPOCH,
             GUID(uuid.uuid4()),

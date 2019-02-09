@@ -19,7 +19,7 @@ from inv_trader.enums.order_side cimport OrderSide, order_side_string
 from inv_trader.enums.order_type cimport OrderType, order_type_string
 from inv_trader.enums.order_status cimport OrderStatus, order_status_string
 from inv_trader.enums.time_in_force cimport TimeInForce, time_in_force_string
-from inv_trader.model.objects cimport Symbol, Price
+from inv_trader.model.objects cimport ValidString, Quantity, Symbol, Price
 from inv_trader.model.events cimport OrderEvent
 from inv_trader.model.events cimport OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
 from inv_trader.model.events cimport OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
@@ -46,7 +46,7 @@ cdef class Order:
                  OrderId order_id,
                  OrderSide order_side,
                  OrderType order_type,
-                 int quantity,
+                 Quantity quantity,
                  datetime timestamp,
                  Price price=None,
                  Label label=None,
@@ -70,7 +70,7 @@ cdef class Order:
         :raises ValueError: If the order type should have a price and the price is None.
         :raises ValueError: If the time_in_force is GTD and the expire_time is None.
         """
-        Precondition.positive(quantity, 'quantity')
+        Precondition.positive(quantity.value, 'quantity')
 
         # Orders with prices
         if order_type in PRICED_ORDER_TYPES:
@@ -100,7 +100,7 @@ cdef class Order:
         self.label = label                  # Can be None
         self.time_in_force = time_in_force  # Can be None
         self.expire_time = expire_time      # Can be None
-        self.filled_quantity = 0
+        self.filled_quantity = Quantity(0)
         self.average_price = None
         self.slippage = Decimal(0.0)
         self.status = OrderStatus.INITIALIZED
@@ -140,7 +140,7 @@ cdef class Order:
         """
         :return: The str() string representation of the order.
         """
-        cdef str quantity = '{:,}'.format(self.quantity)
+        cdef str quantity = '{:,}'.format(self.quantity.value)
         cdef str label = '' if self.label is None else f', label={self.label.value}'
         cdef str price = '' if self.price is None else f'@ {self.price} '
         cdef str expire_time = '' if self.expire_time is None else f' {self.expire_time}'
@@ -335,8 +335,8 @@ cdef class OrderFactory:
     """
 
     def __init__(self,
-                 str id_tag_trader,
-                 str id_tag_strategy,
+                 ValidString id_tag_trader,
+                 ValidString id_tag_strategy,
                  Clock clock=LiveClock()):
         """
         Initializes a new instance of the OrderFactory class.
@@ -344,8 +344,6 @@ cdef class OrderFactory:
         :param id_tag_trader: The identifier tag for the trader.
         :param id_tag_strategy: The identifier tag for the strategy.
         :param clock: The internal clock.
-        :raises ValueError: If the id_tag_trader is not a valid string.
-        :raises ValueError: If the id_tag_strategy is not a valid string.
         """
         self._clock = clock
         self._id_generator = OrderIdGenerator(
@@ -357,7 +355,7 @@ cdef class OrderFactory:
             self,
             Symbol symbol,
             OrderSide order_side,
-            int quantity,
+            Quantity quantity,
             Label label=None):
         """
         Creates and returns a new market order with the given parameters.
@@ -385,7 +383,7 @@ cdef class OrderFactory:
             self,
             Symbol symbol,
             OrderSide order_side,
-            int quantity,
+            Quantity quantity,
             Price price,
             Label label=None,
             TimeInForce time_in_force=TimeInForce.DAY,
@@ -421,7 +419,7 @@ cdef class OrderFactory:
             self,
             Symbol symbol,
             OrderSide order_side,
-            int quantity,
+            Quantity quantity,
             Price price,
             Label label=None,
             TimeInForce time_in_force=TimeInForce.DAY,
@@ -457,7 +455,7 @@ cdef class OrderFactory:
             self,
             Symbol symbol,
             OrderSide order_side,
-            int quantity,
+            Quantity quantity,
             Price price,
             Label label=None,
             TimeInForce time_in_force=TimeInForce.DAY,
@@ -493,7 +491,7 @@ cdef class OrderFactory:
             self,
             Symbol symbol,
             OrderSide order_side,
-            int quantity,
+            Quantity quantity,
             Price price,
             Label label=None,
             TimeInForce time_in_force=TimeInForce.DAY,
@@ -529,7 +527,7 @@ cdef class OrderFactory:
             self,
             Symbol symbol,
             OrderSide order_side,
-            int quantity,
+            Quantity quantity,
             Label label=None):
         """
         Creates and returns a new fill-or-kill order with the given parameters.
@@ -557,7 +555,7 @@ cdef class OrderFactory:
             self,
             Symbol symbol,
             OrderSide order_side,
-            int quantity,
+            Quantity quantity,
             Label label=None):
         """
         Creates and returns a new immediate-or-cancel order with the given parameters.
@@ -585,7 +583,7 @@ cdef class OrderFactory:
             self,
             Symbol symbol,
             OrderSide order_side,
-            int quantity,
+            Quantity quantity,
             Price price_stop_loss,
             Price price_profit_target=None,
             Label label=None):
@@ -621,7 +619,7 @@ cdef class OrderFactory:
             self,
             Symbol symbol,
             OrderSide order_side,
-            int quantity,
+            Quantity quantity,
             Price price_entry,
             Price price_stop_loss,
             Price price_profit_target=None,
@@ -667,7 +665,7 @@ cdef class OrderFactory:
             self,
             Symbol symbol,
             OrderSide order_side,
-            int quantity,
+            Quantity quantity,
             Price price_entry,
             Price price_stop_loss,
             Price price_profit_target=None,

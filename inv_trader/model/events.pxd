@@ -16,7 +16,7 @@ from inv_trader.enums.currency_code cimport CurrencyCode
 from inv_trader.enums.order_side cimport OrderSide
 from inv_trader.enums.order_type cimport OrderType
 from inv_trader.enums.time_in_force cimport TimeInForce
-from inv_trader.model.objects cimport ValidString, Symbol, Price, Money
+from inv_trader.model.objects cimport ValidString, Quantity, Symbol, Price, Money
 from inv_trader.model.identifiers cimport GUID, Label, AccountId, AccountNumber
 from inv_trader.model.identifiers cimport OrderId, ExecutionId, ExecutionTicket
 
@@ -73,7 +73,7 @@ cdef class OrderRejected(OrderEvent):
     Represents an event where an order has been rejected by the broker.
     """
     cdef readonly datetime rejected_time
-    cdef readonly str rejected_reason
+    cdef readonly ValidString rejected_reason
 
 
 cdef class OrderWorking(OrderEvent):
@@ -84,7 +84,7 @@ cdef class OrderWorking(OrderEvent):
     cdef readonly Label label
     cdef readonly OrderSide order_side
     cdef readonly OrderType order_type
-    cdef readonly int quantity
+    cdef readonly Quantity quantity
     cdef readonly Price price
     cdef readonly TimeInForce time_in_force
     cdef readonly datetime working_time
@@ -130,7 +130,7 @@ cdef class OrderFilled(OrderEvent):
     cdef readonly ExecutionId execution_id
     cdef readonly ExecutionTicket execution_ticket
     cdef readonly OrderSide order_side
-    cdef readonly int filled_quantity
+    cdef readonly Quantity filled_quantity
     cdef readonly Price average_price
     cdef readonly datetime execution_time
 
@@ -142,8 +142,8 @@ cdef class OrderPartiallyFilled(OrderEvent):
     cdef readonly ExecutionId execution_id
     cdef readonly ExecutionTicket execution_ticket
     cdef readonly OrderSide order_side
-    cdef readonly int filled_quantity
-    cdef readonly int leaves_quantity
+    cdef readonly Quantity filled_quantity
+    cdef readonly Quantity leaves_quantity
     cdef readonly Price average_price
     cdef readonly datetime execution_time
 

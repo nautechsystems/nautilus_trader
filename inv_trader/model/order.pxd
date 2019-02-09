@@ -12,9 +12,9 @@
 from cpython.datetime cimport datetime
 
 from inv_trader.common.clock cimport Clock
-from inv_trader.model.objects cimport Symbol, Price
+from inv_trader.model.objects cimport Quantity, Symbol, Price
 from inv_trader.model.events cimport OrderEvent
-from inv_trader.model.identifiers cimport Label, GUID, OrderId, ExecutionId, ExecutionTicket
+from inv_trader.model.identifiers cimport Label, OrderId, ExecutionId, ExecutionTicket
 from inv_trader.model.identifiers cimport OrderIdGenerator
 from inv_trader.enums.order_side cimport OrderSide
 from inv_trader.enums.order_type cimport OrderType
@@ -39,13 +39,13 @@ cdef class Order:
     cdef readonly ExecutionTicket execution_ticket
     cdef readonly OrderSide side
     cdef readonly OrderType type
-    cdef readonly int quantity
+    cdef readonly Quantity quantity
     cdef readonly datetime timestamp
     cdef readonly Price price
     cdef readonly Label label
     cdef readonly TimeInForce time_in_force
     cdef readonly datetime expire_time
-    cdef readonly int filled_quantity
+    cdef readonly Quantity filled_quantity
     cdef readonly Price average_price
     cdef readonly object slippage
     cdef readonly OrderStatus status
@@ -92,14 +92,14 @@ cdef class OrderFactory:
             self,
             Symbol symbol,
             OrderSide order_side,
-            int quantity,
+            Quantity quantity,
             Label label=*)
 
     cpdef Order limit(
             self,
             Symbol symbol,
             OrderSide order_side,
-            int quantity,
+            Quantity quantity,
             Price price,
             Label label=*,
             TimeInForce time_in_force=*,
@@ -109,7 +109,7 @@ cdef class OrderFactory:
             self,
             Symbol symbol,
             OrderSide order_side,
-            int quantity,
+            Quantity quantity,
             Price price,
             Label label=*,
             TimeInForce time_in_force=*,
@@ -119,7 +119,7 @@ cdef class OrderFactory:
             self,
             Symbol symbol,
             OrderSide order_side,
-            int quantity,
+            Quantity quantity,
             Price price,
             Label label=*,
             TimeInForce time_in_force=*,
@@ -129,7 +129,7 @@ cdef class OrderFactory:
             self,
             Symbol symbol,
             OrderSide order_side,
-            int quantity,
+            Quantity quantity,
             Price price,
             Label label=*,
             TimeInForce time_in_force=*,
@@ -139,21 +139,21 @@ cdef class OrderFactory:
             self,
             Symbol symbol,
             OrderSide order_side,
-            int quantity,
+            Quantity quantity,
             Label label=*)
 
     cpdef Order immediate_or_cancel(
             self,
             Symbol symbol,
             OrderSide order_side,
-            int quantity,
+            Quantity quantity,
             Label label=*)
 
     cpdef AtomicOrder atomic_order_market(
             self,
             Symbol symbol,
             OrderSide order_side,
-            int quantity,
+            Quantity quantity,
             Price price_stop_loss,
             Price price_profit_target=*,
             Label label=*)
@@ -162,7 +162,7 @@ cdef class OrderFactory:
             self,
             Symbol symbol,
             OrderSide order_side,
-            int quantity,
+            Quantity quantity,
             Price price_entry,
             Price price_stop_loss,
             Price price_profit_target=*,
@@ -174,7 +174,7 @@ cdef class OrderFactory:
             self,
             Symbol symbol,
             OrderSide order_side,
-            int quantity,
+            Quantity quantity,
             Price price_entry,
             Price price_stop_loss,
             Price price_profit_target=*,
