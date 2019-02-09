@@ -114,7 +114,7 @@ cdef class LiveExecClient(ExecutionClient):
         self._commands_worker.stop()
         self._events_worker.stop()
 
-    cpdef void collateral_inquiry(self, CollateralInquiry command):
+    cpdef void _collateral_inquiry(self, CollateralInquiry command):
         """
         Send a collateral inquiry command to the execution service.
         """
@@ -123,7 +123,7 @@ cdef class LiveExecClient(ExecutionClient):
         self._commands_worker.send(message)
         self._log.debug(f"Sent {command}")
 
-    cpdef void submit_order(self, SubmitOrder command):
+    cpdef void _submit_order(self, SubmitOrder command):
         """
         Send a submit order command to the execution service with the given
         order and strategy_id.
@@ -135,7 +135,7 @@ cdef class LiveExecClient(ExecutionClient):
         self._commands_worker.send(message)
         self._log.debug(f"Sent {command}")
 
-    cpdef void modify_order(self, ModifyOrder command):
+    cpdef void _modify_order(self, ModifyOrder command):
         """
         Send a modify order command to the execution service with the given
         order and new_price.
@@ -147,7 +147,7 @@ cdef class LiveExecClient(ExecutionClient):
         self._commands_worker.send(message)
         self._log.debug(f"Sent {command}")
 
-    cpdef void cancel_order(self, CancelOrder command):
+    cpdef void _cancel_order(self, CancelOrder command):
         """
         Send a cancel order command to the execution service with the given
         order and cancel_reason.

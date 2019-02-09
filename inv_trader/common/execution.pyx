@@ -135,56 +135,6 @@ cdef class ExecutionClient:
         """
         self._queue.put(event)
 
-    cpdef void collateral_inquiry(self, CollateralInquiry command):
-        """
-        Send a collateral inquiry command to the execution service.
-        """
-        # Raise exception if not overridden in implementation.
-        raise NotImplementedError("Method must be implemented in the subclass.")
-
-    cpdef void submit_order(self, SubmitOrder command):
-        """
-        Send a submit order request to the execution service.
-        """
-        # Raise exception if not overridden in implementation.
-        raise NotImplementedError("Method must be implemented in the subclass.")
-
-    cpdef void modify_order(self, ModifyOrder command):
-        """
-        Send a modify order request to the execution service.
-        """
-        # Raise exception if not overridden in implementation.
-        raise NotImplementedError("Method must be implemented in the subclass.")
-
-    cpdef void cancel_order(self, CancelOrder command):
-        """
-        Send a cancel order request to the execution service.
-        """
-        # Raise exception if not overridden in implementation.
-        raise NotImplementedError("Method must be implemented in the subclass.")
-
-    cpdef void cancel_all_orders(self, GUID strategy_id, ValidString cancel_reason):
-        """
-        Send a cancel order command for all currently working orders in the
-        order book with the given cancel_reason - to the execution service.
-
-        :param strategy_id: The strategy id to cancel all orders for.
-        :param cancel_reason: The reason for cancellation (will be logged).
-        :raises ValueError: If the strategy has not been registered with an execution client.
-        :raises ValueError: If the cancel_reason is not a valid string.
-        """
-        cdef CancelOrder command
-
-        for order_id, strategy_id in self._order_strategy_index.items():
-            if strategy_id.equals(strategy_id):
-                if not self._order_book[order_id].is_complete:
-                    command = CancelOrder(
-                        self._order_book[order_id],
-                        cancel_reason,
-                        self._guid_factory.generate(),
-                        self._clock.time_now())
-                    self.execute_command(command)
-
     cpdef Order get_order(self, OrderId order_id):
         """
         Return the order with the given identifier (if found).
@@ -265,14 +215,14 @@ cdef class ExecutionClient:
             if isinstance(item, Event):
                 self._handle_event(item)
             elif isinstance(item, CollateralInquiry):
-                self.collateral_inquiry(item)
+                self._collateral_inquiry(item)
             elif isinstance(item, SubmitOrder):
                 self._register_order(item.order, item.position_id, item.strategy_id)
-                self.submit_order(item)
+                self._submit_order(item)
             elif isinstance(item, ModifyOrder):
-                self.modify_order(item)
+                self._modify_order(item)
             elif isinstance(item, CancelOrder):
-                self.cancel_order(item)
+                self._cancel_order(item)
 
     cpdef void _register_order(self, Order order, PositionId position_id, GUID strategy_id):
         """
@@ -290,6 +240,34 @@ cdef class ExecutionClient:
         self._order_strategy_index[order.id] = strategy_id
         self._portfolio.register_order(order.id, position_id)
         self._log.info(f"Registered {order.id} with {position_id} for strategy with id {strategy_id}.")
+
+    cpdef void _collateral_inquiry(self, CollateralInquiry command):
+        """
+        Send a collateral inquiry command to the execution service.
+        """
+        # Raise exception if not overridden in implementation.
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
+    cpdef void _submit_order(self, SubmitOrder command):
+        """
+        Send a submit order request to the execution service.
+        """
+        # Raise exception if not overridden in implementation.
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
+    cpdef void _modify_order(self, ModifyOrder command):
+        """
+        Send a modify order request to the execution service.
+        """
+        # Raise exception if not overridden in implementation.
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
+    cpdef void _cancel_order(self, CancelOrder command):
+        """
+        Send a cancel order request to the execution service.
+        """
+        # Raise exception if not overridden in implementation.
+        raise NotImplementedError("Method must be implemented in the subclass.")
 
     cpdef void _handle_event(self, Event event):
         """

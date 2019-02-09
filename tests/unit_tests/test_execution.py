@@ -12,7 +12,7 @@ import time
 
 from inv_trader.model.enums import Venue, OrderSide, OrderStatus
 from inv_trader.model.identifiers import PositionId
-from inv_trader.model.objects import Symbol, Price
+from inv_trader.model.objects import Quantity, Symbol, Price
 from inv_trader.execution import LiveExecClient
 from test_kit.stubs import TestStubs
 from test_kit.mocks import MockExecClient, MockServer
@@ -56,7 +56,7 @@ class ExecutionClientTests(unittest.TestCase):
         order = self.strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            100000)
+            Quantity(100000))
 
         order_id = order.id
 
@@ -76,7 +76,7 @@ class ExecutionClientTests(unittest.TestCase):
         order = self.strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            100000)
+            Quantity(100000))
 
         order_id = order.id
 
@@ -97,7 +97,7 @@ class ExecutionClientTests(unittest.TestCase):
         order = self.strategy.order_factory.limit(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            100000,
+            Quantity(100000),
             Price('1.00000'))
 
         order_id = order.id
@@ -154,7 +154,7 @@ class LiveExecClientTests(unittest.TestCase):
         order = self.strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            100000)
+            Quantity(100000))
 
         order_id = order.id
 
@@ -171,7 +171,7 @@ class LiveExecClientTests(unittest.TestCase):
         order = self.strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            100000)
+            Quantity(100000))
 
         order_id = order.id
 
@@ -189,7 +189,7 @@ class LiveExecClientTests(unittest.TestCase):
         order = self.strategy.order_factory.limit(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            100000,
+            Quantity(100000),
             Price('1.00000'))
 
         order_id = order.id

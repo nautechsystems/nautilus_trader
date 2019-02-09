@@ -25,15 +25,25 @@ cdef class ValidString:
     Represents a previously validated string (validated with Precondition.valid_string()).
     """
 
-    def __init__(self, str value):
+    def __init__(self, str value=None):
         """
         Initializes a new instance of the ValidString class.
 
         :param value: The string value to validate.
         """
-        Precondition.valid_string(value, 'value')
+        if value is None or value == '':
+            value = 'NONE'
+        else:
+            Precondition.valid_string(value, 'value')
 
         self.value = value
+
+    @staticmethod
+    cdef ValidString none():
+        """
+        :return: A valid string with a value of 'NONE'.
+        """
+        return ValidString()
 
     cdef bint equals(self, ValidString other):
         """
@@ -152,13 +162,13 @@ cdef class Quantity:
         if isinstance(other, Quantity):
             return self.value + other.value
         elif isinstance(other, long):
-            return self.value + other.value
+            return self.value + other
         else:
             raise NotImplementedError(f"Cannot add {type(other)} to a quantity.")
 
     def __sub__(self, other):
         if isinstance(other, Quantity):
-            return self.value - other
+            return self.value - other.value
         elif isinstance(other, long):
             return self.value - other
         else:

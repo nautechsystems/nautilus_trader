@@ -174,7 +174,7 @@ cdef class BacktestExecClient(ExecutionClient):
             command = CollateralInquiry(
             self._guid_factory.generate(),
             self._clock.time_now())
-            self.collateral_inquiry(command)
+            self._collateral_inquiry(command)
 
         # Simulate market dynamics
         cdef Price highest_ask
@@ -214,7 +214,7 @@ cdef class BacktestExecClient(ExecutionClient):
 
         self.iteration += 1
 
-    cpdef void collateral_inquiry(self, CollateralInquiry command):
+    cpdef void _collateral_inquiry(self, CollateralInquiry command):
         """
         Send a collateral inquiry command to the execution service.
         """
@@ -234,7 +234,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._clock.time_now())
         self._handle_event(event)
 
-    cpdef void submit_order(self, SubmitOrder command):
+    cpdef void _submit_order(self, SubmitOrder command):
         """
         Send a submit order request to the execution service.
         
@@ -311,7 +311,7 @@ cdef class BacktestExecClient(ExecutionClient):
             order.expire_time)
         self._handle_event(working)
 
-    cpdef void modify_order(self, ModifyOrder command):
+    cpdef void _modify_order(self, ModifyOrder command):
         """
         Send a modify order request to the execution service.
         """
@@ -353,7 +353,7 @@ cdef class BacktestExecClient(ExecutionClient):
 
         self._handle_event(modified)
 
-    cpdef void cancel_order(self, CancelOrder command):
+    cpdef void _cancel_order(self, CancelOrder command):
         """
         Send a cancel order request to the execution service.
         """

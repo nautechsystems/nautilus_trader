@@ -11,9 +11,7 @@
 
 from cpython.datetime cimport datetime
 
-from inv_trader.core.precondition cimport Precondition
-from inv_trader.enums.order_type cimport OrderType
-from inv_trader.model.objects cimport Price
+from inv_trader.model.objects cimport ValidString, Price
 from inv_trader.model.identifiers cimport GUID, Label, PositionId
 from inv_trader.model.order cimport Order, AtomicOrder
 
@@ -209,7 +207,7 @@ cdef class CancelOrder(OrderCommand):
 
     def __init__(self,
                  Order order,
-                 str cancel_reason,
+                 ValidString cancel_reason,
                  GUID command_id,
                  datetime command_timestamp):
         """
@@ -220,8 +218,6 @@ cdef class CancelOrder(OrderCommand):
         :param command_id: The commands identifier.
         :param command_timestamp: The commands timestamp.
         """
-        Precondition.valid_string(cancel_reason, 'cancel_reason')
-
         super().__init__(
             order,
             command_id,

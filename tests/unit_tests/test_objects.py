@@ -17,6 +17,16 @@ from inv_trader.model.objects import ValidString, Quantity, Symbol, Price, Money
 
 class ObjectTests(unittest.TestCase):
 
+    def test_valid_string_initialized_with_empty_or_none_string(self):
+        # Arrange
+        string1 = ValidString()
+        string2 = ValidString('')
+
+        # Act
+        # Assert
+        self.assertEqual('NONE', string1.value)
+        self.assertEqual('NONE', string2.value)
+
     def test_valid_string_equality(self):
         # Arrange
         string1 = ValidString('abc123')

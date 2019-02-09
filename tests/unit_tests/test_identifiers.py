@@ -13,7 +13,7 @@ import uuid
 from inv_trader.common.clock import TestClock
 from inv_trader.model.identifiers import GUID, Label, OrderId, PositionId, OrderIdGenerator, PositionIdGenerator
 from inv_trader.model.enums import Venue
-from inv_trader.model.objects import Symbol
+from inv_trader.model.objects import ValidString, Symbol
 
 
 class IdentifierTests(unittest.TestCase):
@@ -113,8 +113,8 @@ class OrderIdGeneratorTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
         self.order_id_generator = OrderIdGenerator(
-            id_tag_trader='001',
-            id_tag_strategy='001',
+            id_tag_trader=ValidString('001'),
+            id_tag_strategy=ValidString('001'),
             clock=TestClock())
 
     def test_generate_order_id_with_one_symbol(self):
@@ -157,8 +157,8 @@ class PositionIdGeneratorTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
         self.position_id_generator = PositionIdGenerator(
-            id_tag_trader='001',
-            id_tag_strategy='001',
+            id_tag_trader=ValidString('001'),
+            id_tag_strategy=ValidString('001'),
             clock=TestClock())
 
     def test_generate_order_id_with_one_symbol(self):

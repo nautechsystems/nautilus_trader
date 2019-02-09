@@ -223,7 +223,27 @@ cdef class MockExecClient(ExecutionClient):
         """
         self._log.info("MockExecClient disconnected.")
 
-    cpdef void submit_order(self, SubmitOrder command):
+    cpdef void fill_last_order(self):
+        """
+        Fills the last working order.
+        """
+        cdef Order order = self.working_orders.pop(-1)
+
+        cdef OrderFilled filled = OrderFilled(
+            order.symbol,
+            order.id,
+            ExecutionId('E' + str(order.id)),
+            ExecutionTicket('ET' + str(order.id)),
+            order.side,
+            order.quantity,
+            Price('1.00000') if order.price is None else order.price,
+            datetime.utcnow(),
+            GUID(uuid.uuid4()),
+            datetime.utcnow())
+
+        self.handle_event(filled)
+
+    cpdef void _submit_order(self, SubmitOrder command):
         """
         Send a submit order command to the mock execution service.
         """
@@ -264,7 +284,7 @@ cdef class MockExecClient(ExecutionClient):
         self.handle_event(accepted)
         self.handle_event(working)
 
-    cpdef void modify_order(self, ModifyOrder command):
+    cpdef void _modify_order(self, ModifyOrder command):
         """
         Send a modify order command to the mock execution service.
         """
@@ -279,7 +299,7 @@ cdef class MockExecClient(ExecutionClient):
 
         self.handle_event(modified)
 
-    cpdef void cancel_order(self, CancelOrder command):
+    cpdef void _cancel_order(self, CancelOrder command):
         """
         Send a cancel order command to the mock execution service.
         """
@@ -292,28 +312,8 @@ cdef class MockExecClient(ExecutionClient):
 
         self.handle_event(cancelled)
 
-    cpdef void collateral_inquiry(self, CollateralInquiry command):
+    cpdef void _collateral_inquiry(self, CollateralInquiry command):
         """
         Send a collateral inquiry command to the mock execution service.
         """
         # Do nothing
-
-    cpdef void fill_last_order(self):
-        """
-        Fills the last working order.
-        """
-        cdef Order order = self.working_orders.pop(-1)
-
-        cdef OrderFilled filled = OrderFilled(
-            order.symbol,
-            order.id,
-            ExecutionId('E' + str(order.id)),
-            ExecutionTicket('ET' + str(order.id)),
-            order.side,
-            order.quantity,
-            Price('1.00000') if order.price is None else order.price,
-            datetime.utcnow(),
-            GUID(uuid.uuid4()),
-            datetime.utcnow())
-
-        self.handle_event(filled)
