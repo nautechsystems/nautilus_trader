@@ -14,6 +14,7 @@ from cpython.datetime cimport datetime
 from inv_trader.enums.brokerage cimport Broker
 from inv_trader.enums.currency_code cimport CurrencyCode
 from inv_trader.model.events cimport AccountEvent
+from inv_trader.model.objects cimport ValidString
 from inv_trader.model.identifiers cimport AccountId, AccountNumber
 
 
@@ -36,7 +37,7 @@ cdef class Account:
     cdef readonly margin_used_liquidation
     cdef readonly margin_used_maintenance
     cdef readonly margin_ratio
-    cdef readonly str margin_call_status
+    cdef readonly ValidString margin_call_status
     cdef readonly datetime last_updated
     cdef readonly int event_count
     cdef readonly AccountEvent last_event

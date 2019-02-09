@@ -12,7 +12,7 @@
 from inv_trader.enums.brokerage cimport Broker
 from inv_trader.enums.currency_code cimport CurrencyCode
 from inv_trader.model.events cimport AccountEvent
-from inv_trader.model.objects import Money
+from inv_trader.model.objects import ValidString, Money
 
 
 cdef class Account:
@@ -37,7 +37,7 @@ cdef class Account:
         self.margin_used_liquidation = Money.zero()
         self.margin_used_maintenance = Money.zero()
         self.margin_ratio = Money.zero()
-        self.margin_call_status = ""
+        self.margin_call_status = ValidString('NONE')
         self.free_equity = Money.zero()
         self.last_updated = None
         self.event_count = 0
