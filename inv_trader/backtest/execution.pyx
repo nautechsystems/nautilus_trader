@@ -232,7 +232,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._account.margin_call_status,
             self._guid_factory.generate(),
             self._clock.time_now())
-        self._handle_event(event)
+        self.handle_event(event)
 
     cpdef void _submit_order(self, SubmitOrder command):
         """
@@ -250,7 +250,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._clock.time_now(),
             self._guid_factory.generate(),
             self._clock.time_now())
-        self._handle_event(submitted)
+        self.handle_event(submitted)
 
         cdef OrderAccepted accepted = OrderAccepted(
             order.symbol,
@@ -258,7 +258,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._clock.time_now(),
             self._guid_factory.generate(),
             self._clock.time_now())
-        self._handle_event(accepted)
+        self.handle_event(accepted)
 
         cdef Price closing_ask
         cdef Price closing_bid
@@ -309,7 +309,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._guid_factory.generate(),
             self._clock.time_now(),
             order.expire_time)
-        self._handle_event(working)
+        self.handle_event(working)
 
     cpdef void _modify_order(self, ModifyOrder command):
         """
@@ -351,7 +351,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._guid_factory.generate(),
             self._clock.time_now())
 
-        self._handle_event(modified)
+        self.handle_event(modified)
 
     cpdef void _cancel_order(self, CancelOrder command):
         """
@@ -367,7 +367,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._clock.time_now())
 
         del self.working_orders[command.order.id]
-        self._handle_event(cancelled)
+        self.handle_event(cancelled)
 
     cdef dict _prepare_minute_data(self, dict bar_data, str quote_type):
         """
@@ -460,7 +460,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._guid_factory.generate(),
             self._clock.time_now())
 
-        self._handle_event(rejected)
+        self.handle_event(rejected)
 
     cdef void _reject_modify_order(self, Order order, str reason):
         """
@@ -476,7 +476,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._guid_factory.generate(),
             self._clock.time_now())
 
-        self._handle_event(cancel_reject)
+        self.handle_event(cancel_reject)
 
     cdef void _expire_order(self, Order order):
         """
@@ -490,8 +490,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._guid_factory.generate(),
             self._clock.time_now())
 
-        self._handle_event(expired)
-
+        self.handle_event(expired)
 
     cdef void _fill_order(self, Order order, Price fill_price):
         """
@@ -509,7 +508,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._guid_factory.generate(),
             self._clock.time_now())
 
-        self._handle_event(filled)
+        self.handle_event(filled)
         self._adjust_account(filled)
 
     cdef void _adjust_account(self, OrderEvent event):
