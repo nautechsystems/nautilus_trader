@@ -41,6 +41,8 @@ cdef class LoggerAdapter:
     Provides a logger adapter adapter for a components logger.
     """
     cdef Logger _logger
+    cdef object _queue
+    cdef object _thread
 
     cdef readonly bint bypassed
     cdef readonly str component_name
@@ -51,3 +53,4 @@ cdef class LoggerAdapter:
     cpdef void error(self, str message)
     cpdef void critical(self, str message)
     cdef ValidString _format_message(self, str message)
+    cpdef void _process_messages(self)
