@@ -31,6 +31,8 @@ cdef class ValidString:
 
         :param value: The string value to validate.
         """
+        Precondition.valid_string(value, 'value')
+
         self.value = value
 
     cdef bint equals(self, ValidString other):
@@ -71,6 +73,96 @@ cdef class ValidString:
         :return: The repr() string representation of the valid string.
         """
         return f"<{self.__class__.__name__}({self.value}) object at {id(self)}>"
+
+
+cdef class Quantity:
+    """
+    Represents a non-negative integer quantity.
+    """
+
+    def __init__(self, int value):
+        """
+        Initializes a new instance of the Quantity class.
+
+        :param value: The value of the quantity (>= 0).
+        :raises ValueError: If the value is negative (< 0).
+        """
+        Precondition.not_negative(value, 'value')
+
+        self.value = value
+
+    cdef bint equals(self, Quantity other):
+        """
+        Compare if the object equals the given object.
+        
+        :param other: The other string to compare
+        :return: True if the objects are equal, otherwise False.
+        """
+        return self.value == other.value
+
+    def __eq__(self, Quantity other) -> bool:
+        """
+        Override the default equality comparison.
+        """
+        return self.equals(other)
+
+    def __ne__(self, Quantity other) -> bool:
+        """
+        Override the default not-equals comparison.
+        """
+        return not self.equals(other)
+
+    def __hash__(self) -> int:
+        """"
+        Override the default hash implementation.
+        """
+        return hash(self.value)
+
+    def __str__(self) -> str:
+        """
+        :return: The str() string representation of the quantity.
+        """
+        return str(self.value)
+
+    def __repr__(self) -> str:
+        """
+        :return: The repr() string representation of the quantity.
+        """
+        return f"<{self.__class__.__name__}({self.value}) object at {id(self)}>"
+
+    def __lt__(self, Quantity other) -> bool:
+        return self.value < other.value
+
+    def __le__(self, Quantity other) -> bool:
+        return self.value <= other.value
+
+    def __eq__(self, Quantity other) -> bool:
+        return self.value == other.value
+
+    def __ne__(self, Quantity other) -> bool:
+        return self.value != other.value
+
+    def __gt__(self, Quantity other) -> bool:
+        return self.value > other.value
+
+    def __ge__(self, Quantity other) -> bool:
+        return self.value >= other.value
+
+    def __add__(self, other) -> int:
+        if isinstance(other, Quantity):
+            return self.value + other.value
+        elif isinstance(other, int):
+            return self.value + other
+        else:
+            raise NotImplementedError(f"Cannot add {type(other)} to a quantity.")
+
+    def __sub__(self, other) -> int:
+        if isinstance(other, Quantity):
+            return self.value - other.value
+        elif isinstance(other, int):
+            return self.value - other
+        else:
+            raise NotImplementedError(f"Cannot subtract {type(other)} from a quantity.")
 
 
 cdef class Symbol:

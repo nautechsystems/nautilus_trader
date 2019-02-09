@@ -89,7 +89,7 @@ cdef class AccountEvent(Event):
                  Money margin_used_liquidation,
                  Money margin_used_maintenance,
                  object margin_ratio,
-                 str margin_call_status,
+                 ValidString margin_call_status,
                  GUID event_id,
                  datetime event_timestamp):
         """
@@ -234,7 +234,7 @@ cdef class OrderRejected(OrderEvent):
                  Symbol symbol,
                  OrderId order_id,
                  datetime rejected_time,
-                 str rejected_reason,
+                 ValidString rejected_reason,
                  GUID event_id,
                  datetime event_timestamp):
         """
@@ -247,8 +247,6 @@ cdef class OrderRejected(OrderEvent):
         :param event_id: The events identifier.
         :param event_timestamp: The events timestamp.
         """
-        Precondition.valid_string(rejected_reason, 'rejected_reason')
-
         super().__init__(symbol,
                          order_id,
                          event_id,
@@ -347,8 +345,8 @@ cdef class OrderCancelReject(OrderEvent):
                  Symbol symbol,
                  OrderId order_id,
                  datetime cancel_reject_time,
-                 str cancel_response,
-                 str cancel_reject_reason,
+                 ValidString cancel_response,
+                 ValidString cancel_reject_reason,
                  GUID event_id,
                  datetime event_timestamp):
         """
@@ -362,9 +360,6 @@ cdef class OrderCancelReject(OrderEvent):
         :param event_id: The events identifier.
         :param event_timestamp: The events timestamp.
         """
-        Precondition.valid_string(cancel_response, 'cancel_response')
-        Precondition.valid_string(cancel_reject_reason, 'cancel_reject_reason')
-
         super().__init__(symbol,
                          order_id,
                          event_id,

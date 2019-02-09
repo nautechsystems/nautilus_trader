@@ -16,7 +16,7 @@ from inv_trader.enums.currency_code cimport CurrencyCode
 from inv_trader.enums.order_side cimport OrderSide
 from inv_trader.enums.order_type cimport OrderType
 from inv_trader.enums.time_in_force cimport TimeInForce
-from inv_trader.model.objects cimport Symbol, Price, Money
+from inv_trader.model.objects cimport ValidString, Symbol, Price, Money
 from inv_trader.model.identifiers cimport GUID, Label, AccountId, AccountNumber
 from inv_trader.model.identifiers cimport OrderId, ExecutionId, ExecutionTicket
 
@@ -43,7 +43,7 @@ cdef class AccountEvent(Event):
     cdef readonly Money margin_used_liquidation
     cdef readonly Money margin_used_maintenance
     cdef readonly object margin_ratio
-    cdef readonly str margin_call_status
+    cdef readonly ValidString margin_call_status
 
 
 cdef class OrderEvent(Event):
@@ -103,8 +103,8 @@ cdef class OrderCancelReject(OrderEvent):
     Represents an event where an order cancel request has been rejected by the broker.
     """
     cdef readonly datetime cancel_reject_time
-    cdef readonly str cancel_reject_response
-    cdef readonly str cancel_reject_reason
+    cdef readonly ValidString cancel_reject_response
+    cdef readonly ValidString cancel_reject_reason
 
 
 cdef class OrderExpired(OrderEvent):
