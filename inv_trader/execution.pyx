@@ -130,8 +130,6 @@ cdef class LiveExecClient(ExecutionClient):
 
         :param command: The command to execute.
         """
-        self._register_order(command.order, command.position_id, command.strategy_id)
-
         cdef bytes message = self._command_serializer.serialize(command)
 
         self._commands_worker.send(message)

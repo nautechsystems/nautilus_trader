@@ -55,6 +55,7 @@ cdef class Order:
     cdef readonly bint is_complete
 
     cdef bint equals(self, Order other)
+    cpdef str status_as_string(self)
     cpdef list get_order_ids_broker(self)
     cpdef list get_execution_ids(self)
     cpdef list get_execution_tickets(self)

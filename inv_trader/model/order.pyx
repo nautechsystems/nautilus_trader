@@ -17,7 +17,7 @@ from inv_trader.core.precondition cimport Precondition
 from inv_trader.common.clock cimport Clock, LiveClock
 from inv_trader.enums.order_side cimport OrderSide, order_side_string
 from inv_trader.enums.order_type cimport OrderType, order_type_string
-from inv_trader.enums.order_status cimport OrderStatus
+from inv_trader.enums.order_status cimport OrderStatus, order_status_string
 from inv_trader.enums.time_in_force cimport TimeInForce, time_in_force_string
 from inv_trader.model.objects cimport Symbol, Price
 from inv_trader.model.events cimport OrderEvent
@@ -144,7 +144,7 @@ cdef class Order:
         cdef str label = '' if self.label is None else f', label={self.label.value}'
         cdef str price = '' if self.price is None else f'@ {self.price} '
         cdef str expire_time = '' if self.expire_time is None else f' {self.expire_time}'
-        return (f"Order(id={self.id.value}{label}) "
+        return (f"Order(id={self.id.value}{label}, status={order_status_string(self.status)}) "
                 f"{order_side_string(self.side)} {quantity} {self.symbol} {order_type_string(self.type)} {price}"
                 f"{time_in_force_string(self.time_in_force)}{expire_time}")
 
@@ -153,6 +153,12 @@ cdef class Order:
         :return: The repr() string representation of the order.
         """
         return f"<{str(self)} object at {id(self)}>"
+
+    cpdef str status_as_string(self):
+        """
+        :return: The order status as a string.
+        """
+        return order_status_string(self.status)
 
     cpdef list get_order_ids_broker(self):
         """

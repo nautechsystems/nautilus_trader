@@ -64,13 +64,14 @@ class ExecutionClientTests(unittest.TestCase):
         self.strategy.submit_order(order, PositionId(order_id.value))
 
         # Assert
-        #self.assertEqual(order, self.strategy.order(order_id))
-        #self.assertEqual(OrderStatus.WORKING, order.status)  # OrderStatus.WORKING
+        time.sleep(0.1)
+        self.assertEqual(order, self.exec_client.get_order(order_id))
+        self.assertEqual(order, self.strategy.order(order_id))
+        self.assertEqual(OrderStatus.WORKING, self.strategy.order(order_id).status)
 
     def test_can_send_cancel_order_command_to_mock_exec_clint(self):
         # Arrange
         self.exec_client.register_strategy(self.strategy)
-        self.exec_client.connect()
 
         order = self.strategy.order_factory.market(
             AUDUSD_FXCM,
@@ -84,8 +85,9 @@ class ExecutionClientTests(unittest.TestCase):
         self.strategy.cancel_order(order, 'ORDER_EXPIRED')
 
         # Assert
+        time.sleep(0.1)
         self.assertEqual(order, self.strategy.order(order_id))
-        self.assertEqual(OrderStatus.CANCELLED, order.status)
+        self.assertEqual(OrderStatus.CANCELLED, self.strategy.order(order_id).status)
 
     def test_can_send_modify_order_command_to_mock_exec_client(self):
         # Arrange
@@ -105,9 +107,10 @@ class ExecutionClientTests(unittest.TestCase):
         self.strategy.modify_order(order, Price('1.00001'))
 
         # Assert
+        time.sleep(0.1)
         self.assertEqual(order, self.strategy.order(order_id))
-        self.assertEqual(OrderStatus.WORKING, order.status)
-        self.assertEqual(Price('1.00001'), order.price)
+        self.assertEqual(OrderStatus.WORKING, self.strategy.order(order_id).status)
+        self.assertEqual(Price('1.00001'), self.strategy.order(order_id).price)
 
 
 class LiveExecClientTests(unittest.TestCase):
@@ -177,6 +180,7 @@ class LiveExecClientTests(unittest.TestCase):
         self.strategy.cancel_order(order, 'ORDER_EXPIRED')
 
         # Assert
+        time.sleep(1)
         self.assertEqual(order, self.strategy.order(order_id))
         self.assertEqual(2, len(self.response_list))
 
@@ -195,6 +199,7 @@ class LiveExecClientTests(unittest.TestCase):
         self.strategy.modify_order(order, Price('1.00001'))
 
         # Assert
+        time.sleep(1)
         self.assertEqual(order, self.strategy.order(order_id))
         self.assertEqual(2, len(self.response_list))
 
@@ -204,4 +209,5 @@ class LiveExecClientTests(unittest.TestCase):
         self.strategy.collateral_inquiry()
 
         # Assert
+        time.sleep(1)
         self.assertEqual(1, len(self.response_list))

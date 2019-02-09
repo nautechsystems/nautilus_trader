@@ -768,8 +768,7 @@ cdef class TradeStrategy:
         cdef Position position = self._portfolio.get_position(position_id)
 
         if position.market_position == MarketPosition.FLAT:
-            self.log.warning(
-                f"Cannot flatten position (the position {position_id} was already FLAT).")
+            self.log.warning(f"Cannot flatten position (the position {position_id} was already FLAT).")
             return
 
         cdef Order order = self.order_factory.market(
@@ -867,9 +866,8 @@ cdef class TradeStrategy:
         than the stop_time.
         """
         self._clock.set_timer(label, interval, start_time, stop_time, repeat, self.handle_event)
-        self.log.info(
-            (f"Set timer for {label} with interval {interval}, "
-             f"starting at {start_time}, stopping at {stop_time}, repeat={repeat}."))
+        self.log.info((f"Set timer for {label} with interval {interval}, "
+                       f"starting at {start_time}, stopping at {stop_time}, repeat={repeat}."))
 
     cpdef void cancel_timer(self, Label label):
         """

@@ -228,8 +228,6 @@ cdef class MockExecClient(ExecutionClient):
         """
         Send a submit order command to the mock execution service.
         """
-        self._register_order(command.order, command.position_id, command.strategy_id)
-
         cdef Order order = command.order
 
         cdef OrderSubmitted submitted = OrderSubmitted(
@@ -246,8 +244,6 @@ cdef class MockExecClient(ExecutionClient):
             GUID(uuid.uuid4()),
             datetime.utcnow())
 
-        if self.working_orders is None:
-            self.working_orders = []
         self.working_orders.append(command.order)
 
         cdef OrderWorking working = OrderWorking(

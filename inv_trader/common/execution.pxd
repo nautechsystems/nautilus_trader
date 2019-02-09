@@ -31,7 +31,7 @@ cdef class ExecutionClient:
     cdef GuidFactory _guid_factory
     cdef LoggerAdapter _log
     cdef object _queue
-    cdef object _process
+    cdef object _thread
     cdef Account _account
     cdef Portfolio _portfolio
     cdef dict _registered_strategies

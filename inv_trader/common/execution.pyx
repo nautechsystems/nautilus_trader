@@ -11,16 +11,18 @@
 
 from cpython.datetime cimport datetime
 from typing import Dict
-from multiprocessing import Process, SimpleQueue
+from threading import Thread
+from multiprocessing import Queue
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.common.clock cimport Clock
 from inv_trader.common.guid cimport GuidFactory
 from inv_trader.common.logger cimport Logger, LoggerAdapter
 from inv_trader.common.account cimport Account
+from inv_trader.enums.order_status cimport order_status_string
 from inv_trader.model.order cimport Order
 from inv_trader.model.events cimport Event, OrderEvent, AccountEvent, OrderModified
-from inv_trader.model.events cimport OrderRejected, OrderCancelReject, OrderFilled, OrderPartiallyFilled
+from inv_trader.model.events cimport OrderRejected, OrderCancelled, OrderCancelReject, OrderFilled, OrderPartiallyFilled
 from inv_trader.model.identifiers cimport GUID, OrderId, PositionId
 from inv_trader.commands cimport Command, CollateralInquiry, SubmitOrder, ModifyOrder, CancelOrder
 from inv_trader.strategy cimport TradeStrategy
@@ -53,8 +55,8 @@ cdef class ExecutionClient:
             self._log = LoggerAdapter(f"ExecClient")
         else:
             self._log = LoggerAdapter(f"ExecClient", logger)
-        self._queue = SimpleQueue()
-        self._process = Process(target=self._process_queue, daemon=True)
+        self._queue = Queue()
+        self._thread = Thread(target=self._process_queue, daemon=True)
         self._account = account
         self._portfolio = portfolio
         self._registered_strategies = {}  # type: Dict[GUID, TradeStrategy]
@@ -63,7 +65,7 @@ cdef class ExecutionClient:
         self._orders_active = {}          # type: Dict[GUID, Dict[OrderId, Order]]
         self._orders_completed = {}       # type: Dict[GUID, Dict[OrderId, Order]]
 
-        self._process.start()
+        self._thread.start()
         self._log.info(f"Initialized.")
 
     cpdef datetime time_now(self):
@@ -260,19 +262,19 @@ cdef class ExecutionClient:
         Process the queue.
         """
         while True:
-            if not self._queue.empty():
-                item = self._queue.get()
+            item = self._queue.get()
 
-                if isinstance(item, Event):
-                    self._handle_event(item)
-                elif isinstance(item, CollateralInquiry):
-                    self.collateral_inquiry(item)
-                elif isinstance(item, SubmitOrder):
-                    self.submit_order(item)
-                elif isinstance(item, ModifyOrder):
-                    self.modify_order(item)
-                elif isinstance(item, CancelOrder):
-                    self.cancel_order(item)
+            if isinstance(item, Event):
+                self._handle_event(item)
+            elif isinstance(item, CollateralInquiry):
+                self.collateral_inquiry(item)
+            elif isinstance(item, SubmitOrder):
+                self._register_order(item.order, item.position_id, item.strategy_id)
+                self.submit_order(item)
+            elif isinstance(item, ModifyOrder):
+                self.modify_order(item)
+            elif isinstance(item, CancelOrder):
+                self.cancel_order(item)
 
     cpdef void _register_order(self, Order order, PositionId position_id, GUID strategy_id):
         """
@@ -295,7 +297,7 @@ cdef class ExecutionClient:
         """
         Handle events received from the execution service.
         """
-        self._log.debug(f"Received {event}")
+        self._log.info(f"Received {event}")
 
         cdef Order order
         cdef GUID strategy_id
@@ -322,11 +324,12 @@ cdef class ExecutionClient:
                     if order.id in self._orders_active[strategy_id]:
                         del self._orders_active[strategy_id][order.id]
 
-            # Position events
             if isinstance(event, OrderFilled) or isinstance(event, OrderPartiallyFilled):
                 self._portfolio.handle_event(event, strategy_id)
             elif isinstance(event, OrderModified):
                 self._log.info(f"{event} price to {event.modified_price}")
+            elif isinstance(event, OrderCancelled):
+                self._log.info(str(event))
             # Warning Events
             elif isinstance(event, OrderRejected):
                 self._log.warning(f"{event} {event.rejected_reason}")
