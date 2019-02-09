@@ -718,6 +718,7 @@ class TradeStrategyTests(unittest.TestCase):
         strategy.submit_order(order, PositionId(str(order.id)))
 
         # Assert
+        time.sleep(0.1)
         self.assertEqual(order, strategy.orders_all()[order.id])
         self.assertEqual(OrderStatus.WORKING, strategy.orders_all()[order.id].status)
         self.assertTrue(order.id in strategy.orders_active())
@@ -757,6 +758,7 @@ class TradeStrategyTests(unittest.TestCase):
         strategy.cancel_order(order, 'NONE')
 
         # Assert
+        time.sleep(0.1)
         self.assertEqual(order, strategy.orders_all()[order.id])
         self.assertEqual(OrderStatus.CANCELLED, strategy.orders_all()[order.id].status)
         self.assertTrue(order.id in strategy.orders_completed())
@@ -797,6 +799,7 @@ class TradeStrategyTests(unittest.TestCase):
         strategy.modify_order(order, Price(1.00001, 5))
 
         # Assert
+        time.sleep(0.1)
         self.assertEqual(order, strategy.orders_all()[order.id])
         self.assertEqual(OrderStatus.WORKING, strategy.orders_all()[order.id].status)
         self.assertEqual(Price(1.00001, 5), strategy.orders_all()[order.id].price)
@@ -829,6 +832,7 @@ class TradeStrategyTests(unittest.TestCase):
         strategy.cancel_all_orders('TEST')
 
         # Assert
+        time.sleep(0.1)
         self.assertEqual(order1, strategy.orders_all()[order1.id])
         self.assertEqual(order2, strategy.orders_all()[order2.id])
         self.assertEqual(OrderStatus.CANCELLED, strategy.orders_all()[order1.id].status)

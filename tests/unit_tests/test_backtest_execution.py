@@ -9,6 +9,7 @@
 
 import pandas as pd
 import unittest
+import time
 
 from decimal import Decimal
 from datetime import datetime, timezone, timedelta
@@ -21,6 +22,7 @@ from inv_trader.model.enums import Venue, OrderSide
 from inv_trader.model.identifiers import Label, OrderId, PositionId
 from inv_trader.model.objects import Symbol, Price, Money
 from inv_trader.model.events import OrderRejected, OrderWorking, OrderModified, OrderFilled
+from inv_trader.strategy import TradeStrategy
 from inv_trader.backtest.execution import BacktestExecClient
 from inv_trader.portfolio.portfolio import Portfolio
 from test_kit.strategies import TestStrategy1
@@ -80,10 +82,14 @@ class BacktestExecClientTests(unittest.TestCase):
 
     def test_can_send_collateral_inquiry(self):
         # Arrange
+        strategy = TradeStrategy()
+        self.client.register_strategy(strategy)
+
         # Act
-        self.client.collateral_inquiry()
+        strategy.collateral_inquiry()
 
         # Assert
+        time.sleep(0.1)
         self.assertEqual(2, self.account.event_count)
 
     def test_can_submit_market_order(self):
@@ -97,13 +103,16 @@ class BacktestExecClientTests(unittest.TestCase):
             OrderSide.BUY,
             100000)
 
+        order_id = order.id
+
         # Act
         strategy.submit_order(order, PositionId(str(order.id)))
 
         # Assert
+        time.sleep(0.1)
         self.assertEqual(4, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[3], OrderFilled))
-        self.assertEqual(Price('86.711'), order.average_price)
+        self.assertEqual(Price('86.711'), strategy.order(order_id).average_price)
 
     def test_can_submit_limit_order(self):
         # Arrange
@@ -121,6 +130,7 @@ class BacktestExecClientTests(unittest.TestCase):
         strategy.submit_order(order, PositionId(str(order.id)))
 
         # Assert
+        time.sleep(0.1)
         print(strategy.object_storer.get_store())
         self.assertEqual(4, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[3], OrderWorking))
@@ -138,13 +148,16 @@ class BacktestExecClientTests(unittest.TestCase):
             100000,
             Price('86.711'))
 
+        order_id = order.id
+
         strategy.submit_order(order, PositionId(str(order.id)))
 
         # Act
         strategy.modify_order(order, Price('86.712'))
 
         # Assert
-        self.assertEqual(Price('86.712'), order.price)
+        time.sleep(0.1)
+        self.assertEqual(Price('86.712'), strategy.order(order_id).price)
         self.assertEqual(5, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[4], OrderModified))
 
@@ -164,5 +177,6 @@ class BacktestExecClientTests(unittest.TestCase):
         strategy.submit_order(order, PositionId(str(order.id)))
 
         # Assert
+        time.sleep(0.1)
         self.assertEqual(4, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[3], OrderRejected))
