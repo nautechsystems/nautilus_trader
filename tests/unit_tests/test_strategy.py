@@ -16,7 +16,7 @@ from datetime import datetime, timezone, timedelta
 from inv_trader.common.clock import TestClock, LiveClock
 from inv_trader.model.enums import Venue, Resolution, QuoteType, OrderSide, TimeInForce, OrderStatus
 from inv_trader.model.enums import MarketPosition
-from inv_trader.model.objects import Symbol, Price, Tick, BarType, Bar
+from inv_trader.model.objects import Quantity, Symbol, Price, Tick, BarType, Bar
 from inv_trader.model.events import TimeEvent
 from inv_trader.model.identifiers import GUID, Label, OrderId, PositionId
 from inv_trader.model.position import Position
@@ -314,7 +314,7 @@ class TradeStrategyTests(unittest.TestCase):
         order = strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            100000)
+            Quantity(100000))
 
         strategy.submit_order(order, PositionId('some-position'))
 
@@ -342,7 +342,7 @@ class TradeStrategyTests(unittest.TestCase):
         order = strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            100000)
+            Quantity(100000))
 
         position_id = PositionId('AUDUSD-1-123456')
 
@@ -712,7 +712,7 @@ class TradeStrategyTests(unittest.TestCase):
         order = strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            100000)
+            Quantity(100000))
 
         # Act
         strategy.submit_order(order, PositionId(str(order.id)))
@@ -750,7 +750,7 @@ class TradeStrategyTests(unittest.TestCase):
         order = strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            100000)
+            Quantity(100000))
 
         strategy.submit_order(order, PositionId(str(order.id)))
 
@@ -790,7 +790,7 @@ class TradeStrategyTests(unittest.TestCase):
         order = strategy.order_factory.limit(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            100000,
+            Quantity(100000),
             Price(1.00000, 5))
 
         strategy.submit_order(order, PositionId(str(order.id)))
@@ -814,13 +814,13 @@ class TradeStrategyTests(unittest.TestCase):
         order1 = strategy.order_factory.stop_market(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            100000,
+            Quantity(100000),
             Price(1.00000, 5))
 
         order2 = strategy.order_factory.stop_market(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            100000,
+            Quantity(100000),
             Price(1.00010, 5))
 
         position_id = strategy.generate_position_id(AUDUSD_FXCM)
@@ -849,7 +849,7 @@ class TradeStrategyTests(unittest.TestCase):
         order = strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            100000)
+            Quantity(100000))
 
         position_id = strategy.generate_position_id(AUDUSD_FXCM)
 
@@ -887,12 +887,12 @@ class TradeStrategyTests(unittest.TestCase):
         order1 = strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            100000)
+            Quantity(100000))
 
         order2 = strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            100000)
+            Quantity(100000))
 
         strategy.submit_order(order1, PositionId('some-position1'))
         strategy.submit_order(order2, PositionId('some-position2'))
@@ -954,7 +954,7 @@ class TradeStrategyTests(unittest.TestCase):
         order = strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            100000)
+            Quantity(100000))
 
         strategy.submit_order(order, strategy.generate_position_id(AUDUSD_FXCM))
         exec_client.fill_last_order()
@@ -982,12 +982,12 @@ class TradeStrategyTests(unittest.TestCase):
         order1 = strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            100000)
+            Quantity(100000))
 
         order2 = strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.SELL,
-            100000)
+            Quantity(100000))
 
         strategy.submit_order(order1, position1)
         exec_client.fill_last_order()

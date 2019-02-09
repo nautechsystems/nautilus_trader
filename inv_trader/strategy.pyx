@@ -749,9 +749,7 @@ cdef class TradeStrategy:
         :raises ValueError: If the strategy has not been registered with an execution client.
         :raises ValueError: If the cancel_reason is not a valid string.
         """
-        Precondition.valid_string(cancel_reason, 'cancel_reason')
-
-        self._exec_client.cancel_all_orders(self.id, cancel_reason)
+        self._exec_client.cancel_all_orders(self.id, ValidString(cancel_reason))
 
     cpdef void flatten_position(self, PositionId position_id):
         """
