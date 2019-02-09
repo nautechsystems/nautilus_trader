@@ -207,7 +207,7 @@ cdef class ExecutionClient:
 
     cpdef void _process_queue(self):
         """
-        Process the queue.
+        Process the queue one item at a time.
         """
         while True:
             item = self._queue.get()

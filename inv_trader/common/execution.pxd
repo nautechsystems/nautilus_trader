@@ -17,7 +17,6 @@ from inv_trader.common.guid cimport GuidFactory
 from inv_trader.common.logger cimport LoggerAdapter
 from inv_trader.model.events cimport Event
 from inv_trader.model.identifiers cimport GUID, OrderId, PositionId
-from inv_trader.model.objects cimport ValidString
 from inv_trader.model.order cimport Order
 from inv_trader.commands cimport  Command, CollateralInquiry, SubmitOrder, ModifyOrder, CancelOrder
 from inv_trader.portfolio.portfolio cimport Portfolio

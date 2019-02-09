@@ -13,6 +13,8 @@ import logging
 import os
 import threading
 
+from threading import Thread
+from queue import Queue
 from logging import INFO, DEBUG
 
 from inv_trader.core.precondition cimport Precondition
@@ -186,8 +188,12 @@ cdef class LoggerAdapter:
             component_name = ''
 
         self._logger = logger
+        self._queue = Queue()
+        self._thread = Thread(target=self._process_messages, daemon=True)
         self.component_name = component_name
         self.bypassed = logger.bypass_logging
+
+        self._thread.start()
 
     cpdef void debug(self, str message):
         """
@@ -196,7 +202,7 @@ cdef class LoggerAdapter:
         :param message: The debug message to log.
         """
         if not self.bypassed:
-            self._logger.debug(self._format_message(message))
+            self._queue.put((logging.DEBUG, self._format_message(message)))
 
     cpdef void info(self, str message):
         """
@@ -205,7 +211,7 @@ cdef class LoggerAdapter:
         :param message: The information message to log.
         """
         if not self.bypassed:
-            self._logger.info(self._format_message(message))
+            self._queue.put((logging.INFO, self._format_message(message)))
 
     cpdef void warning(self, str message):
         """
@@ -214,7 +220,7 @@ cdef class LoggerAdapter:
         :param message: The warning message to log.
         """
         if not self.bypassed:
-            self._logger.warning(self._format_message(message))
+            self._queue.put((logging.WARNING, self._format_message(message)))
 
     cpdef void error(self, str message):
         """
@@ -223,7 +229,7 @@ cdef class LoggerAdapter:
         :param message: The error message to log.
         """
         if not self.bypassed:
-            self._logger.error(self._format_message(message))
+            self._queue.put((logging.ERROR, self._format_message(message)))
 
     cpdef void critical(self, str message):
         """
@@ -232,7 +238,25 @@ cdef class LoggerAdapter:
         :param message: The critical message to log.
         """
         if not self.bypassed:
-            self._logger.critical(self._format_message(message))
+            self._queue.put((logging.CRITICAL, self._format_message(message)))
 
     cdef ValidString _format_message(self, str message):
         return ValidString(f"{self.component_name}: {message}")
+
+    cpdef void _process_messages(self):
+        """
+        Process the queue one item at a time.
+        """
+        while True:
+            item = self._queue.get()
+
+            if item[0] == logging.DEBUG:
+                self._logger.debug(item[1])
+            elif item[0] == logging.INFO:
+                self._logger.info(item[1])
+            elif item[0] == logging.WARNING:
+                self._logger.warning(item[1])
+            elif item[0] == logging.ERROR:
+                self._logger.error(item[1])
+            elif item[0] == logging.CRITICAL:
+                self._logger.critical(item[1])
