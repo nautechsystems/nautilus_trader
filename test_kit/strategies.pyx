@@ -16,7 +16,7 @@ from inv_trader.common.clock cimport Clock, TestClock
 from inv_trader.common.logger cimport Logger
 from inv_trader.enums.order_side cimport OrderSide
 from inv_trader.enums.time_in_force cimport TimeInForce
-from inv_trader.model.objects cimport Symbol, Price, Tick, BarType, Bar, Instrument
+from inv_trader.model.objects cimport Quantity, Symbol, Price, Tick, BarType, Bar, Instrument
 from inv_trader.model.events cimport Event
 from inv_trader.model.identifiers cimport Label, OrderId, PositionId
 from inv_trader.model.order cimport Order
@@ -128,7 +128,7 @@ cdef class EMACross(TradeStrategy):
     cdef readonly Instrument instrument
     cdef readonly Symbol symbol
     cdef readonly BarType bar_type
-    cdef readonly int position_size
+    cdef readonly Quantity position_size
     cdef readonly int tick_precision
     cdef readonly object entry_buffer
     cdef readonly float SL_atr_multiple
@@ -175,7 +175,7 @@ cdef class EMACross(TradeStrategy):
         self.instrument = instrument
         self.symbol = instrument.symbol
         self.bar_type = bar_type
-        self.position_size = position_size
+        self.position_size = Quantity(position_size)
         self.tick_precision = instrument.tick_precision
         self.entry_buffer = instrument.tick_size
         self.SL_atr_multiple = sl_atr_multiple
@@ -241,7 +241,7 @@ cdef class EMACross(TradeStrategy):
                     expire_time=self.time_now() + timedelta(minutes=1))
                 self.entry_orders[entry_order.id] = entry_order
                 self.log.info(f"Added {entry_order.id} to entry orders.")
-                self.position_id = PositionId(str(entry_order.id))
+                self.position_id = self.generate_position_id(self.symbol)
                 self.submit_order(entry_order, self.position_id)
 
             # SELL LOGIC
@@ -256,7 +256,7 @@ cdef class EMACross(TradeStrategy):
                     expire_time=self.time_now() + timedelta(minutes=1))
                 self.entry_orders[entry_order.id] = entry_order
                 self.log.info(f"Added {entry_order.id} to entry orders.")
-                self.position_id = PositionId(str(entry_order.id))
+                self.position_id = self.generate_position_id(self.symbol)
                 self.submit_order(entry_order, self.position_id)
 
         for order_id, order in self.stop_loss_orders.items():

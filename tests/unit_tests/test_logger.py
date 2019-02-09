@@ -10,7 +10,7 @@
 import unittest
 import logging
 
-from inv_trader.common.logger import Logger
+from inv_trader.common.logger import Logger, LoggerAdapter
 
 
 class LoggerTests(unittest.TestCase):
@@ -21,9 +21,10 @@ class LoggerTests(unittest.TestCase):
     def test_can_log_debug_messages_to_console(self):
         # Arrange
         logger = Logger(level_console=logging.DEBUG)
+        logger_adapter = LoggerAdapter('TEST_LOGGER', logger)
 
         # Act
-        logger.debug("This is a log message.")
+        logger_adapter.debug("This is a log message.")
 
         # Assert
         self.assertTrue(True)  # Does not raise errors.
@@ -31,9 +32,10 @@ class LoggerTests(unittest.TestCase):
     def test_can_log_info_messages_to_console(self):
         # Arrange
         logger = Logger(level_console=logging.INFO)
+        logger_adapter = LoggerAdapter('TEST_LOGGER', logger)
 
         # Act
-        logger.info("This is a log message.")
+        logger_adapter.info("This is a log message.")
 
         # Assert
         self.assertTrue(True)  # Does not raise errors.
@@ -41,9 +43,21 @@ class LoggerTests(unittest.TestCase):
     def test_can_log_warning_messages_to_console(self):
         # Arrange
         logger = Logger(level_console=logging.WARNING)
+        logger_adapter = LoggerAdapter('TEST_LOGGER', logger)
 
         # Act
-        logger.warning("This is a log message.")
+        logger_adapter.warning("This is a log message.")
+
+        # Assert
+        self.assertTrue(True)  # Does not raise errors.
+
+    def test_can_log_error_messages_to_console(self):
+        # Arrange
+        logger = Logger(level_console=logging.ERROR)
+        logger_adapter = LoggerAdapter('TEST_LOGGER', logger)
+
+        # Act
+        logger_adapter.error("This is a log message.")
 
         # Assert
         self.assertTrue(True)  # Does not raise errors.
@@ -51,9 +65,10 @@ class LoggerTests(unittest.TestCase):
     def test_can_log_critical_messages_to_console(self):
         # Arrange
         logger = Logger(level_console=logging.CRITICAL)
+        logger_adapter = LoggerAdapter('TEST_LOGGER', logger)
 
         # Act
-        logger.critical("This is a log message.")
+        logger_adapter.critical("This is a log message.")
 
         # Assert
         self.assertTrue(True)  # Does not raise errors.

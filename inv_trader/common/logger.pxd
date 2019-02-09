@@ -10,6 +10,7 @@
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
 from inv_trader.common.clock cimport Clock
+from inv_trader.model.objects cimport ValidString
 
 
 cdef class Logger:
@@ -26,12 +27,13 @@ cdef class Logger:
 
     cdef readonly bint bypass_logging
 
-    cpdef void debug(self, str message)
-    cpdef void info(self, str message)
-    cpdef void warning(self, str message)
-    cpdef void critical(self, str message)
+    cpdef void debug(self, ValidString message)
+    cpdef void info(self, ValidString message)
+    cpdef void warning(self, ValidString message)
+    cpdef void error(self, ValidString message)
+    cpdef void critical(self, ValidString message)
     cdef str _format_message(self, str log_level, str message)
-    cdef void _console_print_handler(self, str message, log_level)
+    cdef void _console_print_handler(self, log_level, str message, )
 
 
 cdef class LoggerAdapter:
@@ -46,5 +48,6 @@ cdef class LoggerAdapter:
     cpdef void debug(self, str message)
     cpdef void info(self, str message)
     cpdef void warning(self, str message)
+    cpdef void error(self, str message)
     cpdef void critical(self, str message)
-    cdef str _format_message(self, str message)
+    cdef ValidString _format_message(self, str message)

@@ -126,7 +126,7 @@ cdef class AccountEvent(Event):
         :return: The str() string representation of the event.
         """
         return (f"{self.__class__.__name__}"
-                f"(order_id={self.cash_balance}, margin_used={self.margin_used_maintenance})")
+                f"(cash_balance={self.cash_balance}, margin_used={self.margin_used_maintenance})")
 
     def __repr__(self) -> str:
         """

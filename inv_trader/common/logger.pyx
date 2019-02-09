@@ -16,12 +16,13 @@ import threading
 from logging import INFO, DEBUG
 
 from inv_trader.core.precondition cimport Precondition
+from inv_trader.model.objects cimport ValidString
 from inv_trader.common.clock cimport Clock, LiveClock
 
 
 cdef str HEADER = '\033[95m'
-cdef str OKBLUE = '\033[94m'
-cdef str OKGREEN = '\033[92m'
+cdef str OK_BLUE = '\033[94m'
+cdef str OK_GREEN = '\033[92m'
 cdef str WARNING = '\033[1;33m'
 cdef str FAIL = '\033[01;31m'
 cdef str ENDC = '\033[0m'
@@ -81,16 +82,14 @@ cdef class Logger:
             self._log_file_handler = logging.FileHandler(self._log_file)
             self._logger.addHandler(self._log_file_handler)
 
-    cpdef void debug(self, str message):
+    cpdef void debug(self, ValidString message):
         """
         Log the given debug message with the logger.
 
         :param message: The debug message to log.
         """
-        Precondition.valid_string(message, 'message')
-
-        log_message = self._format_message('DBG', message)
-        self._console_print_handler(log_message, logging.DEBUG)
+        cdef str log_message = self._format_message('DBG', message.value)
+        self._console_print_handler(logging.DEBUG, log_message)
 
         if self._log_to_file:
             try:
@@ -98,16 +97,14 @@ cdef class Logger:
             except IOError as ex:
                 self._console_print_handler(f"IOError: {ex}.", logging.CRITICAL)
 
-    cpdef void info(self, str message):
+    cpdef void info(self, ValidString message):
         """
         Log the given information message with the logger.
 
         :param message: The information message to log.
         """
-        Precondition.valid_string(message, 'message')
-
-        log_message = self._format_message('INF', message)
-        self._console_print_handler(log_message, logging.INFO)
+        cdef str log_message = self._format_message('INF', message.value)
+        self._console_print_handler(logging.INFO, log_message)
 
         if self._log_to_file:
             try:
@@ -115,16 +112,14 @@ cdef class Logger:
             except IOError as ex:
                 self._console_print_handler(f"IOError: {ex}.", logging.CRITICAL)
 
-    cpdef void warning(self, str message):
+    cpdef void warning(self, ValidString message):
         """
         Log the given warning message with the logger.
 
         :param message: The warning message to log.
         """
-        Precondition.valid_string(message, 'message')
-
-        log_message = self._format_message(WARNING + 'WRN' + ENDC, WARNING + message + ENDC)
-        self._console_print_handler(log_message, logging.WARNING)
+        cdef str log_message = self._format_message(WARNING + 'WRN' + ENDC, WARNING + message.value + ENDC)
+        self._console_print_handler(logging.WARNING, log_message)
 
         if self._log_to_file:
             try:
@@ -132,16 +127,29 @@ cdef class Logger:
             except IOError as ex:
                 self._console_print_handler(f"IOError: {ex}.", logging.CRITICAL)
 
-    cpdef void critical(self, str message):
+    cpdef void error(self, ValidString message):
+        """
+        Log the given error message with the logger.
+
+        :param message: The error message to log.
+        """
+        cdef str log_message = self._format_message(FAIL + 'ERR' + ENDC, FAIL + message.value + ENDC)
+        self._console_print_handler(logging.ERROR, log_message)
+
+        if self._log_to_file:
+            try:
+                self._logger.critical(log_message)
+            except IOError as ex:
+                self._console_print_handler(f"IOError: {ex}.", logging.CRITICAL)
+
+    cpdef void critical(self, ValidString message):
         """
         Log the given critical message with the logger.
 
         :param message: The critical message to log.
         """
-        Precondition.valid_string(message, 'message')
-
-        log_message = self._format_message(FAIL + 'FTL' + ENDC, FAIL + message + ENDC)
-        self._console_print_handler(log_message, logging.CRITICAL)
+        cdef str log_message = self._format_message(FAIL + 'CRT' + ENDC, FAIL + message.value + ENDC)
+        self._console_print_handler(logging.CRITICAL, log_message)
 
         if self._log_to_file:
             try:
@@ -151,10 +159,9 @@ cdef class Logger:
 
     cdef str _format_message(self, str log_level, str message):
         cdef str time = self._clock.time_now().isoformat(timespec='milliseconds') + 'Z'
-        return (f'{BOLD}{time}{ENDC} [{threading.current_thread().ident}][{log_level}] '
-                f'{message}')
+        return f"{BOLD}{time}{ENDC} [{threading.current_thread().ident}][{log_level}] {message}"
 
-    cdef void _console_print_handler(self, str message, log_level: logging):
+    cdef void _console_print_handler(self, log_level: logging, str message):
         if self._console_prints and log_level >= self._log_level_console:
             print(message)
 
@@ -188,8 +195,6 @@ cdef class LoggerAdapter:
 
         :param message: The debug message to log.
         """
-        Precondition.valid_string(message, 'message')
-
         if not self.bypassed:
             self._logger.debug(self._format_message(message))
 
@@ -199,8 +204,6 @@ cdef class LoggerAdapter:
 
         :param message: The information message to log.
         """
-        Precondition.valid_string(message, 'message')
-
         if not self.bypassed:
             self._logger.info(self._format_message(message))
 
@@ -210,10 +213,17 @@ cdef class LoggerAdapter:
 
         :param message: The warning message to log.
         """
-        Precondition.valid_string(message, 'message')
-
         if not self.bypassed:
             self._logger.warning(self._format_message(message))
+
+    cpdef void error(self, str message):
+        """
+        Log the given error message with the logger.
+
+        :param message: The error message to log.
+        """
+        if not self.bypassed:
+            self._logger.error(self._format_message(message))
 
     cpdef void critical(self, str message):
         """
@@ -221,10 +231,8 @@ cdef class LoggerAdapter:
 
         :param message: The critical message to log.
         """
-        Precondition.valid_string(message, 'message')
-
         if not self.bypassed:
             self._logger.critical(self._format_message(message))
 
-    cdef str _format_message(self, str message):
-        return f"{self.component_name}: {message}"
+    cdef ValidString _format_message(self, str message):
+        return ValidString(f"{self.component_name}: {message}")
