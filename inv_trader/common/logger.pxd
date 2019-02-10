@@ -24,14 +24,18 @@ cdef class Logger:
     cdef str _log_file
     cdef object _logger
     cdef Clock _clock
+    cdef object _queue
+    cdef object _thread
 
     cdef readonly bint bypass_logging
 
-    cpdef void debug(self, ValidString message)
-    cpdef void info(self, ValidString message)
-    cpdef void warning(self, ValidString message)
-    cpdef void error(self, ValidString message)
-    cpdef void critical(self, ValidString message)
+    cpdef void log(self, tuple message)
+    cpdef void _debug(self, ValidString message)
+    cpdef void _info(self, ValidString message)
+    cpdef void _warning(self, ValidString message)
+    cpdef void _error(self, ValidString message)
+    cpdef void _critical(self, ValidString message)
+    cpdef void _process_messages(self)
     cdef str _format_message(self, str log_level, str message)
     cdef void _console_print_handler(self, log_level, str message, )
 
@@ -41,8 +45,6 @@ cdef class LoggerAdapter:
     Provides a logger adapter adapter for a components logger.
     """
     cdef Logger _logger
-    cdef object _queue
-    cdef object _thread
 
     cdef readonly bint bypassed
     cdef readonly str component_name
@@ -53,4 +55,3 @@ cdef class LoggerAdapter:
     cpdef void error(self, str message)
     cpdef void critical(self, str message)
     cdef ValidString _format_message(self, str message)
-    cpdef void _process_messages(self)

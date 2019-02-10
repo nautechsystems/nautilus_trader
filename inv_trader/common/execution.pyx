@@ -11,15 +11,12 @@
 
 from cpython.datetime cimport datetime
 from typing import Dict
-from threading import Thread
-from queue import Queue
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.common.clock cimport Clock
 from inv_trader.common.guid cimport GuidFactory
 from inv_trader.common.logger cimport Logger, LoggerAdapter
 from inv_trader.common.account cimport Account
-from inv_trader.model.objects cimport ValidString
 from inv_trader.model.order cimport Order
 from inv_trader.model.events cimport Event, OrderEvent, AccountEvent, OrderModified
 from inv_trader.model.events cimport OrderRejected, OrderCancelled, OrderCancelReject, OrderFilled, OrderPartiallyFilled
@@ -55,8 +52,6 @@ cdef class ExecutionClient:
             self._log = LoggerAdapter(f"ExecClient")
         else:
             self._log = LoggerAdapter(f"ExecClient", logger)
-        self._queue = Queue()
-        self._thread = Thread(target=self._process_queue, daemon=True)
         self._account = account
         self._portfolio = portfolio
         self._registered_strategies = {}  # type: Dict[GUID, TradeStrategy]
@@ -65,7 +60,6 @@ cdef class ExecutionClient:
         self._orders_active = {}          # type: Dict[GUID, Dict[OrderId, Order]]
         self._orders_completed = {}       # type: Dict[GUID, Dict[OrderId, Order]]
 
-        self._thread.start()
         self._log.info(f"Initialized.")
 
     cpdef datetime time_now(self):
@@ -125,7 +119,8 @@ cdef class ExecutionClient:
         
         :param command: The command to execute.
         """
-        self._queue.put(command)
+        # Raise exception if not overridden in implementation.
+        raise NotImplementedError("Method must be implemented in the subclass.")
 
     cpdef void handle_event(self, Event event):
         """
@@ -133,7 +128,8 @@ cdef class ExecutionClient:
         
         :param event: The event to handle
         """
-        self._queue.put(event)
+        # Raise exception if not overridden in implementation.
+        raise NotImplementedError("Method must be implemented in the subclass.")
 
     cpdef Order get_order(self, OrderId order_id):
         """
@@ -205,24 +201,72 @@ cdef class ExecutionClient:
 
         return self._orders_completed[strategy_id].copy()
 
-    cpdef void _process_queue(self):
+    cpdef void _execute_command(self, Command command):
         """
-        Process the queue one item at a time.
+        Execute the given command received from a strategy.
+        
+        :param command: The command to execute.
         """
-        while True:
-            item = self._queue.get()
+        self._log.debug(f"Received {command}")
 
-            if isinstance(item, Event):
-                self._handle_event(item)
-            elif isinstance(item, CollateralInquiry):
-                self._collateral_inquiry(item)
-            elif isinstance(item, SubmitOrder):
-                self._register_order(item.order, item.position_id, item.strategy_id)
-                self._submit_order(item)
-            elif isinstance(item, ModifyOrder):
-                self._modify_order(item)
-            elif isinstance(item, CancelOrder):
-                self._cancel_order(item)
+        if isinstance(command, CollateralInquiry):
+            self._collateral_inquiry(command)
+        elif isinstance(command, SubmitOrder):
+            self._register_order(command.order, command.position_id, command.strategy_id)
+            self._submit_order(command)
+        elif isinstance(command, ModifyOrder):
+                self._modify_order(command)
+        elif isinstance(command, CancelOrder):
+                self._cancel_order(command)
+
+    cpdef void _handle_event(self, Event event):
+        """
+        Handle the given event received from the execution service.
+        """
+        self._log.debug(f"Received {event}")
+
+        cdef Order order
+        cdef GUID strategy_id
+
+        # Order events
+        if isinstance(event, OrderEvent):
+            Precondition.is_in(event.order_id, self._order_book, 'order_id', 'order_book')
+            Precondition.is_in(event.order_id, self._order_strategy_index, 'order_id', 'order_strategy_index')
+
+            order = self._order_book[event.order_id]
+            order.apply(event)
+
+            strategy_id = self._order_strategy_index[event.order_id]
+
+            # Active order
+            if order.is_active:
+                if order.id not in self._orders_active[strategy_id]:
+                    self._orders_active[strategy_id][order.id] = order
+
+            # Completed order
+            if order.is_complete:
+                if order.id not in self._orders_completed[strategy_id]:
+                    self._orders_completed[strategy_id][order.id] = order
+                    if order.id in self._orders_active[strategy_id]:
+                        del self._orders_active[strategy_id][order.id]
+
+            if isinstance(event, OrderFilled) or isinstance(event, OrderPartiallyFilled):
+                self._portfolio.handle_event(event, strategy_id)
+            elif isinstance(event, OrderModified):
+                self._log.info(f"{event} price to {event.modified_price}")
+            elif isinstance(event, OrderCancelled):
+                self._log.info(str(event))
+            # Warning Events
+            elif isinstance(event, OrderRejected):
+                self._log.warning(f"{event} {event.rejected_reason}")
+            elif isinstance(event, OrderCancelReject):
+                self._log.warning(f"{event} {event.cancel_reject_reason} {event.cancel_reject_response}")
+
+            # Send event to strategy
+            self._registered_strategies[strategy_id].handle_event(event)
+
+        elif isinstance(event, AccountEvent):
+            self._account.apply(event)
 
     cpdef void _register_order(self, Order order, PositionId position_id, GUID strategy_id):
         """
@@ -268,52 +312,3 @@ cdef class ExecutionClient:
         """
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the subclass.")
-
-    cpdef void _handle_event(self, Event event):
-        """
-        Handle events received from the execution service.
-        """
-        self._log.info(f"Received {event}")
-
-        cdef Order order
-        cdef GUID strategy_id
-
-        # Order events
-        if isinstance(event, OrderEvent):
-            Precondition.is_in(event.order_id, self._order_book, 'order_id', 'order_book')
-            Precondition.is_in(event.order_id, self._order_strategy_index, 'order_id', 'order_strategy_index')
-
-            order = self._order_book[event.order_id]
-            order.apply(event)
-
-            strategy_id = self._order_strategy_index[event.order_id]
-
-            # Active order
-            if order.is_active:
-                if order.id not in self._orders_active[strategy_id]:
-                    self._orders_active[strategy_id][order.id] = order
-
-            # Completed order
-            if order.is_complete:
-                if order.id not in self._orders_completed[strategy_id]:
-                    self._orders_completed[strategy_id][order.id] = order
-                    if order.id in self._orders_active[strategy_id]:
-                        del self._orders_active[strategy_id][order.id]
-
-            if isinstance(event, OrderFilled) or isinstance(event, OrderPartiallyFilled):
-                self._portfolio.handle_event(event, strategy_id)
-            elif isinstance(event, OrderModified):
-                self._log.info(f"{event} price to {event.modified_price}")
-            elif isinstance(event, OrderCancelled):
-                self._log.info(str(event))
-            # Warning Events
-            elif isinstance(event, OrderRejected):
-                self._log.warning(f"{event} {event.rejected_reason}")
-            elif isinstance(event, OrderCancelReject):
-                self._log.warning(f"{event} {event.cancel_reject_reason} {event.cancel_reject_response}")
-
-            # Send event to strategy
-            self._registered_strategies[strategy_id].handle_event(event)
-
-        elif isinstance(event, AccountEvent):
-            self._account.apply(event)

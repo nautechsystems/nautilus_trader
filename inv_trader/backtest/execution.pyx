@@ -24,7 +24,7 @@ from inv_trader.enums.order_type cimport OrderType
 from inv_trader.enums.order_side cimport OrderSide
 from inv_trader.model.objects cimport ValidString, Symbol, Price, Money, Instrument
 from inv_trader.model.order cimport Order
-from inv_trader.model.events cimport OrderEvent, AccountEvent
+from inv_trader.model.events cimport Event, OrderEvent, AccountEvent
 from inv_trader.model.events cimport OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
 from inv_trader.model.events cimport OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
 from inv_trader.model.events cimport OrderFilled
@@ -34,7 +34,7 @@ from inv_trader.common.clock cimport TestClock
 from inv_trader.common.guid cimport TestGuidFactory
 from inv_trader.common.logger cimport Logger
 from inv_trader.common.execution cimport ExecutionClient
-from inv_trader.commands cimport CollateralInquiry, SubmitOrder, ModifyOrder, CancelOrder
+from inv_trader.commands cimport Command, CollateralInquiry, SubmitOrder, ModifyOrder, CancelOrder
 from inv_trader.portfolio.portfolio cimport Portfolio
 
 
@@ -213,6 +213,22 @@ cdef class BacktestExecClient(ExecutionClient):
                 self._expire_order(order)
 
         self.iteration += 1
+
+    cpdef void execute_command(self, Command command):
+        """
+        Execute the given command.
+        
+        :param command: The command to execute.
+        """
+        self._execute_command(command)
+
+    cpdef void handle_event(self, Event event):
+        """
+        Handle the given event.
+        
+        :param event: The event to handle
+        """
+        self._handle_event(event)
 
     cpdef void _collateral_inquiry(self, CollateralInquiry command):
         """
@@ -471,8 +487,8 @@ cdef class BacktestExecClient(ExecutionClient):
             order.symbol,
             order.id,
             self._clock.time_now(),
-            'INVALID PRICE',
-            reason,
+            ValidString('INVALID PRICE'),
+            ValidString(reason),
             self._guid_factory.generate(),
             self._clock.time_now())
 
@@ -528,7 +544,7 @@ cdef class BacktestExecClient(ExecutionClient):
             margin_used_liquidation=Money(0),
             margin_used_maintenance=Money(0),
             margin_ratio=Decimal(0),
-            margin_call_status='NONE',
+            margin_call_status=ValidString(),
             event_id=self._guid_factory.generate(),
             event_timestamp=self._clock.time_now())
 

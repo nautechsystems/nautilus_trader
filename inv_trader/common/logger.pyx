@@ -13,7 +13,7 @@ import logging
 import os
 import threading
 
-from threading import Thread
+from threading import Thread, Lock
 from queue import Queue
 from logging import INFO, DEBUG
 
@@ -75,6 +75,8 @@ cdef class Logger:
         self._log_file = f'{log_file_path}{name}.log'
         self._logger = logging.getLogger(name)
         self._logger.setLevel(level_file)
+        self._queue = Queue()
+        self._thread = Thread(target=self._process_messages, daemon=True)
 
         # Setup log file handling.
         if log_to_file:
@@ -84,7 +86,17 @@ cdef class Logger:
             self._log_file_handler = logging.FileHandler(self._log_file)
             self._logger.addHandler(self._log_file_handler)
 
-    cpdef void debug(self, ValidString message):
+        self._thread.start()
+
+    cpdef void log(self, tuple message):
+        """
+        TBA
+        :param message: 
+        :return: 
+        """
+        self._queue.put(message)
+
+    cpdef void _debug(self, ValidString message):
         """
         Log the given debug message with the logger.
 
@@ -99,7 +111,7 @@ cdef class Logger:
             except IOError as ex:
                 self._console_print_handler(f"IOError: {ex}.", logging.CRITICAL)
 
-    cpdef void info(self, ValidString message):
+    cpdef void _info(self, ValidString message):
         """
         Log the given information message with the logger.
 
@@ -114,7 +126,7 @@ cdef class Logger:
             except IOError as ex:
                 self._console_print_handler(f"IOError: {ex}.", logging.CRITICAL)
 
-    cpdef void warning(self, ValidString message):
+    cpdef void _warning(self, ValidString message):
         """
         Log the given warning message with the logger.
 
@@ -129,7 +141,7 @@ cdef class Logger:
             except IOError as ex:
                 self._console_print_handler(f"IOError: {ex}.", logging.CRITICAL)
 
-    cpdef void error(self, ValidString message):
+    cpdef void _error(self, ValidString message):
         """
         Log the given error message with the logger.
 
@@ -144,7 +156,7 @@ cdef class Logger:
             except IOError as ex:
                 self._console_print_handler(f"IOError: {ex}.", logging.CRITICAL)
 
-    cpdef void critical(self, ValidString message):
+    cpdef void _critical(self, ValidString message):
         """
         Log the given critical message with the logger.
 
@@ -159,13 +171,33 @@ cdef class Logger:
             except IOError as ex:
                 self._console_print_handler(f"IOError: {ex}.", logging.CRITICAL)
 
+    cpdef void _process_messages(self):
+        """
+        Process the queue one item at a time.
+        """
+        while True:
+            item = self._queue.get()
+
+            if item[0] == logging.DEBUG:
+                self._debug(item[1])
+            elif item[0] == logging.INFO:
+                self._info(item[1])
+            elif item[0] == logging.WARNING:
+                self._warning(item[1])
+            elif item[0] == logging.ERROR:
+                self._error(item[1])
+            elif item[0] == logging.CRITICAL:
+                self._critical(item[1])
+
     cdef str _format_message(self, str log_level, str message):
-        cdef str time = self._clock.time_now().isoformat(timespec='milliseconds') + 'Z'
+        #cdef str time = self._clock.time_now().isoformat(timespec='milliseconds') + 'Z'
+        cdef str time = self._clock.time_now().isoformat() + 'Z'
         return f"{BOLD}{time}{ENDC} [{threading.current_thread().ident}][{log_level}] {message}"
 
     cdef void _console_print_handler(self, log_level: logging, str message):
         if self._console_prints and log_level >= self._log_level_console:
-            print(message)
+            with Lock():
+                print(message)
 
 
 cdef class LoggerAdapter:
@@ -188,12 +220,8 @@ cdef class LoggerAdapter:
             component_name = ''
 
         self._logger = logger
-        self._queue = Queue()
-        self._thread = Thread(target=self._process_messages, daemon=True)
         self.component_name = component_name
         self.bypassed = logger.bypass_logging
-
-        self._thread.start()
 
     cpdef void debug(self, str message):
         """
@@ -202,7 +230,7 @@ cdef class LoggerAdapter:
         :param message: The debug message to log.
         """
         if not self.bypassed:
-            self._queue.put((logging.DEBUG, self._format_message(message)))
+            self._logger.log((logging.DEBUG, self._format_message(message)))
 
     cpdef void info(self, str message):
         """
@@ -211,7 +239,7 @@ cdef class LoggerAdapter:
         :param message: The information message to log.
         """
         if not self.bypassed:
-            self._queue.put((logging.INFO, self._format_message(message)))
+            self._logger.log((logging.INFO, self._format_message(message)))
 
     cpdef void warning(self, str message):
         """
@@ -220,7 +248,7 @@ cdef class LoggerAdapter:
         :param message: The warning message to log.
         """
         if not self.bypassed:
-            self._queue.put((logging.WARNING, self._format_message(message)))
+            self._logger.log((logging.WARNING, self._format_message(message)))
 
     cpdef void error(self, str message):
         """
@@ -229,7 +257,7 @@ cdef class LoggerAdapter:
         :param message: The error message to log.
         """
         if not self.bypassed:
-            self._queue.put((logging.ERROR, self._format_message(message)))
+            self._logger.log((logging.ERROR, self._format_message(message)))
 
     cpdef void critical(self, str message):
         """
@@ -238,25 +266,7 @@ cdef class LoggerAdapter:
         :param message: The critical message to log.
         """
         if not self.bypassed:
-            self._queue.put((logging.CRITICAL, self._format_message(message)))
+            self._logger.log((logging.CRITICAL, self._format_message(message)))
 
     cdef ValidString _format_message(self, str message):
         return ValidString(f"{self.component_name}: {message}")
-
-    cpdef void _process_messages(self):
-        """
-        Process the queue one item at a time.
-        """
-        while True:
-            item = self._queue.get()
-
-            if item[0] == logging.DEBUG:
-                self._logger.debug(item[1])
-            elif item[0] == logging.INFO:
-                self._logger.info(item[1])
-            elif item[0] == logging.WARNING:
-                self._logger.warning(item[1])
-            elif item[0] == logging.ERROR:
-                self._logger.error(item[1])
-            elif item[0] == logging.CRITICAL:
-                self._logger.critical(item[1])
