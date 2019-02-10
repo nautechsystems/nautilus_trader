@@ -25,11 +25,10 @@ from inv_trader.common.logger cimport Logger
 from inv_trader.common.account cimport Account
 from inv_trader.model.objects cimport Price
 from inv_trader.model.order cimport Order
-from inv_trader.model.events cimport OrderSubmitted, OrderAccepted, OrderWorking
-from inv_trader.model.events cimport  OrderModified, OrderCancelled
-from inv_trader.model.events cimport OrderFilled
+from inv_trader.model.events cimport Event, OrderSubmitted, OrderAccepted, OrderWorking
+from inv_trader.model.events cimport  OrderModified, OrderCancelled, OrderFilled
 from inv_trader.model.identifiers cimport GUID, OrderId, ExecutionId, ExecutionTicket
-from inv_trader.commands cimport CollateralInquiry, SubmitOrder, ModifyOrder, CancelOrder
+from inv_trader.commands cimport Command, CollateralInquiry, SubmitOrder, ModifyOrder, CancelOrder
 from inv_trader.portfolio.portfolio cimport Portfolio
 
 cdef str UTF8 = 'utf-8'
@@ -222,6 +221,22 @@ cdef class MockExecClient(ExecutionClient):
         Disconnect from the execution service.
         """
         self._log.info("MockExecClient disconnected.")
+
+    cpdef void execute_command(self, Command command):
+        """
+        Execute the given command.
+        
+        :param command: The command to execute.
+        """
+        self._execute_command(command)
+
+    cpdef void handle_event(self, Event event):
+        """
+        Handle the given event.
+        
+        :param event: The event to handle
+        """
+        self._handle_event(event)
 
     cpdef void fill_last_order(self):
         """

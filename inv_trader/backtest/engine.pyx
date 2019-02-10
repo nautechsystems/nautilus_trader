@@ -17,6 +17,7 @@ from cpython.datetime cimport datetime, timedelta
 from pandas import DataFrame
 from typing import List, Dict
 from logging import INFO, DEBUG
+from time import sleep
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.backtest.data cimport BacktestDataClient
@@ -99,12 +100,9 @@ cdef class BacktestEngine:
         self.clock = LiveClock()
         self.created_time = self.clock.time_now()
 
-        cdef Logger logger = Logger()
-        self.log = LoggerAdapter(component_name='BacktestEngine', logger=logger)
-
         self.test_clock = TestClock()
         self.test_clock.set_time(self.clock.time_now())
-        self.test_log = Logger(
+        self.test_logger = Logger(
             name='backtest',
             bypass_logging=config.bypass_logging,
             level_console=config.level_console,
@@ -113,9 +111,10 @@ cdef class BacktestEngine:
             log_to_file=config.log_to_file,
             log_file_path=config.log_file_path,
             clock=self.test_clock)
+        self.log = LoggerAdapter(component_name='BacktestEngine', logger=self.test_logger)
 
         self.account = Account()
-        self.portfolio = Portfolio(logger=self.test_log)
+        self.portfolio = Portfolio(logger=self.test_logger)
         self.instruments = instruments
         self.data_client = BacktestDataClient(
             instruments=instruments,
@@ -123,7 +122,7 @@ cdef class BacktestEngine:
             data_bars_bid=data_bars_bid,
             data_bars_ask=data_bars_ask,
             clock=self.test_clock,
-            logger=self.test_log)
+            logger=self.test_logger)
 
         cdef dict minute_bars_bid = {}
         for symbol, data in data_bars_bid.items():
@@ -144,7 +143,7 @@ cdef class BacktestEngine:
             portfolio=self.portfolio,
             clock=self.test_clock,
             guid_factory=TestGuidFactory(),
-            logger=self.test_log)
+            logger=self.test_logger)
 
         self.data_minute_index = self.data_client.data_minute_index
 
@@ -157,7 +156,7 @@ cdef class BacktestEngine:
             # Replace strategies clocks with test clocks
             strategy.change_clock(TestClock())  # Separate test clock to iterate independently
             # Replace strategies loggers with test loggers
-            strategy.change_logger(self.test_log)
+            strategy.change_logger(self.test_logger)
 
         self.trader = Trader(
             'Backtest',
@@ -222,6 +221,7 @@ cdef class BacktestEngine:
         assert(self.data_client.time_now() == start)
         assert(self.exec_client.time_now() == start)
 
+        sleep(0.3)
         while time < stop:
             # Iterate execution first to simulate correct order of events
             # Order fills should occur before the bar closes
