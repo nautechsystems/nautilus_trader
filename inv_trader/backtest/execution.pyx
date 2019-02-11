@@ -23,7 +23,7 @@ from inv_trader.enums.currency_code cimport CurrencyCode
 from inv_trader.enums.order_type cimport OrderType
 from inv_trader.enums.order_side cimport OrderSide
 from inv_trader.model.objects cimport ValidString, Symbol, Price, Money, Instrument
-from inv_trader.model.order cimport Order
+from inv_trader.model.order cimport Order, AtomicOrder
 from inv_trader.model.events cimport Event, OrderEvent, AccountEvent
 from inv_trader.model.events cimport OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
 from inv_trader.model.events cimport OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
@@ -102,8 +102,9 @@ cdef class BacktestExecClient(ExecutionClient):
         self.day_number = 0
         self.account_cash_start_day = starting_capital
         self.account_cash_activity_day = Money(0)
-        self.slippage_index = {}                    # type: Dict[Symbol, Decimal]
-        self.working_orders = {}                    # type: Dict[OrderId, Order]
+        self.slippage_index = {}  # type: Dict[Symbol, Decimal]
+        self.working_orders = {}  # type: Dict[OrderId, Order]
+        self.working_atomic_orders = {}  # type: Dict[OrderId, AtomicOrder]
 
         self._set_slippage_index(slippage_ticks)
 

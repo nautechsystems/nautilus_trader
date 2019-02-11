@@ -18,7 +18,8 @@ from inv_trader.common.logger cimport LoggerAdapter
 from inv_trader.model.events cimport Event
 from inv_trader.model.identifiers cimport GUID, OrderId, PositionId
 from inv_trader.model.order cimport Order
-from inv_trader.commands cimport  Command, CollateralInquiry, SubmitOrder, ModifyOrder, CancelOrder
+from inv_trader.commands cimport Command, CollateralInquiry
+from inv_trader.commands cimport SubmitOrder, SubmitAtomicOrder, ModifyOrder, CancelOrder
 from inv_trader.portfolio.portfolio cimport Portfolio
 from inv_trader.strategy cimport TradeStrategy
 
@@ -60,5 +61,6 @@ cdef class ExecutionClient:
     cdef void _register_order(self, Order order, PositionId position_id, GUID strategy_id)
     cdef void _collateral_inquiry(self, CollateralInquiry command)
     cdef void _submit_order(self, SubmitOrder command)
+    cdef void _submit_atomic_order(self, SubmitAtomicOrder command)
     cdef void _modify_order(self, ModifyOrder command)
     cdef void _cancel_order(self, CancelOrder command)

@@ -22,7 +22,8 @@ from inv_trader.model.order cimport Order
 from inv_trader.model.events cimport Event, OrderEvent, AccountEvent, OrderModified
 from inv_trader.model.events cimport OrderRejected, OrderCancelled, OrderCancelReject, OrderFilled, OrderPartiallyFilled
 from inv_trader.model.identifiers cimport GUID, OrderId, PositionId
-from inv_trader.commands cimport Command, CollateralInquiry, SubmitOrder, ModifyOrder, CancelOrder
+from inv_trader.commands cimport Command, CollateralInquiry
+from inv_trader.commands cimport SubmitOrder, SubmitAtomicOrder, ModifyOrder, CancelOrder
 from inv_trader.strategy cimport TradeStrategy
 from inv_trader.portfolio.portfolio cimport Portfolio
 
@@ -214,10 +215,16 @@ cdef class ExecutionClient:
         elif isinstance(command, SubmitOrder):
             self._register_order(command.order, command.position_id, command.strategy_id)
             self._submit_order(command)
+        elif isinstance(command, SubmitAtomicOrder):
+            self._register_order(command.atomic_order.entry, command.position_id, command.strategy_id)
+            self._register_order(command.atomic_order.stop_loss, command.position_id, command.strategy_id)
+            if command.has_profit_target:
+                self._register_order(command.atomic_order.profit_target, command.position_id, command.strategy_id)
+            self._submit_atomic_order(command)
         elif isinstance(command, ModifyOrder):
-                self._modify_order(command)
+            self._modify_order(command)
         elif isinstance(command, CancelOrder):
-                self._cancel_order(command)
+            self._cancel_order(command)
 
     cdef void _handle_event(self, Event event):
         """
@@ -283,32 +290,49 @@ cdef class ExecutionClient:
         self._order_book[order.id] = order
         self._order_strategy_index[order.id] = strategy_id
         self._portfolio.register_order(order.id, position_id)
-        self._log.info(f"Registered {order.id} with {position_id} for strategy with id {strategy_id}.")
+        self._log.debug(f"Registered {order.id} with {position_id} for strategy with id {strategy_id}.")
 
     cdef void _collateral_inquiry(self, CollateralInquiry command):
         """
         Send a collateral inquiry command to the execution service.
+        
+        :param command: The command to send.
         """
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the subclass.")
 
     cdef void _submit_order(self, SubmitOrder command):
         """
-        Send a submit order request to the execution service.
+        Send a submit order command to the execution service.
+        
+        :param command: The command to send.
+        """
+        # Raise exception if not overridden in implementation.
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
+    cdef void _submit_atomic_order(self, SubmitAtomicOrder command):
+        """
+        Send a submit atomic order command to the execution service.
+        
+        :param command: The command to send.
         """
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the subclass.")
 
     cdef void _modify_order(self, ModifyOrder command):
         """
-        Send a modify order request to the execution service.
+        Send a modify order command to the execution service.
+        
+        :param command: The command to send.
         """
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the subclass.")
 
     cdef void _cancel_order(self, CancelOrder command):
         """
-        Send a cancel order request to the execution service.
+        Send a cancel order command to the execution service.
+        
+        :param command: The command to send.
         """
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the subclass.")

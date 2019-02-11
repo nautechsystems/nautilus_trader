@@ -699,6 +699,8 @@ cdef class TradeStrategy:
             self._guid_factory.generate(),
             self._clock.time_now())
 
+        self._exec_client.execute_command(command)
+
     cpdef void modify_order(self, Order order, Price new_price):
         """
         Send a modify order command for the given order with the given new price
