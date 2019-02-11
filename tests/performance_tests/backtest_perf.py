@@ -60,6 +60,7 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
 
         # to datetime(2013, 8, 10, 0, 0, 0, 0, tzinfo=timezone.utc)
         # 3490226 function calls in 0.623 seconds
+        # 5407539 function calls (5407535 primitive calls) in 1.187 seconds
 
     def test_run_with_ema_cross_strategy(self):
         # Arrange
@@ -73,7 +74,8 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         ask_data = {usdjpy.symbol: {Resolution.MINUTE: ask_data_1min}}
 
         strategies = [EMACross(label='001',
-                               order_id_tag='01',
+                               id_tag_trader='001',
+                               id_tag_strategy='001',
                                instrument=usdjpy,
                                bar_type=TestStubs.bartype_usdjpy_1min_bid(),
                                position_size=100000,
@@ -111,5 +113,6 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         #          19915492 function calls (19911303 primitive calls) in 11.036 seconds
         #          22743234 function calls (22739045 primitive calls) in 12.844 seconds (implemented more sophisticated portfolio)
         # 31/01/19 22751226 function calls (22747037 primitive calls) in 12.830 seconds
+        # 11/02/19 35533884 function calls (35533856 primitive calls) in 24.422 seconds
 
         self.assertTrue(True)

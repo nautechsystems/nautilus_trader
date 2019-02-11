@@ -17,7 +17,6 @@ from cpython.datetime cimport datetime, timedelta
 from pandas import DataFrame
 from typing import List, Dict
 from logging import INFO, DEBUG
-from threading import Thread
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.backtest.data cimport BacktestDataClient
@@ -227,8 +226,7 @@ cdef class BacktestEngine:
             self.test_clock.set_time(time)
             self.exec_client.iterate()
             for strategy in self.trader.strategies:
-                thread = Thread(target=strategy.iterate, args=(time,))
-                thread.start()
+                strategy.iterate(time)
             self.data_client.iterate()
             self.exec_client.process_queue()
             time += time_step
