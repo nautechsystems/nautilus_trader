@@ -162,7 +162,7 @@ cdef class OrderEvent(Event):
         """
         :return: The str() string representation of the event.
         """
-        return f"{self.__class__.__name__}(id={self.order_id})"
+        return f"{self.__class__.__name__}(id={self.order_id.value})"
 
     def __repr__(self) -> str:
         """
@@ -372,7 +372,7 @@ cdef class OrderCancelReject(OrderEvent):
         :return: The str() string representation of the event.
         """
         return (f"{self.__class__.__name__}"
-                f"(id={self.order_id}, reason={self.cancel_reject_reason})")
+                f"(id={self.order_id.value}, reason={self.cancel_reject_reason})")
 
 
 cdef class OrderExpired(OrderEvent):
