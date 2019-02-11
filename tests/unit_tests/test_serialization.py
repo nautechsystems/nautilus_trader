@@ -14,7 +14,7 @@ from decimal import Decimal
 from datetime import datetime, timezone, timedelta
 
 from inv_trader.common.clock import TestClock
-from inv_trader.commands import SubmitOrder, CancelOrder, ModifyOrder
+from inv_trader.commands import SubmitOrder, SubmitAtomicOrder, CancelOrder, ModifyOrder
 from inv_trader.commands import CollateralInquiry
 from inv_trader.model.enums import Venue, OrderSide, OrderType, TimeInForce
 from inv_trader.model.enums import CurrencyCode, SecurityType
@@ -254,6 +254,64 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         # Assert
         self.assertEqual(command, deserialized)
         self.assertEqual(order, deserialized.order)
+        print(serialized.hex())
+        print(command)
+
+    def test_can_serialize_and_deserialize_submit_atomic_order_no_profit_target_commands(self):
+        # Arrange
+        serializer = MsgPackCommandSerializer()
+
+        atomic_order = self.order_factory.atomic_order_market(
+            AUDUSD_FXCM,
+            OrderSide.BUY,
+            Quantity(100000),
+            Price('0.99900'))
+
+        command = SubmitAtomicOrder(
+            atomic_order,
+            PositionId('some-position'),
+            GUID(uuid.uuid4()),
+            Label('SCALPER01'),
+            GUID(uuid.uuid4()),
+            UNIX_EPOCH)
+
+        # Act
+        serialized = serializer.serialize(command)
+        deserialized = serializer.deserialize(serialized)
+
+        # Assert
+        self.assertEqual(command, deserialized)
+        self.assertEqual(atomic_order, deserialized.atomic_order)
+        print(serialized.hex())
+        print(command)
+
+    def test_can_serialize_and_deserialize_submit_atomic_order_with_profit_target_commands(self):
+        # Arrange
+        serializer = MsgPackCommandSerializer()
+
+        atomic_order = self.order_factory.atomic_order_limit(
+            AUDUSD_FXCM,
+            OrderSide.BUY,
+            Quantity(100000),
+            Price('0.99900'),
+            Price('1.00000'),
+            Price('1.00010'))
+
+        command = SubmitAtomicOrder(
+            atomic_order,
+            PositionId('some-position'),
+            GUID(uuid.uuid4()),
+            Label('SCALPER01'),
+            GUID(uuid.uuid4()),
+            UNIX_EPOCH)
+
+        # Act
+        serialized = serializer.serialize(command)
+        deserialized = serializer.deserialize(serialized)
+
+        # Assert
+        self.assertEqual(command, deserialized)
+        self.assertEqual(atomic_order, deserialized.atomic_order)
         print(serialized.hex())
         print(command)
 

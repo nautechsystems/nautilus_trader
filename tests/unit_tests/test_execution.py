@@ -166,6 +166,24 @@ class LiveExecClientTests(unittest.TestCase):
         self.assertEqual(order, self.strategy.order(order_id))
         self.assertEqual(1, len(self.response_list))
 
+    def test_can_send_submit_atomic_order_command(self):
+        # Arrange
+        order = self.strategy.order_factory.atomic_order_market(
+            AUDUSD_FXCM,
+            OrderSide.BUY,
+            Quantity(100000),
+            Price('0.99900'))
+
+        order_id = order.id
+
+        # Act
+        self.strategy.submit_atomic_order(order, PositionId(order.id.value))
+
+        time.sleep(0.1)
+        # Assert
+        self.assertEqual(order, self.strategy.order(order_id))
+        self.assertEqual(1, len(self.response_list))
+
     def test_can_send_cancel_order_command(self):
         # Arrange
         order = self.strategy.order_factory.market(
