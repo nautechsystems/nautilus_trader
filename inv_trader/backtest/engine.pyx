@@ -7,7 +7,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-# cython: language_level=3, boundscheck=False
+# cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
 import logging
 import psutil
@@ -17,7 +17,7 @@ from cpython.datetime cimport datetime, timedelta
 from pandas import DataFrame
 from typing import List, Dict
 from logging import INFO, DEBUG
-from time import sleep
+from threading import Thread
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.backtest.data cimport BacktestDataClient
@@ -185,8 +185,8 @@ cdef class BacktestEngine:
         Note: The default time_step_mins is 1 and shouldn't need to be changed.
         """
         Precondition.true(start < stop, 'start < stop')
-        Precondition.true(start >= self.data_minute_index[0], 'start >= self.first_timestamp')
-        Precondition.true(stop <= self.data_minute_index[- 1], 'stop <= self.last_timestamp')
+        Precondition.true(start >= self.data_minute_index[0], 'start >= first_timestamp')
+        Precondition.true(stop <= self.data_minute_index[len(self.data_minute_index) - 1], 'stop <= last_timestamp')
         Precondition.positive(time_step_mins, 'time_step_mins')
 
         cdef datetime run_started = self.clock.time_now()
@@ -221,14 +221,14 @@ cdef class BacktestEngine:
         assert(self.data_client.time_now() == start)
         assert(self.exec_client.time_now() == start)
 
-        sleep(0.3)
         while time < stop:
             # Iterate execution first to simulate correct order of events
             # Order fills should occur before the bar closes
             self.test_clock.set_time(time)
             self.exec_client.iterate()
             for strategy in self.trader.strategies:
-                strategy.iterate(time)
+                thread = Thread(target=strategy.iterate, args=(time,))
+                thread.start()
             self.data_client.iterate()
             self.exec_client.process_queue()
             time += time_step

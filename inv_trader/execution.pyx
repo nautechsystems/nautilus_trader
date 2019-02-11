@@ -128,15 +128,8 @@ cdef class LiveExecClient(ExecutionClient):
 
             if isinstance(item, Event):
                 self._handle_event(item)
-            elif isinstance(item, CollateralInquiry):
-                self._collateral_inquiry(item)
-            elif isinstance(item, SubmitOrder):
-                self._register_order(item.order, item.position_id, item.strategy_id)
-                self._submit_order(item)
-            elif isinstance(item, ModifyOrder):
-                self._modify_order(item)
-            elif isinstance(item, CancelOrder):
-                self._cancel_order(item)
+            elif isinstance(item, Command):
+                self._execute_command(item)
 
     cdef void _collateral_inquiry(self, CollateralInquiry command):
         """

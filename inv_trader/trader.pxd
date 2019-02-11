@@ -35,6 +35,7 @@ cdef class Trader:
     cdef readonly list started_datetimes
     cdef readonly list stopped_datetimes
 
+    cpdef int strategy_count(self)
     cpdef void start(self)
     cpdef void stop(self)
     cpdef void reset(self)
