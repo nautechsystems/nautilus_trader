@@ -31,6 +31,7 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef readonly Money account_cash_activity_day
     cdef readonly dict slippage_index
     cdef readonly dict working_orders
+    cdef readonly dict working_atomic_orders
 
     cpdef void set_initial_iteration(self, datetime to_time, timedelta time_step)
     cpdef void iterate(self)

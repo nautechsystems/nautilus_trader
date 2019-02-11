@@ -28,7 +28,8 @@ from inv_trader.model.order cimport Order
 from inv_trader.model.events cimport Event, OrderSubmitted, OrderAccepted, OrderWorking
 from inv_trader.model.events cimport  OrderModified, OrderCancelled, OrderFilled
 from inv_trader.model.identifiers cimport GUID, OrderId, ExecutionId, ExecutionTicket
-from inv_trader.commands cimport Command, CollateralInquiry, SubmitOrder, ModifyOrder, CancelOrder
+from inv_trader.commands cimport Command, CollateralInquiry
+from inv_trader.commands cimport SubmitOrder, SubmitAtomicOrder, ModifyOrder, CancelOrder
 from inv_trader.portfolio.portfolio cimport Portfolio
 
 cdef str UTF8 = 'utf-8'
@@ -254,7 +255,7 @@ cdef class MockExecClient(ExecutionClient):
 
         self.handle_event(filled)
 
-    cpdef void _submit_order(self, SubmitOrder command):
+    cdef void _submit_order(self, SubmitOrder command):
         """
         Send a submit order command to the mock execution service.
         """
@@ -295,7 +296,13 @@ cdef class MockExecClient(ExecutionClient):
         self.handle_event(accepted)
         self.handle_event(working)
 
-    cpdef void _modify_order(self, ModifyOrder command):
+    cdef void _submit_atomic_order(self, SubmitAtomicOrder command):
+        """
+        Send a submit atomic order command to the mock execution service.
+        """
+        pass
+
+    cdef void _modify_order(self, ModifyOrder command):
         """
         Send a modify order command to the mock execution service.
         """
@@ -310,7 +317,7 @@ cdef class MockExecClient(ExecutionClient):
 
         self.handle_event(modified)
 
-    cpdef void _cancel_order(self, CancelOrder command):
+    cdef void _cancel_order(self, CancelOrder command):
         """
         Send a cancel order command to the mock execution service.
         """
@@ -323,7 +330,7 @@ cdef class MockExecClient(ExecutionClient):
 
         self.handle_event(cancelled)
 
-    cpdef void _collateral_inquiry(self, CollateralInquiry command):
+    cdef void _collateral_inquiry(self, CollateralInquiry command):
         """
         Send a collateral inquiry command to the mock execution service.
         """
