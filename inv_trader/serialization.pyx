@@ -193,12 +193,16 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
 
         if isinstance(command, SubmitAtomicOrder):
             package[COMMAND_TYPE] = SUBMIT_ATOMIC_ORDER
-            package[ENTRY] = self.order_serializer.serialize(command.entry).hex()
-            package[STOP_LOSS] = self.order_serializer.serialize(command.stop_loss).hex()
-            package[PROFIT_TARGET] = self.order_serializer.serialize(command.profit_target).hex()
+            package[ENTRY] = self.order_serializer.serialize(command.atomic_order.entry).hex()
+            package[STOP_LOSS] = self.order_serializer.serialize(command.atomic_order.stop_loss).hex()
+            if command.atomic_order.has_profit_target:
+                package[PROFIT_TARGET] = self.order_serializer.serialize(command.atomic_order.profit_target).hex()
+            else:
+                package[PROFIT_TARGET] = NONE
             package[POSITION_ID] = command.position_id.value
             package[STRATEGY_ID] = command.strategy_id.value
             package[STRATEGY_NAME] = command.strategy_name.value
+            return msgpack.packb(package)
         elif isinstance(command, CollateralInquiry):
             package[COMMAND_TYPE] = COLLATERAL_INQUIRY
             return msgpack.packb(package)
@@ -227,10 +231,15 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
                 command_timestamp,
                 unpacked)
         elif command_type == SUBMIT_ATOMIC_ORDER:
+            if unpacked[PROFIT_TARGET] == NONE:
+                profit_target = None
+            else:
+                profit_target = self.order_serializer.deserialize(bytes.fromhex(unpacked[PROFIT_TARGET]))
+
             return SubmitAtomicOrder(
-                self.order_serializer.deserialize(bytes.fromhex(unpacked[ENTRY])),
-                self.order_serializer.deserialize(bytes.fromhex(unpacked[STOP_LOSS])),
-                self.order_serializer.deserialize(bytes.fromhex(unpacked[PROFIT_TARGET])),
+                AtomicOrder(self.order_serializer.deserialize(bytes.fromhex(unpacked[ENTRY])),
+                            self.order_serializer.deserialize(bytes.fromhex(unpacked[STOP_LOSS])),
+                            profit_target),
                 PositionId(unpacked[POSITION_ID]),
                 GUID(unpacked[STRATEGY_ID]),
                 Label(unpacked[STRATEGY_NAME]),

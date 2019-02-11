@@ -152,7 +152,7 @@ cdef class SubmitAtomicOrder(Command):
     """
 
     def __init__(self,
-                 AtomicOrder order,
+                 AtomicOrder atomic_order,
                  PositionId position_id,
                  GUID strategy_id,
                  Label strategy_name,
@@ -161,7 +161,7 @@ cdef class SubmitAtomicOrder(Command):
         """
         Initializes a new instance of the SubmitOrder class.
 
-        :param order: The commands atomic order to submit.
+        :param atomic_order: The commands atomic order to submit.
         :param position_id: The command position identifier.
         :param strategy_id: The strategy identifier to associate with the order.
         :param strategy_name: The name of the strategy associated with the order.
@@ -170,11 +170,22 @@ cdef class SubmitAtomicOrder(Command):
         """
         super().__init__(command_id,
                          command_timestamp)
-        self.order = order
+        self.atomic_order = atomic_order
         self.position_id = position_id
         self.strategy_id = strategy_id
         self.strategy_name = strategy_name
 
+    def __str__(self) -> str:
+        """
+        :return: The str() string representation of the command.
+        """
+        return f"{self.__class__.__name__}({self.atomic_order})"
+
+    def __repr__(self) -> str:
+        """
+        :return: The repr() string representation of the command.
+        """
+        return f"<{str(self)} object at {id(self)}>"
 
 cdef class ModifyOrder(OrderCommand):
     """

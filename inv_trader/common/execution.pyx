@@ -218,7 +218,7 @@ cdef class ExecutionClient:
         elif isinstance(command, SubmitAtomicOrder):
             self._register_order(command.atomic_order.entry, command.position_id, command.strategy_id)
             self._register_order(command.atomic_order.stop_loss, command.position_id, command.strategy_id)
-            if command.has_profit_target:
+            if command.atomic_order.has_profit_target:
                 self._register_order(command.atomic_order.profit_target, command.position_id, command.strategy_id)
             self._submit_atomic_order(command)
         elif isinstance(command, ModifyOrder):

@@ -13,7 +13,7 @@ import uuid
 import zmq
 
 from threading import Thread
-from typing import Callable
+from typing import Callable, List, Dict
 from zmq import Context
 
 from cpython.datetime cimport datetime
@@ -209,7 +209,8 @@ cdef class MockExecClient(ExecutionClient):
             TestGuidFactory(),
             Logger())
 
-        self.working_orders = []
+        self.working_orders = []  # type: List[Order]
+        self.atomic_orders = {}   # type: Dict[OrderId, List[Order]]
 
     cpdef void connect(self):
         """
@@ -255,12 +256,11 @@ cdef class MockExecClient(ExecutionClient):
 
         self.handle_event(filled)
 
-    cdef void _submit_order(self, SubmitOrder command):
-        """
-        Send a submit order command to the mock execution service.
-        """
-        cdef Order order = command.order
+        if order.id in self.atomic_orders:
+            for order in self.atomic_orders[order.id]:
+                self._work_order(order)
 
+    cdef void _work_order(self, Order order):
         cdef OrderSubmitted submitted = OrderSubmitted(
             order.symbol,
             order.id,
@@ -275,7 +275,7 @@ cdef class MockExecClient(ExecutionClient):
             GUID(uuid.uuid4()),
             datetime.utcnow())
 
-        self.working_orders.append(command.order)
+        self.working_orders.append(order)
 
         cdef OrderWorking working = OrderWorking(
             order.symbol,
@@ -296,11 +296,22 @@ cdef class MockExecClient(ExecutionClient):
         self.handle_event(accepted)
         self.handle_event(working)
 
+    cdef void _submit_order(self, SubmitOrder command):
+        """
+        Send a submit order command to the mock execution service.
+        """
+        self._work_order(command.order)
+
     cdef void _submit_atomic_order(self, SubmitAtomicOrder command):
         """
         Send a submit atomic order command to the mock execution service.
         """
-        pass
+        atomic_orders = [command.atomic_order.stop_loss]
+        if command.atomic_order.has_profit_target:
+            atomic_orders.append(command.atomic_order.profit_target)
+
+        self.atomic_orders[command.atomic_order.id] = atomic_orders
+        self._work_order(command.atomic_order.entry)
 
     cdef void _modify_order(self, ModifyOrder command):
         """
