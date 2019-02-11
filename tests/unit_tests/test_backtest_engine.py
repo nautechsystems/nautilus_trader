@@ -98,3 +98,44 @@ class BacktestEngineTests(unittest.TestCase):
         # Assert
         self.assertEqual(2880, engine.data_client.data_providers[self.usdjpy.symbol].iterations[TestStubs.bartype_usdjpy_1min_bid()])
         self.assertEqual(1440, strategies[0].fast_ema.count)
+
+    def test_can_run_concurrent_strategies(self):
+        # Arrange
+        strategies = [EMACross(label='001',
+                               id_tag_trader='001',
+                               id_tag_strategy='001',
+                               instrument=self.usdjpy,
+                               bar_type=TestStubs.bartype_usdjpy_1min_bid(),
+                               position_size=100000,
+                               fast_ema=10,
+                               slow_ema=20,
+                               atr_period=20,
+                               sl_atr_multiple=2.0),
+                      EMACross(label='002',
+                               id_tag_trader='002',
+                               id_tag_strategy='002',
+                               instrument=self.usdjpy,
+                               bar_type=TestStubs.bartype_usdjpy_1min_bid(),
+                               position_size=100000,
+                               fast_ema=10,
+                               slow_ema=20,
+                               atr_period=20,
+                               sl_atr_multiple=2.0)]
+
+        config = BacktestConfig(slippage_ticks=1)
+        engine = BacktestEngine(instruments=self.instruments,
+                                data_ticks=self.tick_data,
+                                data_bars_bid=self.bid_data,
+                                data_bars_ask=self.ask_data,
+                                strategies=strategies,
+                                config=config)
+
+        start = datetime(2013, 1, 2, 0, 0, 0, 0, tzinfo=timezone.utc)
+        stop = datetime(2013, 1, 3, 0, 0, 0, 0, tzinfo=timezone.utc)
+
+        # Act
+        engine.run(start, stop)
+
+        # Assert
+        self.assertEqual(2880, engine.data_client.data_providers[self.usdjpy.symbol].iterations[TestStubs.bartype_usdjpy_1min_bid()])
+        self.assertEqual(1440, strategies[0].fast_ema.count)
