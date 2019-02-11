@@ -9,7 +9,6 @@
 
 import pandas as pd
 import unittest
-import time
 
 from decimal import Decimal
 from datetime import datetime, timezone, timedelta
@@ -19,7 +18,6 @@ from inv_trader.common.clock import TestClock
 from inv_trader.common.guid import TestGuidFactory
 from inv_trader.common.logger import Logger
 from inv_trader.model.enums import Venue, OrderSide
-from inv_trader.model.identifiers import PositionId
 from inv_trader.model.objects import Quantity, Symbol, Price, Money
 from inv_trader.model.events import OrderRejected, OrderWorking, OrderModified, OrderFilled
 from inv_trader.strategy import TradeStrategy
@@ -106,7 +104,7 @@ class BacktestExecClientTests(unittest.TestCase):
         order_id = order.id
 
         # Act
-        strategy.submit_order(order, PositionId(str(order.id)))
+        strategy.submit_order(order, strategy.generate_position_id(self.usdjpy.symbol))
         self.client.process_queue()
 
         # Assert
@@ -127,7 +125,7 @@ class BacktestExecClientTests(unittest.TestCase):
             Price('80.000'))
 
         # Act
-        strategy.submit_order(order, PositionId(str(order.id)))
+        strategy.submit_order(order, strategy.generate_position_id(self.usdjpy.symbol))
         self.client.process_queue()
 
         # Assert
@@ -135,6 +133,55 @@ class BacktestExecClientTests(unittest.TestCase):
         self.assertEqual(4, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[3], OrderWorking))
         self.assertEqual(Price('80.000'), order.price)
+
+    def test_can_submit_atomic_market_order(self):
+        # Arrange
+        strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
+        self.client.register_strategy(strategy)
+        strategy.start()
+
+        atomic_order = strategy.order_factory.atomic_order_market(
+            USDJPY_FXCM,
+            OrderSide.BUY,
+            Quantity(100000),
+            Price('80.000'))
+
+        # Act
+        strategy.submit_atomic_order(atomic_order, strategy.generate_position_id(self.usdjpy.symbol))
+        self.client.process_queue()
+
+        # Assert
+        print(strategy.object_storer.get_store())
+        self.assertEqual(5, strategy.object_storer.count)
+        self.assertTrue(isinstance(strategy.object_storer.get_store()[3], OrderFilled))
+        self.assertEqual(Price('80.000'), atomic_order.stop_loss.price)
+        self.assertTrue(atomic_order.stop_loss.id not in self.client.atomic_orders)
+
+    def test_can_submit_atomic_stop_order(self):
+        # Arrange
+        strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
+        self.client.register_strategy(strategy)
+        strategy.start()
+
+        atomic_order = strategy.order_factory.atomic_order_stop_market(
+            USDJPY_FXCM,
+            OrderSide.BUY,
+            Quantity(100000),
+            Price('87.000'),
+            Price('86.710'),
+            Price('86.000'))
+
+        # Act
+        strategy.submit_atomic_order(atomic_order, strategy.generate_position_id(self.usdjpy.symbol))
+        self.client.process_queue()
+
+        # Assert
+        print(strategy.object_storer.get_store())
+        self.assertEqual(4, strategy.object_storer.count)
+        self.assertTrue(isinstance(strategy.object_storer.get_store()[3], OrderWorking))
+        self.assertTrue(atomic_order.entry.id in self.client.atomic_orders)
+        self.assertTrue(atomic_order.stop_loss in self.client.atomic_orders[atomic_order.entry.id])
+        self.assertTrue(atomic_order.profit_target in self.client.atomic_orders[atomic_order.entry.id])
 
     def test_can_modify_stop_order(self):
         # Arrange
@@ -150,7 +197,7 @@ class BacktestExecClientTests(unittest.TestCase):
 
         order_id = order.id
 
-        strategy.submit_order(order, PositionId(str(order.id)))
+        strategy.submit_order(order, strategy.generate_position_id(self.usdjpy.symbol))
         self.client.process_queue()
 
         # Act
@@ -175,7 +222,7 @@ class BacktestExecClientTests(unittest.TestCase):
             Price('80.000'))
 
         # Act
-        strategy.submit_order(order, PositionId(str(order.id)))
+        strategy.submit_order(order, strategy.generate_position_id(self.usdjpy.symbol))
         self.client.process_queue()
 
         # Assert
