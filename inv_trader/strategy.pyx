@@ -485,7 +485,7 @@ cdef class TradeStrategy:
                 return False
         return True
 
-    cpdef bint all_indicators_initialized(self):
+    cpdef bint indicators_initialized_all(self):
         """
         :return: A value indicating whether all indicators for the strategy are initialized. 
         """
