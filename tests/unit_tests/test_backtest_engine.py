@@ -99,7 +99,7 @@ class BacktestEngineTests(unittest.TestCase):
         self.assertEqual(2880, engine.data_client.data_providers[self.usdjpy.symbol].iterations[TestStubs.bartype_usdjpy_1min_bid()])
         self.assertEqual(1440, strategies[0].fast_ema.count)
 
-    def test_can_run_concurrent_strategies(self):
+    def test_can_run_multiple_strategies(self):
         # Arrange
         strategies = [EMACross(label='001',
                                id_tag_trader='001',
