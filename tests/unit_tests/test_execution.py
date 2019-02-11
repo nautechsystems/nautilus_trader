@@ -159,29 +159,48 @@ class LiveExecClientTests(unittest.TestCase):
         order_id = order.id
 
         # Act
-        self.strategy.submit_order(order, PositionId(order.id.value))
+        self.strategy.submit_order(order, self.strategy.generate_position_id(AUDUSD_FXCM))
 
         time.sleep(0.1)
         # Assert
         self.assertEqual(order, self.strategy.order(order_id))
         self.assertEqual(1, len(self.response_list))
 
-    def test_can_send_submit_atomic_order_command(self):
+    def test_can_send_submit_atomic_order_no_profit_target_command(self):
         # Arrange
-        order = self.strategy.order_factory.atomic_order_market(
+        atomic_order = self.strategy.order_factory.atomic_order_market(
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
             Price('0.99900'))
 
-        order_id = order.id
-
         # Act
-        self.strategy.submit_atomic_order(order, PositionId(order.id.value))
+        self.strategy.submit_atomic_order(atomic_order, self.strategy.generate_position_id(AUDUSD_FXCM))
 
         time.sleep(0.1)
         # Assert
-        self.assertEqual(order, self.strategy.order(order_id))
+        self.assertEqual(atomic_order.entry, self.strategy.order(atomic_order.entry.id))
+        self.assertEqual(atomic_order.stop_loss, self.strategy.order(atomic_order.stop_loss.id))
+        self.assertEqual(1, len(self.response_list))
+
+    def test_can_send_submit_atomic_order_with_profit_target_command(self):
+        # Arrange
+        atomic_order = self.strategy.order_factory.atomic_order_limit(
+            AUDUSD_FXCM,
+            OrderSide.BUY,
+            Quantity(100000),
+            Price('1.00010'),
+            Price('1.00000'),
+            Price('0.99900'))
+
+        # Act
+        self.strategy.submit_atomic_order(atomic_order, self.strategy.generate_position_id(AUDUSD_FXCM))
+
+        time.sleep(0.1)
+        # Assert
+        self.assertEqual(atomic_order.entry, self.strategy.order(atomic_order.entry.id))
+        self.assertEqual(atomic_order.stop_loss, self.strategy.order(atomic_order.stop_loss.id))
+        self.assertEqual(atomic_order.profit_target, self.strategy.order(atomic_order.profit_target.id))
         self.assertEqual(1, len(self.response_list))
 
     def test_can_send_cancel_order_command(self):
@@ -194,7 +213,7 @@ class LiveExecClientTests(unittest.TestCase):
         order_id = order.id
 
         # Act
-        self.strategy.submit_order(order, PositionId(order_id.value))
+        self.strategy.submit_order(order, self.strategy.generate_position_id(AUDUSD_FXCM))
         time.sleep(1)
         self.strategy.cancel_order(order, 'ORDER_EXPIRED')
 
@@ -214,7 +233,7 @@ class LiveExecClientTests(unittest.TestCase):
         order_id = order.id
 
         # Act
-        self.strategy.submit_order(order, PositionId(order_id.value))
+        self.strategy.submit_order(order, self.strategy.generate_position_id(AUDUSD_FXCM))
         time.sleep(1)
         self.strategy.modify_order(order, Price('1.00001'))
 

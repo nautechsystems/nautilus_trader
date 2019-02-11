@@ -290,7 +290,7 @@ cdef class ExecutionClient:
         self._order_book[order.id] = order
         self._order_strategy_index[order.id] = strategy_id
         self._portfolio.register_order(order.id, position_id)
-        self._log.debug(f"Registered {order.id} with {position_id} for strategy with id {strategy_id}.")
+        self._log.info(f"Registered {order.id} with {position_id} for strategy with id {strategy_id}.")
 
     cdef void _collateral_inquiry(self, CollateralInquiry command):
         """
