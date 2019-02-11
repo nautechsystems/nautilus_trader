@@ -22,6 +22,7 @@ cdef class Logger:
     cdef bint _console_prints
     cdef bint _log_to_file
     cdef str _log_file
+    cdef object _log_file_handler
     cdef object _logger
     cdef Clock _clock
     cdef object _queue

@@ -175,22 +175,24 @@ cdef class Logger:
         """
         Process the queue one item at a time.
         """
+        cdef int log_level
+
         while True:
             item = self._queue.get()
+            log_level = item[0]
 
-            if item[0] == logging.DEBUG:
+            if log_level == logging.DEBUG:
                 self._debug(item[1])
-            elif item[0] == logging.INFO:
+            elif log_level == logging.INFO:
                 self._info(item[1])
-            elif item[0] == logging.WARNING:
+            elif log_level == logging.WARNING:
                 self._warning(item[1])
-            elif item[0] == logging.ERROR:
+            elif log_level == logging.ERROR:
                 self._error(item[1])
-            elif item[0] == logging.CRITICAL:
+            elif log_level == logging.CRITICAL:
                 self._critical(item[1])
 
     cdef str _format_message(self, str log_level, str message):
-        #cdef str time = self._clock.time_now().isoformat(timespec='milliseconds') + 'Z'
         cdef str time = self._clock.time_now().isoformat() + 'Z'
         return f"{BOLD}{time}{ENDC} [{threading.current_thread().ident}][{log_level}] {message}"
 
