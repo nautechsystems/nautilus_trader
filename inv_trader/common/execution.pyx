@@ -107,8 +107,8 @@ cdef class ExecutionClient:
         Precondition.not_in(strategy.id, self._orders_completed, 'strategy', 'orders_completed')
 
         self._registered_strategies[strategy.id] = strategy
-        self._orders_active[strategy.id] = {}      # type: Dict[OrderId, Order]
-        self._orders_completed[strategy.id] = {}   # type: Dict[OrderId, Order]
+        self._orders_active[strategy.id] = {}     # type: Dict[OrderId, Order]
+        self._orders_completed[strategy.id] = {}  # type: Dict[OrderId, Order]
 
         self._portfolio.register_strategy(strategy.id)
         strategy.register_execution_client(self)
@@ -201,7 +201,7 @@ cdef class ExecutionClient:
 
         return self._orders_completed[strategy_id].copy()
 
-    cpdef void _execute_command(self, Command command):
+    cdef void _execute_command(self, Command command):
         """
         Execute the given command received from a strategy.
         
@@ -219,7 +219,7 @@ cdef class ExecutionClient:
         elif isinstance(command, CancelOrder):
                 self._cancel_order(command)
 
-    cpdef void _handle_event(self, Event event):
+    cdef void _handle_event(self, Event event):
         """
         Handle the given event received from the execution service.
         """
@@ -268,7 +268,7 @@ cdef class ExecutionClient:
         elif isinstance(event, AccountEvent):
             self._account.apply(event)
 
-    cpdef void _register_order(self, Order order, PositionId position_id, GUID strategy_id):
+    cdef void _register_order(self, Order order, PositionId position_id, GUID strategy_id):
         """
         Register the given order with the execution client.
 
@@ -285,28 +285,28 @@ cdef class ExecutionClient:
         self._portfolio.register_order(order.id, position_id)
         self._log.info(f"Registered {order.id} with {position_id} for strategy with id {strategy_id}.")
 
-    cpdef void _collateral_inquiry(self, CollateralInquiry command):
+    cdef void _collateral_inquiry(self, CollateralInquiry command):
         """
         Send a collateral inquiry command to the execution service.
         """
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void _submit_order(self, SubmitOrder command):
+    cdef void _submit_order(self, SubmitOrder command):
         """
         Send a submit order request to the execution service.
         """
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void _modify_order(self, ModifyOrder command):
+    cdef void _modify_order(self, ModifyOrder command):
         """
         Send a modify order request to the execution service.
         """
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void _cancel_order(self, CancelOrder command):
+    cdef void _cancel_order(self, CancelOrder command):
         """
         Send a cancel order request to the execution service.
         """
