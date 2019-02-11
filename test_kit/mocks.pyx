@@ -197,6 +197,7 @@ cdef class MockExecClient(ExecutionClient):
     Provides a mock execution client for trading strategies.
     """
     cdef readonly list working_orders
+    cdef readonly dict atomic_orders
 
     def __init__(self):
         """
