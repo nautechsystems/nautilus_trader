@@ -91,7 +91,7 @@ cdef class TradeStrategy:
     cpdef void register_indicator(self, BarType bar_type, indicator, update_method)
     cpdef list indicators(self, BarType bar_type)
     cpdef readonly bint indicators_initialized(self, BarType bar_type)
-    cpdef readonly bint all_indicators_initialized(self)
+    cpdef readonly bint indicators_initialized_all(self)
 
 # -- MANAGEMENT METHODS -------------------------------------------------------------------------- #
     cpdef PositionId generate_position_id(self, Symbol symbol)

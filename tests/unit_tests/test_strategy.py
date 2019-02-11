@@ -120,16 +120,18 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertTrue(2, len(result))
         print(result)
 
-    def test_can_call_all_indicators_initialized(self):
+    def test_indicator_initialization(self):
         # Arrange
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
         strategy = TestStrategy1(bar_type)
 
         # Act
-        result = strategy.all_indicators_initialized()
+        result1 = strategy.indicators_initialized(bar_type)
+        result2 = strategy.indicators_initialized_all()
 
         # Assert
-        self.assertFalse(result)
+        self.assertFalse(result1)
+        self.assertFalse(result2)
 
     def test_getting_indicators_for_unknown_bar_type_raises_exception(self):
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
