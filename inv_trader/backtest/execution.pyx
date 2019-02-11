@@ -233,7 +233,7 @@ cdef class BacktestExecClient(ExecutionClient):
             elif isinstance(item, CancelOrder):
                 self._cancel_order(item)
 
-    cpdef void _collateral_inquiry(self, CollateralInquiry command):
+    cdef void _collateral_inquiry(self, CollateralInquiry command):
         """
         Send a collateral inquiry command to the execution service.
         """
@@ -253,7 +253,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._clock.time_now())
         self.handle_event(event)
 
-    cpdef void _submit_order(self, SubmitOrder command):
+    cdef void _submit_order(self, SubmitOrder command):
         """
         Send a submit order request to the execution service.
         
@@ -330,7 +330,7 @@ cdef class BacktestExecClient(ExecutionClient):
             order.expire_time)
         self.handle_event(working)
 
-    cpdef void _modify_order(self, ModifyOrder command):
+    cdef void _modify_order(self, ModifyOrder command):
         """
         Send a modify order request to the execution service.
         """
@@ -372,7 +372,7 @@ cdef class BacktestExecClient(ExecutionClient):
 
         self.handle_event(modified)
 
-    cpdef void _cancel_order(self, CancelOrder command):
+    cdef void _cancel_order(self, CancelOrder command):
         """
         Send a cancel order request to the execution service.
         """

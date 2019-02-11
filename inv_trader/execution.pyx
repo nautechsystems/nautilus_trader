@@ -89,7 +89,7 @@ cdef class LiveExecClient(ExecutionClient):
             self.zmq_context,
             host,
             commands_port,
-            self._command_ack_handler,
+            self._acknowledge_command,
             logger)
 
         self._events_worker = SubscriberWorker(
@@ -98,7 +98,7 @@ cdef class LiveExecClient(ExecutionClient):
             host,
             events_port,
             "nautilus_execution_events",
-            self._event_handler,
+            self._deserialize_event,
             logger)
 
         self._log.info(f"ZMQ v{zmq.pyzmq_version()}.")
@@ -138,7 +138,7 @@ cdef class LiveExecClient(ExecutionClient):
             elif isinstance(item, CancelOrder):
                 self._cancel_order(item)
 
-    cpdef void _collateral_inquiry(self, CollateralInquiry command):
+    cdef void _collateral_inquiry(self, CollateralInquiry command):
         """
         Send a collateral inquiry command to the execution service.
         """
@@ -147,7 +147,7 @@ cdef class LiveExecClient(ExecutionClient):
         self._commands_worker.send(message)
         self._log.debug(f"Sent {command}")
 
-    cpdef void _submit_order(self, SubmitOrder command):
+    cdef void _submit_order(self, SubmitOrder command):
         """
         Send a submit order command to the execution service with the given
         order and strategy_id.
@@ -159,7 +159,7 @@ cdef class LiveExecClient(ExecutionClient):
         self._commands_worker.send(message)
         self._log.debug(f"Sent {command}")
 
-    cpdef void _modify_order(self, ModifyOrder command):
+    cdef void _modify_order(self, ModifyOrder command):
         """
         Send a modify order command to the execution service with the given
         order and new_price.
@@ -171,7 +171,7 @@ cdef class LiveExecClient(ExecutionClient):
         self._commands_worker.send(message)
         self._log.debug(f"Sent {command}")
 
-    cpdef void _cancel_order(self, CancelOrder command):
+    cdef void _cancel_order(self, CancelOrder command):
         """
         Send a cancel order command to the execution service with the given
         order and cancel_reason.
@@ -183,7 +183,7 @@ cdef class LiveExecClient(ExecutionClient):
         self._commands_worker.send(message)
         self._log.debug(f"Sent {command}")
 
-    cpdef void _event_handler(self, bytes body):
+    cdef void _deserialize_event(self, bytes body):
         """"
         Handle the event message by parsing to an Event and sending
         to the registered strategy.
@@ -198,7 +198,7 @@ cdef class LiveExecClient(ExecutionClient):
 
         self._handle_event(event)
 
-    cpdef void _command_ack_handler(self, bytes body):
+    cdef void _acknowledge_command(self, bytes body):
         """"
         Handle the command acknowledgement message.
 
