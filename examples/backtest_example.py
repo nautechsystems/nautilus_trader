@@ -43,7 +43,7 @@ if __name__ == "__main__":
     config = BacktestConfig(
         slippage_ticks=1,
         level_console=logging.DEBUG,
-        log_to_file=True)
+        log_to_file=False)
     engine = BacktestEngine(
         instruments=instruments,
         data_ticks=tick_data,
@@ -56,3 +56,5 @@ if __name__ == "__main__":
     stop = datetime(2013, 1, 3, 0, 0, 0, 0, tzinfo=timezone.utc)
 
     engine.run(start, stop)
+
+    input("Press Enter to continue...")

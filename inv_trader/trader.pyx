@@ -66,6 +66,8 @@ cdef class Trader:
         self.started_datetimes = []  # type: List[datetime]
         self.stopped_datetimes = []  # type: List[datetime]
 
+        self.portfolio.register_execution_client(self._exec_client)
+
         for strategy in strategies:
             self._data_client.register_strategy(strategy)
             self._exec_client.register_strategy(strategy)
