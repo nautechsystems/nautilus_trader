@@ -34,7 +34,8 @@ from inv_trader.common.clock cimport TestClock
 from inv_trader.common.guid cimport TestGuidFactory
 from inv_trader.common.logger cimport Logger
 from inv_trader.common.execution cimport ExecutionClient
-from inv_trader.commands cimport Command, CollateralInquiry, SubmitOrder, ModifyOrder, CancelOrder
+from inv_trader.commands cimport Command, CollateralInquiry
+from inv_trader.commands cimport SubmitOrder, SubmitAtomicOrder, ModifyOrder, CancelOrder
 from inv_trader.portfolio.portfolio cimport Portfolio
 
 
@@ -104,7 +105,7 @@ cdef class BacktestExecClient(ExecutionClient):
         self.account_cash_activity_day = Money(0)
         self.slippage_index = {}  # type: Dict[Symbol, Decimal]
         self.working_orders = {}  # type: Dict[OrderId, Order]
-        self.working_atomic_orders = {}  # type: Dict[OrderId, AtomicOrder]
+        self.atomic_orders = {}   # type: Dict[OrderId, List[Order]]
 
         self._set_slippage_index(slippage_ticks)
 
@@ -253,76 +254,18 @@ cdef class BacktestExecClient(ExecutionClient):
         
         :param command: The command to execute.
         """
-        Precondition.not_in(command.order.id, self.working_orders, 'order.id', 'working_orders')
+        self._accept_order(command.order)
 
-        cdef Order order = command.order
+    cdef void _submit_atomic_order(self, SubmitAtomicOrder command):
+        """
+        Send a submit atomic order command to the mock execution service.
+        """
+        cdef list atomic_orders = [command.atomic_order.stop_loss]
+        if command.atomic_order.has_profit_target:
+            atomic_orders.append(command.atomic_order.profit_target)
 
-        cdef OrderSubmitted submitted = OrderSubmitted(
-            order.symbol,
-            order.id,
-            self._clock.time_now(),
-            self._guid_factory.generate(),
-            self._clock.time_now())
-        self.handle_event(submitted)
-
-        cdef OrderAccepted accepted = OrderAccepted(
-            order.symbol,
-            order.id,
-            self._clock.time_now(),
-            self._guid_factory.generate(),
-            self._clock.time_now())
-        self.handle_event(accepted)
-
-        cdef Price closing_ask
-        cdef Price closing_bid
-
-        # Check order price is valid or reject
-        if order.side is OrderSide.BUY:
-            closing_ask = self._get_closing_ask(order.symbol)
-            if order.type is OrderType.MARKET:
-                self._fill_order(order, Price(closing_ask + self.slippage_index[order.symbol]))
-                return
-            elif order.type is OrderType.STOP_MARKET or order.type is OrderType.STOP_LIMIT or order.type is OrderType.MIT:
-                if order.price < closing_ask:
-                    self._reject_order(order,  f'Buy stop order price of {order.price} is below the ask {closing_ask}')
-                    return
-            elif order.type is OrderType.LIMIT:
-                if order.price > closing_ask:
-                    self._reject_order(order,  f'Buy limit order price of {order.price} is above the ask {closing_ask}')
-                    return
-        elif order.side is OrderSide.SELL:
-            closing_bid = self._get_closing_bid(order.symbol)
-            if order.type is OrderType.MARKET:
-                self._fill_order(order, Price(closing_bid - self.slippage_index[order.symbol]))
-                return
-            elif order.type is OrderType.STOP_MARKET or order.type is OrderType.STOP_LIMIT or order.type is OrderType.MIT:
-                if order.price > closing_bid:
-                    self._reject_order(order,  f'Sell stop order price of {order.price} is above the bid {closing_bid}')
-                    return
-            elif order.type is OrderType.LIMIT:
-                if order.price < closing_bid:
-                    self._reject_order(order,  f'Sell limit order price of {order.price} is below the bid {closing_bid}')
-                    return
-
-        # Order now becomes working
-        self._log.debug(f"{order.id} WORKING at {order.price}.")
-        self.working_orders[order.id] = order
-
-        cdef OrderWorking working = OrderWorking(
-            order.symbol,
-            order.id,
-            OrderId('B' + str(order.id)),  # Dummy broker id
-            order.label,
-            order.side,
-            order.type,
-            order.quantity,
-            order.price,
-            order.time_in_force,
-            self._clock.time_now(),
-            self._guid_factory.generate(),
-            self._clock.time_now(),
-            order.expire_time)
-        self.handle_event(working)
+        self.atomic_orders[command.atomic_order.entry.id] = atomic_orders
+        self._accept_order(command.atomic_order.entry)
 
     cdef void _modify_order(self, ModifyOrder command):
         """
@@ -391,7 +334,7 @@ cdef class BacktestExecClient(ExecutionClient):
         :param quote_type: The quote type of data (bid or ask).
         :return: The Dict[Symbol, List] of prepared data.
         """
-        cdef dict minute_data = {}    # type: Dict[Symbol, List]
+        cdef dict minute_data = {}  # type: Dict[Symbol, List]
         for symbol, data in bar_data.items():
             start = datetime.utcnow()
             map_func = partial(self._convert_to_prices, precision=self.instruments[symbol].tick_precision)
@@ -460,10 +403,31 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         return self.data_bars_ask[symbol][self.iteration][3]
 
+    cdef void _accept_order(self, Order order):
+        """
+        Accept the given order and handle OrderSubmitted and OrderAccepted events.
+        """
+        cdef OrderSubmitted submitted = OrderSubmitted(
+            order.symbol,
+            order.id,
+            self._clock.time_now(),
+            self._guid_factory.generate(),
+            self._clock.time_now())
+        self.handle_event(submitted)
+
+        cdef OrderAccepted accepted = OrderAccepted(
+            order.symbol,
+            order.id,
+            self._clock.time_now(),
+            self._guid_factory.generate(),
+            self._clock.time_now())
+        self.handle_event(accepted)
+
+        self._work_order(order)
+
     cdef void _reject_order(self, Order order, str reason):
         """
-        Reject the given order by sending an OrderRejected event to the on event 
-        handler.
+        Reject the given order and handle an OrderRejected event.
         """
         cdef OrderRejected rejected = OrderRejected(
             order.symbol,
@@ -505,6 +469,63 @@ cdef class BacktestExecClient(ExecutionClient):
 
         self.handle_event(expired)
 
+    cdef void _work_order(self, Order order):
+        """
+        Work the given order.
+        """
+        Precondition.not_in(order.id, self.working_orders, 'order.id', 'working_orders')
+
+        cdef Price closing_ask
+        cdef Price closing_bid
+
+        # Check order price is valid or reject
+        if order.side is OrderSide.BUY:
+            closing_ask = self._get_closing_ask(order.symbol)
+            if order.type is OrderType.MARKET:
+                self._fill_order(order, Price(closing_ask + self.slippage_index[order.symbol]))
+                return
+            elif order.type is OrderType.STOP_MARKET or order.type is OrderType.STOP_LIMIT or order.type is OrderType.MIT:
+                if order.price < closing_ask:
+                    self._reject_order(order,  f'Buy stop order price of {order.price} is below the ask {closing_ask}')
+                    return
+            elif order.type is OrderType.LIMIT:
+                if order.price > closing_ask:
+                    self._reject_order(order,  f'Buy limit order price of {order.price} is above the ask {closing_ask}')
+                    return
+        elif order.side is OrderSide.SELL:
+            closing_bid = self._get_closing_bid(order.symbol)
+            if order.type is OrderType.MARKET:
+                self._fill_order(order, Price(closing_bid - self.slippage_index[order.symbol]))
+                return
+            elif order.type is OrderType.STOP_MARKET or order.type is OrderType.STOP_LIMIT or order.type is OrderType.MIT:
+                if order.price > closing_bid:
+                    self._reject_order(order,  f'Sell stop order price of {order.price} is above the bid {closing_bid}')
+                    return
+            elif order.type is OrderType.LIMIT:
+                if order.price < closing_bid:
+                    self._reject_order(order,  f'Sell limit order price of {order.price} is below the bid {closing_bid}')
+                    return
+
+        # Order now becomes working
+        self._log.debug(f"{order.id} WORKING at {order.price}.")
+        self.working_orders[order.id] = order
+
+        cdef OrderWorking working = OrderWorking(
+            order.symbol,
+            order.id,
+            OrderId('B-' + str(order.id.value)),  # Dummy broker id
+            order.label,
+            order.side,
+            order.type,
+            order.quantity,
+            order.price,
+            order.time_in_force,
+            self._clock.time_now(),
+            self._guid_factory.generate(),
+            self._clock.time_now(),
+            order.expire_time)
+        self.handle_event(working)
+
     cdef void _fill_order(self, Order order, Price fill_price):
         """
         Fill the given order at the given price.
@@ -512,8 +533,8 @@ cdef class BacktestExecClient(ExecutionClient):
         cdef OrderFilled filled = OrderFilled(
             order.symbol,
             order.id,
-            ExecutionId('E' + str(order.id)),
-            ExecutionTicket('ET' + str(order.id)),
+            ExecutionId('E-' + str(order.id.value)),
+            ExecutionTicket('ET-' + str(order.id.value)),
             order.side,
             order.quantity,
             fill_price,
@@ -523,6 +544,11 @@ cdef class BacktestExecClient(ExecutionClient):
 
         self.handle_event(filled)
         self._adjust_account(filled)
+
+        if order.id in self.atomic_orders:
+            for order in self.atomic_orders[order.id]:
+                self._work_order(order)
+            del self.atomic_orders[order.id]
 
     cdef void _adjust_account(self, OrderEvent event):
         """
