@@ -14,10 +14,11 @@ from inv_trader.common.clock import TestClock
 from inv_trader.model.enums import Venue, OrderSide
 from inv_trader.model.objects import ValidString, Quantity, Symbol, Price
 from inv_trader.model.order import OrderFactory
-from inv_trader.model.events import OrderFilled, OrderPartiallyFilled
-from inv_trader.model.identifiers import GUID, Label, OrderId, PositionId, ExecutionId, ExecutionTicket
+from inv_trader.model.events import OrderFilled
+from inv_trader.model.identifiers import GUID, OrderId, PositionId, ExecutionId, ExecutionTicket
 from inv_trader.strategy import TradeStrategy
 from inv_trader.portfolio.portfolio import Portfolio
+from test_kit.mocks import MockExecClient
 from test_kit.stubs import TestStubs
 
 UNIX_EPOCH = TestStubs.unix_epoch()
@@ -34,6 +35,7 @@ class PortfolioTestsTests(unittest.TestCase):
             id_tag_strategy=ValidString('001'),
             clock=TestClock())
         self.portfolio = Portfolio()
+        self.portfolio.register_execution_client(MockExecClient())
         print('\n')
 
     def test_can_register_strategy(self):

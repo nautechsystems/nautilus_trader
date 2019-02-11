@@ -12,9 +12,11 @@
 from typing import List, Dict
 
 from inv_trader.core.precondition cimport Precondition
-from inv_trader.common.clock cimport Clock, LiveClock
 from inv_trader.common.logger cimport Logger, LoggerAdapter
-from inv_trader.model.events cimport Event
+from inv_trader.common.clock cimport LiveClock
+from inv_trader.common.guid cimport LiveGuidFactory
+from inv_trader.common.execution cimport ExecutionClient
+from inv_trader.model.events cimport Event, PositionOpened, PositionModified, PositionClosed
 from inv_trader.model.identifiers cimport GUID, OrderId, PositionId
 from inv_trader.model.position cimport Position
 
@@ -24,7 +26,10 @@ cdef class Portfolio:
     Represents a trading portfolio of positions.
     """
 
-    def __init__(self, Logger logger=None):
+    def __init__(self,
+                 Clock clock=LiveClock(),
+                 GuidFactory guid_factory=LiveGuidFactory(),
+                 Logger logger=None):
         """
         Initializes a new instance of the Portfolio class.
         """
@@ -33,6 +38,9 @@ cdef class Portfolio:
         else:
             self._log = LoggerAdapter(self.__class__.__name__, logger)
 
+        self._clock = clock
+        self._guid_factory = guid_factory
+        self._exec_client = None          # Initialized when registered with execution client
         self._position_book = {}          # type: Dict[PositionId, Position]
         self._order_p_index = {}          # type: Dict[OrderId, PositionId]
         self._registered_strategies = []  # type: List[GUID]
@@ -151,6 +159,17 @@ cdef class Portfolio:
 
         return True
 
+    cpdef void register_execution_client(self, ExecutionClient client):
+        """
+        Register the given execution client with the portfolio to receive position events.
+        
+        :param client: The client to register
+        """
+        Precondition.not_none(client, 'client')
+
+        self._exec_client = client
+        self._log.info("Registered execution client.")
+
     cpdef void register_strategy(self, GUID strategy_id):
         """
         Register the given strategy identifier with the portfolio.
@@ -204,8 +223,7 @@ cdef class Portfolio:
             assert(position_id not in self._positions_active[strategy_id])
             self._positions_active[strategy_id][position_id] = position
             self._log.debug(f"Position(id={position.id}) added to active positions.")
-
-            self._log.info(f"Opened {position}")
+            self._position_opened(position)
 
         # Position exists
         else:
@@ -213,17 +231,41 @@ cdef class Portfolio:
             position.apply(event)
 
             if position.is_exited:
-                self._log.info(f"Closed {position}")
-
                 # Move to closed positions
                 if position_id in self._positions_active[strategy_id]:
                     self._positions_closed[strategy_id][position_id] = position
                     del self._positions_active[strategy_id][position_id]
                     self._log.debug(f"Position(id={position.id}) moved to closed positions.")
+                    self._position_closed(position)
             else:
                 # Check for overfill
                 if position_id in self._positions_closed[strategy_id]:
                     self._positions_active[strategy_id][position_id] = position
                     del self._positions_closed[strategy_id][position_id]
                     self._log.debug(f"Position(id={position.id}) moved BACK to active positions due overfill.")
-                self._log.info(f"Modified {position}")
+                    self._position_opened(position)
+                self._position_modified(position)
+
+    cdef void _position_opened(self, Position position):
+        self._log.info(f"Opened {position}")
+
+        self._exec_client.handle_event(PositionOpened(
+            position,
+            self._guid_factory.generate(),
+            self._clock.time_now()))
+
+    cdef void _position_modified(self, Position position):
+        self._log.info(f"Modified {position}")
+
+        self._exec_client.handle_event(PositionModified(
+            position,
+            self._guid_factory.generate(),
+            self._clock.time_now()))
+
+    cdef void _position_closed(self, Position position):
+        self._log.info(f"Closed {position}")
+
+        self._exec_client.handle_event(PositionClosed(
+            position,
+            self._guid_factory.generate(),
+            self._clock.time_now()))

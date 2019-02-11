@@ -19,6 +19,7 @@ from inv_trader.enums.time_in_force cimport TimeInForce
 from inv_trader.model.objects cimport ValidString, Quantity, Symbol, Price, Money
 from inv_trader.model.identifiers cimport GUID, Label, AccountId, AccountNumber
 from inv_trader.model.identifiers cimport OrderId, ExecutionId, ExecutionTicket
+from inv_trader.model.position cimport Position
 
 
 cdef class Event:
@@ -48,7 +49,7 @@ cdef class AccountEvent(Event):
 
 cdef class OrderEvent(Event):
     """
-    The abstract base class for all order events.
+    The base class for all order events.
     """
     cdef readonly Symbol symbol
     cdef readonly OrderId order_id
@@ -146,6 +147,31 @@ cdef class OrderPartiallyFilled(OrderEvent):
     cdef readonly Quantity leaves_quantity
     cdef readonly Price average_price
     cdef readonly datetime execution_time
+
+
+cdef class PositionEvent(Event):
+    """
+    The base class for all position events.
+    """
+    cdef readonly Position position
+
+
+cdef class PositionOpened(PositionEvent):
+    """
+    Represents an event where a position has been opened.
+    """
+
+
+cdef class PositionModified(PositionEvent):
+    """
+    Represents an event where a position has been modified.
+    """
+
+
+cdef class PositionClosed(PositionEvent):
+    """
+    Represents an event where a position has been closed.
+    """
 
 
 cdef class TimeEvent(Event):

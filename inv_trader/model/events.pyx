@@ -20,6 +20,7 @@ from inv_trader.enums.time_in_force cimport TimeInForce
 from inv_trader.model.identifiers cimport GUID, Label, AccountNumber, AccountId
 from inv_trader.model.identifiers cimport OrderId, ExecutionId, ExecutionTicket
 from inv_trader.model.objects cimport ValidString, Quantity, Symbol, Price
+from inv_trader.model.position cimport Position
 
 
 cdef class Event:
@@ -137,7 +138,7 @@ cdef class AccountEvent(Event):
 
 cdef class OrderEvent(Event):
     """
-    The abstract base class for all order events.
+    The base class for all order events.
     """
 
     def __init__(self,
@@ -146,13 +147,12 @@ cdef class OrderEvent(Event):
                  GUID event_id,
                  datetime event_timestamp):
         """
-        Initializes a new instance of the OrderEvent abstract class.
+        Initializes a new instance of the OrderEvent base class.
 
         :param symbol: The events order symbol.
         :param order_id: The events order identifier.
         :param event_id: The events identifier.
         :param event_timestamp: The order events timestamp.
-        :raises ValueError: If the order_id is not a valid string.
         """
         super().__init__(event_id, event_timestamp)
         self.symbol = symbol
@@ -520,6 +520,95 @@ cdef class OrderPartiallyFilled(OrderEvent):
         self.leaves_quantity = leaves_quantity
         self.average_price = average_price
         self.execution_time = execution_time
+
+
+cdef class PositionEvent(Event):
+    """
+    The base class for all position events.
+    """
+
+    def __init__(self,
+                 Position position,
+                 GUID event_id,
+                 datetime event_timestamp):
+        """
+        Initializes a new instance of the OrderEvent base class.
+
+        :param position: The events position.
+        :param event_id: The events identifier.
+        :param event_timestamp: The order events timestamp.
+        """
+        super().__init__(event_id, event_timestamp)
+        self.position = position
+
+    def __str__(self) -> str:
+        """
+        :return: The str() string representation of the event.
+        """
+        return f"{self.__class__.__name__}(id={self.position.id.value})"
+
+    def __repr__(self) -> str:
+        """
+        :return: The repr() string representation of the event.
+        """
+        return f"<{str(self)} object at {id(self)}>"
+
+
+cdef class PositionOpened(PositionEvent):
+    """
+    Represents an event where a position has been opened.
+    """
+
+    def __init__(self,
+                 Position position,
+                 GUID event_id,
+                 datetime event_timestamp):
+        """
+        Initializes a new instance of the PositionOpened class.
+
+        :param position: The events position.
+        :param event_id: The events identifier.
+        :param event_timestamp: The order events timestamp.
+        """
+        super().__init__(position, event_id, event_timestamp)
+
+
+cdef class PositionModified(PositionEvent):
+    """
+    Represents an event where a position has been modified.
+    """
+
+    def __init__(self,
+                 Position position,
+                 GUID event_id,
+                 datetime event_timestamp):
+        """
+        Initializes a new instance of the PositionOpened class.
+
+        :param position: The events position.
+        :param event_id: The events identifier.
+        :param event_timestamp: The order events timestamp.
+        """
+        super().__init__(position, event_id, event_timestamp)
+
+
+cdef class PositionClosed(PositionEvent):
+    """
+    Represents an event where a position has been closed.
+    """
+
+    def __init__(self,
+                 Position position,
+                 GUID event_id,
+                 datetime event_timestamp):
+        """
+        Initializes a new instance of the PositionClosed class.
+
+        :param position: The events position.
+        :param event_id: The events identifier.
+        :param event_timestamp: The order events timestamp.
+        """
+        super().__init__(position, event_id, event_timestamp)
 
 
 cdef class TimeEvent(Event):

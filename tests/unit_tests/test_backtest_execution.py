@@ -47,7 +47,10 @@ class BacktestExecClientTests(unittest.TestCase):
         self.strategies = [TestStrategy1(TestStubs.bartype_usdjpy_1min_bid())]
 
         self.account = Account()
-        self.portfolio = Portfolio()
+        self.portfolio = Portfolio(
+            clock=TestClock(),
+            guid_factory=TestGuidFactory(),
+            logger=Logger())
         self.client = BacktestExecClient(instruments=self.instruments,
                                          data_ticks=self.data_ticks,
                                          data_bars_bid=self.data_bars_bid,
@@ -59,6 +62,8 @@ class BacktestExecClientTests(unittest.TestCase):
                                          clock=TestClock(),
                                          guid_factory=TestGuidFactory(),
                                          logger=Logger())
+
+        self.portfolio.register_execution_client(self.client)
 
     def test_can_initialize_client_with_data(self):
         # Arrange

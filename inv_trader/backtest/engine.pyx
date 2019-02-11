@@ -113,7 +113,10 @@ cdef class BacktestEngine:
         self.log = LoggerAdapter(component_name='BacktestEngine', logger=self.test_logger)
 
         self.account = Account()
-        self.portfolio = Portfolio(logger=self.test_logger)
+        self.portfolio = Portfolio(
+            clock=self.test_clock,
+            guid_factory=TestGuidFactory(),
+            logger=self.test_logger)
         self.instruments = instruments
         self.data_client = BacktestDataClient(
             instruments=instruments,
