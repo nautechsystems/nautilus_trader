@@ -32,6 +32,7 @@ cdef class ExecutionClient:
     cdef LoggerAdapter _log
     cdef Account _account
     cdef Portfolio _portfolio
+    cdef object _queue
     cdef dict _registered_strategies
     cdef dict _order_strategy_index
     cdef dict _order_book

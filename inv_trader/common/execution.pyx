@@ -11,6 +11,7 @@
 
 from cpython.datetime cimport datetime
 from typing import Dict
+from queue import Queue
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.common.clock cimport Clock
@@ -54,6 +55,7 @@ cdef class ExecutionClient:
             self._log = LoggerAdapter(f"ExecClient", logger)
         self._account = account
         self._portfolio = portfolio
+        self._queue = Queue()
         self._registered_strategies = {}  # type: Dict[GUID, TradeStrategy]
         self._order_book = {}             # type: Dict[OrderId, Order]
         self._order_strategy_index = {}   # type: Dict[OrderId, GUID]
@@ -115,21 +117,19 @@ cdef class ExecutionClient:
 
     cpdef void execute_command(self, Command command):
         """
-        Execute the given command by adding it to the internal processing queue.
+        Execute the given command by putting it on the internal queue for processing.
         
         :param command: The command to execute.
         """
-        # Raise exception if not overridden in implementation.
-        raise NotImplementedError("Method must be implemented in the subclass.")
+        self._queue.put(command)
 
     cpdef void handle_event(self, Event event):
         """
-        Handle the given event by adding it to the internal processing queue.
+        Handle the given event by putting it on the internal queue for processing.
         
         :param event: The event to handle
         """
-        # Raise exception if not overridden in implementation.
-        raise NotImplementedError("Method must be implemented in the subclass.")
+        self._queue.put(event)
 
     cpdef Order get_order(self, OrderId order_id):
         """

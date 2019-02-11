@@ -87,9 +87,9 @@ class BacktestExecClientTests(unittest.TestCase):
 
         # Act
         strategy.collateral_inquiry()
+        self.client.process_queue()
 
         # Assert
-        time.sleep(0.1)
         self.assertEqual(2, self.account.event_count)
 
     def test_can_submit_market_order(self):
@@ -107,9 +107,9 @@ class BacktestExecClientTests(unittest.TestCase):
 
         # Act
         strategy.submit_order(order, PositionId(str(order.id)))
+        self.client.process_queue()
 
         # Assert
-        time.sleep(0.1)
         self.assertEqual(4, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[3], OrderFilled))
         self.assertEqual(Price('86.711'), strategy.order(order_id).average_price)
@@ -128,9 +128,9 @@ class BacktestExecClientTests(unittest.TestCase):
 
         # Act
         strategy.submit_order(order, PositionId(str(order.id)))
+        self.client.process_queue()
 
         # Assert
-        time.sleep(0.1)
         print(strategy.object_storer.get_store())
         self.assertEqual(4, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[3], OrderWorking))
@@ -151,12 +151,13 @@ class BacktestExecClientTests(unittest.TestCase):
         order_id = order.id
 
         strategy.submit_order(order, PositionId(str(order.id)))
+        self.client.process_queue()
 
         # Act
         strategy.modify_order(order, Price('86.712'))
+        self.client.process_queue()
 
         # Assert
-        time.sleep(0.1)
         self.assertEqual(Price('86.712'), strategy.order(order_id).price)
         self.assertEqual(5, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[4], OrderModified))
@@ -175,8 +176,8 @@ class BacktestExecClientTests(unittest.TestCase):
 
         # Act
         strategy.submit_order(order, PositionId(str(order.id)))
+        self.client.process_queue()
 
         # Assert
-        time.sleep(0.1)
         self.assertEqual(4, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[3], OrderRejected))

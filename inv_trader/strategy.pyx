@@ -480,24 +480,20 @@ cdef class TradeStrategy:
         """
         Precondition.is_in(bar_type, self._indicators, 'bar_type', 'indicators')
 
-        # Closures not yet supported so can't do one liner
-        cpdef bint initialized = True
         for indicator in self._indicators[bar_type]:
             if indicator.initialized is False:
-                initialized = False
-        return initialized
+                return False
+        return True
 
     cpdef bint all_indicators_initialized(self):
         """
         :return: A value indicating whether all indicators for the strategy are initialized. 
         """
-        # Closures not yet supported so can't do one liner
-        cpdef bint initialized = True
         for indicator_list in self._indicators.values():
             for indicator in indicator_list:
                 if indicator.initialized is False:
-                    initialized = False
-        return initialized
+                    return False
+        return True
 
 
 # -- MANAGEMENT METHODS -------------------------------------------------------------------------- #
@@ -645,10 +641,10 @@ cdef class TradeStrategy:
             self.log.warning(f"Cannot reset a running strategy...")
             return
 
-        self._ticks = {}                 # type: Dict[Symbol, Tick]
-        self._bars = {}                  # type: Dict[BarType, Deque[Bar]]
+        self._ticks = {}  # type: Dict[Symbol, Tick]
+        self._bars = {}   # type: Dict[BarType, Deque[Bar]]
 
-        # Reset all indicators.
+        # Reset all indicators
         for indicator_list in self._indicators.values():
             [indicator.reset() for indicator in indicator_list]
 
