@@ -317,9 +317,9 @@ class TradeStrategyTests(unittest.TestCase):
             Quantity(100000))
 
         strategy.submit_order(order, PositionId('some-position'))
+        exec_client.process_queue()
 
         # Act
-        time.sleep(0.1)
         result = strategy.order(order.id)
 
         # Assert
@@ -348,11 +348,11 @@ class TradeStrategyTests(unittest.TestCase):
         position_id = PositionId('AUDUSD-1-123456')
 
         strategy.submit_order(order, position_id)
-        time.sleep(0.1)
+        exec_client.process_queue()
         exec_client.fill_last_order()
+        exec_client.process_queue()
 
         # Act
-        time.sleep(0.1)
         result = strategy.position(position_id)
 
         # Assert
@@ -719,9 +719,9 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Act
         strategy.submit_order(order, PositionId(str(order.id)))
+        exec_client.process_queue()
 
         # Assert
-        time.sleep(0.1)
         self.assertEqual(order, strategy.orders_all()[order.id])
         self.assertEqual(OrderStatus.WORKING, strategy.orders_all()[order.id].status)
         self.assertTrue(order.id in strategy.orders_active())
@@ -756,12 +756,13 @@ class TradeStrategyTests(unittest.TestCase):
             Quantity(100000))
 
         strategy.submit_order(order, PositionId(str(order.id)))
+        exec_client.process_queue()
 
         # Act
         strategy.cancel_order(order, 'NONE')
+        exec_client.process_queue()
 
         # Assert
-        time.sleep(0.1)
         self.assertEqual(order, strategy.orders_all()[order.id])
         self.assertEqual(OrderStatus.CANCELLED, strategy.orders_all()[order.id].status)
         self.assertTrue(order.id in strategy.orders_completed())
@@ -797,12 +798,13 @@ class TradeStrategyTests(unittest.TestCase):
             Price(1.00000, 5))
 
         strategy.submit_order(order, PositionId(str(order.id)))
+        exec_client.process_queue()
 
         # Act
         strategy.modify_order(order, Price(1.00001, 5))
+        exec_client.process_queue()
 
         # Assert
-        time.sleep(0.1)
         self.assertEqual(order, strategy.orders_all()[order.id])
         self.assertEqual(OrderStatus.WORKING, strategy.orders_all()[order.id].status)
         self.assertEqual(Price(1.00001, 5), strategy.orders_all()[order.id].price)
@@ -832,11 +834,11 @@ class TradeStrategyTests(unittest.TestCase):
         strategy.submit_order(order2, position_id)
 
         # Act
-        time.sleep(0.1)
+        exec_client.process_queue()
         strategy.cancel_all_orders()
+        exec_client.process_queue()
 
         # Assert
-        time.sleep(0.1)
         self.assertEqual(order1, strategy.orders_all()[order1.id])
         self.assertEqual(order2, strategy.orders_all()[order2.id])
         self.assertEqual(OrderStatus.CANCELLED, strategy.orders_all()[order1.id].status)
@@ -858,17 +860,17 @@ class TradeStrategyTests(unittest.TestCase):
         position_id = strategy.generate_position_id(AUDUSD_FXCM)
 
         strategy.submit_order(order, position_id)
-        time.sleep(0.1)
+        exec_client.process_queue()
         exec_client.fill_last_order()
 
         # Act
-        time.sleep(0.1)
+        exec_client.process_queue()
         strategy.flatten_position(position_id)
-        time.sleep(0.1)
+        exec_client.process_queue()
         exec_client.fill_last_order()
+        exec_client.process_queue()
 
         # Assert
-        time.sleep(0.1)
         self.assertEqual(order, strategy.orders_all()[order.id])
         self.assertEqual(OrderStatus.FILLED, strategy.orders_all()[order.id].status)
         self.assertEqual(MarketPosition.FLAT, strategy.positions_all()[position_id].market_position)
@@ -905,19 +907,19 @@ class TradeStrategyTests(unittest.TestCase):
         strategy.submit_order(order1, PositionId('some-position1'))
         strategy.submit_order(order2, PositionId('some-position2'))
 
-        time.sleep(0.1)
+        exec_client.process_queue()
         exec_client.fill_last_order()
         exec_client.fill_last_order()
 
         # Act
-        time.sleep(0.1)
+        exec_client.process_queue()
         strategy.flatten_all_positions()
-        time.sleep(0.1)
+        exec_client.process_queue()
         exec_client.fill_last_order()
         exec_client.fill_last_order()
 
         # Assert
-        time.sleep(0.1)
+        exec_client.process_queue()
         self.assertEqual(order1, strategy.orders_all()[order1.id])
         self.assertEqual(order2, strategy.orders_all()[order2.id])
         self.assertEqual(OrderStatus.FILLED, strategy.orders_all()[order1.id].status)
@@ -969,12 +971,12 @@ class TradeStrategyTests(unittest.TestCase):
             Quantity(100000))
 
         strategy.submit_order(order, strategy.generate_position_id(AUDUSD_FXCM))
-        time.sleep(0.1)
+        exec_client.process_queue()
         exec_client.fill_last_order()
 
         # Act
         # Assert
-        time.sleep(0.1)
+        exec_client.process_queue()
         self.assertTrue(OrderId('19700101-000000-001-001-AUDUSD-FXCM-1') in strategy.orders_all())
         self.assertTrue(PositionId('19700101-000000-001-001-AUDUSD-FXCM-1') in strategy.positions_all())
         self.assertEqual(0, len(strategy.orders_active()))
@@ -1003,15 +1005,15 @@ class TradeStrategyTests(unittest.TestCase):
             Quantity(100000))
 
         strategy.submit_order(order1, position1)
-        time.sleep(0.1)
+        exec_client.process_queue()
         exec_client.fill_last_order()
         strategy.submit_order(order2, position1)
-        time.sleep(0.1)
+        exec_client.process_queue()
         exec_client.fill_last_order()
 
         # Act
         # Assert
-        time.sleep(0.1)
+        exec_client.process_queue()
         self.assertEqual(0, len(strategy.orders_active()))
         self.assertEqual(order1, strategy.orders_completed()[order1.id])
         self.assertEqual(order2, strategy.orders_completed()[order2.id])

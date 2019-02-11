@@ -12,7 +12,6 @@
 import zmq
 
 from threading import Thread
-from queue import Queue
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.common.account cimport Account
@@ -36,7 +35,6 @@ cdef class LiveExecClient(ExecutionClient):
     """
     Provides a client for the execution service utilizing a ZMQ transport.
     """
-    cdef object _queue
     cdef object _thread
     cdef CommandSerializer _command_serializer
     cdef EventSerializer _event_serializer
@@ -81,8 +79,6 @@ cdef class LiveExecClient(ExecutionClient):
                          clock,
                          guid_factory,
                          logger)
-
-        self._queue = Queue()
         self._thread = Thread(target=self._process_queue, daemon=True)
         self._command_serializer = command_serializer
         self._event_serializer = event_serializer
@@ -122,22 +118,6 @@ cdef class LiveExecClient(ExecutionClient):
         """
         self._commands_worker.stop()
         self._events_worker.stop()
-
-    cpdef void execute_command(self, Command command):
-        """
-        Execute the given command.
-        
-        :param command: The command to execute.
-        """
-        self._queue.put(command)
-
-    cpdef void handle_event(self, Event event):
-        """
-        Handle the given event.
-        
-        :param event: The event to handle
-        """
-        self._queue.put(event)
 
     cpdef void _process_queue(self):
         """

@@ -222,21 +222,24 @@ cdef class MockExecClient(ExecutionClient):
         """
         self._log.info("MockExecClient disconnected.")
 
-    cpdef void execute_command(self, Command command):
+    cpdef void process_queue(self):
         """
-        Execute the given command.
-        
-        :param command: The command to execute.
+        Process the internal queue of commands and events.
         """
-        self._execute_command(command)
+        while not self._queue.empty():
+            item = self._queue.get()
 
-    cpdef void handle_event(self, Event event):
-        """
-        Handle the given event.
-        
-        :param event: The event to handle
-        """
-        self._handle_event(event)
+            if isinstance(item, Event):
+                self._handle_event(item)
+            elif isinstance(item, CollateralInquiry):
+                self._collateral_inquiry(item)
+            elif isinstance(item, SubmitOrder):
+                self._register_order(item.order, item.position_id, item.strategy_id)
+                self._submit_order(item)
+            elif isinstance(item, ModifyOrder):
+                self._modify_order(item)
+            elif isinstance(item, CancelOrder):
+                self._cancel_order(item)
 
     cpdef void fill_last_order(self):
         """
