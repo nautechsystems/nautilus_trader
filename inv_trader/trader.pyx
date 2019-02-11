@@ -70,6 +70,12 @@ cdef class Trader:
             self._data_client.register_strategy(strategy)
             self._exec_client.register_strategy(strategy)
 
+    cpdef int strategy_count(self):
+        """
+        :return: The number of strategies held by the trader.
+        """
+        return len(self.strategies)
+
     cpdef void start(self):
         """
         Start the trader.
