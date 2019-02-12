@@ -318,7 +318,7 @@ class TradeStrategyTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000))
 
-        strategy.submit_order(order, PositionId('some-position'))
+        strategy.submit_order(order, strategy.generate_position_id(AUDUSD_FXCM))
         exec_client.process_queue()
 
         # Act
@@ -347,7 +347,7 @@ class TradeStrategyTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000))
 
-        position_id = PositionId('AUDUSD-1-123456')
+        position_id = strategy.generate_position_id(AUDUSD_FXCM)
 
         strategy.submit_order(order, position_id)
         exec_client.process_queue()
@@ -656,14 +656,6 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertEqual(OrderSide.SELL, result1)
         self.assertEqual(OrderSide.BUY, result2)
 
-    # def test_get_flatten_side_with_flat_market_position_raises_exception(self):
-    #     # Arrange
-    #     strategy = TradeStrategy()
-    #
-    #     # Act
-    #     # Assert
-    #     self.assertRaises(ValueError, strategy.get_flatten_side, MarketPosition.FLAT)
-
     def test_get_flatten_side_with_long_or_short_market_position_returns_expected_sides(self):
         # Arrange
         strategy = TradeStrategy()
@@ -720,7 +712,7 @@ class TradeStrategyTests(unittest.TestCase):
             Quantity(100000))
 
         # Act
-        strategy.submit_order(order, PositionId(str(order.id)))
+        strategy.submit_order(order, strategy.generate_position_id(AUDUSD_FXCM))
         exec_client.process_queue()
 
         # Assert
@@ -757,7 +749,7 @@ class TradeStrategyTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000))
 
-        strategy.submit_order(order, PositionId(str(order.id)))
+        strategy.submit_order(order, strategy.generate_position_id(AUDUSD_FXCM))
         exec_client.process_queue()
 
         # Act
@@ -799,7 +791,7 @@ class TradeStrategyTests(unittest.TestCase):
             Quantity(100000),
             Price(1.00000, 5))
 
-        strategy.submit_order(order, PositionId(str(order.id)))
+        strategy.submit_order(order, strategy.generate_position_id(AUDUSD_FXCM))
         exec_client.process_queue()
 
         # Act
