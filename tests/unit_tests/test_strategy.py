@@ -327,14 +327,15 @@ class TradeStrategyTests(unittest.TestCase):
         # Assert
         self.assertEqual(order, result)
 
-    # def test_getting_position_with_unknown_id_raises_exception(self):
-    #     # Arrange
-    #     bar_type = TestStubs.bartype_audusd_1min_bid()
-    #     strategy = TestStrategy1(bar_type)
-    #
-    #     # Act
-    #     # Assert
-    #     self.assertRaises(ValueError, strategy.position, PositionId('unknown_position_id'))
+    def test_getting_position_with_unknown_id_returns_None(self):
+        # Arrange
+        strategy = TradeStrategy()
+
+        # Act
+        result = strategy.position(PositionId('unknown'))
+
+        # Assert
+        self.assertEqual(None, result)
 
     def test_can_get_position(self):
         # Arrange

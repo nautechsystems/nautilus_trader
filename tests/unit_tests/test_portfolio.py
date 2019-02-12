@@ -64,6 +64,12 @@ class PortfolioTestsTests(unittest.TestCase):
         self.assertTrue(order.id in self.portfolio.registered_order_ids())
         self.assertTrue(position_id in self.portfolio.registered_position_ids())
 
+    def test_position_exists_when_no_position(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertFalse(self.portfolio.position_exists(PositionId('unknown')))
+
     def test_opens_new_position_on_order_fill(self):
         # Arrange
         strategy = TradeStrategy()
@@ -88,6 +94,7 @@ class PortfolioTestsTests(unittest.TestCase):
         self.portfolio.handle_event(event, strategy.id)
 
         # Assert
+        self.assertTrue(self.portfolio.position_exists(position_id))
         self.assertTrue(position_id in self.portfolio.get_positions_all())
         self.assertTrue(position_id not in self.portfolio.get_positions_closed(strategy.id))
         self.assertTrue(position_id not in self.portfolio.get_positions_closed_all()[strategy.id])

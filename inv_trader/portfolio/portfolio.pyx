@@ -71,12 +71,21 @@ cdef class Portfolio:
         with Lock():
             return list(self._order_p_index.values())
 
+    cpdef bint position_exists(self, PositionId position_id):
+        """
+        Return a value indicating whether a position with the given identifier exists.
+        
+        :param position_id: The position identifier.
+        :return: True if the position exists, else False.
+        """
+        return position_id in self._position_book
+
     cpdef Position get_position(self, PositionId position_id):
         """
-        Return the position associated with the given id.
+        Return the position associated with the given identifier.
         
         :param position_id: The position id.
-        :return: The position associated with the given id.
+        :return: The position or None if not found.
         :raises ValueError: If the position is not found.
         """
         with Lock():

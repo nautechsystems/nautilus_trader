@@ -575,7 +575,9 @@ cdef class TradeStrategy:
         :return: The position with the given id.
         :raises ValueError: If the portfolio does not contain a position with the given id.
         """
-        return self._portfolio.get_position(position_id)
+        if self._portfolio.position_exists(position_id):
+            print("hi")
+            return self._portfolio.get_position(position_id)
 
     cpdef dict positions_all(self):
         """
