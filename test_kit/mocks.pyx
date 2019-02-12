@@ -203,9 +203,11 @@ cdef class MockExecClient(ExecutionClient):
         """
         Initializes a new instance of the MockExecClient class.
         """
+        cdef Portfolio portfolio = Portfolio()
+        portfolio.register_execution_client(self)
         super().__init__(
             Account(),
-            Portfolio(),
+            portfolio,
             TestClock(),
             TestGuidFactory(),
             Logger())

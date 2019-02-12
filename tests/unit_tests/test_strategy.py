@@ -906,8 +906,11 @@ class TradeStrategyTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000))
 
-        strategy.submit_order(order1, PositionId('some-position1'))
-        strategy.submit_order(order2, PositionId('some-position2'))
+        position_id1 = strategy.generate_position_id(AUDUSD_FXCM)
+        position_id2 = strategy.generate_position_id(AUDUSD_FXCM)
+
+        strategy.submit_order(order1, position_id1)
+        strategy.submit_order(order2, position_id2)
 
         exec_client.process_queue()
         exec_client.fill_last_order()
@@ -926,12 +929,12 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertEqual(order2, strategy.orders_all()[order2.id])
         self.assertEqual(OrderStatus.FILLED, strategy.orders_all()[order1.id].status)
         self.assertEqual(OrderStatus.FILLED, strategy.orders_all()[order2.id].status)
-        self.assertEqual(MarketPosition.FLAT, strategy.positions_all()[PositionId('some-position1')].market_position)
-        self.assertEqual(MarketPosition.FLAT, strategy.positions_all()[PositionId('some-position2')].market_position)
-        self.assertTrue(strategy.positions_all()[PositionId('some-position1')].is_exited)
-        self.assertTrue(strategy.positions_all()[PositionId('some-position2')].is_exited)
-        self.assertTrue(PositionId('some-position1') in strategy.positions_closed())
-        self.assertTrue(PositionId('some-position2') in strategy.positions_closed())
+        self.assertEqual(MarketPosition.FLAT, strategy.positions_all()[position_id1].market_position)
+        self.assertEqual(MarketPosition.FLAT, strategy.positions_all()[position_id2].market_position)
+        self.assertTrue(strategy.positions_all()[position_id1].is_exited)
+        self.assertTrue(strategy.positions_all()[position_id2].is_exited)
+        self.assertTrue(position_id1 in strategy.positions_closed())
+        self.assertTrue(position_id2 in strategy.positions_closed())
         self.assertTrue(strategy.is_flat())
 
     def test_can_update_bars_and_indicators(self):
