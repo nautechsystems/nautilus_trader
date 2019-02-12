@@ -12,6 +12,7 @@
 from cpython.datetime cimport datetime
 from typing import Dict
 from queue import Queue
+from threading import Lock
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.common.clock cimport Clock
@@ -139,9 +140,10 @@ cdef class ExecutionClient:
         :return: Order.
         :raises ValueError: If the order is not found.
         """
-        Precondition.is_in(order_id, self._order_book, 'order_id', 'order_book')
+        with Lock():
+            Precondition.is_in(order_id, self._order_book, 'order_id', 'order_book')
 
-        return self._order_book[order_id]
+            return self._order_book[order_id]
 
     cpdef dict get_orders_all(self):
         """
@@ -149,7 +151,8 @@ cdef class ExecutionClient:
         
         :return: Dict[OrderId, Order].
         """
-        return self._order_book.copy()
+        with Lock():
+            return self._order_book.copy()
 
     cpdef dict get_orders_active_all(self):
         """
@@ -157,7 +160,8 @@ cdef class ExecutionClient:
         
         :return: Dict[OrderId, Order].
         """
-        return self._orders_active.copy()
+        with Lock():
+            return self._orders_active.copy()
 
     cpdef dict get_orders_completed_all(self):
         """
@@ -165,7 +169,8 @@ cdef class ExecutionClient:
         
         :return: Dict[OrderId, Order].
         """
-        return self._orders_completed.copy()
+        with Lock():
+            return self._orders_completed.copy()
 
     cpdef dict get_orders(self, GUID strategy_id):
         """
@@ -174,11 +179,14 @@ cdef class ExecutionClient:
         :param strategy_id: The strategy identifier associated with the orders.
         :return: Dict[OrderId, Order].
         """
-        Precondition.is_in(strategy_id, self._orders_active, 'strategy_id', 'orders_active')
-        Precondition.is_in(strategy_id, self._orders_completed, 'strategy_id', 'orders_completed')
+        cpdef dict orders
 
-        cpdef dict orders = {**self._orders_active[strategy_id], **self._orders_completed[strategy_id]}
-        return orders  # type: Dict[OrderId, Order]
+        with Lock():
+            Precondition.is_in(strategy_id, self._orders_active, 'strategy_id', 'orders_active')
+            Precondition.is_in(strategy_id, self._orders_completed, 'strategy_id', 'orders_completed')
+
+            orders = {**self._orders_active[strategy_id], **self._orders_completed[strategy_id]}
+            return orders  # type: Dict[OrderId, Order]
 
     cpdef dict get_orders_active(self, GUID strategy_id):
         """
@@ -187,9 +195,10 @@ cdef class ExecutionClient:
         :param strategy_id: The strategy identifier associated with the orders.
         :return: Dict[OrderId, Order].
         """
-        Precondition.is_in(strategy_id, self._orders_active, 'strategy_id', 'orders_active')
+        with Lock():
+            Precondition.is_in(strategy_id, self._orders_active, 'strategy_id', 'orders_active')
 
-        return self._orders_active[strategy_id].copy()
+            return self._orders_active[strategy_id].copy()
 
     cpdef dict get_orders_completed(self, GUID strategy_id):
         """
@@ -198,9 +207,10 @@ cdef class ExecutionClient:
         :param strategy_id: The strategy identifier associated with the orders.
         :return: Dict[OrderId, Order].
         """
-        Precondition.is_in(strategy_id, self._orders_completed, 'strategy_id', 'orders_completed')
+        with Lock():
+            Precondition.is_in(strategy_id, self._orders_completed, 'strategy_id', 'orders_completed')
 
-        return self._orders_completed[strategy_id].copy()
+            return self._orders_completed[strategy_id].copy()
 
     cdef void _execute_command(self, Command command):
         """
