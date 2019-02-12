@@ -10,6 +10,7 @@
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
 from typing import List, Dict
+from threading import Lock
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.common.logger cimport Logger, LoggerAdapter
@@ -53,19 +54,22 @@ cdef class Portfolio:
         """
         :return: A list of strategy identifiers registered with the portfolio.
         """
-        return self._registered_strategies
+        with Lock():
+            return self._registered_strategies
 
     cpdef list registered_order_ids(self):
         """
         :return: A list of order identifiers registered with the portfolio.
         """
-        return list(self._order_p_index.keys())
+        with Lock():
+            return list(self._order_p_index.keys())
 
     cpdef list registered_position_ids(self):
         """
         :return: A list of position identifiers registered with the portfolio.
         """
-        return list(self._order_p_index.values())
+        with Lock():
+            return list(self._order_p_index.values())
 
     cpdef Position get_position(self, PositionId position_id):
         """
@@ -75,9 +79,10 @@ cdef class Portfolio:
         :return: The position associated with the given id.
         :raises ValueError: If the position is not found.
         """
-        Precondition.is_in(position_id, self._position_book, 'position_id', 'position_book')
+        with Lock():
+            Precondition.is_in(position_id, self._position_book, 'position_id', 'position_book')
 
-        return self._position_book[position_id]
+            return self._position_book[position_id]
 
     cpdef dict get_positions_all(self):
         """
@@ -85,7 +90,8 @@ cdef class Portfolio:
         
         :return: Dict[PositionId, Position].
         """
-        return self._position_book.copy()
+        with Lock():
+            return self._position_book.copy()
 
     cpdef dict get_positions_active_all(self):
         """
@@ -93,7 +99,8 @@ cdef class Portfolio:
         
         :return: Dict[PositionId, Position].
         """
-        return self._positions_active.copy()
+        with Lock():
+            return self._positions_active.copy()
 
     cpdef dict get_positions_closed_all(self):
         """
@@ -101,7 +108,8 @@ cdef class Portfolio:
         
         :return: Dict[PositionId, Position].
         """
-        return self._positions_closed.copy()
+        with Lock():
+            return self._positions_closed.copy()
 
     cpdef dict get_positions(self, GUID strategy_id):
         """
@@ -110,11 +118,14 @@ cdef class Portfolio:
         :param strategy_id: The strategy identifier associated with the positions.
         :return: Dict[PositionId, Position].
         """
-        Precondition.is_in(strategy_id, self._positions_active, 'strategy_id', 'positions_active')
-        Precondition.is_in(strategy_id, self._positions_closed, 'strategy_id', 'positions_closed')
+        cpdef dict positions
 
-        cpdef dict positions = {**self._positions_active[strategy_id], **self._positions_closed[strategy_id]}
-        return positions  # type: Dict[PositionId, Position]
+        with Lock():
+            Precondition.is_in(strategy_id, self._positions_active, 'strategy_id', 'positions_active')
+            Precondition.is_in(strategy_id, self._positions_closed, 'strategy_id', 'positions_closed')
+
+            positions = {**self._positions_active[strategy_id], **self._positions_closed[strategy_id]}
+            return positions  # type: Dict[PositionId, Position]
 
     cpdef dict get_positions_active(self, GUID strategy_id):
         """
@@ -123,9 +134,10 @@ cdef class Portfolio:
         :param strategy_id: The strategy identifier associated with the positions.
         :return: Dict[PositionId, Position].
         """
-        Precondition.is_in(strategy_id, self._positions_active, 'strategy_id', 'positions_active')
+        with Lock():
+            Precondition.is_in(strategy_id, self._positions_active, 'strategy_id', 'positions_active')
 
-        return self._positions_active[strategy_id].copy()
+            return self._positions_active[strategy_id].copy()
 
     cpdef dict get_positions_closed(self, GUID strategy_id):
         """
@@ -134,9 +146,10 @@ cdef class Portfolio:
         :param strategy_id: The strategy identifier associated with the positions.
         :return: Dict[PositionId, Position].
         """
-        Precondition.is_in(strategy_id, self._positions_closed, 'strategy_id', 'positions_closed')
+        with Lock():
+            Precondition.is_in(strategy_id, self._positions_closed, 'strategy_id', 'positions_closed')
 
-        return self._positions_closed[strategy_id].copy()
+            return self._positions_closed[strategy_id].copy()
 
     cpdef bint is_strategy_flat(self, GUID strategy_id):
         """
@@ -145,7 +158,8 @@ cdef class Portfolio:
         :param strategy_id: The strategy identifier.
         :return: True if the strategy is flat, else False.
         """
-        return len(self._positions_active[strategy_id]) == 0
+        with Lock():
+            return len(self._positions_active[strategy_id]) == 0
 
     cpdef bint is_flat(self):
         """
@@ -153,10 +167,11 @@ cdef class Portfolio:
         
         :return: True if the portfolio is flat, else False.
         """
-        for position in self._position_book.values():
-            if not position.is_exited:
-                return False
-        return True
+        with Lock():
+            for position in self._position_book.values():
+                if not position.is_exited:
+                    return False
+            return True
 
     cpdef void register_execution_client(self, ExecutionClient client):
         """
@@ -191,6 +206,8 @@ cdef class Portfolio:
         :param order_id: The order identifier to register.
         :param position_id: The position identifier to register.
         """
+        # Lock should not be needed as the execution client is the only caller.
+
         Precondition.not_in(order_id, self._order_p_index, 'order_id', 'order_position_index')
 
         self._order_p_index[order_id] = position_id
@@ -202,6 +219,8 @@ cdef class Portfolio:
         :param event: The event to handle.
         :param strategy_id: The strategy identifier.
         """
+        # Lock should not be needed as the execution client is the only caller.
+
         Precondition.is_in(event.order_id, self._order_p_index, 'event.order_id', 'order_position_index')
 
         cdef PositionId position_id = self._order_p_index[event.order_id]
