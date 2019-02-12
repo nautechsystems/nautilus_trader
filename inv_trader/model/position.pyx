@@ -86,7 +86,7 @@ cdef class Position:
         :return: The str() string representation of the position.
         """
         cdef str quantity = '{:,}'.format(self.quantity.value)
-        return (f"Position(id={self.id}) "
+        return (f"Position(id={self.id.value}) "
                 f"{self.symbol} {market_position_string(self.market_position)} {quantity}")
 
     def __repr__(self) -> str:

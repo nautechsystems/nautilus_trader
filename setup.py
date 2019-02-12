@@ -17,7 +17,7 @@ from typing import List
 from setuptools import setup, Extension
 
 
-VERSION = '0.75.0'
+VERSION = '0.80.0'
 AUTHOR = 'Invariance'
 INV_TRADER = 'inv_trader'
 DESCRIPTION = 'The python trading client for Invariance.'

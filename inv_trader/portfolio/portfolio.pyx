@@ -156,7 +156,6 @@ cdef class Portfolio:
         for position in self._position_book.values():
             if not position.is_exited:
                 return False
-
         return True
 
     cpdef void register_execution_client(self, ExecutionClient client):
@@ -222,7 +221,7 @@ cdef class Portfolio:
             # Add position to active positions
             assert(position_id not in self._positions_active[strategy_id])
             self._positions_active[strategy_id][position_id] = position
-            self._log.debug(f"Position(id={position.id}) added to active positions.")
+            self._log.debug(f"{position} added to active positions.")
             self._position_opened(position)
 
         # Position exists
@@ -235,14 +234,14 @@ cdef class Portfolio:
                 if position_id in self._positions_active[strategy_id]:
                     self._positions_closed[strategy_id][position_id] = position
                     del self._positions_active[strategy_id][position_id]
-                    self._log.debug(f"Position(id={position.id}) moved to closed positions.")
+                    self._log.debug(f"Moved {position} to closed positions.")
                     self._position_closed(position)
             else:
                 # Check for overfill
                 if position_id in self._positions_closed[strategy_id]:
                     self._positions_active[strategy_id][position_id] = position
                     del self._positions_closed[strategy_id][position_id]
-                    self._log.debug(f"Position(id={position.id}) moved BACK to active positions due overfill.")
+                    self._log.debug(f"Moved {position} BACK to active positions due overfill.")
                     self._position_opened(position)
                 self._position_modified(position)
 
