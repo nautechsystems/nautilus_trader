@@ -313,7 +313,6 @@ cdef class LiveDataClient(DataClient):
                 self._pubsub_thread = self._pubsub.run_in_thread(0.001)
             self._subscriptions_bars.append(bars_channel)
             self._subscriptions_bars.sort()
-            self._log.info(f"Subscribed to bar data for {bars_channel}.")
 
     cpdef void unsubscribe_bars(self, BarType bar_type, handler: Callable):
         """

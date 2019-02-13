@@ -14,7 +14,7 @@ import time
 from datetime import datetime, timezone, timedelta
 
 from inv_trader.common.clock import TestClock, LiveClock
-from inv_trader.model.enums import Venue, Resolution, QuoteType, OrderSide, TimeInForce, OrderStatus
+from inv_trader.model.enums import Venue, Resolution, QuoteType, OrderSide, OrderStatus
 from inv_trader.model.enums import MarketPosition
 from inv_trader.model.objects import Quantity, Symbol, Price, Tick, BarType, Bar
 from inv_trader.model.events import TimeEvent
@@ -97,7 +97,6 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(isinstance(result, GUID))
-        print(result)
 
     def test_can_get_current_time(self):
         # Arrange
@@ -110,6 +109,7 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertEqual(timezone.utc, result.tzinfo)
 
     def test_can_get_indicators(self):
+        # Arrange
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
         strategy = TestStrategy1(bar_type)
 
@@ -134,9 +134,8 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertFalse(result2)
 
     def test_getting_indicators_for_unknown_bar_type_raises_exception(self):
-        bar_type = TestStubs.bartype_gbpusd_1sec_mid()
-        strategy = TestStrategy1(bar_type)
-
+        # Arrange
+        strategy = TradeStrategy()
         unknown_bar_type = BarType(
             AUDUSD_FXCM,
             5,
@@ -148,9 +147,8 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertRaises(ValueError, strategy.indicators, unknown_bar_type)
 
     def test_getting_bars_for_unknown_bar_type_raises_exception(self):
-        bar_type = TestStubs.bartype_gbpusd_1sec_mid()
-        strategy = TestStrategy1(bar_type)
-
+        # Arrange
+        strategy = TradeStrategy()
         unknown_bar_type = BarType(
             AUDUSD_FXCM,
             5,
@@ -162,9 +160,7 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertRaises(ValueError, strategy.bars, unknown_bar_type)
 
     def test_can_get_bars(self):
-        bar_type = TestStubs.bartype_gbpusd_1sec_mid()
-        strategy = TestStrategy1(bar_type)
-
+        strategy = TradeStrategy()
         bar_type = BarType(GBPUSD_FXCM,
                            1,
                            Resolution.SECOND,
@@ -187,9 +183,7 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertTrue(bar, result[0])
 
     def test_getting_bar_for_unknown_bar_type_raises_exception(self):
-        bar_type = TestStubs.bartype_gbpusd_1sec_mid()
-        strategy = TestStrategy1(bar_type)
-
+        strategy = TradeStrategy()
         unknown_bar_type = BarType(
             AUDUSD_FXCM,
             5,
@@ -201,14 +195,11 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertRaises(ValueError, strategy.bar, unknown_bar_type, 0)
 
     def test_getting_bar_at_out_of_range_index_raises_exception(self):
-        bar_type = TestStubs.bartype_gbpusd_1sec_mid()
-        strategy = TestStrategy1(bar_type)
-
+        strategy = TradeStrategy()
         bar_type = BarType(GBPUSD_FXCM,
                            1,
                            Resolution.SECOND,
                            QuoteType.MID)
-
         bar = Bar(
             Price('1.00001'),
             Price('1.00004'),
@@ -224,14 +215,11 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertRaises(ValueError, strategy.bar, bar_type, -2)
 
     def test_can_get_bar(self):
-        bar_type = TestStubs.bartype_gbpusd_1sec_mid()
-        strategy = TestStrategy1(bar_type)
-
+        strategy = TradeStrategy()
         bar_type = BarType(GBPUSD_FXCM,
                            1,
                            Resolution.SECOND,
                            QuoteType.MID)
-
         bar = Bar(
             Price('1.00001'),
             Price('1.00004'),
@@ -249,14 +237,11 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertEqual(bar, result)
 
     def test_can_get_last_bar(self):
-        bar_type = TestStubs.bartype_gbpusd_1sec_mid()
-        strategy = TestStrategy1(bar_type)
-
+        strategy = TradeStrategy()
         bar_type = BarType(GBPUSD_FXCM,
                            1,
                            Resolution.SECOND,
                            QuoteType.MID)
-
         bar = Bar(
             Price('1.00001'),
             Price('1.00004'),
@@ -274,16 +259,14 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertEqual(bar, result)
 
     def test_getting_last_tick_with_unknown_symbol_raises_exception(self):
-        bar_type = TestStubs.bartype_gbpusd_1sec_mid()
-        strategy = TestStrategy1(bar_type)
+        strategy = TradeStrategy()
 
         # Act
         # Assert
         self.assertRaises(ValueError, strategy.last_tick, AUDUSD_FXCM)
 
     def test_can_get_last_tick(self):
-        bar_type = TestStubs.bartype_gbpusd_1sec_mid()
-        strategy = TestStrategy1(bar_type)
+        strategy = TradeStrategy()
 
         tick = Tick(Symbol('AUDUSD', Venue.FXCM),
                     Price('1.00000'),
@@ -298,14 +281,15 @@ class TradeStrategyTests(unittest.TestCase):
         # Assert
         self.assertEqual(tick, result)
 
-    # def test_getting_order_with_unknown_id_raises_exception(self):
-    #     # Arrange
-    #     bar_type = TestStubs.bartype_gbpusd_1sec_mid()
-    #     strategy = TestStrategy1(bar_type)
-    #
-    #     # Act
-    #     # Assert
-    #     self.assertRaises(ValueError, strategy.order, OrderId('unknown_order_id'))
+    def test_getting_order_which_does_not_exist_raises_exception(self):
+        # Arrange
+        strategy = TradeStrategy()
+        exec_client = MockExecClient()
+        exec_client.register_strategy(strategy)
+
+        # Act
+        # Assert
+        self.assertRaises(ValueError, strategy.order, OrderId('unknown_order_id'))
 
     def test_can_get_order(self):
         # Arrange
@@ -325,17 +309,19 @@ class TradeStrategyTests(unittest.TestCase):
         result = strategy.order(order.id)
 
         # Assert
+        self.assertTrue(strategy.order_exists(order.id))
         self.assertEqual(order, result)
 
-    def test_getting_position_with_unknown_id_returns_None(self):
+    def test_getting_position_which_does_not_exist_raises_exception(self):
         # Arrange
         strategy = TradeStrategy()
+        exec_client = MockExecClient()
+        exec_client.register_strategy(strategy)
 
         # Act
-        result = strategy.position(PositionId('unknown'))
-
         # Assert
-        self.assertEqual(None, result)
+        self.assertRaises(ValueError, strategy.position, PositionId('unknown'))
+        self.assertFalse(strategy.position_exists(PositionId('unknown')))
 
     def test_can_get_position(self):
         # Arrange
@@ -359,6 +345,7 @@ class TradeStrategyTests(unittest.TestCase):
         result = strategy.position(position_id)
 
         # Assert
+        self.assertTrue(strategy.position_exists(position_id))
         self.assertTrue(type(result) == Position)
 
     def test_can_start_strategy(self):
@@ -681,26 +668,6 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertEqual(clock.unix_epoch(), strategy.time_now())
         self.assertEqual(PositionId('19700101-000000-001-001-AUDUSD-FXCM-1'), strategy.generate_position_id(AUDUSD_FXCM))
 
-    # def test_submitting_order_with_identical_id_raises_ex(self):
-    #     # Arrange
-    #     strategy = TradeStrategy()
-    #     exec_client = MockExecClient()
-    #     exec_client.register_strategy(strategy)
-    #
-    #     order = self.order_factory.market(
-    #         AUDUSD_FXCM,
-    #         OrderId('AUDUSD-123456-1'),
-    #         Label('S1'),
-    #         OrderSide.BUY,
-    #         100000)
-    #
-    #     position_id = PositionId(str(order.id))
-    #     strategy.submit_order(order, position_id)
-    #
-    #     # Act
-    #     # Assert
-    #     self.assertRaises(ValueError, strategy.submit_order, order, position_id)
-
     def test_strategy_can_submit_order(self):
         # Arrange
         strategy = TradeStrategy()
@@ -721,23 +688,6 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertEqual(OrderStatus.WORKING, strategy.orders_all()[order.id].status)
         self.assertTrue(order.id in strategy.orders_active())
         self.assertTrue(order.id not in strategy.orders_completed())
-
-    # def test_cancelling_order_which_does_not_exist_raises_ex(self):
-    #     # Arrange
-    #     strategy = TradeStrategy()
-    #     exec_client = MockExecClient()
-    #     exec_client.register_strategy(strategy)
-    #
-    #     order = self.order_factory.market(
-    #         AUDUSD_FXCM,
-    #         OrderId('AUDUSD-123456-1'),
-    #         Label('S1'),
-    #         OrderSide.BUY,
-    #         100000)
-    #
-    #     # Act
-    #     # Assert
-    #     self.assertRaises(ValueError, strategy.cancel_order, order, 'NONE')
 
     def test_can_cancel_order(self):
         # Arrange
@@ -762,23 +712,6 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertEqual(OrderStatus.CANCELLED, strategy.orders_all()[order.id].status)
         self.assertTrue(order.id in strategy.orders_completed())
         self.assertTrue(order.id not in strategy.orders_active())
-
-    # def test_modifying_order_which_does_not_exist_raises_ex(self):
-    #     # Arrange
-    #     strategy = TradeStrategy()
-    #     exec_client = MockExecClient()
-    #     exec_client.register_strategy(strategy)
-    #
-    #     order = self.order_factory.market(
-    #         AUDUSD_FXCM,
-    #         OrderId('AUDUSD-123456-1'),
-    #         Label('S1'),
-    #         OrderSide.BUY,
-    #         100000)
-    #
-    #     # Act
-    #     # Assert
-    #     self.assertRaises(ValueError, strategy.modify_order, order, Price(1.00001, 5))
 
     def test_can_modify_order(self):
         # Arrange
@@ -872,16 +805,6 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertTrue(strategy.positions_all()[position_id].is_exited)
         self.assertTrue(position_id in strategy.positions_closed())
         self.assertTrue(strategy.is_flat())
-
-    # def test_flatten_position_which_does_not_exist_raises_exception(self):
-    #     # Arrange
-    #     strategy = TradeStrategy()
-    #     exec_client = MockExecClient()
-    #     exec_client.register_strategy(strategy)
-    #
-    #     # Act
-    #     # Assert
-    #     self.assertRaises(ValueError, strategy.flatten_position, PositionId('some-position'))
 
     def test_can_flatten_all_positions(self):
         # Arrange

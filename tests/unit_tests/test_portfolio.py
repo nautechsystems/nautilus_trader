@@ -16,6 +16,7 @@ from inv_trader.model.objects import ValidString, Quantity, Symbol, Price
 from inv_trader.model.order import OrderFactory
 from inv_trader.model.events import OrderFilled
 from inv_trader.model.identifiers import GUID, OrderId, PositionId, ExecutionId, ExecutionTicket
+from inv_trader.model.position import Position
 from inv_trader.strategy import TradeStrategy
 from inv_trader.portfolio.portfolio import Portfolio
 from test_kit.mocks import MockExecClient
@@ -95,6 +96,7 @@ class PortfolioTestsTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(self.portfolio.position_exists(position_id))
+        self.assertEqual(Position, type(self.portfolio.get_position(position_id)))
         self.assertTrue(position_id in self.portfolio.get_positions_all())
         self.assertTrue(position_id not in self.portfolio.get_positions_closed(strategy.id))
         self.assertTrue(position_id not in self.portfolio.get_positions_closed_all()[strategy.id])
@@ -127,6 +129,8 @@ class PortfolioTestsTests(unittest.TestCase):
         self.portfolio.handle_event(event, strategy.id)
 
         # Assert
+        self.assertTrue(self.portfolio.position_exists(position_id))
+        self.assertEqual(Position, type(self.portfolio.get_position(position_id)))
         self.assertEqual(0, len(self.portfolio.get_positions_closed(strategy.id)))
         self.assertEqual(0, len(self.portfolio.get_positions_closed_all()[strategy.id]))
         self.assertEqual(1, len(self.portfolio.get_positions_active(strategy.id)))
@@ -170,6 +174,8 @@ class PortfolioTestsTests(unittest.TestCase):
         self.portfolio.handle_event(sell, strategy.id)
 
         # Assert
+        self.assertTrue(self.portfolio.position_exists(position_id))
+        self.assertEqual(Position, type(self.portfolio.get_position(position_id)))
         self.assertTrue(position_id in self.portfolio.get_positions(strategy.id))
         self.assertTrue(position_id in self.portfolio.get_positions_all())
         self.assertEqual(0, len(self.portfolio.get_positions_active(strategy.id)))
@@ -222,6 +228,10 @@ class PortfolioTestsTests(unittest.TestCase):
         self.portfolio.handle_event(buy2, strategy2.id)
 
         # Assert
+        self.assertTrue(self.portfolio.position_exists(position_id1))
+        self.assertTrue(self.portfolio.position_exists(position_id2))
+        self.assertEqual(Position, type(self.portfolio.get_position(position_id1)))
+        self.assertEqual(Position, type(self.portfolio.get_position(position_id2)))
         self.assertTrue(position_id1 in self.portfolio.get_positions(strategy1.id))
         self.assertTrue(position_id2 in self.portfolio.get_positions(strategy2.id))
         self.assertTrue(position_id1 in self.portfolio.get_positions_all())

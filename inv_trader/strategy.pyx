@@ -249,6 +249,8 @@ cdef class TradeStrategy:
 
         :param event: The event received.
         """
+        self.log.info(f"{event}")
+
         if self.is_running:
             self.on_event(event)
 
@@ -268,7 +270,6 @@ cdef class TradeStrategy:
         """
         Precondition.not_none(self._data_client, 'data_client')
 
-        # List already copied in date client
         return self._data_client.symbols
 
     cpdef list instruments(self):
@@ -279,7 +280,6 @@ cdef class TradeStrategy:
         """
         Precondition.not_none(self._data_client, 'data_client')
 
-        # List already copied in date client
         return self._data_client.symbols
 
     cpdef Instrument get_instrument(self, Symbol symbol):
@@ -533,6 +533,17 @@ cdef class TradeStrategy:
         else:
             raise ValueError("Cannot flatten a FLAT position.")
 
+    cpdef bint order_exists(self, OrderId order_id):
+        """
+        Return a value indicating whether an order with the given identifier exists.
+        
+        :param order_id: The order identifier.
+        :return: True if the order exists, else False.
+        """
+        Precondition.not_none(self._exec_client, 'exec_client')
+
+        return self._exec_client.order_exists(order_id)
+
     cpdef Order order(self, OrderId order_id):
         """
         Return the order with the given order_id.
@@ -541,6 +552,8 @@ cdef class TradeStrategy:
         :return: The order with the given id.
         :raises ValueError: If the execution client does not contain an order with the given id.
         """
+        Precondition.not_none(self._exec_client, 'exec_client')
+
         return self._exec_client.get_order(order_id)
 
     cpdef dict orders_all(self):
@@ -549,6 +562,8 @@ cdef class TradeStrategy:
         
         :return: Dict[OrderId, Order]
         """
+        Precondition.not_none(self._exec_client, 'exec_client')
+
         return self._exec_client.get_orders(self.id)
 
     cpdef dict orders_active(self):
@@ -557,6 +572,8 @@ cdef class TradeStrategy:
         
         :return: Dict[OrderId, Order]
         """
+        Precondition.not_none(self._exec_client, 'exec_client')
+
         return self._exec_client.get_orders_active(self.id)
 
     cpdef dict orders_completed(self):
@@ -565,19 +582,32 @@ cdef class TradeStrategy:
         
         :return: Dict[OrderId, Order]
         """
+        Precondition.not_none(self._exec_client, 'exec_client')
+
         return self._exec_client.get_orders_completed(self.id)
+
+    cpdef bint position_exists(self, PositionId position_id):
+        """
+        Return a value indicating whether a position with the given identifier exists.
+        
+        :param position_id: The position identifier.
+        :return: True if the position exists, else False.
+        """
+        Precondition.not_none(self._portfolio, 'portfolio')
+
+        return self._portfolio.position_exists(position_id)
 
     cpdef Position position(self, PositionId position_id):
         """
         Return the position associated with the given id.
 
         :param position_id: The positions identifier.
-        :return: The position with the given id.
-        :raises ValueError: If the portfolio does not contain a position with the given id.
+        :return: The position with the given identifier.
+        :raises ValueError: If the portfolio does not contain a position with the given identifier.
         """
-        if self._portfolio.position_exists(position_id):
-            print("hi")
-            return self._portfolio.get_position(position_id)
+        Precondition.not_none(self._portfolio, 'portfolio')
+
+        return self._portfolio.get_position(position_id)
 
     cpdef dict positions_all(self):
         """
@@ -585,6 +615,8 @@ cdef class TradeStrategy:
         
         :return: Dict[PositionId, Position]
         """
+        Precondition.not_none(self._portfolio, 'portfolio')
+
         return self._portfolio.get_positions(self.id)
 
     cpdef dict positions_active(self):
@@ -593,6 +625,8 @@ cdef class TradeStrategy:
         
         :return: Dict[PositionId, Position]
         """
+        Precondition.not_none(self._portfolio, 'portfolio')
+
         return self._portfolio.get_positions_active(self.id)
 
     cpdef dict positions_closed(self):
@@ -601,6 +635,8 @@ cdef class TradeStrategy:
         
         :return: Dict[PositionId, Position]
         """
+        Precondition.not_none(self._portfolio, 'portfolio')
+
         return self._portfolio.get_positions_closed(self.id)
 
     cpdef bint is_flat(self):
@@ -608,6 +644,8 @@ cdef class TradeStrategy:
         :return: A value indicating whether this strategy is completely flat
         (no positions other than FLAT) across all instruments.
         """
+        Precondition.not_none(self._portfolio, 'portfolio')
+
         return self._portfolio.is_strategy_flat(self.id)
 
 
@@ -673,6 +711,8 @@ cdef class TradeStrategy:
         :param order: The order to submit.
         :param position_id: The position identifier to associate with this order.
         """
+        Precondition.not_none(self._exec_client, 'exec_client')
+
         self.log.info(f"Submitting {order} with {position_id}")
 
         cdef SubmitOrder command = SubmitOrder(
@@ -693,6 +733,8 @@ cdef class TradeStrategy:
         :param order: The atomic order to submit.
         :param position_id: The position identifier to associate with this order.
         """
+        Precondition.not_none(self._exec_client, 'exec_client')
+
         self.log.info(f"Submitting {order} for {position_id}")
 
         cdef SubmitAtomicOrder command = SubmitAtomicOrder(
@@ -713,6 +755,8 @@ cdef class TradeStrategy:
         :param order: The order to modify.
         :param new_price: The new price for the given order.
         """
+        Precondition.not_none(self._exec_client, 'exec_client')
+
         self.log.info(f"Modifying {order} with new price {new_price}")
 
         cdef ModifyOrder command = ModifyOrder(
@@ -731,6 +775,8 @@ cdef class TradeStrategy:
         :param order: The order to cancel.
         :param cancel_reason: The reason for cancellation (will be logged).
         """
+        Precondition.not_none(self._exec_client, 'exec_client')
+
         self.log.info(f"Cancelling {order}")
 
         cdef CancelOrder command = CancelOrder(
@@ -750,6 +796,8 @@ cdef class TradeStrategy:
         :raises ValueError: If the strategy has not been registered with an execution client.
         :raises ValueError: If the cancel_reason is not a valid string.
         """
+        Precondition.not_none(self._exec_client, 'exec_client')
+
         cdef dict all_orders = self._exec_client.get_orders(self.id)
         cdef CancelOrder command
 
@@ -772,6 +820,8 @@ cdef class TradeStrategy:
         :param position_id: The position identifier to flatten.
         :raises ValueError: If the position_id is not found in the position book.
         """
+        Precondition.not_none(self._exec_client, 'exec_client')
+
         cdef Position position = self._portfolio.get_position(position_id)
 
         if position.market_position == MarketPosition.FLAT:
@@ -793,6 +843,8 @@ cdef class TradeStrategy:
         them to the execution service. If no positions found or a position is None
         then will log a warning.
         """
+        Precondition.not_none(self._exec_client, 'exec_client')
+
         cdef dict positions = self._portfolio.get_positions_active(self.id)
 
         if len(positions) == 0:

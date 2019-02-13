@@ -226,9 +226,11 @@ cdef class BacktestDataClient(DataClient):
         Precondition.is_in(bar_type.symbol, self.data_providers, 'symbol', 'data_providers')
 
         cdef start = datetime.utcnow()
-        self.data_providers[bar_type.symbol].register_bar_type(bar_type)
+
+        if bar_type not in self.data_providers[bar_type.symbol].bars:
+            self.data_providers[bar_type.symbol].register_bar_type(bar_type)
+            self._log.info(f"Built {len(self.data_providers[bar_type.symbol].bars[bar_type])} {bar_type} bars in {round((datetime.utcnow() - start).total_seconds(), 2)}s.")
         self._subscribe_bars(bar_type, handler)
-        self._log.info(f"Built {len(self.data_providers[bar_type.symbol].bars[bar_type])} {bar_type} bars in {round((datetime.utcnow() - start).total_seconds(), 2)}s.")
 
     cpdef void unsubscribe_bars(self, BarType bar_type, handler: Callable):
         """
