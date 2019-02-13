@@ -133,6 +133,16 @@ cdef class ExecutionClient:
         """
         self._queue.put(event)
 
+    cpdef bint order_exists(self, OrderId order_id):
+        """
+        Return a value indicating whether an order with the given identifier exists.
+        
+        :param order_id: The order identifier.
+        :return: True if the order exists, else False.
+        """
+        with Lock():
+            return order_id in self._order_book
+
     cpdef Order get_order(self, OrderId order_id):
         """
         Return the order with the given identifier (if found).
@@ -270,9 +280,9 @@ cdef class ExecutionClient:
             if isinstance(event, OrderFilled) or isinstance(event, OrderPartiallyFilled):
                 self._portfolio.handle_event(event, strategy_id)
             elif isinstance(event, OrderModified):
-                self._log.info(f"{event} price to {event.modified_price}")
+                self._log.debug(f"{event} price to {event.modified_price}")
             elif isinstance(event, OrderCancelled):
-                self._log.info(str(event))
+                self._log.debug(str(event))
             # Warning Events
             elif isinstance(event, OrderRejected):
                 self._log.warning(f"{event} {event.rejected_reason}")
@@ -300,7 +310,7 @@ cdef class ExecutionClient:
         self._order_book[order.id] = order
         self._order_strategy_index[order.id] = strategy_id
         self._portfolio.register_order(order.id, position_id)
-        self._log.info(f"Registered {order.id} with {position_id} for strategy with id {strategy_id}.")
+        self._log.debug(f"Registered {order.id} with {position_id} for strategy with id {strategy_id}.")
 
     cdef void _collateral_inquiry(self, CollateralInquiry command):
         """

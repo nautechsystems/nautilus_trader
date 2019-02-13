@@ -55,7 +55,7 @@ cdef class Portfolio:
         :return: A list of strategy identifiers registered with the portfolio.
         """
         with Lock():
-            return self._registered_strategies
+            return self._registered_strategies.copy()
 
     cpdef list registered_order_ids(self):
         """
@@ -78,7 +78,8 @@ cdef class Portfolio:
         :param position_id: The position identifier.
         :return: True if the position exists, else False.
         """
-        return position_id in self._position_book
+        with Lock():
+            return position_id in self._position_book
 
     cpdef Position get_position(self, PositionId position_id):
         """
