@@ -250,8 +250,8 @@ cdef class Portfolio:
             # Add position to active positions
             assert(position_id not in self._positions_active[strategy_id])
             self._positions_active[strategy_id][position_id] = position
-            self._log.debug(f"{position} added to active positions.")
-            self._position_opened(position)
+            self._log.debug(f"Added {position} to active positions.")
+            self._position_opened(position, strategy_id)
 
         # Position exists
         else:
@@ -264,36 +264,33 @@ cdef class Portfolio:
                     self._positions_closed[strategy_id][position_id] = position
                     del self._positions_active[strategy_id][position_id]
                     self._log.debug(f"Moved {position} to closed positions.")
-                    self._position_closed(position)
+                    self._position_closed(position, strategy_id)
             else:
                 # Check for overfill
                 if position_id in self._positions_closed[strategy_id]:
                     self._positions_active[strategy_id][position_id] = position
                     del self._positions_closed[strategy_id][position_id]
                     self._log.debug(f"Moved {position} BACK to active positions due overfill.")
-                    self._position_opened(position)
-                self._position_modified(position)
+                    self._position_opened(position, strategy_id)
+                self._position_modified(position, strategy_id)
 
-    cdef void _position_opened(self, Position position):
-        self._log.info(f"Opened {position}")
-
+    cdef void _position_opened(self, Position position, GUID strategy_id):
         self._exec_client.handle_event(PositionOpened(
             position,
+            strategy_id,
             self._guid_factory.generate(),
             self._clock.time_now()))
 
-    cdef void _position_modified(self, Position position):
-        self._log.info(f"Modified {position}")
-
+    cdef void _position_modified(self, Position position, GUID strategy_id):
         self._exec_client.handle_event(PositionModified(
             position,
+            strategy_id,
             self._guid_factory.generate(),
             self._clock.time_now()))
 
-    cdef void _position_closed(self, Position position):
-        self._log.info(f"Closed {position}")
-
+    cdef void _position_closed(self, Position position, GUID strategy_id):
         self._exec_client.handle_event(PositionClosed(
             position,
+            strategy_id,
             self._guid_factory.generate(),
             self._clock.time_now()))
