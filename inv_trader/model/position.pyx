@@ -85,15 +85,20 @@ cdef class Position:
         """
         :return: The str() string representation of the position.
         """
-        cdef str quantity = '{:,}'.format(self.quantity.value)
-        return (f"Position(id={self.id.value}) "
-                f"{self.symbol} {market_position_string(self.market_position)} {quantity}")
+        return f"Position(id={self.id.value}) {self.status_string()}"
 
     def __repr__(self) -> str:
         """
         :return: The repr() string representation of the position.
         """
         return f"<{str(self)} object at {id(self)}>"
+
+    cdef str status_string(self):
+        """
+        :return: A string describing the positions status.
+        """
+        cdef str quantity = '{:,}'.format(self.quantity.value)
+        return f"{self.symbol} {market_position_string(self.market_position)} {quantity}"
 
     cpdef list get_order_ids(self):
         """

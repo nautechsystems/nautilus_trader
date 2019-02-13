@@ -154,6 +154,7 @@ cdef class PositionEvent(Event):
     The base class for all position events.
     """
     cdef readonly Position position
+    cdef readonly GUID strategy_id
 
 
 cdef class PositionOpened(PositionEvent):

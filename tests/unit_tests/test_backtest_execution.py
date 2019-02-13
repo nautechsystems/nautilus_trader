@@ -113,7 +113,7 @@ class BacktestExecClientTests(unittest.TestCase):
         self.client.process_queue()
 
         # Assert
-        self.assertEqual(4, strategy.object_storer.count)
+        self.assertEqual(5, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[3], OrderFilled))
         self.assertEqual(Price('86.711'), strategy.order(order_id).average_price)
 
@@ -134,7 +134,6 @@ class BacktestExecClientTests(unittest.TestCase):
         self.client.process_queue()
 
         # Assert
-        print(strategy.object_storer.get_store())
         self.assertEqual(4, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[3], OrderWorking))
         self.assertEqual(Price('80.000'), order.price)
@@ -157,7 +156,7 @@ class BacktestExecClientTests(unittest.TestCase):
 
         # Assert
         print(strategy.object_storer.get_store())
-        self.assertEqual(5, strategy.object_storer.count)
+        self.assertEqual(6, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[3], OrderFilled))
         self.assertEqual(Price('80.000'), atomic_order.stop_loss.price)
         self.assertTrue(atomic_order.stop_loss.id not in self.client.atomic_orders)

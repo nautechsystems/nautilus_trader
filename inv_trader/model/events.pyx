@@ -152,7 +152,7 @@ cdef class OrderEvent(Event):
         :param symbol: The events order symbol.
         :param order_id: The events order identifier.
         :param event_id: The events identifier.
-        :param event_timestamp: The order events timestamp.
+        :param event_timestamp: The events timestamp.
         """
         super().__init__(event_id, event_timestamp)
         self.symbol = symbol
@@ -529,23 +529,26 @@ cdef class PositionEvent(Event):
 
     def __init__(self,
                  Position position,
+                 GUID strategy_id,
                  GUID event_id,
                  datetime event_timestamp):
         """
         Initializes a new instance of the OrderEvent base class.
 
         :param position: The events position.
+        :param strategy_id: The strategy identifier associated with the position.
         :param event_id: The events identifier.
-        :param event_timestamp: The order events timestamp.
+        :param event_timestamp: The events timestamp.
         """
         super().__init__(event_id, event_timestamp)
         self.position = position
+        self.strategy_id = strategy_id
 
     def __str__(self) -> str:
         """
         :return: The str() string representation of the event.
         """
-        return f"{self.__class__.__name__}(id={self.position.id.value})"
+        return f"{self.__class__.__name__}(id={self.position.id.value}) {self.position.status_string()}"
 
     def __repr__(self) -> str:
         """
@@ -561,16 +564,21 @@ cdef class PositionOpened(PositionEvent):
 
     def __init__(self,
                  Position position,
+                 GUID strategy_id,
                  GUID event_id,
                  datetime event_timestamp):
         """
         Initializes a new instance of the PositionOpened class.
 
         :param position: The events position.
+        :param strategy_id: The strategy identifier associated with the position.
         :param event_id: The events identifier.
-        :param event_timestamp: The order events timestamp.
+        :param event_timestamp: The events timestamp.
         """
-        super().__init__(position, event_id, event_timestamp)
+        super().__init__(position,
+                         strategy_id,
+                         event_id,
+                         event_timestamp)
 
 
 cdef class PositionModified(PositionEvent):
@@ -580,16 +588,21 @@ cdef class PositionModified(PositionEvent):
 
     def __init__(self,
                  Position position,
+                 GUID strategy_id,
                  GUID event_id,
                  datetime event_timestamp):
         """
         Initializes a new instance of the PositionOpened class.
 
         :param position: The events position.
+        :param strategy_id: The strategy identifier associated with the position.
         :param event_id: The events identifier.
-        :param event_timestamp: The order events timestamp.
+        :param event_timestamp: The events timestamp.
         """
-        super().__init__(position, event_id, event_timestamp)
+        super().__init__(position,
+                         strategy_id,
+                         event_id,
+                         event_timestamp)
 
 
 cdef class PositionClosed(PositionEvent):
@@ -599,16 +612,21 @@ cdef class PositionClosed(PositionEvent):
 
     def __init__(self,
                  Position position,
+                 GUID strategy_id,
                  GUID event_id,
                  datetime event_timestamp):
         """
         Initializes a new instance of the PositionClosed class.
 
         :param position: The events position.
+        :param strategy_id: The strategy identifier associated with the position.
         :param event_id: The events identifier.
-        :param event_timestamp: The order events timestamp.
+        :param event_timestamp: The events timestamp.
         """
-        super().__init__(position, event_id, event_timestamp)
+        super().__init__(position,
+                         strategy_id,
+                         event_id,
+                         event_timestamp)
 
 
 cdef class TimeEvent(Event):
@@ -623,8 +641,8 @@ cdef class TimeEvent(Event):
         """
         Initializes a new instance of the TimeEvent class.
 
-        :param event_id: The time events identifier.
-        :param event_timestamp: The time events timestamp.
+        :param event_id: The events identifier.
+        :param event_timestamp: The events timestamp.
         """
         super().__init__(event_id, event_timestamp)
         self.label = label

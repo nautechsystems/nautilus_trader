@@ -20,7 +20,7 @@ from inv_trader.common.guid cimport GuidFactory
 from inv_trader.common.logger cimport Logger, LoggerAdapter
 from inv_trader.common.account cimport Account
 from inv_trader.model.order cimport Order
-from inv_trader.model.events cimport Event, OrderEvent, AccountEvent, OrderModified
+from inv_trader.model.events cimport Event, OrderEvent, PositionEvent, AccountEvent, OrderModified
 from inv_trader.model.events cimport OrderRejected, OrderCancelled, OrderCancelReject, OrderFilled, OrderPartiallyFilled
 from inv_trader.model.identifiers cimport GUID, OrderId, PositionId
 from inv_trader.commands cimport Command, CollateralInquiry
@@ -250,8 +250,6 @@ cdef class ExecutionClient:
         """
         Handle the given event received from the execution service.
         """
-        self._log.debug(f"Received {event}")
-
         cdef Order order
         cdef GUID strategy_id
 
@@ -278,6 +276,7 @@ cdef class ExecutionClient:
                         del self._orders_active[strategy_id][order.id]
 
             if isinstance(event, OrderFilled) or isinstance(event, OrderPartiallyFilled):
+                self._log.debug(f"{event}")
                 self._portfolio.handle_event(event, strategy_id)
             elif isinstance(event, OrderModified):
                 self._log.debug(f"{event} price to {event.modified_price}")
@@ -292,7 +291,15 @@ cdef class ExecutionClient:
             # Send event to strategy
             self._registered_strategies[strategy_id].handle_event(event)
 
+        # Position events
+        elif isinstance(event, PositionEvent):
+            self._log.debug(f"{event}")
+            # Send event to strategy
+            self._registered_strategies[event.strategy_id].handle_event(event)
+
+        # Account event
         elif isinstance(event, AccountEvent):
+            self._log.debug(f"{event}")
             self._account.apply(event)
 
     cdef void _register_order(self, Order order, PositionId position_id, GUID strategy_id):
