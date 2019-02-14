@@ -261,7 +261,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         # Arrange
         serializer = MsgPackCommandSerializer()
 
-        atomic_order = self.order_factory.atomic_order_market(
+        atomic_order = self.order_factory.atomic_market(
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
@@ -289,7 +289,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         # Arrange
         serializer = MsgPackCommandSerializer()
 
-        atomic_order = self.order_factory.atomic_order_limit(
+        atomic_order = self.order_factory.atomic_limit(
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),

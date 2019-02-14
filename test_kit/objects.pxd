@@ -15,5 +15,5 @@ cdef class ObjectStorer:
     cdef readonly int count
 
     cpdef list get_store(self)
-    cpdef void store(self, object obj, bint print_storage=*)
-    cpdef void store_2(self, object obj1, object obj2, bint print_storage=*)
+    cpdef void store(self, object obj)
+    cpdef void store_2(self, object obj1, object obj2)

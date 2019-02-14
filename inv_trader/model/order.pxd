@@ -149,7 +149,7 @@ cdef class OrderFactory:
             Quantity quantity,
             Label label=*)
 
-    cpdef AtomicOrder atomic_order_market(
+    cpdef AtomicOrder atomic_market(
             self,
             Symbol symbol,
             OrderSide order_side,
@@ -158,7 +158,7 @@ cdef class OrderFactory:
             Price price_profit_target=*,
             Label label=*)
 
-    cpdef AtomicOrder atomic_order_limit(
+    cpdef AtomicOrder atomic_limit(
             self,
             Symbol symbol,
             OrderSide order_side,
@@ -170,7 +170,7 @@ cdef class OrderFactory:
             TimeInForce time_in_force=*,
             datetime expire_time=*)
 
-    cpdef AtomicOrder atomic_order_stop_market(
+    cpdef AtomicOrder atomic_stop_market(
             self,
             Symbol symbol,
             OrderSide order_side,

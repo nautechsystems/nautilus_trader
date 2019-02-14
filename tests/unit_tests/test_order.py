@@ -277,7 +277,7 @@ class OrderTests(unittest.TestCase):
     def test_can_initialize_atomic_order_market_with_no_profit_target_or_label(self):
         # Arrange
         # Act
-        atomic_order = self.order_factory.atomic_order_market(
+        atomic_order = self.order_factory.atomic_market(
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
@@ -303,7 +303,7 @@ class OrderTests(unittest.TestCase):
     def test_can_initialize_atomic_order_market_with_profit_target_and_label(self):
         # Arrange
         # Act
-        atomic_order = self.order_factory.atomic_order_market(
+        atomic_order = self.order_factory.atomic_market(
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
@@ -338,7 +338,7 @@ class OrderTests(unittest.TestCase):
     def test_atomic_order_str_and_repr(self):
         # Arrange
         # Act
-        atomic_order = self.order_factory.atomic_order_market(
+        atomic_order = self.order_factory.atomic_market(
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),

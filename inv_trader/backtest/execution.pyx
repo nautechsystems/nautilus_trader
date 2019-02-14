@@ -405,7 +405,7 @@ cdef class BacktestExecClient(ExecutionClient):
 
     cdef void _accept_order(self, Order order):
         """
-        Accept the given order and handle OrderSubmitted and OrderAccepted events.
+        Accept the given order and generate OrderSubmitted and OrderAccepted events.
         """
         cdef OrderSubmitted submitted = OrderSubmitted(
             order.symbol,
@@ -546,8 +546,8 @@ cdef class BacktestExecClient(ExecutionClient):
         self._adjust_account(filled)
 
         if order.id in self.atomic_orders:
-            for order in self.atomic_orders[order.id]:
-                self._work_order(order)
+            for child_order in self.atomic_orders[order.id]:
+                self._work_order(child_order)
             del self.atomic_orders[order.id]
 
     cdef void _adjust_account(self, OrderEvent event):

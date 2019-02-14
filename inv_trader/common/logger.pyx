@@ -13,6 +13,7 @@ import logging
 import os
 import threading
 
+from cpython.datetime cimport datetime
 from threading import Thread, Lock
 from queue import Queue
 from logging import INFO, DEBUG
@@ -67,7 +68,7 @@ cdef class Logger:
         Precondition.valid_string(log_file_path, 'log_file_path')
 
         self.bypass_logging = bypass_logging
-        self._clock = clock
+        self.clock = clock
         self._log_level_console = level_console
         self._log_level_file = level_file
         self._console_prints = console_prints
@@ -96,13 +97,13 @@ cdef class Logger:
         """
         self._queue.put(message)
 
-    cpdef void _debug(self, ValidString message):
+    cpdef void _debug(self, datetime timestamp, ValidString message):
         """
         Log the given debug message with the logger.
 
         :param message: The debug message to log.
         """
-        cdef str log_message = self._format_message('DBG', message.value)
+        cdef str log_message = self._format_message(timestamp, 'DBG', message.value)
         self._console_print_handler(logging.DEBUG, log_message)
 
         if self._log_to_file:
@@ -111,13 +112,13 @@ cdef class Logger:
             except IOError as ex:
                 self._console_print_handler(f"IOError: {ex}.", logging.CRITICAL)
 
-    cpdef void _info(self, ValidString message):
+    cpdef void _info(self, datetime timestamp, ValidString message):
         """
         Log the given information message with the logger.
 
         :param message: The information message to log.
         """
-        cdef str log_message = self._format_message('INF', message.value)
+        cdef str log_message = self._format_message(timestamp, 'INF', message.value)
         self._console_print_handler(logging.INFO, log_message)
 
         if self._log_to_file:
@@ -126,13 +127,13 @@ cdef class Logger:
             except IOError as ex:
                 self._console_print_handler(f"IOError: {ex}.", logging.CRITICAL)
 
-    cpdef void _warning(self, ValidString message):
+    cpdef void _warning(self, datetime timestamp, ValidString message):
         """
         Log the given warning message with the logger.
 
         :param message: The warning message to log.
         """
-        cdef str log_message = self._format_message(WARNING + 'WRN' + ENDC, WARNING + message.value + ENDC)
+        cdef str log_message = self._format_message(timestamp, WARNING + 'WRN' + ENDC, WARNING + message.value + ENDC)
         self._console_print_handler(logging.WARNING, log_message)
 
         if self._log_to_file:
@@ -141,13 +142,13 @@ cdef class Logger:
             except IOError as ex:
                 self._console_print_handler(f"IOError: {ex}.", logging.CRITICAL)
 
-    cpdef void _error(self, ValidString message):
+    cpdef void _error(self, datetime timestamp, ValidString message):
         """
         Log the given error message with the logger.
 
         :param message: The error message to log.
         """
-        cdef str log_message = self._format_message(FAIL + 'ERR' + ENDC, FAIL + message.value + ENDC)
+        cdef str log_message = self._format_message(timestamp, FAIL + 'ERR' + ENDC, FAIL + message.value + ENDC)
         self._console_print_handler(logging.ERROR, log_message)
 
         if self._log_to_file:
@@ -156,13 +157,13 @@ cdef class Logger:
             except IOError as ex:
                 self._console_print_handler(f"IOError: {ex}.", logging.CRITICAL)
 
-    cpdef void _critical(self, ValidString message):
+    cpdef void _critical(self, datetime timestamp, ValidString message):
         """
         Log the given critical message with the logger.
 
         :param message: The critical message to log.
         """
-        cdef str log_message = self._format_message(FAIL + 'CRT' + ENDC, FAIL + message.value + ENDC)
+        cdef str log_message = self._format_message(timestamp, FAIL + 'CRT' + ENDC, FAIL + message.value + ENDC)
         self._console_print_handler(logging.CRITICAL, log_message)
 
         if self._log_to_file:
@@ -182,18 +183,18 @@ cdef class Logger:
             log_level = item[0]
 
             if log_level == logging.DEBUG:
-                self._debug(item[1])
+                self._debug(item[1], item[2])
             elif log_level == logging.INFO:
-                self._info(item[1])
+                self._info(item[1], item[2])
             elif log_level == logging.WARNING:
-                self._warning(item[1])
+                self._warning(item[1], item[2])
             elif log_level == logging.ERROR:
-                self._error(item[1])
+                self._error(item[1], item[2])
             elif log_level == logging.CRITICAL:
-                self._critical(item[1])
+                self._critical(item[1], item[2])
 
-    cdef str _format_message(self, str log_level, str message):
-        cdef str time = self._clock.time_now().isoformat() + 'Z'
+    cdef str _format_message(self, datetime timestamp, str log_level, str message):
+        cdef str time = timestamp.isoformat(timespec='milliseconds').partition('+')[0] + 'Z'
         return f"{BOLD}{time}{ENDC} [{threading.current_thread().ident}][{log_level}] {message}"
 
     cdef void _console_print_handler(self, log_level: logging, str message):
@@ -232,7 +233,7 @@ cdef class LoggerAdapter:
         :param message: The debug message to log.
         """
         if not self.bypassed:
-            self._logger.log((logging.DEBUG, self._format_message(message)))
+            self._logger.log((logging.DEBUG, self._logger.clock.time_now(), self._format_message(message)))
 
     cpdef void info(self, str message):
         """
@@ -241,7 +242,7 @@ cdef class LoggerAdapter:
         :param message: The information message to log.
         """
         if not self.bypassed:
-            self._logger.log((logging.INFO, self._format_message(message)))
+            self._logger.log((logging.INFO, self._logger.clock.time_now(), self._format_message(message)))
 
     cpdef void warning(self, str message):
         """
@@ -250,7 +251,7 @@ cdef class LoggerAdapter:
         :param message: The warning message to log.
         """
         if not self.bypassed:
-            self._logger.log((logging.WARNING, self._format_message(message)))
+            self._logger.log((logging.WARNING, self._logger.clock.time_now(), self._format_message(message)))
 
     cpdef void error(self, str message):
         """
@@ -259,7 +260,7 @@ cdef class LoggerAdapter:
         :param message: The error message to log.
         """
         if not self.bypassed:
-            self._logger.log((logging.ERROR, self._format_message(message)))
+            self._logger.log((logging.ERROR, self._logger.clock.time_now(), self._format_message(message)))
 
     cpdef void critical(self, str message):
         """
@@ -268,7 +269,7 @@ cdef class LoggerAdapter:
         :param message: The critical message to log.
         """
         if not self.bypassed:
-            self._logger.log((logging.CRITICAL, self._format_message(message)))
+            self._logger.log((logging.CRITICAL, self._logger.clock.time_now(), self._format_message(message)))
 
     cdef ValidString _format_message(self, str message):
         return ValidString(f"{self.component_name}: {message}")
