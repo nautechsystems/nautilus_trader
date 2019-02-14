@@ -23,7 +23,7 @@ from inv_trader.enums.currency_code cimport CurrencyCode
 from inv_trader.enums.order_type cimport OrderType
 from inv_trader.enums.order_side cimport OrderSide
 from inv_trader.model.objects cimport ValidString, Symbol, Price, Money, Instrument
-from inv_trader.model.order cimport Order, AtomicOrder
+from inv_trader.model.order cimport Order
 from inv_trader.model.events cimport Event, OrderEvent, AccountEvent
 from inv_trader.model.events cimport OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
 from inv_trader.model.events cimport OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
