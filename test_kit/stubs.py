@@ -11,12 +11,17 @@ from decimal import Decimal
 from datetime import datetime, timedelta, timezone
 
 from inv_trader.model.enums import Venue, Resolution, QuoteType, CurrencyCode, SecurityType
-from inv_trader.model.objects import Quantity, Symbol, BarType, Instrument
+from inv_trader.model.objects import Quantity, Symbol, Price, BarSpecification, BarType, Bar, Instrument
+
 # Unix epoch is the UTC time at 00:00:00 on 1/1/1970
 UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc)
 AUDUSD_FXCM = Symbol('AUDUSD', Venue.FXCM)
 GBPUSD_FXCM = Symbol('GBPUSD', Venue.FXCM)
 USDJPY_FXCM = Symbol('USDJPY', Venue.FXCM)
+ONE_MINUTE_BID = BarSpecification(1, Resolution.MINUTE, QuoteType.BID)
+ONE_MINUTE_ASK = BarSpecification(1, Resolution.MINUTE, QuoteType.ASK)
+ONE_MINUTE_MID = BarSpecification(1, Resolution.MINUTE, QuoteType.MID)
+ONE_SECOND_MID = BarSpecification(1, Resolution.SECOND, QuoteType.MID)
 
 
 class TestStubs:
@@ -84,28 +89,37 @@ class TestStubs:
 
     @staticmethod
     def bartype_audusd_1min_bid():
-        return BarType(AUDUSD_FXCM, 1, Resolution.MINUTE, QuoteType.BID)
+        return BarType(AUDUSD_FXCM, ONE_MINUTE_BID)
 
     @staticmethod
     def bartype_audusd_1min_ask():
-        return BarType(AUDUSD_FXCM, 1, Resolution.MINUTE, QuoteType.ASK)
+        return BarType(AUDUSD_FXCM, ONE_MINUTE_ASK)
 
     @staticmethod
     def bartype_gbpusd_1min_bid():
-        return BarType(GBPUSD_FXCM, 1, Resolution.MINUTE, QuoteType.BID)
+        return BarType(GBPUSD_FXCM, ONE_MINUTE_BID)
 
     @staticmethod
     def bartype_gbpusd_1min_ask():
-        return BarType(GBPUSD_FXCM, 1, Resolution.MINUTE, QuoteType.ASK)
+        return BarType(GBPUSD_FXCM, ONE_MINUTE_ASK)
 
     @staticmethod
     def bartype_gbpusd_1sec_mid():
-        return BarType(GBPUSD_FXCM, 1, Resolution.SECOND, QuoteType.MID)
+        return BarType(GBPUSD_FXCM, ONE_SECOND_MID)
 
     @staticmethod
     def bartype_usdjpy_1min_bid():
-        return BarType(USDJPY_FXCM, 1, Resolution.MINUTE, QuoteType.BID)
+        return BarType(USDJPY_FXCM, ONE_MINUTE_BID)
 
     @staticmethod
     def bartype_usdjpy_1min_ask():
-        return BarType(USDJPY_FXCM, 1, Resolution.MINUTE, QuoteType.ASK)
+        return BarType(USDJPY_FXCM, ONE_MINUTE_ASK)
+
+    @staticmethod
+    def bar():
+        return Bar(Price('1.00001'),
+                   Price('1.00004'),
+                   Price('1.00002'),
+                   Price('1.00003'),
+                   100000,
+                   UNIX_EPOCH)

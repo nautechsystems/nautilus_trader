@@ -136,43 +136,31 @@ class TradeStrategyTests(unittest.TestCase):
     def test_getting_indicators_for_unknown_bar_type_raises_exception(self):
         # Arrange
         strategy = TradeStrategy()
-        unknown_bar_type = BarType(
-            AUDUSD_FXCM,
-            5,
-            Resolution.MINUTE,
-            QuoteType.BID)
+        bar_type = TestStubs.bartype_gbpusd_1sec_mid()
 
         # Act
         # Assert
-        self.assertRaises(ValueError, strategy.indicators, unknown_bar_type)
+        self.assertRaises(ValueError, strategy.indicators, bar_type)
 
     def test_getting_bars_for_unknown_bar_type_raises_exception(self):
         # Arrange
         strategy = TradeStrategy()
-        unknown_bar_type = BarType(
-            AUDUSD_FXCM,
-            5,
-            Resolution.MINUTE,
-            QuoteType.BID)
+        bar_type = TestStubs.bartype_gbpusd_1sec_mid()
 
         # Act
         # Assert
-        self.assertRaises(ValueError, strategy.bars, unknown_bar_type)
+        self.assertRaises(ValueError, strategy.bars, bar_type)
 
     def test_can_get_bars(self):
+        # Arrange
         strategy = TradeStrategy()
-        bar_type = BarType(GBPUSD_FXCM,
-                           1,
-                           Resolution.SECOND,
-                           QuoteType.MID)
-
-        bar = Bar(
-            Price('1.00001'),
-            Price('1.00004'),
-            Price('1.00002'),
-            Price('1.00003'),
-            100000,
-            datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc))
+        bar_type = TestStubs.bartype_gbpusd_1sec_mid()
+        bar = Bar(Price('1.00001'),
+                  Price('1.00004'),
+                  Price('1.00002'),
+                  Price('1.00003'),
+                  100000,
+                  datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc))
 
         strategy.handle_bar(bar_type, bar)
 
@@ -183,30 +171,24 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertTrue(bar, result[0])
 
     def test_getting_bar_for_unknown_bar_type_raises_exception(self):
+        # Arrange
         strategy = TradeStrategy()
-        unknown_bar_type = BarType(
-            AUDUSD_FXCM,
-            5,
-            Resolution.MINUTE,
-            QuoteType.BID)
+        unknown_bar_type = TestStubs.bartype_gbpusd_1sec_mid()
 
         # Act
         # Assert
         self.assertRaises(ValueError, strategy.bar, unknown_bar_type, 0)
 
     def test_getting_bar_at_out_of_range_index_raises_exception(self):
+        # Arrange
         strategy = TradeStrategy()
-        bar_type = BarType(GBPUSD_FXCM,
-                           1,
-                           Resolution.SECOND,
-                           QuoteType.MID)
-        bar = Bar(
-            Price('1.00001'),
-            Price('1.00004'),
-            Price('1.00002'),
-            Price('1.00003'),
-            100000,
-            datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc))
+        bar_type = TestStubs.bartype_gbpusd_1sec_mid()
+        bar = Bar(Price('1.00001'),
+                  Price('1.00004'),
+                  Price('1.00002'),
+                  Price('1.00003'),
+                  100000,
+                  datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc))
 
         strategy.handle_bar(bar_type, bar)
 
@@ -216,17 +198,13 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_get_bar(self):
         strategy = TradeStrategy()
-        bar_type = BarType(GBPUSD_FXCM,
-                           1,
-                           Resolution.SECOND,
-                           QuoteType.MID)
-        bar = Bar(
-            Price('1.00001'),
-            Price('1.00004'),
-            Price('1.00002'),
-            Price('1.00003'),
-            100000,
-            datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc))
+        bar_type = TestStubs.bartype_gbpusd_1sec_mid()
+        bar = Bar(Price('1.00001'),
+                  Price('1.00004'),
+                  Price('1.00002'),
+                  Price('1.00003'),
+                  100000,
+                  datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc))
 
         strategy.handle_bar(bar_type, bar)
 
@@ -238,17 +216,13 @@ class TradeStrategyTests(unittest.TestCase):
 
     def test_can_get_last_bar(self):
         strategy = TradeStrategy()
-        bar_type = BarType(GBPUSD_FXCM,
-                           1,
-                           Resolution.SECOND,
-                           QuoteType.MID)
-        bar = Bar(
-            Price('1.00001'),
-            Price('1.00004'),
-            Price('1.00002'),
-            Price('1.00003'),
-            100000,
-            datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc))
+        bar_type = TestStubs.bartype_gbpusd_1sec_mid()
+        bar = Bar(Price('1.00001'),
+                  Price('1.00004'),
+                  Price('1.00002'),
+                  Price('1.00003'),
+                  100000,
+                  datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc))
 
         strategy.handle_bar(bar_type, bar)
 
@@ -383,19 +357,14 @@ class TradeStrategyTests(unittest.TestCase):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = TestStrategy1(bar_type)
+        bar_type = TestStubs.bartype_gbpusd_1sec_mid()
 
-        bar_type = BarType(GBPUSD_FXCM,
-                           1,
-                           Resolution.SECOND,
-                           QuoteType.MID)
-
-        bar = Bar(
-            Price('1.00001'),
-            Price('1.00004'),
-            Price('1.00002'),
-            Price('1.00003'),
-            100000,
-            datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc))
+        bar = Bar(Price('1.00001'),
+                  Price('1.00004'),
+                  Price('1.00002'),
+                  Price('1.00003'),
+                  100000,
+                  datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc))
 
         strategy.handle_bar(bar_type, bar)
 
@@ -857,12 +826,6 @@ class TradeStrategyTests(unittest.TestCase):
         # Arrange
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
         strategy = TestStrategy1(bar_type)
-
-        bar_type = BarType(GBPUSD_FXCM,
-                           1,
-                           Resolution.SECOND,
-                           QuoteType.MID)
-
         bar = Bar(Price('1.00001'),
                   Price('1.00004'),
                   Price('1.00002'),

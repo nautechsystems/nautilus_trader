@@ -11,8 +11,9 @@ import unittest
 
 from decimal import Decimal, InvalidOperation
 
-from inv_trader.model.enums import Venue
+from inv_trader.model.enums import Venue, Resolution, QuoteType
 from inv_trader.model.objects import ValidString, Quantity, Symbol, Price, Money
+from inv_trader.model.objects import BarSpecification, BarType
 
 
 class ObjectTests(unittest.TestCase):
@@ -68,7 +69,7 @@ class ObjectTests(unittest.TestCase):
         # Act
         # Assert
         self.assertEqual("AUDUSD.FXCM", str(symbol))
-        self.assertTrue(repr(symbol).startswith("<AUDUSD.FXCM object at"))
+        self.assertTrue(repr(symbol).startswith("<Symbol(AUDUSD.FXCM) object at"))
 
     def test_quantity_initialized_with_negative_integer_raises_exception(self):
         # Arrange
@@ -424,3 +425,49 @@ class ObjectTests(unittest.TestCase):
         self.assertEqual(Money, type(result4))
         self.assertEqual(Money('2.00'), result4)
 
+    def test_bar_spec_equality(self):
+        # Arrange
+        bar_spec1 = BarSpecification(1, Resolution.MINUTE, QuoteType.BID)
+        bar_spec2 = BarSpecification(1, Resolution.MINUTE, QuoteType.BID)
+        bar_spec3 = BarSpecification(1, Resolution.MINUTE, QuoteType.ASK)
+
+        # Act
+        # Assert
+        self.assertTrue(bar_spec1 == bar_spec1)
+        self.assertTrue(bar_spec1 == bar_spec2)
+        self.assertTrue(bar_spec1 != bar_spec3)
+
+    def test_bar_spec_str_and_repr(self):
+        # Arrange
+        bar_spec = BarSpecification(1, Resolution.MINUTE, QuoteType.BID)
+
+        # Act
+        # Assert
+        self.assertEqual("1-MINUTE[BID]", str(bar_spec))
+        self.assertTrue(repr(bar_spec).startswith("<BarSpecification(1-MINUTE[BID]) object at"))
+
+    def test_bar_type_equality(self):
+        # Arrange
+        symbol1 = Symbol("AUDUSD", Venue.FXCM)
+        symbol2 = Symbol("GBPUSD", Venue.FXCM)
+        bar_spec = BarSpecification(1, Resolution.MINUTE, QuoteType.BID)
+        bar_type1 = BarType(symbol1, bar_spec)
+        bar_type2 = BarType(symbol1, bar_spec)
+        bar_type3 = BarType(symbol2, bar_spec)
+
+        # Act
+        # Assert
+        self.assertTrue(bar_type1 == bar_type1)
+        self.assertTrue(bar_type1 == bar_type2)
+        self.assertTrue(bar_type1 != bar_type3)
+
+    def test_bar_type_str_and_repr(self):
+        # Arrange
+        symbol = Symbol("AUDUSD", Venue.FXCM)
+        bar_spec = BarSpecification(1, Resolution.MINUTE, QuoteType.BID)
+        bar_type = BarType(symbol, bar_spec)
+
+        # Act
+        # Assert
+        self.assertEqual("AUDUSD.FXCM-1-MINUTE[BID]", str(bar_type))
+        self.assertTrue(repr(bar_type).startswith("<BarType(AUDUSD.FXCM-1-MINUTE[BID]) object at"))
