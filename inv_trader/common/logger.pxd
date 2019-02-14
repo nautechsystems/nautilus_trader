@@ -9,6 +9,8 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
+from cpython.datetime cimport datetime
+
 from inv_trader.common.clock cimport Clock
 from inv_trader.model.objects cimport ValidString
 
@@ -24,20 +26,20 @@ cdef class Logger:
     cdef str _log_file
     cdef object _log_file_handler
     cdef object _logger
-    cdef Clock _clock
     cdef object _queue
     cdef object _thread
 
     cdef readonly bint bypass_logging
+    cdef readonly Clock clock
 
     cpdef void log(self, tuple message)
-    cpdef void _debug(self, ValidString message)
-    cpdef void _info(self, ValidString message)
-    cpdef void _warning(self, ValidString message)
-    cpdef void _error(self, ValidString message)
-    cpdef void _critical(self, ValidString message)
+    cpdef void _debug(self, datetime timestamp, ValidString message)
+    cpdef void _info(self, datetime timestamp, ValidString message)
+    cpdef void _warning(self, datetime timestamp, ValidString message)
+    cpdef void _error(self, datetime timestamp, ValidString message)
+    cpdef void _critical(self, datetime timestamp, ValidString message)
     cpdef void _process_messages(self)
-    cdef str _format_message(self, str log_level, str message)
+    cdef str _format_message(self, datetime timestamp, str log_level, str message)
     cdef void _console_print_handler(self, log_level, str message, )
 
 

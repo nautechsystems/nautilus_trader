@@ -144,7 +144,7 @@ class BacktestExecClientTests(unittest.TestCase):
         self.client.register_strategy(strategy)
         strategy.start()
 
-        atomic_order = strategy.order_factory.atomic_order_market(
+        atomic_order = strategy.order_factory.atomic_market(
             USDJPY_FXCM,
             OrderSide.BUY,
             Quantity(100000),
@@ -167,7 +167,7 @@ class BacktestExecClientTests(unittest.TestCase):
         self.client.register_strategy(strategy)
         strategy.start()
 
-        atomic_order = strategy.order_factory.atomic_order_stop_market(
+        atomic_order = strategy.order_factory.atomic_stop_market(
             USDJPY_FXCM,
             OrderSide.BUY,
             Quantity(100000),
@@ -212,6 +212,32 @@ class BacktestExecClientTests(unittest.TestCase):
         self.assertEqual(Price('86.712'), strategy.order(order_id).price)
         self.assertEqual(5, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[4], OrderModified))
+
+    def test_can_modify_atomic_order_working_stop_loss(self):
+        # Arrange
+        strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
+        self.client.register_strategy(strategy)
+        strategy.start()
+
+        atomic_order = strategy.order_factory.atomic_market(
+            USDJPY_FXCM,
+            OrderSide.BUY,
+            Quantity(100000),
+            Price('85.000'))
+
+        stop_loss_order_id = atomic_order.stop_loss.id
+
+        strategy.submit_atomic_order(atomic_order, strategy.generate_position_id(self.usdjpy.symbol))
+        self.client.process_queue()
+
+        # Act
+        strategy.modify_order(atomic_order.stop_loss, Price('85.100'))
+        self.client.process_queue()
+
+        # Assert
+        self.assertEqual(Price('85.100'), strategy.order(stop_loss_order_id).price)
+        self.assertEqual(7, strategy.object_storer.count)
+        self.assertTrue(isinstance(strategy.object_storer.get_store()[6], OrderModified))
 
     def test_order_with_invalid_price_gets_rejected(self):
         # Arrange

@@ -358,7 +358,7 @@ cdef class OrderFactory:
             Quantity quantity,
             Label label=None):
         """
-        Creates and returns a new market order with the given parameters.
+        Creates and returns a new market order.
 
         :param symbol: The orders symbol.
         :param order_side: The orders side.
@@ -389,7 +389,7 @@ cdef class OrderFactory:
             TimeInForce time_in_force=TimeInForce.DAY,
             datetime expire_time=None):
         """
-        Creates and returns a new limit order with the given parameters.
+        Creates and returns a new limit order.
         If the time in force is GTD then a valid expire time must be given.
 
         :param symbol: The orders symbol.
@@ -425,7 +425,7 @@ cdef class OrderFactory:
             TimeInForce time_in_force=TimeInForce.DAY,
             datetime expire_time=None):
         """
-        Creates and returns a new stop-market order with the given parameters.
+        Creates and returns a new stop-market order.
         If the time in force is GTD then a valid expire time must be given.
 
         :param symbol: The orders symbol.
@@ -461,7 +461,7 @@ cdef class OrderFactory:
             TimeInForce time_in_force=TimeInForce.DAY,
             datetime expire_time=None):
         """
-        Creates and returns a new stop-limit order with the given parameters.
+        Creates and returns a new stop-limit order.
         If the time in force is GTD then a valid expire time must be given.
 
         :param symbol: The orders symbol.
@@ -497,7 +497,7 @@ cdef class OrderFactory:
             TimeInForce time_in_force=TimeInForce.DAY,
             datetime expire_time=None):
         """
-        Creates and returns a new market-if-touched order with the given parameters.
+        Creates and returns a new market-if-touched order
         If the time in force is GTD then a valid expire time must be given.
 
         :param symbol: The orders symbol.
@@ -530,7 +530,7 @@ cdef class OrderFactory:
             Quantity quantity,
             Label label=None):
         """
-        Creates and returns a new fill-or-kill order with the given parameters.
+        Creates and returns a new fill-or-kill order.
 
         :param symbol: The orders symbol.
         :param order_side: The orders side.
@@ -558,7 +558,7 @@ cdef class OrderFactory:
             Quantity quantity,
             Label label=None):
         """
-        Creates and returns a new immediate-or-cancel order with the given parameters.
+        Creates and returns a new immediate-or-cancel order.
 
         :param symbol: The orders symbol.
         :param order_side: The orders side.
@@ -579,7 +579,7 @@ cdef class OrderFactory:
             time_in_force=TimeInForce.IOC,
             expire_time=None)
 
-    cpdef AtomicOrder atomic_order_market(
+    cpdef AtomicOrder atomic_market(
             self,
             Symbol symbol,
             OrderSide order_side,
@@ -588,7 +588,7 @@ cdef class OrderFactory:
             Price price_profit_target=None,
             Label label=None):
         """
-        Creates and returns a new market order with the given parameters.
+        Creates and returns a new atomic order with a market entry.
 
         :param symbol: The orders symbol.
         :param order_side: The orders side.
@@ -615,7 +615,7 @@ cdef class OrderFactory:
             price_profit_target,
             label)
 
-    cpdef AtomicOrder atomic_order_limit(
+    cpdef AtomicOrder atomic_limit(
             self,
             Symbol symbol,
             OrderSide order_side,
@@ -627,7 +627,7 @@ cdef class OrderFactory:
             TimeInForce time_in_force=TimeInForce.DAY,
             datetime expire_time=None):
         """
-        Creates and returns a new limit order with the given parameters.
+        Creates and returns a new atomic order with a limit entry.
         If the time in force is GTD then a valid expire time must be given.
 
         :param symbol: The orders symbol.
@@ -661,7 +661,7 @@ cdef class OrderFactory:
             price_stop_loss,
             price_profit_target)
 
-    cpdef AtomicOrder atomic_order_stop_market(
+    cpdef AtomicOrder atomic_stop_market(
             self,
             Symbol symbol,
             OrderSide order_side,
@@ -673,7 +673,7 @@ cdef class OrderFactory:
             TimeInForce time_in_force=TimeInForce.DAY,
             datetime expire_time=None):
         """
-        Creates and returns a new stop-market order with the given parameters.
+        Creates and returns a new atomic order with a stop-market entry.
         If the time in force is GTD then a valid expire time must be given.
 
         :param symbol: The orders symbol.

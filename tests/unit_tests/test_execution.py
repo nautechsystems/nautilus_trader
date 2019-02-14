@@ -169,7 +169,7 @@ class LiveExecClientTests(unittest.TestCase):
 
     def test_can_send_submit_atomic_order_no_profit_target_command(self):
         # Arrange
-        atomic_order = self.strategy.order_factory.atomic_order_market(
+        atomic_order = self.strategy.order_factory.atomic_market(
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
@@ -186,7 +186,7 @@ class LiveExecClientTests(unittest.TestCase):
 
     def test_can_send_submit_atomic_order_with_profit_target_command(self):
         # Arrange
-        atomic_order = self.strategy.order_factory.atomic_order_limit(
+        atomic_order = self.strategy.order_factory.atomic_limit(
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),

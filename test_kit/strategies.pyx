@@ -10,15 +10,15 @@
 # cython: language_level=3, boundscheck=False
 
 from datetime import timedelta
-from typing import Dict
 
 from inv_trader.common.clock cimport Clock, TestClock
 from inv_trader.common.logger cimport Logger
 from inv_trader.enums.order_side cimport OrderSide
+from inv_trader.enums.order_status cimport OrderStatus
 from inv_trader.enums.time_in_force cimport TimeInForce
 from inv_trader.model.objects cimport Quantity, Symbol, Price, Tick, BarType, Bar, Instrument
 from inv_trader.model.events cimport Event
-from inv_trader.model.identifiers cimport Label, OrderId, PositionId
+from inv_trader.model.identifiers cimport Label, PositionId
 from inv_trader.model.order cimport Order
 from inv_trader.model.events cimport OrderFilled, OrderExpired, OrderRejected
 from inv_trader.strategy cimport TradeStrategy
@@ -136,8 +136,8 @@ cdef class EMACross(TradeStrategy):
     cdef readonly object fast_ema
     cdef readonly object slow_ema
     cdef readonly object atr
-    cdef readonly dict entry_orders
-    cdef readonly dict stop_loss_orders
+    cdef readonly Order entry_order
+    cdef readonly Order stop_loss_order
     cdef readonly PositionId position_id
 
     def __init__(self,
@@ -192,8 +192,8 @@ cdef class EMACross(TradeStrategy):
         self.register_indicator(self.bar_type, self.atr, self.atr.update)
 
         # Users custom order management logic if you like...
-        self.entry_orders = {}      # type: Dict[OrderId, Order]
-        self.stop_loss_orders = {}  # type: Dict[OrderId, Order]
+        self.entry_order = None
+        self.stop_loss_order = None
         self.position_id = None
 
     cpdef void on_start(self):
@@ -227,47 +227,49 @@ cdef class EMACross(TradeStrategy):
         if not self.fast_ema.initialized or not self.slow_ema.initialized:
             return
 
-        # TODO: Account for the spread, using bid bars only at the moment
-        if self.position_id is None:
+        # TODO: Factor in spread, using bid bars only at the moment
+        if self.entry_order is None:
             # BUY LOGIC
             if self.fast_ema.value >= self.slow_ema.value:
-                entry_order = self.order_factory.stop_market(
+                atomic_order = self.order_factory.atomic_stop_market(
                     self.symbol,
                     OrderSide.BUY,
                     self.position_size,
                     Price(self.last_bar(self.bar_type).high + self.entry_buffer),
-                    Label('S1_E'),
-                    TimeInForce.GTD,
+                    Price(self.last_bar(self.bar_type).low - (self.atr.value * self.SL_atr_multiple)),
+                    price_profit_target=None,
+                    label=Label('S1'),
+                    time_in_force=TimeInForce.GTD,
                     expire_time=self.time_now() + timedelta(minutes=1))
-                self.entry_orders[entry_order.id] = entry_order
-                self.log.info(f"Added {entry_order.id} to entry orders.")
-                self.position_id = self.generate_position_id(self.symbol)
-                self.submit_order(entry_order, self.position_id)
 
             # SELL LOGIC
             elif self.fast_ema.value < self.slow_ema.value:
-                entry_order = self.order_factory.stop_market(
+                atomic_order = self.order_factory.atomic_stop_market(
                     self.symbol,
                     OrderSide.SELL,
                     self.position_size,
                     Price(self.last_bar(self.bar_type).low - self.entry_buffer),
-                    Label('S1_E'),
-                    TimeInForce.GTD,
+                    Price(self.last_bar(self.bar_type).high + (self.atr.value * self.SL_atr_multiple)),
+                    price_profit_target=None,
+                    label=Label('S1'),
+                    time_in_force=TimeInForce.GTD,
                     expire_time=self.time_now() + timedelta(minutes=1))
-                self.entry_orders[entry_order.id] = entry_order
-                self.log.info(f"Added {entry_order.id} to entry orders.")
-                self.position_id = self.generate_position_id(self.symbol)
-                self.submit_order(entry_order, self.position_id)
 
-        for order_id, order in self.stop_loss_orders.items():
-            if order.side is OrderSide.SELL:
+            self.entry_order = atomic_order.entry
+            self.stop_loss_order = atomic_order.stop_loss
+            self.position_id = self.generate_position_id(self.symbol)
+
+            self.submit_atomic_order(atomic_order, self.position_id)
+
+        if self.stop_loss_order is not None and self.stop_loss_order.status == OrderStatus.WORKING:
+            if self.stop_loss_order.side is OrderSide.SELL:
                 temp_price = Price(self.last_bar(self.bar_type).low - (self.atr.value * self.SL_atr_multiple))
-                if order.price < temp_price:
-                    self.modify_order(order, temp_price)
-            elif order.side is OrderSide.BUY:
+                if self.stop_loss_order.price < temp_price:
+                    self.modify_order(self.stop_loss_order, temp_price)
+            elif self.stop_loss_order.side is OrderSide.BUY:
                 temp_price = Price(self.last_bar(self.bar_type).high + (self.atr.value * self.SL_atr_multiple))
-                if order.price > temp_price:
-                    self.modify_order(order, temp_price)
+                if self.stop_loss_order.price > temp_price:
+                    self.modify_order(self.stop_loss_order, temp_price)
 
     cpdef void on_event(self, Event event):
         """
@@ -278,46 +280,21 @@ cdef class EMACross(TradeStrategy):
         :param event: The received event.
         """
         if isinstance(event, OrderFilled):
-            # A real strategy should also cover the OrderPartiallyFilled case...
-
-            if event.order_id in self.entry_orders:
-                # SET TRAILING STOP
-                stop_side = self.get_opposite_side(event.order_side)
-                if stop_side is OrderSide.BUY:
-                    stop_price = Price(self.last_bar(self.bar_type).high + (self.atr.value * self.SL_atr_multiple))
-                else:
-                    stop_price = Price(self.last_bar(self.bar_type).low - (self.atr.value * self.SL_atr_multiple))
-
-                stop_order = self.order_factory.stop_market(
-                    self.symbol,
-                    stop_side,
-                    event.filled_quantity,
-                    stop_price,
-                    Label('S1_SL'))
-                self.stop_loss_orders[stop_order.id] = stop_order
-                self.submit_order(stop_order, self.position_id)
-                self.log.info(f"Added {stop_order.id} to stop-loss orders.")
-
-            elif event.order_id in self.stop_loss_orders:
-                del self.stop_loss_orders[event.order_id]
+            if self.is_flat():
+                self.entry_order = None
+                self.stop_loss_order = None
                 self.position_id = None
 
-        elif isinstance(event, OrderExpired):
-            if event.order_id in self.entry_orders:
-                del self.entry_orders[event.order_id]
-                self.log.info(f"Removed {event.order_id} from entry orders due expiration.")
-                self.position_id = None
-
-        elif isinstance(event, OrderRejected):
-            if event.order_id in self.entry_orders:
-                del self.entry_orders[event.order_id]
-                self.log.info(f"Removed {event.order_id} from entry orders due rejection.")
+        elif isinstance(event, OrderRejected) or isinstance(event, OrderExpired):
+            if event.order_id.equals(self.entry_order.id):
+                self.entry_order = None
+                self.stop_loss_order = None
                 self.position_id = None
             # If a stop-loss order is rejected then flatten the entered position
-            elif event.order_id in self.stop_loss_orders:
+            elif event.order_id.equals(self.stop_loss_order.id):
                 self.flatten_all_positions()
-                self.entry_orders = {}      # type: Dict[OrderId, Order]
-                self.stop_loss_orders = {}  # type: Dict[OrderId, Order]
+                self.entry_order = None
+                self.stop_loss_order = None
                 self.position_id = None
 
     cpdef void on_stop(self):
@@ -341,6 +318,6 @@ cdef class EMACross(TradeStrategy):
         self.unsubscribe_bars(self.bar_type)
         self.unsubscribe_ticks(self.symbol)
 
-        self.entry_orders = {}
-        self.stop_loss_orders = {}
+        self.entry_order = None
+        self.stop_loss_order = None
         self.position_id = None
