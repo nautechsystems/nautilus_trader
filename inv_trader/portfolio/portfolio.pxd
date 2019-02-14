@@ -32,6 +32,12 @@ cdef class Portfolio:
     cdef dict _positions_active
     cdef dict _positions_closed
 
+    cdef readonly int positions_count
+    cdef readonly int positions_active_count
+    cdef readonly int positions_closed_count
+    cdef readonly list position_opened_events
+    cdef readonly list position_closed_events
+
     cpdef list registered_strategies(self)
     cpdef list registered_order_ids(self)
     cpdef list registered_position_ids(self)
