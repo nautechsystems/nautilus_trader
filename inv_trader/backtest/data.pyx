@@ -267,7 +267,7 @@ cdef class BacktestDataClient(DataClient):
 
 cdef class DataProvider:
     """
-    Provides data for the BacktestDataClient.
+    Provides data for a particular instrument for the BacktestDataClient.
     """
 
     def __init__(self,
@@ -299,7 +299,6 @@ cdef class DataProvider:
         Precondition.true(bar_type.symbol == self.instrument.symbol, 'bar_type.symbol == self.instrument.symbol')
 
         # TODO: Add capability for re-sampled bars
-        # TODO: QuoteType.LAST not yet supported
 
         if bar_type not in self.bars:
             if bar_type.quote_type is QuoteType.BID:
@@ -311,6 +310,8 @@ cdef class DataProvider:
             elif bar_type.quote_type is QuoteType.MID:
                 data = (self._dataframes_bars_bid[bar_type.resolution] + self._dataframes_bars_ask[bar_type.resolution]) / 2
                 tick_precision = self.instrument.tick_precision + 1
+            elif bar_type.quote_type is QuoteType.LAST:
+                raise NotImplemented('QuoteType.LAST not supported for bar type.')
 
             builder = BarBuilder(data=data, decimal_precision=tick_precision)
             self.bars[bar_type] = builder.build_bars_all()

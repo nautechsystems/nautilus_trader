@@ -37,7 +37,7 @@ cdef class BacktestDataClient(DataClient):
 
 cdef class DataProvider:
     """
-    Provides data for the BacktestDataClient.
+    Provides data for a particular instrument for the BacktestDataClient.
     """
     cdef readonly Instrument instrument
     cdef readonly dict _dataframes_bars_bid

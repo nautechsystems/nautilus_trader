@@ -13,7 +13,7 @@
 cpdef enum QuoteType:
     BID = 0,
     ASK = 1,
-    MID = 2
+    MID = 2,
     LAST = 3
 
 
