@@ -14,7 +14,6 @@ from inv_trader.model.enums import Venue, OrderSide, OrderStatus
 from inv_trader.model.identifiers import PositionId
 from inv_trader.model.objects import Quantity, Symbol, Price
 from inv_trader.execution import LiveExecClient
-from inv_trader.strategy import TradeStrategy
 from test_kit.stubs import TestStubs
 from test_kit.mocks import MockExecClient, MockServer
 from test_kit.strategies import TestStrategy1
