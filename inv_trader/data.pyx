@@ -26,7 +26,7 @@ from inv_trader.model.enums import Resolution, QuoteType, Venue
 from inv_trader.enums.resolution cimport Resolution
 from inv_trader.enums.quote_type cimport QuoteType
 from inv_trader.enums.venue cimport Venue
-from inv_trader.model.objects cimport Symbol, Price, Tick, BarType, Bar, Instrument
+from inv_trader.model.objects cimport Symbol, Price, Tick, BarSpecification, BarType, Bar, Instrument
 from inv_trader.strategy cimport TradeStrategy
 
 cdef str UTF8 = 'utf-8'
@@ -431,11 +431,12 @@ cdef class LiveDataClient(DataClient):
         cdef list split_string = re.split(r'[.-]+', bar_type_string)
         cdef str resolution = split_string[3].split('[')[0]
         cdef str quote_type = split_string[3].split('[')[1].strip(']')
+        cdef Symbol symbol = Symbol(split_string[0], Venue[split_string[1].upper()])
+        cdef BarSpecification bar_spec = BarSpecification(int(split_string[2]),
+                                                          Resolution[resolution.upper()],
+                                                          QuoteType[quote_type.upper()])
 
-        return BarType(Symbol(split_string[0], Venue[split_string[1].upper()]),
-                       int(split_string[2]),
-                       Resolution[resolution.upper()],
-                       QuoteType[quote_type.upper()])
+        return BarType(symbol, bar_spec)
 
     cpdef Bar _parse_bar(self, str bar_string):
         """
@@ -465,7 +466,7 @@ cdef class LiveDataClient(DataClient):
         """
         return str(f'{bar_type.symbol.code.lower()}.'
                    f'{bar_type.symbol.venue_string().lower()}-'
-                   f'{bar_type.period}-'
+                   f'{bar_type.bar_spec.period}-'
                    f'{bar_type.resolution_string().lower()}['
                    f'{bar_type.quote_type_string().lower()}]')
 

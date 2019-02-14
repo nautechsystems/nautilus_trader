@@ -14,9 +14,10 @@ import time
 from datetime import datetime, timezone
 
 from inv_trader.data import LiveDataClient
-from inv_trader.model.objects import Symbol, Price, Tick, BarType, Bar
+from inv_trader.model.objects import Symbol, Price, Tick, BarSpecification, BarType, Bar
 from inv_trader.model.enums import Venue, Resolution, QuoteType
 from test_kit.objects import ObjectStorer
+from test_kit.stubs import TestStubs
 
 
 class LiveDataClientTests(unittest.TestCase):
@@ -82,12 +83,12 @@ class LiveDataClientTests(unittest.TestCase):
     def test_can_create_correct_bar_channel_name(self):
         # Arrange
         # Act
-        result1 = self.data_client._get_bar_channel_name(BarType(Symbol('AUDUSD', Venue.FXCM), 1, Resolution.SECOND, QuoteType.BID))
-        result2 = self.data_client._get_bar_channel_name(BarType(Symbol('GBPUSD', Venue.DUKASCOPY), 5, Resolution.MINUTE, QuoteType.MID))
+        result1 = self.data_client._get_bar_channel_name(TestStubs.bartype_audusd_1min_bid())
+        result2 = self.data_client._get_bar_channel_name(TestStubs.bartype_gbpusd_1sec_mid())
 
         # Assert
-        self.assertEqual(result1, 'audusd.fxcm-1-second[bid]')
-        self.assertEqual(result2, 'gbpusd.dukascopy-5-minute[mid]')
+        self.assertEqual('audusd.fxcm-1-minute[bid]', result1)
+        self.assertEqual('gbpusd.fxcm-1-second[mid]', result2)
 
     def test_can_subscribe_to_tick_data(self):
         # Arrange
@@ -119,27 +120,27 @@ class LiveDataClientTests(unittest.TestCase):
         self.data_client.connect()
 
         # Act
-        self.data_client.subscribe_bars(BarType(Symbol('AUDUSD', Venue.FXCM), 1, Resolution.SECOND, QuoteType.BID), handler=None)
+        self.data_client.subscribe_bars(TestStubs.bartype_audusd_1min_bid(), handler=None)
         bar_channels = self.data_client.subscriptions_bars
         all_channels = self.data_client.subscriptions_all
 
         # Assert
-        self.assertEqual("['audusd.fxcm-1-second[bid]']", str(bar_channels))
-        self.assertTrue(any('audusd.fxcm-1-second[bid]' in channel for channel in all_channels))
+        self.assertEqual("['audusd.fxcm-1-minute[bid]']", str(bar_channels))
+        self.assertTrue(any('audusd.fxcm-1-minute[bid]' in channel for channel in all_channels))
 
     def test_can_unsubscribe_from_bar_data(self):
         # Arrange
         self.data_client.connect()
-        self.data_client.subscribe_bars(BarType(Symbol('AUDUSD', Venue.FXCM), 1, Resolution.SECOND, QuoteType.BID), handler=None)
+        self.data_client.subscribe_bars(TestStubs.bartype_audusd_1min_bid(), handler=None)
 
         # Act
-        self.data_client.unsubscribe_bars(BarType(Symbol('AUDUSD', Venue.FXCM), 1, Resolution.SECOND, QuoteType.BID), handler=None)
+        self.data_client.unsubscribe_bars(TestStubs.bartype_audusd_1min_bid(), handler=None)
         bar_channels = self.data_client.subscriptions_bars
         all_channels = self.data_client.subscriptions_all
 
         # Assert
         self.assertEqual("[]", str(bar_channels))
-        self.assertFalse(any('audusd.fxcm-1-second[bid]' in channel for channel in all_channels))
+        self.assertFalse(any('audusd.fxcm-1-minute[bid]' in channel for channel in all_channels))
 
     def test_disconnecting_when_subscribed_to_multiple_channels_then_unsubscribes(self):
         # Arrange
@@ -180,7 +181,7 @@ class LiveDataClientTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(tick, result)
-        self.assertEqual('Tick(AUDUSD.FXCM,1.00000,1.00001,2018-01-01T19:59:01+00:00)', str(result))
+        self.assertEqual('AUDUSD.FXCM,1.00000,1.00001,2018-01-01T19:59:01+00:00', str(result))
 
     def test_can_parse_bars(self):
         # Arrange
@@ -192,20 +193,16 @@ class LiveDataClientTests(unittest.TestCase):
                   datetime(2018, 1, 1, 19, 59, 1, 0, timezone.utc))
 
         # Act
-        result = self.data_client._parse_bar(
-            '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T19:59:01.000Z')
+        result = self.data_client._parse_bar('1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T19:59:01.000Z')
 
         # Assert
         self.assertEqual(bar, result)
-        self.assertEqual(
-            'Bar(1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T19:59:01+00:00)', str(result))
+        self.assertEqual('1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T19:59:01+00:00', str(result))
 
     def test_can_parse_bar_type(self):
         # Arrange
-        bar_type = BarType(Symbol('audusd', Venue.FXCM),
-                           1,
-                           Resolution.SECOND,
-                           QuoteType.MID)
+        bar_type = TestStubs.bartype_gbpusd_1sec_mid()
+
         # Act
         result = self.data_client._parse_bar_type(str(bar_type))
 
@@ -269,7 +266,7 @@ class LiveDataClientTests(unittest.TestCase):
         # Assert
         time.sleep(0.1)  # Allow threads to work.
         self.assertEqual(5, storer.count)
-        self.assertEqual('Tick(AUDUSD.FXCM,1.00000,1.00005,2018-01-01T20:00:05+00:00)', str(storer.get_store()[4]))
+        self.assertEqual('AUDUSD.FXCM,1.00000,1.00005,2018-01-01T20:00:05+00:00', str(storer.get_store()[4]))
 
     def test_can_receive_ticks_from_multiple_subscribers(self):
         # Arrange
@@ -299,26 +296,18 @@ class LiveDataClientTests(unittest.TestCase):
         # Assert
         time.sleep(0.1)  # Allow threads to work.
         self.assertEqual(15, storer.count)
-        self.assertEqual('Tick(EURUSD.FXCM,1.00000,1.00005,2018-01-01T20:00:05+00:00)', str(storer.get_store()[14]))
+        self.assertEqual('EURUSD.FXCM,1.00000,1.00005,2018-01-01T20:00:05+00:00', str(storer.get_store()[14]))
 
     def test_can_receive_bar(self):
         # Arrange
         storer = ObjectStorer()
         self.data_client.connect()
-        self.data_client.subscribe_bars(BarType(Symbol('AUDUSD', Venue.FXCM), 1, Resolution.SECOND, QuoteType.BID), storer.store_2)
+        self.data_client.subscribe_bars(TestStubs.bartype_audusd_1min_bid(), storer.store_2)
 
-        bar = Bar(
-            Price('1.00001'),
-            Price('1.00004'),
-            Price('1.00002'),
-            Price('1.00003'),
-            100000,
-            datetime(2018, 1, 1, 19, 59, 1, 0, timezone.utc))
+        bar = TestStubs.bar()
 
         # Act
-        self.redis_tester.publish(
-            'audusd.fxcm-1-second[bid]',
-            '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T19:59:01+00:00')
+        self.redis_tester.publish('audusd.fxcm-1-minute[bid]', '1.00001,1.00004,1.00002,1.00003,100000,1970-01-01T00:00:00+00:00')
 
         # Assert
         time.sleep(0.1)  # Allow threads to work.
@@ -328,27 +317,27 @@ class LiveDataClientTests(unittest.TestCase):
         # Arrange
         storer = ObjectStorer()
         self.data_client.connect()
-        self.data_client.subscribe_bars(BarType(Symbol('AUDUSD', Venue.FXCM), 1, Resolution.SECOND, QuoteType.BID), storer.store_2)
+        self.data_client.subscribe_bars(TestStubs.bartype_audusd_1min_bid(), storer.store_2)
 
         # Act
-        self.redis_tester.publish('audusd.fxcm-1-second[bid]', '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:00+00:00')
-        self.redis_tester.publish('audusd.fxcm-1-second[bid]', '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:01+00:00')
-        self.redis_tester.publish('audusd.fxcm-1-second[bid]', '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:02+00:00')
-        self.redis_tester.publish('audusd.fxcm-1-second[bid]', '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:03+00:00')
-        self.redis_tester.publish('audusd.fxcm-1-second[bid]', '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:04+00:00')
+        self.redis_tester.publish('audusd.fxcm-1-minute[bid]', '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:00+00:00')
+        self.redis_tester.publish('audusd.fxcm-1-minute[bid]', '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:01+00:00')
+        self.redis_tester.publish('audusd.fxcm-1-minute[bid]', '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:02+00:00')
+        self.redis_tester.publish('audusd.fxcm-1-minute[bid]', '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:03+00:00')
+        self.redis_tester.publish('audusd.fxcm-1-minute[bid]', '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:04+00:00')
 
         # Assert
         time.sleep(0.1)  # Allow threads to work.
         self.assertEqual(5, storer.count)  # All bar types and bars.
-        self.assertEqual('Bar(1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:04+00:00)', str(storer.get_store()[4][1]))
+        self.assertEqual('1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:04+00:00', str(storer.get_store()[4][1]))
 
     def test_can_receive_bars_from_multiple_subscribers(self):
         # Arrange
         storer = ObjectStorer()
         self.data_client.connect()
-        self.data_client.subscribe_bars(BarType(Symbol('AUDUSD', Venue.FXCM), 1, Resolution.SECOND, QuoteType.BID), storer.store_2)
-        self.data_client.subscribe_bars(BarType(Symbol('GBPUSD', Venue.FXCM), 1, Resolution.SECOND, QuoteType.BID), storer.store_2)
-        self.data_client.subscribe_bars(BarType(Symbol('EURUSD', Venue.FXCM), 1, Resolution.SECOND, QuoteType.BID), storer.store_2)
+        self.data_client.subscribe_bars(BarType(Symbol('AUDUSD', Venue.FXCM), BarSpecification(1, Resolution.SECOND, QuoteType.BID)), storer.store_2)
+        self.data_client.subscribe_bars(BarType(Symbol('GBPUSD', Venue.FXCM), BarSpecification(1, Resolution.SECOND, QuoteType.BID)), storer.store_2)
+        self.data_client.subscribe_bars(BarType(Symbol('EURUSD', Venue.FXCM), BarSpecification(1, Resolution.SECOND, QuoteType.BID)), storer.store_2)
 
         # Act
         self.redis_tester.publish('audusd.fxcm-1-second[bid]', '1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:00+00:00')
@@ -370,22 +359,12 @@ class LiveDataClientTests(unittest.TestCase):
         # Assert
         time.sleep(0.1)  # Allow threads to work.
         self.assertEqual(15, storer.count)  # All bar types and bars.
-        self.assertEqual('Bar(1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:04+00:00)', str(storer.get_store()[14][1]))
+        self.assertEqual('1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T12:00:04+00:00', str(storer.get_store()[14][1]))
 
     def test_can_add_bartype_to_dict(self):
         # Arrange
-        bar_type = BarType(Symbol('audusd', Venue.FXCM),
-                           1,
-                           Resolution.SECOND,
-                           QuoteType.MID)
-
-        bar = Bar(
-            Price('1.00001'),
-            Price('1.00004'),
-            Price('1.00002'),
-            Price('1.00003'),
-            100000,
-            datetime(2018, 1, 1, 19, 59, 1, 0, timezone.utc))
+        bar_type = TestStubs.bartype_audusd_1min_bid()
+        bar = TestStubs.bar()
 
         # Act
         bar_dictionary = {bar_type: bar}

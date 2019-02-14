@@ -57,8 +57,8 @@ cdef class BacktestDataClient(DataClient):
 
         super().__init__(clock, logger)
         self.data_ticks = data_ticks
-        self.data_bars_bid = data_bars_bid     # type: Dict[Symbol, Dict[Resolution, DataFrame]]
-        self.data_bars_ask = data_bars_ask     # type: Dict[Symbol, Dict[Resolution, DataFrame]]
+        self.data_bars_bid = data_bars_bid  # type: Dict[Symbol, Dict[Resolution, DataFrame]]
+        self.data_bars_ask = data_bars_ask  # type: Dict[Symbol, Dict[Resolution, DataFrame]]
 
         # Set minute data index
         first_dataframe = data_bars_bid[next(iter(data_bars_bid))][Resolution.MINUTE]
@@ -66,7 +66,7 @@ cdef class BacktestDataClient(DataClient):
 
         assert(isinstance(self.data_minute_index[0], datetime))
 
-        self.data_providers = {}               # type: Dict[Symbol, DataProvider]
+        self.data_providers = {}  # type: Dict[Symbol, DataProvider]
         self.iteration = 0
 
         # Convert instruments list to dictionary indexed by symbol
@@ -301,16 +301,16 @@ cdef class DataProvider:
         # TODO: Add capability for re-sampled bars
 
         if bar_type not in self.bars:
-            if bar_type.quote_type is QuoteType.BID:
-                data = self._dataframes_bars_bid[bar_type.resolution]
+            if bar_type.bar_spec.quote_type is QuoteType.BID:
+                data = self._dataframes_bars_bid[bar_type.bar_spec.resolution]
                 tick_precision = self.instrument.tick_precision
-            elif bar_type.quote_type is QuoteType.ASK:
-                data = self._dataframes_bars_ask[bar_type.resolution]
+            elif bar_type.bar_spec.quote_type is QuoteType.ASK:
+                data = self._dataframes_bars_ask[bar_type.bar_spec.resolution]
                 tick_precision = self.instrument.tick_precision
-            elif bar_type.quote_type is QuoteType.MID:
-                data = (self._dataframes_bars_bid[bar_type.resolution] + self._dataframes_bars_ask[bar_type.resolution]) / 2
+            elif bar_type.bar_spec.quote_type is QuoteType.MID:
+                data = (self._dataframes_bars_bid[bar_type.bar_spec.resolution] + self._dataframes_bars_ask[bar_type.bar_spec.resolution]) / 2
                 tick_precision = self.instrument.tick_precision + 1
-            elif bar_type.quote_type is QuoteType.LAST:
+            elif bar_type.bar_spec.quote_type is QuoteType.LAST:
                 raise NotImplemented('QuoteType.LAST not supported for bar type.')
 
             builder = BarBuilder(data=data, decimal_precision=tick_precision)

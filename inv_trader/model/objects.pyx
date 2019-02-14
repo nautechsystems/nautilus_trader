@@ -232,13 +232,13 @@ cdef class Symbol:
         """
         :return: The str() string representation of the symbol.
         """
-        return str(f"{self.code}.{venue_string(self.venue)}")
+        return f"{self.code}.{venue_string(self.venue)}"
 
     def __repr__(self) -> str:
         """
         :return: The repr() string representation of the symbol.
         """
-        return str(f"<{str(self)} object at {id(self)}>")
+        return f"<{self.__class__.__name__}({str(self)}) object at {id(self)}>"
 
 
 cdef inline str _get_decimal_str(float value, int precision):
@@ -315,7 +315,7 @@ cdef class Price:
         """
         :return: The repr() string representation of the symbol.
         """
-        return str(f"<Price({str(self)}) object at {id(self)}>")
+        return f"<{self.__class__.__name__}({str(self)}) object at {id(self)}>"
 
     def __lt__(self, Price other) -> bool:
         return self.value < other.value
@@ -431,7 +431,7 @@ cdef class Money:
         """
         :return: The repr() string representation of the symbol.
         """
-        return str(f"<Money({str(self)}) object at {id(self)}>")
+        return f"<{self.__class__.__name__}({str(self)}) object at {id(self)}>"
 
     def __lt__(self, Money other) -> bool:
         return self.value < other.value
@@ -518,30 +518,26 @@ cdef class Tick:
         """
         :return: The str() string representation of the tick.
         """
-        return str(f"Tick({self.symbol},{self.bid},{self.ask},"
-                f"{self.timestamp.isoformat()})")
+        return f"{self.symbol},{self.bid},{self.ask},{self.timestamp.isoformat()}"
 
     def __repr__(self) -> str:
         """
         :return: The repr() string representation of the tick.
         """
-        return str(f"<{str(self)} object at {id(self)}>")
+        return f"<{self.__class__.__name__}({str(self)}) object at {id(self)}>"
 
 
-cdef class BarType:
+cdef class BarSpecification:
     """
-    Represents a financial market symbol and bar specification.
+    Represents the specification of a financial market trade bar.
     """
-
     def __init__(self,
-                 Symbol symbol,
                  int period,
                  Resolution resolution,
                  QuoteType quote_type):
         """
-        Initializes a new instance of the BarType class.
+        Initializes a new instance of the BarSpecification class.
 
-        :param symbol: The bar symbol.
         :param period: The bar period.
         :param resolution: The bar resolution.
         :param quote_type: The bar quote type.
@@ -549,10 +545,20 @@ cdef class BarType:
         """
         Precondition.positive(period, 'period')
 
-        self.symbol = symbol
         self.period = period
         self.resolution = resolution
         self.quote_type = quote_type
+
+    cdef bint equals(self, BarSpecification other):
+        """
+        Compare if the object equals the given object.
+        
+        :param other: The other object to compare
+        :return: True if the objects are equal, otherwise False.
+        """
+        return (self.period == other.period
+                and self.resolution == other.resolution
+                and self.quote_type == other.quote_type)
 
     cdef str resolution_string(self):
         """
@@ -566,6 +572,66 @@ cdef class BarType:
         """
         return quote_type_string(self.quote_type)
 
+    def __eq__(self, BarSpecification other) -> bool:
+        """
+        Override the default equality comparison.
+        """
+        return self.equals(other)
+
+    def __ne__(self, BarSpecification other) -> bool:
+        """
+        Override the default not-equals comparison.
+        """
+        return not self.equals(other)
+
+    def __hash__(self) -> int:
+        """"
+        Override the default hash implementation.
+        """
+        return hash((self.period, self.resolution, self.quote_type))
+
+    def __str__(self) -> str:
+        """
+        :return: The str() string representation of the bar type.
+        """
+        return f"{self.period}-{resolution_string(self.resolution)}[{quote_type_string(self.quote_type)}]"
+
+    def __repr__(self) -> str:
+        """
+        :return: The repr() string representation of the bar type.
+        """
+        return f"<{self.__class__.__name__}({str(self)}) object at {id(self)}>"
+
+
+cdef class BarType:
+    """
+    Represents a financial market symbol and bar specification.
+    """
+
+    def __init__(self,
+                 Symbol symbol,
+                 BarSpecification bar_spec):
+        """
+        Initializes a new instance of the BarType class.
+
+        :param symbol: The bar symbol.
+        :param bar_spec: The bar specification.
+        """
+        self.symbol = symbol
+        self.bar_spec = bar_spec
+
+    cdef str resolution_string(self):
+        """
+        :return: The resolution string. 
+        """
+        return self.bar_spec.resolution_string()
+
+    cdef str quote_type_string(self):
+        """
+        :return: The quote type string. 
+        """
+        return self.bar_spec.quote_type_string()
+
     cdef bint equals(self, BarType other):
         """
         Compare if the object equals the given object.
@@ -573,10 +639,7 @@ cdef class BarType:
         :param other: The other object to compare
         :return: True if the objects are equal, otherwise False.
         """
-        return (self.symbol == other.symbol
-                and self.period == other.period
-                and self.resolution == other.resolution
-                and self.quote_type == other.quote_type)
+        return self.symbol.equals(other.symbol) and self.bar_spec.equals(other.bar_spec)
 
     def __eq__(self, BarType other) -> bool:
         """
@@ -594,20 +657,19 @@ cdef class BarType:
         """"
         Override the default hash implementation.
         """
-        return hash((self.symbol, self.period, self.resolution, self.quote_type))
+        return hash((self.symbol, self.bar_spec))
 
     def __str__(self) -> str:
         """
         :return: The str() string representation of the bar type.
         """
-        return str(f"{str(self.symbol)}"
-                f"-{self.period}-{resolution_string(self.resolution)}[{quote_type_string(self.quote_type)}]")
+        return f"{str(self.symbol)}-{self.bar_spec}"
 
     def __repr__(self) -> str:
         """
         :return: The repr() string representation of the bar type.
         """
-        return str(f"<{str(self)} object at {id(self)}>")
+        return f"<{self.__class__.__name__}({str(self)}) object at {id(self)}>"
 
 
 cdef class Bar:
@@ -678,14 +740,14 @@ cdef class Bar:
         """
         :return: The str() string representation of the bar.
         """
-        return str(f"Bar({self.open},{self.high},{self.low},{self.close},"
-                f"{self.volume},{self.timestamp.isoformat()})")
+        return (f"{self.open},{self.high},{self.low},{self.close},"
+                f"{self.volume},{self.timestamp.isoformat()}")
 
     def __repr__(self) -> str:
         """
         :return: The repr() string representation of the bar.
         """
-        return str(f"<{str(self)} object at {id(self)}>")
+        return f"<{self.__class__.__name__}({str(self)}) object at {id(self)}>"
 
 
 cdef class DataBar:
@@ -744,14 +806,14 @@ cdef class DataBar:
         """
         :return: The str() string representation of the bar.
         """
-        return str(f"DataBar({self.open},{self.high},{self.low},{self.close},"
-                f"{self.volume},{self.timestamp.isoformat()})")
+        return (f"{self.open},{self.high},{self.low},{self.close},"
+                f"{self.volume},{self.timestamp.isoformat()}")
 
     def __repr__(self) -> str:
         """
         :return: The repr() string representation of the bar.
         """
-        return str(f"<{str(self)} object at {id(self)}>")
+        return f"<{self.__class__.__name__}({str(self)}) object at {id(self)}>"
 
 
 cdef class Instrument:
@@ -862,10 +924,10 @@ cdef class Instrument:
         """
         :return: The str() string representation of the instrument.
         """
-        return str(f"Instrument({self.symbol})")
+        return f"{self.__class__.__name__}({self.symbol})"
 
     def __repr__(self) -> str:
         """
         :return: The repr() string representation of the instrument.
         """
-        return str(f"<{str(self)} object at {id(self)}>")
+        return f"<{str(self)} object at {id(self)}>"
