@@ -17,7 +17,7 @@ from inv_trader.common.logger cimport Logger, LoggerAdapter
 from inv_trader.common.clock cimport LiveClock
 from inv_trader.common.guid cimport LiveGuidFactory
 from inv_trader.common.execution cimport ExecutionClient
-from inv_trader.model.events cimport Event, PositionOpened, PositionModified, PositionClosed
+from inv_trader.model.events cimport Event, PositionEvent, PositionOpened, PositionModified, PositionClosed
 from inv_trader.model.identifiers cimport GUID, OrderId, PositionId
 from inv_trader.model.position cimport Position
 
@@ -47,6 +47,12 @@ cdef class Portfolio:
         self._registered_strategies = []  # type: List[GUID]
         self._positions_active = {}       # type: Dict[GUID, Dict[PositionId, Position]]
         self._positions_closed = {}       # type: Dict[GUID, Dict[PositionId, Position]]
+
+        self.positions_count = 0
+        self.positions_active_count = 0
+        self.positions_closed_count = 0
+        self.position_opened_events = []  # type: List[PositionOpened]
+        self.position_closed_events = []  # type: List[PositionClosed]
 
         self._log.info("Initialized.")
 
@@ -242,6 +248,7 @@ cdef class Portfolio:
                 event.symbol,
                 position_id,
                 event.execution_time)
+            self.positions_count += 1
             position.apply(event)
 
             # Add position to position book
@@ -275,22 +282,33 @@ cdef class Portfolio:
                 self._position_modified(position, strategy_id)
 
     cdef void _position_opened(self, Position position, GUID strategy_id):
-        self._exec_client.handle_event(PositionOpened(
+        cdef PositionOpened event = PositionOpened(
             position,
             strategy_id,
             self._guid_factory.generate(),
-            self._clock.time_now()))
+            self._clock.time_now())
+
+        self.position_opened_events.append(event)
+        self.positions_active_count += 1
+        self._exec_client.handle_event(event)
 
     cdef void _position_modified(self, Position position, GUID strategy_id):
-        self._exec_client.handle_event(PositionModified(
+        cdef PositionModified event = PositionModified(
             position,
             strategy_id,
             self._guid_factory.generate(),
-            self._clock.time_now()))
+            self._clock.time_now())
+
+        self._exec_client.handle_event(event)
 
     cdef void _position_closed(self, Position position, GUID strategy_id):
-        self._exec_client.handle_event(PositionClosed(
+        cdef PositionClosed event = PositionClosed(
             position,
             strategy_id,
             self._guid_factory.generate(),
-            self._clock.time_now()))
+            self._clock.time_now())
+
+        self.position_closed_events.append(event)
+        self.positions_closed_count += 1
+        self.positions_active_count -= 1
+        self._exec_client.handle_event(event)
