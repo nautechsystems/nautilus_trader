@@ -101,6 +101,7 @@ cdef class BacktestExecClient(ExecutionClient):
 
         self.iteration = 0
         self.day_number = 0
+        self.account_capital = starting_capital
         self.account_cash_start_day = starting_capital
         self.account_cash_activity_day = Money(0)
         self.slippage_index = {}  # type: Dict[Symbol, Decimal]
@@ -482,6 +483,7 @@ cdef class BacktestExecClient(ExecutionClient):
         if order.side is OrderSide.BUY:
             closing_ask = self._get_closing_ask(order.symbol)
             if order.type is OrderType.MARKET:
+                # Fill market orders immediately
                 self._fill_order(order, Price(closing_ask + self.slippage_index[order.symbol]))
                 return
             elif order.type is OrderType.STOP_MARKET or order.type is OrderType.STOP_LIMIT or order.type is OrderType.MIT:
@@ -495,6 +497,7 @@ cdef class BacktestExecClient(ExecutionClient):
         elif order.side is OrderSide.SELL:
             closing_bid = self._get_closing_bid(order.symbol)
             if order.type is OrderType.MARKET:
+                # Fill market orders immediately
                 self._fill_order(order, Price(closing_bid - self.slippage_index[order.symbol]))
                 return
             elif order.type is OrderType.STOP_MARKET or order.type is OrderType.STOP_LIMIT or order.type is OrderType.MIT:
@@ -561,7 +564,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._account.broker,
             self._account.account_number,
             self._account.currency,
-            self._account.cash_balance,
+            self.account_capital,
             self.account_cash_start_day,
             self.account_cash_activity_day,
             margin_used_liquidation=Money(0),
@@ -571,4 +574,4 @@ cdef class BacktestExecClient(ExecutionClient):
             event_id=self._guid_factory.generate(),
             event_timestamp=self._clock.time_now())
 
-        self._account.apply(account_event)
+        self.handle_event(account_event)

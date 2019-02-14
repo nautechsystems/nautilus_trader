@@ -27,6 +27,7 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef readonly list data_minute_index
     cdef readonly int iteration
     cdef readonly int day_number
+    cdef readonly Money account_capital
     cdef readonly Money account_cash_start_day
     cdef readonly Money account_cash_activity_day
     cdef readonly dict slippage_index
