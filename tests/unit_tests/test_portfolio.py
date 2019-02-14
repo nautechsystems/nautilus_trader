@@ -102,6 +102,11 @@ class PortfolioTestsTests(unittest.TestCase):
         self.assertTrue(position_id not in self.portfolio.get_positions_closed_all()[strategy.id])
         self.assertTrue(position_id in self.portfolio.get_positions_active(strategy.id))
         self.assertTrue(position_id in self.portfolio.get_positions_active_all()[strategy.id])
+        self.assertEqual(1, self.portfolio.positions_count)
+        self.assertEqual(1, self.portfolio.positions_active_count)
+        self.assertEqual(0, self.portfolio.positions_closed_count)
+        self.assertEqual(1, len(self.portfolio.position_opened_events))
+        self.assertEqual(0, len(self.portfolio.position_closed_events))
 
     def test_adds_to_existing_position_on_order_fill(self):
         # Arrange
@@ -135,6 +140,11 @@ class PortfolioTestsTests(unittest.TestCase):
         self.assertEqual(0, len(self.portfolio.get_positions_closed_all()[strategy.id]))
         self.assertEqual(1, len(self.portfolio.get_positions_active(strategy.id)))
         self.assertEqual(1, len(self.portfolio.get_positions_active_all()[strategy.id]))
+        self.assertEqual(1, self.portfolio.positions_count)
+        self.assertEqual(1, self.portfolio.positions_active_count)
+        self.assertEqual(0, self.portfolio.positions_closed_count)
+        self.assertEqual(1, len(self.portfolio.position_opened_events))
+        self.assertEqual(0, len(self.portfolio.position_closed_events))
 
     def test_closes_position_on_order_fill(self):
         # Arrange
@@ -184,6 +194,11 @@ class PortfolioTestsTests(unittest.TestCase):
         self.assertTrue(position_id in self.portfolio.get_positions_closed_all()[strategy.id])
         self.assertTrue(position_id not in self.portfolio.get_positions_active(strategy.id))
         self.assertTrue(position_id not in self.portfolio.get_positions_active_all()[strategy.id])
+        self.assertEqual(1, self.portfolio.positions_count)
+        self.assertEqual(0, self.portfolio.positions_active_count)
+        self.assertEqual(1, self.portfolio.positions_closed_count)
+        self.assertEqual(1, len(self.portfolio.position_opened_events))
+        self.assertEqual(1, len(self.portfolio.position_closed_events))
 
     def test_multiple_strategy_positions_opened(self):
         # Arrange
@@ -249,6 +264,11 @@ class PortfolioTestsTests(unittest.TestCase):
         self.assertTrue(position_id2 not in self.portfolio.get_positions_closed(strategy2.id))
         self.assertTrue(position_id1 not in self.portfolio.get_positions_closed_all()[strategy1.id])
         self.assertTrue(position_id2 not in self.portfolio.get_positions_closed_all()[strategy2.id])
+        self.assertEqual(2, self.portfolio.positions_count)
+        self.assertEqual(2, self.portfolio.positions_active_count)
+        self.assertEqual(0, self.portfolio.positions_closed_count)
+        self.assertEqual(2, len(self.portfolio.position_opened_events))
+        self.assertEqual(0, len(self.portfolio.position_closed_events))
 
     def test_multiple_strategy_positions_one_active_one_closed(self):
         # Arrange
@@ -324,3 +344,8 @@ class PortfolioTestsTests(unittest.TestCase):
         self.assertTrue(position_id2 not in self.portfolio.get_positions_closed(strategy2.id))
         self.assertTrue(position_id1 in self.portfolio.get_positions_closed_all()[strategy1.id])
         self.assertTrue(position_id2 not in self.portfolio.get_positions_closed_all()[strategy2.id])
+        self.assertEqual(2, self.portfolio.positions_count)
+        self.assertEqual(1, self.portfolio.positions_active_count)
+        self.assertEqual(1, self.portfolio.positions_closed_count)
+        self.assertEqual(2, len(self.portfolio.position_opened_events))
+        self.assertEqual(1, len(self.portfolio.position_closed_events))
