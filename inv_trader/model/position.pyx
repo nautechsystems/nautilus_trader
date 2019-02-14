@@ -31,7 +31,7 @@ cdef class Position:
         """
         Initializes a new instance of the Position class.
 
-        :param symbol: The orders symbol.
+        :param symbol: The positions symbol.
         :param position_id: The positions identifier.
         :param timestamp: The positions initialization timestamp.
         """
