@@ -49,18 +49,23 @@ cdef class TradeStrategy:
         """
         Initializes a new instance of the TradeStrategy abstract class.
 
-        :param label: The optional unique label for the strategy.
+        :param label: The unique label for the strategy.
         :param id_tag_trader: The unique order identifier tag for the trader.
         :param id_tag_strategy: The unique order identifier tag for the strategy.
         :param bar_capacity: The capacity for the internal bar deque(s).
-        :param clock: The internal clock for the strategy.
-        :param guid_factory: internal The GUID factory for the strategy.
+        :param clock: The clock for the strategy.
+        :param guid_factory: The GUID factory for the strategy.
         :param logger: The logger (can be None, and will print).
         :raises ValueError: If the label is not a valid string.
+        :raises ValueError: If the id_tag_trader is not a valid string.
         :raises ValueError: If the order_id_tag is not a valid string.
         :raises ValueError: If the bar_capacity is not positive (> 0).
+        :raises ValueError: If the clock is None.
+        :raises ValueError: If the guid_factory is None.
         """
         Precondition.positive(bar_capacity, 'bar_capacity')
+        Precondition.not_none(clock, 'clock')
+        Precondition.not_none(guid_factory, 'guid_factory')
 
         self._clock = clock
         self._guid_factory = guid_factory

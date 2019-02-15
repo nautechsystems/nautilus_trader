@@ -30,7 +30,7 @@ cdef class Trader:
     """
 
     def __init__(self,
-                 str name,
+                 str label,
                  list strategies,
                  DataClient data_client,
                  ExecutionClient exec_client,
@@ -41,22 +41,29 @@ cdef class Trader:
         """
         Initializes a new instance of the Trader class.
 
-        :param name: The name of the trader.
+        :param label: The unique label for the trader.
         :param strategies: The initial list of strategies to manage (cannot be empty).
         :param logger: The logger for the trader (can be None).
+        :raise ValueError: If the label is an invalid string.
+        :raise ValueError: If the strategies list is empty.
+        :raise ValueError: If the strategies list contains a type other than TradeStrategy.
+        :raise ValueError: If the data client is None.
+        :raise ValueError: If the exec client is None.
+        :raise ValueError: If the clock is None.
         """
-        Precondition.valid_string(name, 'name')
+        Precondition.valid_string(label, 'label')
+        Precondition.not_empty(strategies, 'strategies')
         Precondition.list_type(strategies, TradeStrategy, 'strategies')
         Precondition.not_none(data_client, 'data_client')
         Precondition.not_none(exec_client, 'exec_client')
         Precondition.not_none(clock, 'clock')
 
         self._clock = clock
+        self.name = Label(self.__class__.__name__ + '-' + label)
         if logger is None:
-            self._log = LoggerAdapter(f"{self.__class__.__name__}-{self.name}")
+            self._log = LoggerAdapter(f"{self.name.value}")
         else:
-            self._log = LoggerAdapter(f"{self.__class__.__name__}-{self.name}", logger)
-        self.name = Label(name)
+            self._log = LoggerAdapter(f"{self.name.value}", logger)
         self.id = GUID(uuid.uuid4())
         self._data_client = data_client
         self._exec_client = exec_client
