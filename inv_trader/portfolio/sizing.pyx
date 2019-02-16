@@ -89,7 +89,7 @@ cdef class FixedRiskSizer(PositionSizer):
 
     def __init__(self, Instrument instrument):
         """
-        Initializes a new instance of the FixedRiskVolatilitySizer class.
+        Initializes a new instance of the FixedRiskSizer class.
 
         :param instrument: The instrument for position sizing.
         """
@@ -110,7 +110,7 @@ cdef class FixedRiskSizer(PositionSizer):
 
         :param equity: The account equity.
         :param exchange_rate: The exchange rate for the instrument quote currency vs account currency.
-        :param risk_bp: The risk in basis points (0.01%).
+        :param risk_bp: The risk in basis points (1 basis point = 0.01%).
         :param entry: The entry price level.
         :param stop_loss: The stop loss price level.
         :param hard_limit: The hard limit for the total quantity (>= 0) (0 = no hard limit).
@@ -119,12 +119,10 @@ cdef class FixedRiskSizer(PositionSizer):
         :raises ValueError: If the exchange_rate is not positive (> 0).
         :raises ValueError: If the risk_bp is not positive (> 0).
         :raises ValueError: If the units are not positive (> 0).
-        :raises ValueError: If the hard limit is negative (< 0).
         :return: The calculated quantity for the position.
         """
         Precondition.positive(exchange_rate, 'exchange_rate')
         Precondition.positive(risk_bp, 'risk_bp')
-        Precondition.not_negative(hard_limit, 'hard_limit')
         Precondition.positive(units, 'units')
         Precondition.positive(unit_batch_size, 'unit_batch_size')
 

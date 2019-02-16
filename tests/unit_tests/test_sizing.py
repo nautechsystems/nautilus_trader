@@ -34,4 +34,3 @@ class FixedRiskSizerTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(Quantity(0), result)
-
