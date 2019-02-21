@@ -493,7 +493,7 @@ cdef class LiveDataClient(DataClient):
         cdef Tick tick = self._parse_tick(symbol, message['data'].decode(UTF8))
 
         if symbol not in self._tick_handlers:
-            # If no tick handlers then print message to console.
+            # If no tick handlers then print message to console
             print(f"Received {tick}")
             return
 
@@ -510,7 +510,7 @@ cdef class LiveDataClient(DataClient):
         cdef Bar bar = self._parse_bar(message['data'].decode(UTF8))
 
         if bar_type not in self._bar_handlers:
-            # If no bar handlers then print message to console.
+            # If no bar handlers then print message to console
             print(f"Received {bar_type}, {bar}")
             return
 
