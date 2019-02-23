@@ -322,12 +322,6 @@ class ObjectTests(unittest.TestCase):
         # Assert
         self.assertRaises(AssertionError, Money, Decimal(-1.0))
 
-    def test_money_initialized_with_decimal_with_precision_3_raises_exception(self):
-        # Arrange
-        # Act
-        # Assert
-        self.assertRaises(AssertionError, Money, Decimal('9.999'))
-
     def test_money_zero_returns_money_with_zero_value(self):
         # Arrange
         # Act
