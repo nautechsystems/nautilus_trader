@@ -58,9 +58,9 @@ cdef class BarBuilder:
 
     cpdef list build_databars_all(self):
         """
-        Build a list of DataBars from all data.
+        Return a list of DataBars from all data.
         
-        :return: The list of DataBars.
+        :return: List[DataBar].
         """
         return list(map(self._build_databar,
                         self._data.values,
@@ -68,9 +68,9 @@ cdef class BarBuilder:
 
     cpdef list build_databars_from(self, int index=0):
         """
-        Build a list of DataBars from the given index.
+        Return a list of DataBars from the given index.
         
-        :return: The list of DatBars.
+        :return: List[DataBar].
         """
         Precondition.not_negative(index, 'index')
 
@@ -80,9 +80,9 @@ cdef class BarBuilder:
 
     cpdef list build_databars_range(self, int start=0, int end=-1):
         """
-        Build a list of DataBars within the given range.
+        Return a list of DataBars within the given range.
         
-        :return: The list of Bars.
+        :return: List[DataBar].
         """
         Precondition.not_negative(start, 'start')
 
@@ -92,9 +92,9 @@ cdef class BarBuilder:
 
     cpdef list build_bars_all(self):
         """
-        Build a list of Bars from all data.
+        Return a list of Bars from all data.
 
-        :return: The list of Bars.
+        :return: List[Bar].
         """
         return list(map(self._build_bar,
                         self._data.values,
@@ -102,9 +102,9 @@ cdef class BarBuilder:
 
     cpdef list build_bars_from(self, int index=0):
         """
-        Build a list of Bars from the given index (>= 0).
+        Return a list of Bars from the given index (>= 0).
 
-        :return: The list of Bars.
+        :return: List[Bar].
         """
         Precondition.not_negative(index, 'index')
 
@@ -114,9 +114,9 @@ cdef class BarBuilder:
 
     cpdef list build_bars_range(self, int start=0, int end=-1):
         """
-        Build a list of Bars within the given range.
+        Return a list of Bars within the given range.
 
-        :return: The list of Bars.
+        :return: List[Bar].
         """
         Precondition.not_negative(start, 'start')
 
@@ -208,7 +208,7 @@ cdef class IndicatorUpdater:
         """
         Update the indicator with the given Bar object.
 
-        :param bar: The update bar.
+        :param bar: The bar to update with.
         """
         self._input_method(*[bar.__getattribute__(param).value for param in self._input_params])
 
@@ -216,15 +216,15 @@ cdef class IndicatorUpdater:
         """
         Update the indicator with the given Bar object.
 
-        :param bar: The update bar.
+        :param bar: The bar to update with.
         """
         self._input_method(*[bar.__getattribute__(param) for param in self._input_params])
 
     cpdef dict build_features(self, list bars):
         """
-        Create a dictionary of output features from the given bars data.
+        Return a dictionary of output features from the given bars data.
         
-        :return: The list of indicator output feature.
+        :return: Dict[str, float].
         """
         cdef dict features = {}
         for output in self._outputs:
@@ -240,9 +240,9 @@ cdef class IndicatorUpdater:
 
     cpdef dict build_features_databars(self, list bars):
         """
-        Create a dictionary of output features from the given bars data.
+        Return a dictionary of output features from the given bars data.
         
-        :return: The list of indicator output feature.
+        :return: Dict[str, float].
         """
         cdef dict features = {}
         for output in self._outputs:

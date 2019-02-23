@@ -58,7 +58,7 @@ def scan_directories(directories: List[str]) -> List[str]:
     return file_names
 
 
-# Recursively scan for all files to cythonize
+# Recursively scan directory for all files to cythonize
 def scan_files(directory: str, files: List[str]=[]) -> List[str]:
     for file in os.listdir(directory):
         path = os.path.join(directory, file)

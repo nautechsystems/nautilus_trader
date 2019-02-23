@@ -361,19 +361,22 @@ cdef class Price:
         """
         return float(self.value)
 
+cdef str DECIMAL_POINT = '.'
 
 cdef inline str _get_money_str(str value):
     cdef tuple partitioned
     cdef int cents_length
 
-    if not value.__contains__('.'):
+    if not value.__contains__(DECIMAL_POINT):
         return value + '.00'
     else:
-        partitioned = value.partition('.')
+        partitioned = value.partition(DECIMAL_POINT)
         cents_length = len(partitioned[2])
-        assert(cents_length <= 2)
 
-        return value + ('0' * (2 - cents_length))
+        if cents_length <= 2:
+            return partitioned[0] + DECIMAL_POINT + ('0' * (2 - cents_length))
+        else:
+            return partitioned[0] + DECIMAL_POINT + partitioned[2][:1]
 
 
 cdef class Money:

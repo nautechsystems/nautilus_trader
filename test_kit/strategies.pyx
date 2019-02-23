@@ -9,6 +9,7 @@
 
 # cython: language_level=3, boundscheck=False
 
+from decimal import Decimal
 from datetime import timedelta
 
 from inv_trader.common.clock cimport Clock, TestClock
@@ -22,6 +23,7 @@ from inv_trader.model.identifiers cimport Label, PositionId
 from inv_trader.model.order cimport Order
 from inv_trader.model.events cimport OrderFilled, OrderExpired, OrderRejected
 from inv_trader.strategy cimport TradeStrategy
+from inv_trader.portfolio.sizing cimport PositionSizer, FixedRiskSizer
 from inv_indicators.average.ema import ExponentialMovingAverage
 from inv_indicators.atr import AverageTrueRange
 from test_kit.objects cimport ObjectStorer
@@ -128,7 +130,8 @@ cdef class EMACross(TradeStrategy):
     cdef readonly Instrument instrument
     cdef readonly Symbol symbol
     cdef readonly BarType bar_type
-    cdef readonly Quantity position_size
+    cdef readonly PositionSizer position_sizer
+    cdef readonly int risk_bp
     cdef readonly int tick_precision
     cdef readonly object entry_buffer
     cdef readonly float SL_atr_multiple
@@ -146,7 +149,7 @@ cdef class EMACross(TradeStrategy):
                  str id_tag_strategy,
                  Instrument instrument,
                  BarType bar_type,
-                 int position_size=100000,
+                 int risk_bp=10,
                  int fast_ema=10,
                  int slow_ema=20,
                  int atr_period=20,
@@ -160,7 +163,7 @@ cdef class EMACross(TradeStrategy):
         :param id_tag_trader: The unique order identifier tag for the trader.
         :param id_tag_strategy: The unique order identifier tag for the strategy.
         :param bar_type: The bar type for the strategy (could also input any number of them)
-        :param position_size: The position unit size.
+        :param risk_bp: The risk per trade in basis points.
         :param fast_ema: The fast EMA period.
         :param slow_ema: The slow EMA period.
         :param bar_capacity: The historical bar capacity.
@@ -175,7 +178,8 @@ cdef class EMACross(TradeStrategy):
         self.instrument = instrument
         self.symbol = instrument.symbol
         self.bar_type = bar_type
-        self.position_size = Quantity(position_size)
+        self.risk_bp = risk_bp
+        self.position_sizer = FixedRiskSizer(self.instrument)
         self.tick_precision = instrument.tick_precision
         self.entry_buffer = instrument.tick_size
         self.SL_atr_multiple = sl_atr_multiple
@@ -227,16 +231,33 @@ cdef class EMACross(TradeStrategy):
         if not self.fast_ema.initialized or not self.slow_ema.initialized:
             return
 
+        cdef Price entry_price
+        cdef Price stop_loss_price
+        cdef Quantity position_size
+
         # TODO: Factor in spread, using bid bars only at the moment
         if self.entry_order is None:
             # BUY LOGIC
             if self.fast_ema.value >= self.slow_ema.value:
+                entry_price = Price(self.last_bar(self.bar_type).high + self.entry_buffer)
+                stop_loss_price = Price(self.last_bar(self.bar_type).low - (self.atr.value * self.SL_atr_multiple))
+
+                position_size = self.position_sizer.calculate(
+                    equity=self.account.free_equity,
+                    exchange_rate=Decimal('1'),
+                    risk_bp=self.risk_bp,
+                    entry_price=entry_price,
+                    stop_loss_price=stop_loss_price,
+                    hard_limit=0,
+                    units=1,
+                    unit_batch_size=1000)
+
                 atomic_order = self.order_factory.atomic_stop_market(
                     self.symbol,
                     OrderSide.BUY,
-                    self.position_size,
-                    Price(self.last_bar(self.bar_type).high + self.entry_buffer),
-                    Price(self.last_bar(self.bar_type).low - (self.atr.value * self.SL_atr_multiple)),
+                    position_size,
+                    entry_price,
+                    stop_loss_price,
                     price_profit_target=None,
                     label=Label('S1'),
                     time_in_force=TimeInForce.GTD,
@@ -244,12 +265,25 @@ cdef class EMACross(TradeStrategy):
 
             # SELL LOGIC
             elif self.fast_ema.value < self.slow_ema.value:
+                entry_price = Price(self.last_bar(self.bar_type).low - self.entry_buffer)
+                stop_loss_price = Price(self.last_bar(self.bar_type).high + (self.atr.value * self.SL_atr_multiple))
+
+                position_size = self.position_sizer.calculate(
+                    equity=self.account.free_equity,
+                    exchange_rate=Decimal('1'),
+                    risk_bp=self.risk_bp,
+                    entry_price=entry_price,
+                    stop_loss_price=stop_loss_price,
+                    hard_limit=0,
+                    units=1,
+                    unit_batch_size=1000)
+
                 atomic_order = self.order_factory.atomic_stop_market(
                     self.symbol,
                     OrderSide.SELL,
-                    self.position_size,
-                    Price(self.last_bar(self.bar_type).low - self.entry_buffer),
-                    Price(self.last_bar(self.bar_type).high + (self.atr.value * self.SL_atr_multiple)),
+                    position_size,
+                    entry_price,
+                    stop_loss_price,
                     price_profit_target=None,
                     label=Label('S1'),
                     time_in_force=TimeInForce.GTD,

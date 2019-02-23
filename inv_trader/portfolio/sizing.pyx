@@ -44,8 +44,8 @@ cdef class PositionSizer:
             Money equity,
             exchange_rate,
             int risk_bp,
-            Price entry,
-            Price stop_loss,
+            Price entry_price,
+            Price stop_loss_price,
             hard_limit=0,
             units=1,
             unit_batch_size=1):
@@ -55,8 +55,8 @@ cdef class PositionSizer:
         :param equity: The account equity.
         :param exchange_rate: The exchange rate for the instrument quote currency vs account currency.
         :param risk_bp: The risk in basis points (0.01%).
-        :param entry: The entry price level.
-        :param stop_loss: The stop loss price level.
+        :param entry_price: The entry price level.
+        :param stop_loss_price: The stop loss price level.
         :param hard_limit: The hard limit for the total quantity (>= 0) (0 = no hard limit).
         :param units: The number of units to batch the position into (> 0).
         :param unit_batch_size: The unit batch size (> 0).
@@ -66,7 +66,7 @@ cdef class PositionSizer:
         :raises ValueError: If the hard limit is negative (< 0).
         :return: The calculated quantity for the position.
         """
-        # Raise exception if not overridden in implementation.
+        # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
     cdef Money _calculate_risk_money(self, Money equity, int risk_bp):
@@ -75,11 +75,11 @@ cdef class PositionSizer:
         """
         return Money(equity.value * Decimal(round(risk_bp * 0.01, 2)))
 
-    cdef object _calculate_risk_points(self, Price entry, Price stop_loss):
+    cdef int _calculate_risk_points(self, Price entry, Price stop_loss):
         """
         Calculate the difference in points between the entry and stop loss.
         """
-        return abs(entry - stop_loss)
+        return int(abs(entry - stop_loss) / self.instrument.tick_size)
 
 
 cdef class FixedRiskSizer(PositionSizer):
@@ -100,8 +100,8 @@ cdef class FixedRiskSizer(PositionSizer):
             Money equity,
             exchange_rate,
             int risk_bp,
-            Price entry,
-            Price stop_loss,
+            Price entry_price,
+            Price stop_loss_price,
             hard_limit=0,
             units=1,
             unit_batch_size=1):
@@ -111,8 +111,8 @@ cdef class FixedRiskSizer(PositionSizer):
         :param equity: The account equity.
         :param exchange_rate: The exchange rate for the instrument quote currency vs account currency.
         :param risk_bp: The risk in basis points (1 basis point = 0.01%).
-        :param entry: The entry price level.
-        :param stop_loss: The stop loss price level.
+        :param entry_price: The entry price.
+        :param stop_loss_price: The stop loss price.
         :param hard_limit: The hard limit for the total quantity (>= 0) (0 = no hard limit).
         :param units: The number of units to batch the position into (> 0).
         :param unit_batch_size: The unit batch size (> 0).
@@ -127,16 +127,16 @@ cdef class FixedRiskSizer(PositionSizer):
         Precondition.positive(unit_batch_size, 'unit_batch_size')
 
         cdef Money risk_money = self._calculate_risk_money(equity, risk_bp)
-        cdef object risk_points = self._calculate_risk_points(entry, stop_loss)
+        cdef int risk_points = self._calculate_risk_points(entry_price, stop_loss_price)
 
         cdef object tick_value_size = self.instrument.tick_size * exchange_rate
-        cdef int position_size = int(round(((risk_money / risk_points) / tick_value_size) / self.instrument.contract_size))
+        cdef long position_size = long(round(((risk_money.value / risk_points) / tick_value_size) / self.instrument.contract_size.value))
 
         # Limit size
         if hard_limit > 0:
             position_size = min(position_size, hard_limit)
 
         # Batch into units
-        cdef int position_size_batched = int(round(position_size / units / unit_batch_size)) * unit_batch_size
+        cdef long position_size_batched = long(round(position_size / units / unit_batch_size) * unit_batch_size)
 
         return Quantity(position_size_batched)

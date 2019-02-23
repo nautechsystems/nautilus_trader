@@ -124,7 +124,7 @@ cdef class LiveDataClient(DataClient):
 
         if self._pubsub_thread is not None:
             self._pubsub_thread.stop()
-            time.sleep(0.1)  # Allows thread to stop.
+            time.sleep(0.1)  # Allows thread to stop
             self._log.debug(f"Stopped PubSub thread {self._pubsub_thread}.")
 
         self._log.info(f"Unsubscribed from tick data {self._subscriptions_ticks}.")
@@ -278,7 +278,7 @@ cdef class LiveDataClient(DataClient):
                 if bar.timestamp >= from_datetime:
                     bars.insert(0, self._parse_bar(bar_bytes.decode(UTF8)))
                 else:
-                    break  # Reached from_datetime.
+                    break  # Reached from_datetime
 
         first_bar_timestamp = bars[0].timestamp
         if first_bar_timestamp > from_datetime:
@@ -373,7 +373,7 @@ cdef class LiveDataClient(DataClient):
 
         self._unsubscribe_ticks(symbol, handler)
 
-        # If no further subscribers for this bar type.
+        # If no further subscribers for this bar type
         if len(self._tick_handlers[symbol]) == 0:
             tick_channel = self._get_tick_channel_name(symbol)
             self._pubsub.unsubscribe(tick_channel)
@@ -474,8 +474,8 @@ cdef class LiveDataClient(DataClient):
         """
         Check the connection with the live database.
 
-        :raises ConnectionError if the client is None.
-        :raises ConnectionError if the client is not connected.
+        :raises ConnectionError: If the client is None.
+        :raises ConnectionError: If the client is not connected.
         """
         if self._redis_client is None:
             raise ConnectionError(("No connection has been established to the live database "
