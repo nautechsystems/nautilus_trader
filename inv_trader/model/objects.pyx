@@ -373,10 +373,7 @@ cdef inline str _get_money_str(str value):
         partitioned = value.partition(DECIMAL_POINT)
         cents_length = len(partitioned[2])
 
-        if cents_length <= 2:
-            return partitioned[0] + DECIMAL_POINT + ('0' * (2 - cents_length))
-        else:
-            return partitioned[0] + DECIMAL_POINT + partitioned[2][:1]
+        return value + ('0' * (2 - cents_length))[:1]
 
 
 cdef class Money:
