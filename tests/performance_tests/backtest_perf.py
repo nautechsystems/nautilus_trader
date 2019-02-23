@@ -78,7 +78,7 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
                                id_tag_strategy='001',
                                instrument=usdjpy,
                                bar_type=TestStubs.bartype_usdjpy_1min_bid(),
-                               position_size=100000,
+                               risk_bp=10,
                                fast_ema=10,
                                slow_ema=20,
                                atr_period=20,
