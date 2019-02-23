@@ -24,11 +24,17 @@ cdef class PositionSizer:
             Money equity,
             exchange_rate,
             int risk_bp,
-            Price entry,
-            Price stop_loss,
+            Price entry_price,
+            Price stop_loss_price,
             hard_limit=*,
             units=*,
             unit_batch_size=*)
 
     cdef Money _calculate_risk_money(self, Money equity, int risk_bp)
-    cdef object _calculate_risk_points(self, Price entry, Price stop_loss)
+    cdef int _calculate_risk_points(self, Price entry, Price stop_loss)
+
+
+cdef class FixedRiskSizer(PositionSizer):
+    """
+    Provides position sizing calculations based on a given risk.
+    """

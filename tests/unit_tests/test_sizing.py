@@ -22,15 +22,84 @@ class FixedRiskSizerTests(unittest.TestCase):
 
     def test_can_calculate_single_unit_size(self):
         # Arrange
-        equity = Money('1000000')
+        equity = Money('100000.00')
 
         # Act
         result = self.sizer.calculate(
             equity,
-            Decimal('1'),
-            10,
+            Decimal('1.00'),
+            1,
             Price('1.00100'),
-            Price('1.00000'))
+            Price('1.00000'),
+            unit_batch_size=1000)
+
+        # Assert
+        self.assertEqual(Quantity(1000000), result)
+
+    def test_can_calculate_single_unit_size_when_risk_too_high(self):
+        # Arrange
+        equity = Money('100000.00')
+
+        # Act
+        result = self.sizer.calculate(
+            equity,
+            Decimal('1.00'),
+            1,
+            Price('3.00000'),
+            Price('1.00000'),
+            unit_batch_size=1000)
 
         # Assert
         self.assertEqual(Quantity(0), result)
+
+    def test_can_impose_hard_limit(self):
+        # Arrange
+        equity = Money('1000000.00')
+
+        # Act
+        result = self.sizer.calculate(
+            equity,
+            Decimal('1.00'),
+            1,
+            Price('1.00100'),
+            Price('1.00000'),
+            hard_limit=500000,
+            units=1,
+            unit_batch_size=1000)
+
+        # Assert
+        self.assertEqual(Quantity(500000), result)
+
+    def test_can_calculate_multiple_unit_size(self):
+        # Arrange
+        equity = Money('1000000.00')
+
+        # Act
+        result = self.sizer.calculate(
+            equity,
+            Decimal('1.00'),
+            1,
+            Price('1.00100'),
+            Price('1.00000'),
+            units=3,
+            unit_batch_size=1000)
+
+        # Assert
+        self.assertEqual(Quantity(3333000), result)
+
+    def test_can_calculate_multiple_unit_size_larger_batches(self):
+        # Arrange
+        equity = Money('1000000.00')
+
+        # Act
+        result = self.sizer.calculate(
+            equity,
+            Decimal('1.00'),
+            1,
+            Price('1.00087'),
+            Price('1.00000'),
+            units=4,
+            unit_batch_size=25000)
+
+        # Assert
+        self.assertEqual(Quantity(2875000), result)
