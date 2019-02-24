@@ -13,9 +13,10 @@ import pandas as pd
 
 from decimal import Decimal
 from cpython.datetime cimport datetime
+from collections import deque
 from functools import partial
 from pandas import DataFrame
-from typing import List, Dict
+from typing import List, Dict, Deque
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.enums.brokerage cimport Broker
@@ -81,12 +82,14 @@ cdef class BacktestExecClient(ExecutionClient):
                          guid_factory,
                          logger)
 
+        self._queue = deque()
+
         # Convert instruments list to dictionary indexed by symbol
-        cdef dict instruments_dict = {}             # type: Dict[Symbol, Instrument]
+        cdef dict instruments_dict = {}      # type: Dict[Symbol, Instrument]
         for instrument in instruments:
             instruments_dict[instrument.symbol] = instrument
 
-        self.instruments = instruments_dict         # type: Dict[Symbol, Instrument]
+        self.instruments = instruments_dict  # type: Dict[Symbol, Instrument]
 
         # Prepare data
         self.data_ticks = data_ticks                                          # type: Dict[Symbol, List]
@@ -217,13 +220,28 @@ cdef class BacktestExecClient(ExecutionClient):
 
         self.iteration += 1
 
+    cpdef void execute_command(self, Command command):
+        """
+        Execute the given command by putting it on the internal queue for processing.
+
+        :param command: The command to execute.
+        """
+        self._queue.append(command)
+
+    cpdef void handle_event(self, Event event):
+        """
+        Handle the given event by putting it on the internal queue for processing.
+
+        :param event: The event to handle
+        """
+        self._queue.append(event)
+
     cpdef void process_queue(self):
         """
         Process the internal queue of commands and events.
         """
-        while not self._queue.empty():
-            item = self._queue.get()
-
+        while len(self._queue) > 0:
+            item = self._queue.popleft()
             if isinstance(item, Event):
                 self._handle_event(item)
             elif isinstance(item, Command):
