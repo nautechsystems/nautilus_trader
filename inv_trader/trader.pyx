@@ -7,7 +7,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-# cython: language_level=3, boundscheck=False
+# cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
 import uuid
 
@@ -81,7 +81,9 @@ cdef class Trader:
 
     cpdef int strategy_count(self):
         """
-        :return: The number of strategies held by the trader.
+        Return the number of strategies held by the trader.
+        
+        :return: int.
         """
         return len(self.strategies)
 
