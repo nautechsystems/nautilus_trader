@@ -544,18 +544,46 @@ cdef class TradeStrategy:
         
         :param order_id: The order identifier.
         :return: True if the order exists, else False.
+        :raises ValueError: If the execution client is not registered.
         """
         Precondition.not_none(self._exec_client, 'exec_client')
 
         return self._exec_client.order_exists(order_id)
 
+    cpdef bint order_active(self, OrderId order_id):
+        """
+        Return a value indicating whether an order with the given identifier is active.
+         
+        :param order_id: The order identifier.
+        :return: True if the order exists and is active, else False.
+        :raises ValueError: If the execution client is not registered.
+        :raises ValueError: If the order is not found.
+        """
+        Precondition.not_none(self._exec_client, 'exec_client')
+
+        return self._exec_client.order_active(order_id)
+
+    cpdef bint order_complete(self, OrderId order_id):
+        """
+        Return a value indicating whether an order with the given identifier is complete.
+         
+        :param order_id: The order identifier.
+        :return: True if the order does not exist or is complete, else False.
+        :raises ValueError: If the execution client is not registered.
+        :raises ValueError: If the order is not found.
+        """
+        Precondition.not_none(self._exec_client, 'exec_client')
+
+        return self._exec_client.order_complete(order_id)
+
     cpdef Order order(self, OrderId order_id):
         """
-        Return the order with the given order_id.
+        Return the order with the given identifier.
 
         :param order_id: The order identifier.
-        :return: The order with the given id.
-        :raises ValueError: If the execution client does not contain an order with the given id.
+        :return: Order.
+        :raises ValueError: If the execution client is not registered.
+        :raises ValueError: If the execution client does not contain an order with the given identifier.
         """
         Precondition.not_none(self._exec_client, 'exec_client')
 
@@ -566,6 +594,7 @@ cdef class TradeStrategy:
         Return a dictionary of all orders associated with this strategy.
         
         :return: Dict[OrderId, Order]
+        :raises ValueError: If the execution client is not registered.
         """
         Precondition.not_none(self._exec_client, 'exec_client')
 
@@ -576,6 +605,7 @@ cdef class TradeStrategy:
         Return a dictionary of all active orders associated with this strategy.
         
         :return: Dict[OrderId, Order]
+        :raises ValueError: If the execution client is not registered.
         """
         Precondition.not_none(self._exec_client, 'exec_client')
 
@@ -586,6 +616,7 @@ cdef class TradeStrategy:
         Return a dictionary of all completed orders associated with this strategy.
         
         :return: Dict[OrderId, Order]
+        :raises ValueError: If the execution client is not registered.
         """
         Precondition.not_none(self._exec_client, 'exec_client')
 
@@ -597,6 +628,7 @@ cdef class TradeStrategy:
         
         :param position_id: The position identifier.
         :return: True if the position exists, else False.
+        :raises ValueError: If the portfolio is not registered.
         """
         Precondition.not_none(self._portfolio, 'portfolio')
 
@@ -608,6 +640,7 @@ cdef class TradeStrategy:
 
         :param position_id: The positions identifier.
         :return: The position with the given identifier.
+        :raises ValueError: If the portfolio is not registered.
         :raises ValueError: If the portfolio does not contain a position with the given identifier.
         """
         Precondition.not_none(self._portfolio, 'portfolio')
@@ -619,6 +652,7 @@ cdef class TradeStrategy:
         Return a dictionary of all positions associated with this strategy.
         
         :return: Dict[PositionId, Position]
+        :raises ValueError: If the portfolio is not registered.
         """
         Precondition.not_none(self._portfolio, 'portfolio')
 
@@ -629,6 +663,7 @@ cdef class TradeStrategy:
         Return a dictionary of all active positions associated with this strategy.
         
         :return: Dict[PositionId, Position]
+        :raises ValueError: If the portfolio is not registered.
         """
         Precondition.not_none(self._portfolio, 'portfolio')
 
@@ -639,6 +674,7 @@ cdef class TradeStrategy:
         Return a dictionary of all closed positions associated with this strategy.
         
         :return: Dict[PositionId, Position]
+        :raises ValueError: If the portfolio is not registered.
         """
         Precondition.not_none(self._portfolio, 'portfolio')
 
@@ -646,8 +682,11 @@ cdef class TradeStrategy:
 
     cpdef bint is_flat(self):
         """
-        :return: A value indicating whether this strategy is completely flat
-        (no positions other than FLAT) across all instruments.
+        Return a value indicating whether the strategy is completely flat (i.e no market positions
+        other than FLAT across all instruments).
+        
+        :return: True if flat, else False.
+        :raises ValueError: If the portfolio is not registered.
         """
         Precondition.not_none(self._portfolio, 'portfolio')
 

@@ -49,6 +49,8 @@ cdef class ExecutionClient:
     cpdef void execute_command(self, Command command)
     cpdef void handle_event(self, Event event)
     cpdef bint order_exists(self, OrderId order_id)
+    cpdef bint order_active(self, OrderId order_id)
+    cpdef bint order_complete(self, OrderId order_id)
     cpdef Order get_order(self, OrderId order_id)
     cpdef dict get_orders_all(self)
     cpdef dict get_orders_active_all(self)

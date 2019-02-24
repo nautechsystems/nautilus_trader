@@ -125,6 +125,30 @@ cdef class ExecutionClient:
         """
         return order_id in self._order_book
 
+    cpdef bint order_active(self, OrderId order_id):
+        """
+        Return a value indicating whether an order with the given identifier is active.
+         
+        :param order_id: The order identifier.
+        :return: True if the order exists and is active, else False.
+        :raises ValueError: If the order is not found.
+        """
+        Precondition.is_in(order_id, self._order_book, 'order_id', 'order_book')
+
+        return self._order_book[order_id].is_active
+
+    cpdef bint order_complete(self, OrderId order_id):
+        """
+        Return a value indicating whether an order with the given identifier is complete.
+         
+        :param order_id: The order identifier.
+        :return: True if the order does not exist or is complete, else False.
+        :raises ValueError: If the order is not found.
+        """
+        Precondition.is_in(order_id, self._order_book, 'order_id', 'order_book')
+
+        return self._order_book[order_id].is_complete
+
     cpdef Order get_order(self, OrderId order_id):
         """
         Return the order with the given identifier (if found).

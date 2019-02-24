@@ -7,7 +7,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-# cython: language_level=3, boundscheck=False
+# cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
 import pandas as pd
 
@@ -251,7 +251,6 @@ cdef class BacktestDataClient(DataClient):
         :param symbol: The tick symbol to subscribe to.
         :param handler: The callable handler for subscription (if None will just call print).
         """
-        # Do nothing
         self._subscribe_ticks(symbol, handler)
 
     cpdef void unsubscribe_ticks(self, Symbol symbol, handler: Callable):
@@ -261,7 +260,6 @@ cdef class BacktestDataClient(DataClient):
         :param symbol: The tick symbol to unsubscribe from.
         :param handler: The callable handler which was subscribed (can be None).
         """
-        # Do nothing.
         self._unsubscribe_ticks(symbol, handler)
 
 
