@@ -125,7 +125,9 @@ cdef class TestStrategy1(TradeStrategy):
 
 cdef class EMACross(TradeStrategy):
     """"
-    A simple moving average cross example strategy.
+    A simple moving average cross example strategy. When the fast EMA crosses
+    the slow EMA then a STOP_MARKET atomic order is placed for that direction
+    with a trailing stop.
     """
     cdef readonly Instrument instrument
     cdef readonly Symbol symbol
@@ -157,7 +159,7 @@ cdef class EMACross(TradeStrategy):
                  int bar_capacity=1000,
                  Logger logger=None):
         """
-        Initializes a new instance of the EMACrossLimitEntry class.
+        Initializes a new instance of the EMACross class.
 
         :param label: The optional unique label for the strategy.
         :param id_tag_trader: The unique order identifier tag for the trader.
@@ -195,7 +197,7 @@ cdef class EMACross(TradeStrategy):
         self.register_indicator(self.bar_type, self.slow_ema, self.slow_ema.update)
         self.register_indicator(self.bar_type, self.atr, self.atr.update)
 
-        # Users custom order management logic if you like...
+        # Users custom order management logic
         self.entry_order = None
         self.stop_loss_order = None
         self.position_id = None
@@ -295,7 +297,7 @@ cdef class EMACross(TradeStrategy):
 
             self.submit_atomic_order(atomic_order, self.position_id)
 
-        if self.stop_loss_order is not None and self.stop_loss_order.status == OrderStatus.WORKING:
+        if self.stop_loss_order is not None and self.order_active(self.stop_loss_order.id):
             if self.stop_loss_order.side is OrderSide.SELL:
                 temp_price = Price(self.last_bar(self.bar_type).low - (self.atr.value * self.SL_atr_multiple))
                 if self.stop_loss_order.price < temp_price:
@@ -315,21 +317,15 @@ cdef class EMACross(TradeStrategy):
         """
         if isinstance(event, OrderFilled):
             if self.is_flat():
-                self.entry_order = None
-                self.stop_loss_order = None
-                self.position_id = None
+                self._reset_trade()
 
         elif isinstance(event, OrderRejected) or isinstance(event, OrderExpired):
             if event.order_id.equals(self.entry_order.id):
-                self.entry_order = None
-                self.stop_loss_order = None
-                self.position_id = None
+                self._reset_trade()
             # If a stop-loss order is rejected then flatten the entered position
             elif event.order_id.equals(self.stop_loss_order.id):
                 self.flatten_all_positions()
-                self.entry_order = None
-                self.stop_loss_order = None
-                self.position_id = None
+                self._reset_trade()
 
     cpdef void on_stop(self):
         """
@@ -352,6 +348,12 @@ cdef class EMACross(TradeStrategy):
         self.unsubscribe_bars(self.bar_type)
         self.unsubscribe_ticks(self.symbol)
 
+        self._reset_trade()
+
+    cdef void _reset_trade(self):
+        """
+        Reset the trade by clearing all order and position values.
+        """
         self.entry_order = None
         self.stop_loss_order = None
         self.position_id = None
