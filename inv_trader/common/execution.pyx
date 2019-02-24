@@ -88,14 +88,14 @@ cdef class ExecutionClient:
         """
         Connect to the execution service.
         """
-        # Raise exception if not overridden in implementation.
+        # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
     cpdef void disconnect(self):
         """
         Disconnect from the execution service.
         """
-        # Raise exception if not overridden in implementation.
+        # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
     cpdef void register_strategy(self, TradeStrategy strategy):

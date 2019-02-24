@@ -13,7 +13,7 @@ import unittest
 from datetime import datetime, timezone, timedelta
 
 from inv_trader.common.clock import TestClock
-from inv_trader.common.logger import Logger
+from inv_trader.common.logger import TestLogger
 from inv_trader.model.enums import Resolution
 from inv_trader.model.enums import Venue, OrderSide
 from inv_trader.model.identifiers import Label, OrderId, PositionId
@@ -51,7 +51,7 @@ class BacktestDataClientTests(unittest.TestCase):
             data_bars_bid=self.data_bars_bid,
             data_bars_ask=self.data_bars_ask,
             clock=self.test_clock,
-            logger=Logger())
+            logger=TestLogger())
 
         self.client.create_data_providers()
 

@@ -10,17 +10,17 @@
 import unittest
 import logging
 
-from inv_trader.common.logger import Logger, LoggerAdapter
+from inv_trader.common.logger import TestLogger, LoggerAdapter
 
 
-class LoggerTests(unittest.TestCase):
+class TestLoggerTests(unittest.TestCase):
 
     def setUp(self):
         print("\n")
 
     def test_can_log_debug_messages_to_console(self):
         # Arrange
-        logger = Logger(level_console=logging.DEBUG)
+        logger = TestLogger(level_console=logging.DEBUG)
         logger_adapter = LoggerAdapter('TEST_LOGGER', logger)
 
         # Act
@@ -31,7 +31,7 @@ class LoggerTests(unittest.TestCase):
 
     def test_can_log_info_messages_to_console(self):
         # Arrange
-        logger = Logger(level_console=logging.INFO)
+        logger = TestLogger(level_console=logging.INFO)
         logger_adapter = LoggerAdapter('TEST_LOGGER', logger)
 
         # Act
@@ -42,7 +42,7 @@ class LoggerTests(unittest.TestCase):
 
     def test_can_log_warning_messages_to_console(self):
         # Arrange
-        logger = Logger(level_console=logging.WARNING)
+        logger = TestLogger(level_console=logging.WARNING)
         logger_adapter = LoggerAdapter('TEST_LOGGER', logger)
 
         # Act
@@ -53,7 +53,7 @@ class LoggerTests(unittest.TestCase):
 
     def test_can_log_error_messages_to_console(self):
         # Arrange
-        logger = Logger(level_console=logging.ERROR)
+        logger = TestLogger(level_console=logging.ERROR)
         logger_adapter = LoggerAdapter('TEST_LOGGER', logger)
 
         # Act
@@ -64,7 +64,7 @@ class LoggerTests(unittest.TestCase):
 
     def test_can_log_critical_messages_to_console(self):
         # Arrange
-        logger = Logger(level_console=logging.CRITICAL)
+        logger = TestLogger(level_console=logging.CRITICAL)
         logger_adapter = LoggerAdapter('TEST_LOGGER', logger)
 
         # Act

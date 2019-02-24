@@ -16,7 +16,7 @@ from datetime import datetime, timezone, timedelta
 from inv_trader.common.account import Account
 from inv_trader.common.clock import TestClock
 from inv_trader.common.guid import TestGuidFactory
-from inv_trader.common.logger import Logger
+from inv_trader.common.logger import TestLogger
 from inv_trader.model.enums import Venue, OrderSide
 from inv_trader.model.objects import Quantity, Symbol, Price, Money
 from inv_trader.model.events import OrderRejected, OrderWorking, OrderModified, OrderFilled
@@ -50,7 +50,7 @@ class BacktestExecClientTests(unittest.TestCase):
         self.portfolio = Portfolio(
             clock=TestClock(),
             guid_factory=TestGuidFactory(),
-            logger=Logger())
+            logger=TestLogger())
         self.client = BacktestExecClient(instruments=self.instruments,
                                          data_ticks=self.data_ticks,
                                          data_bars_bid=self.data_bars_bid,
@@ -61,7 +61,7 @@ class BacktestExecClientTests(unittest.TestCase):
                                          portfolio=self.portfolio,
                                          clock=TestClock(),
                                          guid_factory=TestGuidFactory(),
-                                         logger=Logger())
+                                         logger=TestLogger())
 
         self.portfolio.register_execution_client(self.client)
 
