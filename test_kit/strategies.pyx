@@ -297,7 +297,7 @@ cdef class EMACross(TradeStrategy):
 
             self.submit_atomic_order(atomic_order, self.position_id)
 
-        if self.stop_loss_order is not None and self.order_active(self.stop_loss_order.id):
+        if self._stop_loss_active():
             if self.stop_loss_order.side is OrderSide.SELL:
                 temp_price = Price(self.last_bar(self.bar_type).low - (self.atr.value * self.SL_atr_multiple))
                 if self.stop_loss_order.price < temp_price:
@@ -357,3 +357,13 @@ cdef class EMACross(TradeStrategy):
         self.entry_order = None
         self.stop_loss_order = None
         self.position_id = None
+
+    cdef bint _stop_loss_active(self):
+        """
+        Return a value indicating whether the stop-loss is active.
+        
+        :return: True if active, else False.
+        """
+        return (self.stop_loss_order is not None
+                and self.order_exists(self.stop_loss_order.id)
+                and self.order_active(self.stop_loss_order.id))
