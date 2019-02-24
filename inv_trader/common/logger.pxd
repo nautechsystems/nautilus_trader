@@ -26,21 +26,43 @@ cdef class Logger:
     cdef str _log_file
     cdef object _log_file_handler
     cdef object _logger
-    cdef object _queue
-    cdef object _thread
 
     cdef readonly bint bypass_logging
     cdef readonly Clock clock
 
-    cpdef void log(self, tuple message)
+    cpdef void log(self, int log_level, ValidString message)
     cpdef void _debug(self, datetime timestamp, ValidString message)
     cpdef void _info(self, datetime timestamp, ValidString message)
     cpdef void _warning(self, datetime timestamp, ValidString message)
     cpdef void _error(self, datetime timestamp, ValidString message)
     cpdef void _critical(self, datetime timestamp, ValidString message)
-    cpdef void _process_messages(self)
     cdef str _format_message(self, datetime timestamp, str log_level, str message)
     cdef void _console_print_handler(self, log_level, str message, )
+
+
+cdef class LogMessage:
+    """
+    Represents a log message.
+    """
+    cdef readonly int log_level
+    cdef readonly datetime timestamp
+    cdef readonly ValidString text
+
+
+cdef class LiveLogger(Logger):
+    """
+    Provides a thread safe logger for live concurrent operations.
+    """
+    cdef object _queue
+    cdef object _thread
+    cpdef void _process_messages(self)
+
+
+cdef class TestLogger(Logger):
+    """
+    Provides a single threaded logger for testing.
+    """
+    pass
 
 
 cdef class LoggerAdapter:

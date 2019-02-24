@@ -23,7 +23,7 @@ from inv_trader.backtest.data cimport BacktestDataClient
 from inv_trader.backtest.execution cimport BacktestExecClient
 from inv_trader.common.clock cimport LiveClock, TestClock
 from inv_trader.common.guid cimport TestGuidFactory
-from inv_trader.common.logger cimport Logger
+from inv_trader.common.logger cimport TestLogger
 from inv_trader.enums.resolution cimport Resolution
 from inv_trader.common.account cimport Account
 from inv_trader.model.objects cimport Symbol, Instrument, Money
@@ -101,7 +101,7 @@ cdef class BacktestEngine:
 
         self.test_clock = TestClock()
         self.test_clock.set_time(self.clock.time_now())
-        self.test_logger = Logger(
+        self.test_logger = TestLogger(
             name='backtest',
             bypass_logging=config.bypass_logging,
             level_console=config.level_console,

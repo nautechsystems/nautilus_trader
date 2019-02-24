@@ -21,7 +21,7 @@ from cpython.datetime cimport datetime
 from inv_trader.common.execution cimport ExecutionClient
 from inv_trader.common.clock cimport TestClock
 from inv_trader.common.guid cimport TestGuidFactory
-from inv_trader.common.logger cimport Logger
+from inv_trader.common.logger cimport TestLogger
 from inv_trader.common.account cimport Account
 from inv_trader.model.objects cimport Price
 from inv_trader.model.order cimport Order
@@ -210,7 +210,7 @@ cdef class MockExecClient(ExecutionClient):
             portfolio,
             TestClock(),
             TestGuidFactory(),
-            Logger())
+            TestLogger())
 
         self.working_orders = []  # type: List[Order]
         self.atomic_orders = {}   # type: Dict[OrderId, List[Order]]
