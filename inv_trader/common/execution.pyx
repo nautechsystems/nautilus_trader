@@ -54,6 +54,7 @@ cdef class ExecutionClient:
             self._log = LoggerAdapter(f"ExecClient")
         else:
             self._log = LoggerAdapter(f"ExecClient", logger)
+        self._queue = Queue()
         self._account = account
         self._portfolio = portfolio
         self._registered_strategies = {}  # type: Dict[GUID, TradeStrategy]
@@ -199,20 +200,18 @@ cdef class ExecutionClient:
     cpdef void execute_command(self, Command command):
         """
         Execute the given command by putting it on the internal queue for processing.
-
+        
         :param command: The command to execute.
         """
-        # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
+        self._queue.put(command)
 
     cpdef void handle_event(self, Event event):
         """
         Handle the given event by putting it on the internal queue for processing.
-
+        
         :param event: The event to handle
         """
-        # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
+        self._queue.put(event)
 
     cdef void _execute_command(self, Command command):
         """

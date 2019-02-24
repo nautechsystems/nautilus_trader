@@ -34,8 +34,6 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef readonly dict working_orders
     cdef readonly dict atomic_orders
 
-    cdef object _queue
-
     cpdef void set_initial_iteration(self, datetime to_time, timedelta time_step)
     cpdef void iterate(self)
     cpdef void process_queue(self)
