@@ -15,12 +15,11 @@ from datetime import timedelta
 from inv_trader.common.clock cimport Clock, TestClock
 from inv_trader.common.logger cimport Logger
 from inv_trader.enums.order_side cimport OrderSide
-from inv_trader.enums.order_status cimport OrderStatus
 from inv_trader.enums.time_in_force cimport TimeInForce
 from inv_trader.model.objects cimport Quantity, Symbol, Price, Tick, BarType, Bar, Instrument
 from inv_trader.model.events cimport Event
 from inv_trader.model.identifiers cimport Label, PositionId
-from inv_trader.model.order cimport Order
+from inv_trader.model.order cimport Order, AtomicOrder
 from inv_trader.model.events cimport OrderFilled, OrderExpired, OrderRejected
 from inv_trader.strategy cimport TradeStrategy
 from inv_trader.portfolio.sizing cimport PositionSizer, FixedRiskSizer
@@ -231,11 +230,13 @@ cdef class EMACross(TradeStrategy):
         :param bar: The received bar.
         """
         if not self.fast_ema.initialized or not self.slow_ema.initialized:
+            # Wait for indicators to warm up
             return
 
         cdef Price entry_price
         cdef Price stop_loss_price
         cdef Quantity position_size
+        cdef AtomicOrder atomic_order
 
         # TODO: Factor in spread, using bid bars only at the moment
         if self.entry_order is None:
@@ -297,7 +298,8 @@ cdef class EMACross(TradeStrategy):
 
             self.submit_atomic_order(atomic_order, self.position_id)
 
-        if self._stop_loss_active():
+        cdef Price temp_price
+        if self._is_stop_loss_active():
             if self.stop_loss_order.side is OrderSide.SELL:
                 temp_price = Price(self.last_bar(self.bar_type).low - (self.atr.value * self.SL_atr_multiple))
                 if self.stop_loss_order.price < temp_price:
@@ -358,7 +360,7 @@ cdef class EMACross(TradeStrategy):
         self.stop_loss_order = None
         self.position_id = None
 
-    cdef bint _stop_loss_active(self):
+    cdef bint _is_stop_loss_active(self):
         """
         Return a value indicating whether the stop-loss is active.
         
