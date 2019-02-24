@@ -13,10 +13,9 @@ import pandas as pd
 
 from decimal import Decimal
 from cpython.datetime cimport datetime
-from collections import deque
 from functools import partial
 from pandas import DataFrame
-from typing import List, Dict, Deque
+from typing import List, Dict
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.enums.brokerage cimport Broker
@@ -272,7 +271,18 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         Send a modify order request to the execution service.
         """
-        Precondition.is_in(command.order.id, self.working_orders, 'order.id', 'working_orders')
+        if command.order.id not in self.working_orders:
+            # Reject the command
+            event = OrderCancelReject(
+                command.order.symbol,
+                command.order.id,
+                self._clock.time_now(),
+                ValidString(f'order with id={command.order.id.value}'),
+                ValidString(f'modify order command id={command.id.value}'),
+                self._guid_factory.generate(),
+                self._clock.time_now())
+            self.handle_event(event)
+            return
 
         cdef Order order = command.order
         cdef Price current_ask
