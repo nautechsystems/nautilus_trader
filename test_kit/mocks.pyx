@@ -199,7 +199,6 @@ cdef class MockExecClient(ExecutionClient):
     """
     cdef readonly list working_orders
     cdef readonly dict atomic_orders
-    cdef object _queue
 
     def __init__(self):
         """
@@ -216,7 +215,6 @@ cdef class MockExecClient(ExecutionClient):
 
         self.working_orders = []  # type: List[Order]
         self.atomic_orders = {}   # type: Dict[OrderId, List[Order]]
-        self._queue = deque()
 
     cpdef void connect(self):
         """
@@ -230,28 +228,12 @@ cdef class MockExecClient(ExecutionClient):
         """
         self._log.info("MockExecClient disconnected.")
 
-    cpdef void execute_command(self, Command command):
-        """
-        Execute the given command by putting it on the internal queue for processing.
-
-        :param command: The command to execute.
-        """
-        self._queue.append(command)
-
-    cpdef void handle_event(self, Event event):
-        """
-        Handle the given event by putting it on the internal queue for processing.
-
-        :param event: The event to handle
-        """
-        self._queue.append(event)
-
     cpdef void process_queue(self):
         """
         Process the internal queue of commands and events.
         """
-        while len(self._queue) > 0:
-            item = self._queue.popleft()
+        while not self._queue.empty():
+            item = self._queue.get()
             if isinstance(item, Event):
                 self._handle_event(item)
             elif isinstance(item, Command):
