@@ -12,7 +12,6 @@
 from cpython.datetime cimport datetime
 from typing import Dict
 from queue import Queue
-from threading import Lock
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.common.clock cimport Clock
@@ -57,7 +56,6 @@ cdef class ExecutionClient:
             self._log = LoggerAdapter(f"ExecClient", logger)
         self._account = account
         self._portfolio = portfolio
-        self._queue = Queue()
         self._registered_strategies = {}  # type: Dict[GUID, TradeStrategy]
         self._order_book = {}             # type: Dict[OrderId, Order]
         self._order_strategy_index = {}   # type: Dict[OrderId, GUID]
@@ -117,22 +115,6 @@ cdef class ExecutionClient:
 
         self._log.info(f"Registered {strategy} with id {strategy.id}.")
 
-    cpdef void execute_command(self, Command command):
-        """
-        Execute the given command by putting it on the internal queue for processing.
-        
-        :param command: The command to execute.
-        """
-        self._queue.put(command)
-
-    cpdef void handle_event(self, Event event):
-        """
-        Handle the given event by putting it on the internal queue for processing.
-        
-        :param event: The event to handle
-        """
-        self._queue.put(event)
-
     cpdef bint order_exists(self, OrderId order_id):
         """
         Return a value indicating whether an order with the given identifier exists.
@@ -140,8 +122,7 @@ cdef class ExecutionClient:
         :param order_id: The order identifier.
         :return: True if the order exists, else False.
         """
-        with Lock():
-            return order_id in self._order_book
+        return order_id in self._order_book
 
     cpdef Order get_order(self, OrderId order_id):
         """
@@ -150,10 +131,9 @@ cdef class ExecutionClient:
         :return: Order.
         :raises ValueError: If the order is not found.
         """
-        with Lock():
-            Precondition.is_in(order_id, self._order_book, 'order_id', 'order_book')
+        Precondition.is_in(order_id, self._order_book, 'order_id', 'order_book')
 
-            return self._order_book[order_id]
+        return self._order_book[order_id]
 
     cpdef dict get_orders_all(self):
         """
@@ -161,8 +141,7 @@ cdef class ExecutionClient:
         
         :return: Dict[OrderId, Order].
         """
-        with Lock():
-            return self._order_book.copy()
+        return self._order_book.copy()
 
     cpdef dict get_orders_active_all(self):
         """
@@ -170,8 +149,7 @@ cdef class ExecutionClient:
         
         :return: Dict[OrderId, Order].
         """
-        with Lock():
-            return self._orders_active.copy()
+        return self._orders_active.copy()
 
     cpdef dict get_orders_completed_all(self):
         """
@@ -179,8 +157,7 @@ cdef class ExecutionClient:
         
         :return: Dict[OrderId, Order].
         """
-        with Lock():
-            return self._orders_completed.copy()
+        return self._orders_completed.copy()
 
     cpdef dict get_orders(self, GUID strategy_id):
         """
@@ -191,12 +168,11 @@ cdef class ExecutionClient:
         """
         cpdef dict orders
 
-        with Lock():
-            Precondition.is_in(strategy_id, self._orders_active, 'strategy_id', 'orders_active')
-            Precondition.is_in(strategy_id, self._orders_completed, 'strategy_id', 'orders_completed')
+        Precondition.is_in(strategy_id, self._orders_active, 'strategy_id', 'orders_active')
+        Precondition.is_in(strategy_id, self._orders_completed, 'strategy_id', 'orders_completed')
 
-            orders = {**self._orders_active[strategy_id], **self._orders_completed[strategy_id]}
-            return orders  # type: Dict[OrderId, Order]
+        orders = {**self._orders_active[strategy_id], **self._orders_completed[strategy_id]}
+        return orders  # type: Dict[OrderId, Order]
 
     cpdef dict get_orders_active(self, GUID strategy_id):
         """
@@ -205,10 +181,9 @@ cdef class ExecutionClient:
         :param strategy_id: The strategy identifier associated with the orders.
         :return: Dict[OrderId, Order].
         """
-        with Lock():
-            Precondition.is_in(strategy_id, self._orders_active, 'strategy_id', 'orders_active')
+        Precondition.is_in(strategy_id, self._orders_active, 'strategy_id', 'orders_active')
 
-            return self._orders_active[strategy_id].copy()
+        return self._orders_active[strategy_id].copy()
 
     cpdef dict get_orders_completed(self, GUID strategy_id):
         """
@@ -217,10 +192,27 @@ cdef class ExecutionClient:
         :param strategy_id: The strategy identifier associated with the orders.
         :return: Dict[OrderId, Order].
         """
-        with Lock():
-            Precondition.is_in(strategy_id, self._orders_completed, 'strategy_id', 'orders_completed')
+        Precondition.is_in(strategy_id, self._orders_completed, 'strategy_id', 'orders_completed')
 
-            return self._orders_completed[strategy_id].copy()
+        return self._orders_completed[strategy_id].copy()
+
+    cpdef void execute_command(self, Command command):
+        """
+        Execute the given command by putting it on the internal queue for processing.
+
+        :param command: The command to execute.
+        """
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
+    cpdef void handle_event(self, Event event):
+        """
+        Handle the given event by putting it on the internal queue for processing.
+
+        :param event: The event to handle
+        """
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
 
     cdef void _execute_command(self, Command command):
         """
@@ -325,7 +317,7 @@ cdef class ExecutionClient:
         
         :param command: The command to send.
         """
-        # Raise exception if not overridden in implementation.
+        # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
     cdef void _submit_order(self, SubmitOrder command):
@@ -334,7 +326,7 @@ cdef class ExecutionClient:
         
         :param command: The command to send.
         """
-        # Raise exception if not overridden in implementation.
+        # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
     cdef void _submit_atomic_order(self, SubmitAtomicOrder command):
@@ -343,7 +335,7 @@ cdef class ExecutionClient:
         
         :param command: The command to send.
         """
-        # Raise exception if not overridden in implementation.
+        # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
     cdef void _modify_order(self, ModifyOrder command):
@@ -352,7 +344,7 @@ cdef class ExecutionClient:
         
         :param command: The command to send.
         """
-        # Raise exception if not overridden in implementation.
+        # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
     cdef void _cancel_order(self, CancelOrder command):
@@ -361,5 +353,5 @@ cdef class ExecutionClient:
         
         :param command: The command to send.
         """
-        # Raise exception if not overridden in implementation.
+        # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
