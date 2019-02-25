@@ -207,7 +207,7 @@ cdef class LiveExecClient(ExecutionClient):
         """
         cdef Event event = self._event_serializer.deserialize(body)
 
-        # If no registered strategies then print message to console.
+        # If no registered strategies then print message to console
         if len(self._registered_strategies) == 0:
             self._log.debug(f"Received {event}")
 
