@@ -239,7 +239,7 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         Process the message bus of commands and events.
         """
-        while len(self._message_bus) > 0:
+        while self._message_bus:
             item = self._message_bus.pop()
             if isinstance(item, Event):
                 self._handle_event(item)

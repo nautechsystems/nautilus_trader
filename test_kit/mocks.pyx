@@ -250,7 +250,7 @@ cdef class MockExecClient(ExecutionClient):
         """
         Process the message bus of commands and events.
         """
-        while len(self.message_bus) > 0:
+        while self.message_bus:
             item = self.message_bus.pop()
             if isinstance(item, Event):
                 self._handle_event(item)
