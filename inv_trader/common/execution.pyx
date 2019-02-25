@@ -11,7 +11,7 @@
 
 from cpython.datetime cimport datetime
 from typing import Dict
-from queue import Queue
+from collections import deque
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.common.clock cimport Clock
@@ -54,7 +54,6 @@ cdef class ExecutionClient:
             self._log = LoggerAdapter(f"ExecClient")
         else:
             self._log = LoggerAdapter(f"ExecClient", logger)
-        self._queue = Queue()
         self._account = account
         self._portfolio = portfolio
         self._registered_strategies = {}  # type: Dict[GUID, TradeStrategy]
@@ -93,6 +92,24 @@ cdef class ExecutionClient:
     cpdef void disconnect(self):
         """
         Disconnect from the execution service.
+        """
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
+    cpdef void execute_command(self, Command command):
+        """
+        Execute the given command by inserting it into the message bus for processing.
+        
+        :param command: The command to execute.
+        """
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
+    cpdef void handle_event(self, Event event):
+        """
+        Handle the given event by inserting it into the message bus for processing.
+        
+        :param event: The event to handle
         """
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
@@ -220,22 +237,6 @@ cdef class ExecutionClient:
         Precondition.is_in(strategy_id, self._orders_completed, 'strategy_id', 'orders_completed')
 
         return self._orders_completed[strategy_id].copy()
-
-    cpdef void execute_command(self, Command command):
-        """
-        Execute the given command by putting it on the internal queue for processing.
-        
-        :param command: The command to execute.
-        """
-        self._queue.put(command)
-
-    cpdef void handle_event(self, Event event):
-        """
-        Handle the given event by putting it on the internal queue for processing.
-        
-        :param event: The event to handle
-        """
-        self._queue.put(event)
 
     cdef void _execute_command(self, Command command):
         """

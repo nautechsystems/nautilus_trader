@@ -90,7 +90,7 @@ class BacktestExecClientTests(unittest.TestCase):
 
         # Act
         strategy.collateral_inquiry()
-        self.client.process_queue()
+        self.client.process()
 
         # Assert
         self.assertEqual(2, self.account.event_count)
@@ -110,7 +110,7 @@ class BacktestExecClientTests(unittest.TestCase):
 
         # Act
         strategy.submit_order(order, strategy.generate_position_id(self.usdjpy.symbol))
-        self.client.process_queue()
+        self.client.process()
 
         # Assert
         self.assertEqual(5, strategy.object_storer.count)
@@ -131,7 +131,7 @@ class BacktestExecClientTests(unittest.TestCase):
 
         # Act
         strategy.submit_order(order, strategy.generate_position_id(self.usdjpy.symbol))
-        self.client.process_queue()
+        self.client.process()
 
         # Assert
         self.assertEqual(4, strategy.object_storer.count)
@@ -152,7 +152,7 @@ class BacktestExecClientTests(unittest.TestCase):
 
         # Act
         strategy.submit_atomic_order(atomic_order, strategy.generate_position_id(self.usdjpy.symbol))
-        self.client.process_queue()
+        self.client.process()
 
         # Assert
         print(strategy.object_storer.get_store())
@@ -177,7 +177,7 @@ class BacktestExecClientTests(unittest.TestCase):
 
         # Act
         strategy.submit_atomic_order(atomic_order, strategy.generate_position_id(self.usdjpy.symbol))
-        self.client.process_queue()
+        self.client.process()
 
         # Assert
         print(strategy.object_storer.get_store())
@@ -202,11 +202,11 @@ class BacktestExecClientTests(unittest.TestCase):
         order_id = order.id
 
         strategy.submit_order(order, strategy.generate_position_id(self.usdjpy.symbol))
-        self.client.process_queue()
+        self.client.process()
 
         # Act
         strategy.modify_order(order, Price('86.712'))
-        self.client.process_queue()
+        self.client.process()
 
         # Assert
         self.assertEqual(Price('86.712'), strategy.order(order_id).price)
@@ -228,11 +228,11 @@ class BacktestExecClientTests(unittest.TestCase):
         stop_loss_order_id = atomic_order.stop_loss.id
 
         strategy.submit_atomic_order(atomic_order, strategy.generate_position_id(self.usdjpy.symbol))
-        self.client.process_queue()
+        self.client.process()
 
         # Act
         strategy.modify_order(atomic_order.stop_loss, Price('85.100'))
-        self.client.process_queue()
+        self.client.process()
 
         # Assert
         self.assertEqual(Price('85.100'), strategy.order(stop_loss_order_id).price)
@@ -253,7 +253,7 @@ class BacktestExecClientTests(unittest.TestCase):
 
         # Act
         strategy.submit_order(order, strategy.generate_position_id(self.usdjpy.symbol))
-        self.client.process_queue()
+        self.client.process()
 
         # Assert
         self.assertEqual(4, strategy.object_storer.count)

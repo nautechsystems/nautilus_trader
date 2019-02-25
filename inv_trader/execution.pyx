@@ -11,6 +11,7 @@
 
 import zmq
 
+from queue import Queue
 from threading import Thread
 
 from inv_trader.core.precondition cimport Precondition
@@ -35,6 +36,7 @@ cdef class LiveExecClient(ExecutionClient):
     """
     Provides a client for the execution service utilizing a ZMQ transport.
     """
+    cdef object _message_bus
     cdef object _thread
     cdef object _commands_worker
     cdef object _events_worker
@@ -79,7 +81,8 @@ cdef class LiveExecClient(ExecutionClient):
                          clock,
                          guid_factory,
                          logger)
-        self._thread = Thread(target=self._process_queue, daemon=True)
+        self._message_bus = Queue()
+        self._thread = Thread(target=self._process, daemon=True)
         self.zmq_context = zmq.Context()
         self._commands_worker = RequestWorker(
             'ExecClient.CommandSender',
@@ -116,12 +119,28 @@ cdef class LiveExecClient(ExecutionClient):
         self._commands_worker.stop()
         self._events_worker.stop()
 
-    cpdef void _process_queue(self):
+    cpdef void execute_command(self, Command command):
         """
-        Process the queue one item at a time.
+        Execute the given command by inserting it into the message bus for processing.
+        
+        :param command: The command to execute.
+        """
+        self._message_bus.put(command)
+
+    cpdef void handle_event(self, Event event):
+        """
+        Handle the given event by inserting it into the message bus for processing.
+        
+        :param event: The event to handle
+        """
+        self._message_bus.put(event)
+
+    cpdef void _process(self):
+        """
+        Process the message bus of commands and events.
         """
         while True:
-            item = self._queue.get()
+            item = self._message_bus.get()
             if isinstance(item, Event):
                 self._handle_event(item)
             elif isinstance(item, Command):

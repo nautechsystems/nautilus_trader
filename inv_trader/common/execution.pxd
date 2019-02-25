@@ -31,7 +31,6 @@ cdef class ExecutionClient:
     cdef Clock _clock
     cdef GuidFactory _guid_factory
     cdef LoggerAdapter _log
-    cdef object _queue
     cdef Account _account
     cdef Portfolio _portfolio
     cdef dict _registered_strategies
@@ -45,9 +44,9 @@ cdef class ExecutionClient:
     cpdef Portfolio get_portfolio(self)
     cpdef void connect(self)
     cpdef void disconnect(self)
-    cpdef void register_strategy(self, TradeStrategy strategy)
     cpdef void execute_command(self, Command command)
     cpdef void handle_event(self, Event event)
+    cpdef void register_strategy(self, TradeStrategy strategy)
     cpdef bint order_exists(self, OrderId order_id)
     cpdef bint order_active(self, OrderId order_id)
     cpdef bint order_complete(self, OrderId order_id)
@@ -58,8 +57,6 @@ cdef class ExecutionClient:
     cpdef dict get_orders(self, GUID strategy_id)
     cpdef dict get_orders_active(self, GUID strategy_id)
     cpdef dict get_orders_completed(self, GUID strategy_id)
-    cpdef void execute_command(self, Command command)
-    cpdef void handle_event(self, Event event)
 
     cdef void _execute_command(self, Command command)
     cdef void _handle_event(self, Event event)

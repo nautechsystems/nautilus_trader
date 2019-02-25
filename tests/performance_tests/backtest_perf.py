@@ -59,8 +59,9 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         self.assertTrue(True)
 
         # to datetime(2013, 8, 10, 0, 0, 0, 0, tzinfo=timezone.utc)
-        # 3490226 function calls in 0.623 seconds
-        # 5407539 function calls (5407535 primitive calls) in 1.187 seconds
+        #          3490226 function calls in 0.623 seconds
+        #          5407539 function calls (5407535 primitive calls) in 1.187 seconds
+        # 26/02/19 4450292 function calls (4450288 primitive calls) in 0.823 seconds
 
     def test_run_with_ema_cross_strategy(self):
         # Arrange

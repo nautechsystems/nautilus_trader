@@ -13,6 +13,7 @@ import pandas as pd
 
 from decimal import Decimal
 from cpython.datetime cimport datetime
+from collections import deque
 from functools import partial
 from pandas import DataFrame
 from typing import List, Dict
@@ -80,6 +81,7 @@ cdef class BacktestExecClient(ExecutionClient):
                          clock,
                          guid_factory,
                          logger)
+        self._message_bus = deque()
 
         # Convert instruments list to dictionary indexed by symbol
         cdef dict instruments_dict = {}      # type: Dict[Symbol, Instrument]
@@ -217,12 +219,28 @@ cdef class BacktestExecClient(ExecutionClient):
 
         self.iteration += 1
 
-    cpdef void process_queue(self):
+    cpdef void execute_command(self, Command command):
         """
-        Process the internal queue of commands and events.
+        Execute the given command by inserting it into the message bus for processing.
+        
+        :param command: The command to execute.
         """
-        while not self._queue.empty():
-            item = self._queue.get()
+        self._message_bus.appendleft(command)
+
+    cpdef void handle_event(self, Event event):
+        """
+        Handle the given event by inserting it into the message bus for processing.
+        
+        :param event: The event to handle
+        """
+        self._message_bus.appendleft(event)
+
+    cpdef void process(self):
+        """
+        Process the message bus of commands and events.
+        """
+        while len(self._message_bus) > 0:
+            item = self._message_bus.pop()
             if isinstance(item, Event):
                 self._handle_event(item)
             elif isinstance(item, Command):
