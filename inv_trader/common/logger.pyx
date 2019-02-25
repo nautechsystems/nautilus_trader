@@ -218,7 +218,7 @@ cdef class LiveLogger(Logger):
                  bint log_to_file=False,
                  str log_file_path='log/'):
         """
-        Initializes a new instance of the Logger class.
+        Initializes a new instance of the LiveLogger class.
 
         :param name: The name of the logger.
         :param level_console: The minimum log level for logging messages to the console.
@@ -287,7 +287,7 @@ cdef class TestLogger(Logger):
                  str log_file_path='log/',
                  Clock clock=TestClock()):
         """
-        Initializes a new instance of the Logger class.
+        Initializes a new instance of the TestLogger class.
 
         :param name: The name of the logger.
         :param level_console: The minimum log level for logging messages to the console.
