@@ -99,14 +99,14 @@ cdef class MQWorker:
         """
         Open a new connection to the service.
         """
-        # Raise exception if not overridden in implementation.
+        # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
     cpdef void _close_connection(self):
         """
         Close the connection with the service.
         """
-        # Raise exception if not overridden in implementation.
+        # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
 
