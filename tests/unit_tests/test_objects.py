@@ -221,19 +221,6 @@ class ObjectTests(unittest.TestCase):
         self.assertEqual(1.000, result6.as_float())
         self.assertEqual(Price('87.100'), result7)
 
-    def test_price_equality(self):
-        # Arrange
-        # Act
-        price1 = Price('1.00000')
-        price2 = Price('1.00000')
-        price3 = Price('2.00000')
-        price4 = Price('1.01')
-
-        # Assert
-        self.assertEqual(price1, price2)
-        self.assertNotEqual(price1, price3)
-        self.assertNotEqual(price1, price4)
-
     def test_price_str(self):
         # Arrange
         price = Price(1.00000, 5)
@@ -254,7 +241,20 @@ class ObjectTests(unittest.TestCase):
         # Assert
         self.assertTrue(result.startswith('<Price(1.00000) object at'))
 
-    def test_price_operators(self):
+    def test_price_equality(self):
+        # Arrange
+        # Act
+        price1 = Price('1.00000')
+        price2 = Price('1.00000')
+        price3 = Price('2.00000')
+        price4 = Price('1.01')
+
+        # Assert
+        self.assertEqual(price1, price2)
+        self.assertNotEqual(price1, price3)
+        self.assertNotEqual(price1, price4)
+
+    def test_price_equality_operators(self):
         # Arrange
         price1 = Price('0.500')
         price2 = Price('1.000')
@@ -268,7 +268,7 @@ class ObjectTests(unittest.TestCase):
         self.assertTrue(price3 > price2)
         self.assertTrue(price3 >= price3)
 
-    def test_price_arithmetic(self):
+    def test_price_arithmetic_operators(self):
         # Arrange
         # Act
         result1 = Price('1.0000') + 1.0000
@@ -352,19 +352,6 @@ class ObjectTests(unittest.TestCase):
         self.assertEqual(Decimal('1000.00'), result2.value)
         self.assertEqual(Decimal('2.00'), result3.value)
 
-    def test_money_equality(self):
-        # Arrange
-        # Act
-        money1 = Money('1.00')
-        money2 = Money('1.00')
-        money3 = Money('2.00')
-        money4 = Money('1.01')
-
-        # Assert
-        self.assertEqual(money1, money2)
-        self.assertNotEqual(money1, money3)
-        self.assertNotEqual(money1, money4)
-
     def test_money_str(self):
         # Arrange
         money = Money(1)
@@ -385,7 +372,20 @@ class ObjectTests(unittest.TestCase):
         # Assert
         self.assertTrue(result.startswith('<Money(1.00) object at'))
 
-    def test_money_operators(self):
+    def test_money_equality(self):
+        # Arrange
+        # Act
+        money1 = Money('1.00')
+        money2 = Money('1.00')
+        money3 = Money('2.00')
+        money4 = Money('1.01')
+
+        # Assert
+        self.assertEqual(money1, money2)
+        self.assertNotEqual(money1, money3)
+        self.assertNotEqual(money1, money4)
+
+    def test_money_equality_operators(self):
         # Arrange
         money1 = Price('0.50')
         money2 = Price('1.00')
@@ -399,25 +399,53 @@ class ObjectTests(unittest.TestCase):
         self.assertTrue(money3 > money2)
         self.assertTrue(money3 >= money3)
 
-    def test_money_arithmetic(self):
+    def test_money_arithmetic_operators(self):
         # Arrange
         # Act
         result1 = Money('1.00') + Decimal('1.00')
         result2 = Money('1.00') + Money('1.00')
+        result3 = Money('1.00') + 1
 
-        result3 = Money('3.00') - Decimal('1.00')
-        result4 = Money('3.00') - Money('1.00')
+        result4 = Money('3.00') - Decimal('1.00')
+        result5 = Money('3.00') - Money('1.00')
+        result6 = Money('3.00') - 1
+
+        result7 = Money('1.00') / Money('2')
+        result8 = Money('1.00') / Decimal('2')
+        result9 = Money('1.00') / 2
+
+        result10 = Money('1.00') * Money('2')
+        result11 = Money('1.00') * Decimal('2')
+        result12 = Money('1.00') * 2
 
         # Assert
         self.assertEqual(Money, type(result1))
         self.assertEqual(Money('2.00'), result1)
         self.assertEqual(Money, type(result2))
         self.assertEqual(Money('2.00'), result2)
-
         self.assertEqual(Money, type(result3))
         self.assertEqual(Money('2.00'), result3)
+
         self.assertEqual(Money, type(result4))
         self.assertEqual(Money('2.00'), result4)
+        self.assertEqual(Money, type(result5))
+        self.assertEqual(Money('2.00'), result5)
+        self.assertEqual(Money, type(result6))
+        self.assertEqual(Money('2.00'), result6)
+
+        self.assertEqual(Money, type(result7))
+        self.assertEqual(Money('0.50'), result7)
+        self.assertEqual(Money, type(result8))
+        self.assertEqual(Money('0.50'), result8)
+        self.assertEqual(Money, type(result9))
+        self.assertEqual(Money('0.50'), result9)
+
+        self.assertEqual(Money, type(result10))
+        self.assertEqual(Money(2), result10)
+        self.assertEqual(Money, type(result11))
+        self.assertEqual(Money(2), result11)
+        self.assertEqual(Money, type(result12))
+        self.assertEqual(Money(2), result12)
 
     def test_bar_spec_equality(self):
         # Arrange

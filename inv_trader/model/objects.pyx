@@ -452,20 +452,44 @@ cdef class Money:
         return self.value >= other.value
 
     def __add__(self, other) -> Money:
-        if isinstance(other, Decimal):
-            return Money(self.value + other)
-        elif isinstance(other, Money):
+        if isinstance(other, Money):
             return Money(self.value + other.value)
+        elif isinstance(other, Decimal):
+            return Money(self.value + other)
+        elif isinstance(other, int):
+            return self + Money(other)
         else:
             raise NotImplementedError(f"Cannot add {type(other)} to money.")
 
-    def __sub__(self, other) -> Decimal:
-        if isinstance(other, Decimal):
-            return Money(self.value - other)
-        elif isinstance(other, Money):
+    def __sub__(self, other) -> Money:
+        if isinstance(other, Money):
             return Money(self.value - other.value)
+        elif isinstance(other, Decimal):
+            return Money(self.value - other)
+        elif isinstance(other, int):
+            return self - Money(other)
         else:
             raise NotImplementedError(f"Cannot subtract {type(other)} from money.")
+
+    def __truediv__(self, other) -> Money:
+        if isinstance(other, Money):
+            return Money(self.value / other.value)
+        elif isinstance(other, Decimal):
+            return Money(self.value / other)
+        elif isinstance(other, int):
+            return self / Money(other)
+        else:
+            raise NotImplementedError(f"Cannot divide money by {type(other)}.")
+
+    def __mul__(self, other) -> Money:
+        if isinstance(other, Money):
+            return Money(self.value * other.value)
+        elif isinstance(other, Decimal):
+            return Money(self.value * other)
+        elif isinstance(other, int):
+            return self * Money(other)
+        else:
+            raise NotImplementedError(f"Cannot multiply money with {type(other)}.")
 
 
 cdef class Tick:
