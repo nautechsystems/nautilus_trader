@@ -231,7 +231,7 @@ cdef class BacktestEngine:
             for strategy in self.trader.strategies:
                 strategy.iterate(time)
             self.data_client.iterate()
-            self.exec_client.process_queue()
+            self.exec_client.process()
             time += time_step
 
         self.trader.stop()

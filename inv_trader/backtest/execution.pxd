@@ -20,6 +20,8 @@ cdef class BacktestExecClient(ExecutionClient):
     """
     Provides an execution client for the BacktestEngine.
     """
+    cdef object _message_bus
+
     cdef readonly dict instruments
     cdef readonly dict data_ticks
     cdef readonly dict data_bars_bid
@@ -36,7 +38,7 @@ cdef class BacktestExecClient(ExecutionClient):
 
     cpdef void set_initial_iteration(self, datetime to_time, timedelta time_step)
     cpdef void iterate(self)
-    cpdef void process_queue(self)
+    cpdef void process(self)
 
     cdef dict _prepare_minute_data(self, dict bar_data, str quote_type)
     cpdef list _convert_to_prices(self, double[:] values, int precision)

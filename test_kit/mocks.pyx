@@ -197,6 +197,7 @@ cdef class MockExecClient(ExecutionClient):
     """
     Provides a mock execution client for trading strategies.
     """
+    cdef readonly object message_bus
     cdef readonly list working_orders
     cdef readonly dict atomic_orders
 
@@ -213,6 +214,7 @@ cdef class MockExecClient(ExecutionClient):
             TestGuidFactory(),
             TestLogger())
 
+        self.message_bus = deque()
         self.working_orders = []  # type: List[Order]
         self.atomic_orders = {}   # type: Dict[OrderId, List[Order]]
 
@@ -228,12 +230,28 @@ cdef class MockExecClient(ExecutionClient):
         """
         self._log.info("MockExecClient disconnected.")
 
-    cpdef void process_queue(self):
+    cpdef void execute_command(self, Command command):
         """
-        Process the internal queue of commands and events.
+        Execute the given command by inserting it into the message bus for processing.
+        
+        :param command: The command to execute.
         """
-        while not self._queue.empty():
-            item = self._queue.get()
+        self.message_bus.appendleft(command)
+
+    cpdef void handle_event(self, Event event):
+        """
+        Handle the given event by inserting it into the message bus for processing.
+        
+        :param event: The event to handle
+        """
+        self.message_bus.appendleft(event)
+
+    cpdef void process(self):
+        """
+        Process the message bus of commands and events.
+        """
+        while len(self.message_bus) > 0:
+            item = self.message_bus.pop()
             if isinstance(item, Event):
                 self._handle_event(item)
             elif isinstance(item, Command):

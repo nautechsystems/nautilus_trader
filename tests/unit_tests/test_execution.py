@@ -62,7 +62,7 @@ class ExecutionClientTests(unittest.TestCase):
 
         # Act
         self.strategy.submit_order(order, PositionId(order_id.value))
-        self.exec_client.process_queue()
+        self.exec_client.process()
 
         # Assert
         self.assertEqual(order, self.exec_client.get_order(order_id))
@@ -86,7 +86,7 @@ class ExecutionClientTests(unittest.TestCase):
         # Act
         self.strategy.submit_order(order, PositionId(order_id.value))
         self.strategy.cancel_order(order, 'ORDER_EXPIRED')
-        self.exec_client.process_queue()
+        self.exec_client.process()
 
         # Assert
         self.assertEqual(order, self.strategy.order(order_id))
@@ -108,7 +108,7 @@ class ExecutionClientTests(unittest.TestCase):
         # Act
         self.strategy.submit_order(order, PositionId(order_id.value))
         self.strategy.modify_order(order, Price('1.00001'))
-        self.exec_client.process_queue()
+        self.exec_client.process()
 
         # Assert
         self.assertEqual(order, self.strategy.order(order_id))

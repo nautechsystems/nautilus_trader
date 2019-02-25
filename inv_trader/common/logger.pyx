@@ -254,21 +254,20 @@ cdef class LiveLogger(Logger):
         """
         Process the queue one item at a time.
         """
-        cdef int log_level
+        cdef LogMessage log_message
 
         while True:
             log_message = self._queue.get()
-            log_level = log_message.log_level
 
-            if log_level == logging.DEBUG:
+            if log_message.log_level == logging.DEBUG:
                 self._debug(log_message.timestamp, log_message.text)
-            elif log_level == logging.INFO:
+            elif log_message.log_level == logging.INFO:
                 self._info(log_message.timestamp, log_message.text)
-            elif log_level == logging.WARNING:
+            elif log_message.log_level == logging.WARNING:
                 self._warning(log_message.timestamp, log_message.text)
-            elif log_level == logging.ERROR:
+            elif log_message.log_level == logging.ERROR:
                 self._error(log_message.timestamp, log_message.text)
-            elif log_level == logging.CRITICAL:
+            elif log_message.log_level == logging.CRITICAL:
                 self._critical(log_message.timestamp, log_message.text)
 
 
