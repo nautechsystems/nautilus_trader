@@ -95,7 +95,7 @@ class PricePerformanceTests(unittest.TestCase):
         print('\n' + f'test_price_from_float({number} iterations)')
         print(f'{round(total_elapsed / tests)}ms')
 
-        # ~850ms for 1000000 prices
+        # ~527ms for 1000000 prices
 
     @staticmethod
     def test_price_from_decimal():
