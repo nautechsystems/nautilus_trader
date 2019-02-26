@@ -242,7 +242,7 @@ cdef class Symbol:
 
 
 cdef inline str _get_decimal_str(float value, int precision):
-    return f'{round(value, precision):.{precision}f}'
+    return f'{value:.{precision}f}'
 
 
 cdef inline int _get_precision(str value):
