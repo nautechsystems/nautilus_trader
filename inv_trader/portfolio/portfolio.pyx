@@ -205,8 +205,6 @@ cdef class Portfolio:
         :param order_id: The order identifier to register.
         :param position_id: The position identifier to register.
         """
-        # Lock should not be needed as the execution client is the only caller
-
         Precondition.not_in(order_id, self._order_p_index, 'order_id', 'order_position_index')
 
         self._order_p_index[order_id] = position_id
@@ -218,8 +216,6 @@ cdef class Portfolio:
         :param event: The event to handle.
         :param strategy_id: The strategy identifier.
         """
-        # Lock should not be needed as the execution client is the only caller
-
         Precondition.is_in(event.order_id, self._order_p_index, 'event.order_id', 'order_position_index')
 
         cdef PositionId position_id = self._order_p_index[event.order_id]

@@ -22,7 +22,7 @@ cdef str UTF8 = 'utf-8'
 
 cdef class DataClient:
     """
-    The abstract base class for all data clients.
+    The base class for all data clients.
     """
 
     def __init__(self,
@@ -149,7 +149,7 @@ cdef class DataClient:
         :param handler: The bar handler to pass the bars to.
         :raises ValueError: If the quantity is not None and not positive (> 0).
         """
-        # Raise exception if not overridden in implementation.
+        # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the data client.")
 
     cpdef void historical_bars_from(
@@ -179,7 +179,7 @@ cdef class DataClient:
         :param bar_type: The bar type to subscribe to.
         :param handler: The callable handler for subscription (if None will just call print).
         """
-        # Raise exception if not overridden in implementation.
+        # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the data client.")
 
     cpdef void unsubscribe_bars(self, BarType bar_type, handler: Callable):
@@ -189,7 +189,7 @@ cdef class DataClient:
         :param bar_type: The bar type to unsubscribe from.
         :param handler: The callable handler which was subscribed (can be None).
         """
-        # Raise exception if not overridden in implementation.
+        # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the data client.")
 
     cpdef void subscribe_ticks(self, Symbol symbol, handler: Callable):
@@ -199,7 +199,7 @@ cdef class DataClient:
         :param symbol: The tick symbol to subscribe to.
         :param handler: The callable handler for subscription (if None will just call print).
         """
-        # Raise exception if not overridden in implementation.
+        # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the data client.")
 
     cpdef void unsubscribe_ticks(self, Symbol symbol, handler: Callable):
@@ -209,7 +209,7 @@ cdef class DataClient:
         :param symbol: The tick symbol to unsubscribe from.
         :param handler: The callable handler which was subscribed (can be None).
         """
-        # Raise exception if not overridden in implementation.
+        # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the data client.")
 
     cdef void _subscribe_bars(self, BarType bar_type, handler: Callable):

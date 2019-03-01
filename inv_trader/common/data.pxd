@@ -19,7 +19,7 @@ from inv_trader.strategy cimport TradeStrategy
 
 cdef class DataClient:
     """
-    The abstract base class for all data clients.
+    The base class for all data clients.
     """
     cdef Clock _clock
     cdef LoggerAdapter _log
