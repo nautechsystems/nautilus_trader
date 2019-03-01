@@ -156,4 +156,4 @@ cdef class FixedRiskSizer(PositionSizer):
         # Batch into units
         cdef long position_size_batched = long(round(position_size / units / unit_batch_size) * unit_batch_size)
 
-        return Quantity(position_size_batched)
+        return Quantity(min(position_size_batched, self.instrument.max_trade_size.value))
