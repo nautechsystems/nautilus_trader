@@ -42,38 +42,49 @@ cdef class PositionSizer:
     cpdef Quantity calculate(
             self,
             Money equity,
-            exchange_rate,
             int risk_bp,
             Price entry_price,
             Price stop_loss_price,
+            exchange_rate=Decimal(1),
+            int leverage=1,
+            commission_rate=Decimal(15),
             hard_limit=0,
             units=1,
             unit_batch_size=1):
         """
-        Calculate the position size.
+        Return the calculated quantity for the position size.
 
         :param equity: The account equity.
         :param exchange_rate: The exchange rate for the instrument quote currency vs account currency.
-        :param risk_bp: The risk in basis points (0.01%).
-        :param entry_price: The entry price level.
-        :param stop_loss_price: The stop loss price level.
+        :param risk_bp: The risk in basis points (1 basis point = 0.01%).
+        :param entry_price: The entry price.
+        :param stop_loss_price: The stop loss price.
+        :param leverage: The broker leverage for the position (> 0).
+        :param commission_rate: The commission rate per million notional (>= 0).
         :param hard_limit: The hard limit for the total quantity (>= 0) (0 = no hard limit).
         :param units: The number of units to batch the position into (> 0).
         :param unit_batch_size: The unit batch size (> 0).
         :raises ValueError: If the exchange_rate is not positive (> 0).
         :raises ValueError: If the risk_bp is not positive (> 0).
         :raises ValueError: If the units are not positive (> 0).
-        :raises ValueError: If the hard limit is negative (< 0).
-        :return: The calculated quantity for the position.
+        :return: Quantity.
         """
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cdef Money _calculate_risk_money(self, Money equity, int risk_bp):
+    cdef Money _calculate_risk_money(
+            self,
+            Money equity,
+            int risk_bp,
+            int leverage,
+            commission_rate):
         """
-        Calculate the amount of money based on the risk basis points.
+        Calculate the amount of risk money available.
         """
-        return Money(equity.value * Decimal(round(risk_bp * 0.01, 2)))
+        cdef Money risk_money = Money(equity.value * Decimal(round(risk_bp * 0.01, 2)))
+        cdef Money commission = Money(((risk_money.value * leverage) / 1000000) * commission_rate)
+
+        return risk_money - commission
 
     cdef int _calculate_risk_points(self, Price entry, Price stop_loss):
         """
@@ -98,35 +109,41 @@ cdef class FixedRiskSizer(PositionSizer):
     cpdef Quantity calculate(
             self,
             Money equity,
-            exchange_rate,
             int risk_bp,
             Price entry_price,
             Price stop_loss_price,
+            exchange_rate=Decimal(1),
+            int leverage=1,
+            commission_rate=Decimal(15),
             hard_limit=0,
             units=1,
             unit_batch_size=1):
         """
-        Calculate the position size.
+        Return the calculated quantity for the position size.
 
         :param equity: The account equity.
         :param exchange_rate: The exchange rate for the instrument quote currency vs account currency.
         :param risk_bp: The risk in basis points (1 basis point = 0.01%).
         :param entry_price: The entry price.
         :param stop_loss_price: The stop loss price.
+        :param leverage: The broker leverage for the position (> 0).
+        :param commission_rate: The commission rate per million notional (>= 0).
         :param hard_limit: The hard limit for the total quantity (>= 0) (0 = no hard limit).
         :param units: The number of units to batch the position into (> 0).
         :param unit_batch_size: The unit batch size (> 0).
         :raises ValueError: If the exchange_rate is not positive (> 0).
         :raises ValueError: If the risk_bp is not positive (> 0).
         :raises ValueError: If the units are not positive (> 0).
-        :return: The calculated quantity for the position.
+        :return: Quantity.
         """
         Precondition.positive(exchange_rate, 'exchange_rate')
         Precondition.positive(risk_bp, 'risk_bp')
+        Precondition.positive(leverage, 'leverage')
+        Precondition.not_negative(commission_rate, 'commission_rate')
         Precondition.positive(units, 'units')
         Precondition.positive(unit_batch_size, 'unit_batch_size')
 
-        cdef Money risk_money = self._calculate_risk_money(equity, risk_bp)
+        cdef Money risk_money = self._calculate_risk_money(equity, risk_bp, leverage, commission_rate)
         cdef int risk_points = self._calculate_risk_points(entry_price, stop_loss_price)
 
         cdef object tick_value_size = self.instrument.tick_size * exchange_rate
