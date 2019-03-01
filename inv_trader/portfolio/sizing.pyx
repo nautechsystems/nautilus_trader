@@ -145,9 +145,7 @@ cdef class FixedRiskSizer(PositionSizer):
 
         cdef Money risk_money = self._calculate_risk_money(equity, risk_bp, leverage, commission_rate)
         cdef int risk_points = self._calculate_risk_points(entry_price, stop_loss_price)
-
-        cdef object tick_value_size = self.instrument.tick_size * exchange_rate
-        cdef long position_size = long(round(((risk_money.value / risk_points) / tick_value_size) / self.instrument.contract_size.value))
+        cdef long position_size = long(round(((risk_money.value / risk_points) / (self.instrument.tick_size * exchange_rate)) / self.instrument.contract_size.value))
 
         # Limit size
         if hard_limit > 0:
