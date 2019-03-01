@@ -25,13 +25,14 @@ from inv_trader.commands cimport Command, CollateralInquiry
 from inv_trader.commands cimport SubmitOrder, SubmitAtomicOrder, ModifyOrder, CancelOrder
 from inv_trader.strategy cimport TradeStrategy
 from inv_trader.portfolio.portfolio cimport Portfolio
+from inv_trader.portfolio.analyzer cimport Analyzer
 
 cdef str UTF8 = 'utf-8'
 
 
 cdef class ExecutionClient:
     """
-    The abstract base class for all execution clients.
+    The base class for all execution clients.
     """
 
     def __init__(self,
@@ -55,6 +56,7 @@ cdef class ExecutionClient:
             self._log = LoggerAdapter(f"ExecClient", logger)
         self._account = account
         self._portfolio = portfolio
+        self._analyzer = Analyzer()
         self._registered_strategies = {}  # type: Dict[GUID, TradeStrategy]
         self._order_book = {}             # type: Dict[OrderId, Order]
         self._order_strategy_index = {}   # type: Dict[OrderId, GUID]
