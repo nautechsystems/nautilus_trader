@@ -11,7 +11,6 @@
 
 from cpython.datetime cimport datetime
 from typing import Dict
-from collections import deque
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.common.clock cimport Clock
@@ -208,13 +207,10 @@ cdef class ExecutionClient:
         :param strategy_id: The strategy identifier associated with the orders.
         :return: Dict[OrderId, Order].
         """
-        cpdef dict orders
-
         Precondition.is_in(strategy_id, self._orders_active, 'strategy_id', 'orders_active')
         Precondition.is_in(strategy_id, self._orders_completed, 'strategy_id', 'orders_completed')
 
-        orders = {**self._orders_active[strategy_id], **self._orders_completed[strategy_id]}
-        return orders  # type: Dict[OrderId, Order]
+        return {**self._orders_active[strategy_id], **self._orders_completed[strategy_id]}
 
     cpdef dict get_orders_active(self, GUID strategy_id):
         """
