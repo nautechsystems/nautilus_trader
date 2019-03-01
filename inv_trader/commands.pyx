@@ -18,7 +18,7 @@ from inv_trader.model.order cimport Order, AtomicOrder
 
 cdef class Command:
     """
-    The abstract base class for all commands.
+    The base class for all commands.
     """
 
     def __init__(self,

@@ -25,7 +25,7 @@ from inv_trader.model.position cimport Position
 
 cdef class Event:
     """
-    The abstract base class for all events.
+    The base class for all events.
     """
 
     def __init__(self,
