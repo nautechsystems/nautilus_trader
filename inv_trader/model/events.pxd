@@ -24,7 +24,7 @@ from inv_trader.model.position cimport Position
 
 cdef class Event:
     """
-    The abstract base class for all events.
+    The base class for all events.
     """
     cdef readonly GUID id
     cdef readonly datetime timestamp

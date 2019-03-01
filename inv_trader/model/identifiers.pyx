@@ -9,7 +9,6 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
-from multiprocessing import Lock
 from uuid import UUID
 from typing import Dict
 
@@ -216,26 +215,21 @@ cdef class IdentifierGenerator:
 
     cdef str _generate(self, Symbol symbol):
         """
-        Create a unique identifier string using the given symbol.
+        Return a unique identifier string using the given symbol.
 
         :param symbol: The symbol for the unique identifier.
         :return: The unique identifier string.
         """
-        cdef str identifier_string
+        if symbol not in self._symbol_counts:
+            self._symbol_counts[symbol] = 0
+        self._symbol_counts[symbol] += 1
 
-        with Lock():
-            if symbol not in self._symbol_counts:
-                self._symbol_counts[symbol] = 0
-            self._symbol_counts[symbol] += 1
-
-            identifier_string = (self._clock.get_datetime_tag()
+        return (self._clock.get_datetime_tag()
                 + SEPARATOR + self.id_tag_trader.value
                 + SEPARATOR + self.id_tag_strategy.value
                 + SEPARATOR + symbol.code
                 + SEPARATOR + symbol.venue_string()
                 + SEPARATOR + str(self._symbol_counts[symbol]))
-
-        return identifier_string
 
 
 cdef class OrderIdGenerator(IdentifierGenerator):
@@ -260,7 +254,7 @@ cdef class OrderIdGenerator(IdentifierGenerator):
 
     cpdef OrderId generate(self, Symbol symbol):
         """
-        Create a unique OrderId using the given symbol.
+        Return a unique OrderId using the given symbol.
 
         :param symbol: The symbol for the unique identifier.
         :return: The unique OrderId.
@@ -290,7 +284,7 @@ cdef class PositionIdGenerator(IdentifierGenerator):
 
     cpdef PositionId generate(self, Symbol symbol):
         """
-        Create a unique PositionId using the given symbol.
+        Return a unique PositionId using the given symbol.
 
         :param symbol: The symbol for the unique identifier.
         :return: The unique PositionId.

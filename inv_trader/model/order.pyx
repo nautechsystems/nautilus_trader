@@ -28,7 +28,7 @@ from inv_trader.model.identifiers cimport Label, OrderId, ExecutionId, Execution
 from inv_trader.model.identifiers cimport OrderIdGenerator
 
 
-# Order types which require prices to be valid
+# Order types which require a price to be valid
 cdef list PRICED_ORDER_TYPES = [
     OrderType.LIMIT,
     OrderType.STOP_MARKET,
@@ -72,10 +72,10 @@ cdef class Order:
         """
         Precondition.positive(quantity.value, 'quantity')
 
-        # Orders with prices
+        # For orders which require a price
         if order_type in PRICED_ORDER_TYPES:
             Precondition.not_none(price, 'price')
-        # Orders without prices
+        # For orders which require no price
         else:
             Precondition.none(price, 'price')
 
