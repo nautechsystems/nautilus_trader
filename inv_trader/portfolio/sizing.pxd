@@ -22,15 +22,21 @@ cdef class PositionSizer:
     cpdef Quantity calculate(
             self,
             Money equity,
-            exchange_rate,
             int risk_bp,
             Price entry_price,
             Price stop_loss_price,
+            exchange_rate=*,
+            int leverage=*,
+            commission_rate=*,
             hard_limit=*,
             units=*,
             unit_batch_size=*)
 
-    cdef Money _calculate_risk_money(self, Money equity, int risk_bp)
+    cdef Money _calculate_risk_money(self,
+            Money equity,
+            int risk_bp,
+            int leverage,
+            commission_rate,)
     cdef int _calculate_risk_points(self, Price entry, Price stop_loss)
 
 
