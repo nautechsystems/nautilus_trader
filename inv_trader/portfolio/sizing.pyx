@@ -66,7 +66,10 @@ cdef class PositionSizer:
         :param unit_batch_size: The unit batch size (> 0).
         :raises ValueError: If the exchange_rate is not positive (> 0).
         :raises ValueError: If the risk_bp is not positive (> 0).
-        :raises ValueError: If the units are not positive (> 0).
+        :raises ValueError: If the leverage is not positive (> 0).
+        :raises ValueError: If the commission_rate is negative (< 0).
+        :raises ValueError: If the units is not positive (> 0).
+        :raises ValueError: If the unit_batch_size is not positive (> 0).
         :return: Quantity.
         """
         # Raise exception if not overridden in implementation
@@ -133,7 +136,10 @@ cdef class FixedRiskSizer(PositionSizer):
         :param unit_batch_size: The unit batch size (> 0).
         :raises ValueError: If the exchange_rate is not positive (> 0).
         :raises ValueError: If the risk_bp is not positive (> 0).
-        :raises ValueError: If the units are not positive (> 0).
+        :raises ValueError: If the leverage is not positive (> 0).
+        :raises ValueError: If the commission_rate is negative (< 0).
+        :raises ValueError: If the units is not positive (> 0).
+        :raises ValueError: If the unit_batch_size is not positive (> 0).
         :return: Quantity.
         """
         Precondition.positive(exchange_rate, 'exchange_rate')
