@@ -59,7 +59,7 @@ cdef class PositionSizer:
         :param risk_bp: The risk in basis points (1 basis point = 0.01%).
         :param entry_price: The entry price.
         :param stop_loss_price: The stop loss price.
-        :param leverage: The broker leverage for the position (> 0).
+        :param leverage: The broker leverage for the instrument (> 0).
         :param commission_rate: The commission rate per million notional (>= 0).
         :param hard_limit: The hard limit for the total quantity (>= 0) (0 = no hard limit).
         :param units: The number of units to batch the position into (> 0).
@@ -129,7 +129,7 @@ cdef class FixedRiskSizer(PositionSizer):
         :param risk_bp: The risk in basis points (1 basis point = 0.01%).
         :param entry_price: The entry price.
         :param stop_loss_price: The stop loss price.
-        :param leverage: The broker leverage for the position (> 0).
+        :param leverage: The broker leverage for the instrument (> 0).
         :param commission_rate: The commission rate per million notional (>= 0).
         :param hard_limit: The hard limit for the total quantity (>= 0) (0 = no hard limit).
         :param units: The number of units to batch the position into (> 0).
