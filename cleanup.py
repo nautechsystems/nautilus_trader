@@ -10,29 +10,19 @@
 import os
 
 cython_extension = (".c", ".so", ".o", ".pyd")
+package_name = 'inv_trader'
+directories = [package_name,
+               f'{package_name}/backtest',
+               f'{package_name}/common',
+               f'{package_name}/core',
+               f'{package_name}/enums',
+               f'{package_name}/model',
+               f'{package_name}/portfolio',
+               'test_kit']
 
 if __name__ == "__main__":
-    for file in os.listdir('inv_trader'):
-        path = os.path.join('inv_trader', file)
-        if os.path.isfile(path) and path.endswith(cython_extension):
-            os.remove(path)
-
-    for file in os.listdir('inv_trader/core'):
-        path = os.path.join('inv_trader/core', file)
-        if os.path.isfile(path) and path.endswith(cython_extension):
-            os.remove(path)
-
-    for file in os.listdir('inv_trader/common'):
-        path = os.path.join('inv_trader/common', file)
-        if os.path.isfile(path) and path.endswith(cython_extension):
-            os.remove(path)
-
-    for file in os.listdir('inv_trader/model'):
-        path = os.path.join('inv_trader/model', file)
-        if os.path.isfile(path) and path.endswith(cython_extension):
-            os.remove(path)
-
-    for file in os.listdir('test_kit'):
-        path = os.path.join('test_kit', file)
-        if os.path.isfile(path) and path.endswith(cython_extension):
-            os.remove(path)
+    for directory in directories:
+        for file in os.listdir(directory):
+            path = os.path.join(directory, file)
+            if os.path.isfile(path) and path.endswith(cython_extension):
+                os.remove(path)

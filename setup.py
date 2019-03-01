@@ -17,7 +17,7 @@ from typing import List
 from setuptools import setup, Extension
 
 
-VERSION = '0.80.0'
+VERSION = '0.80.1'
 AUTHOR = 'Invariance'
 INV_TRADER = 'inv_trader'
 DESCRIPTION = 'The python trading client for Invariance.'
@@ -45,7 +45,7 @@ DIRECTORIES = [INV_TRADER, 'test_kit']
 Options.embed_pos_in_docstring = True  # Embed docstrings in extensions
 Options.warning_errors = True  # Treat compiler warnings as errors
 Options.cimport_from_pyx = True  # Allows cimporting from a pyx file without a pxd file
-Profile_Hooks = True  # Write profiling hooks into methods (some overhead, use for profiling)
+Profile_Hooks = True  # Write profiling hooks into methods (x2 overhead, use for profiling only)
 
 
 # Recursively scan given directories
