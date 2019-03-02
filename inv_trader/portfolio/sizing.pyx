@@ -46,11 +46,11 @@ cdef class PositionSizer:
             Price entry_price,
             Price stop_loss_price,
             exchange_rate=Decimal(1),
-            int leverage=1,
             commission_rate=Decimal(15),
-            hard_limit=0,
-            units=1,
-            unit_batch_size=1):
+            int leverage=1,
+            int hard_limit=0,
+            int units=1,
+            int unit_batch_size=1):
         """
         Return the calculated quantity for the position size.
 
@@ -59,15 +59,15 @@ cdef class PositionSizer:
         :param entry_price: The entry price.
         :param stop_loss_price: The stop loss price.
         :param exchange_rate: The exchange rate for the instrument quote currency vs account currency.
-        :param leverage: The broker leverage for the instrument (> 0).
         :param commission_rate: The commission rate per million notional (>= 0).
+        :param leverage: The broker leverage for the instrument (> 0).
         :param hard_limit: The hard limit for the total quantity (>= 0) (0 = no hard limit).
         :param units: The number of units to batch the position into (> 0).
         :param unit_batch_size: The unit batch size (> 0).
         :raises ValueError: If the risk_bp is not positive (> 0).
         :raises ValueError: If the exchange_rate is not positive (> 0).
-        :raises ValueError: If the leverage is not positive (> 0).
         :raises ValueError: If the commission_rate is negative (< 0).
+        :raises ValueError: If the leverage is not positive (> 0).
         :raises ValueError: If the units is not positive (> 0).
         :raises ValueError: If the unit_batch_size is not positive (> 0).
         :return: Quantity.
@@ -116,11 +116,11 @@ cdef class FixedRiskSizer(PositionSizer):
             Price entry_price,
             Price stop_loss_price,
             exchange_rate=Decimal(1),
-            int leverage=1,
             commission_rate=Decimal(15),
-            hard_limit=0,
-            units=1,
-            unit_batch_size=1):
+            int leverage=1,
+            int hard_limit=0,
+            int units=1,
+            int unit_batch_size=1):
         """
         Return the calculated quantity for the position size.
 
@@ -129,23 +129,23 @@ cdef class FixedRiskSizer(PositionSizer):
         :param entry_price: The entry price.
         :param stop_loss_price: The stop loss price.
         :param exchange_rate: The exchange rate for the instrument quote currency vs account currency.
-        :param leverage: The broker leverage for the instrument (> 0).
         :param commission_rate: The commission rate per million notional (>= 0).
+        :param leverage: The broker leverage for the instrument (> 0).
         :param hard_limit: The hard limit for the total quantity (>= 0) (0 = no hard limit).
         :param units: The number of units to batch the position into (> 0).
         :param unit_batch_size: The unit batch size (> 0).
         :raises ValueError: If the risk_bp is not positive (> 0).
         :raises ValueError: If the exchange_rate is not positive (> 0).
-        :raises ValueError: If the leverage is not positive (> 0).
         :raises ValueError: If the commission_rate is negative (< 0).
+        :raises ValueError: If the leverage is not positive (> 0).
         :raises ValueError: If the units is not positive (> 0).
         :raises ValueError: If the unit_batch_size is not positive (> 0).
         :return: Quantity.
         """
         Precondition.positive(risk_bp, 'risk_bp')
         Precondition.positive(exchange_rate, 'exchange_rate')
-        Precondition.positive(leverage, 'leverage')
         Precondition.not_negative(commission_rate, 'commission_rate')
+        Precondition.positive(leverage, 'leverage')
         Precondition.positive(units, 'units')
         Precondition.positive(unit_batch_size, 'unit_batch_size')
 
