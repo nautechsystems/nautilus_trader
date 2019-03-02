@@ -56,3 +56,6 @@ cdef class BacktestEngine:
 
     cpdef void run(self, datetime start, datetime stop, int time_step_mins=*)
     cpdef void reset(self)
+
+    cdef void _backtest_header(self, datetime start, datetime stop, int time_step_mins)
+    cdef void _backtest_footer(self, datetime run_started)

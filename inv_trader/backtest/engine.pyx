@@ -191,23 +191,11 @@ cdef class BacktestEngine:
         Precondition.true(stop <= self.data_minute_index[len(self.data_minute_index) - 1], 'stop <= last_timestamp')
         Precondition.positive(time_step_mins, 'time_step_mins')
 
+        cdef timedelta time_step = timedelta(minutes=time_step_mins)
         cdef datetime run_started = self.clock.time_now()
-
-        self.log.info("#----------------------------------------------------------------------------------------------------#")
-        self.log.info("#--------------------------------------------- BACKTEST ---------------------------------------------#")
-        self.log.info("#----------------------------------------------------------------------------------------------------#")
-        self.log.info(f"OS: {platform.platform()}")
-        self.log.info(f"Processors: {platform.processor()}")
-        self.log.info(f"RAM-Total: {round(psutil.virtual_memory()[0] / 1000000)}MB")
-        self.log.info(f"RAM-Used:  {round(psutil.virtual_memory()[3] / 1000000)}MB")
-        self.log.info(f"RAM-Avail: {round(psutil.virtual_memory()[1] / 1000000)}MB ({100 - psutil.virtual_memory()[2]}%)")
-        self.log.info(f"Time-step: {time_step_mins} minute")
-        self.log.info(f"Running backtest from {start} to {stop}...")
-        self.log.info("#----------------------------------------------------------------------------------------------------#")
-
-        cdef time_step = timedelta(minutes=time_step_mins)
         cdef datetime time = start
 
+        self._backtest_header(start, stop, time_step_mins)
         self.test_clock.set_time(time)
 
         # Set all strategy clocks to the start of the backtest period
@@ -235,6 +223,38 @@ cdef class BacktestEngine:
             time += time_step
 
         self.trader.stop()
+        self._backtest_footer(run_started)
+
+    cpdef void reset(self):
+        """
+        Reset the backtest engine. The internal trader and all strategies are reset.
+        """
+        self.trader.reset()
+
+    cdef void _backtest_header(
+            self,
+            datetime start,
+            datetime stop,
+            int time_step_mins):
+        """
+        Create a backtest log header.
+        """
+        self.log.info("#----------------------------------------------------------------------------------------------------#")
+        self.log.info("#--------------------------------------------- BACKTEST ---------------------------------------------#")
+        self.log.info("#----------------------------------------------------------------------------------------------------#")
+        self.log.info(f"OS: {platform.platform()}")
+        self.log.info(f"Processors: {platform.processor()}")
+        self.log.info(f"RAM-Total: {round(psutil.virtual_memory()[0] / 1000000)}MB")
+        self.log.info(f"RAM-Used:  {round(psutil.virtual_memory()[3] / 1000000)}MB")
+        self.log.info(f"RAM-Avail: {round(psutil.virtual_memory()[1] / 1000000)}MB ({100 - psutil.virtual_memory()[2]}%)")
+        self.log.info(f"Time-step: {time_step_mins} minute")
+        self.log.info(f"Running backtest from {start} to {stop}...")
+        self.log.info("#----------------------------------------------------------------------------------------------------#")
+
+    cdef void _backtest_footer(self, datetime run_started):
+        """
+        Create a backtest log footer.
+        """
         self.log.info("#----------------------------------------------------------------------------------------------------#")
         self.log.info("#-- BACKTEST DIAGNOSTICS ----------------------------------------------------------------------------#")
         self.log.info("#----------------------------------------------------------------------------------------------------#")
@@ -242,9 +262,3 @@ cdef class BacktestEngine:
         self.log.info(f"Ran backtest in {round(self.clock.get_elapsed(run_started), 2)}s.")
         self.log.info(f"Time-step iterations: {self.exec_client.iteration}")
         self.log.info("#----------------------------------------------------------------------------------------------------#")
-
-    cpdef void reset(self):
-        """
-        Reset the backtest engine. The internal trader and all strategies are reset.
-        """
-        self.trader.reset()
