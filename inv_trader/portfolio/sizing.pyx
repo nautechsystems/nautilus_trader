@@ -64,8 +64,8 @@ cdef class PositionSizer:
         :param hard_limit: The hard limit for the total quantity (>= 0) (0 = no hard limit).
         :param units: The number of units to batch the position into (> 0).
         :param unit_batch_size: The unit batch size (> 0).
-        :raises ValueError: If the exchange_rate is not positive (> 0).
         :raises ValueError: If the risk_bp is not positive (> 0).
+        :raises ValueError: If the exchange_rate is not positive (> 0).
         :raises ValueError: If the leverage is not positive (> 0).
         :raises ValueError: If the commission_rate is negative (< 0).
         :raises ValueError: If the units is not positive (> 0).
@@ -134,16 +134,16 @@ cdef class FixedRiskSizer(PositionSizer):
         :param hard_limit: The hard limit for the total quantity (>= 0) (0 = no hard limit).
         :param units: The number of units to batch the position into (> 0).
         :param unit_batch_size: The unit batch size (> 0).
-        :raises ValueError: If the exchange_rate is not positive (> 0).
         :raises ValueError: If the risk_bp is not positive (> 0).
+        :raises ValueError: If the exchange_rate is not positive (> 0).
         :raises ValueError: If the leverage is not positive (> 0).
         :raises ValueError: If the commission_rate is negative (< 0).
         :raises ValueError: If the units is not positive (> 0).
         :raises ValueError: If the unit_batch_size is not positive (> 0).
         :return: Quantity.
         """
-        Precondition.positive(exchange_rate, 'exchange_rate')
         Precondition.positive(risk_bp, 'risk_bp')
+        Precondition.positive(exchange_rate, 'exchange_rate')
         Precondition.positive(leverage, 'leverage')
         Precondition.not_negative(commission_rate, 'commission_rate')
         Precondition.positive(units, 'units')
