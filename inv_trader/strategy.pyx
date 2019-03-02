@@ -91,10 +91,10 @@ cdef class TradeStrategy:
         self._bars = {}                # type: Dict[BarType, Deque[Bar]]
         self._indicators = {}          # type: Dict[BarType, List[Indicator]]
         self._indicator_updaters = {}  # type: Dict[BarType, List[IndicatorUpdater]]
-        self._data_client = None       # Initialized when registered with data client.
-        self._exec_client = None       # Initialized when registered with execution client.
-        self._portfolio = None         # Initialized when registered with execution client.
-        self.account = None            # Initialized when registered with execution client.
+        self._data_client = None       # Initialized when registered with data client
+        self._exec_client = None       # Initialized when registered with execution client
+        self._portfolio = None         # Initialized when registered with execution client
+        self.account = None            # Initialized when registered with execution client
 
         self.log.info(f"Initialized.")
 
@@ -144,7 +144,7 @@ cdef class TradeStrategy:
         """
         Called when the strategy is started.
         """
-        # Raise exception if not overridden in implementation.
+        # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
 
     cpdef void on_tick(self, Tick tick):
@@ -153,7 +153,7 @@ cdef class TradeStrategy:
 
         :param tick: The tick received.
         """
-        # Raise exception if not overridden in implementation.
+        # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
 
     cpdef void on_bar(self, BarType bar_type, Bar bar):
@@ -163,7 +163,7 @@ cdef class TradeStrategy:
         :param bar_type: The bar type received.
         :param bar: The bar received.
         """
-        # Raise exception if not overridden in implementation.
+        # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
 
     cpdef void on_event(self, Event event):
@@ -172,24 +172,24 @@ cdef class TradeStrategy:
 
         :param event: The event received.
         """
-        # Raise exception if not overridden in implementation.
+        # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
 
     cpdef void on_stop(self):
         """
         Called when the strategy is stopped.
         """
-        # Raise exception if not overridden in implementation.
+        # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
 
     cpdef void on_reset(self):
         """
         Called when the strategy is reset.
         """
-        # Raise exception if not overridden in implementation.
+        # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
 
-# -- HANDLER METHODS ------------------------------------------------------------------------ #
+# -- REGISTRATION AND HANDLER METHODS ------------------------------------------------------------ #
 
     cpdef void register_data_client(self, DataClient client):
         """

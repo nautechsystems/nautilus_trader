@@ -223,7 +223,7 @@ cdef class BacktestEngine:
         assert(self.data_client.time_now() == start)
         assert(self.exec_client.time_now() == start)
 
-        while time < stop:
+        while time <= stop:
             # Iterate execution first to simulate correct order of events
             # Order fills should occur before the bar closes
             self.test_clock.set_time(time)

@@ -121,5 +121,6 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 02/03/19 30212024 function calls (30212011 primitive calls) in 17.260 seconds (remove redundant Lock in id generation)
         # 02/03/19 30638417 function calls (30638404 primitive calls) in 18.212 seconds (add max trade size limiter)
         # 02/03/19  4521539 function calls  (4521526 primitive calls) in 10.337 seconds (with no profile hooks!)
+        # 02/03/19 30922722 function calls (30922709 primitive calls) in 17.678 seconds (nonecheck=False for preconditions)
 
         self.assertTrue(True)

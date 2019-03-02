@@ -168,10 +168,10 @@ cdef class BacktestExecClient(ExecutionClient):
         Iterate the data client one time step.
         """
         cdef CollateralInquiry command
-        # Set account statistics
 
         cdef datetime time_now = self._clock.time_now()
         if self.day_number is not time_now.day:
+            # Set account statistics
             self.day_number = time_now.day
             self.account_cash_start_day = self._account.cash_balance
             self.account_cash_activity_day = Money(0)
@@ -272,7 +272,16 @@ cdef class BacktestExecClient(ExecutionClient):
         
         :param command: The command to execute.
         """
-        self._accept_order(command.order)
+        cdef Order order = command.order
+        cdef OrderSubmitted submitted = OrderSubmitted(
+            order.symbol,
+            order.id,
+            self._clock.time_now(),
+            self._guid_factory.generate(),
+            self._clock.time_now())
+        self.handle_event(submitted)
+
+        self._accept_order(order)
 
     cdef void _submit_atomic_order(self, SubmitAtomicOrder command):
         """
@@ -283,7 +292,15 @@ cdef class BacktestExecClient(ExecutionClient):
             atomic_orders.append(command.atomic_order.profit_target)
 
         self.atomic_orders[command.atomic_order.entry.id] = atomic_orders
-        self._accept_order(command.atomic_order.entry)
+
+        cdef SubmitOrder submit_order = SubmitOrder(
+            command.atomic_order.entry,
+            command.position_id,
+            command.strategy_id,
+            command.strategy_name,
+            self._guid_factory.generate(),
+            self._clock.time_now())
+        self._submit_order(submit_order)
 
     cdef void _modify_order(self, ModifyOrder command):
         """
@@ -352,6 +369,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._clock.time_now())
 
         del self.working_orders[command.order.id]
+
         self.handle_event(cancelled)
 
     cdef dict _prepare_minute_data(self, dict bar_data, str quote_type):
@@ -436,14 +454,6 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         Accept the given order and generate OrderSubmitted and OrderAccepted events.
         """
-        cdef OrderSubmitted submitted = OrderSubmitted(
-            order.symbol,
-            order.id,
-            self._clock.time_now(),
-            self._guid_factory.generate(),
-            self._clock.time_now())
-        self.handle_event(submitted)
-
         cdef OrderAccepted accepted = OrderAccepted(
             order.symbol,
             order.id,

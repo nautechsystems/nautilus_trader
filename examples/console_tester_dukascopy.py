@@ -34,7 +34,7 @@ if __name__ == "__main__":
         5,
         Decimal('0.00001'),
         AUDUSD_1_SEC_MID,
-        100000,
+        1,
         10,
         20,
         logger=logger)

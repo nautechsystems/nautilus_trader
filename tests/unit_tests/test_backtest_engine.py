@@ -65,8 +65,8 @@ class BacktestEngineTests(unittest.TestCase):
         engine.run(start, stop)
 
         # Assert
-        self.assertEqual(44640, engine.data_client.iteration)
-        self.assertEqual(44640, engine.exec_client.iteration)
+        self.assertEqual(44641, engine.data_client.iteration)
+        self.assertEqual(44641, engine.exec_client.iteration)
 
     def test_can_run_ema_cross_strategy(self):
         # Arrange
@@ -96,8 +96,8 @@ class BacktestEngineTests(unittest.TestCase):
         engine.run(start, stop)
 
         # Assert
-        self.assertEqual(2880, engine.data_client.data_providers[self.usdjpy.symbol].iterations[TestStubs.bartype_usdjpy_1min_bid()])
-        self.assertEqual(1440, strategies[0].fast_ema.count)
+        self.assertEqual(2881, engine.data_client.data_providers[self.usdjpy.symbol].iterations[TestStubs.bartype_usdjpy_1min_bid()])
+        self.assertEqual(1441, strategies[0].fast_ema.count)
 
     def test_can_run_multiple_strategies(self):
         # Arrange
@@ -137,5 +137,5 @@ class BacktestEngineTests(unittest.TestCase):
         engine.run(start, stop)
 
         # Assert
-        self.assertEqual(2880, engine.data_client.data_providers[self.usdjpy.symbol].iterations[TestStubs.bartype_usdjpy_1min_bid()])
-        self.assertEqual(1440, strategies[0].fast_ema.count)
+        self.assertEqual(2881, engine.data_client.data_providers[self.usdjpy.symbol].iterations[TestStubs.bartype_usdjpy_1min_bid()])
+        self.assertEqual(1441, strategies[0].fast_ema.count)
