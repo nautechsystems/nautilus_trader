@@ -55,10 +55,10 @@ cdef class PositionSizer:
         Return the calculated quantity for the position size.
 
         :param equity: The account equity.
-        :param exchange_rate: The exchange rate for the instrument quote currency vs account currency.
         :param risk_bp: The risk in basis points (1 basis point = 0.01%).
         :param entry_price: The entry price.
         :param stop_loss_price: The stop loss price.
+        :param exchange_rate: The exchange rate for the instrument quote currency vs account currency.
         :param leverage: The broker leverage for the instrument (> 0).
         :param commission_rate: The commission rate per million notional (>= 0).
         :param hard_limit: The hard limit for the total quantity (>= 0) (0 = no hard limit).
@@ -125,10 +125,10 @@ cdef class FixedRiskSizer(PositionSizer):
         Return the calculated quantity for the position size.
 
         :param equity: The account equity.
-        :param exchange_rate: The exchange rate for the instrument quote currency vs account currency.
         :param risk_bp: The risk in basis points (1 basis point = 0.01%).
         :param entry_price: The entry price.
         :param stop_loss_price: The stop loss price.
+        :param exchange_rate: The exchange rate for the instrument quote currency vs account currency.
         :param leverage: The broker leverage for the instrument (> 0).
         :param commission_rate: The commission rate per million notional (>= 0).
         :param hard_limit: The hard limit for the total quantity (>= 0) (0 = no hard limit).
