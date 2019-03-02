@@ -151,10 +151,7 @@ cpdef str convert_datetime_to_string(datetime time):
     :param time: The datetime to convert
     :return: The converted string.
     """
-    try:
-        return NONE if time is None else time.isoformat(timespec='milliseconds').replace('+00:00', 'Z')
-    except Exception as ex: # TODO: Decrease exception scope.
-        print(f"Cannot convert {time} to string.")
+    return NONE if time is None else time.isoformat(timespec='milliseconds').replace('+00:00', 'Z')
 
 cpdef datetime convert_string_to_datetime(str time_string):
     """
@@ -178,7 +175,7 @@ cdef class OrderSerializer:
         :param order: The order to serialize.
         :return: The serialized order.
         """
-        # Raise exception if not overridden in implementation.
+        # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
     cpdef Order deserialize(self, bytes order_bytes):
@@ -188,7 +185,7 @@ cdef class OrderSerializer:
         :param order_bytes: The bytes to deserialize.
         :return: The deserialized order.
         """
-        # Raise exception if not overridden in implementation.
+        # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass. ")
 
 
@@ -204,7 +201,7 @@ cdef class CommandSerializer:
         :param: command: The command to serialize.
         :return: The serialized command.
         """
-        # Raise exception if not overridden in implementation.
+        # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
     cpdef Command deserialize(self, bytes command_bytes):
@@ -214,11 +211,11 @@ cdef class CommandSerializer:
         :param: command_bytes: The command bytes to deserialize.
         :return: The deserialized command.
         """
-        # Raise exception if not overridden in implementation.
+        # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
     cdef bytes _serialize_order_command(self, OrderCommand order_command):
-        # Raise exception if not overridden in implementation.
+        # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented.")
 
     cdef OrderCommand _deserialize_order_command(
@@ -226,8 +223,8 @@ cdef class CommandSerializer:
             GUID command_id,
             datetime command_timestamp,
             dict unpacked):
-        # Raise exception if not overridden in implementation.
-        raise NotImplementedError("Method must be implemented.")
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
 
 
 cdef class EventSerializer:
@@ -242,8 +239,8 @@ cdef class EventSerializer:
         :param event: The event to serialize.
         :return: The serialized event.
         """
-        # Raise exception if not overridden in implementation.
-        raise NotImplementedError("Method must be implemented.")
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
 
     cpdef Event deserialize(self, bytes event_bytes):
         """
@@ -253,11 +250,11 @@ cdef class EventSerializer:
         :return: The deserialized event.
         """
         # Raise exception if not overridden in implementation.
-        raise NotImplementedError("Method must be implemented.")
+        raise NotImplementedError("Method must be implemented in the subclass.")
 
     cdef bytes _serialize_order_event(self, OrderEvent order_event):
         # Raise exception if not overridden in implementation.
-        raise NotImplementedError("Method must be implemented.")
+        raise NotImplementedError("Method must be implemented in the subclass.")
 
     cdef OrderEvent _deserialize_order_event(
             self,
@@ -265,7 +262,7 @@ cdef class EventSerializer:
             datetime event_timestamp,
             dict unpacked):
         # Raise exception if not overridden in implementation.
-        raise NotImplementedError("Method must be implemented.")
+        raise NotImplementedError("Method must be implemented in the subclass.")
 
 
 @cython.wraparound(True)
@@ -283,10 +280,9 @@ cdef class InstrumentSerializer:
         :raises ValueError: If the instrument_bytes is empty.
         :raises ValueError: If the instrument cannot be deserialized.
         """
-        inst_json = (json.loads(instrument_bytes)
-                     .replace("\"", "\'")
-                     .replace("\'Timestamp\':", "\'Timestamp\':\'")[:-1] + "\'}")
-        inst_dict = ast.literal_eval(inst_json)
+        cdef dict inst_dict = ast.literal_eval((json.loads(instrument_bytes)
+                                      .replace("\"", "\'")
+                                      .replace("\'Timestamp\':", "\'Timestamp\':\'")[:-1] + "\'}"))
 
         tick_size = inst_dict['TickSize']
         tick_value = inst_dict['TickValue']

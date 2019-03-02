@@ -64,7 +64,7 @@ cdef class TradeStrategy:
     cpdef void on_stop(self)
     cpdef void on_reset(self)
 
-# -- HANDLER METHODS ----------------------------------------------------------------------------- #
+# -- REGISTRATION AND HANDLER METHODS ------------------------------------------------------------ #
     cpdef void register_data_client(self, DataClient client)
     cpdef void register_execution_client(self, ExecutionClient client)
     cpdef void handle_tick(self, Tick tick)

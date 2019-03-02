@@ -33,7 +33,7 @@ if __name__ == "__main__":
         '001',
         instrument,
         AUDUSD_FXCM_1_SEC_MID,
-        100000,
+        1,
         10,
         20,
         20,

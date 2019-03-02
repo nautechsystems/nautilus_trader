@@ -11,9 +11,9 @@ import unittest
 import timeit
 from time import time
 
-from inv_trader.model.objects import Symbol
+from inv_trader.model.objects import Symbol, ValidString
 from inv_trader.model.enums import Venue
-from inv_trader.model.order import OrderIdGenerator
+from inv_trader.model.identifiers import OrderIdGenerator
 
 MILLISECONDS_IN_SECOND = 1000
 AUDUSD_FXCM = Symbol('USDJPY', Venue.FXCM)
@@ -22,7 +22,7 @@ AUDUSD_FXCM = Symbol('USDJPY', Venue.FXCM)
 class OrderIdGeneratorPerformanceTest:
     def __init__(self):
         self.symbol = AUDUSD_FXCM
-        self.generator = OrderIdGenerator('001')
+        self.generator = OrderIdGenerator(ValidString('001'), ValidString('001'))
 
     def generate(self):
         self.generator.generate(self.symbol)
@@ -48,4 +48,4 @@ class OrderPerformanceTests(unittest.TestCase):
         print('\n' + f'test_order_id_generator({number} iterations)')
         print(f'{round(total_elapsed / tests)}ms')
 
-        # ~20ms for 10000 ids
+        # ~29ms for 10000 ids
