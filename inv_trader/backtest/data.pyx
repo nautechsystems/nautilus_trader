@@ -216,34 +216,6 @@ cdef class BacktestDataClient(DataClient):
         """
         self._log.info(f"Simulating download of historical bars from {from_datetime} for {bar_type}.")
 
-    cpdef void subscribe_bars(self, BarType bar_type, handler: Callable):
-        """
-        Subscribe to live bar data for the given bar parameters.
-
-        :param bar_type: The bar type to subscribe to.
-        :param handler: The callable handler for subscription (if None will just call print).
-        """
-        Precondition.is_in(bar_type.symbol, self.data_providers, 'symbol', 'data_providers')
-
-        cdef start = datetime.utcnow()
-
-        if bar_type not in self.data_providers[bar_type.symbol].bars:
-            self.data_providers[bar_type.symbol].register_bar_type(bar_type)
-            self._log.info(f"Built {len(self.data_providers[bar_type.symbol].bars[bar_type])} {bar_type} bars in {round((datetime.utcnow() - start).total_seconds(), 2)}s.")
-        self._subscribe_bars(bar_type, handler)
-
-    cpdef void unsubscribe_bars(self, BarType bar_type, handler: Callable):
-        """
-        Unsubscribes from bar data for the given symbol and venue.
-
-        :param bar_type: The bar type to unsubscribe from.
-        :param handler: The callable handler which was subscribed (can be None).
-        """
-        Precondition.is_in(bar_type.symbol, self.data_providers, 'symbol', 'data_providers')
-
-        self.data_providers[bar_type.symbol].deregister_bar_type(bar_type)
-        self._unsubscribe_bars(bar_type, handler)
-
     cpdef void subscribe_ticks(self, Symbol symbol, handler: Callable):
         """
         Subscribe to tick data for the given symbol and venue.
@@ -261,6 +233,34 @@ cdef class BacktestDataClient(DataClient):
         :param handler: The callable handler which was subscribed (can be None).
         """
         self._unsubscribe_ticks(symbol, handler)
+
+    cpdef void subscribe_bars(self, BarType bar_type, handler: Callable):
+        """
+        Subscribe to live bar data for the given bar parameters.
+
+        :param bar_type: The bar type to subscribe to.
+        :param handler: The callable handler for subscription (if None will just call print).
+        """
+        Precondition.is_in(bar_type.symbol, self.data_providers, 'symbol', 'data_providers')
+
+        cdef start = datetime.utcnow()
+        if bar_type not in self.data_providers[bar_type.symbol].bars:
+            self.data_providers[bar_type.symbol].register_bar_type(bar_type)
+            self._log.info(f"Built {len(self.data_providers[bar_type.symbol].bars[bar_type])} {bar_type} bars in {round((datetime.utcnow() - start).total_seconds(), 2)}s.")
+
+        self._subscribe_bars(bar_type, handler)
+
+    cpdef void unsubscribe_bars(self, BarType bar_type, handler: Callable):
+        """
+        Unsubscribes from bar data for the given symbol and venue.
+
+        :param bar_type: The bar type to unsubscribe from.
+        :param handler: The callable handler which was subscribed (can be None).
+        """
+        Precondition.is_in(bar_type.symbol, self.data_providers, 'symbol', 'data_providers')
+
+        self.data_providers[bar_type.symbol].deregister_bar_type(bar_type)
+        self._unsubscribe_bars(bar_type, handler)
 
 
 cdef class DataProvider:

@@ -29,10 +29,6 @@ cdef class BacktestDataClient(DataClient):
     cpdef void create_data_providers(self)
     cpdef void set_initial_iteration(self, datetime to_time, timedelta time_step)
     cpdef void iterate(self)
-    cpdef void subscribe_bars(self, BarType bar_type, handler)
-    cpdef void unsubscribe_bars(self, BarType bar_type, handler)
-    cpdef void subscribe_ticks(self, Symbol symbol, handler)
-    cpdef void unsubscribe_ticks(self, Symbol symbol, handler)
 
 
 cdef class DataProvider:
