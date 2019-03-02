@@ -111,6 +111,7 @@ class LiveDataClientTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(0, len(self.data_client.subscribed_ticks()))
+        self.assertEqual(0, len(self.data_client.subscribed_channels()))
 
     def test_can_subscribe_to_bar_data(self):
         # Arrange
@@ -121,7 +122,7 @@ class LiveDataClientTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(TestStubs.bartype_audusd_1min_bid(), self.data_client.subscribed_bars()[0])
-        self.assertTrue(any('audusd.fxcm-1-minute[bid]' in channel for channel in self.data_client.subscribed_channels()))
+        self.assertEqual('audusd.fxcm-1-minute[bid]', self.data_client.subscribed_channels()[0])
 
     def test_can_unsubscribe_from_bar_data(self):
         # Arrange
@@ -133,7 +134,7 @@ class LiveDataClientTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(0, len(self.data_client.subscribed_bars()))
-        self.assertFalse(any('audusd.fxcm-1-minute[bid]' in channel for channel in self.data_client.subscribed_channels()))
+        self.assertEqual(0, len(self.data_client.subscribed_channels()))
 
     def test_disconnecting_when_subscribed_to_multiple_channels_then_unsubscribes(self):
         # Arrange
