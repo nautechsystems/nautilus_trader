@@ -92,8 +92,8 @@ cdef class LiveDataClient(DataClient):
             time.sleep(0.1)  # Allows thread to stop
             self._log.debug(f"Stopped PubSub thread {self._pubsub_thread}.")
 
-        self._log.info(f"Unsubscribed from tick data {self._subscribed_ticks}.")
-        self._log.info(f"Unsubscribed from bar data {self._subscribed_bars}.")
+        self._log.info(f"Unsubscribed from all tick data.")
+        self._log.info(f"Unsubscribed from all bar data.")
 
         if self._redis_client is not None:
             self._redis_client.connection_pool.disconnect()
@@ -278,49 +278,6 @@ cdef class LiveDataClient(DataClient):
             handler(bar_type, bar)
         self._log.debug(f"Historical bars hydrated to handler {handler}.")
 
-    cpdef void subscribe_bars(self, BarType bar_type, handler: Callable):
-        """
-        Subscribe to live bar data for the given bar parameters.
-
-        :param bar_type: The bar type to subscribe to.
-        :param handler: The callable handler for subscription (if None will just call print).
-        """
-        Precondition.type_or_none(handler, Callable, 'handler')
-
-        self._check_connection()
-        self._subscribe_bars(bar_type, handler)
-
-        cdef str bars_channel = self._get_bar_channel_name(bar_type)
-        if bar_type not in self._subscribed_bars:
-            self._pubsub.subscribe(**{bars_channel: self._handle_bar})
-
-            if self._pubsub_thread is None:
-                self._pubsub_thread = self._pubsub.run_in_thread(0.001)
-            self._subscribed_bars.append(bar_type)
-            self._subscribed_bars.sort()
-
-    cpdef void unsubscribe_bars(self, BarType bar_type, handler: Callable):
-        """
-        Unsubscribes from live bar data for the given symbol and venue.
-
-        :param bar_type: The bar type to unsubscribe from.
-        :param handler: The callable handler which was subscribed (can be None).
-        """
-        Precondition.type_or_none(handler, Callable, 'handler')
-
-        self._check_connection()
-        self._unsubscribe_bars(bar_type, handler)
-
-        # If no further subscribers for this bar type
-        if len(self._bar_handlers[bar_type]) == 0:
-            bar_channel = self._get_bar_channel_name(bar_type)
-            self._pubsub.unsubscribe(bar_channel)
-
-            if bar_type in self._subscribed_bars:
-                self._subscribed_bars.remove(bar_type)
-                self._subscribed_bars.sort()
-                self._log.info(f"Unsubscribed from bar data for {bar_channel}.")
-
     cpdef void subscribe_ticks(self, Symbol symbol, handler: Callable):
         """
         Subscribe to live tick data for the given symbol and venue.
@@ -331,17 +288,15 @@ cdef class LiveDataClient(DataClient):
         Precondition.type_or_none(handler, Callable, 'handler')
 
         self._check_connection()
-        self._subscribe_ticks(symbol, handler)
 
         cdef str ticks_channel = self._get_tick_channel_name(symbol)
-        if symbol not in self._subscribed_ticks:
+        if symbol not in self._tick_handlers:
             self._pubsub.subscribe(**{ticks_channel: self._handle_tick})
 
             if self._pubsub_thread is None:
                 self._pubsub_thread = self._pubsub.run_in_thread(0.001)
-            self._subscribed_ticks.append(symbol)
-            self._subscribed_ticks.sort()
-            self._log.info(f"Subscribed to tick data for {ticks_channel}.")
+
+        self._subscribe_ticks(symbol, handler)
 
     cpdef void unsubscribe_ticks(self, Symbol symbol, handler: Callable):
         """
@@ -356,15 +311,46 @@ cdef class LiveDataClient(DataClient):
         self._unsubscribe_ticks(symbol, handler)
 
         # If no further subscribers for this bar type
-        if len(self._tick_handlers[symbol]) == 0:
+        if symbol not in self._tick_handlers:
             tick_channel = self._get_tick_channel_name(symbol)
             self._pubsub.unsubscribe(tick_channel)
 
-            if symbol in self._subscribed_ticks:
-                self._subscribed_ticks.remove(symbol)
-                self._subscribed_ticks.sort()
+    cpdef void subscribe_bars(self, BarType bar_type, handler: Callable):
+        """
+        Subscribe to live bar data for the given bar parameters.
 
-            self._log.info(f"Unsubscribed from tick data for {tick_channel}.")
+        :param bar_type: The bar type to subscribe to.
+        :param handler: The callable handler for subscription (if None will just call print).
+        """
+        Precondition.type_or_none(handler, Callable, 'handler')
+
+        self._check_connection()
+
+        cdef str bars_channel = self._get_bar_channel_name(bar_type)
+        if bar_type not in self._bar_handlers:
+            self._pubsub.subscribe(**{bars_channel: self._handle_bar})
+
+            if self._pubsub_thread is None:
+                self._pubsub_thread = self._pubsub.run_in_thread(0.001)
+
+        self._subscribe_bars(bar_type, handler)
+
+    cpdef void unsubscribe_bars(self, BarType bar_type, handler: Callable):
+        """
+        Unsubscribes from live bar data for the given symbol and venue.
+
+        :param bar_type: The bar type to unsubscribe from.
+        :param handler: The callable handler which was subscribed (can be None).
+        """
+        Precondition.type_or_none(handler, Callable, 'handler')
+
+        self._check_connection()
+        self._unsubscribe_bars(bar_type, handler)
+
+        # If no further subscribers for this bar type
+        if bar_type not in self._bar_handlers:
+            bar_channel = self._get_bar_channel_name(bar_type)
+            self._pubsub.unsubscribe(bar_channel)
 
     cdef list _get_redis_bar_keys(self, BarType bar_type):
         """

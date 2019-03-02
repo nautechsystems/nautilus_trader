@@ -332,7 +332,7 @@ cdef class TestLogger(Logger):
 
 cdef class LoggerAdapter:
     """
-    Provides a logger adapter adapter for a components logger.
+    Provides a logger adapter for a components logger.
     """
 
     def __init__(self,

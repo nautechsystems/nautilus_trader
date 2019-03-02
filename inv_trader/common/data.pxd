@@ -23,11 +23,9 @@ cdef class DataClient:
     """
     cdef Clock _clock
     cdef LoggerAdapter _log
-    cdef list _subscribed_bars
-    cdef list _subscribed_ticks
     cdef dict _instruments
-    cdef dict _bar_handlers
     cdef dict _tick_handlers
+    cdef dict _bar_handlers
 
     cpdef datetime time_now(self)
     cpdef list symbols(self)
@@ -44,13 +42,13 @@ cdef class DataClient:
     cpdef void register_strategy(self, TradeStrategy strategy)
     cpdef void historical_bars(self, BarType bar_type, int quantity, handler)
     cpdef void historical_bars_from(self, BarType bar_type, datetime from_datetime, handler)
-    cpdef void subscribe_bars(self, BarType bar_type, handler)
-    cpdef void unsubscribe_bars(self, BarType bar_type, handler)
     cpdef void subscribe_ticks(self, Symbol symbol, handler)
     cpdef void unsubscribe_ticks(self, Symbol symbol, handler)
+    cpdef void subscribe_bars(self, BarType bar_type, handler)
+    cpdef void unsubscribe_bars(self, BarType bar_type, handler)
 
-    cdef void _subscribe_bars(self, BarType bar_type, handler)
-    cdef void _unsubscribe_bars(self, BarType bar_type, handler)
     cdef void _subscribe_ticks(self, Symbol symbol, handler)
     cdef void _unsubscribe_ticks(self, Symbol symbol, handler)
+    cdef void _subscribe_bars(self, BarType bar_type, handler)
+    cdef void _unsubscribe_bars(self, BarType bar_type, handler)
     cdef void _reset(self)
