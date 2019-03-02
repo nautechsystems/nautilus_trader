@@ -69,41 +69,6 @@ cdef class LiveDataClient(DataClient):
         self._pubsub_thread = None
         self._instrument_serializer = InstrumentSerializer()
 
-    cpdef bint is_connected(self):
-        """
-        :return: True if the client is connected, otherwise false.
-        """
-        if self._redis_client is None:
-            return False
-
-        try:
-            self._redis_client.ping()
-        except ConnectionError:
-            return False
-
-        return True
-
-    @property
-    def subscriptions_all(self) -> List[str]:
-        """
-        :return: All subscribed channels from the pub/sub server.
-        """
-        return [channel.decode(UTF8) for channel in self._redis_client.pubsub_channels()]
-
-    @property
-    def subscriptions_ticks(self) -> List[str]:
-        """
-        :return: The list of tick channels subscribed to.
-        """
-        return self._subscriptions_ticks
-
-    @property
-    def subscriptions_bars(self) -> List[str]:
-        """
-        :return: The list of bar channels subscribed to.
-        """
-        return self._subscriptions_bars
-
     cpdef void connect(self):
         """
         Connect to the data service, creating a pub/sub server.
@@ -127,8 +92,8 @@ cdef class LiveDataClient(DataClient):
             time.sleep(0.1)  # Allows thread to stop
             self._log.debug(f"Stopped PubSub thread {self._pubsub_thread}.")
 
-        self._log.info(f"Unsubscribed from tick data {self._subscriptions_ticks}.")
-        self._log.info(f"Unsubscribed from bar data {self._subscriptions_bars}.")
+        self._log.info(f"Unsubscribed from tick data {self._subscribed_ticks}.")
+        self._log.info(f"Unsubscribed from bar data {self._subscribed_bars}.")
 
         if self._redis_client is not None:
             self._redis_client.connection_pool.disconnect()
@@ -140,6 +105,27 @@ cdef class LiveDataClient(DataClient):
         self._pubsub = None
         self._pubsub_thread = None
         self._reset()
+
+    cpdef bint is_connected(self):
+        """
+        :return: True if the client is connected, otherwise false.
+        """
+        if self._redis_client is None:
+            return False
+
+        try:
+            self._redis_client.ping()
+        except ConnectionError:
+            return False
+
+        return True
+
+    cpdef list subscribed_channels(self):
+        """
+        Return a list of all subscribed channels from the pub/sub server.
+        :return: List[str].
+        """
+        return [channel.decode(UTF8) for channel in self._redis_client.pubsub_channels()]
 
     cpdef void update_all_instruments(self):
         """
@@ -302,17 +288,16 @@ cdef class LiveDataClient(DataClient):
         Precondition.type_or_none(handler, Callable, 'handler')
 
         self._check_connection()
-
         self._subscribe_bars(bar_type, handler)
 
         cdef str bars_channel = self._get_bar_channel_name(bar_type)
-        if bars_channel not in self._subscriptions_bars:
+        if bar_type not in self._subscribed_bars:
             self._pubsub.subscribe(**{bars_channel: self._handle_bar})
 
             if self._pubsub_thread is None:
                 self._pubsub_thread = self._pubsub.run_in_thread(0.001)
-            self._subscriptions_bars.append(bars_channel)
-            self._subscriptions_bars.sort()
+            self._subscribed_bars.append(bar_type)
+            self._subscribed_bars.sort()
 
     cpdef void unsubscribe_bars(self, BarType bar_type, handler: Callable):
         """
@@ -324,17 +309,16 @@ cdef class LiveDataClient(DataClient):
         Precondition.type_or_none(handler, Callable, 'handler')
 
         self._check_connection()
-
         self._unsubscribe_bars(bar_type, handler)
 
-        # If no further subscribers for this bar type.
+        # If no further subscribers for this bar type
         if len(self._bar_handlers[bar_type]) == 0:
             bar_channel = self._get_bar_channel_name(bar_type)
             self._pubsub.unsubscribe(bar_channel)
 
-            if bar_channel in self._subscriptions_bars:
-                self._subscriptions_bars.remove(bar_channel)
-                self._subscriptions_bars.sort()
+            if bar_type in self._subscribed_bars:
+                self._subscribed_bars.remove(bar_type)
+                self._subscribed_bars.sort()
                 self._log.info(f"Unsubscribed from bar data for {bar_channel}.")
 
     cpdef void subscribe_ticks(self, Symbol symbol, handler: Callable):
@@ -347,17 +331,16 @@ cdef class LiveDataClient(DataClient):
         Precondition.type_or_none(handler, Callable, 'handler')
 
         self._check_connection()
-
         self._subscribe_ticks(symbol, handler)
 
         cdef str ticks_channel = self._get_tick_channel_name(symbol)
-        if ticks_channel not in self._subscriptions_ticks:
+        if symbol not in self._subscribed_ticks:
             self._pubsub.subscribe(**{ticks_channel: self._handle_tick})
 
             if self._pubsub_thread is None:
                 self._pubsub_thread = self._pubsub.run_in_thread(0.001)
-            self._subscriptions_ticks.append(ticks_channel)
-            self._subscriptions_ticks.sort()
+            self._subscribed_ticks.append(symbol)
+            self._subscribed_ticks.sort()
             self._log.info(f"Subscribed to tick data for {ticks_channel}.")
 
     cpdef void unsubscribe_ticks(self, Symbol symbol, handler: Callable):
@@ -370,7 +353,6 @@ cdef class LiveDataClient(DataClient):
         Precondition.type_or_none(handler, Callable, 'handler')
 
         self._check_connection()
-
         self._unsubscribe_ticks(symbol, handler)
 
         # If no further subscribers for this bar type
@@ -378,9 +360,9 @@ cdef class LiveDataClient(DataClient):
             tick_channel = self._get_tick_channel_name(symbol)
             self._pubsub.unsubscribe(tick_channel)
 
-            if tick_channel in self._subscriptions_ticks:
-                self._subscriptions_ticks.remove(tick_channel)
-                self._subscriptions_ticks.sort()
+            if symbol in self._subscribed_ticks:
+                self._subscribed_ticks.remove(symbol)
+                self._subscribed_ticks.sort()
 
             self._log.info(f"Unsubscribed from tick data for {tick_channel}.")
 

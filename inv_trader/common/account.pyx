@@ -90,7 +90,7 @@ cdef class Account:
         self.last_event = event
 
         if not self.initialized:
-            self._initialize(event)
+            self.initialize(event)
 
         self.cash_balance = event.cash_balance
         self.cash_start_day = event.cash_start_day
@@ -103,7 +103,7 @@ cdef class Account:
 
         self.last_updated = event.timestamp
 
-    cdef void _initialize(self, AccountEvent event):
+    cdef void initialize(self, AccountEvent event):
         """
         Initialize the account with the given event.
         
