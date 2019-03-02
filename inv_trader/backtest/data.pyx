@@ -27,7 +27,7 @@ from inv_trader.tools cimport BarBuilder
 
 cdef class BacktestDataClient(DataClient):
     """
-    Provides a data client for the BacktestEngine.
+    Provides a data client for backtesting.
     """
 
     def __init__(self,
@@ -346,12 +346,12 @@ cdef class DataProvider:
 
     cpdef list iterate_bars(self, datetime time):
         """
-        Build a list of bars which have closed based on the given datetime.
+        Return a list of bars which have closed based on the given datetime.
 
-        :param time: The time to build iteration list to.
-        :return: The list of closed bars.
+        :param time: The time to build the bar list to.
+        :return: List[Bar].
         """
-        cdef list bars_list = []
+        cdef list bars_list = []  # type: List[Bar]
 
         for bar_type, iterations in self.iterations.items():
             if self.bars[bar_type][iterations].timestamp == time:

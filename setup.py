@@ -31,9 +31,7 @@ REQUIREMENTS = ['cython',
                 'psutil',
                 'redis',
                 'inv_indicators',
-                'pyfolio',
-                'pymc3',
-                'theano']
+                'pymc3']
 DIRECTORIES = [INV_TRADER, 'test_kit']
 
 
@@ -45,7 +43,7 @@ DIRECTORIES = [INV_TRADER, 'test_kit']
 Options.embed_pos_in_docstring = True  # Embed docstrings in extensions
 Options.warning_errors = True  # Treat compiler warnings as errors
 Options.cimport_from_pyx = True  # Allows cimporting from a pyx file without a pxd file
-Profile_Hooks = True  # Write profiling hooks into methods (x2 overhead, use for profiling only)
+Profile_Hooks = False  # Write profiling hooks into methods (x2 overhead, use for profiling only)
 
 
 # Recursively scan given directories

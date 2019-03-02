@@ -17,7 +17,7 @@ from inv_trader.model.objects cimport Symbol, BarType, Instrument
 
 cdef class BacktestDataClient(DataClient):
     """
-    Provides a data client for the BacktestEngine.
+    Provides a data client for backtesting.
     """
     cdef readonly dict data_ticks
     cdef readonly dict data_bars_bid
