@@ -23,8 +23,8 @@ cdef class DataClient:
     """
     cdef Clock _clock
     cdef LoggerAdapter _log
-    cdef list _subscriptions_bars
-    cdef list _subscriptions_ticks
+    cdef list _subscribed_bars
+    cdef list _subscribed_ticks
     cdef dict _instruments
     cdef dict _bar_handlers
     cdef dict _tick_handlers
@@ -32,8 +32,8 @@ cdef class DataClient:
     cpdef datetime time_now(self)
     cpdef list symbols(self)
     cpdef list instruments(self)
-    cpdef list subscriptions_ticks(self)
-    cpdef list subscriptions_bars(self)
+    cpdef list subscribed_ticks(self)
+    cpdef list subscribed_bars(self)
 
     cpdef void connect(self)
     cpdef void disconnect(self)

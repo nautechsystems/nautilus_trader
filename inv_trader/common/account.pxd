@@ -44,4 +44,4 @@ cdef class Account:
 
     cpdef list get_events(self)
     cpdef void apply(self, AccountEvent event)
-    cdef void _initialize(self, AccountEvent event)
+    cdef void initialize(self, AccountEvent event)

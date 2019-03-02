@@ -40,11 +40,11 @@ cdef class DataClient:
         else:
             self._log = LoggerAdapter(f"DataClient", logger)
 
-        self._subscriptions_bars = []   # type: List[str]
-        self._subscriptions_ticks = []  # type: List[str]
-        self._instruments = {}          # type: Dict[Symbol, Instrument]
-        self._bar_handlers = {}         # type: Dict[BarType, List[Callable]]
-        self._tick_handlers = {}        # type: Dict[Symbol, List[Callable]]
+        self._subscribed_bars = []   # type: List[BarType]
+        self._subscribed_ticks = []  # type: List[Symbol]
+        self._instruments = {}       # type: Dict[Symbol, Instrument]
+        self._bar_handlers = {}      # type: Dict[BarType, List[Callable]]
+        self._tick_handlers = {}     # type: Dict[Symbol, List[Callable]]
 
         self._log.info("Initialized.")
 
@@ -66,17 +66,17 @@ cdef class DataClient:
         """
         return list(self._instruments.values()).copy()
 
-    cpdef list subscriptions_ticks(self):
+    cpdef list subscribed_ticks(self):
         """
         :return: The list of tick channels subscribed to.
         """
-        return self._subscriptions_ticks
+        return self._subscribed_ticks
 
-    cpdef list subscriptions_bars(self):
+    cpdef list subscribed_bars(self):
         """
         :return: The list of bar channels subscribed to.
         """
-        return self._subscriptions_bars
+        return self._subscribed_bars
 
     cpdef void connect(self):
         """
@@ -150,7 +150,7 @@ cdef class DataClient:
         :raises ValueError: If the quantity is not None and not positive (> 0).
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the data client.")
+        raise NotImplementedError("Method must be implemented in the subclass.")
 
     cpdef void historical_bars_from(
             self,
@@ -170,7 +170,7 @@ cdef class DataClient:
         :raises ValueError: If the from_datetime is not less than datetime.utcnow().
         """
         # Raise exception if not overridden in implementation.
-        raise NotImplementedError("Method must be implemented in the data client.")
+        raise NotImplementedError("Method must be implemented in the subclass.")
 
     cpdef void subscribe_bars(self, BarType bar_type, handler: Callable):
         """
@@ -190,7 +190,7 @@ cdef class DataClient:
         :param handler: The callable handler which was subscribed (can be None).
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the data client.")
+        raise NotImplementedError("Method must be implemented in the subclass.")
 
     cpdef void subscribe_ticks(self, Symbol symbol, handler: Callable):
         """
@@ -210,7 +210,7 @@ cdef class DataClient:
         :param handler: The callable handler which was subscribed (can be None).
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the data client.")
+        raise NotImplementedError("Method must be implemented in the subclass.")
 
     cdef void _subscribe_bars(self, BarType bar_type, handler: Callable):
         """
@@ -292,10 +292,10 @@ cdef class DataClient:
         """
         Resets the DataClient by clearing all stateful internal values. 
         """
-        self._subscriptions_bars = []   # type: List[str]
-        self._subscriptions_ticks = []  # type: List[str]
-        self._instruments = {}          # type: Dict[Symbol, Instrument]
-        self._bar_handlers = {}         # type: Dict[BarType, List[Callable]]
-        self._tick_handlers = {}        # type: Dict[Symbol, List[Callable]]
+        self._subscribed_bars = []   # type: List[str]
+        self._subscribed_ticks = []  # type: List[str]
+        self._instruments = {}       # type: Dict[Symbol, Instrument]
+        self._bar_handlers = {}      # type: Dict[BarType, List[Callable]]
+        self._tick_handlers = {}     # type: Dict[Symbol, List[Callable]]
 
         self._log.info("Initialized.")
