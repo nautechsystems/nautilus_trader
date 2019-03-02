@@ -126,11 +126,13 @@ class LiveDataClientTests(unittest.TestCase):
 
     def test_can_unsubscribe_from_bar_data(self):
         # Arrange
+        x = []
+        handler = x.append
         self.data_client.connect()
-        self.data_client.subscribe_bars(TestStubs.bartype_audusd_1min_bid(), handler=None)
+        self.data_client.subscribe_bars(TestStubs.bartype_audusd_1min_bid(), handler=handler)
 
         # Act
-        self.data_client.unsubscribe_bars(TestStubs.bartype_audusd_1min_bid(), handler=None)
+        self.data_client.unsubscribe_bars(TestStubs.bartype_audusd_1min_bid(), handler=handler)
 
         # Assert
         self.assertEqual(0, len(self.data_client.subscribed_bars()))

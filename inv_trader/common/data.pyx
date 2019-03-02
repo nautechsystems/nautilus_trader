@@ -40,11 +40,9 @@ cdef class DataClient:
         else:
             self._log = LoggerAdapter(f"DataClient", logger)
 
-        self._subscribed_bars = []   # type: List[BarType]
-        self._subscribed_ticks = []  # type: List[Symbol]
         self._instruments = {}       # type: Dict[Symbol, Instrument]
-        self._bar_handlers = {}      # type: Dict[BarType, List[Callable]]
         self._tick_handlers = {}     # type: Dict[Symbol, List[Callable]]
+        self._bar_handlers = {}      # type: Dict[BarType, List[Callable]]
 
         self._log.info("Initialized.")
 
@@ -70,37 +68,37 @@ cdef class DataClient:
         """
         :return: The list of tick channels subscribed to.
         """
-        return self._subscribed_ticks
+        return list(self._tick_handlers.keys())
 
     cpdef list subscribed_bars(self):
         """
         :return: The list of bar channels subscribed to.
         """
-        return self._subscribed_bars
+        return list(self._bar_handlers.keys())
 
     cpdef void connect(self):
         """
         Connect to the data service.
         """
-        # Raise exception if not overridden in implementation.
+        # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the data client.")
 
     cpdef void disconnect(self):
         """
         Disconnect from the data service.
         """
-        # Raise exception if not overridden in implementation.
+        # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the data client.")
 
     cpdef void update_all_instruments(self):
         """
         Update all instruments from the database.
         """
-        # Raise exception if not overridden in implementation.
+        # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the data client.")
 
     cpdef void update_instrument(self, Symbol symbol):
-        # Raise exception if not overridden in implementation.
+        # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the data client.")
 
     cpdef dict get_all_instruments(self):
@@ -172,26 +170,6 @@ cdef class DataClient:
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void subscribe_bars(self, BarType bar_type, handler: Callable):
-        """
-        Subscribe to bar data for the given bar parameters.
-
-        :param bar_type: The bar type to subscribe to.
-        :param handler: The callable handler for subscription (if None will just call print).
-        """
-        # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the data client.")
-
-    cpdef void unsubscribe_bars(self, BarType bar_type, handler: Callable):
-        """
-        Unsubscribes from bar data for the given symbol and venue.
-
-        :param bar_type: The bar type to unsubscribe from.
-        :param handler: The callable handler which was subscribed (can be None).
-        """
-        # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
-
     cpdef void subscribe_ticks(self, Symbol symbol, handler: Callable):
         """
         Subscribe to tick data for the given symbol and venue.
@@ -200,7 +178,7 @@ cdef class DataClient:
         :param handler: The callable handler for subscription (if None will just call print).
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the data client.")
+        raise NotImplementedError("Method must be implemented in the subclass.")
 
     cpdef void unsubscribe_ticks(self, Symbol symbol, handler: Callable):
         """
@@ -212,43 +190,25 @@ cdef class DataClient:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cdef void _subscribe_bars(self, BarType bar_type, handler: Callable):
+    cpdef void subscribe_bars(self, BarType bar_type, handler: Callable):
         """
         Subscribe to bar data for the given bar parameters.
 
         :param bar_type: The bar type to subscribe to.
         :param handler: The callable handler for subscription (if None will just call print).
         """
-        Precondition.type_or_none(handler, Callable, 'handler')
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
 
-        if bar_type not in self._bar_handlers:
-            self._bar_handlers[bar_type] = []  # type: List[Callable]
-            self._log.info(f"Subscribed to {bar_type} bars.")
-
-        if handler is not None and handler not in self._bar_handlers[bar_type]:
-            self._bar_handlers[bar_type].append(handler)
-            self._log.debug(f"Added bar handler {handler} for {bar_type} bars.")
-
-    cdef void _unsubscribe_bars(self, BarType bar_type, handler: Callable):
+    cpdef void unsubscribe_bars(self, BarType bar_type, handler: Callable):
         """
         Unsubscribes from bar data for the given symbol and venue.
 
         :param bar_type: The bar type to unsubscribe from.
         :param handler: The callable handler which was subscribed (can be None).
         """
-        Precondition.type_or_none(handler, Callable, 'handler')
-
-        if bar_type not in self._bar_handlers:
-            self._log.warning(f"Cannot unsubscribe bars (no handlers for {bar_type}).")
-            return
-
-        if handler is not None:
-            if handler in self._bar_handlers[bar_type]:
-                self._bar_handlers[bar_type].remove(handler)
-                self._log.debug(f"Removed handler {handler} from bar handlers.")
-                self._log.info(f"Unsubscribed from {bar_type} bars.")
-            else:
-                self._log.warning(f"Cannot remove handler {handler} from bar handlers (not found).")
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
 
     cdef void _subscribe_ticks(self, Symbol symbol, handler: Callable):
         """
@@ -284,16 +244,58 @@ cdef class DataClient:
             if handler in self._tick_handlers[symbol]:
                 self._tick_handlers[symbol].remove(handler)
                 self._log.debug(f"Removed handler {handler} from tick handlers.")
-                self._log.info(f"Unsubscribed from {symbol} ticks.")
             else:
                 self._log.warning(f"Cannot remove handler {handler} from tick handlers (not found).")
+
+        if len(self._tick_handlers[symbol]) == 0:
+            del self._tick_handlers[symbol]
+            self._log.info(f"Unsubscribed from {symbol} ticks.")
+
+    cdef void _subscribe_bars(self, BarType bar_type, handler: Callable):
+        """
+        Subscribe to bar data for the given bar parameters.
+
+        :param bar_type: The bar type to subscribe to.
+        :param handler: The callable handler for subscription (if None will just call print).
+        """
+        Precondition.type_or_none(handler, Callable, 'handler')
+
+        if bar_type not in self._bar_handlers:
+            self._bar_handlers[bar_type] = []  # type: List[Callable]
+            self._log.info(f"Subscribed to {bar_type} bars.")
+
+        if handler is not None and handler not in self._bar_handlers[bar_type]:
+            self._bar_handlers[bar_type].append(handler)
+            self._log.debug(f"Added bar handler {handler} for {bar_type} bars.")
+
+    cdef void _unsubscribe_bars(self, BarType bar_type, handler: Callable):
+        """
+        Unsubscribes from bar data for the given symbol and venue.
+
+        :param bar_type: The bar type to unsubscribe from.
+        :param handler: The callable handler which was subscribed (can be None).
+        """
+        Precondition.type_or_none(handler, Callable, 'handler')
+
+        if bar_type not in self._bar_handlers:
+            self._log.warning(f"Cannot unsubscribe bars (no handlers for {bar_type}).")
+            return
+
+        if handler is not None:
+            if handler in self._bar_handlers[bar_type]:
+                self._bar_handlers[bar_type].remove(handler)
+                self._log.debug(f"Removed handler {handler} from bar handlers.")
+            else:
+                self._log.warning(f"Cannot remove handler {handler} from bar handlers (not found).")
+
+        if len(self._bar_handlers[bar_type]) == 0:
+            del self._bar_handlers[bar_type]
+            self._log.info(f"Unsubscribed from {bar_type} bars.")
 
     cdef void _reset(self):
         """
         Resets the DataClient by clearing all stateful internal values. 
         """
-        self._subscribed_bars = []   # type: List[str]
-        self._subscribed_ticks = []  # type: List[str]
         self._instruments = {}       # type: Dict[Symbol, Instrument]
         self._bar_handlers = {}      # type: Dict[BarType, List[Callable]]
         self._tick_handlers = {}     # type: Dict[Symbol, List[Callable]]
