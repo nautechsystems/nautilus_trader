@@ -378,8 +378,9 @@ cdef class DataProvider:
         cdef datetime current = from_time
 
         while current < to_time:
-            while self.ticks[self.tick_index].timestamp <= current:
-                self.tick_index += 1
+            if self.has_ticks:
+                 while self.ticks[self.tick_index].timestamp <= current:
+                    self.tick_index += 1
 
             for bar_type, iterations in self.iterations.items():
                 if self.bars[bar_type][iterations].timestamp == current:
