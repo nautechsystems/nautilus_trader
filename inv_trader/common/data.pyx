@@ -221,7 +221,7 @@ cdef class DataClient:
 
         if symbol not in self._tick_handlers:
             self._tick_handlers[symbol] = []  # type: List[Callable]
-            self._log.info(f"Subscribed to {symbol} ticks.")
+            self._log.info(f"Subscribed to tick data for {symbol}.")
 
         if handler is not None and handler not in self._tick_handlers:
             self._tick_handlers[symbol].append(handler)
@@ -249,7 +249,7 @@ cdef class DataClient:
 
         if len(self._tick_handlers[symbol]) == 0:
             del self._tick_handlers[symbol]
-            self._log.info(f"Unsubscribed from {symbol} ticks.")
+            self._log.info(f"Unsubscribed from tick data for {symbol}.")
 
     cdef void _subscribe_bars(self, BarType bar_type, handler: Callable):
         """
@@ -262,7 +262,7 @@ cdef class DataClient:
 
         if bar_type not in self._bar_handlers:
             self._bar_handlers[bar_type] = []  # type: List[Callable]
-            self._log.info(f"Subscribed to {bar_type} bars.")
+            self._log.info(f"Subscribed to bar data for {bar_type}.")
 
         if handler is not None and handler not in self._bar_handlers[bar_type]:
             self._bar_handlers[bar_type].append(handler)
@@ -290,7 +290,7 @@ cdef class DataClient:
 
         if len(self._bar_handlers[bar_type]) == 0:
             del self._bar_handlers[bar_type]
-            self._log.info(f"Unsubscribed from {bar_type} bars.")
+            self._log.info(f"Unsubscribed from bar data for {bar_type}.")
 
     cdef void _reset(self):
         """

@@ -17,7 +17,7 @@ from typing import Callable, List
 from pandas.core.frame import DataFrame
 
 from inv_trader.core.precondition cimport Precondition
-from inv_trader.model.objects cimport Price, Bar, DataBar
+from inv_trader.model.objects cimport Symbol, Price, Bar, DataBar, Tick
 from inv_indicators.base.indicator import Indicator
 
 cdef str POINT = 'point'
@@ -31,6 +31,76 @@ cdef str VOLUME = 'volume'
 cdef str TIMESTAMP = 'timestamp'
 
 
+cdef class TickBuilder:
+    """
+    Provides a means of building lists of ticks from the given Pandas DataFrames
+    of bid and ask data. Provided data can either be tick data or bar data.
+    """
+    def __init__(self,
+                 Symbol symbol,
+                 int decimal_precision=5,
+                 tick_data: DataFrame=None,
+                 bid_data: DataFrame=None,
+                 ask_data: DataFrame=None):
+        """
+        Initializes a new instance of the TickBuilder class.
+
+        :param bid_data: The DataFrame containing the tick data.
+        :param bid_data: The DataFrame containing the market bid data.
+        :param ask_data: The DataFrame containing the market ask data.
+        :param decimal_precision: The decimal precision for tick prices.
+        """
+        Precondition.not_negative(decimal_precision, 'decimal_precision')
+        Precondition.type_or_none(tick_data, DataFrame, 'tick_data')
+        Precondition.type_or_none(bid_data, DataFrame, 'bid_data')
+        Precondition.type_or_none(ask_data, DataFrame, 'ask_data')
+
+        self._symbol = symbol
+        self._decimal_precision = decimal_precision
+        self._tick_data = tick_data
+        self._bid_data = bid_data
+        self._ask_data = ask_data
+
+    cpdef list build_ticks_all(self):
+        """
+        Return a dictionary of built ticks from the held data.
+        
+        :return: List[Tick].
+        """
+        if self._tick_data is not None:
+
+            return list(map(self._build_tick,
+                            self._tick_data['Bid'],
+                            self._tick_data['Ask'],
+                            pd.to_datetime(self._tick_data.index, utc=True)))
+        else:
+            assert(self._bid_data is not None, 'Insufficient data to build ticks.')
+            assert(self._ask_data is not None, 'Insufficient data to build ticks.')
+
+            return list(map(self._build_tick,
+                            self._bid_data['Close'],
+                            self._ask_data['Close'],
+                            pd.to_datetime(self._bid_data.index, utc=True)))
+
+    cpdef Tick _build_tick(
+            self,
+            float bid,
+            float ask,
+            datetime timestamp):
+        """
+        Build a Tick from the given values.
+
+        :param bid: The bid price for the tick.
+        :param ask: The ask price for the tick.
+        :param timestamp: The timestamp for the tick.
+        :return: Tick.
+        """
+        return Tick(self._symbol,
+                    Price(bid, self._decimal_precision),
+                    Price(ask, self._decimal_precision),
+                    timestamp)
+
+
 cdef class BarBuilder:
     """
     Provides a means of building lists of bars from a given Pandas DataFrame of
@@ -38,9 +108,9 @@ cdef class BarBuilder:
     """
 
     def __init__(self,
-                 data: DataFrame=None,
-                 int decimal_precision=5,
-                 int volume_multiple=1):
+                 int decimal_precision,
+                 int volume_multiple=1,
+                 data: DataFrame=None):
         """
         Initializes a new instance of the BarBuilder class.
 
@@ -48,13 +118,13 @@ cdef class BarBuilder:
         :param decimal_precision: The decimal precision for bar prices.
         :param volume_multiple: The volume multiple for the builder (> 0).
         """
-        Precondition.type_or_none(data, DataFrame, 'data')
         Precondition.not_negative(decimal_precision, 'decimal_precision')
         Precondition.positive(volume_multiple, 'volume_multiple')
+        Precondition.type_or_none(data, DataFrame, 'data')
 
-        self._data = data
         self._decimal_precision = decimal_precision
         self._volume_multiple = volume_multiple
+        self._data = data
 
     cpdef list build_databars_all(self):
         """

@@ -11,18 +11,39 @@ import unittest
 
 from datetime import datetime, timezone
 
-from inv_trader.model.objects import Price, Bar, DataBar
-from inv_trader.tools import BarBuilder, IndicatorUpdater
+from inv_trader.model.objects import Price, Bar
+from inv_trader.tools import TickBuilder, BarBuilder, IndicatorUpdater
 from inv_indicators.average.ema import ExponentialMovingAverage
 from inv_indicators.intrinsic_network import IntrinsicNetwork
 from test_kit.data import TestDataProvider
+from test_kit.stubs import TestStubs
+
+
+class TickBuilderTests(unittest.TestCase):
+
+    def setUp(self):
+        bid_data = TestDataProvider.usdjpy_1min_bid()[:1000]
+        ask_data = TestDataProvider.usdjpy_1min_ask()[:1000]
+        self.tick_builder = TickBuilder(symbol=TestStubs.instrument_usdjpy().symbol,
+                                        decimal_precision=5,
+                                        tick_data=None,
+                                        bid_data=bid_data,
+                                        ask_data=ask_data)
+
+    def test_build_ticks_all(self):
+        # Arrange
+        # Act
+        ticks = self.tick_builder.build_ticks_all()
+
+        # Assert
+        self.assertEqual(1000, len(ticks))
 
 
 class BarBuilderTests(unittest.TestCase):
 
     def setUp(self):
         data = TestDataProvider.gbpusd_1min_bid()[:1000]
-        self.bar_builder = BarBuilder(data, 5, 1)
+        self.bar_builder = BarBuilder(5, 1, data)
 
     def test_build_databars_all(self):
         # Arrange
