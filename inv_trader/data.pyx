@@ -15,7 +15,7 @@ import time
 
 from cpython.datetime cimport datetime
 from redis import StrictRedis, ConnectionError
-from typing import List, Callable
+from typing import Callable
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.common.clock cimport Clock, LiveClock
@@ -84,6 +84,14 @@ cdef class LiveDataClient(DataClient):
         Disconnect from the data service, unsubscribes from the pub/sub server
         and stops the pub/sub thread.
         """
+        for symbol in self._tick_handlers.copy():
+            for handler in self._tick_handlers[symbol].copy():
+                self.unsubscribe_ticks(symbol, handler)
+
+        for bar_type in self._bar_handlers.copy():
+            for handler in self._bar_handlers[bar_type].copy():
+                self.unsubscribe_bars(bar_type, handler)
+
         if self._pubsub is not None:
             self._pubsub.unsubscribe()
 
@@ -91,9 +99,6 @@ cdef class LiveDataClient(DataClient):
             self._pubsub_thread.stop()
             time.sleep(0.1)  # Allows thread to stop
             self._log.debug(f"Stopped PubSub thread {self._pubsub_thread}.")
-
-        self._log.info(f"Unsubscribed from all tick data.")
-        self._log.info(f"Unsubscribed from all bar data.")
 
         if self._redis_client is not None:
             self._redis_client.connection_pool.disconnect()
@@ -108,6 +113,7 @@ cdef class LiveDataClient(DataClient):
 
     cpdef bint is_connected(self):
         """
+        Return a value indicating whether the data client is connected to the data service.
         :return: True if the client is connected, otherwise false.
         """
         if self._redis_client is None:
@@ -123,6 +129,7 @@ cdef class LiveDataClient(DataClient):
     cpdef list subscribed_channels(self):
         """
         Return a list of all subscribed channels from the pub/sub server.
+        
         :return: List[str].
         """
         return [channel.decode(UTF8) for channel in self._redis_client.pubsub_channels()]
@@ -380,7 +387,7 @@ cdef class LiveDataClient(DataClient):
         Parse a Tick object from the given UTF-8 string.
 
         :param tick_string: The tick string.
-        :return: The parsed Tick object.
+        :return: Tick.
         """
         cdef list split_tick = tick_string.split(',')
 
@@ -394,7 +401,7 @@ cdef class LiveDataClient(DataClient):
         Parse a BarType object from the given UTF-8 string.
 
         :param bar_type_string: The bar type string to parse.
-        :return: The parsed Bar object.
+        :return: Bar.
         """
         cdef list split_string = re.split(r'[.-]+', bar_type_string)
         cdef str resolution = split_string[3].split('[')[0]
@@ -411,7 +418,7 @@ cdef class LiveDataClient(DataClient):
         Parse a Bar object from the given UTF-8 string.
 
         :param bar_string: The bar string to parse.
-        :return: The parsed bar object.
+        :return: Bar.
         """
         cdef list split_bar = bar_string.split(',')
 
@@ -425,12 +432,16 @@ cdef class LiveDataClient(DataClient):
     cpdef str _get_tick_channel_name(self, Symbol symbol):
         """
         Return the tick channel name from the given parameters.
+        
+        :return: str.
         """
         return str(f'{symbol.code.lower()}.{symbol.venue_string().lower()}')
 
     cpdef str _get_bar_channel_name(self, BarType bar_type):
         """
         Return the bar channel name from the given parameters.
+        
+        :return: str.
         """
         return str(f'{bar_type.symbol.code.lower()}.'
                    f'{bar_type.symbol.venue_string().lower()}-'

@@ -40,9 +40,9 @@ cdef class DataClient:
         else:
             self._log = LoggerAdapter(f"DataClient", logger)
 
-        self._instruments = {}       # type: Dict[Symbol, Instrument]
-        self._tick_handlers = {}     # type: Dict[Symbol, List[Callable]]
-        self._bar_handlers = {}      # type: Dict[BarType, List[Callable]]
+        self._instruments = {}    # type: Dict[Symbol, Instrument]
+        self._tick_handlers = {}  # type: Dict[Symbol, List[Callable]]
+        self._bar_handlers = {}   # type: Dict[BarType, List[Callable]]
 
         self._log.info("Initialized.")
 
