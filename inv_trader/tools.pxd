@@ -11,7 +11,22 @@
 
 from cpython.datetime cimport datetime
 
-from inv_trader.model.objects cimport Bar, DataBar
+from inv_trader.model.objects cimport Symbol, Tick, Bar, DataBar
+
+
+cdef class TickBuilder:
+    """
+    Provides a means of building lists of ticks from the given Pandas DataFrames
+    of bid and ask data.
+    """
+    cdef Symbol _symbol
+    cdef int _decimal_precision
+    cdef object _tick_data
+    cdef object _bid_data
+    cdef object _ask_data
+
+    cpdef list build_ticks_all(self)
+    cpdef Tick _build_tick(self, float bid, float ask, datetime timestamp)
 
 
 cdef class BarBuilder:
@@ -19,9 +34,9 @@ cdef class BarBuilder:
     Provides a means of building lists of bars from a given Pandas DataFrame of
     the correct specification.
     """
-    cdef object _data
     cdef int _decimal_precision
     cdef int _volume_multiple
+    cdef object _data
 
     cpdef list build_databars_all(self)
     cpdef list build_databars_from(self, int index=*)

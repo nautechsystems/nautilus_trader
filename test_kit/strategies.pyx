@@ -208,6 +208,7 @@ cdef class EMACross(TradeStrategy):
         """
         self.historical_bars(self.bar_type)
         self.subscribe_bars(self.bar_type)
+        self.subscribe_ticks(self.symbol)
 
     cpdef void on_tick(self, Tick tick):
         """
@@ -218,7 +219,7 @@ cdef class EMACross(TradeStrategy):
 
         :param tick: The received tick.
         """
-        pass
+        self.log.info(f"Received {tick}.")
 
     cpdef void on_bar(self, BarType bar_type, Bar bar):
         """

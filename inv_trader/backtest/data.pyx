@@ -21,8 +21,8 @@ from inv_trader.enums.resolution cimport Resolution
 from inv_trader.common.clock cimport TestClock
 from inv_trader.common.logger cimport Logger
 from inv_trader.common.data cimport DataClient
-from inv_trader.model.objects cimport Symbol, BarType, Instrument, Bar
-from inv_trader.tools cimport BarBuilder
+from inv_trader.model.objects cimport Symbol, Instrument, Tick, BarType, Bar
+from inv_trader.tools cimport TickBuilder, BarBuilder
 
 
 cdef class BacktestDataClient(DataClient):
@@ -145,9 +145,18 @@ cdef class BacktestDataClient(DataClient):
         """
         Iterate the data client one time step.
         """
-        # TODO: Iterate tick data.
+        # Iterate ticks
+        cdef list ticks = []
+        for data_provider in self.data_providers.values():
+            if data_provider.has_ticks:
+                ticks = data_provider.iterate_ticks(self._clock.time_now())
+                for tick in ticks:
+                    if tick.symbol in self._tick_handlers:
+                        for handler in self._tick_handlers[tick.symbol]:
+                            handler(tick)
 
-        cdef list bars = list()
+        # Iterate bars
+        cdef list bars = []
         for data_provider in self.data_providers.values():
             bars = data_provider.iterate_bars(self._clock.time_now())
             for bar_type, bar in bars:
@@ -223,6 +232,11 @@ cdef class BacktestDataClient(DataClient):
         :param symbol: The tick symbol to subscribe to.
         :param handler: The callable handler for subscription (if None will just call print).
         """
+        Precondition.is_in(symbol, self.data_providers, 'symbol', 'data_providers')
+
+        cdef start = datetime.utcnow()
+        self.data_providers[symbol].register_ticks()
+        self._log.info(f"Built {len(self.data_providers[symbol].ticks)} {symbol} ticks in {round((datetime.utcnow() - start).total_seconds(), 2)}s.")
         self._subscribe_ticks(symbol, handler)
 
     cpdef void unsubscribe_ticks(self, Symbol symbol, handler: Callable):
@@ -232,6 +246,9 @@ cdef class BacktestDataClient(DataClient):
         :param symbol: The tick symbol to unsubscribe from.
         :param handler: The callable handler which was subscribed (can be None).
         """
+        Precondition.is_in(symbol, self.data_providers, 'symbol', 'data_providers')
+
+        self.data_providers[symbol].deregister_ticks()
         self._unsubscribe_ticks(symbol, handler)
 
     cpdef void subscribe_bars(self, BarType bar_type, handler: Callable):
@@ -245,7 +262,7 @@ cdef class BacktestDataClient(DataClient):
 
         cdef start = datetime.utcnow()
         if bar_type not in self.data_providers[bar_type.symbol].bars:
-            self.data_providers[bar_type.symbol].register_bar_type(bar_type)
+            self.data_providers[bar_type.symbol].register_bars(bar_type)
             self._log.info(f"Built {len(self.data_providers[bar_type.symbol].bars[bar_type])} {bar_type} bars in {round((datetime.utcnow() - start).total_seconds(), 2)}s.")
 
         self._subscribe_bars(bar_type, handler)
@@ -259,7 +276,7 @@ cdef class BacktestDataClient(DataClient):
         """
         Precondition.is_in(bar_type.symbol, self.data_providers, 'symbol', 'data_providers')
 
-        self.data_providers[bar_type.symbol].deregister_bar_type(bar_type)
+        self.data_providers[bar_type.symbol].deregister_bars(bar_type)
         self._unsubscribe_bars(bar_type, handler)
 
 
@@ -285,10 +302,32 @@ cdef class DataProvider:
         self.instrument = instrument
         self._dataframes_bars_bid = data_bars_bid  # type: Dict[Resolution, DataFrame]
         self._dataframes_bars_ask = data_bars_ask  # type: Dict[Resolution, DataFrame]
+        self.ticks = []                            # type: List[Tick]
         self.bars = {}                             # type: Dict[BarType, List[Bar]]
         self.iterations = {}                       # type: Dict[BarType, int]
+        self.tick_index = 0
+        self.has_ticks = False
 
-    cpdef void register_bar_type(self, BarType bar_type):
+    cpdef void register_ticks(self):
+        """
+        Register ticks for the data provider.
+        """
+        cdef TickBuilder builder = TickBuilder(symbol=self.instrument.symbol,
+                                               decimal_precision=self.instrument.tick_precision,
+                                               bid_data=self._dataframes_bars_bid[Resolution.MINUTE],
+                                               ask_data=self._dataframes_bars_ask[Resolution.MINUTE])
+
+        self.ticks = builder.build_ticks_all()
+        self.has_ticks = True
+
+    cpdef void deregister_ticks(self):
+        """
+        Deregister ticks with the data provider.
+        """
+        self.ticks = []
+        self.has_ticks = False
+
+    cpdef void register_bars(self, BarType bar_type):
         """
         Register the given bar type with the data provider.
         
@@ -311,13 +350,13 @@ cdef class DataProvider:
             elif bar_type.bar_spec.quote_type is QuoteType.LAST:
                 raise NotImplemented('QuoteType.LAST not supported for bar type.')
 
-            builder = BarBuilder(data=data, decimal_precision=tick_precision)
+            builder = BarBuilder(decimal_precision=tick_precision, data=data)
             self.bars[bar_type] = builder.build_bars_all()
 
         if bar_type not in self.iterations:
             self.iterations[bar_type] = 0
 
-    cpdef void deregister_bar_type(self, BarType bar_type):
+    cpdef void deregister_bars(self, BarType bar_type):
         """
         Deregister the given bar type with the data provider.
         
@@ -339,22 +378,40 @@ cdef class DataProvider:
         cdef datetime current = from_time
 
         while current < to_time:
+            while self.ticks[self.tick_index].timestamp <= current:
+                self.tick_index += 1
+
             for bar_type, iterations in self.iterations.items():
                 if self.bars[bar_type][iterations].timestamp == current:
                     self.iterations[bar_type] += 1
             current += time_step
 
-    cpdef list iterate_bars(self, datetime time):
+    cpdef list iterate_ticks(self, datetime to_time):
         """
-        Return a list of bars which have closed based on the given datetime.
+        Return a list of ticks which have been generated based on the given to datetime.
+        
+        :param to_time: The time to build the tick list to.
+        :return: List[Tick].
+        """
+        cdef list ticks_list = []  # type: List[Tick]
 
-        :param time: The time to build the bar list to.
+        while self.ticks[self.tick_index].timestamp <= to_time:
+            ticks_list.append(self.ticks[self.tick_index])
+            self.tick_index += 1
+
+        return ticks_list
+
+    cpdef list iterate_bars(self, datetime to_time):
+        """
+        Return a list of bars which have closed based on the given to datetime.
+
+        :param to_time: The time to build the bar list to.
         :return: List[Bar].
         """
         cdef list bars_list = []  # type: List[Bar]
 
         for bar_type, iterations in self.iterations.items():
-            if self.bars[bar_type][iterations].timestamp == time:
+            if self.bars[bar_type][iterations].timestamp == to_time:
                 bars_list.append((bar_type, self.bars[bar_type][iterations]))
                 self.iterations[bar_type] += 1
 

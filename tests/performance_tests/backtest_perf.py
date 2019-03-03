@@ -122,5 +122,6 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 02/03/19 30638417 function calls (30638404 primitive calls) in 18.212 seconds (add max trade size limiter)
         # 02/03/19  4521539 function calls  (4521526 primitive calls) in 10.337 seconds (with no profile hooks!)
         # 02/03/19 30922722 function calls (30922709 primitive calls) in 17.678 seconds (nonecheck=False for preconditions)
+        # 03/03/19  6809241 function calls  (6809223 primitive calls) in 14.351 seconds (removed profile hooks, added tick iterations)
 
         self.assertTrue(True)
