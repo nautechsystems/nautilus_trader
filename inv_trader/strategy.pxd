@@ -7,7 +7,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-# cython: language_level=3, boundscheck=False
+# cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
 from cpython.datetime cimport datetime, timedelta
 
@@ -63,6 +63,7 @@ cdef class TradeStrategy:
     cpdef void on_event(self, Event event)
     cpdef void on_stop(self)
     cpdef void on_reset(self)
+    cpdef void on_dispose(self)
 
 # -- REGISTRATION AND HANDLER METHODS ------------------------------------------------------------ #
     cpdef void register_data_client(self, DataClient client)
@@ -115,6 +116,7 @@ cdef class TradeStrategy:
     cpdef void start(self)
     cpdef void stop(self)
     cpdef void reset(self)
+    cpdef void dispose(self)
     cpdef void collateral_inquiry(self)
     cpdef void submit_order(self, Order order, PositionId position_id)
     cpdef void submit_atomic_order(self, AtomicOrder order, PositionId position_id)

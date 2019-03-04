@@ -75,7 +75,7 @@ cdef class Trader:
 
         self.portfolio.register_execution_client(self._exec_client)
 
-        for strategy in strategies:
+        for strategy in self.strategies:
             self._data_client.register_strategy(strategy)
             self._exec_client.register_strategy(strategy)
 
@@ -93,6 +93,7 @@ cdef class Trader:
         """
         self.started_datetimes.append(self._clock.time_now())
 
+        self._log.info("Starting...")
         self._data_client.connect()
         self._exec_client.connect()
 
@@ -100,6 +101,7 @@ cdef class Trader:
 
         for strategy in self.strategies:
             strategy.start()
+        self._log.info("Running...")
 
     cpdef void stop(self):
         """
@@ -107,19 +109,28 @@ cdef class Trader:
         """
         self.stopped_datetimes.append(self._clock.time_now())
 
+        self._log.info("Stopping...")
         for strategy in self.strategies:
             strategy.stop()
+        self._log.info("Stopped.")
 
     cpdef void reset(self):
         """
         Reset the trader.
         """
+        self._log.info("Resetting...")
         for strategy in self.strategies:
             strategy.reset()
+        self._log.info("Reset.")
 
     cpdef void dispose(self):
         """
         Dispose of the trader.
         """
+        self._log.info("Disposing...")
+        for strategy in self.strategies:
+            strategy.dispose()
+
         self._data_client.disconnect()
         self._exec_client.disconnect()
+        self._log.info("Disposed.")

@@ -189,6 +189,13 @@ cdef class TradeStrategy:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
 
+    cpdef void on_dispose(self):
+        """
+        Called when the strategy is disposed.
+        """
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
+
 # -- REGISTRATION AND HANDLER METHODS ------------------------------------------------------------ #
 
     cpdef void register_data_client(self, DataClient client):
@@ -734,8 +741,17 @@ cdef class TradeStrategy:
         for indicator_list in self._indicators.values():
             [indicator.reset() for indicator in indicator_list]
 
+        self.log.info(f"Resetting...")
         self.on_reset()
         self.log.info(f"Reset.")
+
+    cpdef void dispose(self):
+        """
+        Dispose of the strategy to release system resources, on_dispose() is called.
+        """
+        self.log.info(f"Disposing...")
+        self.on_dispose()
+        self.log.info(f"Disposed.")
 
     cpdef void collateral_inquiry(self):
         """

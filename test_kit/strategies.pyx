@@ -50,6 +50,9 @@ cdef class EmptyStrategy(TradeStrategy):
     cpdef void on_reset(self):
         pass
 
+    cpdef void on_dispose(self):
+        pass
+
 
 cdef class TestStrategy1(TradeStrategy):
     """"
@@ -120,6 +123,9 @@ cdef class TestStrategy1(TradeStrategy):
 
     cpdef void on_reset(self):
         self.object_storer.store('custom reset logic')
+
+    cpdef void on_dispose(self):
+        self.object_storer.store('custom dispose logic')
 
 
 cdef class EMACross(TradeStrategy):
@@ -219,13 +225,13 @@ cdef class EMACross(TradeStrategy):
 
         :param tick: The received tick.
         """
-        self.log.info(f"Received Tick({tick}).")
+        self.log.info(f"Received Tick({tick})")
 
     cpdef void on_bar(self, BarType bar_type, Bar bar):
         """
         This method is called whenever the strategy receives a Bar, after the
         Bar has been processed by the base class (update indicators etc).
-        The received BarType and Bar objects are also passed into the method.
+        The received BarType and Bar objects are also passed into this method.
 
         :param bar_type: The received bar type.
         :param bar: The received bar.
@@ -352,10 +358,15 @@ cdef class EMACross(TradeStrategy):
 
         Put custom code to be run on a strategy reset here.
         """
+        self._reset_trade()
+
+    cpdef void on_dispose(self):
+        """
+        This method is called when self.dispose() is called. Dispose of any resources
+        that had been used by the strategy here.
+        """
         self.unsubscribe_bars(self.bar_type)
         self.unsubscribe_ticks(self.symbol)
-
-        self._reset_trade()
 
     cdef void _reset_trade(self):
         """
