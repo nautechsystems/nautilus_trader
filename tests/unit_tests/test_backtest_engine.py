@@ -28,47 +28,45 @@ class BacktestEngineTests(unittest.TestCase):
 
     def setUp(self):
         self.usdjpy = TestStubs.instrument_usdjpy()
-        self.bid_data_1min = TestDataProvider.usdjpy_1min_bid()
-        self.ask_data_1min = TestDataProvider.usdjpy_1min_ask()
+        bid_data_1min = TestDataProvider.usdjpy_1min_bid()
+        ask_data_1min = TestDataProvider.usdjpy_1min_ask()
 
-        self.instruments = [TestStubs.instrument_usdjpy()]
-        self.tick_data = {self.usdjpy.symbol: pd.DataFrame()}
-        self.bid_data = {self.usdjpy.symbol: {Resolution.MINUTE: self.bid_data_1min}}
-        self.ask_data = {self.usdjpy.symbol: {Resolution.MINUTE: self.ask_data_1min}}
+        instruments = [TestStubs.instrument_usdjpy()]
+        tick_data = {self.usdjpy.symbol: pd.DataFrame()}
+        bid_data = {self.usdjpy.symbol: {Resolution.MINUTE: bid_data_1min}}
+        ask_data = {self.usdjpy.symbol: {Resolution.MINUTE: ask_data_1min}}
+
+        strategies = [EmptyStrategy()]
+        config = BacktestConfig(
+            leverage=50,
+            slippage_ticks=1)
+
+        self.engine = BacktestEngine(
+            instruments=instruments,
+            data_ticks=tick_data,
+            data_bars_bid=bid_data,
+            data_bars_ask=ask_data,
+            strategies=strategies,
+            config=config)
+
+    def tearDown(self):
+        self.engine.dispose()
 
     def test_initialization(self):
-        strategies = [EmptyStrategy()]
-
-        engine = BacktestEngine(instruments=self.instruments,
-                                data_ticks=self.tick_data,
-                                data_bars_bid=self.bid_data,
-                                data_bars_ask=self.ask_data,
-                                strategies=strategies)
-
-        self.assertEqual(self.usdjpy, engine.instruments[0])
-        self.assertEqual(strategies[0], engine.trader.strategies[0])
-        engine.dispose()
+        self.assertEqual(self.usdjpy, self.engine.instruments[0])
+        self.assertEqual(1, self.engine.trader.strategy_count())
 
     def test_can_run_empty_strategy(self):
         # Arrange
-        strategies = [EmptyStrategy()]
-
-        engine = BacktestEngine(instruments=self.instruments,
-                                data_ticks=self.tick_data,
-                                data_bars_bid=self.bid_data,
-                                data_bars_ask=self.ask_data,
-                                strategies=strategies)
-
         start = datetime(2013, 1, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
         stop = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
 
         # Act
-        engine.run(start, stop)
+        self.engine.run(start, stop)
 
         # Assert
-        self.assertEqual(44641, engine.data_client.iteration)
-        self.assertEqual(44641, engine.exec_client.iteration)
-        engine.dispose()
+        self.assertEqual(44641, self.engine.data_client.iteration)
+        self.assertEqual(44641, self.engine.exec_client.iteration)
 
     def test_can_run_ema_cross_strategy(self):
         # Arrange
@@ -83,25 +81,17 @@ class BacktestEngineTests(unittest.TestCase):
                                atr_period=20,
                                sl_atr_multiple=2.0)]
 
-        config = BacktestConfig(leverage=50,
-                                slippage_ticks=1)
-        engine = BacktestEngine(instruments=self.instruments,
-                                data_ticks=self.tick_data,
-                                data_bars_bid=self.bid_data,
-                                data_bars_ask=self.ask_data,
-                                strategies=strategies,
-                                config=config)
+        self.engine.change_strategies(strategies)
 
         start = datetime(2013, 1, 2, 0, 0, 0, 0, tzinfo=timezone.utc)
         stop = datetime(2013, 1, 3, 0, 0, 0, 0, tzinfo=timezone.utc)
 
         # Act
-        engine.run(start, stop)
+        self.engine.run(start, stop)
 
         # Assert
-        self.assertEqual(2881, engine.data_client.data_providers[self.usdjpy.symbol].iterations[TestStubs.bartype_usdjpy_1min_bid()])
+        self.assertEqual(2881, self.engine.data_client.data_providers[self.usdjpy.symbol].iterations[TestStubs.bartype_usdjpy_1min_bid()])
         self.assertEqual(1441, strategies[0].fast_ema.count)
-        engine.dispose()
 
     def test_can_run_multiple_strategies(self):
         # Arrange
@@ -126,22 +116,14 @@ class BacktestEngineTests(unittest.TestCase):
                                atr_period=20,
                                sl_atr_multiple=2.0)]
 
-        config = BacktestConfig(leverage=50,
-                                slippage_ticks=1)
-        engine = BacktestEngine(instruments=self.instruments,
-                                data_ticks=self.tick_data,
-                                data_bars_bid=self.bid_data,
-                                data_bars_ask=self.ask_data,
-                                strategies=strategies,
-                                config=config)
+        self.engine.change_strategies(strategies)
 
         start = datetime(2013, 1, 2, 0, 0, 0, 0, tzinfo=timezone.utc)
         stop = datetime(2013, 1, 3, 0, 0, 0, 0, tzinfo=timezone.utc)
 
         # Act
-        engine.run(start, stop)
+        self.engine.run(start, stop)
 
         # Assert
-        self.assertEqual(2881, engine.data_client.data_providers[self.usdjpy.symbol].iterations[TestStubs.bartype_usdjpy_1min_bid()])
+        self.assertEqual(2881, self.engine.data_client.data_providers[self.usdjpy.symbol].iterations[TestStubs.bartype_usdjpy_1min_bid()])
         self.assertEqual(1441, strategies[0].fast_ema.count)
-        engine.dispose()

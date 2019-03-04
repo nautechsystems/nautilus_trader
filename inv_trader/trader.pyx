@@ -67,17 +67,15 @@ cdef class Trader:
         self.id = GUID(uuid.uuid4())
         self._data_client = data_client
         self._exec_client = exec_client
-        self.account = account
-        self.portfolio = portfolio
-        self.strategies = strategies
         self.started_datetimes = []  # type: List[datetime]
         self.stopped_datetimes = []  # type: List[datetime]
+        self.is_running = False
 
+        self.account = account
+        self.portfolio = portfolio
         self.portfolio.register_execution_client(self._exec_client)
-
-        for strategy in self.strategies:
-            self._data_client.register_strategy(strategy)
-            self._exec_client.register_strategy(strategy)
+        self.strategies = strategies
+        self._load_strategies()
 
     cpdef int strategy_count(self):
         """
@@ -101,6 +99,7 @@ cdef class Trader:
 
         for strategy in self.strategies:
             strategy.start()
+        self.is_running = True
         self._log.info("Running...")
 
     cpdef void stop(self):
@@ -112,12 +111,29 @@ cdef class Trader:
         self._log.info("Stopping...")
         for strategy in self.strategies:
             strategy.stop()
+        self.is_running = False
         self._log.info("Stopped.")
+
+    cpdef void change_strategies(self, list strategies: List[TradeStrategy]):
+        """
+        Change strategies with the given list of trade strategies.
+        
+        :param strategies: The list of strategies to load into the trader.
+        :raises ValueError: If the strategies list contains a type other than TradeStrategy.
+        """
+        Precondition.list_type(strategies, TradeStrategy, 'strategies')
+
+        self.strategies = strategies
+        self._load_strategies()
 
     cpdef void reset(self):
         """
         Reset the trader.
         """
+        if self.is_running:
+            self._log.warning(f"Cannot reset a running Trader...")
+            return
+
         self._log.info("Resetting...")
         for strategy in self.strategies:
             strategy.reset()
@@ -134,3 +150,8 @@ cdef class Trader:
         self._data_client.disconnect()
         self._exec_client.disconnect()
         self._log.info("Disposed.")
+
+    cdef void _load_strategies(self):
+        for strategy in self.strategies:
+            self._data_client.register_strategy(strategy)
+            self._exec_client.register_strategy(strategy)

@@ -56,8 +56,10 @@ cdef class BacktestEngine:
     cdef readonly list data_minute_index
 
     cpdef void run(self, datetime start, datetime stop, int time_step_mins=*)
+    cpdef void change_strategies(self, list strategies)
     cpdef void reset(self)
     cpdef void dispose(self)
 
     cdef void _backtest_header(self, datetime start, datetime stop, int time_step_mins)
     cdef void _backtest_footer(self, datetime run_started)
+    cdef void _change_strategy_clocks_and_loggers(self, list strategies)
