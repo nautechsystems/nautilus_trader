@@ -47,6 +47,7 @@ class BacktestEngineTests(unittest.TestCase):
 
         self.assertEqual(self.usdjpy, engine.instruments[0])
         self.assertEqual(strategies[0], engine.trader.strategies[0])
+        engine.dispose()
 
     def test_can_run_empty_strategy(self):
         # Arrange
@@ -67,6 +68,7 @@ class BacktestEngineTests(unittest.TestCase):
         # Assert
         self.assertEqual(44641, engine.data_client.iteration)
         self.assertEqual(44641, engine.exec_client.iteration)
+        engine.dispose()
 
     def test_can_run_ema_cross_strategy(self):
         # Arrange
@@ -99,6 +101,7 @@ class BacktestEngineTests(unittest.TestCase):
         # Assert
         self.assertEqual(2881, engine.data_client.data_providers[self.usdjpy.symbol].iterations[TestStubs.bartype_usdjpy_1min_bid()])
         self.assertEqual(1441, strategies[0].fast_ema.count)
+        engine.dispose()
 
     def test_can_run_multiple_strategies(self):
         # Arrange
@@ -141,3 +144,4 @@ class BacktestEngineTests(unittest.TestCase):
         # Assert
         self.assertEqual(2881, engine.data_client.data_providers[self.usdjpy.symbol].iterations[TestStubs.bartype_usdjpy_1min_bid()])
         self.assertEqual(1441, strategies[0].fast_ema.count)
+        engine.dispose()

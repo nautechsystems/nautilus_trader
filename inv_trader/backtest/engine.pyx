@@ -239,6 +239,12 @@ cdef class BacktestEngine:
         """
         self.trader.reset()
 
+    cpdef void dispose(self):
+        """
+        Dispose of the backtest engine by disposing the trader and releasing system resources.
+        """
+        self.trader.dispose()
+
     cdef void _backtest_header(
             self,
             datetime start,
