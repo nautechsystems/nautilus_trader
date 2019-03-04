@@ -123,5 +123,6 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 02/03/19  4521539 function calls  (4521526 primitive calls) in 10.337 seconds (with no profile hooks!)
         # 02/03/19 30922722 function calls (30922709 primitive calls) in 17.678 seconds (nonecheck=False for preconditions)
         # 03/03/19  6809241 function calls  (6809223 primitive calls) in 13.887 seconds (removed profile hooks, added tick iterations)
+        # 04/03/19  6809285 function calls  (6809267 primitive calls) in 13.740 seconds (add return calculations to positions)
 
         self.assertTrue(True)
