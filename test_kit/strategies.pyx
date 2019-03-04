@@ -215,11 +215,11 @@ cdef class EMACross(TradeStrategy):
         This method is called whenever a Tick is received by the strategy, after
         the Tick has been processed by the base class (update last received Tick
         for the Symbol).
-        The received Tick object is also passed into the method.
+        The received Tick object is then passed into this method.
 
         :param tick: The received tick.
         """
-        self.log.info(f"Received {tick}.")
+        self.log.info(f"Received Tick({tick}).")
 
     cpdef void on_bar(self, BarType bar_type, Bar bar):
         """
