@@ -97,6 +97,8 @@ cdef class BacktestEngine:
         :param data_bars_ask: The historical ask market data needed for the backtest.
         :param strategies: The strategies for the backtest.
         :param config: The configuration for the backtest.
+        :raises ValueError: If the instruments list contains a type other than Instrument.
+        :raises ValueError: If the strategies list contains a type other than TradeStrategy.
         """
         Precondition.list_type(instruments, Instrument, 'instruments')
         Precondition.list_type(strategies, TradeStrategy, 'strategies')
@@ -206,10 +208,7 @@ cdef class BacktestEngine:
         self._backtest_header(start, stop, time_step_mins)
         self.test_clock.set_time(time)
 
-        # Set all strategy clocks to the start of the backtest period
-        for strategy in self.trader.strategies:
-            strategy.set_time(start)
-
+        self._change_strategy_clocks_and_loggers(self.trader.strategies)
         self.trader.start()
 
         self.data_client.set_initial_iteration(start, time_step)  # Also sets clock to start time
@@ -232,6 +231,18 @@ cdef class BacktestEngine:
 
         self.trader.stop()
         self._backtest_footer(run_started)
+
+    cpdef void change_strategies(self, list strategies: List[TradeStrategy]):
+        """
+        Change strategies with the given list of trade strategies.
+        
+        :param strategies: The list of strategies to load into the engine.
+        :raises ValueError: If the strategies list contains a type other than TradeStrategy.
+        """
+        Precondition.list_type(strategies, TradeStrategy, 'strategies')
+
+        self._change_strategy_clocks_and_loggers(strategies)
+        self.trader.change_strategies(strategies)
 
     cpdef void reset(self):
         """
@@ -276,3 +287,10 @@ cdef class BacktestEngine:
         self.log.info(f"Ran backtest in {round(self.clock.get_elapsed(run_started), 2)}s.")
         self.log.info(f"Time-step iterations: {self.exec_client.iteration}")
         self.log.info("#----------------------------------------------------------------------------------------------------#")
+
+    cdef void _change_strategy_clocks_and_loggers(self, list strategies):
+        for strategy in strategies:
+            # Replace the strategies clock with a test clock
+            strategy.change_clock(TestClock())  # Separate test clock to iterate independently
+            # Replace the strategies logger with the engines test logger
+            strategy.change_logger(self.test_logger)

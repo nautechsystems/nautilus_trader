@@ -34,9 +34,13 @@ cdef class Trader:
     cdef readonly list strategies
     cdef readonly list started_datetimes
     cdef readonly list stopped_datetimes
+    cdef readonly bint is_running
 
     cpdef int strategy_count(self)
     cpdef void start(self)
     cpdef void stop(self)
+    cpdef void change_strategies(self, list strategies)
     cpdef void reset(self)
     cpdef void dispose(self)
+
+    cdef void _load_strategies(self)
