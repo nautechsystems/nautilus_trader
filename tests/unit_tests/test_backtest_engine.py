@@ -81,7 +81,8 @@ class BacktestEngineTests(unittest.TestCase):
                                atr_period=20,
                                sl_atr_multiple=2.0)]
 
-        config = BacktestConfig(slippage_ticks=1)
+        config = BacktestConfig(leverage=50,
+                                slippage_ticks=1)
         engine = BacktestEngine(instruments=self.instruments,
                                 data_ticks=self.tick_data,
                                 data_bars_bid=self.bid_data,
@@ -122,7 +123,8 @@ class BacktestEngineTests(unittest.TestCase):
                                atr_period=20,
                                sl_atr_multiple=2.0)]
 
-        config = BacktestConfig(slippage_ticks=1)
+        config = BacktestConfig(leverage=50,
+                                slippage_ticks=1)
         engine = BacktestEngine(instruments=self.instruments,
                                 data_ticks=self.tick_data,
                                 data_bars_bid=self.bid_data,

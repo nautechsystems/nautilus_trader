@@ -262,6 +262,7 @@ cdef class BacktestDataClient(DataClient):
 
         cdef start = datetime.utcnow()
         if bar_type not in self.data_providers[bar_type.symbol].bars:
+            self._log.info(f"Building {bar_type} bars...")
             self.data_providers[bar_type.symbol].register_bars(bar_type)
             self._log.info(f"Built {len(self.data_providers[bar_type.symbol].bars[bar_type])} {bar_type} bars in {round((datetime.utcnow() - start).total_seconds(), 2)}s.")
 

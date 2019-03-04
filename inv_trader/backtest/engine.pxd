@@ -26,6 +26,7 @@ cdef class BacktestConfig:
     Represents a configuration for a BacktestEngine.
     """
     cdef readonly Money starting_capital
+    cdef readonly int leverage
     cdef readonly int slippage_ticks
     cdef readonly bint bypass_logging
     cdef readonly object level_console

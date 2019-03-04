@@ -51,6 +51,7 @@ cdef class BacktestExecClient(ExecutionClient):
                  dict data_bars_bid: Dict[Symbol, DataFrame],
                  dict data_bars_ask: Dict[Symbol, DataFrame],
                  Money starting_capital,
+                 int leverage,
                  int slippage_ticks,
                  Account account,
                  Portfolio portfolio,
@@ -66,9 +67,17 @@ cdef class BacktestExecClient(ExecutionClient):
         :param data_bars_ask: The historical minute ask bars data needed for the backtest.
         :param starting_capital: The starting capital for the backtest account (> 0).
         :param slippage_ticks: The slippage for each order fill in ticks (>= 0).
+        :param leverage: The leverage for broker instruments notional value (FX only) (> 0).
         :param clock: The clock for the component.
         :param clock: The GUID factory for the component.
         :param logger: The logger for the component.
+        :raises ValueError: If the instruments list contains a type other than Instrument.
+        :raises ValueError: If the data_ticks contains a key other than Symbol or value other than DataFrame.
+        :raises ValueError: If the data_bars_bid contains a key other than Symbol or value other than DataFrame.
+        :raises ValueError: If the data_bars_ask contains a key other than Symbol or value other than DataFrame.
+        :raises ValueError: If the starting capital is not positive (> 0).
+        :raises ValueError: If the leverage is not positive (> 0).
+        :raises ValueError: If the slippage_ticks is negative (< 0).
         """
         Precondition.list_type(instruments, Instrument, 'instruments')
         Precondition.dict_types(data_ticks, Symbol, DataFrame, 'data_ticks')

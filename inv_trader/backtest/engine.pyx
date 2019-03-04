@@ -37,6 +37,7 @@ cdef class BacktestConfig:
     """
     def __init__(self,
                  int starting_capital=1000000,
+                 int leverage=1,
                  int slippage_ticks=0,
                  bint bypass_logging=False,
                  level_console: logging=INFO,
@@ -47,19 +48,25 @@ cdef class BacktestConfig:
         """
         Initializes a new instance of the BacktestEngine class.
 
-        :param starting_capital: The starting capital for the engine.
-        :param slippage_ticks: The slippage ticks for the engine.
+        :param starting_capital: The starting capital for the engine (> 0).
+        :param leverage: The leverage for broker instruments notional value (FX only) (> 0).
+        :param slippage_ticks: The slippage ticks for the engine (>= 0).
         :param bypass_logging: The flag indicating whether logging should be bypassed.
         :param level_console: The minimum log level for logging messages to the console.
         :param level_file: The minimum log level for logging messages to the log file.
         :param console_prints: The boolean flag indicating whether log messages should print.
         :param log_to_file: The boolean flag indicating whether log messages should log to file
         :param log_file_path: The name of the log file (cannot be None if log_to_file is True).
+        :raises ValueError: If the starting capital is not positive (> 0).
+        :raises ValueError: If the leverage is not positive (> 0).
+        :raises ValueError: If the slippage_ticks is negative (< 0).
         """
         Precondition.positive(starting_capital, 'starting_capital')
+        Precondition.positive(leverage, 'leverage')
         Precondition.not_negative(slippage_ticks, 'slippage_ticks')
 
         self.starting_capital = Money(starting_capital)
+        self.leverage = leverage
         self.slippage_ticks = slippage_ticks
         self.bypass_logging = bypass_logging
         self.level_console = level_console
@@ -140,6 +147,7 @@ cdef class BacktestEngine:
             data_bars_bid=minute_bars_bid,
             data_bars_ask=minute_bars_ask,
             starting_capital=config.starting_capital,
+            leverage=config.leverage,
             slippage_ticks=config.slippage_ticks,
             account=self.account,
             portfolio=self.portfolio,
