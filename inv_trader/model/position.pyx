@@ -48,15 +48,16 @@ cdef class Position:
         self.last_execution_id = None
         self.last_execution_ticket = None
         self.quantity = Quantity(0)
+        self.peak_quantity = Quantity(0)
         self.market_position = MarketPosition.FLAT
         self.timestamp = timestamp
         self.entry_time = None
         self.exit_time = None
         self.average_entry_price = None
         self.average_exit_price = None
+        self.return_realized = 0.0
         self.is_entered = False
         self.is_exited = False
-        self.peak_quantity = Quantity(0)
         self.event_count = 0
         self.last_event = None
 
@@ -152,8 +153,20 @@ cdef class Position:
 
         # Fill logic
         if event.order_side is OrderSide.BUY:
+            if self.market_position == MarketPosition.SHORT:
+                # Increment realized return of a short position
+                self.return_realized += self._calculate_return(
+                    MarketPosition.SHORT,
+                    self.average_entry_price,
+                    event.average_price)
             self._relative_quantity += event.filled_quantity.value
         elif event.order_side is OrderSide.SELL:
+            if self.market_position == MarketPosition.LONG:
+                # Increment realized return of a long position
+                self.return_realized += self._calculate_return(
+                    MarketPosition.LONG,
+                    self.average_entry_price,
+                    event.average_price)
             self._relative_quantity -= event.filled_quantity.value
 
         self.quantity = Quantity(abs(self._relative_quantity))
@@ -178,3 +191,31 @@ cdef class Position:
         # Check overfill
         if self.is_exited and self._relative_quantity != 0:
             self.is_exited = False
+
+    cpdef float return_unrealized(self, Price current_price):
+        """
+        Calculate the percentage unrealized return from the given current price.
+         
+        :param current_price: The current price of the position instrument.
+        :return: float.
+        """
+        if not self.is_entered or self.is_exited or self.market_position is MarketPosition.FLAT:
+            return 0.0
+        return self._calculate_return(self.market_position,
+                                      self.average_entry_price,
+                                      current_price)
+
+    cdef float _calculate_return(
+            self,
+            MarketPosition direction,
+            Price entry_price,
+            Price exit_price):
+        """
+        Calculate the return from the given parameters.
+        """
+        if direction is MarketPosition.LONG:
+            return (exit_price.as_float() - entry_price.as_float()) / exit_price.as_float()
+        if direction is MarketPosition.SHORT:
+            return (entry_price.as_float() - exit_price.as_float()) / exit_price.as_float()
+        else:
+            raise ValueError(f'Cannot calculate the return of a {direction} direction.')

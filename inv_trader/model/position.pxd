@@ -34,15 +34,17 @@ cdef class Position:
     cdef readonly OrderId from_order_id
     cdef readonly OrderId last_order_id
     cdef readonly Quantity quantity
+    cdef readonly Quantity peak_quantity
     cdef readonly MarketPosition market_position
     cdef readonly datetime timestamp
     cdef readonly datetime entry_time
     cdef readonly datetime exit_time
     cdef readonly Price average_entry_price
     cdef readonly Price average_exit_price
+    cdef readonly float return_realized
     cdef readonly bint is_entered
     cdef readonly bint is_exited
-    cdef readonly Quantity peak_quantity
+
     cdef readonly int event_count
     cdef readonly OrderEvent last_event
 
@@ -53,3 +55,10 @@ cdef class Position:
     cpdef list get_execution_tickets(self)
     cpdef list get_events(self)
     cpdef void apply(self, OrderEvent event)
+    cpdef float return_unrealized(self, Price current_price)
+
+    cdef float _calculate_return(
+            self,
+            MarketPosition direction,
+            Price entry_price,
+            Price exit_price)

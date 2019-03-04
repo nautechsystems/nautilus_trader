@@ -50,6 +50,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(None, position.last_execution_ticket)
         self.assertFalse(position.is_entered)
         self.assertFalse(position.is_exited)
+        self.assertEqual(0.0, position.return_realized)
         self.assertEqual('Position(id=P123456) AUDUSD.FXCM FLAT 0', str(position))
         self.assertTrue(repr(position).startswith('<Position(id=P123456) AUDUSD.FXCM FLAT 0 object at'))
 
@@ -94,6 +95,8 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(ExecutionTicket('T123456'), position.last_execution_ticket)
         self.assertTrue(position.is_entered)
         self.assertFalse(position.is_exited)
+        self.assertEqual(0.0, position.return_realized)
+        self.assertEqual(0.0004897053586319089, position.return_unrealized(Price('1.00050')))
 
     def test_position_filled_with_sell_order_returns_expected_attributes(self):
         # Arrange
@@ -132,6 +135,8 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(ExecutionTicket('T123456'), position.last_execution_ticket)
         self.assertTrue(position.is_entered)
         self.assertFalse(position.is_exited)
+        self.assertEqual(0.0, position.return_realized)
+        self.assertEqual(-0.0004897053586319089, position.return_unrealized(Price('1.00050')))
 
     def test_position_partial_fills_with_buy_order_returns_expected_attributes(self):
         # Arrange
@@ -172,6 +177,8 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(ExecutionTicket('T123456'), position.last_execution_ticket)
         self.assertTrue(position.is_entered)
         self.assertFalse(position.is_exited)
+        self.assertEqual(0.0, position.return_realized)
+        self.assertEqual(0.0004897053586319089, position.return_unrealized(Price('1.00050')))
 
     def test_position_partial_fills_with_sell_order_returns_expected_attributes(self):
         # Arrange
@@ -212,6 +219,8 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(ExecutionTicket('T123456'), position.last_execution_ticket)
         self.assertTrue(position.is_entered)
         self.assertFalse(position.is_exited)
+        self.assertEqual(0.0, position.return_realized)
+        self.assertEqual(-0.0004897053586319089, position.return_unrealized(Price('1.00050')))
 
     def test_position_filled_with_buy_order_then_sell_order_returns_expected_attributes(self):
         # Arrange
@@ -265,6 +274,8 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Price('1.00001'), position.average_exit_price)
         self.assertTrue(position.is_entered)
         self.assertTrue(position.is_exited)
+        self.assertEqual(0.0, position.return_realized)  # No change in price
+        self.assertEqual(0.0, position.return_unrealized(Price('1.00050')))
 
     def test_position_filled_with_sell_order_then_buy_order_returns_expected_attributes(self):
         # Arrange
@@ -319,3 +330,5 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Price('1.00001'), position.average_exit_price)
         self.assertTrue(position.is_entered)
         self.assertTrue(position.is_exited)
+        self.assertEqual(-1.001348027784843e-05, position.return_realized)
+        self.assertEqual(0.0, position.return_unrealized(Price('1.00050')))
