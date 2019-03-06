@@ -35,7 +35,6 @@ cdef class Position:
         :param position_id: The positions identifier.
         :param timestamp: The positions initialization timestamp.
         """
-        self._relative_quantity = 0
         self._order_ids = set()       # type: Set[OrderId]
         self._execution_ids = []      # type: List[ExecutionId]
         self._execution_tickets = []  # type: List[ExecutionTicket]
@@ -47,6 +46,7 @@ cdef class Position:
         self.last_order_id = None
         self.last_execution_id = None
         self.last_execution_ticket = None
+        self.relative_quantity = 0
         self.quantity = Quantity(0)
         self.peak_quantity = Quantity(0)
         self.market_position = MarketPosition.FLAT
@@ -159,7 +159,7 @@ cdef class Position:
                     MarketPosition.SHORT,
                     self.average_entry_price,
                     event.average_price)
-            self._relative_quantity += event.filled_quantity.value
+            self.relative_quantity += event.filled_quantity.value
         elif event.order_side is OrderSide.SELL:
             if self.market_position == MarketPosition.LONG:
                 # Increment realized return of a long position
@@ -167,29 +167,29 @@ cdef class Position:
                     MarketPosition.LONG,
                     self.average_entry_price,
                     event.average_price)
-            self._relative_quantity -= event.filled_quantity.value
+            self.relative_quantity -= event.filled_quantity.value
 
-        self.quantity = Quantity(abs(self._relative_quantity))
+        self.quantity = Quantity(abs(self.relative_quantity))
 
         if self.quantity > self.peak_quantity:
             self.peak_quantity = self.quantity
 
         # Exit logic
-        if self._relative_quantity == 0:
+        if self.relative_quantity == 0:
             self.exit_time = event.timestamp
             self.average_exit_price = event.average_price
             self.is_exited = True
 
         # Market position logic
-        if self._relative_quantity > 0:
+        if self.relative_quantity > 0:
             self.market_position = MarketPosition.LONG
-        elif self._relative_quantity < 0:
+        elif self.relative_quantity < 0:
             self.market_position = MarketPosition.SHORT
         else:
             self.market_position = MarketPosition.FLAT
 
         # Check overfill
-        if self.is_exited and self._relative_quantity != 0:
+        if self.is_exited and self.relative_quantity != 0:
             self.is_exited = False
 
     cpdef float return_unrealized(self, Price current_price):

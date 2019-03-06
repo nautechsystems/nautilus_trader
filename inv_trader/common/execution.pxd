@@ -21,7 +21,6 @@ from inv_trader.model.order cimport Order
 from inv_trader.commands cimport Command, CollateralInquiry
 from inv_trader.commands cimport SubmitOrder, SubmitAtomicOrder, ModifyOrder, CancelOrder
 from inv_trader.portfolio.portfolio cimport Portfolio
-from inv_trader.portfolio.analyzer cimport Analyzer
 from inv_trader.strategy cimport TradeStrategy
 
 
@@ -34,7 +33,6 @@ cdef class ExecutionClient:
     cdef LoggerAdapter _log
     cdef Account _account
     cdef Portfolio _portfolio
-    cdef Analyzer _analyzer
     cdef dict _registered_strategies
     cdef dict _order_strategy_index
     cdef dict _order_book
