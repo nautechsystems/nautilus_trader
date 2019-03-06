@@ -16,6 +16,7 @@ from inv_trader.common.execution cimport ExecutionClient
 from inv_trader.model.identifiers cimport GUID, OrderId, PositionId
 from inv_trader.model.events cimport Event
 from inv_trader.model.position cimport Position
+from inv_trader.portfolio.analyzer cimport Analyzer
 
 
 cdef class Portfolio:
@@ -37,6 +38,7 @@ cdef class Portfolio:
     cdef readonly int positions_closed_count
     cdef readonly list position_opened_events
     cdef readonly list position_closed_events
+    cdef readonly Analyzer analyzer
 
     cpdef list registered_strategies(self)
     cpdef list registered_order_ids(self)

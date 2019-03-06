@@ -31,6 +31,8 @@ REQUIREMENTS = ['cython',
                 'psutil',
                 'redis',
                 'inv_indicators',
+                'pyfolio',
+                'theano',
                 'pymc3']
 DIRECTORIES = [INV_TRADER, 'test_kit']
 

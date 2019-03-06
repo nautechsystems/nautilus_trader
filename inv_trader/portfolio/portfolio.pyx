@@ -19,6 +19,7 @@ from inv_trader.common.execution cimport ExecutionClient
 from inv_trader.model.events cimport Event, PositionOpened, PositionModified, PositionClosed
 from inv_trader.model.identifiers cimport GUID, OrderId, PositionId
 from inv_trader.model.position cimport Position
+from inv_trader.portfolio.analyzer cimport Analyzer
 
 
 cdef class Portfolio:
@@ -52,6 +53,8 @@ cdef class Portfolio:
         self.positions_closed_count = 0
         self.position_opened_events = []  # type: List[PositionOpened]
         self.position_closed_events = []  # type: List[PositionClosed]
+
+        self.analyzer = Analyzer()
 
         self._log.info("Initialized.")
 

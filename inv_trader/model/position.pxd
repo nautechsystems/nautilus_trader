@@ -21,7 +21,6 @@ cdef class Position:
     """
     Represents a position in a financial market.
     """
-    cdef long _relative_quantity
     cdef set _order_ids
     cdef list _execution_ids
     cdef list _execution_tickets
@@ -33,6 +32,7 @@ cdef class Position:
     cdef readonly ExecutionTicket last_execution_ticket
     cdef readonly OrderId from_order_id
     cdef readonly OrderId last_order_id
+    cdef readonly long relative_quantity
     cdef readonly Quantity quantity
     cdef readonly Quantity peak_quantity
     cdef readonly MarketPosition market_position
