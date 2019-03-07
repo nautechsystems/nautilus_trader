@@ -225,7 +225,7 @@ cdef class EMACross(TradeStrategy):
 
         :param tick: The received tick.
         """
-        self.log.info(f"Received Tick({tick})")
+        self.log.info(f"Received Tick({tick})")  # For demonstration purposes
 
     cpdef void on_bar(self, BarType bar_type, Bar bar):
         """
@@ -237,7 +237,7 @@ cdef class EMACross(TradeStrategy):
         :param bar: The received bar.
         """
         if not self.fast_ema.initialized or not self.slow_ema.initialized:
-            # Wait for indicators to warm up
+            # Wait for indicators to warm up...
             return
 
         cdef Price entry_price
