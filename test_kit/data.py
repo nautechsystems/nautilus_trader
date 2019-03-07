@@ -9,8 +9,10 @@
 
 import os
 import pandas as pd
+import gzip
 
-from pandas import DataFrame
+from pandas import Series, DataFrame, read_csv
+from pyfolio.utils import (to_utc, to_series)
 
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -31,3 +33,25 @@ class TestDataProvider:
     def usdjpy_1min_ask() -> DataFrame:
         return pd.read_csv(os.path.join(ROOT_DIR, 'USDJPY_1 Min_Ask.csv'),
                            index_col='Time (UTC)')
+
+    @staticmethod
+    def test_returns() -> Series:
+        data = read_csv(
+            gzip.open(os.path.join(ROOT_DIR, 'test_returns.csv.gz')),
+            index_col=0,
+            parse_dates=True)
+        return to_series(to_utc(data))
+
+    @staticmethod
+    def test_positions() -> DataFrame:
+        return read_csv(
+            gzip.open(os.path.join(ROOT_DIR, 'test_positions.csv.gz')),
+            index_col=0,
+            parse_dates=True)
+
+    @staticmethod
+    def test_transactions() -> DataFrame:
+        return read_csv(
+            gzip.open(os.path.join(ROOT_DIR, 'test_transactions.csv.gz')),
+            index_col=0,
+            parse_dates=True)
