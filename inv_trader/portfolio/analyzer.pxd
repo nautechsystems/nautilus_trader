@@ -9,7 +9,10 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
-from cpython.datetime cimport date, timedelta
+from cpython.datetime cimport datetime
+
+from inv_trader.model.position import Position
+from inv_trader.model.events cimport OrderEvent
 
 
 cdef class Analyzer:
@@ -18,15 +21,15 @@ cdef class Analyzer:
     and statistics.
     """
     cdef bint _log_returns
-    cdef timedelta _time_step
     cdef object _returns
     cdef list _positions_symbols
     cdef list _positions_columns
     cdef object _positions
     cdef object _transactions
 
-    cpdef void add_return(self, date d, float value)
-    cpdef void add_daily_positions(self, date d, list positions, float cash)
+    cpdef void add_return(self, datetime time, float value)
+    # cpdef void add_position(self, datetime time, Position positions)
+    cpdef void add_transaction(self, OrderEvent event)
     cpdef object get_returns(self)
     cpdef object get_positions(self)
     cpdef object get_transactions(self)

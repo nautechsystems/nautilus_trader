@@ -13,10 +13,13 @@ import pandas as pd
 
 from math import log
 from typing import List, Dict
-from cpython.datetime cimport date, timedelta
+from cpython.datetime cimport datetime, timedelta
 from pyfolio.tears import create_simple_tear_sheet, create_returns_tear_sheet, create_full_tear_sheet
 
-from inv_trader.model.objects import Symbol
+from inv_trader.enums.order_side cimport OrderSide
+from inv_trader.model.objects cimport Symbol
+from inv_trader.model.position cimport Position
+from inv_trader.model.events cimport OrderEvent
 
 
 cdef class Analyzer:
@@ -25,62 +28,81 @@ cdef class Analyzer:
     and statistics.
     """
 
-    def __init__(self,
-                 use_log_returns=False,
-                 time_step=timedelta(hours=1)):
+    def __init__(self, log_returns=False):
         """
         Initializes a new instance of the Analyzer class.
+
+        :param log_returns: A boolean flag indicating whether log returns will be used.
         """
-        self._log_returns = use_log_returns
-        self._time_step = time_step
+        self._log_returns = log_returns
         self._returns = pd.Series()
         self._positions_symbols = []        # type: List[Symbol]
         self._positions_columns = ['cash']  # type: List[str]
         self._positions = pd.DataFrame(columns=self._positions_columns)
         self._transactions = pd.DataFrame(columns=['amount', 'price', 'symbol'])
 
-    cpdef void add_return(self, date d, float value):
+    cpdef void add_return(self, datetime time, float value):
         """
-        Add daily returns data to the analyzer.
+        Add return data to the analyzer.
         
-        :param d: The date for the returns entry.
+        :param time: The timestamp for the returns entry.
         :param value: The return value to add.
         """
         if self._log_returns:
             value = log(value)
 
-        pandas_timestamp = pd.to_datetime(d)
-        if pandas_timestamp not in self._returns:
-            self._returns.loc[pandas_timestamp] = 0.0
+        timestamp = pd.to_datetime(time.date())
+        if timestamp not in self._returns:
+            self._returns.loc[timestamp] = 0.0
 
-        self._returns.loc[pandas_timestamp] += value
+        self._returns.loc[timestamp] += value
 
-    cpdef void add_daily_positions(self, date d, list positions, float cash):
+    # cpdef void add_position(self, datetime time, Position position):
+    #     """
+    #     Add position data to the analyzer.
+    #
+    #     :param time: The timestamp for the position entry.
+    #     :param position: The position.
+    #     """
+    #     cdef dict symbol_quantities = {}  # type: Dict[Symbol, int]
+    #     pandas_timestamp = pd.to_datetime(time.date())
+    #     if pandas_timestamp not in self._positions:
+    #         self._positions.loc[pandas_timestamp] = 0.0
+    #
+    #     for position in positions:
+    #         if position.symbol not in self._positions_symbols:
+    #             self._positions_symbols.append(position.symbol)
+    #             self._positions_columns.append(str(position.symbol))
+    #         if position.symbol not in symbol_quantities:
+    #             symbol_quantities[position.symbol] = 0
+    #         symbol_quantities[position.symbol] += position.relative_quantity
+    #
+    #     self._positions_columns.sort()
+    #     self._positions = self._positions[self._positions_columns]
+    #
+    #     self._positions.loc[pandas_timestamp]['cash'] = cash
+    #
+    #     for symbol, quantity in symbol_quantities.items():
+    #         self._positions.loc[pandas_timestamp][str(symbol)] = quantity
+
+    cpdef void add_transaction(self, OrderEvent event):
         """
-        Add daily positions to the analyzer.
+        Add transaction data to the analyzer.
 
-        :param d: The date for the positions entry.
-        :param positions: The active positions.
-        :param cash: The cash balance at the end of day.
+        :param event: The transaction event.
         """
-        cdef dict symbol_quantities = {}  # type: Dict[Symbol, int]
-        pandas_timestamp = pd.to_datetime(d)
+        timestamp = pd.to_datetime(event.timestamp)
 
-        for position in positions:
-            if position.symbol not in self._positions_symbols:
-                self._positions_symbols.append(position.symbol)
-                self._positions_columns.append(str(position.symbol))
-            if position.symbol not in symbol_quantities:
-                symbol_quantities[position.symbol] = 0
-            symbol_quantities[position.symbol] += position.relative_quantity
+        if timestamp in self._transactions:
+            timestamp += timedelta(milliseconds=1)
 
-        self._positions_columns.sort()
-        self._positions = self._positions[self._positions_columns]
+        cdef int quantity
+        if event.order_side == OrderSide.BUY:
+            quantity = event.filled_quantity.value
+        else:
+            quantity = -event.filled_quantity.value
 
-        self._positions.loc[pandas_timestamp]['cash'] = cash
-
-        for symbol, quantity in symbol_quantities.items():
-            self._positions.loc[pandas_timestamp][str(symbol)] = quantity
+        self._transactions.loc[timestamp] = [quantity, event.average_price, str(event.symbol)]
 
     cpdef object get_returns(self):
         return self._returns
@@ -95,8 +117,8 @@ cdef class Analyzer:
         """
         Create a pyfolio returns tear sheet based on analyzer data from the last run.
         """
-        create_simple_tear_sheet(returns=self._returns)
         create_returns_tear_sheet(returns=self._returns,
+                                  transactions=self._transactions,
                                   benchmark_rets=self._returns,
                                   bootstrap=True,
                                   cone_std=1)
@@ -105,8 +127,8 @@ cdef class Analyzer:
         """
         Create a pyfolio full tear sheet based on analyzer data from the last run.
         """
-        create_simple_tear_sheet(returns=self._returns)
-        create_returns_tear_sheet(returns=self._returns,
-                                  benchmark_rets=self._returns,
-                                  bootstrap=True,
-                                  cone_std=1)
+        create_full_tear_sheet(returns=self._returns,
+                               transactions=self._transactions,
+                               benchmark_rets=self._returns,
+                               bootstrap=True,
+                               cone_std=1)

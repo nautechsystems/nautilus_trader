@@ -264,6 +264,9 @@ cdef class Portfolio:
                     self._position_opened(position, strategy_id)
                 self._position_modified(position, strategy_id)
 
+        # Update analyzer
+        self.analyzer.add_transaction(event)
+
     cdef void _position_opened(self, Position position, GUID strategy_id):
         cdef PositionOpened event = PositionOpened(
             position,
@@ -295,5 +298,5 @@ cdef class Portfolio:
         self.position_closed_events.append(event)
         self.positions_closed_count += 1
         self.positions_active_count -= 1
-        self.analyzer.add_return(time_now.date(), position.return_realized)
+        self.analyzer.add_return(time_now, position.return_realized)
         self._exec_client.handle_event(event)
