@@ -14,7 +14,7 @@ import pandas as pd
 from math import log
 from typing import List, Dict
 from cpython.datetime cimport date, timedelta
-from pyfolio.tears import create_returns_tear_sheet, create_full_tear_sheet
+from pyfolio.tears import create_simple_tear_sheet, create_returns_tear_sheet, create_full_tear_sheet
 
 from inv_trader.model.objects import Symbol
 
@@ -91,15 +91,21 @@ cdef class Analyzer:
     cpdef object get_transactions(self):
         return self._transactions
 
-    cpdef void get_returns_tearsheet(self):
-        print(self._returns)
+    cpdef void create_returns_tear_sheet(self):
+        """
+        Create a pyfolio returns tear sheet based on analyzer data from the last run.
+        """
+        create_simple_tear_sheet(returns=self._returns)
         create_returns_tear_sheet(returns=self._returns,
                                   benchmark_rets=self._returns,
                                   bootstrap=True,
                                   cone_std=1)
 
-    cpdef void get_full_tearsheet(self):
-        print(self._returns)
+    cpdef void create_full_tear_sheet(self):
+        """
+        Create a pyfolio full tear sheet based on analyzer data from the last run.
+        """
+        create_simple_tear_sheet(returns=self._returns)
         create_returns_tear_sheet(returns=self._returns,
                                   benchmark_rets=self._returns,
                                   bootstrap=True,

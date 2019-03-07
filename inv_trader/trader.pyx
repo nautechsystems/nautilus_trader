@@ -102,17 +102,17 @@ cdef class Trader:
         self.is_running = True
         self._log.info("Running...")
 
-    cpdef void get_returns_tearsheet(self):
+    cpdef void create_returns_tear_sheet(self):
         """
-        Get a pyfolio returns tearsheet based on analyzer data from the last run.
+        Create a pyfolio returns tear sheet based on analyzer data from the last run.
         """
-        self.portfolio.analyzer.get_returns_tearsheet()
+        self.portfolio.analyzer.create_returns_tear_sheet()
 
-    cpdef void get_full_tearsheet(self):
+    cpdef void create_full_tear_sheet(self):
         """
-        Get a pyfolio full tearsheet based on analyzer data from the last run.
+        Create a pyfolio full tear sheet based on analyzer data from the last run.
         """
-        self.portfolio.analyzer.get_full_tearsheet()
+        self.portfolio.analyzer.create_full_tear_sheet()
 
     cpdef void stop(self):
         """

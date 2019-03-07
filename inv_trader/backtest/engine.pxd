@@ -56,8 +56,8 @@ cdef class BacktestEngine:
     cdef readonly list data_minute_index
 
     cpdef void run(self, datetime start, datetime stop, int time_step_mins=*)
-    cpdef void get_returns_tearsheet(self)
-    cpdef void get_full_tearsheet(self)
+    cpdef void create_returns_tear_sheet(self)
+    cpdef void create_full_tear_sheet(self)
     cpdef void change_strategies(self, list strategies)
     cpdef void reset(self)
     cpdef void dispose(self)

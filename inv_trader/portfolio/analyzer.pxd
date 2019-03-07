@@ -30,5 +30,5 @@ cdef class Analyzer:
     cpdef object get_returns(self)
     cpdef object get_positions(self)
     cpdef object get_transactions(self)
-    cpdef void get_returns_tearsheet(self)
-    cpdef void get_full_tearsheet(self)
+    cpdef void create_returns_tear_sheet(self)
+    cpdef void create_full_tear_sheet(self)

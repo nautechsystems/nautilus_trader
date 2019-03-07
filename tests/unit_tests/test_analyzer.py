@@ -39,7 +39,7 @@ class PortfolioTestsTests(unittest.TestCase):
         # Arrange
         returns = TestDataProvider.test_returns()
         positions = TestDataProvider.test_positions()
-        transactions = TestDataProvider.test_transactions()
+        #transactions = TestDataProvider.test_transactions()
 
         # Act
         # Assert
