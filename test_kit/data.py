@@ -49,9 +49,9 @@ class TestDataProvider:
             index_col=0,
             parse_dates=True)
 
-    @staticmethod
-    def test_transactions() -> DataFrame:
-        return read_csv(
-            gzip.open(os.path.join(ROOT_DIR, 'test_transactions.csv.gz')),
-            index_col=0,
-            parse_dates=True)
+    # @staticmethod
+    # def test_transactions() -> DataFrame:
+    #     return read_csv(
+    #         gzip.open(os.path.join(ROOT_DIR, 'test_transactions.csv.gz')),
+    #         index_col=0,
+    #         parse_dates=True)

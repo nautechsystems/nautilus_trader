@@ -92,7 +92,6 @@ class BacktestEngineTests(unittest.TestCase):
         # Assert
         self.assertEqual(2881, self.engine.data_client.data_providers[self.usdjpy.symbol].iterations[TestStubs.bartype_usdjpy_1min_bid()])
         self.assertEqual(1441, strategies[0].fast_ema.count)
-        self.engine.get_returns_tearsheet()
 
     def test_can_run_multiple_strategies(self):
         # Arrange

@@ -244,17 +244,17 @@ cdef class BacktestEngine:
         self._change_strategy_clocks_and_loggers(strategies)
         self.trader.change_strategies(strategies)
 
-    cpdef void get_returns_tearsheet(self):
+    cpdef void create_returns_tear_sheet(self):
         """
-        Get a pyfolio returns tearsheet based on analyzer data from the last run.
+        Create a pyfolio returns tear sheet based on analyzer data from the last run.
         """
-        self.trader.get_returns_tearsheet()
+        self.trader.create_returns_tear_sheet()
 
-    cpdef void get_full_tearsheet(self):
+    cpdef void create_full_tear_sheet(self):
         """
-        Get a pyfolio full tearsheet based on analyzer data from the last run.
+        Create a pyfolio full tear sheet based on analyzer data from the last run.
         """
-        self.trader.get_full_tearsheet()
+        self.trader.create_full_tear_sheet()
 
     cpdef void reset(self):
         """
