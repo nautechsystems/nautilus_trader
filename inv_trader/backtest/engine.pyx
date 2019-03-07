@@ -244,6 +244,18 @@ cdef class BacktestEngine:
         self._change_strategy_clocks_and_loggers(strategies)
         self.trader.change_strategies(strategies)
 
+    cpdef void get_returns_tearsheet(self):
+        """
+        Get a pyfolio returns tearsheet based on analyzer data from the last run.
+        """
+        self.trader.get_returns_tearsheet()
+
+    cpdef void get_full_tearsheet(self):
+        """
+        Get a pyfolio full tearsheet based on analyzer data from the last run.
+        """
+        self.trader.get_full_tearsheet()
+
     cpdef void reset(self):
         """
         Reset the backtest engine. The internal trader and all strategies are reset.

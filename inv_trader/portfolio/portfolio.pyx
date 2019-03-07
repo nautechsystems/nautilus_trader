@@ -10,6 +10,7 @@
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
 from typing import List, Dict
+from cpython.datetime cimport datetime
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.common.logger cimport Logger, LoggerAdapter
@@ -284,13 +285,15 @@ cdef class Portfolio:
         self._exec_client.handle_event(event)
 
     cdef void _position_closed(self, Position position, GUID strategy_id):
+        cdef datetime time_now = self._clock.time_now()
         cdef PositionClosed event = PositionClosed(
             position,
             strategy_id,
             self._guid_factory.generate(),
-            self._clock.time_now())
+            time_now)
 
         self.position_closed_events.append(event)
         self.positions_closed_count += 1
         self.positions_active_count -= 1
+        self.analyzer.add_return(time_now.date(), position.return_realized)
         self._exec_client.handle_event(event)

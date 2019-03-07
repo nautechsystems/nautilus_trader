@@ -102,6 +102,18 @@ cdef class Trader:
         self.is_running = True
         self._log.info("Running...")
 
+    cpdef void get_returns_tearsheet(self):
+        """
+        Get a pyfolio returns tearsheet based on analyzer data from the last run.
+        """
+        self.portfolio.analyzer.get_returns_tearsheet()
+
+    cpdef void get_full_tearsheet(self):
+        """
+        Get a pyfolio full tearsheet based on analyzer data from the last run.
+        """
+        self.portfolio.analyzer.get_full_tearsheet()
+
     cpdef void stop(self):
         """
         Stop the trader.

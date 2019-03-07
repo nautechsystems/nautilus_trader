@@ -39,6 +39,8 @@ cdef class Trader:
     cpdef int strategy_count(self)
     cpdef void start(self)
     cpdef void stop(self)
+    cpdef void get_returns_tearsheet(self)
+    cpdef void get_full_tearsheet(self)
     cpdef void change_strategies(self, list strategies)
     cpdef void reset(self)
     cpdef void dispose(self)
