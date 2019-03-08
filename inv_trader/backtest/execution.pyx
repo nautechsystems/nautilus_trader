@@ -112,6 +112,7 @@ cdef class BacktestExecClient(ExecutionClient):
 
         self.iteration = 0
         self.day_number = 0
+        self.leverage = leverage
         self.account_capital = starting_capital
         self.account_cash_start_day = starting_capital
         self.account_cash_activity_day = Money(0)
@@ -592,8 +593,8 @@ cdef class BacktestExecClient(ExecutionClient):
             self._guid_factory.generate(),
             self._clock.time_now())
 
-        self.handle_event(filled)
         self._adjust_account(filled)
+        self.handle_event(filled)
 
         if order.id in self.atomic_orders:
             for child_order in self.atomic_orders[order.id]:
@@ -606,6 +607,12 @@ cdef class BacktestExecClient(ExecutionClient):
         
         :param event: The order fill event.
         """
+        # TODO: Improve this calculation to factor in exchange rate.
+        cdef Money commission = Money(Decimal(round(float(event.filled_quantity.value) * float(self.leverage) / 1000000 * 15, 2)))
+
+        self.account_capital -= commission
+        self.account_cash_activity_day -= commission
+
         cdef AccountEvent account_event = AccountEvent(
             self._account.id,
             self._account.broker,
