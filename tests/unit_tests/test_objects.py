@@ -316,12 +316,6 @@ class ObjectTests(unittest.TestCase):
         # Assert
         self.assertRaises(InvalidOperation, Money, 'a')
 
-    def test_money_initialized_with_negative_value_raises_exception(self):
-        # Arrange
-        # Act
-        # Assert
-        self.assertRaises(AssertionError, Money, Decimal(-1.0))
-
     def test_money_zero_returns_money_with_zero_value(self):
         # Arrange
         # Act

@@ -385,11 +385,9 @@ cdef class Money:
         """
         Initializes a new instance of the Money class.
 
-        :param value: The value of the money (>= 0).
-        Note: Can be str, float or Decimal only.
+        :param value: The value of the money (>= 0) (Must be str, float or Decimal only).
+        Note: Only the first two decimal places of precision are retained.
         :raises TypeError: If the value is not a str, float or Decimal.
-        :raises AssertionError: If the value is negative (< 0).
-        :raises AssertionError: If the str or Decimal value has a precision > 2.
         """
         if isinstance(value, str):
             self.value = Decimal(_get_money_str(value))
@@ -402,8 +400,6 @@ cdef class Money:
 
         else:
             raise TypeError(f'Cannot initialize Money with a {type(value)}.')
-
-        assert(self.value >= 0)
 
     @staticmethod
     def zero():
