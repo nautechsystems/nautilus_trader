@@ -102,7 +102,7 @@ cdef class Analyzer:
         else:
             quantity = -event.filled_quantity.value
 
-        self._transactions.loc[timestamp] = [quantity, event.average_price, str(event.symbol)]
+        self._transactions.loc[timestamp] = [quantity, str(event.average_price), str(event.symbol)]
 
     cpdef object get_returns(self):
         return self._returns

@@ -31,6 +31,7 @@ REQUIREMENTS = ['cython',
                 'psutil',
                 'redis',
                 'inv_indicators',
+                'empyrical',
                 'pyfolio',
                 'theano',
                 'pymc3']
