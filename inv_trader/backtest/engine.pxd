@@ -63,5 +63,5 @@ cdef class BacktestEngine:
     cpdef void dispose(self)
 
     cdef void _backtest_header(self, datetime start, datetime stop, int time_step_mins)
-    cdef void _backtest_footer(self, datetime run_started)
+    cdef void _backtest_footer(self, datetime run_started, datetime start, datetime stop)
     cdef void _change_strategy_clocks_and_loggers(self, list strategies)
