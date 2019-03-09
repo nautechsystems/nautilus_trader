@@ -36,22 +36,21 @@ class TestDataProvider:
 
     @staticmethod
     def test_returns() -> Series:
-        data = read_csv(
-            gzip.open(os.path.join(ROOT_DIR, 'test_returns.csv.gz')),
-            index_col=0,
-            parse_dates=True)
+        data = read_csv(gzip.open(os.path.join(ROOT_DIR, 'test_returns.csv.gz')),
+                        index_col=0,
+                        parse_dates=True)
         return to_series(to_utc(data))
 
     @staticmethod
     def test_positions() -> DataFrame:
-        return read_csv(
-            gzip.open(os.path.join(ROOT_DIR, 'test_positions.csv.gz')),
-            index_col=0,
-            parse_dates=True)
+        data = read_csv(gzip.open(os.path.join(ROOT_DIR, 'test_positions.csv.gz')),
+                        index_col=0,
+                        parse_dates=True)
+        return to_utc(data)
 
     # @staticmethod
     # def test_transactions() -> DataFrame:
-    #     return read_csv(
-    #         gzip.open(os.path.join(ROOT_DIR, 'test_transactions.csv.gz')),
-    #         index_col=0,
-    #         parse_dates=True)
+    #     data = read_csv(gzip.open(os.path.join(ROOT_DIR, 'test_txn.csv.gz')),
+    #                     index_col=0,
+    #                     parse_dates=True)
+    #     return to_utc(data)

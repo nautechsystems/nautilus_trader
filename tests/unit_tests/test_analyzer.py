@@ -11,8 +11,12 @@ import unittest
 import uuid
 
 from datetime import datetime
-from pyfolio.tears import create_full_tear_sheet
-from pyfolio.tears import create_returns_tear_sheet
+from pyfolio.tears import (
+    create_simple_tear_sheet,
+    create_returns_tear_sheet,
+    create_full_tear_sheet,
+    create_bayesian_tear_sheet)
+
 
 from inv_trader.common.clock import TestClock
 from inv_trader.model.order import Order, OrderFactory
@@ -29,7 +33,7 @@ from test_kit.stubs import TestStubs
 from test_kit.data import TestDataProvider
 
 UNIX_EPOCH = TestStubs.unix_epoch()
-AUDUSD_FXCM = Symbol('audusd', Venue.FXCM)
+AUDUSD_FXCM = Symbol('AUDUSD', Venue.FXCM)
 
 
 class PortfolioTestsTests(unittest.TestCase):
@@ -38,17 +42,14 @@ class PortfolioTestsTests(unittest.TestCase):
         # Fixture Setup
         self.analyzer = Analyzer()
 
-    def test_pyfolio_output(self):
-        # Arrange
+    def test_pyfolio_can_create_full_tear_sheet(self):
         returns = TestDataProvider.test_returns()
         positions = TestDataProvider.test_positions()
         #transactions = TestDataProvider.test_transactions()
 
-        # Act
-        # Assert
         # create_full_tear_sheet(returns,
         #                        positions=positions,
-        #                        transactions=transactions,
+        #                        transactions=None,
         #                        benchmark_rets=returns,
         #                        slippage=1,
         #                        live_start_date=returns.index[-20],
@@ -56,6 +57,14 @@ class PortfolioTestsTests(unittest.TestCase):
         #                        hide_positions=True,
         #                        cone_std=1,
         #                        bootstrap=True)
+
+    def test_pyfolio_can_create_bayesian_tear_sheet(self):
+        returns = TestDataProvider.test_returns()
+
+        # create_bayesian_tear_sheet(returns=returns,
+        #                            benchmark_rets=None,
+        #                            live_start_date=returns.index[-20],
+        #                            progressbar=True)
 
     def test_can_add_return(self):
         # Arrange
@@ -86,7 +95,7 @@ class PortfolioTestsTests(unittest.TestCase):
         # Assert
         create_returns_tear_sheet(returns=result)
 
-    def test_can_add_transaction(self):
+    def test_can_add_buy_transaction(self):
         # Arrange
         order_factory = OrderFactory(
             id_tag_trader=ValidString('001'),
@@ -112,6 +121,44 @@ class PortfolioTestsTests(unittest.TestCase):
 
         # Act
         self.analyzer.add_transaction(event)
+        result = self.analyzer.get_transactions()
 
         # Assert
-        print(self.analyzer.get_transactions())
+        self.assertEqual(1, len(result))
+        self.assertEqual('AUDUSD.FXCM', result.iloc[0]['symbol'])
+        self.assertEqual(100000, result.iloc[0]['amount'])
+        self.assertEqual('1.00001', result.iloc[0]['price'])
+
+    def test_can_add_sell_transaction(self):
+        # Arrange
+        order_factory = OrderFactory(
+            id_tag_trader=ValidString('001'),
+            id_tag_strategy=ValidString('001'),
+            clock=TestClock())
+
+        order = order_factory.market(
+            AUDUSD_FXCM,
+            OrderSide.SELL,
+            Quantity(100000))
+
+        event = OrderFilled(
+            order.symbol,
+            order.id,
+            ExecutionId('SOME_EXEC_ID_1'),
+            ExecutionTicket('SOME_EXEC_TICKET_1'),
+            order.side,
+            order.quantity,
+            Price('1.00001'),
+            UNIX_EPOCH,
+            GUID(uuid.uuid4()),
+            UNIX_EPOCH)
+
+        # Act
+        self.analyzer.add_transaction(event)
+        result = self.analyzer.get_transactions()
+
+        # Assert
+        self.assertEqual(1, len(result))
+        self.assertEqual('AUDUSD.FXCM', result.iloc[0]['symbol'])
+        self.assertEqual(-100000, result.iloc[0]['amount'])
+        self.assertEqual('1.00001', result.iloc[0]['price'])
