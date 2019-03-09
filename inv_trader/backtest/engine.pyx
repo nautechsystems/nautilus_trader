@@ -14,7 +14,21 @@ import psutil
 import platform
 
 from cpython.datetime cimport datetime, timedelta
-from empyrical.stats import sharpe_ratio, sortino_ratio
+from scipy.stats import kurtosis, skew
+from empyrical.stats import (
+    annual_return,
+    cum_returns_final,
+    annual_volatility,
+    sharpe_ratio,
+    calmar_ratio,
+    sortino_ratio,
+    omega_ratio,
+    stability_of_timeseries,
+    value_at_risk,
+    max_drawdown,
+    alpha,
+    beta,
+    tail_ratio)
 from pandas import DataFrame
 from typing import List, Dict
 from logging import INFO, DEBUG
@@ -122,12 +136,7 @@ cdef class BacktestEngine:
             clock=self.test_clock)
         self.log = LoggerAdapter(component_name='BacktestEngine', logger=self.test_logger)
 
-        self.log.info("#----------------------------------------------------------------------------------------------------#")
-        self.log.info("#----------------------------------------- BACKTEST ENGINE ------------------------------------------#")
-        self.log.info("#----------------------------------------------------------------------------------------------------#")
-        self.log.info("Nautilus Trader for Invariance Pte")
-        self.log.info("Version: 0.80.1")
-        self.log.info("Building engine...")
+        self._engine_header()
 
         self.account = Account()
         self.portfolio = Portfolio(
@@ -276,16 +285,27 @@ cdef class BacktestEngine:
         """
         self.trader.dispose()
 
+    cdef void _engine_header(self):
+        """
+        Create a backtest engine log header.
+        """
+        self.log.info("#----------------------------------------------------------------------------------------------------#")
+        self.log.info("#-- BACKTEST ENGINE ---------------------------------------------------------------------------------#")
+        self.log.info("#----------------------------------------------------------------------------------------------------#")
+        self.log.info("Nautilus Trader for Invariance Pte")
+        self.log.info("Version: 0.80.1")
+        self.log.info("Building engine...")
+
     cdef void _backtest_header(
             self,
             datetime start,
             datetime stop,
             int time_step_mins):
         """
-        Create a backtest log header.
+        Create a backtest run log header.
         """
         self.log.info("#----------------------------------------------------------------------------------------------------#")
-        self.log.info("#--------------------------------------------- BACKTEST ---------------------------------------------#")
+        self.log.info("#-- BACKTEST RUN ------------------------------------------------------------------------------------#")
         self.log.info("#----------------------------------------------------------------------------------------------------#")
         self.log.info(f"OS: {platform.platform()}")
         self.log.info(f"Processors: {platform.processor()}")
@@ -323,8 +343,21 @@ cdef class BacktestEngine:
         self.log.info("#----------------------------------------------------------------------------------------------------#")
         self.log.info("#-- PERFORMANCE STATISTICS --------------------------------------------------------------------------#")
         self.log.info("#----------------------------------------------------------------------------------------------------#")
-        self.log.info(f"Sharpe Ratio: {round(sharpe_ratio(returns=returns), 2)}")
-        self.log.info(f"Sortino Ratio: {round(sortino_ratio(returns=returns), 2)}")
+        self.log.info(f"Annual return: {round(annual_return(returns=returns), 2)}%")
+        self.log.info(f"Cum returns:   {round(cum_returns_final(returns=returns), 2)}%")
+        self.log.info(f"Max drawdown:  {round(max_drawdown(returns=returns), 2)}%")
+        self.log.info(f"Annual vol:    {round(annual_volatility(returns=returns), 2)}%")
+        self.log.info(f"Sharpe ratio:  {round(sharpe_ratio(returns=returns), 2)}")
+        self.log.info(f"Calmar ratio:  {round(calmar_ratio(returns=returns), 2)}")
+        self.log.info(f"Sortino ratio: {round(sortino_ratio(returns=returns), 2)}")
+        self.log.info(f"Omega ratio:   {round(omega_ratio(returns=returns), 2)}")
+        self.log.info(f"Stability:     {round(stability_of_timeseries(returns=returns), 2)}")
+        self.log.info(f"Skew:          {round(skew(returns), 2)}")
+        self.log.info(f"Kurtosis:      {round(kurtosis(returns), 2)}")
+        self.log.info(f"Tail ratio:    {round(tail_ratio(returns=returns), 2)}")
+        self.log.info(f"Alpha:         {round(alpha(returns=returns, factor_returns=returns), 2)}")
+        self.log.info(f"Beta:          {round(beta(returns=returns, factor_returns=returns), 2)}")
+        self.log.info(f"Daily VAR:     {round(value_at_risk(returns=returns), 2)}%")
         self.log.info("#----------------------------------------------------------------------------------------------------#")
 
     cdef void _change_strategy_clocks_and_loggers(self, list strategies):

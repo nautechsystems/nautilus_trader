@@ -53,8 +53,8 @@ if __name__ == "__main__":
         strategies=strategies,
         config=config)
 
-    start = datetime(2013, 10, 2, 0, 0, 0, 0, tzinfo=timezone.utc)
-    stop = datetime(2013, 10, 10, 0, 0, 0, 0, tzinfo=timezone.utc)
+    start = datetime(2013, 1, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
+    stop = datetime(2013, 3, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
 
     engine.run(start, stop)
     #engine.create_full_tear_sheet()
