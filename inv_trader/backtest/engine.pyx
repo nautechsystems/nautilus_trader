@@ -14,6 +14,7 @@ import psutil
 import platform
 
 from cpython.datetime cimport datetime, timedelta
+from empyrical.stats import sharpe_ratio, sortino_ratio
 from pandas import DataFrame
 from typing import List, Dict
 from logging import INFO, DEBUG
@@ -120,6 +121,13 @@ cdef class BacktestEngine:
             log_file_path=config.log_file_path,
             clock=self.test_clock)
         self.log = LoggerAdapter(component_name='BacktestEngine', logger=self.test_logger)
+
+        self.log.info("#----------------------------------------------------------------------------------------------------#")
+        self.log.info("#----------------------------------------- BACKTEST ENGINE ------------------------------------------#")
+        self.log.info("#----------------------------------------------------------------------------------------------------#")
+        self.log.info("Nautilus Trader for Invariance Pte")
+        self.log.info("Version: 0.80.1")
+        self.log.info("Building engine...")
 
         self.account = Account()
         self.portfolio = Portfolio(
@@ -230,7 +238,7 @@ cdef class BacktestEngine:
             time += time_step
 
         self.trader.stop()
-        self._backtest_footer(run_started)
+        self._backtest_footer(run_started, start, stop)
 
     cpdef void change_strategies(self, list strategies: List[TradeStrategy]):
         """
@@ -285,19 +293,38 @@ cdef class BacktestEngine:
         self.log.info(f"RAM-Used:  {round(psutil.virtual_memory()[3] / 1000000)}MB")
         self.log.info(f"RAM-Avail: {round(psutil.virtual_memory()[1] / 1000000)}MB ({100 - psutil.virtual_memory()[2]}%)")
         self.log.info(f"Time-step: {time_step_mins} minute")
-        self.log.info(f"Running backtest from {start} to {stop}...")
+        self.log.info(f"Start datetime: {start}")
+        self.log.info(f"Stop datetime:  {stop}")
+        self.log.info(f"Starting account balance: {self.config.starting_capital}")
         self.log.info("#----------------------------------------------------------------------------------------------------#")
+        self.log.info(f"Running backtest...")
 
-    cdef void _backtest_footer(self, datetime run_started):
+    cdef void _backtest_footer(
+            self,
+            datetime run_started,
+            datetime start,
+            datetime stop):
         """
         Create a backtest log footer.
         """
+        returns = self.trader.portfolio.analyzer.get_returns()
+
         self.log.info("#----------------------------------------------------------------------------------------------------#")
         self.log.info("#-- BACKTEST DIAGNOSTICS ----------------------------------------------------------------------------#")
         self.log.info("#----------------------------------------------------------------------------------------------------#")
-        self.log.info(f"Initialized in {round(self.time_to_initialize, 2)}s.")
-        self.log.info(f"Ran backtest in {round(self.clock.get_elapsed(run_started), 2)}s.")
+        self.log.info(f"Initialized in {round(self.time_to_initialize, 2)}s")
+        self.log.info(f"Ran backtest in {round(self.clock.get_elapsed(run_started), 2)}s")
         self.log.info(f"Time-step iterations: {self.exec_client.iteration}")
+        self.log.info(f"Start datetime: {start}")
+        self.log.info(f"Stop datetime:  {stop}")
+        self.log.info(f"Starting account balance: {self.config.starting_capital}")
+        self.log.info(f"Ending account balance:   {self.account.cash_balance}")
+        self.log.info("")
+        self.log.info("#----------------------------------------------------------------------------------------------------#")
+        self.log.info("#-- PERFORMANCE STATISTICS --------------------------------------------------------------------------#")
+        self.log.info("#----------------------------------------------------------------------------------------------------#")
+        self.log.info(f"Sharpe Ratio: {round(sharpe_ratio(returns=returns), 2)}")
+        self.log.info(f"Sortino Ratio: {round(sortino_ratio(returns=returns), 2)}")
         self.log.info("#----------------------------------------------------------------------------------------------------#")
 
     cdef void _change_strategy_clocks_and_loggers(self, list strategies):
