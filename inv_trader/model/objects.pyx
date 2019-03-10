@@ -9,7 +9,7 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from cpython.datetime cimport datetime
 
 from inv_trader.core.precondition cimport Precondition
