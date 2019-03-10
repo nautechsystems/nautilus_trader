@@ -84,6 +84,8 @@ cdef class PositionSizer:
         """
         Calculate the amount of risk money available.
         """
+        if equity.value <= 0:
+            return Money.zero()
         cdef Money risk_money = Money(equity.value * Decimal(round(risk_bp * 0.01, 2)))
         cdef Money commission = Money(((risk_money.value * leverage) / 1000000) * commission_rate)
 

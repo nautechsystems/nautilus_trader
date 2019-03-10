@@ -14,7 +14,7 @@ from typing import Set, List
 
 from inv_trader.enums.market_position cimport MarketPosition, market_position_string
 from inv_trader.enums.order_side cimport OrderSide
-from inv_trader.model.objects cimport Symbol
+from inv_trader.model.objects cimport Symbol, Money
 from inv_trader.model.events cimport OrderEvent
 from inv_trader.model.identifiers cimport PositionId, ExecutionId, ExecutionTicket
 
@@ -194,7 +194,7 @@ cdef class Position:
 
     cpdef float return_unrealized(self, Price current_price):
         """
-        Calculate the percentage unrealized return from the given current price.
+        Calculate the unrealized return percentage from the given current price.
          
         :param current_price: The current price of the position instrument.
         :return: float.

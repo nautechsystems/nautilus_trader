@@ -12,7 +12,8 @@
 from cpython.datetime cimport datetime, timedelta
 
 from inv_trader.common.execution cimport ExecutionClient
-from inv_trader.model.objects cimport Symbol, Price, Money
+from inv_trader.enums.market_position cimport MarketPosition
+from inv_trader.model.objects cimport Symbol, Price, Money, Quantity
 from inv_trader.model.order cimport Order, OrderEvent
 
 
@@ -57,3 +58,9 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef void _work_order(self, Order order)
     cdef void _fill_order(self, Order order, Price fill_price)
     cdef void _adjust_account(self, OrderEvent event)
+    cdef Money _calculate_pnl(
+            self,
+            MarketPosition direction,
+            Price entry_price,
+            Price exit_price,
+            Quantity quantity)

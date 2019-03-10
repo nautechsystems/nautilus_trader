@@ -57,8 +57,6 @@ cdef class Portfolio:
 
         self.analyzer = Analyzer()
 
-        self._log.info("Initialized.")
-
     cpdef list registered_strategies(self):
         """
         :return: A list of strategy identifiers registered with the portfolio.
@@ -86,12 +84,35 @@ cdef class Portfolio:
         """
         return position_id in self._position_book
 
+    cpdef bint order_has_position(self, OrderId order_id):
+        """
+        Return a value indicating whether there is a position associated with the given
+        order identifier.
+        
+        :param order_id: The order identifier.
+        :return: True if an associated position exists, else False.
+        """
+        return order_id in self._order_p_index and self._order_p_index[order_id] in self._position_book
+
+    cpdef Position get_position_for_order(self, OrderId order_id):
+        """
+        Return the position associated with the given order identifier.
+        
+        :param order_id: The order identifier.
+        :return: Position (if found).
+        :raises ValueError: If the position is not found.
+        """
+        Precondition.is_in(order_id, self._order_p_index, 'order_id', 'order_p_index')
+
+        cdef PositionId position_id = self._order_p_index[order_id]
+        return self._position_book[position_id]
+
     cpdef Position get_position(self, PositionId position_id):
         """
-        Return the position associated with the given identifier.
+        Return the position associated with the given position identifier.
         
-        :param position_id: The position id.
-        :return: The position or None if not found.
+        :param position_id: The position identifier.
+        :return: Position (if found).
         :raises ValueError: If the position is not found.
         """
         Precondition.is_in(position_id, self._position_book, 'position_id', 'position_book')

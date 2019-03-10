@@ -35,7 +35,7 @@ if __name__ == "__main__":
         id_tag_strategy='001',
         instrument=usdjpy,
         bar_type=TestStubs.bartype_usdjpy_1min_bid(),
-        risk_bp=10,
+        risk_bp=1,
         fast_ema=10,
         slow_ema=20,
         atr_period=20,

@@ -304,12 +304,6 @@ class ObjectTests(unittest.TestCase):
         # Assert
         self.assertEqual(1.0, result)
 
-    def test_money_initialized_with_invalid_type_raises_exception(self):
-        # Arrange
-        # Act
-        # Assert
-        self.assertRaises(TypeError, Money, Price(1.0))
-
     def test_money_initialized_with_malformed_string_raises_exception(self):
         # Arrange
         # Act

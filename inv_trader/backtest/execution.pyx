@@ -23,13 +23,15 @@ from inv_trader.enums.brokerage cimport Broker
 from inv_trader.enums.currency_code cimport CurrencyCode
 from inv_trader.enums.order_type cimport OrderType
 from inv_trader.enums.order_side cimport OrderSide
-from inv_trader.model.objects cimport ValidString, Symbol, Price, Money, Instrument
+from inv_trader.enums.market_position cimport MarketPosition
+from inv_trader.model.objects cimport ValidString, Symbol, Price, Money, Instrument, Quantity
 from inv_trader.model.order cimport Order
+from inv_trader.model.position cimport Position
 from inv_trader.model.events cimport Event, OrderEvent, AccountEvent
 from inv_trader.model.events cimport OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
 from inv_trader.model.events cimport OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
 from inv_trader.model.events cimport OrderFilled
-from inv_trader.model.identifiers cimport  OrderId, ExecutionId, ExecutionTicket, AccountNumber
+from inv_trader.model.identifiers cimport OrderId, ExecutionId, ExecutionTicket, AccountNumber
 from inv_trader.common.account cimport Account
 from inv_trader.common.clock cimport TestClock
 from inv_trader.common.guid cimport TestGuidFactory
@@ -608,10 +610,24 @@ cdef class BacktestExecClient(ExecutionClient):
         :param event: The order fill event.
         """
         # TODO: Improve this calculation to factor in exchange rate.
-        cdef Money commission = Money(Decimal(round(float(event.filled_quantity.value) * float(self.leverage) / 1000000 * 15, 2)))
 
-        self.account_capital -= commission
-        self.account_cash_activity_day -= commission
+        cdef Position position
+        cdef Price average_entry
+        cdef Money pnl = Money.zero()
+        if self._portfolio.order_has_position(event.order_id):
+            position = self._portfolio.get_position_for_order(event.order_id)
+            average_entry = position.average_entry_price
+            pnl = self._calculate_pnl(
+                position.market_position,
+                average_entry,
+                event.average_price,
+                event.filled_quantity)
+
+        cdef Money commission = Money(Decimal(round(float(event.filled_quantity.value) * float(self.leverage) / 1000000 * 15, 2)))
+        pnl -= commission
+
+        self.account_capital += pnl
+        self.account_cash_activity_day += pnl
 
         cdef AccountEvent account_event = AccountEvent(
             self._account.id,
@@ -629,3 +645,24 @@ cdef class BacktestExecClient(ExecutionClient):
             event_timestamp=self._clock.time_now())
 
         self.handle_event(account_event)
+
+    cdef Money _calculate_pnl(
+            self,
+            MarketPosition direction,
+            Price entry_price,
+            Price exit_price,
+            Quantity quantity):
+        """
+        Return the pnl from the given parameters.
+        
+        :return: Money.
+        """
+        cdef float difference
+        if direction is MarketPosition.LONG:
+            difference = exit_price.as_float() - entry_price.as_float()
+        elif direction is MarketPosition.SHORT:
+            difference = entry_price.as_float() - exit_price.as_float()
+        else:
+            raise ValueError(f'Cannot calculate the pnl of a {direction} direction.')
+
+        return Money(((difference * quantity.value) / exit_price.as_float()) * self.leverage)

@@ -129,16 +129,17 @@ class EMACrossPy(TradeStrategy):
                     units=1,
                     unit_batch_size=1000)
 
-                atomic_order = self.order_factory.atomic_stop_market(
-                    self.symbol,
-                    OrderSide.BUY,
-                    position_size,
-                    entry_price,
-                    stop_loss_price,
-                    price_profit_target=None,
-                    label=Label('S1'),
-                    time_in_force=TimeInForce.GTD,
-                    expire_time=self.time_now() + timedelta(minutes=1))
+                if position_size.value > 0:
+                    atomic_order = self.order_factory.atomic_stop_market(
+                        self.symbol,
+                        OrderSide.BUY,
+                        position_size,
+                        entry_price,
+                        stop_loss_price,
+                        price_profit_target=None,
+                        label=Label('S1'),
+                        time_in_force=TimeInForce.GTD,
+                        expire_time=self.time_now() + timedelta(minutes=1))
 
             # SELL LOGIC
             elif self.fast_ema.value < self.slow_ema.value:
@@ -157,23 +158,25 @@ class EMACrossPy(TradeStrategy):
                     units=1,
                     unit_batch_size=1000)
 
-                atomic_order = self.order_factory.atomic_stop_market(
-                    self.symbol,
-                    OrderSide.SELL,
-                    position_size,
-                    entry_price,
-                    stop_loss_price,
-                    price_profit_target=None,
-                    label=Label('S1'),
-                    time_in_force=TimeInForce.GTD,
-                    expire_time=self.time_now() + timedelta(minutes=1))
+                if position_size.value > 0:
+                    atomic_order = self.order_factory.atomic_stop_market(
+                        self.symbol,
+                        OrderSide.SELL,
+                        position_size,
+                        entry_price,
+                        stop_loss_price,
+                        price_profit_target=None,
+                        label=Label('S1'),
+                        time_in_force=TimeInForce.GTD,
+                        expire_time=self.time_now() + timedelta(minutes=1))
 
             # ENTRY ORDER SUBMISSION
-            self.entry_order = atomic_order.entry
-            self.stop_loss_order = atomic_order.stop_loss
-            self.position_id = self.generate_position_id(self.symbol)
+            if atomic_order is not None:
+                self.entry_order = atomic_order.entry
+                self.stop_loss_order = atomic_order.stop_loss
+                self.position_id = self.generate_position_id(self.symbol)
 
-            self.submit_atomic_order(atomic_order, self.position_id)
+                self.submit_atomic_order(atomic_order, self.position_id)
 
         # TRAILING STOP LOGIC
         if self._is_stop_loss_active():
