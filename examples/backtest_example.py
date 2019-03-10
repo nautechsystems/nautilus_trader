@@ -55,7 +55,7 @@ if __name__ == "__main__":
         config=config)
 
     start = datetime(2013, 1, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
-    stop = datetime(2013, 6, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
+    stop = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
 
     engine.run(start, stop)
     #engine.create_full_tear_sheet()

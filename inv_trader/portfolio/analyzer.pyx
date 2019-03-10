@@ -13,10 +13,11 @@ import pandas as pd
 
 from math import log
 from typing import List, Dict
-from cpython.datetime cimport datetime, timedelta
-from pyfolio.tears import create_simple_tear_sheet, create_returns_tear_sheet, create_full_tear_sheet
+from cpython.datetime cimport date, datetime, timedelta
+from pyfolio.tears import create_returns_tear_sheet, create_full_tear_sheet
 
 from inv_trader.enums.order_side cimport OrderSide
+from inv_trader.enums.market_position cimport MarketPosition
 from inv_trader.model.objects cimport Symbol
 from inv_trader.model.position cimport Position
 from inv_trader.model.events cimport OrderEvent
@@ -36,10 +37,8 @@ cdef class Analyzer:
         """
         self._log_returns = log_returns
         self._returns = pd.Series()
-        self._positions_symbols = []        # type: List[Symbol]
-        self._positions_columns = ['cash']  # type: List[str]
-        self._positions = pd.DataFrame(columns=self._positions_columns)
         self._transactions = pd.DataFrame(columns=['amount', 'price', 'symbol'])
+        self._positions = pd.DataFrame(columns=['cash'])
 
     cpdef void add_return(self, datetime time, float value):
         """
@@ -51,39 +50,11 @@ cdef class Analyzer:
         if self._log_returns:
             value = log(value)
 
-        timestamp = pd.to_datetime(time.date())
-        if timestamp not in self._returns:
-            self._returns.loc[timestamp] = 0.0
+        cdef date index_date = pd.to_datetime(time.date())
+        if index_date not in self._returns:
+            self._returns.loc[index_date] = 0.0
 
-        self._returns.loc[timestamp] += value
-
-    # cpdef void add_position(self, datetime time, Position position):
-    #     """
-    #     Add position data to the analyzer.
-    #
-    #     :param time: The timestamp for the position entry.
-    #     :param position: The position.
-    #     """
-    #     cdef dict symbol_quantities = {}  # type: Dict[Symbol, int]
-    #     pandas_timestamp = pd.to_datetime(time.date())
-    #     if pandas_timestamp not in self._positions:
-    #         self._positions.loc[pandas_timestamp] = 0.0
-    #
-    #     for position in positions:
-    #         if position.symbol not in self._positions_symbols:
-    #             self._positions_symbols.append(position.symbol)
-    #             self._positions_columns.append(str(position.symbol))
-    #         if position.symbol not in symbol_quantities:
-    #             symbol_quantities[position.symbol] = 0
-    #         symbol_quantities[position.symbol] += position.relative_quantity
-    #
-    #     self._positions_columns.sort()
-    #     self._positions = self._positions[self._positions_columns]
-    #
-    #     self._positions.loc[pandas_timestamp]['cash'] = cash
-    #
-    #     for symbol, quantity in symbol_quantities.items():
-    #         self._positions.loc[pandas_timestamp][str(symbol)] = quantity
+        self._returns.loc[index_date] += value
 
     cpdef void add_transaction(self, OrderEvent event):
         """
@@ -91,10 +62,9 @@ cdef class Analyzer:
 
         :param event: The transaction event.
         """
-        timestamp = pd.to_datetime(event.timestamp)
-
-        if timestamp in self._transactions:
-            timestamp += timedelta(milliseconds=1)
+        cdef datetime index_datetime = pd.to_datetime(event.timestamp)
+        if index_datetime in self._transactions:
+            index_datetime += timedelta(milliseconds=1)
 
         cdef int quantity
         if event.order_side == OrderSide.BUY:
@@ -102,16 +72,59 @@ cdef class Analyzer:
         else:
             quantity = -event.filled_quantity.value
 
-        self._transactions.loc[timestamp] = [quantity, str(event.average_price), str(event.symbol)]
+        self._transactions.loc[index_datetime] = [quantity, str(event.average_price), str(event.symbol)]
+
+    cpdef void add_positions(
+            self,
+            datetime time,
+            list positions,
+            Money cash_balance):
+        """
+        Add end of day positions data to the analyzer.
+
+        :param time: The timestamp for the positions entry.
+        :param positions: The end of day positions.
+        :param cash_balance: The end of day cash balance of the account.
+        """
+        cdef date index_date = pd.to_datetime(time.date())
+        if index_date not in self._positions:
+            self._positions.loc[index_date] = 0
+
+        cdef str symbol
+        cdef list columns
+        for position in positions:
+            symbol = str(position.symbol)
+            columns = list(self._positions.columns.values)
+            if symbol not in columns:
+                self._positions[symbol] = 0
+            self._positions.loc[index_date][symbol] += position.relative_quantity
+
+        # TODO: Cash not being added??
+        self._positions.loc[index_date]['cash'] = cash_balance.value
 
     cpdef object get_returns(self):
+        """
+        Return the returns data.
+        
+        :return: Pandas.Series.
+        """
         return self._returns
 
-    cpdef object get_positions(self):
-        return self._positions
-
     cpdef object get_transactions(self):
+        """
+        Return the transactions data.
+        
+        :return: Pandas.DataFrame.
+        """
         return self._transactions
+
+    cpdef object get_positions(self):
+        """
+        Return the positions data.
+        
+        :return: Pandas.DataFrame.
+        """
+        return self._positions
 
     cpdef void create_returns_tear_sheet(self):
         """
