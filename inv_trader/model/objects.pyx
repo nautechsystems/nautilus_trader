@@ -9,7 +9,7 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from cpython.datetime cimport datetime
 
 from inv_trader.core.precondition cimport Precondition
@@ -373,7 +373,10 @@ cdef inline str _get_money_str(str value):
         partitioned = value.partition(DECIMAL_POINT)
         cents_length = len(partitioned[2])
 
-        return value + ('0' * (2 - cents_length))[:1]
+        if cents_length >= 2:
+            return partitioned[0] + DECIMAL_POINT + partitioned[2][:2]
+        else:
+            return partitioned[0] + DECIMAL_POINT + partitioned[2] + ('0' * (2 - cents_length))
 
 
 cdef class Money:
@@ -385,21 +388,13 @@ cdef class Money:
         """
         Initializes a new instance of the Money class.
 
-        :param value: The value of the money (>= 0) (Must be str, float or Decimal only).
+        :param value: The value of the money.
         Note: Only the first two decimal places of precision are retained.
-        :raises TypeError: If the value is not a str, float or Decimal.
         """
         if isinstance(value, str):
             self.value = Decimal(_get_money_str(value))
-
-        elif isinstance(value, Decimal):
-            self.value = Decimal(_get_money_str(str(value)))
-
-        elif isinstance(value, int):
-            self.value = Decimal(_get_decimal_str(float(value), 2))
-
         else:
-            raise TypeError(f'Cannot initialize Money with a {type(value)}.')
+            self.value = Decimal(_get_money_str(str(value)))
 
     @staticmethod
     def zero():

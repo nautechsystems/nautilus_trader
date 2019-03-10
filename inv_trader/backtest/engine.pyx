@@ -357,7 +357,6 @@ cdef class BacktestEngine:
         self.log.info(f"Tail ratio:    {round(tail_ratio(returns=returns), 2)}")
         self.log.info(f"Alpha:         {round(alpha(returns=returns, factor_returns=returns), 2)}")
         self.log.info(f"Beta:          {round(beta(returns=returns, factor_returns=returns), 2)}")
-        self.log.info(f"Daily VAR:     {round(value_at_risk(returns=returns), 2)}%")
         self.log.info("#----------------------------------------------------------------------------------------------------#")
 
     cdef void _change_strategy_clocks_and_loggers(self, list strategies):
