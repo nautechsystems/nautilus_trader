@@ -344,7 +344,7 @@ cdef class BacktestEngine:
         self.log.info("#-- PERFORMANCE STATISTICS --------------------------------------------------------------------------#")
         self.log.info("#----------------------------------------------------------------------------------------------------#")
         self.log.info(f"PNL:           {self._print_stat(float((self.account.cash_balance - self.config.starting_capital).value))}")
-        self.log.info(f"PNL %:         {self._print_stat(float(((self.account.cash_balance - self.config.starting_capital) / self.config.starting_capital).value * 100))}%")
+        self.log.info(f"PNL %:         {self._print_stat(float(((self.account.cash_balance.value - self.config.starting_capital.value) / self.config.starting_capital.value) * 100))}%")
         self.log.info(f"Annual return: {self._print_stat(annual_return(returns=returns))}%")
         self.log.info(f"Cum returns:   {self._print_stat(cum_returns_final(returns=returns))}%")
         self.log.info(f"Max drawdown:  {self._print_stat(max_drawdown(returns=returns))}%")
