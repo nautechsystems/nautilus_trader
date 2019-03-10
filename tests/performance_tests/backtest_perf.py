@@ -103,6 +103,8 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         s = pstats.Stats("Profile.prof")
         s.strip_dirs().sort_stats("time").print_stats()
 
+        self.assertTrue(True)
+
         # to datetime(2013, 3, 10, 0, 0, 0, 0, tzinfo=timezone.utc)
         #          51112051 function calls (51107866 primitive calls) in 22.586 seconds
         #          52912808 function calls (52908623 primitive calls) in 25.232 seconds
@@ -126,4 +128,4 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 03/03/19  6809241 function calls  (6809223 primitive calls) in 13.887 seconds (removed profile hooks, added tick iterations)
         # 04/03/19  6809285 function calls  (6809267 primitive calls) in 13.740 seconds (add return calculations to positions)
         # 08/03/19  9249474 function calls  (9210052 primitive calls) in 16.686 seconds (add portfolio analysis)
-        self.assertTrue(True)
+        # 11/03/19  9352466 function calls  (9312764 primitive calls) in 16.185 seconds (add more portfolio analysis)
