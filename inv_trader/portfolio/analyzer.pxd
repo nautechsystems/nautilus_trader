@@ -11,7 +11,7 @@
 
 from cpython.datetime cimport datetime
 
-from inv_trader.model.position import Position
+from inv_trader.model.objects cimport Money
 from inv_trader.model.events cimport OrderEvent
 
 
@@ -22,16 +22,14 @@ cdef class Analyzer:
     """
     cdef bint _log_returns
     cdef object _returns
-    cdef list _positions_symbols
-    cdef list _positions_columns
     cdef object _positions
     cdef object _transactions
 
     cpdef void add_return(self, datetime time, float value)
-    # cpdef void add_position(self, datetime time, Position positions)
     cpdef void add_transaction(self, OrderEvent event)
+    cpdef void add_positions(self, datetime time, list positions, Money cash_balance)
     cpdef object get_returns(self)
-    cpdef object get_positions(self)
     cpdef object get_transactions(self)
+    cpdef object get_positions(self)
     cpdef void create_returns_tear_sheet(self)
     cpdef void create_full_tear_sheet(self)

@@ -332,31 +332,33 @@ cdef class BacktestEngine:
         self.log.info("#----------------------------------------------------------------------------------------------------#")
         self.log.info("#-- BACKTEST DIAGNOSTICS ----------------------------------------------------------------------------#")
         self.log.info("#----------------------------------------------------------------------------------------------------#")
-        self.log.info(f"Initialized in {round(self.time_to_initialize, 2)}s")
-        self.log.info(f"Ran backtest in {round(self.clock.get_elapsed(run_started), 2)}s")
+        self.log.info(f"Initialization elapsed time: {round(self.time_to_initialize, 2)}s")
+        self.log.info(f"Running elapsed time: {round(self.clock.get_elapsed(run_started), 2)}s")
         self.log.info(f"Time-step iterations: {self.exec_client.iteration}")
         self.log.info(f"Start datetime: {start}")
-        self.log.info(f"Stop datetime:  {stop}")
-        self.log.info(f"Starting account balance: {self.config.starting_capital}")
-        self.log.info(f"Ending account balance:   {self.account.cash_balance}")
+        self.log.info(f"End datetime:   {stop}")
+        self.log.info(f"Starting account balance:{self._print_stat(float(self.config.starting_capital.value))}")
+        self.log.info(f"Ending account balance:  {self._print_stat(float(self.account.cash_balance.value))}")
+        self.log.info(f"PNL:                     {self._print_stat(float((self.account.cash_balance - self.config.starting_capital).value))}")
+        self.log.info(f"PNL %:                   {self._print_stat(float(((self.account.cash_balance - self.config.starting_capital) / self.config.starting_capital).value * 100))}%")
         self.log.info("")
         self.log.info("#----------------------------------------------------------------------------------------------------#")
         self.log.info("#-- PERFORMANCE STATISTICS --------------------------------------------------------------------------#")
         self.log.info("#----------------------------------------------------------------------------------------------------#")
-        self.log.info(f"Annual return: {round(annual_return(returns=returns), 2)}%")
-        self.log.info(f"Cum returns:   {round(cum_returns_final(returns=returns), 2)}%")
-        self.log.info(f"Max drawdown:  {round(max_drawdown(returns=returns), 2)}%")
-        self.log.info(f"Annual vol:    {round(annual_volatility(returns=returns), 2)}%")
-        self.log.info(f"Sharpe ratio:  {round(sharpe_ratio(returns=returns), 2)}")
-        self.log.info(f"Calmar ratio:  {round(calmar_ratio(returns=returns), 2)}")
-        self.log.info(f"Sortino ratio: {round(sortino_ratio(returns=returns), 2)}")
-        self.log.info(f"Omega ratio:   {round(omega_ratio(returns=returns), 2)}")
-        self.log.info(f"Stability:     {round(stability_of_timeseries(returns=returns), 2)}")
-        self.log.info(f"Skew:          {round(skew(returns), 2)}")
-        self.log.info(f"Kurtosis:      {round(kurtosis(returns), 2)}")
-        self.log.info(f"Tail ratio:    {round(tail_ratio(returns=returns), 2)}")
-        self.log.info(f"Alpha:         {round(alpha(returns=returns, factor_returns=returns), 2)}")
-        self.log.info(f"Beta:          {round(beta(returns=returns, factor_returns=returns), 2)}")
+        self.log.info(f"Annual return: {self._print_stat(annual_return(returns=returns))}%")
+        self.log.info(f"Cum returns:   {self._print_stat(cum_returns_final(returns=returns))}%")
+        self.log.info(f"Max drawdown:  {self._print_stat(max_drawdown(returns=returns))}%")
+        self.log.info(f"Annual vol:    {self._print_stat(annual_volatility(returns=returns))}%")
+        self.log.info(f"Sharpe ratio:  {self._print_stat(sharpe_ratio(returns=returns))}")
+        self.log.info(f"Calmar ratio:  {self._print_stat(calmar_ratio(returns=returns))}")
+        self.log.info(f"Sortino ratio: {self._print_stat(sortino_ratio(returns=returns))}")
+        self.log.info(f"Omega ratio:   {self._print_stat(omega_ratio(returns=returns))}")
+        self.log.info(f"Stability:     {self._print_stat(stability_of_timeseries(returns=returns))}")
+        self.log.info(f"Skew:          {self._print_stat(skew(returns))}")
+        self.log.info(f"Kurtosis:      {self._print_stat(kurtosis(returns))}")
+        self.log.info(f"Tail ratio:    {self._print_stat(tail_ratio(returns=returns))}")
+        self.log.info(f"Alpha:         {self._print_stat(alpha(returns=returns, factor_returns=returns))}")
+        self.log.info(f"Beta:          {self._print_stat(beta(returns=returns, factor_returns=returns))}")
         self.log.info("#----------------------------------------------------------------------------------------------------#")
 
     cdef void _change_strategy_clocks_and_loggers(self, list strategies):
@@ -365,3 +367,9 @@ cdef class BacktestEngine:
             strategy.change_clock(TestClock())  # Separate test clock to iterate independently
             # Replace the strategies logger with the engines test logger
             strategy.change_logger(self.test_logger)
+
+    cdef str _print_stat(self, float value, int decimals=2):
+        cdef str string_value = f'{value:.{decimals}f}'
+        if not string_value.startswith('-'):
+            string_value = ' ' + string_value
+        return string_value

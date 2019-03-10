@@ -12,28 +12,25 @@ import uuid
 
 from datetime import datetime
 from pyfolio.tears import (
-    create_simple_tear_sheet,
     create_returns_tear_sheet,
     create_full_tear_sheet,
     create_bayesian_tear_sheet)
 
 
 from inv_trader.common.clock import TestClock
-from inv_trader.model.order import Order, OrderFactory
 from inv_trader.model.enums import Venue, OrderSide
-from inv_trader.model.objects import ValidString, Quantity, Symbol, Price
+from inv_trader.model.objects import ValidString, Quantity, Symbol, Price, Money
 from inv_trader.model.order import OrderFactory
 from inv_trader.model.events import OrderFilled
 from inv_trader.model.identifiers import GUID, OrderId, PositionId, ExecutionId, ExecutionTicket
 from inv_trader.model.position import Position
-from inv_trader.strategy import TradeStrategy
 from inv_trader.portfolio.analyzer import Analyzer
-from test_kit.mocks import MockExecClient
 from test_kit.stubs import TestStubs
 from test_kit.data import TestDataProvider
 
 UNIX_EPOCH = TestStubs.unix_epoch()
 AUDUSD_FXCM = Symbol('AUDUSD', Venue.FXCM)
+GBPUSD_FXCM = Symbol('GBPUSD', Venue.FXCM)
 
 
 class PortfolioTestsTests(unittest.TestCase):
@@ -162,3 +159,23 @@ class PortfolioTestsTests(unittest.TestCase):
         self.assertEqual('AUDUSD.FXCM', result.iloc[0]['symbol'])
         self.assertEqual(-100000, result.iloc[0]['amount'])
         self.assertEqual('1.00001', result.iloc[0]['price'])
+
+    def test_can_add_positions(self):
+        # Arrange
+        position1 = Position(
+            AUDUSD_FXCM,
+            PositionId('1'),
+            UNIX_EPOCH)
+
+        position2 = Position(
+            GBPUSD_FXCM,
+            PositionId('1'),
+            UNIX_EPOCH)
+
+        positions = [position1, position2]
+
+        # Act
+        self.analyzer.add_positions(UNIX_EPOCH, positions, Money(100000))
+
+        # Assert
+        print(self.analyzer.get_positions())

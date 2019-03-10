@@ -65,11 +65,17 @@ class PortfolioTestsTests(unittest.TestCase):
         self.assertTrue(order.id in self.portfolio.registered_order_ids())
         self.assertTrue(position_id in self.portfolio.registered_position_ids())
 
-    def test_position_exists_when_no_position(self):
+    def test_position_exists_when_no_position_returns_false(self):
         # Arrange
         # Act
         # Assert
         self.assertFalse(self.portfolio.position_exists(PositionId('unknown')))
+
+    def test_position_for_order_has_position_when_no_position_returns_false(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertFalse(self.portfolio.order_has_position(OrderId('unknown')))
 
     def test_opens_new_position_on_order_fill(self):
         # Arrange
@@ -107,6 +113,8 @@ class PortfolioTestsTests(unittest.TestCase):
         self.assertEqual(0, self.portfolio.positions_closed_count)
         self.assertEqual(1, len(self.portfolio.position_opened_events))
         self.assertEqual(0, len(self.portfolio.position_closed_events))
+        self.assertTrue(self.portfolio.order_has_position(order_id))
+        self.assertEqual(Position, type(self.portfolio.get_position_for_order(order_id)))
 
     def test_adds_to_existing_position_on_order_fill(self):
         # Arrange

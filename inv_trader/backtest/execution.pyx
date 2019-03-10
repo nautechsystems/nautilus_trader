@@ -614,6 +614,7 @@ cdef class BacktestExecClient(ExecutionClient):
         cdef Position position
         cdef Price average_entry
         cdef Money pnl = Money.zero()
+
         if self._portfolio.order_has_position(event.order_id):
             position = self._portfolio.get_position_for_order(event.order_id)
             average_entry = position.average_entry_price
