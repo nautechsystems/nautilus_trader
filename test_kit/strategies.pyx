@@ -160,7 +160,7 @@ cdef class EMACross(TradeStrategy):
                  int fast_ema=10,
                  int slow_ema=20,
                  int atr_period=20,
-                 float sl_atr_multiple=2,
+                 float sl_atr_multiple=2.0,
                  Logger logger=None):
         """
         Initializes a new instance of the EMACross class.

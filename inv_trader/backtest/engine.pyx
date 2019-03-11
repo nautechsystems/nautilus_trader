@@ -24,7 +24,6 @@ from empyrical.stats import (
     sortino_ratio,
     omega_ratio,
     stability_of_timeseries,
-    value_at_risk,
     max_drawdown,
     alpha,
     beta,
