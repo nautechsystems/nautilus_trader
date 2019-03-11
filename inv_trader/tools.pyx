@@ -70,16 +70,16 @@ cdef class TickBuilder:
         if self._tick_data is not None:
 
             return list(map(self._build_tick,
-                            self._tick_data['Bid'],
-                            self._tick_data['Ask'],
+                            self._tick_data['bid'],
+                            self._tick_data['ask'],
                             pd.to_datetime(self._tick_data.index, utc=True)))
         else:
             assert(self._bid_data is not None, 'Insufficient data to build ticks.')
             assert(self._ask_data is not None, 'Insufficient data to build ticks.')
 
             return list(map(self._build_tick,
-                            self._bid_data['Close'],
-                            self._ask_data['Close'],
+                            self._bid_data['close'],
+                            self._ask_data['close'],
                             pd.to_datetime(self._bid_data.index, utc=True)))
 
     cpdef Tick _build_tick(
