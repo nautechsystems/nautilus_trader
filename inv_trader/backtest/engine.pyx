@@ -13,6 +13,7 @@ import logging
 import psutil
 import platform
 
+from inv_trader.version import __version__
 from cpython.datetime cimport datetime, timedelta
 from scipy.stats import kurtosis, skew
 from empyrical.stats import (
@@ -291,8 +292,7 @@ cdef class BacktestEngine:
         self.log.info("#----------------------------------------------------------------------------------------------------#")
         self.log.info("#-- BACKTEST ENGINE ---------------------------------------------------------------------------------#")
         self.log.info("#----------------------------------------------------------------------------------------------------#")
-        self.log.info("Nautilus Trader for Invariance Pte")
-        self.log.info("Version: 0.80.1")
+        self.log.info(f"Nautilus Trader (v{__version__}) for Invariance Pte")
         self.log.info("Building engine...")
 
     cdef void _backtest_header(
