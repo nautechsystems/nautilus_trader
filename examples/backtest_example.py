@@ -58,6 +58,6 @@ if __name__ == "__main__":
     stop = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
 
     engine.run(start, stop)
-    #engine.create_full_tear_sheet()
+    engine.create_full_tear_sheet()
 
     input("Press Enter to continue...")
