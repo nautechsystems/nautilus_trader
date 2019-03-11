@@ -16,8 +16,8 @@ from Cython.Compiler import Options
 from typing import List
 from setuptools import setup, Extension
 
+from inv_trader.version import __version__
 
-VERSION = '0.80.1'
 AUTHOR = 'Invariance'
 INV_TRADER = 'inv_trader'
 DESCRIPTION = 'The python trading client for Invariance.'
@@ -84,7 +84,7 @@ extensions = [make_extension(name) for name in scan_directories(DIRECTORIES)]
 
 setup(
     name=INV_TRADER,
-    version=VERSION,
+    version=__version__,
     author=AUTHOR,
     description=DESCRIPTION,
     packages=setuptools.find_packages(),
