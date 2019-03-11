@@ -33,6 +33,9 @@ class EMACrossPy(TradeStrategy):
     def __init__(self,
                  instrument: Instrument,
                  bar_type: BarType,
+                 label: str='001',
+                 id_tag_trader: str='001',
+                 id_tag_strategy: str='001',
                  risk_bp: int=10,
                  fast_ema: int=10,
                  slow_ema: int=20,
@@ -51,7 +54,10 @@ class EMACrossPy(TradeStrategy):
         :param sl_atr_multiple: The ATR multiple for stop-loss prices.
         :param logger: The logger for the strategy (can be None, will just print).
         """
-        super().__init__(logger=logger)
+        super().__init__(label=label,
+                         id_tag_trader=id_tag_trader,
+                         id_tag_strategy=id_tag_strategy,
+                         logger=logger)
 
         self.instrument = instrument
         self.symbol = instrument.symbol
