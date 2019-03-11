@@ -31,12 +31,7 @@ if __name__ == "__main__":
 
     strategies = [EMACrossPy(
         instrument=usdjpy,
-        bar_type=TestStubs.bartype_usdjpy_1min_bid(),
-        risk_bp=1,
-        fast_ema=10,
-        slow_ema=20,
-        atr_period=20,
-        sl_atr_multiple=2.0)]
+        bar_type=TestStubs.bartype_usdjpy_1min_bid())]
 
     config = BacktestConfig(
         leverage=50,
@@ -51,8 +46,8 @@ if __name__ == "__main__":
         strategies=strategies,
         config=config)
 
-    start = datetime(2013, 1, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
-    stop = datetime(2013, 1, 3, 0, 0, 0, 0, tzinfo=timezone.utc)
+    start = datetime(2013, 1, 5, 0, 0, 0, 0, tzinfo=timezone.utc)
+    stop = datetime(2013, 3, 10, 0, 0, 0, 0, tzinfo=timezone.utc)
 
     engine.run(start, stop)
     #engine.create_full_tear_sheet()

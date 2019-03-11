@@ -28,6 +28,42 @@ from inv_indicators.atr import AverageTrueRange
 from test_kit.objects cimport ObjectStorer
 
 
+class PyStrategy(TradeStrategy):
+    """
+    A strategy which is empty and does nothing.
+    """
+
+    def __init__(self, bar_type: BarType):
+        """
+        Initializes a new instance of the TestStrategy1 class.
+        """
+        super().__init__()
+        self.bar_type = bar_type
+        self.object_storer = ObjectStorer()
+
+    def on_start(self):
+        self.subscribe_bars(self.bar_type)
+
+    def on_tick(self, tick):
+        pass
+
+    def on_bar(self, bar_type, bar):
+        print(bar)
+        self.object_storer.store_2(bar_type, bar)
+
+    def on_event(self, event):
+        self.object_storer.store(event)
+
+    def on_stop(self):
+        pass
+
+    def on_reset(self):
+        pass
+
+    def on_dispose(self):
+        pass
+
+
 cdef class EmptyStrategy(TradeStrategy):
     """
     A strategy which is empty and does nothing.
@@ -64,7 +100,7 @@ cdef class TestStrategy1(TradeStrategy):
     cdef readonly object ema2
     cdef readonly PositionId position_id
 
-    def __init__(self, bar_type: BarType, clock: Clock=TestClock()):
+    def __init__(self, BarType bar_type, Clock clock=TestClock()):
         """
         Initializes a new instance of the TestStrategy1 class.
         """
@@ -169,7 +205,7 @@ cdef class EMACross(TradeStrategy):
         :param id_tag_trader: The unique order identifier tag for the trader.
         :param id_tag_strategy: The unique order identifier tag for the strategy.
         :param bar_type: The bar type for the strategy (could also input any number of them)
-        :param risk_bp: The risk per trade in basis points.
+        :param risk_bp: The risk per trade (basis points).
         :param fast_ema: The fast EMA period.
         :param slow_ema: The slow EMA period.
         :param atr_period: The ATR period.

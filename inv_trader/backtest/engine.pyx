@@ -338,6 +338,7 @@ cdef class BacktestEngine:
         self.log.info(f"End datetime:   {stop}")
         self.log.info(f"Starting account balance:{self._print_stat(float(self.config.starting_capital.value))}")
         self.log.info(f"Ending account balance:  {self._print_stat(float(self.account.cash_balance.value))}")
+        self.log.info(f"Total commissions:       {self._print_stat(float(self.exec_client.total_commissions.value))}")
         self.log.info("")
         self.log.info("#----------------------------------------------------------------------------------------------------#")
         self.log.info("#-- PERFORMANCE STATISTICS --------------------------------------------------------------------------#")
