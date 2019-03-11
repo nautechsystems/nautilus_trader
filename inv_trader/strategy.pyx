@@ -246,7 +246,7 @@ cdef class TradeStrategy:
         """
         if bar_type not in self._bars:
             self._bars[bar_type] = deque(maxlen=self.bar_capacity)  # type: Deque[Bar]
-        self._bars[bar_type].append(bar)
+        self._bars[bar_type].appendleft(bar)
 
         if bar_type in self._indicators:
             for updater in self._indicator_updaters[bar_type]:
@@ -412,7 +412,7 @@ cdef class TradeStrategy:
 
         :param bar_type: The bar type to get.
         :param index: The index (>= 0).
-        :return: The bar (if found).
+        :return: The Bar (if found).
         :raises ValueError: If the strategies bars dictionary does not contain the bar type.
         :raises ValueError: If the index is negative.
         :raises IndexError: If the strategies bars dictionary does not contain a bar at the given index.
@@ -420,27 +420,27 @@ cdef class TradeStrategy:
         Precondition.is_in(bar_type, self._bars, 'bar_type', 'bars')
         Precondition.not_negative(index, 'index')
 
-        return self._bars[bar_type][len(self._bars[bar_type]) - 1 - index]
+        return self._bars[bar_type][index]
 
     cpdef Bar last_bar(self, BarType bar_type):
         """
         Get the last bar for the given bar type (if a bar has been received).
 
         :param bar_type: The bar type to get.
-        :return: The bar (if found).
+        :return: The Bar (if found).
         :raises ValueError: If the strategies bars dictionary does not contain the bar type.
         :raises IndexError: If the strategies bars dictionary does not contain a bar at the given index.
         """
         Precondition.is_in(bar_type, self._bars, 'bar_type', 'bars')
 
-        return self._bars[bar_type][len(self._bars[bar_type]) - 1]
+        return self._bars[bar_type][0]
 
     cpdef Tick last_tick(self, Symbol symbol):
         """
         Get the last tick held for the given symbol.
 
         :param symbol: The last ticks symbol.
-        :return: The tick object.
+        :return: The Tick (if found).
         :raises KeyError: If the strategies tick dictionary does not contain a tick for the given symbol.
         """
         Precondition.is_in(symbol, self._ticks, 'symbol', 'ticks')

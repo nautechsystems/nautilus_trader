@@ -37,12 +37,13 @@ class EMACrossPy(TradeStrategy):
                  fast_ema: int=10,
                  slow_ema: int=20,
                  atr_period: int=20,
-                 sl_atr_multiple: float=2,
+                 sl_atr_multiple: float=2.0,
                  logger: Logger=None):
         """
         Initializes a new instance of the EMACross class.
 
-        :param bar_type: The bar type for the strategy (could also input any number of them)
+        :param instrument: The instrument for the strategy.
+        :param bar_type: The bar type for the strategy.
         :param risk_bp: The risk per trade in basis points.
         :param fast_ema: The fast EMA period.
         :param slow_ema: The slow EMA period.
@@ -79,8 +80,7 @@ class EMACrossPy(TradeStrategy):
 
     def on_start(self):
         """
-        This method is called when self.start() is called, and after internal
-        start logic.
+        This method is called when self.start() is called, and after internal start logic.
         """
         self.historical_bars(self.bar_type)
         self.subscribe_bars(self.bar_type)
@@ -101,7 +101,7 @@ class EMACrossPy(TradeStrategy):
         """
         This method is called whenever the strategy receives a Bar, after the
         Bar has been processed by the base class (update indicators etc).
-        The received BarType and Bar objects are also passed into this method.
+        The received BarType and Bar objects are then passed into this method.
 
         :param bar_type: The received bar type.
         :param bar: The received bar.
@@ -110,6 +110,8 @@ class EMACrossPy(TradeStrategy):
             # Wait for indicators to warm up...
             return
 
+        print(bar)
+        atomic_order = None
         # TODO: Factor in spread, using bid bars only at the moment
         if self.entry_order is None:
             # BUY LOGIC
@@ -129,7 +131,7 @@ class EMACrossPy(TradeStrategy):
                     units=1,
                     unit_batch_size=1000)
 
-                if position_size.value > 0:
+                if position_size.value > 0:  # Sufficient equity for a position
                     atomic_order = self.order_factory.atomic_stop_market(
                         self.symbol,
                         OrderSide.BUY,
@@ -158,7 +160,7 @@ class EMACrossPy(TradeStrategy):
                     units=1,
                     unit_batch_size=1000)
 
-                if position_size.value > 0:
+                if position_size.value > 0:  # Sufficient equity for a position
                     atomic_order = self.order_factory.atomic_stop_market(
                         self.symbol,
                         OrderSide.SELL,
@@ -204,10 +206,10 @@ class EMACrossPy(TradeStrategy):
         elif isinstance(event, OrderRejected) or isinstance(event, OrderExpired):
             if event.order_id.equals(self.entry_order.id):
                 self._reset_trade()
-        # If a stop-loss order is rejected then flatten the entered position
-        elif event.order_id.equals(self.stop_loss_order.id):
-            self.flatten_all_positions()
-            self._reset_trade()
+            # If a stop-loss order is rejected then flatten the entered position
+            elif event.order_id.equals(self.stop_loss_order.id):
+                self.flatten_all_positions()
+                self._reset_trade()
 
     def on_stop(self):
         """
@@ -237,6 +239,7 @@ class EMACrossPy(TradeStrategy):
         self.unsubscribe_bars(self.bar_type)
         self.unsubscribe_ticks(self.symbol)
 
+    # Custom internal method for this strategy
     def _reset_trade(self):
         """
         Reset the trade by clearing all order and position values.
@@ -245,6 +248,7 @@ class EMACrossPy(TradeStrategy):
         self.stop_loss_order = None
         self.position_id = None
 
+    # Custom internal method for this strategy
     def _is_stop_loss_active(self):
         """
         Return a value indicating whether the stop-loss is active.

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-# <copyright file="backtest_example.py" company="Invariance Pte">
+# <copyright file="backtest_py_strat_example.py" company="Invariance Pte">
 #  Copyright (C) 2018-2019 Invariance Pte. All rights reserved.
 #  The use of this source code is governed by the license as found in the LICENSE.md file.
 #  http://www.invariance.com
@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 
 from inv_trader.model.enums import Resolution
 from inv_trader.backtest.engine import BacktestConfig, BacktestEngine
-from test_kit.strategies import EMACross
+from examples.ema_cross import EMACrossPy
 from test_kit.data import TestDataProvider
 from test_kit.stubs import TestStubs
 
@@ -29,10 +29,7 @@ if __name__ == "__main__":
     bid_data = {usdjpy.symbol: {Resolution.MINUTE: bid_data_1min}}
     ask_data = {usdjpy.symbol: {Resolution.MINUTE: ask_data_1min}}
 
-    strategies = [EMACross(
-        label='001',
-        id_tag_trader='001',
-        id_tag_strategy='001',
+    strategies = [EMACrossPy(
         instrument=usdjpy,
         bar_type=TestStubs.bartype_usdjpy_1min_bid(),
         risk_bp=1,
@@ -55,7 +52,7 @@ if __name__ == "__main__":
         config=config)
 
     start = datetime(2013, 1, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
-    stop = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
+    stop = datetime(2013, 1, 3, 0, 0, 0, 0, tzinfo=timezone.utc)
 
     engine.run(start, stop)
     #engine.create_full_tear_sheet()

@@ -39,10 +39,10 @@ cdef class TradeStrategy:
     cdef dict _bars
     cdef dict _indicators
     cdef dict _indicator_updaters
-    cdef Account account
     cdef Portfolio _portfolio
 
     cdef readonly LoggerAdapter log
+    cdef readonly Account account
     cdef readonly OrderFactory order_factory
     cdef readonly PositionIdGenerator position_id_generator
     cdef readonly int bar_capacity
