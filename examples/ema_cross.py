@@ -44,7 +44,7 @@ class EMACrossPy(TradeStrategy):
 
         :param instrument: The instrument for the strategy.
         :param bar_type: The bar type for the strategy.
-        :param risk_bp: The risk per trade in basis points.
+        :param risk_bp: The risk per trade (basis points).
         :param fast_ema: The fast EMA period.
         :param slow_ema: The slow EMA period.
         :param atr_period: The ATR period.
@@ -110,8 +110,6 @@ class EMACrossPy(TradeStrategy):
             # Wait for indicators to warm up...
             return
 
-        print(bar)
-        atomic_order = None
         # TODO: Factor in spread, using bid bars only at the moment
         if self.entry_order is None:
             # BUY LOGIC

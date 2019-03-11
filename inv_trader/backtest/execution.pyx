@@ -118,6 +118,7 @@ cdef class BacktestExecClient(ExecutionClient):
         self.account_capital = starting_capital
         self.account_cash_start_day = starting_capital
         self.account_cash_activity_day = Money(0)
+        self.total_commissions = Money(0)
         self.slippage_index = {}  # type: Dict[Symbol, Decimal]
         self.working_orders = {}  # type: Dict[OrderId, Order]
         self.atomic_orders = {}   # type: Dict[OrderId, List[Order]]
@@ -625,6 +626,7 @@ cdef class BacktestExecClient(ExecutionClient):
                 event.filled_quantity)
 
         cdef Money commission = Money(Decimal(round(float(event.filled_quantity.value) * float(self.leverage) / 1000000 * 15, 2)))
+        self.total_commissions += commission
         pnl -= commission
 
         self.account_capital += pnl
