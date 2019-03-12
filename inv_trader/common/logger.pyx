@@ -176,7 +176,8 @@ cdef class Logger:
                 self._console_print_handler(f"IOError: {ex}.", logging.CRITICAL)
 
     cdef str _format_message(self, datetime timestamp, str log_level, str message):
-        cdef str time = timestamp.isoformat(timespec='milliseconds').partition('+')[0] + 'Z'
+        #cdef str time = timestamp.isoformat(timespec='milliseconds').partition('+')[0] + 'Z'
+        cdef str time = timestamp.isoformat().partition('+')[0] + 'Z'
         return f"{BOLD}{time}{ENDC} [{threading.current_thread().ident}][{log_level}] {message}"
 
     cdef void _console_print_handler(self, log_level: logging, str message):

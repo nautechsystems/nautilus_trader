@@ -13,28 +13,25 @@ import unittest
 from datetime import datetime, timezone
 
 from inv_trader.model.enums import Resolution
-from inv_trader.model.enums import Venue
-from inv_trader.model.objects import Symbol
 from inv_trader.backtest.engine import BacktestConfig, BacktestEngine
 from test_kit.strategies import EmptyStrategy, EMACross
 from test_kit.data import TestDataProvider
 from test_kit.stubs import TestStubs
 
 UNIX_EPOCH = TestStubs.unix_epoch()
-USDJPY_FXCM = Symbol('USDJPY', Venue.FXCM)
+USDJPY_FXCM = TestStubs.instrument_usdjpy().symbol
 
 
 class BacktestEngineTests(unittest.TestCase):
 
     def setUp(self):
-        self.usdjpy = TestStubs.instrument_usdjpy()
         bid_data_1min = TestDataProvider.usdjpy_1min_bid()
         ask_data_1min = TestDataProvider.usdjpy_1min_ask()
 
         instruments = [TestStubs.instrument_usdjpy()]
-        tick_data = {self.usdjpy.symbol: pd.DataFrame()}
-        bid_data = {self.usdjpy.symbol: {Resolution.MINUTE: bid_data_1min}}
-        ask_data = {self.usdjpy.symbol: {Resolution.MINUTE: ask_data_1min}}
+        tick_data = {USDJPY_FXCM: pd.DataFrame()}
+        bid_data = {USDJPY_FXCM: {Resolution.MINUTE: bid_data_1min}}
+        ask_data = {USDJPY_FXCM: {Resolution.MINUTE: ask_data_1min}}
 
         strategies = [EmptyStrategy()]
         config = BacktestConfig(
@@ -53,7 +50,7 @@ class BacktestEngineTests(unittest.TestCase):
         self.engine.dispose()
 
     def test_initialization(self):
-        self.assertEqual(self.usdjpy, self.engine.instruments[0])
+        self.assertEqual(TestStubs.instrument_usdjpy(), self.engine.instruments[0])
         self.assertEqual(1, self.engine.trader.strategy_count())
 
     def test_can_run_empty_strategy(self):
@@ -70,11 +67,14 @@ class BacktestEngineTests(unittest.TestCase):
 
     def test_can_run_ema_cross_strategy(self):
         # Arrange
+        instrument = TestStubs.instrument_usdjpy()
+        bar_type = TestStubs.bartype_usdjpy_1min_bid()
+
         strategies = [EMACross(label='001',
                                id_tag_trader='001',
                                id_tag_strategy='001',
-                               instrument=self.usdjpy,
-                               bar_type=TestStubs.bartype_usdjpy_1min_bid(),
+                               instrument=instrument,
+                               bar_type=bar_type,
                                risk_bp=10,
                                fast_ema=10,
                                slow_ema=20,
@@ -90,16 +90,19 @@ class BacktestEngineTests(unittest.TestCase):
         self.engine.run(start, stop)
 
         # Assert
-        self.assertEqual(2881, self.engine.data_client.data_providers[self.usdjpy.symbol].iterations[TestStubs.bartype_usdjpy_1min_bid()])
+        self.assertEqual(2881, self.engine.data_client.data_providers[USDJPY_FXCM].iterations[TestStubs.bartype_usdjpy_1min_bid()])
         self.assertEqual(1441, strategies[0].fast_ema.count)
 
     def test_can_run_multiple_strategies(self):
         # Arrange
+        instrument = TestStubs.instrument_usdjpy()
+        bar_type = TestStubs.bartype_usdjpy_1min_bid()
+
         strategies = [EMACross(label='001',
                                id_tag_trader='001',
                                id_tag_strategy='001',
-                               instrument=self.usdjpy,
-                               bar_type=TestStubs.bartype_usdjpy_1min_bid(),
+                               instrument=instrument,
+                               bar_type=bar_type,
                                risk_bp=10,
                                fast_ema=10,
                                slow_ema=20,
@@ -108,8 +111,8 @@ class BacktestEngineTests(unittest.TestCase):
                       EMACross(label='002',
                                id_tag_trader='002',
                                id_tag_strategy='002',
-                               instrument=self.usdjpy,
-                               bar_type=TestStubs.bartype_usdjpy_1min_bid(),
+                               instrument=instrument,
+                               bar_type=bar_type,
                                risk_bp=10,
                                fast_ema=10,
                                slow_ema=20,
@@ -125,5 +128,5 @@ class BacktestEngineTests(unittest.TestCase):
         self.engine.run(start, stop)
 
         # Assert
-        self.assertEqual(2881, self.engine.data_client.data_providers[self.usdjpy.symbol].iterations[TestStubs.bartype_usdjpy_1min_bid()])
+        self.assertEqual(2881, self.engine.data_client.data_providers[USDJPY_FXCM].iterations[TestStubs.bartype_usdjpy_1min_bid()])
         self.assertEqual(1441, strategies[0].fast_ema.count)
