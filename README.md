@@ -1,4 +1,4 @@
-# Invariance Trader
+# Nautilus Trader
 The python trading client for Invariance.
 
 Use the following terminal command to compile the c extensions for the package;
