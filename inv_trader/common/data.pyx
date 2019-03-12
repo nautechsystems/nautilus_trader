@@ -223,7 +223,7 @@ cdef class DataClient:
             self._tick_handlers[symbol] = []  # type: List[Callable]
             self._log.info(f"Subscribed to tick data for {symbol}.")
 
-        if handler is not None and handler not in self._tick_handlers:
+        if handler is not None and handler not in self._tick_handlers[symbol]:
             self._tick_handlers[symbol].append(handler)
             self._log.debug(f"Added tick {handler}.")
 
