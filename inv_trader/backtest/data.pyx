@@ -41,9 +41,9 @@ cdef class BacktestDataClient(DataClient):
         Initializes a new instance of the BacktestDataClient class.
 
         :param instruments: The instruments needed for the backtest.
-        :param data_ticks: The historical ticks data needed for the backtest.
-        :param data_bars_bid: The historical bid data needed for the backtest.
-        :param data_bars_ask: The historical ask data needed for the backtest.
+        :param data_ticks: The historical tick data needed for the backtest.
+        :param data_bars_bid: The historical bid bar data needed for the backtest.
+        :param data_bars_ask: The historical ask bar data needed for the backtest.
         :param clock: The clock for the component.
         :param logger: The logger for the component.
         """
@@ -56,7 +56,7 @@ cdef class BacktestDataClient(DataClient):
         Precondition.not_none(logger, 'logger')
 
         super().__init__(clock, logger)
-        self.data_ticks = data_ticks
+        self.data_ticks = data_ticks        # type: Dict[Symbol, DataFrame]
         self.data_bars_bid = data_bars_bid  # type: Dict[Symbol, Dict[Resolution, DataFrame]]
         self.data_bars_ask = data_bars_ask  # type: Dict[Symbol, Dict[Resolution, DataFrame]]
 
@@ -83,11 +83,11 @@ cdef class BacktestDataClient(DataClient):
         for symbol in data_bars_ask:
             ask_data_symbols.add(symbol)
         assert(bid_data_symbols == ask_data_symbols)
-        cdef set data_symbols = bid_data_symbols
+        cdef set data_symbols = bid_data_symbols.union(ask_data_symbols)
 
         # Check there is the needed instrument for each data symbol
         for key in self._instruments.keys():
-            assert(key in data_symbols, f'The needed instrument {key} was not provided')
+            assert(key in data_symbols, f'The needed instrument {key} was not provided.')
 
         # Check that all resolution DataFrames are of the same shape and index
         cdef dict shapes = {}  # type: Dict[Resolution, tuple]
@@ -98,13 +98,13 @@ cdef class BacktestDataClient(DataClient):
                     shapes[resolution] = dataframe.shape
                 if resolution not in indexs:
                     indexs[resolution] = dataframe.index
-                assert(dataframe.shape == shapes[resolution], f'{dataframe} shape is not equal')
-                assert(dataframe.index == indexs[resolution], f'{dataframe} index is not equal')
+                assert(dataframe.shape == shapes[resolution], f'{dataframe} shape is not equal.')
+                assert(dataframe.index == indexs[resolution], f'{dataframe} index is not equal.')
 
         for symbol, data in data_bars_ask.items():
             for resolution, dataframe in data.items():
-                assert(dataframe.shape == shapes[resolution], f'{dataframe} shape is not equal')
-                assert(dataframe.index == indexs[resolution], f'{dataframe} index is not equal')
+                assert(dataframe.shape == shapes[resolution], f'{dataframe} shape is not equal.')
+                assert(dataframe.index == indexs[resolution], f'{dataframe} index is not equal.')
 
     cpdef void create_data_providers(self):
         """
@@ -113,6 +113,7 @@ cdef class BacktestDataClient(DataClient):
         for symbol, instrument in self._instruments.items():
             self._log.info(f'Creating data provider for {symbol}...')
             self.data_providers[symbol] = DataProvider(instrument=instrument,
+                                                       data_ticks=None if symbol not in self.data_ticks else self.data_ticks[symbol].tz_localize('UTC'),
                                                        data_bars_bid=self.data_bars_bid[symbol],
                                                        data_bars_ask=self.data_bars_ask[symbol])
 
@@ -150,10 +151,11 @@ cdef class BacktestDataClient(DataClient):
         for data_provider in self.data_providers.values():
             if data_provider.has_ticks:
                 ticks = data_provider.iterate_ticks(self._clock.time_now())
-                for tick in ticks:
-                    if tick.symbol in self._tick_handlers:
-                        for handler in self._tick_handlers[tick.symbol]:
-                            handler(tick)
+                if ticks:
+                    for tick in ticks:
+                        if tick.symbol in self._tick_handlers:
+                            for handler in self._tick_handlers[tick.symbol]:
+                                handler(tick)
 
         # Iterate bars
         cdef list bars = []
@@ -288,19 +290,30 @@ cdef class DataProvider:
 
     def __init__(self,
                  Instrument instrument,
+                 data_ticks: DataFrame,
                  dict data_bars_bid: Dict[Resolution, DataFrame],
                  dict data_bars_ask: Dict[Resolution, DataFrame]):
         """
         Initializes a new instance of the DataProvider class.
 
         :param instrument: The instrument for the data provider.
-        :param data_bars_bid: The bid bars data for the data provider (must contain minute resolution).
-        :param data_bars_ask: The ask bars data for the data provider (must contain minute resolution).
+        :param data_ticks: The tick data for the data provider.
+        :param data_bars_bid: The bid bars data for the data provider (must contain MINUTE resolution).
+        :param data_bars_ask: The ask bars data for the data provider (must contain MINUTE resolution).
+        :raises ValueError: If the data_ticks is a type other than None or DataFrame.
+        :raises ValueError: If the data_bars_bid is None.
+        :raises ValueError: If the data_bars_ask is None.
+        :raises ValueError: If the data_bars_bid does not contain the MINUTE resolution key.
+        :raises ValueError: If the data_bars_ask does not contain the MINUTE resolution key.
         """
+        Precondition.type_or_none(data_ticks, DataFrame, 'data_ticks')
+        Precondition.not_none(data_bars_bid, 'data_bars_bid')
+        Precondition.not_none(data_bars_ask, 'data_bars_ask')
         Precondition.is_in(Resolution.MINUTE, data_bars_bid, 'Resolution.MINUTE', 'data_bars_bid')
         Precondition.is_in(Resolution.MINUTE, data_bars_ask, 'Resolution.MINUTE', 'data_bars_ask')
 
         self.instrument = instrument
+        self._dataframe_ticks = data_ticks
         self._dataframes_bars_bid = data_bars_bid  # type: Dict[Resolution, DataFrame]
         self._dataframes_bars_ask = data_bars_ask  # type: Dict[Resolution, DataFrame]
         self.ticks = []                            # type: List[Tick]
@@ -315,6 +328,7 @@ cdef class DataProvider:
         """
         cdef TickBuilder builder = TickBuilder(symbol=self.instrument.symbol,
                                                decimal_precision=self.instrument.tick_precision,
+                                               tick_data=self._dataframe_ticks,
                                                bid_data=self._dataframes_bars_bid[Resolution.MINUTE],
                                                ask_data=self._dataframes_bars_ask[Resolution.MINUTE])
 
@@ -397,9 +411,14 @@ cdef class DataProvider:
         """
         cdef list ticks_list = []  # type: List[Tick]
 
-        while self.ticks[self.tick_index].timestamp <= to_time:
-            ticks_list.append(self.ticks[self.tick_index])
-            self.tick_index += 1
+        if self.tick_index <= len(self.ticks) - 1:
+            while self.ticks[self.tick_index].timestamp <= to_time:
+                ticks_list.append(self.ticks[self.tick_index])
+                if self.tick_index + 1 <= len(self.ticks) - 1:
+                    self.tick_index += 1
+                else:
+                    self.tick_index += 1
+                    break # No more ticks to append
 
         return ticks_list
 

@@ -7,7 +7,6 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import pandas as pd
 import unittest
 
 from datetime import datetime, timezone, timedelta
@@ -34,17 +33,12 @@ class BacktestDataClientTests(unittest.TestCase):
         self.bid_data_1min = TestDataProvider.usdjpy_1min_bid().iloc[:2000]
         self.ask_data_1min = TestDataProvider.usdjpy_1min_ask().iloc[:2000]
 
-        self.instruments = [TestStubs.instrument_usdjpy()]
-        self.data_ticks = {self.usdjpy.symbol: pd.DataFrame()}
-        self.data_bars_bid = {self.usdjpy.symbol: {Resolution.MINUTE: self.bid_data_1min}}
-        self.data_bars_ask = {self.usdjpy.symbol: {Resolution.MINUTE: self.ask_data_1min}}
-
         self.test_clock = TestClock()
         self.client = BacktestDataClient(
-            instruments=self.instruments,
-            data_ticks=self.data_ticks,
-            data_bars_bid=self.data_bars_bid,
-            data_bars_ask=self.data_bars_ask,
+            instruments=[TestStubs.instrument_usdjpy()],
+            data_ticks={self.usdjpy.symbol: TestDataProvider.usdjpy_test_ticks()},
+            data_bars_bid={self.usdjpy.symbol: {Resolution.MINUTE: self.bid_data_1min}},
+            data_bars_ask={self.usdjpy.symbol: {Resolution.MINUTE: self.ask_data_1min}},
             clock=self.test_clock,
             logger=TestLogger())
 
@@ -72,6 +66,22 @@ class BacktestDataClientTests(unittest.TestCase):
         self.assertEqual(start, self.client.time_now())
         self.assertEqual(1440, self.client.data_providers[self.usdjpy.symbol].iterations[TestStubs.bartype_usdjpy_1min_bid()])
         self.assertEqual(start, self.client.data_providers[self.usdjpy.symbol].bars[TestStubs.bartype_usdjpy_1min_bid()][1440].timestamp)
+
+    def test_can_iterate_tick_data(self):
+        # Arrange
+        receiver = ObjectStorer()
+        self.client.subscribe_ticks(self.usdjpy.symbol, receiver.store)
+
+        start_datetime = datetime(2013, 1, 1, 22, 0, 0, 0, tzinfo=timezone.utc)
+
+        # Act
+        for x in range(1000):
+            self.test_clock.set_time(start_datetime + timedelta(minutes=x))
+            self.client.iterate()
+
+        # Assert
+        self.assertEqual(len(self.client.data_providers[self.usdjpy.symbol].ticks), len(receiver.get_store()))
+        self.assertTrue(self.client.data_providers[self.usdjpy.symbol].has_ticks)
 
     def test_can_iterate_bar_data(self):
         # Arrange
