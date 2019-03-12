@@ -96,8 +96,6 @@ cdef class TradeStrategy:
         self._portfolio = None         # Initialized when registered with execution client
         self.account = None            # Initialized when registered with execution client
 
-        self.log.info(f"Initialized.")
-
     cdef bint equals(self, TradeStrategy other):
         """
         Compare if the object equals the given object.

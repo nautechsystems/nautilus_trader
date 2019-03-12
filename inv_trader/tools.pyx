@@ -69,9 +69,8 @@ cdef class TickBuilder:
         """
         if self._tick_data is not None:
 
-            return list(map(self._build_tick,
-                            self._tick_data['bid'],
-                            self._tick_data['ask'],
+            return list(map(self._build_tick_from_values,
+                            self._tick_data.values,
                             pd.to_datetime(self._tick_data.index, utc=True)))
         else:
             assert(self._bid_data is not None, 'Insufficient data to build ticks.')
@@ -89,7 +88,6 @@ cdef class TickBuilder:
             datetime timestamp):
         """
         Build a Tick from the given values.
-
         :param bid: The bid price for the tick.
         :param ask: The ask price for the tick.
         :param timestamp: The timestamp for the tick.
@@ -98,6 +96,19 @@ cdef class TickBuilder:
         return Tick(self._symbol,
                     Price(bid, self._decimal_precision),
                     Price(ask, self._decimal_precision),
+                    timestamp)
+
+    cpdef Tick _build_tick_from_values(self, double[:] values, datetime timestamp):
+        """
+        Build a Tick from the given values.
+
+        :param values: The price values for the tick.
+        :param timestamp: The timestamp for the tick.
+        :return: Tick.
+        """
+        return Tick(self._symbol,
+                    Price(values[0], self._decimal_precision),
+                    Price(values[1], self._decimal_precision),
                     timestamp)
 
 

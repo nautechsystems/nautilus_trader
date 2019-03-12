@@ -20,6 +20,14 @@ ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 class TestDataProvider:
 
     @staticmethod
+    def usdjpy_test_ticks() -> DataFrame:
+        return pd.read_csv(os.path.join(ROOT_DIR, 'USDJPY_ticks.csv'),
+                           usecols=[1, 2, 3],
+                           index_col=0,
+                           header=None,
+                           parse_dates=True)
+
+    @staticmethod
     def gbpusd_1min_bid() -> DataFrame:
         return pd.read_csv(os.path.join(ROOT_DIR, 'GBPUSD_1 Min_Bid.csv'),
                            index_col='Time (UTC)')
