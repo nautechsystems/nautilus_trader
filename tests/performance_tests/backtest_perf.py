@@ -105,7 +105,8 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
 
         self.assertTrue(True)
 
-        # to datetime(2013, 3, 10, 0, 0, 0, 0, tzinfo=timezone.utc)
+        # start datetime(2013, 1, 1, 22, 0, 0, 0, tzinfo=timezone.utc)
+        # stop  datetime(2013, 3, 10, 0, 0, 0, 0, tzinfo=timezone.utc)
         #          51112051 function calls (51107866 primitive calls) in 22.586 seconds
         #          52912808 function calls (52908623 primitive calls) in 25.232 seconds
         #          49193278 function calls (49189089 primitive calls) in 19.121 seconds
@@ -130,3 +131,4 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 08/03/19  9249474 function calls  (9210052 primitive calls) in 16.686 seconds (add portfolio analysis)
         # 11/03/19  9352466 function calls  (9312764 primitive calls) in 16.185 seconds (add more portfolio analysis)
         # 11/03/19  9262774 function calls  (9223072 primitive calls) in 14.489 seconds (append left to bars list)
+        # 13/03/19  6111078 function calls  (6071325 primitive calls) in 13.208 seconds (improve loops)

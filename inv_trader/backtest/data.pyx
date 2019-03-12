@@ -238,7 +238,10 @@ cdef class BacktestDataClient(DataClient):
 
         cdef start = datetime.utcnow()
         self.data_providers[symbol].register_ticks()
-        self._log.info(f"Built {len(self.data_providers[symbol].ticks)} {symbol} ticks in {round((datetime.utcnow() - start).total_seconds(), 2)}s.")
+        if self.data_providers[symbol].has_ticks:
+            self._log.info(f"Built {len(self.data_providers[symbol].ticks)} {symbol} ticks in {round((datetime.utcnow() - start).total_seconds(), 2)}s.")
+        else:
+            self._log.error(f"No ticks built for {symbol}.")
         self._subscribe_ticks(symbol, handler)
 
     cpdef void unsubscribe_ticks(self, Symbol symbol, handler: Callable):
