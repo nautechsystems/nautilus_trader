@@ -17,6 +17,7 @@ from test_kit.strategies import EMACross
 AUDUSD_FXCM = Symbol('AUDUSD', Venue.FXCM)
 AUDUSD_FXCM_1_SEC_MID = BarType(AUDUSD_FXCM, 1, Resolution.SECOND, QuoteType.MID)
 
+
 if __name__ == "__main__":
 
     logger = Logger(log_to_file=False)
