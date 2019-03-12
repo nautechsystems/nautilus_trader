@@ -333,7 +333,7 @@ cdef class DataProvider:
                                                ask_data=self._dataframes_bars_ask[Resolution.MINUTE])
 
         self.ticks = builder.build_ticks_all()
-        self.has_ticks = True
+        self.has_ticks = len(self.ticks) > 0
 
     cpdef void deregister_ticks(self):
         """
@@ -395,7 +395,10 @@ cdef class DataProvider:
         while current < to_time:
             if self.has_ticks:
                  while self.ticks[self.tick_index].timestamp <= current:
-                    self.tick_index += 1
+                     if self.tick_index + 1 < len(self.ticks):
+                         self.tick_index += 1
+                     else:
+                         break # No more ticks to iterate
 
             for bar_type, iterations in self.iterations.items():
                 if self.bars[bar_type][iterations].timestamp == current:
@@ -411,10 +414,10 @@ cdef class DataProvider:
         """
         cdef list ticks_list = []  # type: List[Tick]
 
-        if self.tick_index <= len(self.ticks) - 1:
+        if self.tick_index < len(self.ticks):
             while self.ticks[self.tick_index].timestamp <= to_time:
                 ticks_list.append(self.ticks[self.tick_index])
-                if self.tick_index + 1 <= len(self.ticks) - 1:
+                if self.tick_index + 1 < len(self.ticks):
                     self.tick_index += 1
                 else:
                     self.tick_index += 1

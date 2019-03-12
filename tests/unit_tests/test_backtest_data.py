@@ -10,19 +10,18 @@
 import unittest
 
 from datetime import datetime, timezone, timedelta
+from pandas import Timestamp
 
 from inv_trader.common.clock import TestClock
 from inv_trader.common.logger import TestLogger
 from inv_trader.model.enums import Resolution
-from inv_trader.model.enums import Venue
-from inv_trader.model.objects import Symbol
 from inv_trader.backtest.data import BacktestDataClient
 from test_kit.objects import ObjectStorer
 from test_kit.data import TestDataProvider
 from test_kit.stubs import TestStubs
 
 UNIX_EPOCH = TestStubs.unix_epoch()
-USDJPY_FXCM = Symbol('USDJPY', Venue.FXCM)
+USDJPY_FXCM = TestStubs.instrument_usdjpy().symbol
 
 
 class BacktestDataClientTests(unittest.TestCase):
@@ -36,9 +35,9 @@ class BacktestDataClientTests(unittest.TestCase):
         self.test_clock = TestClock()
         self.client = BacktestDataClient(
             instruments=[TestStubs.instrument_usdjpy()],
-            data_ticks={self.usdjpy.symbol: TestDataProvider.usdjpy_test_ticks()},
-            data_bars_bid={self.usdjpy.symbol: {Resolution.MINUTE: self.bid_data_1min}},
-            data_bars_ask={self.usdjpy.symbol: {Resolution.MINUTE: self.ask_data_1min}},
+            data_ticks={USDJPY_FXCM: TestDataProvider.usdjpy_test_ticks()},
+            data_bars_bid={USDJPY_FXCM: {Resolution.MINUTE: self.bid_data_1min}},
+            data_bars_ask={USDJPY_FXCM: {Resolution.MINUTE: self.ask_data_1min}},
             clock=self.test_clock,
             logger=TestLogger())
 
@@ -48,8 +47,8 @@ class BacktestDataClientTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(all(self.bid_data_1min), all(self.client.data_bars_bid[self.usdjpy.symbol][Resolution.MINUTE]))
-        self.assertEqual(all(self.ask_data_1min), all(self.client.data_bars_bid[self.usdjpy.symbol][Resolution.MINUTE]))
+        self.assertEqual(all(self.bid_data_1min), all(self.client.data_bars_bid[USDJPY_FXCM][Resolution.MINUTE]))
+        self.assertEqual(all(self.ask_data_1min), all(self.client.data_bars_bid[USDJPY_FXCM][Resolution.MINUTE]))
         self.assertEqual(all(self.bid_data_1min.index), all(self.client.data_minute_index))
 
     def test_can_set_initial_iteration(self):
@@ -58,16 +57,19 @@ class BacktestDataClientTests(unittest.TestCase):
         dummy = []
 
         # Act
+        self.client.subscribe_ticks(USDJPY_FXCM, dummy.append)
         self.client.subscribe_bars(TestStubs.bartype_usdjpy_1min_bid(), dummy.append)
         self.client.set_initial_iteration(start, timedelta(minutes=1))
 
         # Assert
         self.assertEqual(1440, self.client.iteration)
         self.assertEqual(start, self.client.time_now())
-        self.assertEqual(1440, self.client.data_providers[self.usdjpy.symbol].iterations[TestStubs.bartype_usdjpy_1min_bid()])
-        self.assertEqual(start, self.client.data_providers[self.usdjpy.symbol].bars[TestStubs.bartype_usdjpy_1min_bid()][1440].timestamp)
+        self.assertTrue(self.client.data_providers[USDJPY_FXCM].has_ticks)
+        self.assertEqual(999, self.client.data_providers[USDJPY_FXCM].tick_index)
+        self.assertEqual(1440, self.client.data_providers[USDJPY_FXCM].iterations[TestStubs.bartype_usdjpy_1min_bid()])
+        self.assertEqual(start, self.client.data_providers[USDJPY_FXCM].bars[TestStubs.bartype_usdjpy_1min_bid()][1440].timestamp)
 
-    def test_can_iterate_tick_data(self):
+    def test_can_iterate_all_ticks(self):
         # Arrange
         receiver = ObjectStorer()
         self.client.subscribe_ticks(self.usdjpy.symbol, receiver.store)
@@ -80,10 +82,27 @@ class BacktestDataClientTests(unittest.TestCase):
             self.client.iterate()
 
         # Assert
-        self.assertEqual(len(self.client.data_providers[self.usdjpy.symbol].ticks), len(receiver.get_store()))
-        self.assertTrue(self.client.data_providers[self.usdjpy.symbol].has_ticks)
+        self.assertEqual(len(self.client.data_providers[USDJPY_FXCM].ticks), len(receiver.get_store()))
+        self.assertTrue(self.client.data_providers[USDJPY_FXCM].has_ticks)
 
-    def test_can_iterate_bar_data(self):
+    def test_can_iterate_some_ticks(self):
+        # Arrange
+        receiver = ObjectStorer()
+        self.client.subscribe_ticks(USDJPY_FXCM, receiver.store)
+
+        start_datetime = datetime(2013, 1, 1, 22, 0, 0, 0, tzinfo=timezone.utc)
+
+        # Act
+        for x in range(30):
+            self.test_clock.set_time(start_datetime + timedelta(minutes=x))
+            self.client.iterate()
+
+        # Assert
+        self.assertTrue(self.client.data_providers[USDJPY_FXCM].has_ticks)
+        self.assertEqual(655, len(receiver.get_store()))
+        self.assertEqual(Timestamp('2013-01-01 22:28:53.319000+0000', tz='UTC'), receiver.get_store().pop().timestamp)
+
+    def test_can_iterate_bars(self):
         # Arrange
         receiver = ObjectStorer()
         self.client.subscribe_bars(TestStubs.bartype_usdjpy_1min_bid(), receiver.store_2)
@@ -97,4 +116,26 @@ class BacktestDataClientTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(1000, len(receiver.get_store()))
-        self.assertTrue(self.client.data_minute_index[0] == self.client.data_providers[self.usdjpy.symbol].bars[TestStubs.bartype_usdjpy_1min_bid()][0].timestamp)
+        self.assertTrue(self.client.data_minute_index[0] == self.client.data_providers[USDJPY_FXCM].bars[TestStubs.bartype_usdjpy_1min_bid()][0].timestamp)
+        self.assertEqual(Timestamp('2013-01-01 16:39:00+0000', tz='UTC'), receiver.get_store()[999][1].timestamp)
+
+    def test_can_iterate_ticks_and_bars(self):
+        # Arrange
+        receiver = ObjectStorer()
+        self.client.subscribe_ticks(USDJPY_FXCM, receiver.store)
+        self.client.subscribe_bars(TestStubs.bartype_usdjpy_1min_bid(), receiver.store_2)
+
+        start_datetime = datetime(2013, 1, 1, 22, 0, 0, 0, tzinfo=timezone.utc)
+
+        self.client.set_initial_iteration(start_datetime, timedelta(minutes=1))
+
+        # Act
+        for x in range(30):
+            self.test_clock.set_time(start_datetime + timedelta(minutes=x))
+            self.client.iterate()
+
+        print(receiver.get_store())
+        # Assert
+        self.assertTrue(self.client.data_providers[USDJPY_FXCM].has_ticks)
+        self.assertEqual(685, len(receiver.get_store()))
+        self.assertEqual(Timestamp('2013-01-01 22:29:00+0000', tz='UTC'), receiver.get_store().pop()[1].timestamp)
