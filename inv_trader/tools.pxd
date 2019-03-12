@@ -27,6 +27,7 @@ cdef class TickBuilder:
 
     cpdef list build_ticks_all(self)
     cpdef Tick _build_tick(self, float bid, float ask, datetime timestamp)
+    cpdef Tick _build_tick_from_values(self, double[:] values, datetime timestamp)
 
 
 cdef class BarBuilder:

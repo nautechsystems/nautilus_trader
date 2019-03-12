@@ -9,6 +9,7 @@
 
 import unittest
 
+from pandas import Timestamp
 from datetime import datetime, timezone
 
 from inv_trader.model.objects import Price, Bar
@@ -22,6 +23,36 @@ from test_kit.stubs import TestStubs
 class TickBuilderTests(unittest.TestCase):
 
     def setUp(self):
+        pass
+
+    def test_tick_data(self):
+        # Arrange
+        # Act
+        ticks = TestDataProvider.usdjpy_test_ticks()
+
+        # Assert
+        self.assertEqual(1000, len(ticks))
+
+    def test_build_ticks_all_with_tick_data(self):
+        # Arrange
+        tick_data = TestDataProvider.usdjpy_test_ticks()
+        bid_data = TestDataProvider.usdjpy_1min_bid()[:1000]
+        ask_data = TestDataProvider.usdjpy_1min_ask()[:1000]
+        self.tick_builder = TickBuilder(symbol=TestStubs.instrument_usdjpy().symbol,
+                                        decimal_precision=5,
+                                        tick_data=tick_data,
+                                        bid_data=bid_data,
+                                        ask_data=ask_data)
+
+        # Act
+        ticks = self.tick_builder.build_ticks_all()
+
+        # Assert
+        self.assertEqual(1000, len(ticks))
+        self.assertEqual(Timestamp('2013-01-01 22:02:35.907000'), ticks[1].timestamp)
+
+    def test_build_ticks_all_with_bar_data(self):
+        # Arrange
         bid_data = TestDataProvider.usdjpy_1min_bid()[:1000]
         ask_data = TestDataProvider.usdjpy_1min_ask()[:1000]
         self.tick_builder = TickBuilder(symbol=TestStubs.instrument_usdjpy().symbol,
@@ -30,13 +61,12 @@ class TickBuilderTests(unittest.TestCase):
                                         bid_data=bid_data,
                                         ask_data=ask_data)
 
-    def test_build_ticks_all(self):
-        # Arrange
         # Act
         ticks = self.tick_builder.build_ticks_all()
 
         # Assert
         self.assertEqual(1000, len(ticks))
+        self.assertEqual(Timestamp('2013-01-01 00:01:00+0000', tz='UTC'), ticks[1].timestamp)
 
 
 class BarBuilderTests(unittest.TestCase):

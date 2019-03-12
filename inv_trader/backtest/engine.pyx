@@ -289,9 +289,9 @@ cdef class BacktestEngine:
         """
         Create a backtest engine log header.
         """
-        self.log.info("#----------------------------------------------------------------------------------------------------#")
-        self.log.info("#-- BACKTEST ENGINE ---------------------------------------------------------------------------------#")
-        self.log.info("#----------------------------------------------------------------------------------------------------#")
+        self.log.info("#---------------------------------------------------------#")
+        self.log.info("#-------------------- BACKTEST ENGINE --------------------#")
+        self.log.info("#---------------------------------------------------------#")
         self.log.info(f"Nautilus Trader (v{__version__}) for Invariance Pte")
         self.log.info("Building engine...")
 
@@ -303,9 +303,9 @@ cdef class BacktestEngine:
         """
         Create a backtest run log header.
         """
-        self.log.info("#----------------------------------------------------------------------------------------------------#")
-        self.log.info("#-- BACKTEST RUN ------------------------------------------------------------------------------------#")
-        self.log.info("#----------------------------------------------------------------------------------------------------#")
+        self.log.info("#---------------------------------------------------------#")
+        self.log.info("#-------------------- BACKTEST RUN -----------------------#")
+        self.log.info("#---------------------------------------------------------#")
         self.log.info(f"OS: {platform.platform()}")
         self.log.info(f"Processors: {platform.processor()}")
         self.log.info(f"RAM-Total: {round(psutil.virtual_memory()[0] / 1000000)}MB")
@@ -315,7 +315,7 @@ cdef class BacktestEngine:
         self.log.info(f"Start datetime: {start}")
         self.log.info(f"Stop datetime:  {stop}")
         self.log.info(f"Starting account balance: {self.config.starting_capital}")
-        self.log.info("#----------------------------------------------------------------------------------------------------#")
+        self.log.info("#---------------------------------------------------------#")
         self.log.info(f"Running backtest...")
 
     cdef void _backtest_footer(
@@ -328,17 +328,17 @@ cdef class BacktestEngine:
         """
         returns = self.trader.portfolio.analyzer.get_returns()
 
-        self.log.info("#----------------------------------------------------------------------------------------------------#")
-        self.log.info("#-- BACKTEST DIAGNOSTICS ----------------------------------------------------------------------------#")
-        self.log.info("#----------------------------------------------------------------------------------------------------#")
-        self.log.info(f"Initialization elapsed time: {round(self.time_to_initialize, 2)}s")
-        self.log.info(f"Running elapsed time: {round(self.clock.get_elapsed(run_started), 2)}s")
+        self.log.info("#---------------------------------------------------------#")
+        self.log.info("#-------------------- BACKTEST DIAGNOSTICS ---------------#")
+        self.log.info("#---------------------------------------------------------#")
+        self.log.info(f"Initialization elapsed time:{self._print_stat(self.time_to_initialize)}s")
+        self.log.info(f"Running elapsed time:{self._print_stat(self.clock.get_elapsed(run_started))}s")
         self.log.info(f"Time-step iterations: {self.exec_client.iteration}")
         self.log.info(f"Start datetime: {start}")
         self.log.info(f"End datetime:   {stop}")
-        self.log.info(f"Starting account balance:{self._print_stat(float(self.config.starting_capital.value))}")
-        self.log.info(f"Ending account balance:  {self._print_stat(float(self.account.cash_balance.value))}")
-        self.log.info(f"Total commissions:       {self._print_stat(float(self.exec_client.total_commissions.value))}")
+        self.log.info(f"Starting account balance:{self._print_stat(self.config.starting_capital.value)}")
+        self.log.info(f"Ending account balance:  {self._print_stat(self.account.cash_balance.value)}")
+        self.log.info(f"Total commissions:       {self._print_stat(self.exec_client.total_commissions.value)}")
         self.log.info("")
         self.log.info("#----------------------------------------------------------------------------------------------------#")
         self.log.info("#-- PERFORMANCE STATISTICS --------------------------------------------------------------------------#")
@@ -368,7 +368,7 @@ cdef class BacktestEngine:
             # Replace the strategies logger with the engines test logger
             strategy.change_logger(self.test_logger)
 
-    cdef str _print_stat(self, float value, int decimals=2):
+    cdef str _print_stat(self, value, int decimals=2):
         cdef str string_value = f'{value:.{decimals}f}'
         if not string_value.startswith('-'):
             string_value = ' ' + string_value
