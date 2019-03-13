@@ -212,6 +212,10 @@ cdef class BacktestEngine:
         :param time_step_mins: The time step in minutes for each test clock iterations (> 0)
         
         Note: The default time_step_mins is 1 and shouldn't need to be changed.
+        :raises: ValueError: If the start datetime is not < the stop datetime.
+        :raises: ValueError: If the start datetime is not >= the first index timestamp of data.
+        :raises: ValueError: If the start datetime is not <= the last index timestamp of data.
+        :raises: ValueError: If the time_step_mins is not positive (> 0).
         """
         Precondition.true(start < stop, 'start < stop')
         Precondition.true(start >= self.data_minute_index[0], 'start >= first_timestamp')
@@ -362,6 +366,11 @@ cdef class BacktestEngine:
         self.log.info("#-----------------------------------------------------#")
 
     cdef void _change_strategy_clocks_and_loggers(self, list strategies):
+        """
+        Replace the clocks and loggers for every strategy in the given list.
+        
+        :param strategies: The list of strategies.
+        """
         for strategy in strategies:
             # Replace the strategies clock with a test clock
             strategy.change_clock(TestClock())  # Separate test clock to iterate independently
@@ -369,6 +378,12 @@ cdef class BacktestEngine:
             strategy.change_logger(self.test_logger)
 
     cdef str _print_stat(self, value, int decimals=2):
+        """
+        Print the given value rounded to the given decimals with signed formatting.
+        :param value: The value to print.
+        :param decimals: The decimal precision for the value rounding.
+        :return: str.
+        """
         cdef str string_value = f'{value:.{decimals}f}'
         if not string_value.startswith('-'):
             string_value = ' ' + string_value

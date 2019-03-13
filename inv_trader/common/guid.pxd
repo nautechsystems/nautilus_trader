@@ -26,7 +26,6 @@ cdef class TestGuidFactory(GuidFactory):
     """
     cdef GUID _guid
 
-    cpdef GUID generate(self)
 
 
 cdef class LiveGuidFactory(GuidFactory):
@@ -34,5 +33,4 @@ cdef class LiveGuidFactory(GuidFactory):
     Provides a GUID factory for live trading. Generates actual GUIDs based on
     Pythons UUID4.
     """
-
-    cpdef GUID generate(self)
+    pass

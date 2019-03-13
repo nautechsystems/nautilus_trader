@@ -98,10 +98,10 @@ cdef str MARGIN_CALL_STATUS = 'margin_call_status'
 
 cpdef Symbol parse_symbol(str symbol_string):
     """
-    Parse the given string to a Symbol.
+    Return the parsed symbol from the given string.
 
     :param symbol_string: The symbol string to parse.
-    :return: The parsed symbol.
+    :return: Symbol.
     """
     cdef tuple split_symbol = symbol_string.partition('.')
     return Symbol(split_symbol[0], Venue[split_symbol[2].upper()])
@@ -109,56 +109,56 @@ cpdef Symbol parse_symbol(str symbol_string):
 
 cpdef str convert_price_to_string(Price price):
     """
-    Convert the given object to a decimal or 'NONE' string.
+    Return the converted string from the given price, can return a 'NONE' string..
 
     :param price: The price to convert.
-    :return: The converted string.
+    :return: str.
     """
     return NONE if price is None else str(price)
 
 
 cpdef Price convert_string_to_price(str price_string):
     """
-    Convert the given price string to a Decimal or None.
+    Return the converted price (or None) from the given price string.
 
     :param price_string: The price string to convert.
-    :return: The converted price, or None.
+    :return: Price or None.
     """
     return None if price_string == NONE else Price(price_string)
 
 cpdef str convert_label_to_string(Label label):
     """
-    Convert the given object to a label or 'NONE' string.
+    Return the converted string from the given label, can return a 'NONE' string.
 
     :param label: The label to convert.
-    :return: The converted string.
+    :return: str.
     """
     return NONE if label is None else label.value
 
 cpdef Label convert_string_to_label(str label):
     """
-    Convert the given label string to a Label or None.
+    Return the converted label (or None) from the given label string.
 
     :param label: The label string to convert.
-    :return: The converted Label, or None.
+    :return: Label or None.
     """
     return None if label == NONE else Label(label)
 
 cpdef str convert_datetime_to_string(datetime time):
     """
-    Convert the given object to a valid ISO8601 string, or 'NONE'.
+    Return the converted ISO8601 string from the given datetime, can return a 'NONE' string.
 
     :param time: The datetime to convert
-    :return: The converted string.
+    :return: str.
     """
     return NONE if time is None else time.isoformat(timespec='milliseconds').replace('+00:00', 'Z')
 
 cpdef datetime convert_string_to_datetime(str time_string):
     """
-    Convert the given string to a datetime object, or None.
+    Return the converted datetime (or None) from the given time string.
 
     :param time_string: The time string to convert.
-    :return: The converted datetime, or None.
+    :return: datetime or None.
     """
     return None if time_string == NONE else iso8601.parse_date(time_string)
 
@@ -173,17 +173,17 @@ cdef class OrderSerializer:
         Serialize the given order to bytes.
 
         :param order: The order to serialize.
-        :return: The serialized order.
+        :return: bytes.
         """
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
     cpdef Order deserialize(self, bytes order_bytes):
         """
-        Deserialize the given bytes to an Order.
+        Deserialize the given bytes to an order.
 
         :param order_bytes: The bytes to deserialize.
-        :return: The deserialized order.
+        :return: Order.
         """
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass. ")
@@ -199,17 +199,17 @@ cdef class CommandSerializer:
         Serialize the given command to bytes.
 
         :param: command: The command to serialize.
-        :return: The serialized command.
+        :return: bytes.
         """
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
     cpdef Command deserialize(self, bytes command_bytes):
         """
-        Deserialize the given bytes to a Command.
+        Deserialize the given bytes to a command.
 
         :param: command_bytes: The command bytes to deserialize.
-        :return: The deserialized command.
+        :return: Command.
         """
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
@@ -237,7 +237,7 @@ cdef class EventSerializer:
         Serialize the given event to bytes.
 
         :param event: The event to serialize.
-        :return: The serialized event.
+        :return: bytes.
         """
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
@@ -247,7 +247,7 @@ cdef class EventSerializer:
         Deserialize the given bytes to an event.
 
         :param event_bytes: The bytes to deserialize.
-        :return: The deserialized event.
+        :return: Event.
         """
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the subclass.")
@@ -276,7 +276,7 @@ cdef class InstrumentSerializer:
         Deserialize the given instrument bytes to an instrument.
 
         :param instrument_bytes: The string to deserialize.
-        :return: The deserialized instrument.
+        :return: Instrument.
         :raises ValueError: If the instrument_bytes is empty.
         :raises ValueError: If the instrument cannot be deserialized.
         """

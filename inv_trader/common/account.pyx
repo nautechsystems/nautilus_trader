@@ -63,19 +63,19 @@ cdef class Account:
 
     def __str__(self) -> str:
         """
-        :return: The str() string representation of the account.
+        Return the str() string representation of the account.
         """
         return f"Account({str(self.broker)}-{str(self.account_number)})"
 
     def __repr__(self) -> str:
         """
-        :return: The repr() string representation of the account.
+        Return the repr() string representation of the account.
         """
         return f"<{str(self)} object at {id(self)}>"
 
     cpdef list get_events(self):
         """
-        :return: A copy of the list of internally held events. 
+        :return: List[Event]. 
         """
         return self._events.copy()
 
@@ -83,7 +83,7 @@ cdef class Account:
         """
         Applies the given account event to the account.
 
-        :param event: The account event.
+        :param event: The account event to apply.
         """
         self._events.append(event)
         self.event_count += 1
