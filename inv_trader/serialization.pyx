@@ -122,10 +122,10 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
 
     cpdef bytes serialize(self, Order order):
         """
-        Serialize the given Order to Message Pack specification bytes.
+        Serialize the given order to Message Pack specification bytes.
 
         :param order: The order to serialize.
-        :return: The serialized order.
+        :return: bytes.
         """
         return msgpack.packb({
             SYMBOL: str(order.symbol),
@@ -142,10 +142,10 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
 
     cpdef Order deserialize(self, bytes order_bytes):
         """
-        Deserialize the given Message Pack specification bytes to an Order.
+        Deserialize the given Message Pack specification bytes to an order.
 
         :param order_bytes: The bytes to deserialize.
-        :return: The deserialized order.
+        :return: Order.
         :raises ValueError: If the event_bytes is empty.
         """
         Precondition.not_empty(order_bytes, 'order_bytes')
@@ -180,7 +180,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         Serialize the given command to Message Pack specification bytes.
 
         :param: command: The command to serialize.
-        :return: The serialized command.
+        :return: bytes.
         :raises: ValueError: If the command cannot be serialized.
         """
         if isinstance(command, OrderCommand):
@@ -214,7 +214,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         Deserialize the given Message Pack specification bytes to a command.
 
         :param command_bytes: The command to deserialize.
-        :return: The deserialized command.
+        :return: Command.
         :raises ValueError: If the command_bytes is empty.
         :raises ValueError: If the command cannot be deserialized.
         """
@@ -257,7 +257,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         Serialize the given order command to Message Pack specification bytes.
 
         :param order_command: The order command to serialize.
-        :return: The serialized order command.
+        :return: bytes.
         :raises ValueError: If the order command cannot be serialized.
         """
         cdef dict package = {
@@ -296,7 +296,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         :param command_id: The commands order id.
         :param command_timestamp: The commands timestamp.
         :param unpacked: The commands unpacked dictionary.
-        :return: The deserialized order command.
+        :return: OrderCommand.
         :raises ValueError: If the order command cannot be deserialized.
         """
         cdef str order_command = unpacked[ORDER_COMMAND]
@@ -333,10 +333,10 @@ cdef class MsgPackEventSerializer(EventSerializer):
 
     cpdef bytes serialize(self, Event event):
         """
-        Serialize the event to Message Pack specification bytes.
+        Serialize the given event to Message Pack specification bytes.
 
         :param event: The event to serialize.
-        :return: The serialized event.
+        :return: bytes.
         :raises: ValueError: If the event cannot be serialized.
         """
         if isinstance(event, OrderEvent):
@@ -349,7 +349,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
         Deserialize the given Message Pack specification bytes to an event.
 
         :param event_bytes: The bytes to deserialize.
-        :return: The deserialized event.
+        :return: Event.
         :raises ValueError: If the event_bytes is empty.
         :raises ValueError: If the event cannot be deserialized.
         """
@@ -389,7 +389,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
         Serialize the given order event to Message Pack specification bytes.
 
         :param order_event: The order event to serialize.
-        :return: The serialized order event.
+        :return: bytes.
         :raises ValueError: If the order event cannot be serialized.
         """
         cdef dict package = {
@@ -488,7 +488,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
         :param event_id: The events order id.
         :param event_timestamp: The events timestamp.
         :param unpacked: The events unpacked dictionary.
-        :return: The deserialized order event.
+        :return: OrderEvent.
         :raises ValueError: If the order event cannot be deserialized.
         """
         cdef Symbol order_symbol = parse_symbol(unpacked[SYMBOL])

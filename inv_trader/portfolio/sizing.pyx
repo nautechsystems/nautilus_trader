@@ -82,7 +82,9 @@ cdef class PositionSizer:
             int leverage,
             commission_rate):
         """
-        Calculate the amount of risk money available.
+        Return the calculated amount of risk money available.
+        
+        :return Money.
         """
         if equity.value <= 0:
             return Money.zero()
@@ -93,7 +95,9 @@ cdef class PositionSizer:
 
     cdef int _calculate_risk_points(self, Price entry, Price stop_loss):
         """
-        Calculate the difference in points between the entry and stop loss.
+        Return the calculated difference in points between the entry and stop loss.
+        
+        :return int.
         """
         return int(abs(entry - stop_loss) / self.instrument.tick_size)
 

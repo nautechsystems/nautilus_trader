@@ -250,11 +250,10 @@ cdef class Order:
             # Slippage not applicable to orders with entry prices.
             return
 
-        # TODO: Refactor below logic
         if self.side is OrderSide.BUY:
-            self.slippage = Decimal(f'{round(self.average_price.as_float() - self.price.as_float(), self.price.precision):.{self.price.precision}f}')
+            self.slippage = Decimal(f'{self.average_price.as_float() - self.price.as_float():.{self.price.precision}f}')
         else:  # side is OrderSide.SELL:
-            self.slippage = Decimal(f'{round(self.price.as_float() - self.average_price.as_float(), self.price.precision):.{self.price.precision}f}')
+            self.slippage = Decimal(f'{self.price.as_float() - self.average_price.as_float():.{self.price.precision}f}')
 
     cdef void _set_fill_status(self):
         if self.filled_quantity < self.quantity:

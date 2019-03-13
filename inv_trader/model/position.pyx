@@ -96,32 +96,42 @@ cdef class Position:
 
     cdef str status_string(self):
         """
-        :return: A string describing the positions status.
+        Return the positions status as a string.
+        
+        :return: str.
         """
         cdef str quantity = '{:,}'.format(self.quantity.value)
         return f"{self.symbol} {market_position_string(self.market_position)} {quantity}"
 
     cpdef list get_order_ids(self):
         """
-        :return: A copy of the list of internally held from order ids. 
+        Return a copy of the list of internally held from order identifiers.
+        
+        :return: List[OrderId]. 
         """
         return list(self._order_ids.copy())
 
     cpdef list get_execution_ids(self):
         """
-        :return: A copy of the list of internally held execution ids. 
+        Return A copy of the list of internally held execution ids.
+        
+        :return: List[ExecutionId]. 
         """
         return self._execution_ids.copy()
 
     cpdef list get_execution_tickets(self):
         """
-        :return: A copy of the list of internally held execution tickets. 
+        Return a copy of the list of internally held execution tickets.
+        
+        :return: List[ExecutionTicket]. 
         """
         return self._execution_tickets.copy()
 
     cpdef list get_events(self):
         """
-        :return: A copy of the list of internally held events. 
+        Return a copy of the list of internally held events.
+        
+        :return: List[Event].
         """
         return self._events.copy()
 
@@ -194,7 +204,7 @@ cdef class Position:
 
     cpdef float return_unrealized(self, Price current_price):
         """
-        Calculate the unrealized return percentage from the given current price.
+        Return the calculated unrealized return percentage from the given current price.
          
         :param current_price: The current price of the position instrument.
         :return: float.
@@ -211,7 +221,7 @@ cdef class Position:
             Price entry_price,
             Price exit_price):
         """
-        Calculate the return from the given parameters.
+        Return the calculated return from the given parameters.
         """
         if direction is MarketPosition.LONG:
             return (exit_price.as_float() - entry_price.as_float()) / exit_price.as_float()

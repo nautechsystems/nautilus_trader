@@ -41,7 +41,9 @@ cdef class ValidString:
     @staticmethod
     cdef ValidString none():
         """
-        :return: A valid string with a value of 'NONE'.
+        Return a valid string with a value of 'NONE'.
+        
+        :return: ValidString.
         """
         return ValidString()
 
@@ -197,7 +199,9 @@ cdef class Symbol:
 
     cdef str venue_string(self):
         """
-        :return: The venue string. 
+        The venue string.
+        
+        :return: str. 
         """
         return venue_string(self.venue)
 
@@ -357,7 +361,9 @@ cdef class Price:
 
     cpdef float as_float(self):
         """
-        :return: A float representation of the price. 
+        Return A float representation of the price.
+        
+        :return: float.
         """
         return float(self.value)
 
@@ -500,8 +506,8 @@ cdef class Tick:
         :param bid: The tick best bid price.
         :param ask: The tick best ask price.
         :param timestamp: The tick timestamp (UTC).
-        :raises ValueError: If the bid is not positive (> 0).
-        :raises ValueError: If the ask is not positive (> 0).
+        :raises ValueError: If the bid price is not positive (> 0).
+        :raises ValueError: If the ask price is not positive (> 0).
         """
         self.symbol = symbol
         self.bid = bid
@@ -577,13 +583,17 @@ cdef class BarSpecification:
 
     cdef str resolution_string(self):
         """
-        :return: The resolution string. 
+        Return the resolution as a string
+        
+        :return: str.
         """
         return resolution_string(self.resolution)
 
     cdef str quote_type_string(self):
         """
-        :return: The quote type string. 
+        Return the quote type as a string.
+        
+        :return: str.
         """
         return quote_type_string(self.quote_type)
 
@@ -637,13 +647,17 @@ cdef class BarType:
 
     cdef str resolution_string(self):
         """
-        :return: The resolution string. 
+        Return the resolution as a string
+        
+        :return: str.
         """
         return self.bar_spec.resolution_string()
 
     cdef str quote_type_string(self):
         """
-        :return: The quote type string. 
+        Return the quote type as a string.
+        
+        :return: str.
         """
         return self.bar_spec.quote_type_string()
 
