@@ -24,6 +24,7 @@ DESCRIPTION = 'The python trading client for Invariance.'
 LICENSE = 'Invariance Software License, April 2018'
 REQUIREMENTS = ['cython',
                 'numpy',
+                'scipy',
                 'pandas',
                 'iso8601',
                 'pyzmq',

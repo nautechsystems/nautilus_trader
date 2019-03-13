@@ -45,10 +45,14 @@ cdef class TickBuilder:
         """
         Initializes a new instance of the TickBuilder class.
 
-        :param bid_data: The DataFrame containing the tick data.
-        :param bid_data: The DataFrame containing the market bid data.
-        :param ask_data: The DataFrame containing the market ask data.
-        :param decimal_precision: The decimal precision for tick prices.
+        :param decimal_precision: The decimal precision for the tick prices (>= 0).
+        :param tick_data: The DataFrame containing the tick data.
+        :param bid_data: The DataFrame containing the bid bars data.
+        :param ask_data: The DataFrame containing the ask bars data.
+        :raises: ValueError: If the decimal_precision is negative (< 0).
+        :raises: ValueError: If the tick_data is a type other than None or DataFrame.
+        :raises: ValueError: If the bid_data is a type other than None or DataFrame.
+        :raises: ValueError: If the ask_data is a type other than None or DataFrame.
         """
         Precondition.not_negative(decimal_precision, 'decimal_precision')
         Precondition.type_or_none(tick_data, DataFrame, 'tick_data')
@@ -67,7 +71,7 @@ cdef class TickBuilder:
         
         :return: List[Tick].
         """
-        if self._tick_data is not None:
+        if self._tick_data is not None and len(self._tick_data) > 0:
 
             return list(map(self._build_tick_from_values,
                             self._tick_data.values,
@@ -87,7 +91,8 @@ cdef class TickBuilder:
             float ask,
             datetime timestamp):
         """
-        Build a Tick from the given values.
+        Build a tick from the given values.
+        
         :param bid: The bid price for the tick.
         :param ask: The ask price for the tick.
         :param timestamp: The timestamp for the tick.
@@ -100,7 +105,8 @@ cdef class TickBuilder:
 
     cpdef Tick _build_tick_from_values(self, double[:] values, datetime timestamp):
         """
-        Build a Tick from the given values.
+        Build a tick from the given values. The function expects the values to 
+        be an ndarray with 2 elements [bid, ask] of type double.
 
         :param values: The price values for the tick.
         :param timestamp: The timestamp for the tick.
@@ -125,13 +131,16 @@ cdef class BarBuilder:
         """
         Initializes a new instance of the BarBuilder class.
 
-        :param data: The DataFrame containing the market data.
-        :param decimal_precision: The decimal precision for bar prices.
+        :param decimal_precision: The decimal precision for bar prices (>= 0).
+        :param data: The the bars market data.
         :param volume_multiple: The volume multiple for the builder (> 0).
+        :raises: ValueError: If the decimal_precision is negative (< 0).
+        :raises: ValueError: If the volume_multiple is not positive (> 0).
+        :raises: ValueError: If the data is a type other than DataFrame.
         """
         Precondition.not_negative(decimal_precision, 'decimal_precision')
         Precondition.positive(volume_multiple, 'volume_multiple')
-        Precondition.type_or_none(data, DataFrame, 'data')
+        Precondition.type(data, DataFrame, 'data')
 
         self._decimal_precision = decimal_precision
         self._volume_multiple = volume_multiple
@@ -212,7 +221,7 @@ cdef class BarBuilder:
 
         :param values: The values for the bar.
         :param timestamp: The timestamp for the bar.
-        :return: The built DataBar.
+        :return: DataBar.
         """
         return DataBar(values[0],
                        values[1],
@@ -223,12 +232,12 @@ cdef class BarBuilder:
 
     cpdef Bar _build_bar(self, double[:] values, datetime timestamp):
         """
-        Build a Bar from the given index and values. The function expects the
+        Build a bar from the given index and values. The function expects the
         values to be an ndarray with 5 elements [open, high, low, close, volume].
 
         :param values: The values for the bar.
         :param timestamp: The timestamp for the bar.
-        :return: The built Bar.
+        :return: Bar.
         """
         return Bar(Price(values[0], self._decimal_precision),
                    Price(values[1], self._decimal_precision),
@@ -255,6 +264,7 @@ cdef class IndicatorUpdater:
         :param indicator: The indicator for updating.
         :param input_method: The indicators input method.
         :param outputs: The list of the indicators output properties.
+        :raises ValueError: If the input_method is not of type Callable.
         """
         Precondition.type_or_none(input_method, Callable, 'input_method')
 
@@ -341,6 +351,6 @@ cdef class IndicatorUpdater:
         """
         Create a list of the current indicator outputs.
         
-        :return: The list of indicator outputs.
+        :return: List[tuple].
         """
         return [(output, self._indicator.__getattribute__(output)) for output in self._outputs]

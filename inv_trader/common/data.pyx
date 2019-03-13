@@ -165,12 +165,11 @@ cdef class DataClient:
         :param bar_type: The historical bar type to download.
         :param from_datetime: The datetime from which the historical bars should be downloaded.
         :param handler: The handler to pass the bars to.
-        :raises ValueError: If the from_datetime is not less than datetime.utcnow().
         """
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void subscribe_ticks(self, Symbol symbol, handler: Callable):
+    cpdef void subscribe_ticks(self, Symbol symbol, handler: Callable=None):
         """
         Subscribe to tick data for the given symbol and venue.
 
@@ -180,7 +179,7 @@ cdef class DataClient:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void unsubscribe_ticks(self, Symbol symbol, handler: Callable):
+    cpdef void unsubscribe_ticks(self, Symbol symbol, handler: Callable=None):
         """
         Unsubscribes from tick data for the given symbol and venue.
 
@@ -190,7 +189,7 @@ cdef class DataClient:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void subscribe_bars(self, BarType bar_type, handler: Callable):
+    cpdef void subscribe_bars(self, BarType bar_type, handler: Callable=None):
         """
         Subscribe to bar data for the given bar parameters.
 
@@ -200,7 +199,7 @@ cdef class DataClient:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void unsubscribe_bars(self, BarType bar_type, handler: Callable):
+    cpdef void unsubscribe_bars(self, BarType bar_type, handler: Callable=None):
         """
         Unsubscribes from bar data for the given symbol and venue.
 
@@ -210,7 +209,7 @@ cdef class DataClient:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cdef void _subscribe_ticks(self, Symbol symbol, handler: Callable):
+    cdef void _subscribe_ticks(self, Symbol symbol, handler: Callable=None):
         """
         Subscribe to tick data for the given symbol and venue.
 
@@ -227,7 +226,7 @@ cdef class DataClient:
             self._tick_handlers[symbol].append(handler)
             self._log.debug(f"Added tick {handler}.")
 
-    cdef void _unsubscribe_ticks(self, Symbol symbol, handler: Callable):
+    cdef void _unsubscribe_ticks(self, Symbol symbol, handler: Callable=None):
         """
         Unsubscribes from tick data for the given symbol and venue.
 
@@ -251,9 +250,9 @@ cdef class DataClient:
             del self._tick_handlers[symbol]
             self._log.info(f"Unsubscribed from tick data for {symbol}.")
 
-    cdef void _subscribe_bars(self, BarType bar_type, handler: Callable):
+    cdef void _subscribe_bars(self, BarType bar_type, handler: Callable=None):
         """
-        Subscribe to bar data for the given bar parameters.
+        Subscribe to bar data for the given bar type and handler.
 
         :param bar_type: The bar type to subscribe to.
         :param handler: The callable handler for subscription (if None will just call print).
@@ -268,9 +267,9 @@ cdef class DataClient:
             self._bar_handlers[bar_type].append(handler)
             self._log.debug(f"Added bar handler {handler} for {bar_type} bars.")
 
-    cdef void _unsubscribe_bars(self, BarType bar_type, handler: Callable):
+    cdef void _unsubscribe_bars(self, BarType bar_type, handler: Callable=None):
         """
-        Unsubscribes from bar data for the given symbol and venue.
+        Unsubscribes from bar data for the given bar type and handler.
 
         :param bar_type: The bar type to unsubscribe from.
         :param handler: The callable handler which was subscribed (can be None).
