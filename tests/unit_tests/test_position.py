@@ -51,8 +51,8 @@ class PositionTests(unittest.TestCase):
         self.assertFalse(position.is_entered)
         self.assertFalse(position.is_exited)
         self.assertEqual(0.0, position.return_realized)
-        self.assertEqual('Position(id=P123456) AUDUSD.FXCM FLAT 0', str(position))
-        self.assertTrue(repr(position).startswith('<Position(id=P123456) AUDUSD.FXCM FLAT 0 object at'))
+        self.assertEqual('Position(id=P123456) AUDUSD.FXCM FLAT', str(position))
+        self.assertTrue(repr(position).startswith('<Position(id=P123456) AUDUSD.FXCM FLAT object at'))
 
     def test_position_filled_with_buy_order_returns_expected_attributes(self):
         # Arrange

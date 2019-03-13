@@ -544,12 +544,6 @@ cdef class PositionEvent(Event):
         self.position = position
         self.strategy_id = strategy_id
 
-    def __str__(self) -> str:
-        """
-        :return: The str() string representation of the event.
-        """
-        return f"{self.__class__.__name__}(id={self.position.id.value}) {self.position.status_string()}"
-
     def __repr__(self) -> str:
         """
         :return: The repr() string representation of the event.
@@ -580,6 +574,15 @@ cdef class PositionOpened(PositionEvent):
                          event_id,
                          event_timestamp)
 
+    def __str__(self) -> str:
+        """
+        :return: The str() string representation of the event.
+        """
+        return (f"{self.__class__.__name__}("
+                f"id={self.position.id.value}, "
+                f"av_entry_price={self.position.average_entry_price}) "
+                f"{self.position.status_string()}")
+
 
 cdef class PositionModified(PositionEvent):
     """
@@ -604,6 +607,15 @@ cdef class PositionModified(PositionEvent):
                          event_id,
                          event_timestamp)
 
+    def __str__(self) -> str:
+        """
+        :return: The str() string representation of the event.
+        """
+        return (f"{self.__class__.__name__}("
+                f"id={self.position.id.value}, "
+                f"av_entry_price={self.position.average_entry_price}) "
+                f"{self.position.status_string()}")
+
 
 cdef class PositionClosed(PositionEvent):
     """
@@ -627,6 +639,16 @@ cdef class PositionClosed(PositionEvent):
                          strategy_id,
                          event_id,
                          event_timestamp)
+
+    def __str__(self) -> str:
+        """
+        :return: The str() string representation of the event.
+        """
+        return (f"{self.__class__.__name__}("
+                f"id={self.position.id.value}, "
+                f"av_entry_price={self.position.average_entry_price}, "
+                f"av_exit_price={self.position.average_exit_price}) "
+                f"{self.position.status_string()}")
 
 
 cdef class TimeEvent(Event):
