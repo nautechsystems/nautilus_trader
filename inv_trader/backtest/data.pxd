@@ -12,7 +12,7 @@
 from cpython.datetime cimport datetime, timedelta
 
 from inv_trader.common.data cimport DataClient
-from inv_trader.model.objects cimport Symbol, BarType, Instrument
+from inv_trader.model.objects cimport BarType, Instrument
 
 
 cdef class BacktestDataClient(DataClient):

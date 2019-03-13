@@ -190,6 +190,7 @@ cdef class LiveDataClient(DataClient):
         :param bar_type: The historical bar type to download.
         :param quantity: The number of historical bars to download (can be None, will download all).
         :param handler: The bar handler to pass the bars to.
+        :raises ValueError: If the handler is not of type Callable.
         :raises ValueError: If the quantity is not None and not positive (> 0).
         """
         Precondition.type(handler, Callable, 'handler')
@@ -249,6 +250,7 @@ cdef class LiveDataClient(DataClient):
         :param bar_type: The historical bar type to download.
         :param from_datetime: The datetime from which the historical bars should be downloaded.
         :param handler: The handler to pass the bars to.
+        :raises ValueError: If the handler is not of type Callable.
         :raises ValueError: If the from_datetime is not less than that current datetime.
         """
         Precondition.type(handler, Callable, 'handler')
@@ -285,12 +287,13 @@ cdef class LiveDataClient(DataClient):
             handler(bar_type, bar)
         self._log.debug(f"Historical bars hydrated to handler {handler}.")
 
-    cpdef void subscribe_ticks(self, Symbol symbol, handler: Callable):
+    cpdef void subscribe_ticks(self, Symbol symbol, handler: Callable=None):
         """
-        Subscribe to live tick data for the given symbol and venue.
+        Subscribe to live tick data for the given symbol.
 
         :param symbol: The tick symbol to subscribe to.
         :param handler: The callable handler for subscription (if None will just call print).
+        :raises ValueError: If the handler is not of type None or Callable.
         """
         Precondition.type_or_none(handler, Callable, 'handler')
 
@@ -305,12 +308,13 @@ cdef class LiveDataClient(DataClient):
 
         self._subscribe_ticks(symbol, handler)
 
-    cpdef void unsubscribe_ticks(self, Symbol symbol, handler: Callable):
+    cpdef void unsubscribe_ticks(self, Symbol symbol, handler: Callable=None):
         """
-        Unsubscribes from live tick data for the given symbol and venue.
+        Unsubscribes from live tick data for the given symbol.
 
         :param symbol: The tick symbol to unsubscribe from.
         :param handler: The callable handler which was subscribed (can be None).
+        :raises ValueError: If the handler is not of type None or Callable.
         """
         Precondition.type_or_none(handler, Callable, 'handler')
 
@@ -322,12 +326,13 @@ cdef class LiveDataClient(DataClient):
             tick_channel = self._get_tick_channel_name(symbol)
             self._pubsub.unsubscribe(tick_channel)
 
-    cpdef void subscribe_bars(self, BarType bar_type, handler: Callable):
+    cpdef void subscribe_bars(self, BarType bar_type, handler: Callable=None):
         """
         Subscribe to live bar data for the given bar parameters.
 
         :param bar_type: The bar type to subscribe to.
         :param handler: The callable handler for subscription (if None will just call print).
+        :raises ValueError: If the handler is not of type None or Callable.
         """
         Precondition.type_or_none(handler, Callable, 'handler')
 
@@ -342,7 +347,7 @@ cdef class LiveDataClient(DataClient):
 
         self._subscribe_bars(bar_type, handler)
 
-    cpdef void unsubscribe_bars(self, BarType bar_type, handler: Callable):
+    cpdef void unsubscribe_bars(self, BarType bar_type, handler: Callable=None):
         """
         Unsubscribes from live bar data for the given symbol and venue.
 

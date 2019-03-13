@@ -46,6 +46,16 @@ cdef class BacktestDataClient(DataClient):
         :param data_bars_ask: The historical ask bar data needed for the backtest.
         :param clock: The clock for the component.
         :param logger: The logger for the component.
+        :raises ValueError: If the instruments list contains a type other than Instrument.
+        :raises ValueError: If the data_ticks dict contains a key type other than Symbol.
+        :raises ValueError: If the data_ticks dict contains a value type other than DataFrame.
+        :raises ValueError: If the data_bars_bid dict contains a key type other than Symbol.
+        :raises ValueError: If the data_bars_bid dict contains a value type other than DataFrame.
+        :raises ValueError: If the data_bars_ask dict contains a key type other than Symbol.
+        :raises ValueError: If the data_bars_ask dict contains a value type other than DataFrame.
+        :raises ValueError: If the data_bars_bid keys does not equal the data_bars_ask keys.
+        :raises ValueError: If the clock is None.
+        :raises ValueError: If the logger is None.
         """
         Precondition.list_type(instruments, Instrument, 'instruments')
         Precondition.dict_types(data_ticks, Symbol, DataFrame, 'dataframes_ticks')
@@ -122,8 +132,9 @@ cdef class BacktestDataClient(DataClient):
             datetime to_time,
             timedelta time_step):
         """
-        Wind the data client data providers bar iterations forwards to the given 
-        to_time with the given time_step.
+        Set the initial internal iteration by winding the data client data 
+        providers bar iterations and tick indexs forwards to the given to_time 
+        at the given time_step.
         
         :param to_time: The time to wind the data client to.
         :param time_step: The time step to iterate at.
@@ -207,8 +218,14 @@ cdef class BacktestDataClient(DataClient):
         :param bar_type: The historical bar type to download.
         :param quantity: The number of historical bars to download (can be None, will download all).
         :param handler: The bar handler to pass the bars to.
+        :raises ValueError: If the handler is not of type Callable.
         :raises ValueError: If the quantity is not None and not positive (> 0).
         """
+        Precondition.type(handler, Callable, 'handler')
+
+        if quantity is not None:
+            Precondition.positive(quantity, 'quantity')
+
         self._log.info(f"Simulating download of {quantity} historical bars for {bar_type}.")
 
     cpdef void historical_bars_from(
@@ -223,47 +240,60 @@ cdef class BacktestDataClient(DataClient):
         :param bar_type: The historical bar type to download.
         :param from_datetime: The datetime from which the historical bars should be downloaded.
         :param handler: The handler to pass the bars to.
-        :raises ValueError: If the from_datetime is not less than datetime.utcnow().
+        :raises ValueError: If the handler is not of type Callable.
+        :raises ValueError: If the from_datetime is not less than that current datetime.
         """
+        Precondition.type(handler, Callable, 'handler')
+        Precondition.true(from_datetime < self._clock.time_now(), 'from_datetime < self._clock.time_now().')
+
         self._log.info(f"Simulating download of historical bars from {from_datetime} for {bar_type}.")
 
-    cpdef void subscribe_ticks(self, Symbol symbol, handler: Callable):
+    cpdef void subscribe_ticks(self, Symbol symbol, handler: Callable=None):
         """
-        Subscribe to tick data for the given symbol and venue.
+        Subscribe to tick data for the given symbol.
 
         :param symbol: The tick symbol to subscribe to.
         :param handler: The callable handler for subscription (if None will just call print).
+        :raises ValueError: If the symbol is not a key in data_providers.
+        :raises ValueError: If the handler is not of type None or Callable.
         """
         Precondition.is_in(symbol, self.data_providers, 'symbol', 'data_providers')
+        Precondition.type_or_none(handler, Callable, 'handler')
 
         cdef start = datetime.utcnow()
         self.data_providers[symbol].register_ticks()
         if self.data_providers[symbol].has_ticks:
             self._log.info(f"Built {len(self.data_providers[symbol].ticks)} {symbol} ticks in {round((datetime.utcnow() - start).total_seconds(), 2)}s.")
         else:
-            self._log.error(f"No ticks built for {symbol}.")
+            self._log.warning(f"No ticks built for {symbol}.")
         self._subscribe_ticks(symbol, handler)
 
-    cpdef void unsubscribe_ticks(self, Symbol symbol, handler: Callable):
+    cpdef void unsubscribe_ticks(self, Symbol symbol, handler: Callable=None):
         """
-        Unsubscribes from tick data for the given symbol and venue.
+        Unsubscribes from tick data for the given symbol.
 
         :param symbol: The tick symbol to unsubscribe from.
         :param handler: The callable handler which was subscribed (can be None).
+        :raises ValueError: If the symbol is not a key in data_providers.
+        :raises ValueError: If the handler is not of type None or Callable.
         """
         Precondition.is_in(symbol, self.data_providers, 'symbol', 'data_providers')
+        Precondition.type_or_none(handler, Callable, 'handler')
 
         self.data_providers[symbol].deregister_ticks()
         self._unsubscribe_ticks(symbol, handler)
 
-    cpdef void subscribe_bars(self, BarType bar_type, handler: Callable):
+    cpdef void subscribe_bars(self, BarType bar_type, handler: Callable=None):
         """
         Subscribe to live bar data for the given bar parameters.
 
         :param bar_type: The bar type to subscribe to.
         :param handler: The callable handler for subscription (if None will just call print).
+        :raises ValueError: If the symbol is not a key in data_providers.
+        :raises ValueError: If the handler is not of type None or Callable.
         """
         Precondition.is_in(bar_type.symbol, self.data_providers, 'symbol', 'data_providers')
+        Precondition.type_or_none(handler, Callable, 'handler')
 
         cdef start = datetime.utcnow()
         if bar_type not in self.data_providers[bar_type.symbol].bars:
@@ -273,14 +303,17 @@ cdef class BacktestDataClient(DataClient):
 
         self._subscribe_bars(bar_type, handler)
 
-    cpdef void unsubscribe_bars(self, BarType bar_type, handler: Callable):
+    cpdef void unsubscribe_bars(self, BarType bar_type, handler: Callable=None):
         """
         Unsubscribes from bar data for the given symbol and venue.
 
         :param bar_type: The bar type to unsubscribe from.
         :param handler: The callable handler which was subscribed (can be None).
+        :raises ValueError: If the symbol is not a key in data_providers.
+        :raises ValueError: If the handler is not of type None or Callable.
         """
         Precondition.is_in(bar_type.symbol, self.data_providers, 'symbol', 'data_providers')
+        Precondition.type_or_none(handler, Callable, 'handler')
 
         self.data_providers[bar_type.symbol].deregister_bars(bar_type)
         self._unsubscribe_bars(bar_type, handler)
