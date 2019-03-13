@@ -12,14 +12,10 @@
 import pandas as pd
 
 from math import log
-from typing import List, Dict
 from cpython.datetime cimport date, datetime, timedelta
 from pyfolio.tears import create_returns_tear_sheet, create_full_tear_sheet
 
 from inv_trader.enums.order_side cimport OrderSide
-from inv_trader.enums.market_position cimport MarketPosition
-from inv_trader.model.objects cimport Symbol
-from inv_trader.model.position cimport Position
 from inv_trader.model.events cimport OrderEvent
 
 
