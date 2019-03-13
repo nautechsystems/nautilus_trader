@@ -34,6 +34,10 @@ cdef class Portfolio:
                  Logger logger=None):
         """
         Initializes a new instance of the Portfolio class.
+
+        :param clock: The internal clock for the component.
+        :param guid_factory: The internal guid factory for the component.
+        :param logger: The internal logger for the component.
         """
         if logger is None:
             self._log = LoggerAdapter(self.__class__.__name__)
@@ -59,26 +63,32 @@ cdef class Portfolio:
 
     cpdef list registered_strategies(self):
         """
-        :return: A list of strategy identifiers registered with the portfolio.
+        Return a list of strategy identifiers registered with the portfolio.
+
+        :return: List[GUID].
         """
         return self._registered_strategies.copy()
 
     cpdef list registered_order_ids(self):
         """
-        :return: A list of order identifiers registered with the portfolio.
+        Return a list of order identifiers registered with the portfolio.
+        
+        :return: List[OrderId].
         """
         return list(self._order_p_index.keys())
 
     cpdef list registered_position_ids(self):
         """
-        :return: A list of position identifiers registered with the portfolio.
+        Return a list of position identifiers registered with the portfolio.
+        
+        :return: List[PositionId].
         """
         return list(self._order_p_index.values())
 
     cpdef bint position_exists(self, PositionId position_id):
         """
         Return a value indicating whether a position with the given identifier exists.
-        
+
         :param position_id: The position identifier.
         :return: True if the position exists, else False.
         """
@@ -121,7 +131,7 @@ cdef class Portfolio:
 
     cpdef dict get_positions_all(self):
         """
-         Return a dictionary of all positions held by the portfolio.
+        Return a dictionary of all positions held by the portfolio.
         
         :return: Dict[PositionId, Position].
         """

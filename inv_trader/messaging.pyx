@@ -68,16 +68,16 @@ cdef class MQWorker:
 
     cpdef void start(self):
         """
+        Starts the worker and opens a connection.
+        
         Overrides the threads run method (.start() should be called to run this
         in a separate thread).
-
-        Starts the worker and opens a connection.
         """
         self._thread.start()
 
     cpdef void send(self, bytes message):
         """
-        Send the message to the service socket.
+        Send the given message to the service socket.
 
         :param message: The message bytes to send.
         """

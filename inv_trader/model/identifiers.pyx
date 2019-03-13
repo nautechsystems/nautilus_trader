@@ -218,7 +218,7 @@ cdef class IdentifierGenerator:
         Return a unique identifier string using the given symbol.
 
         :param symbol: The symbol for the unique identifier.
-        :return: The unique identifier string.
+        :return: str.
         """
         if symbol not in self._symbol_counts:
             self._symbol_counts[symbol] = 0
@@ -254,10 +254,10 @@ cdef class OrderIdGenerator(IdentifierGenerator):
 
     cpdef OrderId generate(self, Symbol symbol):
         """
-        Return a unique OrderId using the given symbol.
+        Return a unique order identifier using the given symbol.
 
         :param symbol: The symbol for the unique identifier.
-        :return: The unique OrderId.
+        :return: OrderId.
         """
         return OrderId(self._generate(symbol))
 
@@ -284,9 +284,9 @@ cdef class PositionIdGenerator(IdentifierGenerator):
 
     cpdef PositionId generate(self, Symbol symbol):
         """
-        Return a unique PositionId using the given symbol.
+        Return a unique position identifier using the given symbol.
 
         :param symbol: The symbol for the unique identifier.
-        :return: The unique PositionId.
+        :return: PositionId.
         """
         return PositionId(self._generate(symbol))

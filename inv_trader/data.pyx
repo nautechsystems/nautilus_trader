@@ -34,7 +34,7 @@ cdef str UTF8 = 'utf-8'
 
 cdef class LiveDataClient(DataClient):
     """
-    Provides a live data client for alpha models and trading strategies.
+    Provides a data client for live trading.
     """
     cdef str _host
     cdef int _port
@@ -114,6 +114,7 @@ cdef class LiveDataClient(DataClient):
     cpdef bint is_connected(self):
         """
         Return a value indicating whether the data client is connected to the data service.
+        
         :return: True if the client is connected, otherwise false.
         """
         if self._redis_client is None:
@@ -166,7 +167,7 @@ cdef class LiveDataClient(DataClient):
 
     cpdef void register_strategy(self, TradeStrategy strategy):
         """
-        Registers the given trade strategy with the data client.
+        Register the given trade strategy with the data client.
 
         :param strategy: The strategy to register.
         :raise ValueError: If the strategy does not inherit from TradeStrategy.
@@ -289,7 +290,7 @@ cdef class LiveDataClient(DataClient):
 
     cpdef void subscribe_ticks(self, Symbol symbol, handler: Callable=None):
         """
-        Subscribe to live tick data for the given symbol.
+        Subscribe to live tick data for the given symbol and handler.
 
         :param symbol: The tick symbol to subscribe to.
         :param handler: The callable handler for subscription (if None will just call print).
@@ -310,7 +311,7 @@ cdef class LiveDataClient(DataClient):
 
     cpdef void unsubscribe_ticks(self, Symbol symbol, handler: Callable=None):
         """
-        Unsubscribes from live tick data for the given symbol.
+        Unsubscribe from live tick data for the given symbol and handler.
 
         :param symbol: The tick symbol to unsubscribe from.
         :param handler: The callable handler which was subscribed (can be None).
@@ -328,7 +329,7 @@ cdef class LiveDataClient(DataClient):
 
     cpdef void subscribe_bars(self, BarType bar_type, handler: Callable=None):
         """
-        Subscribe to live bar data for the given bar parameters.
+        Subscribe to live bar data for the given bar type and handler.
 
         :param bar_type: The bar type to subscribe to.
         :param handler: The callable handler for subscription (if None will just call print).
@@ -349,7 +350,7 @@ cdef class LiveDataClient(DataClient):
 
     cpdef void unsubscribe_bars(self, BarType bar_type, handler: Callable=None):
         """
-        Unsubscribes from live bar data for the given symbol and venue.
+        Unsubscribe from live bar data for the given symbol and handler.
 
         :param bar_type: The bar type to unsubscribe from.
         :param handler: The callable handler which was subscribed (can be None).
@@ -376,12 +377,12 @@ cdef class LiveDataClient(DataClient):
              f':{bar_type.resolution_string().lower()}'
              f':{bar_type.quote_type_string().lower()}*')).sort()
 
-    cpdef object _parse_tick_symbol(self, str tick_channel):
+    cpdef Symbol _parse_tick_symbol(self, str tick_channel):
         """
-        Parse a Symbol object from the given UTF-8 string.
+        Return a parsed symbol from the given UTF-8 string.
 
         :param tick_channel: The channel the tick was received on.
-        :return: The parsed Symbol object.
+        :return: Symbol.
         """
         cdef list split_channel = tick_channel.split('.')
 
@@ -389,7 +390,7 @@ cdef class LiveDataClient(DataClient):
 
     cpdef Tick _parse_tick(self, Symbol symbol, str tick_string):
         """
-        Parse a Tick object from the given UTF-8 string.
+        Return a parsed a tick from the given UTF-8 string.
 
         :param tick_string: The tick string.
         :return: Tick.
@@ -403,10 +404,10 @@ cdef class LiveDataClient(DataClient):
 
     cpdef BarType _parse_bar_type(self, str bar_type_string):
         """
-        Parse a BarType object from the given UTF-8 string.
+        Return a parsed a bar type from the given UTF-8 string.
 
         :param bar_type_string: The bar type string to parse.
-        :return: Bar.
+        :return: BarType.
         """
         cdef list split_string = re.split(r'[.-]+', bar_type_string)
         cdef str resolution = split_string[3].split('[')[0]
@@ -420,7 +421,7 @@ cdef class LiveDataClient(DataClient):
 
     cpdef Bar _parse_bar(self, str bar_string):
         """
-        Parse a Bar object from the given UTF-8 string.
+        Return a parsed bar from the given UTF-8 string.
 
         :param bar_string: The bar string to parse.
         :return: Bar.
@@ -436,7 +437,7 @@ cdef class LiveDataClient(DataClient):
 
     cpdef str _get_tick_channel_name(self, Symbol symbol):
         """
-        Return the tick channel name from the given parameters.
+        Return the tick channel name from the given symbol.
         
         :return: str.
         """
@@ -444,7 +445,7 @@ cdef class LiveDataClient(DataClient):
 
     cpdef str _get_bar_channel_name(self, BarType bar_type):
         """
-        Return the bar channel name from the given parameters.
+        Return the bar channel name from the given bar type.
         
         :return: str.
         """
@@ -471,7 +472,7 @@ cdef class LiveDataClient(DataClient):
         """"
         Handle the tick message by parsing to a Tick and sending to all subscribers.
 
-        :param message: The tick message.
+        :param message: The tick message to handle.
         """
         cdef Symbol symbol = self._parse_tick_symbol(message['channel'].decode(UTF8))
         cdef Tick tick = self._parse_tick(symbol, message['data'].decode(UTF8))
@@ -488,7 +489,7 @@ cdef class LiveDataClient(DataClient):
         """"
         Handle the bar message by parsing to a Bar and sending to all subscribers.
 
-        :param message: The bar message.
+        :param message: The bar message to handle.
         """
         cdef BarType bar_type = self._parse_bar_type(message['channel'].decode(UTF8))
         cdef Bar bar = self._parse_bar(message['data'].decode(UTF8))

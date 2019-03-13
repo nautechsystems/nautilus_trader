@@ -34,7 +34,8 @@ cdef str UTF8 = 'utf-8'
 
 cdef class LiveExecClient(ExecutionClient):
     """
-    Provides a client for the execution service utilizing a ZMQ transport.
+    Provides an execution client for live trading utilizing a ZMQ transport
+    with the execution service.
     """
     cdef object _message_bus
     cdef object _thread

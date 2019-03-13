@@ -201,7 +201,7 @@ cdef class TradeStrategy:
         Register the strategy with the given data client.
 
         :param client: The data client to register.
-        :raises ValueError: If client is None.
+        :raises ValueError: If the client is None.
         """
         Precondition.not_none(client, 'client')
 
@@ -213,7 +213,7 @@ cdef class TradeStrategy:
         Register the strategy with the given execution client.
 
         :param client: The execution client to register.
-        :raises ValueError: If client is None.
+        :raises ValueError: If the client is None.
         """
         Precondition.not_none(client, 'client')
 
@@ -224,8 +224,8 @@ cdef class TradeStrategy:
 
     cpdef void handle_tick(self, Tick tick):
         """"
-        Updates the last held tick with the given tick, then calls on_tick()
-        and passes the tick (if the strategy is running).
+        Update the last held tick with the given tick, then call on_tick()
+        and pass the tick (if the strategy is running).
 
         :param tick: The tick received.
         """
@@ -236,8 +236,8 @@ cdef class TradeStrategy:
 
     cpdef void handle_bar(self, BarType bar_type, Bar bar):
         """"
-        Updates the internal dictionary of bars with the given bar, then calls
-        on_bar() and passes the arguments (if the strategy is running).
+        Update the internal dictionary of bars with the given bar, then call
+        on_bar() and pass the arguments (if the strategy is running).
 
         :param bar_type: The bar type received.
         :param bar: The bar received.
@@ -255,7 +255,7 @@ cdef class TradeStrategy:
 
     cpdef void handle_event(self, Event event):
         """
-        Calls on_event() and passes the event (if the strategy is running).
+        Call on_event() and passes the event (if the strategy is running).
 
         :param event: The event received.
         """
@@ -268,14 +268,17 @@ cdef class TradeStrategy:
 
     cpdef datetime time_now(self):
         """
-        :return: The current time from the strategies internal clock (UTC). 
+        Return the current time from the strategies internal clock (UTC).
+        
+        :return: datetime.
         """
         return self._clock.time_now()
 
     cpdef list symbols(self):
         """
-        :return: All instrument symbols held by the data client -> List[Symbol].
-        (available once registered with a data client).
+        Return all instrument symbols held by the data client.
+        
+        :return: List[Symbol].
         :raises ValueError: If the strategy has not been registered with a data client.
         """
         Precondition.not_none(self._data_client, 'data_client')
@@ -284,8 +287,9 @@ cdef class TradeStrategy:
 
     cpdef list instruments(self):
         """
-        :return: All instruments held by the data client -> List[Instrument].
-        (available once registered with a data client).
+        Return all instruments held by the data client.
+        
+        :return: List[Instrument].
         :raises ValueError: If the strategy has not been registered with a data client.
         """
         Precondition.not_none(self._data_client, 'data_client')
@@ -294,10 +298,10 @@ cdef class TradeStrategy:
 
     cpdef Instrument get_instrument(self, Symbol symbol):
         """
-        Get the instrument corresponding to the given symbol.
+        Return the instrument corresponding to the given symbol.
 
-        :param symbol: The symbol of the instrument to get.
-        :return: The instrument (if found)
+        :param symbol: The symbol of the instrument to return.
+        :return: Instrument (if found)
         :raises ValueError: If strategy has not been registered with a data client.
         :raises KeyError: If the instrument is not found.
         """
@@ -308,13 +312,12 @@ cdef class TradeStrategy:
     cpdef void historical_bars(self, BarType bar_type, int quantity=0):
         """
         Download the historical bars for the given parameters from the data service.
-        Then pass them to all registered strategies.
 
         Note: Logs warning if the downloaded bars does not equal the requested quantity.
 
         :param bar_type: The historical bar type to download.
         :param quantity: The number of historical bars to download (>= 0)
-        Note: If zero then will download bar capacity.
+        Note: If zero then will download to specified bar capacity.
         :raises ValueError: If strategy has not been registered with a data client.
         :raises ValueError: If the quantity is negative (< 0).
         """
@@ -330,7 +333,7 @@ cdef class TradeStrategy:
         """
         Download the historical bars for the given parameters from the data service.
 
-        Note: Logs warning if the downloaded bars from datetime is greater than that given.
+        Note: Logs warning if the downloaded bars 'from' datetime is greater than that given.
 
         :param bar_type: The historical bar type to download.
         :param from_datetime: The datetime from which the historical bars should be downloaded.
@@ -393,10 +396,10 @@ cdef class TradeStrategy:
 
     cpdef list bars(self, BarType bar_type):
         """
-        Get the bars for the given bar type (returns a copy of the deque).
+        Return the bars for the given bar type (returns a copy of the internal deque).
 
         :param bar_type: The bar type to get.
-        :return: The list of bars (List[Bar]).
+        :return: List[Bar] (if found).
         :raises KeyError: If the strategies bars dictionary does not contain the bar type.
         """
         Precondition.is_in(bar_type, self._bars, 'bar_type', 'bars')
@@ -405,14 +408,14 @@ cdef class TradeStrategy:
 
     cpdef Bar bar(self, BarType bar_type, int index):
         """
-        Get the bar for the given bar type at the given index (reverse indexing, 
+        Return the bar for the given bar type at the given index (reverse indexing, 
         pass index=0 for the last received bar).
 
         :param bar_type: The bar type to get.
         :param index: The index (>= 0).
-        :return: The Bar (if found).
+        :return: Bar (if found).
         :raises ValueError: If the strategies bars dictionary does not contain the bar type.
-        :raises ValueError: If the index is negative.
+        :raises ValueError: If the index is negative (< 0).
         :raises IndexError: If the strategies bars dictionary does not contain a bar at the given index.
         """
         Precondition.is_in(bar_type, self._bars, 'bar_type', 'bars')
@@ -422,10 +425,10 @@ cdef class TradeStrategy:
 
     cpdef Bar last_bar(self, BarType bar_type):
         """
-        Get the last bar for the given bar type (if a bar has been received).
+        Return the last bar for the given bar type (if a bar has been received).
 
         :param bar_type: The bar type to get.
-        :return: The Bar (if found).
+        :return: Bar (if found).
         :raises ValueError: If the strategies bars dictionary does not contain the bar type.
         :raises IndexError: If the strategies bars dictionary does not contain a bar at the given index.
         """
@@ -435,10 +438,10 @@ cdef class TradeStrategy:
 
     cpdef Tick last_tick(self, Symbol symbol):
         """
-        Get the last tick held for the given symbol.
+        Return the last tick held for the given symbol.
 
         :param symbol: The last ticks symbol.
-        :return: The Tick (if found).
+        :return: Tick (if found).
         :raises KeyError: If the strategies tick dictionary does not contain a tick for the given symbol.
         """
         Precondition.is_in(symbol, self._ticks, 'symbol', 'ticks')
@@ -454,13 +457,15 @@ cdef class TradeStrategy:
             indicator: Indicator,
             update_method: Callable):
         """
-        Add the given indicator to the strategy. The indicator must be from the
+        Register the given indicator with the strategy. The indicator must be from the
         inv_indicators package. Once added it will receive bars of the given
         bar type.
 
         :param bar_type: The indicators bar type.
         :param indicator: The indicator to set.
         :param update_method: The update method for the indicator.
+        :raises ValueError: If the indicator is not of type Indicator.
+        :raises ValueError: If the update_method is not of type Callable.
         """
         Precondition.type(indicator, Indicator, 'indicator')
         Precondition.type(update_method, Callable, 'update_method')
@@ -475,10 +480,10 @@ cdef class TradeStrategy:
 
     cpdef list indicators(self, BarType bar_type):
         """
-        Get the indicators list for the given bar type (returns copy).
+        Return the indicators list for the given bar type (returns copy).
 
         :param bar_type: The bar type for the indicators list.
-        :return: The internally held indicators for the given bar type.
+        :return: List[Indicator] (if found).
         :raises ValueError: If the strategies indicators dictionary does not contain the given bar_type.
         """
         Precondition.is_in(bar_type, self._indicators, 'bar_type', 'indicators')
@@ -487,7 +492,9 @@ cdef class TradeStrategy:
 
     cpdef bint indicators_initialized(self, BarType bar_type):
         """
-        :return: A value indicating whether all indicators for the given bar type are initialized.
+        Return a value indicating whether all indicators for the given bar type are initialized.
+        
+        :return: True if indicators initialized, otherwise False.
         :raises ValueError: If the strategies indicators dictionary does not contain the given bar_type.
         """
         Precondition.is_in(bar_type, self._indicators, 'bar_type', 'indicators')
@@ -499,7 +506,9 @@ cdef class TradeStrategy:
 
     cpdef bint indicators_initialized_all(self):
         """
-        :return: A value indicating whether all indicators for the strategy are initialized. 
+        Return a value indicating whether all indicators for the strategy are initialized.
+        
+        :return: True is all indicators initialized, otherwise False.
         """
         for indicator_list in self._indicators.values():
             for indicator in indicator_list:
@@ -512,29 +521,29 @@ cdef class TradeStrategy:
 
     cpdef PositionId generate_position_id(self, Symbol symbol):
         """
-        Generates a unique position identifier with the given symbol.
+        Return a generated unique position identifier from the given symbol.
 
         :param symbol: The symbol.
-        :return: The unique PositionId.
+        :return: PositionId.
         """
         return self.position_id_generator.generate(symbol)
 
     cpdef OrderSide get_opposite_side(self, OrderSide side):
         """
-        Get the opposite order side from the original side given.
+        Return the opposite order side from the given side.
 
         :param side: The original order side.
-        :return: The opposite order side.
+        :return: OrderSide.
         """
         return OrderSide.BUY if side is OrderSide.SELL else OrderSide.SELL
 
     cpdef OrderSide get_flatten_side(self, MarketPosition market_position):
         """
-        Get the order side needed to flatten a position from the given market position.
+        Return the order side needed to flatten a position from the given market position.
 
         :param market_position: The market position to flatten.
-        :return: The order side to flatten.
-        :raises KeyError: If the given market position is flat.
+        :return: OrderSide.
+        :raises ValueError: If the given market position is FLAT.
         """
         if market_position is MarketPosition.LONG:
             return OrderSide.SELL
@@ -641,7 +650,7 @@ cdef class TradeStrategy:
 
     cpdef Position position(self, PositionId position_id):
         """
-        Return the position associated with the given id.
+        Return the position associated with the given position identifier.
 
         :param position_id: The positions identifier.
         :return: The position with the given identifier.
@@ -702,7 +711,7 @@ cdef class TradeStrategy:
 
     cpdef void start(self):
         """
-        Starts the trade strategy and calls on_start().
+        Start the trade strategy and call on_start().
         """
         self.log.info(f"Starting...")
         self.is_running = True
@@ -711,7 +720,7 @@ cdef class TradeStrategy:
 
     cpdef void stop(self):
         """
-        Stops the trade strategy and calls on_stop().
+        Stop the trade strategy and call on_stop().
         """
         self.log.info(f"Stopping...")
         self.on_stop()
@@ -726,7 +735,7 @@ cdef class TradeStrategy:
         """
         Reset the trade strategy by clearing all stateful internal values and
         returning it to a fresh state (strategy must not be running).
-        Then calls on_reset().
+        Then call on_reset().
         """
         if self.is_running:
             self.log.warning(f"Cannot reset a running strategy...")
@@ -745,7 +754,7 @@ cdef class TradeStrategy:
 
     cpdef void dispose(self):
         """
-        Dispose of the strategy to release system resources, on_dispose() is called.
+        Dispose of the strategy to release system resources, then call on_dispose().
         """
         self.log.info(f"Disposing...")
         self.on_dispose()
@@ -768,6 +777,7 @@ cdef class TradeStrategy:
 
         :param order: The order to submit.
         :param position_id: The position identifier to associate with this order.
+        :raises ValueError: If the strategy has not been registered with an execution client.
         """
         Precondition.not_none(self._exec_client, 'exec_client')
 
@@ -790,6 +800,7 @@ cdef class TradeStrategy:
         
         :param order: The atomic order to submit.
         :param position_id: The position identifier to associate with this order.
+        :raises ValueError: If the strategy has not been registered with an execution client.
         """
         Precondition.not_none(self._exec_client, 'exec_client')
 
@@ -812,6 +823,7 @@ cdef class TradeStrategy:
 
         :param order: The order to modify.
         :param new_price: The new price for the given order.
+        :raises ValueError: If the strategy has not been registered with an execution client.
         """
         Precondition.not_none(self._exec_client, 'exec_client')
 
@@ -832,6 +844,7 @@ cdef class TradeStrategy:
 
         :param order: The order to cancel.
         :param cancel_reason: The reason for cancellation (will be logged).
+        :raises ValueError: If the strategy has not been registered with an execution client.
         """
         Precondition.not_none(self._exec_client, 'exec_client')
 
@@ -876,6 +889,7 @@ cdef class TradeStrategy:
         If the position is None or already FLAT will log a warning.
 
         :param position_id: The position identifier to flatten.
+        :raises ValueError: If the strategy has not been registered with an execution client.
         :raises ValueError: If the position_id is not found in the position book.
         """
         Precondition.not_none(self._exec_client, 'exec_client')
@@ -900,6 +914,8 @@ cdef class TradeStrategy:
         Flatten all positions by generating the required market orders and sending
         them to the execution service. If no positions found or a position is None
         then will log a warning.
+        
+        :raises ValueError: If the strategy has not been registered with an execution client.
         """
         Precondition.not_none(self._exec_client, 'exec_client')
 
@@ -1000,7 +1016,7 @@ cdef class TradeStrategy:
 
     cpdef void change_clock(self, Clock clock):
         """
-        Backtest method. Change the strategies internal clock with the given clock
+        Backtest method. Change the strategies internal clock with the given clock.
         
         :param clock: The clock to change to.
         """

@@ -44,3 +44,4 @@ cdef class FixedRiskSizer(PositionSizer):
     """
     Provides position sizing calculations based on a given risk.
     """
+    pass
