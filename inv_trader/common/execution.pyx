@@ -65,19 +65,25 @@ cdef class ExecutionClient:
 
     cpdef datetime time_now(self):
         """
-        :return: The current time of the execution client. 
+        Return the current time of the execution client.
+         
+        :return: datetime. 
         """
         return self._clock.time_now()
 
     cpdef Account get_account(self):
         """
-        :return: The account associated with the execution client. 
+        Return The account associated with the execution client.
+        
+        :return: Account. 
         """
         return self._account
 
     cpdef Portfolio get_portfolio(self):
         """
-        :return: The portfolio associated with the execution client. 
+        Return the portfolio associated with the execution client.
+        
+        :return: Portfolio. 
         """
         return self._portfolio
 

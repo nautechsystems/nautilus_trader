@@ -48,31 +48,41 @@ cdef class DataClient:
 
     cpdef datetime time_now(self):
         """
-        :return: The current time of the data client. 
+        Return the current time of the data client.
+        
+        :return: datetime.
         """
         return self._clock.time_now()
 
     cpdef list symbols(self):
         """
-        :return: All instrument symbols held by the data client.
+        Return all instrument symbols held by the data client.
+        
+        :return: List[Symbol].
         """
         return list(self._instruments).copy()
 
     cpdef list instruments(self):
         """
-        :return: All instruments held by the data client.
+        Return all instruments held by the data client.
+        
+        :return: List[Instrument].
         """
         return list(self._instruments.values()).copy()
 
     cpdef list subscribed_ticks(self):
         """
-        :return: The list of tick channels subscribed to.
+        Return the list of tick channels subscribed to.
+        
+        :return: List[Symbol].
         """
         return list(self._tick_handlers.keys())
 
     cpdef list subscribed_bars(self):
         """
-        :return: The list of bar channels subscribed to.
+        Return the list of bar channels subscribed to.
+        
+        :return: List[BarType].
         """
         return list(self._bar_handlers.keys())
 
@@ -103,15 +113,17 @@ cdef class DataClient:
 
     cpdef dict get_all_instruments(self):
         """
-        :return: A copy of the dictionary of all instruments.
+        Return a copy of the dictionary of all instruments.
+        
+        :return: Dict[Symbol, Instrument].
         """
         return self._instruments.copy()  # type: Dict[Symbol, Instrument]
 
     cpdef Instrument get_instrument(self, Symbol symbol):
         """
-        Get the instrument corresponding to the given symbol.
+        Return the instrument corresponding to the given symbol.
 
-        :param symbol: The symbol of the instrument to get.
+        :param symbol: The symbol of the instrument to return.
         :return: The instrument (if found)
         :raises KeyError: If the instrument is not found.
         """
@@ -121,7 +133,7 @@ cdef class DataClient:
 
     cpdef void register_strategy(self, TradeStrategy strategy):
         """
-        Registers the given trade strategy with the data client.
+        Register the given trade strategy with the data client.
 
         :param strategy: The strategy to register.
         :raise ValueError: If the strategy does not inherit from TradeStrategy.
@@ -171,7 +183,7 @@ cdef class DataClient:
 
     cpdef void subscribe_ticks(self, Symbol symbol, handler: Callable=None):
         """
-        Subscribe to tick data for the given symbol and venue.
+        Subscribe to tick data for the given symbol and handler.
 
         :param symbol: The tick symbol to subscribe to.
         :param handler: The callable handler for subscription (if None will just call print).
@@ -181,7 +193,7 @@ cdef class DataClient:
 
     cpdef void unsubscribe_ticks(self, Symbol symbol, handler: Callable=None):
         """
-        Unsubscribes from tick data for the given symbol and venue.
+        Unsubscribe from tick data for the given symbol and handler.
 
         :param symbol: The tick symbol to unsubscribe from.
         :param handler: The callable handler which was subscribed (can be None).
@@ -191,7 +203,7 @@ cdef class DataClient:
 
     cpdef void subscribe_bars(self, BarType bar_type, handler: Callable=None):
         """
-        Subscribe to bar data for the given bar parameters.
+        Subscribe to bar data for the given bar type and handler.
 
         :param bar_type: The bar type to subscribe to.
         :param handler: The callable handler for subscription (if None will just call print).
@@ -201,7 +213,7 @@ cdef class DataClient:
 
     cpdef void unsubscribe_bars(self, BarType bar_type, handler: Callable=None):
         """
-        Unsubscribes from bar data for the given symbol and venue.
+        Unsubscribe from bar data for the given symbol and handler.
 
         :param bar_type: The bar type to unsubscribe from.
         :param handler: The callable handler which was subscribed (can be None).
@@ -211,7 +223,7 @@ cdef class DataClient:
 
     cdef void _subscribe_ticks(self, Symbol symbol, handler: Callable=None):
         """
-        Subscribe to tick data for the given symbol and venue.
+        Subscribe to tick data for the given symbol and handler.
 
         :param symbol: The tick symbol to subscribe to.
         :param handler: The callable handler for subscription (if None will just call print).
@@ -228,7 +240,7 @@ cdef class DataClient:
 
     cdef void _unsubscribe_ticks(self, Symbol symbol, handler: Callable=None):
         """
-        Unsubscribes from tick data for the given symbol and venue.
+        Unsubscribe from tick data for the given symbol and handler.
 
         :param symbol: The tick symbol to unsubscribe from.
         :param handler: The callable handler which was subscribed (can be None).
@@ -269,7 +281,7 @@ cdef class DataClient:
 
     cdef void _unsubscribe_bars(self, BarType bar_type, handler: Callable=None):
         """
-        Unsubscribes from bar data for the given bar type and handler.
+        Unsubscribe from bar data for the given bar type and handler.
 
         :param bar_type: The bar type to unsubscribe from.
         :param handler: The callable handler which was subscribed (can be None).
@@ -293,7 +305,7 @@ cdef class DataClient:
 
     cdef void _reset(self):
         """
-        Resets the DataClient by clearing all stateful internal values. 
+        Reset the DataClient by clearing all stateful internal values. 
         """
         self._instruments = {}       # type: Dict[Symbol, Instrument]
         self._bar_handlers = {}      # type: Dict[BarType, List[Callable]]

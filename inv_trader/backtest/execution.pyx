@@ -299,6 +299,8 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef void _submit_atomic_order(self, SubmitAtomicOrder command):
         """
         Send a submit atomic order command to the mock execution service.
+        
+        :param command: The command to execute.
         """
         cdef list atomic_orders = [command.atomic_order.stop_loss]
         if command.atomic_order.has_profit_target:
@@ -318,6 +320,8 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef void _modify_order(self, ModifyOrder command):
         """
         Send a modify order request to the execution service.
+        
+        :param command: The command to execute.
         """
         if command.order.id not in self.working_orders:
             # Reject the command
@@ -371,6 +375,8 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef void _cancel_order(self, CancelOrder command):
         """
         Send a cancel order request to the execution service.
+        
+        :param command: The command to execute.
         """
         Precondition.is_in(command.order.id, self.working_orders, 'order.id', 'working_orders')
 
@@ -392,7 +398,7 @@ cdef class BacktestExecClient(ExecutionClient):
         
         :param bar_data: The data to prepare.
         :param quote_type: The quote type of data (bid or ask).
-        :return: The Dict[Symbol, List] of prepared data.
+        :return: Dict[Symbol, List[Decimal]].
         """
         cdef dict minute_data = {}  # type: Dict[Symbol, List]
         for symbol, data in bar_data.items():
@@ -409,7 +415,7 @@ cdef class BacktestExecClient(ExecutionClient):
         the given precision.
 
         :param values: The values to convert.
-        :return: The array of Decimals.
+        :return: [Decimal].
         """
         return [Price(values[0], precision),
                 Price(values[1], precision),
@@ -429,43 +435,57 @@ cdef class BacktestExecClient(ExecutionClient):
 
     cdef Price _get_highest_bid(self, Symbol symbol):
         """
-        :return: Return the highest bid price of the current iteration.
+        Return the highest bid price of the current iteration.
+        
+        :return: Price.
         """
         return self.data_bars_bid[symbol][self.iteration][1]
 
     cdef Price _get_lowest_bid(self, Symbol symbol):
         """
-        :return: Return the lowest bid price of the current iteration.
+        Return the lowest bid price of the current iteration.
+        
+        :return: Price.
         """
         return self.data_bars_bid[symbol][self.iteration][2]
 
     cdef Price _get_closing_bid(self, Symbol symbol):
         """
-        :return: Return the closing bid price of the current iteration.
+        Return the closing bid price of the current iteration.
+        
+        :return: Price
         """
         return self.data_bars_bid[symbol][self.iteration][3]
 
     cdef Price _get_highest_ask(self, Symbol symbol):
         """
-        :return: Return the highest ask price of the current iteration.
+        Return the highest ask price of the current iteration.
+        
+        :return: Price.
         """
         return self.data_bars_ask[symbol][self.iteration][1]
 
     cdef Price _get_lowest_ask(self, Symbol symbol):
         """
-        :return: Return the lowest ask price of the current iteration.
+        Return the lowest ask price of the current iteration.
+        
+        :return: Price.
         """
         return self.data_bars_ask[symbol][self.iteration][2]
 
     cdef Price _get_closing_ask(self, Symbol symbol):
         """
-        :return: Return the closing ask price of the current iteration.
+        Return the closing ask price of the current iteration.
+        
+        :return: Price.
         """
         return self.data_bars_ask[symbol][self.iteration][3]
 
     cdef void _accept_order(self, Order order):
         """
         Accept the given order and generate OrderSubmitted and OrderAccepted events.
+        
+        :param order: The order to accept.
         """
         cdef OrderAccepted accepted = OrderAccepted(
             order.symbol,
@@ -480,6 +500,9 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef void _reject_order(self, Order order, str reason):
         """
         Reject the given order and handle an OrderRejected event.
+        
+        :param order: The order to reject.
+        :param order: The reject reason.
         """
         cdef OrderRejected rejected = OrderRejected(
             order.symbol,
@@ -495,6 +518,9 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         Reject the command to modify the given order by sending an 
         OrderCancelReject event to the event handler.
+        
+        :param order: The order the modification reject relates to.
+        :param reason: The reason for the modification rejection.
         """
         cdef OrderCancelReject cancel_reject = OrderCancelReject(
             order.symbol,
@@ -511,6 +537,8 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         Expire the given order by sending an OrderExpired event to the on event
         handler.
+        
+        :param order: The order to expire.
         """
         cdef OrderExpired expired = OrderExpired(
             order.symbol,
@@ -524,6 +552,8 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef void _work_order(self, Order order):
         """
         Work the given order.
+        
+        :param order: The order to work.
         """
         Precondition.not_in(order.id, self.working_orders, 'order.id', 'working_orders')
 
@@ -583,6 +613,9 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef void _fill_order(self, Order order, Price fill_price):
         """
         Fill the given order at the given price.
+        
+        :param order: The order to fill.
+        :param fill_price: The price to fill the order at.
         """
         cdef OrderFilled filled = OrderFilled(
             order.symbol,
@@ -658,6 +691,10 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         Return the pnl from the given parameters.
         
+        :param direction: The direction of the position affecting pnl.
+        :param entry_price: The entry price of the position affecting pnl.
+        :param exit_price: The exit price of the position affecting pnl.
+        :param quantity: The filled quantity for the position affecting pnl.
         :return: Money.
         """
         cdef float difference
