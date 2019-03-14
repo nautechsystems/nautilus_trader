@@ -42,10 +42,11 @@ if __name__ == "__main__":
         sl_atr_multiple=2.0)]
 
     config = BacktestConfig(
-        leverage=50,
+        starting_capital=1000000,
         slippage_ticks=1,
         level_console=logging.INFO,
         log_to_file=False)
+
     engine = BacktestEngine(
         instruments=instruments,
         data_ticks=tick_data,

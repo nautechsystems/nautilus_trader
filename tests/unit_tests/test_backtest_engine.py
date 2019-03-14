@@ -35,7 +35,6 @@ class BacktestEngineTests(unittest.TestCase):
 
         strategies = [EmptyStrategy()]
         config = BacktestConfig(
-            leverage=50,
             slippage_ticks=1)
 
         self.engine = BacktestEngine(

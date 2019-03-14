@@ -56,7 +56,6 @@ class BacktestExecClientTests(unittest.TestCase):
                                          data_bars_bid=self.data_bars_bid,
                                          data_bars_ask=self.data_bars_ask,
                                          starting_capital=Money(1000000),
-                                         leverage=50,
                                          slippage_ticks=1,
                                          account=self.account,
                                          portfolio=self.portfolio,

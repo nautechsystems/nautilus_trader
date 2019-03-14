@@ -130,8 +130,7 @@ class EMACrossPy(TradeStrategy):
                     entry_price=entry_price,
                     stop_loss_price=stop_loss_price,
                     commission_rate=Decimal(15),
-                    leverage=50,
-                    hard_limit=0,
+                    hard_limit=20000000,
                     units=1,
                     unit_batch_size=1000)
 
@@ -159,8 +158,7 @@ class EMACrossPy(TradeStrategy):
                     entry_price=entry_price,
                     stop_loss_price=stop_loss_price,
                     commission_rate=Decimal(15),
-                    leverage=50,
-                    hard_limit=0,
+                    hard_limit=20000000,
                     units=1,
                     unit_batch_size=1000)
 
