@@ -155,7 +155,7 @@ cdef class Portfolio:
 
     cpdef dict get_positions(self, GUID strategy_id):
         """
-        Return a list of all positions associated with the strategy id.
+        Return a list of all positions associated with the given strategy identifier.
         
         :param strategy_id: The strategy identifier associated with the positions.
         :return: Dict[PositionId, Position].
@@ -167,7 +167,7 @@ cdef class Portfolio:
 
     cpdef dict get_positions_active(self, GUID strategy_id):
         """
-        Return a list of all active positions associated with the strategy id.
+        Return a list of all active positions associated with the given strategy identifier.
         
         :param strategy_id: The strategy identifier associated with the positions.
         :return: Dict[PositionId, Position].
@@ -178,7 +178,7 @@ cdef class Portfolio:
 
     cpdef dict get_positions_closed(self, GUID strategy_id):
         """
-        Return a list of all active positions associated with the strategy id.
+        Return a list of all active positions associated with the given strategy identifier.
         
         :param strategy_id: The strategy identifier associated with the positions.
         :return: Dict[PositionId, Position].
@@ -189,7 +189,8 @@ cdef class Portfolio:
 
     cpdef bint is_strategy_flat(self, GUID strategy_id):
         """
-        Return a value indicating whether the strategy is flat (all associated positions FLAT).
+        Return a value indicating whether the strategy given identifier is flat 
+        (all associated positions FLAT).
         
         :param strategy_id: The strategy identifier.
         :return: True if the strategy is flat, else False.
