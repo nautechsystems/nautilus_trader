@@ -11,6 +11,7 @@
 
 
 cpdef enum Resolution:
+    UNKNOWN = -1,
     TICK = 0,
     SECOND = 1,
     MINUTE = 2,
@@ -28,5 +29,7 @@ cdef inline str resolution_string(int value):
         return "HOUR"
     elif value == 4:
         return "DAY"
+    elif value == -1:
+        return "UNKNOWN"
     else:
         return "UNKNOWN"

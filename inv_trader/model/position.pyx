@@ -8,7 +8,7 @@
 # -------------------------------------------------------------------------------------------------
 
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
-
+from decimal import Decimal
 from cpython.datetime cimport datetime
 from typing import Set, List
 
@@ -51,10 +51,12 @@ cdef class Position:
         self.peak_quantity = Quantity(0)
         self.market_position = MarketPosition.FLAT
         self.timestamp = timestamp
+        self.entry_direction = OrderSide.UNKNOWN
         self.entry_time = None
         self.exit_time = None
         self.average_entry_price = None
         self.average_exit_price = None
+        self.points_realized = Decimal(0)
         self.return_realized = 0.0
         self.is_entered = False
         self.is_exited = False
@@ -157,6 +159,7 @@ cdef class Position:
         # Entry logic
         if not self.is_entered:
             self.from_order_id = event.order_id
+            self.entry_direction = event.order_side
             self.entry_time = event.timestamp
             self.average_entry_price = event.average_price
             self.is_entered = True
@@ -164,19 +167,15 @@ cdef class Position:
         # Fill logic
         if event.order_side is OrderSide.BUY:
             if self.market_position == MarketPosition.SHORT:
-                # Increment realized return of a short position
-                self.return_realized += self._calculate_return(
-                    MarketPosition.SHORT,
-                    self.average_entry_price,
-                    event.average_price)
+                # Increment realized points and return of a short position
+                self.points_realized += self._calculate_points(self.average_entry_price, event.average_price)
+                self.return_realized += self._calculate_return(self.average_entry_price, event.average_price)
             self.relative_quantity += event.filled_quantity.value
         elif event.order_side is OrderSide.SELL:
             if self.market_position == MarketPosition.LONG:
-                # Increment realized return of a long position
-                self.return_realized += self._calculate_return(
-                    MarketPosition.LONG,
-                    self.average_entry_price,
-                    event.average_price)
+                # Increment realized points and return of a long position
+                self.points_realized += self._calculate_points(self.average_entry_price, event.average_price)
+                self.return_realized += self._calculate_return(self.average_entry_price, event.average_price)
             self.relative_quantity -= event.filled_quantity.value
 
         self.quantity = Quantity(abs(self.relative_quantity))
@@ -202,30 +201,50 @@ cdef class Position:
         if self.is_exited and self.relative_quantity != 0:
             self.is_exited = False
 
+    cpdef object points_unrealized(self, Price current_price):
+        """
+        Return the calculated unrealized points from the given current price.
+         
+        :param current_price: The current price of the position instrument.
+        :return: Decimal.
+        """
+        if not self.is_entered or self.is_exited or self.entry_direction is OrderSide.UNKNOWN:
+            return Decimal(0)
+        return self._calculate_points(self.average_entry_price, current_price)
+
     cpdef float return_unrealized(self, Price current_price):
         """
-        Return the calculated unrealized return percentage from the given current price.
+        Return the calculated unrealized return from the given current price.
          
         :param current_price: The current price of the position instrument.
         :return: float.
         """
         if not self.is_entered or self.is_exited or self.market_position is MarketPosition.FLAT:
             return 0.0
-        return self._calculate_return(self.market_position,
-                                      self.average_entry_price,
-                                      current_price)
+        return self._calculate_return(self.average_entry_price, current_price)
 
-    cdef float _calculate_return(
-            self,
-            MarketPosition direction,
-            Price entry_price,
-            Price exit_price):
+    cdef object _calculate_points(self, Price entry_price, Price exit_price):
+        """
+        Return the calculated points from the given parameters.
+        
+        :return: Decimal.
+        """
+        if self.entry_direction is OrderSide.BUY:
+            return exit_price.value - entry_price.value
+        elif self.entry_direction is OrderSide.SELL:
+            return entry_price.value - exit_price.value
+        else:
+            raise ValueError(f'Cannot calculate the points of a {self.entry_direction} direction.')
+
+    cdef float _calculate_return(self, Price entry_price, Price exit_price):
         """
         Return the calculated return from the given parameters.
+        
+        :return: float.
         """
-        if direction is MarketPosition.LONG:
+        if self.market_position is MarketPosition.LONG:
             return (exit_price.as_float() - entry_price.as_float()) / exit_price.as_float()
-        if direction is MarketPosition.SHORT:
+        elif self.market_position is MarketPosition.SHORT:
             return (entry_price.as_float() - exit_price.as_float()) / exit_price.as_float()
         else:
-            raise ValueError(f'Cannot calculate the return of a {direction} direction.')
+            raise ValueError(f'Cannot calculate the return of a {self.market_position} direction.')

@@ -11,6 +11,7 @@
 
 
 cpdef enum OrderStatus:
+    UNKNOWN = -1,
     INITIALIZED = 0,
     SUBMITTED = 1,
     ACCEPTED = 2,
@@ -43,5 +44,7 @@ cdef inline str order_status_string(int value):
         return "FILLED"
     elif value == 9:
         return "EXPIRED"
+    elif value == -1:
+        return "UNKNOWN"
     else:
         return "UNKNOWN"

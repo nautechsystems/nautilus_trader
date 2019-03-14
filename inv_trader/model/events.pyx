@@ -14,7 +14,7 @@ from cpython.datetime cimport datetime
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.enums.brokerage cimport Broker
 from inv_trader.enums.currency_code cimport CurrencyCode
-from inv_trader.enums.order_side cimport OrderSide
+from inv_trader.enums.order_side cimport OrderSide, order_side_string
 from inv_trader.enums.order_type cimport OrderType
 from inv_trader.enums.time_in_force cimport TimeInForce
 from inv_trader.model.identifiers cimport GUID, Label, AccountNumber, AccountId
@@ -580,6 +580,7 @@ cdef class PositionOpened(PositionEvent):
         """
         return (f"{self.__class__.__name__}("
                 f"id={self.position.id.value}, "
+                f"entry_direction={order_side_string(self.position.entry_direction)}, "
                 f"av_entry_price={self.position.average_entry_price}) "
                 f"{self.position.status_string()}")
 
@@ -613,7 +614,9 @@ cdef class PositionModified(PositionEvent):
         """
         return (f"{self.__class__.__name__}("
                 f"id={self.position.id.value}, "
-                f"av_entry_price={self.position.average_entry_price}) "
+                f"entry_direction={order_side_string(self.position.entry_direction)}, "
+                f"av_entry_price={self.position.average_entry_price}, "
+                f"points_realized={self.position.points_realized}) "
                 f"{self.position.status_string()}")
 
 
@@ -646,8 +649,10 @@ cdef class PositionClosed(PositionEvent):
         """
         return (f"{self.__class__.__name__}("
                 f"id={self.position.id.value}, "
+                f"entry_direction={order_side_string(self.position.entry_direction)}, "
                 f"av_entry_price={self.position.average_entry_price}, "
-                f"av_exit_price={self.position.average_exit_price}) "
+                f"av_exit_price={self.position.average_exit_price}, "
+                f"points_realized={self.position.points_realized}) "
                 f"{self.position.status_string()}")
 
 

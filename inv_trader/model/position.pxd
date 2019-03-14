@@ -11,10 +11,11 @@
 
 from cpython.datetime cimport datetime
 
-from inv_trader.model.objects cimport Quantity, Symbol, Price, Money
+from inv_trader.model.objects cimport Quantity, Symbol, Price
 from inv_trader.model.events cimport OrderEvent
 from inv_trader.model.identifiers cimport PositionId, OrderId, ExecutionId, ExecutionTicket
 from inv_trader.enums.market_position cimport MarketPosition
+from inv_trader.enums.order_side cimport OrderSide
 
 
 cdef class Position:
@@ -37,10 +38,12 @@ cdef class Position:
     cdef readonly Quantity peak_quantity
     cdef readonly MarketPosition market_position
     cdef readonly datetime timestamp
+    cdef readonly OrderSide entry_direction
     cdef readonly datetime entry_time
     cdef readonly datetime exit_time
     cdef readonly Price average_entry_price
     cdef readonly Price average_exit_price
+    cdef readonly object points_realized
     cdef readonly float return_realized
     cdef readonly bint is_entered
     cdef readonly bint is_exited
@@ -55,10 +58,8 @@ cdef class Position:
     cpdef list get_execution_tickets(self)
     cpdef list get_events(self)
     cpdef void apply(self, OrderEvent event)
+    cpdef object points_unrealized(self, Price current_price)
     cpdef float return_unrealized(self, Price current_price)
 
-    cdef float _calculate_return(
-            self,
-            MarketPosition direction,
-            Price entry_price,
-            Price exit_price)
+    cdef object _calculate_points(self, Price entry_price, Price exit_price)
+    cdef float _calculate_return(self, Price entry_price, Price exit_price)
