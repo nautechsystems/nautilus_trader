@@ -47,7 +47,6 @@ cdef class PositionSizer:
             Price stop_loss_price,
             exchange_rate=Decimal(1),
             commission_rate=Decimal(15),
-            int leverage=1,
             int hard_limit=0,
             int units=1,
             int unit_batch_size=1):
@@ -60,7 +59,6 @@ cdef class PositionSizer:
         :param stop_loss_price: The stop loss price.
         :param exchange_rate: The exchange rate for the instrument quote currency vs account currency.
         :param commission_rate: The commission rate per million notional (>= 0).
-        :param leverage: The broker leverage for the instrument (> 0).
         :param hard_limit: The hard limit for the total quantity (>= 0) (0 = no hard limit).
         :param units: The number of units to batch the position into (> 0).
         :param unit_batch_size: The unit batch size (> 0).
@@ -79,7 +77,6 @@ cdef class PositionSizer:
             self,
             Money equity,
             int risk_bp,
-            int leverage,
             commission_rate):
         """
         Return the calculated amount of risk money available.
@@ -89,7 +86,7 @@ cdef class PositionSizer:
         if equity.value <= 0:
             return Money.zero()
         cdef Money risk_money = Money(equity.value * Decimal(round(risk_bp * 0.01, 2)))
-        cdef Money commission = Money(((risk_money.value * leverage) / 1000000) * commission_rate)
+        cdef Money commission = Money((risk_money.value / 1000000) * commission_rate)
 
         return risk_money - commission
 
@@ -123,7 +120,6 @@ cdef class FixedRiskSizer(PositionSizer):
             Price stop_loss_price,
             exchange_rate=Decimal(1),
             commission_rate=Decimal(15),
-            int leverage=1,
             int hard_limit=0,
             int units=1,
             int unit_batch_size=1):
@@ -136,7 +132,6 @@ cdef class FixedRiskSizer(PositionSizer):
         :param stop_loss_price: The stop loss price.
         :param exchange_rate: The exchange rate for the instrument quote currency vs account currency.
         :param commission_rate: The commission rate per million notional (>= 0).
-        :param leverage: The broker leverage for the instrument (> 0).
         :param hard_limit: The hard limit for the total quantity (>= 0) (0 = no hard limit).
         :param units: The number of units to batch the position into (> 0).
         :param unit_batch_size: The unit batch size (> 0).
@@ -151,11 +146,10 @@ cdef class FixedRiskSizer(PositionSizer):
         Precondition.positive(risk_bp, 'risk_bp')
         Precondition.positive(exchange_rate, 'exchange_rate')
         Precondition.not_negative(commission_rate, 'commission_rate')
-        Precondition.positive(leverage, 'leverage')
         Precondition.positive(units, 'units')
         Precondition.positive(unit_batch_size, 'unit_batch_size')
 
-        cdef Money risk_money = self._calculate_risk_money(equity, risk_bp, leverage, commission_rate)
+        cdef Money risk_money = self._calculate_risk_money(equity, risk_bp, commission_rate)
         cdef int risk_points = self._calculate_risk_points(entry_price, stop_loss_price)
         cdef long position_size = long(round(((risk_money.value / risk_points) / (self.instrument.tick_size * exchange_rate)) / self.instrument.contract_size.value))
 

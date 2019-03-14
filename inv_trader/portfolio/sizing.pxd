@@ -27,7 +27,6 @@ cdef class PositionSizer:
             Price stop_loss_price,
             exchange_rate=*,
             commission_rate=*,
-            int leverage=*,
             int hard_limit=*,
             int units=*,
             int unit_batch_size=*)
@@ -35,7 +34,6 @@ cdef class PositionSizer:
     cdef Money _calculate_risk_money(self,
             Money equity,
             int risk_bp,
-            int leverage,
             commission_rate,)
     cdef int _calculate_risk_points(self, Price entry, Price stop_loss)
 

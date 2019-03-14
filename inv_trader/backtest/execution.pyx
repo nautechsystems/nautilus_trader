@@ -53,7 +53,6 @@ cdef class BacktestExecClient(ExecutionClient):
                  dict data_bars_bid: Dict[Symbol, DataFrame],
                  dict data_bars_ask: Dict[Symbol, DataFrame],
                  Money starting_capital,
-                 int leverage,
                  int slippage_ticks,
                  Account account,
                  Portfolio portfolio,
@@ -69,7 +68,6 @@ cdef class BacktestExecClient(ExecutionClient):
         :param data_bars_ask: The historical minute ask bars data needed for the backtest.
         :param starting_capital: The starting capital for the backtest account (> 0).
         :param slippage_ticks: The slippage for each order fill in ticks (>= 0).
-        :param leverage: The leverage for broker instruments notional value (FX only) (> 0).
         :param clock: The clock for the component.
         :param clock: The GUID factory for the component.
         :param logger: The logger for the component.
@@ -114,7 +112,6 @@ cdef class BacktestExecClient(ExecutionClient):
 
         self.iteration = 0
         self.day_number = 0
-        self.leverage = leverage
         self.account_capital = starting_capital
         self.account_cash_start_day = starting_capital
         self.account_cash_activity_day = Money(0)
@@ -658,7 +655,7 @@ cdef class BacktestExecClient(ExecutionClient):
                 event.average_price,
                 event.filled_quantity)
 
-        cdef Money commission = Money(Decimal(round(float(event.filled_quantity.value) * float(self.leverage) / 1000000 * 15, 2)))
+        cdef Money commission = Money(Decimal(round(float(event.filled_quantity.value) / 1000000 * 15, 2)))
         self.total_commissions += commission
         pnl -= commission
 
@@ -705,4 +702,4 @@ cdef class BacktestExecClient(ExecutionClient):
         else:
             raise ValueError(f'Cannot calculate the pnl of a {direction} direction.')
 
-        return Money(((difference * quantity.value) / exit_price.as_float()) * self.leverage)
+        return Money(((difference * quantity.value) / exit_price.as_float()))
