@@ -133,3 +133,4 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 11/03/19  9352466 function calls  (9312764 primitive calls) in 16.185 seconds (add more portfolio analysis)
         # 11/03/19  9262774 function calls  (9223072 primitive calls) in 14.489 seconds (append left to bars list)
         # 13/03/19  6111078 function calls  (6071325 primitive calls) in 13.208 seconds (improve loops)
+        # 15/03/19  9352490 function calls  (9312786 primitive calls) in 16.069 seconds (add position calculations)
