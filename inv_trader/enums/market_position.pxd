@@ -11,6 +11,7 @@
 
 
 cpdef enum MarketPosition:
+    UNKNOWN = -1,
     FLAT = 0,
     LONG = 1,
     SHORT = 2
@@ -22,5 +23,7 @@ cdef inline str market_position_string(int value):
         return "LONG"
     elif value == 2:
         return "SHORT"
+    elif value == -1:
+        return "UNKNOWN"
     else:
         return "UNKNOWN"

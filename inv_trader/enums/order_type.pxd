@@ -11,6 +11,7 @@
 
 
 cpdef enum OrderType:
+    UNKNOWN = -1,
     MARKET = 0,
     LIMIT = 1,
     STOP_MARKET = 2,
@@ -28,5 +29,7 @@ cdef inline str order_type_string(int value):
         return "STOP_LIMIT"
     elif value == 4:
         return "MIT"
+    elif value == -1:
+        return "UNKNOWN"
     else:
         return "UNKNOWN"

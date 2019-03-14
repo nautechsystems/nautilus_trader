@@ -11,6 +11,7 @@
 
 
 cpdef enum SecurityType:
+    UNKNOWN = -1,
     FOREX = 0,
     BOND = 1,
     EQUITY = 2,
@@ -31,5 +32,7 @@ cdef inline str security_type_string(int value):
         return "CFD"
     elif value == 5:
         return "OPTION"
+    elif value == -1:
+        return "UNKNOWN"
     else:
         return "UNKNOWN"

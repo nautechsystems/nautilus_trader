@@ -11,6 +11,7 @@
 
 
 cpdef enum CurrencyCode:
+    UNKNOWN = -1,
     AUD = 36,
     CAD = 124,
     CHF = 756,
@@ -31,8 +32,8 @@ cpdef enum CurrencyCode:
     XAG = 961,
     XPT = 962,
     XAU = 959,
-    ZAR = 710,
-    UNKNOWN = -1
+    ZAR = 710
+
 
 cdef inline str currency_code_string(int value):
     if value == 36:

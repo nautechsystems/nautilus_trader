@@ -11,6 +11,7 @@
 
 
 cpdef enum Venue:
+    UNKNOWN = -1,
     DUKASCOPY = 0,
     FXCM = 1,
     IDEAL_PRO = 2,
@@ -28,5 +29,7 @@ cdef inline str venue_string(int value):
         return "NYSE"
     elif value == 4:
         return "GLOBEX"
+    elif value == -1:
+        return "UNKNOWN"
     else:
         return "UNKNOWN"
