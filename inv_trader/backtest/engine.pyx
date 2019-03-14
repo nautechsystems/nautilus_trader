@@ -9,6 +9,7 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
+import numpy as np
 import logging
 import psutil
 import platform
@@ -342,22 +343,24 @@ cdef class BacktestEngine:
         self.log.info("#-----------------------------------------------------#")
         self.log.info("#--------------- PERFORMANCE STATISTICS --------------#")
         self.log.info("#-----------------------------------------------------#")
-        self.log.info(f"PNL:           {self._print_stat(float((self.account.cash_balance - self.config.starting_capital).value))}")
-        self.log.info(f"PNL %:         {self._print_stat(float(((self.account.cash_balance.value - self.config.starting_capital.value) / self.config.starting_capital.value) * 100))}%")
-        self.log.info(f"Annual return: {self._print_stat(annual_return(returns=returns))}%")
-        self.log.info(f"Cum returns:   {self._print_stat(cum_returns_final(returns=returns))}%")
-        self.log.info(f"Max drawdown:  {self._print_stat(max_drawdown(returns=returns))}%")
-        self.log.info(f"Annual vol:    {self._print_stat(annual_volatility(returns=returns))}%")
-        self.log.info(f"Sharpe ratio:  {self._print_stat(sharpe_ratio(returns=returns))}")
-        self.log.info(f"Calmar ratio:  {self._print_stat(calmar_ratio(returns=returns))}")
-        self.log.info(f"Sortino ratio: {self._print_stat(sortino_ratio(returns=returns))}")
-        self.log.info(f"Omega ratio:   {self._print_stat(omega_ratio(returns=returns))}")
-        self.log.info(f"Stability:     {self._print_stat(stability_of_timeseries(returns=returns))}")
-        self.log.info(f"Skew:          {self._print_stat(skew(returns))}")
-        self.log.info(f"Kurtosis:      {self._print_stat(kurtosis(returns))}")
-        self.log.info(f"Tail ratio:    {self._print_stat(tail_ratio(returns=returns))}")
-        self.log.info(f"Alpha:         {self._print_stat(alpha(returns=returns, factor_returns=returns))}")
-        self.log.info(f"Beta:          {self._print_stat(beta(returns=returns, factor_returns=returns))}")
+        self.log.info(f"PNL:              {self._print_stat(float((self.account.cash_balance - self.config.starting_capital).value))}")
+        self.log.info(f"PNL %:            {self._print_stat(float(((self.account.cash_balance.value - self.config.starting_capital.value) / self.config.starting_capital.value) * 100))}%")
+        self.log.info(f"Annual return:    {self._print_stat(annual_return(returns=returns))}%")
+        self.log.info(f"Cum returns:      {self._print_stat(cum_returns_final(returns=returns))}%")
+        self.log.info(f"Max drawdown:     {self._print_stat(max_drawdown(returns=returns))}%")
+        self.log.info(f"Annual vol:       {self._print_stat(annual_volatility(returns=returns))}%")
+        self.log.info(f"Sharpe ratio:     {self._print_stat(sharpe_ratio(returns=returns))}")
+        self.log.info(f"Calmar ratio:     {self._print_stat(calmar_ratio(returns=returns))}")
+        self.log.info(f"Sortino ratio:    {self._print_stat(sortino_ratio(returns=returns))}")
+        self.log.info(f"Omega ratio:      {self._print_stat(omega_ratio(returns=returns))}")
+        self.log.info(f"Stability:        {self._print_stat(stability_of_timeseries(returns=returns))}")
+        self.log.info(f"Returns Mean:     {self._print_stat(value=np.mean(returns), decimals=5)}")
+        self.log.info(f"Returns Variance: {self._print_stat(value=np.var(returns), decimals=8)}")
+        self.log.info(f"Returns Skew:     {self._print_stat(skew(returns))}")
+        self.log.info(f"Returns Kurtosis: {self._print_stat(kurtosis(returns))}")
+        self.log.info(f"Tail ratio:       {self._print_stat(tail_ratio(returns=returns))}")
+        self.log.info(f"Alpha:            {self._print_stat(alpha(returns=returns, factor_returns=returns))}")
+        self.log.info(f"Beta:             {self._print_stat(beta(returns=returns, factor_returns=returns))}")
         self.log.info("#-----------------------------------------------------#")
 
     cdef void _change_strategy_clocks_and_loggers(self, list strategies):
