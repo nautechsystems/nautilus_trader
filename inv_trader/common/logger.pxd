@@ -22,6 +22,7 @@ cdef class Logger:
     cdef object _log_level_console
     cdef object _log_level_file
     cdef bint _console_prints
+    cdef bint _log_thread
     cdef bint _log_to_file
     cdef str _log_file
     cdef object _log_file_handler

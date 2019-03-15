@@ -44,6 +44,7 @@ cdef class Logger:
                  level_console: logging=INFO,
                  level_file: logging=DEBUG,
                  bint console_prints=True,
+                 bint log_thread=False,
                  bint log_to_file=False,
                  str log_file_path='log/',
                  Clock clock=LiveClock()):
@@ -54,7 +55,8 @@ cdef class Logger:
         :param level_console: The minimum log level for logging messages to the console.
         :param level_file: The minimum log level for logging messages to the log file.
         :param console_prints: The boolean flag indicating whether log messages should print.
-        :param log_to_file: The boolean flag indicating whether log messages should log to file
+        :param log_thread: The boolean flag indicating whether log messages should log the thread.
+        :param log_to_file: The boolean flag indicating whether log messages should log to file.
         :param log_file_path: The name of the log file (cannot be None if log_to_file is True).
         :param clock: The clock for the logger.
         :raises ValueError: If the name is not a valid string.
@@ -72,6 +74,7 @@ cdef class Logger:
         self._log_level_console = level_console
         self._log_level_file = level_file
         self._console_prints = console_prints
+        self._log_thread = log_thread
         self._log_to_file = log_to_file
         self._log_file = f'{log_file_path}{name}.log'
         self._logger = logging.getLogger(name)
@@ -177,7 +180,8 @@ cdef class Logger:
 
     cdef str _format_message(self, datetime timestamp, str log_level, str message):
         cdef str time = timestamp.isoformat(timespec='milliseconds').partition('+')[0] + 'Z'
-        return f"{BOLD}{time}{ENDC} [{threading.current_thread().ident}][{log_level}] {message}"
+        cdef str thread = '' if self._log_thread is False else f'[{threading.current_thread().ident}]'
+        return f"{BOLD}{time}{ENDC} {thread}[{log_level}] {message}"
 
     cdef void _console_print_handler(self, log_level: logging, str message):
         if self._console_prints and log_level >= self._log_level_console:
@@ -215,6 +219,7 @@ cdef class LiveLogger(Logger):
                  level_console: logging=INFO,
                  level_file: logging=DEBUG,
                  bint console_prints=True,
+                 bint log_thread=False,
                  bint log_to_file=False,
                  str log_file_path='log/'):
         """
@@ -224,7 +229,8 @@ cdef class LiveLogger(Logger):
         :param level_console: The minimum log level for logging messages to the console.
         :param level_file: The minimum log level for logging messages to the log file.
         :param console_prints: The boolean flag indicating whether log messages should print.
-        :param log_to_file: The boolean flag indicating whether log messages should log to file
+        :param log_thread: The boolean flag indicating whether log messages should log the thread.
+        :param log_to_file: The boolean flag indicating whether log messages should log to file.
         :param log_file_path: The name of the log file (cannot be None if log_to_file is True).
         :raises ValueError: If the name is not a valid string.
         :raises ValueError: If the log_file_path is not a valid string.
@@ -234,6 +240,7 @@ cdef class LiveLogger(Logger):
                          level_console,
                          level_file,
                          console_prints,
+                         log_thread,
                          log_to_file,
                          log_file_path)
 
@@ -282,6 +289,7 @@ cdef class TestLogger(Logger):
                  level_console: logging=INFO,
                  level_file: logging=DEBUG,
                  bint console_prints=True,
+                 bint log_thread=False,
                  bint log_to_file=False,
                  str log_file_path='log/',
                  Clock clock=TestClock()):
@@ -292,7 +300,8 @@ cdef class TestLogger(Logger):
         :param level_console: The minimum log level for logging messages to the console.
         :param level_file: The minimum log level for logging messages to the log file.
         :param console_prints: The boolean flag indicating whether log messages should print.
-        :param log_to_file: The boolean flag indicating whether log messages should log to file
+        :param log_thread: The boolean flag indicating whether log messages should log the thread.
+        :param log_to_file: The boolean flag indicating whether log messages should log to file.
         :param log_file_path: The name of the log file (cannot be None if log_to_file is True).
         :raises ValueError: If the name is not a valid string.
         :raises ValueError: If the log_file_path is not a valid string.
@@ -305,6 +314,7 @@ cdef class TestLogger(Logger):
                          level_console,
                          level_file,
                          console_prints,
+                         log_thread,
                          log_to_file,
                          log_file_path,
                          clock)
