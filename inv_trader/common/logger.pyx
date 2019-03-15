@@ -158,7 +158,7 @@ cdef class Logger:
 
         if self._log_to_file:
             try:
-                self._logger.critical(log_message)
+                self._logger.error(log_message)
             except IOError as ex:
                 self._console_print_handler(f"IOError: {ex}.", logging.CRITICAL)
 
@@ -342,7 +342,7 @@ cdef class TestLogger(Logger):
 
 cdef class LoggerAdapter:
     """
-    Provides a logger adapter for a components logger.
+    Provides an adapter for a components logger.
     """
 
     def __init__(self,
