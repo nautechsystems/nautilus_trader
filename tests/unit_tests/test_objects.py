@@ -352,13 +352,16 @@ class ObjectTests(unittest.TestCase):
 
     def test_money_str(self):
         # Arrange
-        money = Money(1)
+        money1 = Money(1)
+        money2 = Money(1000000)
 
         # Act
-        result = str(money)
+        result1 = str(money1)
+        result2 = str(money2)
 
         # Assert
-        self.assertEqual('1.00', result)
+        self.assertEqual('1.00', result1)
+        self.assertEqual('1,000,000.00', result2)
 
     def test_money_repr(self):
         # Arrange
