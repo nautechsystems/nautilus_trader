@@ -361,7 +361,7 @@ cdef class Price:
 
     cpdef float as_float(self):
         """
-        Return A float representation of the price.
+        Return a float representation of the price.
         
         :return: float.
         """

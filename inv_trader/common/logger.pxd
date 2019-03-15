@@ -68,7 +68,7 @@ cdef class TestLogger(Logger):
 
 cdef class LoggerAdapter:
     """
-    Provides a logger adapter adapter for a components logger.
+    Provides an adapter for a components logger.
     """
     cdef Logger _logger
 
