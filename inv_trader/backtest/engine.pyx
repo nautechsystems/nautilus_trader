@@ -58,6 +58,7 @@ cdef class BacktestConfig:
                  level_console: logging=INFO,
                  level_file: logging=DEBUG,
                  bint console_prints=True,
+                 bint log_thread=False,
                  bint log_to_file=False,
                  str log_file_path='backtests/'):
         """
@@ -69,7 +70,8 @@ cdef class BacktestConfig:
         :param level_console: The minimum log level for logging messages to the console.
         :param level_file: The minimum log level for logging messages to the log file.
         :param console_prints: The boolean flag indicating whether log messages should print.
-        :param log_to_file: The boolean flag indicating whether log messages should log to file
+        :param log_thread: The boolean flag indicating whether log messages should log the thread.
+        :param log_to_file: The boolean flag indicating whether log messages should log to file.
         :param log_file_path: The name of the log file (cannot be None if log_to_file is True).
         :raises ValueError: If the starting capital is not positive (> 0).
         :raises ValueError: If the leverage is not positive (> 0).
@@ -84,6 +86,7 @@ cdef class BacktestConfig:
         self.level_console = level_console
         self.level_file = level_file
         self.console_prints = console_prints
+        self.log_thread = log_thread
         self.log_to_file = log_to_file
         self.log_file_path = log_file_path
 
@@ -128,6 +131,7 @@ cdef class BacktestEngine:
             level_console=config.level_console,
             level_file=config.level_file,
             console_prints=config.console_prints,
+            log_thread=config.log_thread,
             log_to_file=config.log_to_file,
             log_file_path=config.log_file_path,
             clock=self.test_clock)

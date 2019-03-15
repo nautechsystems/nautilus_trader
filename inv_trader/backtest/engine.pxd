@@ -31,6 +31,7 @@ cdef class BacktestConfig:
     cdef readonly object level_console
     cdef readonly object level_file
     cdef readonly bint console_prints
+    cdef readonly bint log_thread
     cdef readonly bint log_to_file
     cdef readonly str log_file_path
 
