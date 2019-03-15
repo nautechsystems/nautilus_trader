@@ -422,7 +422,7 @@ cdef class Money:
         """
         :return: The str() string representation of the price.
         """
-        return str(self.value)
+        return f'{self.value:,.2f}'
 
     def __repr__(self) -> str:
         """
