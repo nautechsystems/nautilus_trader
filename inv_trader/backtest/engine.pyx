@@ -194,7 +194,8 @@ cdef class BacktestEngine:
             self.exec_client,
             self.account,
             self.portfolio,
-            self.test_clock)
+            self.test_clock,
+            self.test_logger)
 
         self.time_to_initialize = self.clock.get_elapsed(self.created_time)
         self.log.info(f'Initialized in {round(self.time_to_initialize, 2)}s.')
@@ -316,10 +317,11 @@ cdef class BacktestEngine:
         self.log.info(f"RAM-Used:  {round(psutil.virtual_memory()[3] / 1000000)}MB")
         self.log.info(f"RAM-Avail: {round(psutil.virtual_memory()[1] / 1000000)}MB ({100 - psutil.virtual_memory()[2]}%)")
         self.log.info(f"Time-step: {time_step_mins} minute")
-        self.log.info(f"Start datetime: {start}")
-        self.log.info(f"Stop datetime:  {stop}")
+        self.log.info(f"Time now: {self.clock.time_now()}")
+        self.log.info(f"Backtest start datetime: {start}")
+        self.log.info(f"Backtest stop datetime:  {stop}")
         self.log.info(f"Account balance (starting): {self.config.starting_capital}")
-        self.log.info("#-----------------------------------------------------#")
+        self.log.info("#-----------------------------------------------------------------#")
         self.log.info(f"Running backtest...")
 
     cdef void _backtest_footer(
@@ -335,11 +337,11 @@ cdef class BacktestEngine:
         self.log.info("#-----------------------------------------------------------------#")
         self.log.info("#--------------------- BACKTEST DIAGNOSTICS ----------------------#")
         self.log.info("#-----------------------------------------------------------------#")
-        self.log.info(f"Elapsed time (initialization):{self._print_stat(self.time_to_initialize)}s")
-        self.log.info(f"Elapsed time (running):{self._print_stat(self.clock.get_elapsed(run_started))}s")
+        self.log.info(f"Elapsed time (initializing engine):{self._print_stat(self.time_to_initialize)}s")
+        self.log.info(f"Elapsed time (running backtest):{self._print_stat(self.clock.get_elapsed(run_started))}s")
         self.log.info(f"Time-step iterations: {self.exec_client.iteration}")
-        self.log.info(f"Start datetime: {start}")
-        self.log.info(f"Stop datetime:  {stop}")
+        self.log.info(f"Backtest start datetime: {start}")
+        self.log.info(f"Backtest stop datetime:  {stop}")
         self.log.info(f"Account balance (starting):{self._print_stat(self.config.starting_capital.value)}")
         self.log.info(f"Account balance (ending):  {self._print_stat(self.account.cash_balance.value)}")
         self.log.info(f"Commissions (total):       {self._print_stat(self.exec_client.total_commissions.value)}")

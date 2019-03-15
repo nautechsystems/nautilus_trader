@@ -17,7 +17,7 @@ from typing import List
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.common.account cimport Account
 from inv_trader.common.clock cimport LiveClock
-from inv_trader.common.logger cimport Logger, LoggerAdapter
+from inv_trader.common.logger cimport Logger, LoggerAdapter, LiveLogger
 from inv_trader.common.data cimport DataClient
 from inv_trader.common.execution cimport ExecutionClient
 from inv_trader.portfolio.portfolio cimport Portfolio
@@ -37,7 +37,7 @@ cdef class Trader:
                  Account account,
                  Portfolio portfolio,
                  Clock clock=LiveClock(),
-                 Logger logger=None):
+                 Logger logger=LiveLogger()):
         """
         Initializes a new instance of the Trader class.
 
