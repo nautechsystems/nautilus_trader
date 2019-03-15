@@ -296,7 +296,7 @@ cdef class BacktestEngine:
         self.log.info("#-----------------------------------------------------------------#")
         self.log.info("#------------------------ BACKTEST ENGINE ------------------------#")
         self.log.info("#-----------------------------------------------------------------#")
-        self.log.info(f"Nautilus Trader (v{__version__}) for Invariance Pte")
+        self.log.info(f"Nautilus Trader (v{__version__}) for Invariance Pte. Limited.")
         self.log.info("Building engine...")
 
     cdef void _backtest_header(
@@ -342,7 +342,7 @@ cdef class BacktestEngine:
         self.log.info(f"Stop datetime:  {stop}")
         self.log.info(f"Account balance (starting):{self._print_stat(self.config.starting_capital.value)}")
         self.log.info(f"Account balance (ending):  {self._print_stat(self.account.cash_balance.value)}")
-        self.log.info(f"Total commissions:       {self._print_stat(self.exec_client.total_commissions.value)}")
+        self.log.info(f"Commissions (total):       {self._print_stat(self.exec_client.total_commissions.value)}")
         self.log.info("")
         self.log.info("#-----------------------------------------------------------------#")
         self.log.info("#--------------------- PERFORMANCE STATISTICS --------------------#")
