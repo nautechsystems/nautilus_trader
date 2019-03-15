@@ -294,9 +294,9 @@ cdef class BacktestEngine:
         """
         Create a backtest engine log header.
         """
-        self.log.info("#-----------------------------------------------------------------#")
-        self.log.info("#------------------------ BACKTEST ENGINE ------------------------#")
-        self.log.info("#-----------------------------------------------------------------#")
+        self.log.info("#---------------------------------------------------------------#")
+        self.log.info("#----------------------- BACKTEST ENGINE -----------------------#")
+        self.log.info("#---------------------------------------------------------------#")
         self.log.info(f"Nautilus Trader (v{__version__}) for Invariance Pte. Limited.")
         self.log.info("Building engine...")
 
@@ -308,9 +308,9 @@ cdef class BacktestEngine:
         """
         Create a backtest run log header.
         """
-        self.log.info("#-----------------------------------------------------------------#")
-        self.log.info("#------------------------ BACKTEST RUN ---------------------------#")
-        self.log.info("#-----------------------------------------------------------------#")
+        self.log.info("#---------------------------------------------------------------#")
+        self.log.info("#----------------------- BACKTEST RUN --------------------------#")
+        self.log.info("#---------------------------------------------------------------#")
         self.log.info(f"OS: {platform.platform()}")
         self.log.info(f"Processors: {platform.processor()}")
         self.log.info(f"RAM-Total: {round(psutil.virtual_memory()[0] / 1000000)}MB")
@@ -321,7 +321,7 @@ cdef class BacktestEngine:
         self.log.info(f"Backtest start datetime: {start}")
         self.log.info(f"Backtest stop datetime:  {stop}")
         self.log.info(f"Account balance (starting): {self.config.starting_capital}")
-        self.log.info("#-----------------------------------------------------------------#")
+        self.log.info("#---------------------------------------------------------------#")
         self.log.info(f"Running backtest...")
 
     cdef void _backtest_footer(
@@ -330,13 +330,13 @@ cdef class BacktestEngine:
             datetime start,
             datetime stop):
         """
-        Create a backtest log footer.
+        Create a backtest run log footer.
         """
         returns = self.trader.portfolio.analyzer.get_returns()
 
-        self.log.info("#-----------------------------------------------------------------#")
-        self.log.info("#--------------------- BACKTEST DIAGNOSTICS ----------------------#")
-        self.log.info("#-----------------------------------------------------------------#")
+        self.log.info("#---------------------------------------------------------------#")
+        self.log.info("#-------------------- BACKTEST DIAGNOSTICS ---------------------#")
+        self.log.info("#---------------------------------------------------------------#")
         self.log.info(f"Elapsed time (initializing engine):{self._print_stat(self.time_to_initialize)}s")
         self.log.info(f"Elapsed time (running backtest):{self._print_stat(self.clock.get_elapsed(run_started))}s")
         self.log.info(f"Time-step iterations: {self.exec_client.iteration}")
@@ -346,9 +346,9 @@ cdef class BacktestEngine:
         self.log.info(f"Account balance (ending):   {self.account.cash_balance}")
         self.log.info(f"Commissions (total):        {self.exec_client.total_commissions}")
         self.log.info("")
-        self.log.info("#-----------------------------------------------------------------#")
-        self.log.info("#--------------------- PERFORMANCE STATISTICS --------------------#")
-        self.log.info("#-----------------------------------------------------------------#")
+        self.log.info("#---------------------------------------------------------------#")
+        self.log.info("#-------------------- PERFORMANCE STATISTICS -------------------#")
+        self.log.info("#---------------------------------------------------------------#")
         self.log.info(f"PNL:              {self.account.cash_balance - self.config.starting_capital}")
         self.log.info(f"PNL %:            {self._print_stat(float(((self.account.cash_balance.value - self.config.starting_capital.value) / self.config.starting_capital.value) * 100))}%")
         self.log.info(f"Annual return:    {self._print_stat(annual_return(returns=returns))}%")
