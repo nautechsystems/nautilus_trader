@@ -347,7 +347,7 @@ cdef class BacktestEngine:
         self.log.info(f"Backtest stop datetime:  {format_zulu_datetime(stop)}")
         self.log.info(f"Account balance (starting): {self.config.starting_capital}")
         self.log.info(f"Account balance (ending):   {self.account.cash_balance}")
-        self.log.info(f"Commissions (total):        {self.exec_client.total_commissions}")
+        self.log.info(f"Commissions (total):       -{self.exec_client.total_commissions}")
         self.log.info("")
         self.log.info("#---------------------------------------------------------------#")
         self.log.info("#-------------------- PERFORMANCE STATISTICS -------------------#")
