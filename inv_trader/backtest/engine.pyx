@@ -228,7 +228,7 @@ cdef class BacktestEngine:
         cdef datetime run_started = self.clock.time_now()
         cdef datetime time = start
 
-        self._backtest_header(start, stop, time_step_mins)
+        self._backtest_header(run_started, start, stop, time_step_mins)
         self.test_clock.set_time(time)
 
         self._change_strategy_clocks_and_loggers(self.trader.strategies)
@@ -303,6 +303,7 @@ cdef class BacktestEngine:
 
     cdef void _backtest_header(
             self,
+            datetime run_started,
             datetime start,
             datetime stop,
             int time_step_mins):
@@ -318,7 +319,7 @@ cdef class BacktestEngine:
         self.log.info(f"RAM-Used:  {round(psutil.virtual_memory()[3] / 1000000)}MB")
         self.log.info(f"RAM-Avail: {round(psutil.virtual_memory()[1] / 1000000)}MB ({100 - psutil.virtual_memory()[2]}%)")
         self.log.info(f"Time-step: {time_step_mins} minute")
-        self.log.info(f"Time now: {self.clock.time_now()}Z")
+        self.log.info(f"Time now: {format_zulu_datetime(run_started, timespec='milliseconds')}")
         self.log.info(f"Backtest start datetime: {format_zulu_datetime(start)}")
         self.log.info(f"Backtest stop datetime:  {format_zulu_datetime(stop)}")
         self.log.info(f"Account balance (starting): {self.config.starting_capital}")
@@ -338,6 +339,7 @@ cdef class BacktestEngine:
         self.log.info("#---------------------------------------------------------------#")
         self.log.info("#-------------------- BACKTEST DIAGNOSTICS ---------------------#")
         self.log.info("#---------------------------------------------------------------#")
+        self.log.info(f"Run started datetime: {format_zulu_datetime(run_started, timespec='milliseconds')}")
         self.log.info(f"Elapsed time (initializing engine):{self._print_stat(self.time_to_initialize)}s")
         self.log.info(f"Elapsed time (running backtest):{self._print_stat(self.clock.get_elapsed(run_started))}s")
         self.log.info(f"Time-step iterations: {self.exec_client.iteration}")
