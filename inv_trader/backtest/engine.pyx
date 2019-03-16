@@ -298,7 +298,7 @@ cdef class BacktestEngine:
         self.log.info("#---------------------------------------------------------------#")
         self.log.info("#----------------------- BACKTEST ENGINE -----------------------#")
         self.log.info("#---------------------------------------------------------------#")
-        self.log.info(f"Nautilus Trader (v{__version__}) for Invariance Pte. Limited.")
+        self.log.info(f"Nautilus Trader v{__version__} for Invariance Pte. Limited.")
         self.log.info("Building engine...")
 
     cdef void _backtest_header(
@@ -379,8 +379,8 @@ cdef class BacktestEngine:
         :param strategies: The list of strategies.
         """
         for strategy in strategies:
-            # Replace the strategies clock with a test clock
-            strategy.change_clock(TestClock())  # Separate test clock to iterate independently
+            # Replace the strategies clock with the engines test clock
+            strategy.change_clock(TestClock())  # Separate test clocks to iterate independently
             # Replace the strategies logger with the engines test logger
             strategy.change_logger(self.test_logger)
 
