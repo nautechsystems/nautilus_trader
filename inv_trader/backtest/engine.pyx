@@ -35,6 +35,7 @@ from typing import List, Dict
 from logging import INFO, DEBUG
 
 from inv_trader.core.precondition cimport Precondition
+from inv_trader.core.functions cimport format_zulu_datetime
 from inv_trader.backtest.data cimport BacktestDataClient
 from inv_trader.backtest.execution cimport BacktestExecClient
 from inv_trader.common.clock cimport LiveClock, TestClock
@@ -317,9 +318,9 @@ cdef class BacktestEngine:
         self.log.info(f"RAM-Used:  {round(psutil.virtual_memory()[3] / 1000000)}MB")
         self.log.info(f"RAM-Avail: {round(psutil.virtual_memory()[1] / 1000000)}MB ({100 - psutil.virtual_memory()[2]}%)")
         self.log.info(f"Time-step: {time_step_mins} minute")
-        self.log.info(f"Time now: {self.clock.time_now()}")
-        self.log.info(f"Backtest start datetime: {start}")
-        self.log.info(f"Backtest stop datetime:  {stop}")
+        self.log.info(f"Time now: {self.clock.time_now()}Z")
+        self.log.info(f"Backtest start datetime: {format_zulu_datetime(start)}")
+        self.log.info(f"Backtest stop datetime:  {format_zulu_datetime(stop)}")
         self.log.info(f"Account balance (starting): {self.config.starting_capital}")
         self.log.info("#---------------------------------------------------------------#")
         self.log.info(f"Running backtest...")
@@ -340,8 +341,8 @@ cdef class BacktestEngine:
         self.log.info(f"Elapsed time (initializing engine):{self._print_stat(self.time_to_initialize)}s")
         self.log.info(f"Elapsed time (running backtest):{self._print_stat(self.clock.get_elapsed(run_started))}s")
         self.log.info(f"Time-step iterations: {self.exec_client.iteration}")
-        self.log.info(f"Backtest start datetime: {start}")
-        self.log.info(f"Backtest stop datetime:  {stop}")
+        self.log.info(f"Backtest start datetime: {format_zulu_datetime(start)}")
+        self.log.info(f"Backtest stop datetime:  {format_zulu_datetime(stop)}")
         self.log.info(f"Account balance (starting): {self.config.starting_capital}")
         self.log.info(f"Account balance (ending):   {self.account.cash_balance}")
         self.log.info(f"Commissions (total):        {self.exec_client.total_commissions}")
