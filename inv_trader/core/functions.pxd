@@ -21,6 +21,9 @@ cdef inline str format_zulu_datetime(datetime dt, str timespec=None):
     :return: str.
     """
     if timespec:
-        return dt.isoformat(timespec=timespec).partition('+')[0] + 'Z'
+        try:
+            return dt.isoformat(timespec=timespec).partition('+')[0] + 'Z'
+        except TypeError as ex:
+            return dt.isoformat().partition('+')[0] + '.000Z'
     else:
         return dt.isoformat().partition('+')[0] + 'Z'
