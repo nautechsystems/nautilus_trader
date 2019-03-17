@@ -23,7 +23,7 @@ from inv_trader.common.logger cimport Logger, LoggerAdapter
 from inv_trader.common.execution cimport ExecutionClient
 from inv_trader.common.data cimport DataClient
 from inv_trader.common.guid cimport GuidFactory, LiveGuidFactory
-from inv_trader.model.events cimport Event
+from inv_trader.model.events cimport Event, PositionEvent
 from inv_trader.model.identifiers cimport GUID, Label, OrderId, PositionId, PositionIdGenerator
 from inv_trader.model.objects cimport ValidString, Symbol, Price, Tick, BarType, Bar, Instrument
 from inv_trader.model.order cimport Order, AtomicOrder, OrderFactory
@@ -259,7 +259,10 @@ cdef class TradeStrategy:
 
         :param event: The event received.
         """
-        self.log.info(f"{event}")
+        if isinstance(event, PositionEvent):  # Fixes bug where position events aren't logging?
+            self.log.info(f"{event}")
+        else:
+            self.log.info(f"{event}")
 
         if self.is_running:
             self.on_event(event)

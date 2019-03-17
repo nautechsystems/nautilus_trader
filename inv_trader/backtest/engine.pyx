@@ -234,6 +234,7 @@ cdef class BacktestEngine:
         self._change_strategy_clocks_and_loggers(self.trader.strategies)
         self.trader.start()
 
+        self.log.info("Setting initial iteration...")
         self.data_client.set_initial_iteration(start, time_step)  # Also sets clock to start time
         self.exec_client.set_initial_iteration(start, time_step)  # Also sets clock to start time
 
@@ -241,6 +242,7 @@ cdef class BacktestEngine:
         assert(self.data_client.time_now() == start)
         assert(self.exec_client.time_now() == start)
 
+        self.log.info("Running...")
         while time <= stop:
             # Iterate execution first to simulate correct order of events
             # Order fills should occur before the bar closes
@@ -252,6 +254,7 @@ cdef class BacktestEngine:
             self.exec_client.process()
             time += time_step
 
+        self.log.info("Stopping...")
         self.trader.stop()
         self._backtest_footer(run_started, start, stop)
 
