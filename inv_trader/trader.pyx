@@ -75,7 +75,7 @@ cdef class Trader:
         self.portfolio = portfolio
         self.portfolio.register_execution_client(self._exec_client)
         self.strategies = strategies
-        self._load_strategies()
+        self._initialize_strategies()
 
     cpdef int strategy_count(self):
         """
@@ -136,7 +136,7 @@ cdef class Trader:
         Precondition.list_type(strategies, TradeStrategy, 'strategies')
 
         self.strategies = strategies
-        self._load_strategies()
+        self._initialize_strategies()
 
     cpdef void reset(self):
         """
@@ -163,7 +163,8 @@ cdef class Trader:
         self._exec_client.disconnect()
         self._log.info("Disposed.")
 
-    cdef void _load_strategies(self):
+    cdef void _initialize_strategies(self):
         for strategy in self.strategies:
             self._data_client.register_strategy(strategy)
             self._exec_client.register_strategy(strategy)
+            self._log.info(f"Initialized {strategy}.")

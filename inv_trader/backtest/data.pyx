@@ -121,7 +121,7 @@ cdef class BacktestDataClient(DataClient):
         Create the data providers for the client based on the given instruments.
         """
         for symbol, instrument in self._instruments.items():
-            self._log.info(f'Creating data provider for {symbol}...')
+            self._log.debug(f'Creating data provider for {symbol}...')
             self.data_providers[symbol] = DataProvider(instrument=instrument,
                                                        data_ticks=None if symbol not in self.data_ticks else self.data_ticks[symbol].tz_localize('UTC'),
                                                        data_bars_bid=self.data_bars_bid[symbol],
