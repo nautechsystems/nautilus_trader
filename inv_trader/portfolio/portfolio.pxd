@@ -16,6 +16,7 @@ from inv_trader.common.execution cimport ExecutionClient
 from inv_trader.model.identifiers cimport GUID, OrderId, PositionId
 from inv_trader.model.events cimport Event
 from inv_trader.model.position cimport Position
+from inv_trader.strategy cimport TradeStrategy
 from inv_trader.portfolio.analyzer cimport Analyzer
 
 
@@ -57,7 +58,7 @@ cdef class Portfolio:
     cpdef bint is_flat(self)
 
     cpdef void register_execution_client(self, ExecutionClient client)
-    cpdef void register_strategy(self, GUID strategy_id)
+    cpdef void register_strategy(self, TradeStrategy strategy)
     cpdef void register_order(self, OrderId order_id, PositionId position_id)
     cpdef void handle_event(self, Event event, GUID strategy_id)
 

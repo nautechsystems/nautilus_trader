@@ -217,22 +217,22 @@ cdef class Portfolio:
         Precondition.not_none(client, 'client')
 
         self._exec_client = client
-        self._log.info("Registered execution client.")
+        self._log.debug("Registered execution client.")
 
-    cpdef void register_strategy(self, GUID strategy_id):
+    cpdef void register_strategy(self, TradeStrategy strategy):
         """
         Register the given strategy identifier with the portfolio.
         
-        :param strategy_id: The strategy identifier to register.
+        :param strategy: The strategy to register.
         """
-        Precondition.true(strategy_id not in self._registered_strategies, 'strategy_id not in self._registered_strategies')
-        Precondition.not_in(strategy_id, self._positions_active, 'strategy_id', 'active_positions')
-        Precondition.not_in(strategy_id, self._positions_closed, 'strategy_id', 'closed_positions')
+        Precondition.true(strategy.id not in self._registered_strategies, 'strategy_id not in self._registered_strategies')
+        Precondition.not_in(strategy.id, self._positions_active, 'strategy_id', 'active_positions')
+        Precondition.not_in(strategy.id, self._positions_closed, 'strategy_id', 'closed_positions')
 
-        self._registered_strategies.append(strategy_id)
-        self._positions_active[strategy_id] = {}  # type: Dict[PositionId, Position]
-        self._positions_closed[strategy_id] = {}  # type: Dict[PositionId, Position]
-        self._log.info(f"Registered strategy with id {strategy_id}.")
+        self._registered_strategies.append(strategy.id)
+        self._positions_active[strategy.id] = {}  # type: Dict[PositionId, Position]
+        self._positions_closed[strategy.id] = {}  # type: Dict[PositionId, Position]
+        self._log.debug(f"Registered {strategy}.")
 
     cpdef void register_order(self, OrderId order_id, PositionId position_id):
         """

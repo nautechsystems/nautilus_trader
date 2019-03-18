@@ -206,7 +206,7 @@ cdef class TradeStrategy:
         Precondition.not_none(client, 'client')
 
         self._data_client = client
-        self.log.info("Registered data client.")
+        self.log.debug("Registered data client.")
 
     cpdef void register_execution_client(self, ExecutionClient client):
         """
@@ -220,7 +220,7 @@ cdef class TradeStrategy:
         self._exec_client = client
         self._portfolio = client.get_portfolio()
         self.account = client.get_account()
-        self.log.info("Registered execution client.")
+        self.log.debug("Registered execution client.")
 
     cpdef void handle_tick(self, Tick tick):
         """"

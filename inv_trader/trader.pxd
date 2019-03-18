@@ -45,4 +45,4 @@ cdef class Trader:
     cpdef void reset(self)
     cpdef void dispose(self)
 
-    cdef void _load_strategies(self)
+    cdef void _initialize_strategies(self)

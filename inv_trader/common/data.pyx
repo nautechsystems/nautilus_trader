@@ -140,7 +140,7 @@ cdef class DataClient:
         """
         strategy.register_data_client(self)
 
-        self._log.info(f"Registered strategy {strategy}.")
+        self._log.debug(f"Registered {strategy}.")
 
     cpdef void historical_bars(
             self,

@@ -133,10 +133,10 @@ cdef class ExecutionClient:
         self._orders_active[strategy.id] = {}     # type: Dict[OrderId, Order]
         self._orders_completed[strategy.id] = {}  # type: Dict[OrderId, Order]
 
-        self._portfolio.register_strategy(strategy.id)
+        self._portfolio.register_strategy(strategy)
         strategy.register_execution_client(self)
 
-        self._log.info(f"Registered {strategy} with id {strategy.id}.")
+        self._log.debug(f"Registered {strategy}.")
 
     cpdef bint order_exists(self, OrderId order_id):
         """

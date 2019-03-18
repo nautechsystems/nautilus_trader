@@ -44,7 +44,7 @@ class PortfolioTestsTests(unittest.TestCase):
         strategy = TradeStrategy()
 
         # Act
-        self.portfolio.register_strategy(strategy.id)
+        self.portfolio.register_strategy(strategy)
 
         # Assert
         self.assertTrue(strategy.id in self.portfolio.registered_strategies())
@@ -83,7 +83,7 @@ class PortfolioTestsTests(unittest.TestCase):
         order_id = OrderId('AUDUSD.FXCM-1-123456')
         position_id = PositionId('AUDUSD.FXCM-1-123456')
 
-        self.portfolio.register_strategy(strategy.id)
+        self.portfolio.register_strategy(strategy)
         self.portfolio.register_order(order_id, position_id)
         event = OrderFilled(
             AUDUSD_FXCM,
@@ -122,7 +122,7 @@ class PortfolioTestsTests(unittest.TestCase):
         order_id = OrderId('AUDUSD.FXCM-1-123456')
         position_id = PositionId('AUDUSD.FXCM-1-123456')
 
-        self.portfolio.register_strategy(strategy.id)
+        self.portfolio.register_strategy(strategy)
         self.portfolio.register_order(order_id, position_id)
 
         event = OrderFilled(
@@ -160,7 +160,7 @@ class PortfolioTestsTests(unittest.TestCase):
         order_id = OrderId('AUDUSD.FXCM-1-123456')
         position_id = PositionId('AUDUSD.FXCM-1-123456')
 
-        self.portfolio.register_strategy(strategy.id)
+        self.portfolio.register_strategy(strategy)
         self.portfolio.register_order(order_id, position_id)
 
         buy = OrderFilled(
@@ -217,8 +217,8 @@ class PortfolioTestsTests(unittest.TestCase):
         position_id1 = PositionId('AUDUSD.FXCM-1-1')
         position_id2 = PositionId('AUDUSD.FXCM-1-2')
 
-        self.portfolio.register_strategy(strategy1.id)
-        self.portfolio.register_strategy(strategy2.id)
+        self.portfolio.register_strategy(strategy1)
+        self.portfolio.register_strategy(strategy2)
         self.portfolio.register_order(order_id1, position_id1)
         self.portfolio.register_order(order_id2, position_id2)
 
@@ -288,8 +288,8 @@ class PortfolioTestsTests(unittest.TestCase):
         position_id1 = PositionId('AUDUSD.FXCM-1-1')
         position_id2 = PositionId('AUDUSD.FXCM-1-2')
 
-        self.portfolio.register_strategy(strategy1.id)
-        self.portfolio.register_strategy(strategy2.id)
+        self.portfolio.register_strategy(strategy1)
+        self.portfolio.register_strategy(strategy2)
         self.portfolio.register_order(order_id1, position_id1)
         self.portfolio.register_order(order_id2, position_id2)
         self.portfolio.register_order(order_id3, position_id1)
