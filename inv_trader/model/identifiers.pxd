@@ -52,6 +52,8 @@ cdef class IdentifierGenerator:
     cdef readonly ValidString id_tag_trader
     cdef readonly ValidString id_tag_strategy
 
+    cpdef void reset(self)
+
     cdef str _generate(self, Symbol symbol)
 
 

@@ -151,6 +151,19 @@ class OrderIdGeneratorTests(unittest.TestCase):
         self.assertEqual(OrderId('19700101-000000-001-001-GBPUSD-FXCM-1'), result2)
         self.assertEqual(OrderId('19700101-000000-001-001-AUDUSD-FXCM-2'), result3)
 
+    def test_can_reset_id_generator(self):
+        # Arrange
+        self.order_id_generator.generate(AUDUSD_FXCM)
+        self.order_id_generator.generate(AUDUSD_FXCM)
+        self.order_id_generator.generate(AUDUSD_FXCM)
+
+        # Act
+        self.order_id_generator.reset()
+        result1 = self.order_id_generator.generate(AUDUSD_FXCM)
+
+        # Assert
+        self.assertEqual(OrderId('19700101-000000-001-001-AUDUSD-FXCM-1'), result1)
+
 
 class PositionIdGeneratorTests(unittest.TestCase):
 
