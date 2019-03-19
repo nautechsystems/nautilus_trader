@@ -303,6 +303,7 @@ cdef class Portfolio:
         """
         Reset the portfolio by returning all stateful internal values to their initial values.
         """
+        self._log.info(f"Resetting...")
         self._position_book = {}                      # type: Dict[PositionId, Position]
         self._order_p_index = {}                      # type: Dict[OrderId, PositionId]
 
@@ -321,7 +322,6 @@ cdef class Portfolio:
         self.position_closed_events = []  # type: List[PositionClosed]
 
         self.analyzer = Analyzer()
-
         self._log.info("Reset.")
 
     cdef void _position_opened(self, Position position, GUID strategy_id):

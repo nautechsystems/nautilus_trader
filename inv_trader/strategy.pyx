@@ -744,6 +744,7 @@ cdef class TradeStrategy:
             self.log.warning(f"Cannot reset a running strategy...")
             return
 
+        self.log.info(f"Resetting...")
         self._ticks = {}  # type: Dict[Symbol, Tick]
         self._bars = {}   # type: Dict[BarType, Deque[Bar]]
 
@@ -751,7 +752,6 @@ cdef class TradeStrategy:
         for indicator_list in self._indicators.values():
             [indicator.reset() for indicator in indicator_list]
 
-        self.log.info(f"Resetting...")
         self.on_reset()
         self.log.info(f"Reset.")
 

@@ -257,6 +257,7 @@ cdef class BacktestEngine:
         self.log.info("Stopping...")
         self.trader.stop()
         self._backtest_footer(run_started, start, stop)
+        self.log.info("Stopped.")
 
     cpdef void change_strategies(self, list strategies: List[TradeStrategy]):
         """
@@ -286,6 +287,7 @@ cdef class BacktestEngine:
         """
         Reset the backtest engine. The data client, execution client, trader and all strategies are reset.
         """
+        self.log.info(f"Resetting...")
         self.data_client.reset()
         self.exec_client.reset()
         self.trader.reset()
