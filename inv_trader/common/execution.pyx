@@ -386,6 +386,7 @@ cdef class ExecutionClient:
         """
         Reset the execution client by returning all stateful internal values to their initial values.
         """
+        self._log.debug(f"Resetting...")
         self._order_book = {}             # type: Dict[OrderId, Order]
         self._order_strategy_index = {}   # type: Dict[OrderId, GUID]
 

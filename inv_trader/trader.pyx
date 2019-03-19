@@ -151,7 +151,6 @@ cdef class Trader:
             strategy.reset()
 
         self.portfolio.reset()
-
         self._log.info("Reset.")
 
     cpdef void dispose(self):

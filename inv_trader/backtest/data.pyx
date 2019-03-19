@@ -184,6 +184,8 @@ cdef class BacktestDataClient(DataClient):
         Reset the data client by returning all stateful internal values to their
         initial values, whilst preserving any constructed bar and tick data.
         """
+        self._log.info(f"Resetting...")
+
         self.iteration = 0
 
         for symbol, data_provider in self.data_providers.items():

@@ -44,7 +44,7 @@ if __name__ == "__main__":
     config = BacktestConfig(
         starting_capital=1000000,
         slippage_ticks=1,
-        level_console=logging.DEBUG,
+        level_console=logging.INFO,
         log_thread=False,
         log_to_file=False)
 
