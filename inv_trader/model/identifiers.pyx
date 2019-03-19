@@ -213,6 +213,12 @@ cdef class IdentifierGenerator:
         self.id_tag_trader = id_tag_trader
         self.id_tag_strategy = id_tag_strategy
 
+    cpdef void reset(self):
+        """
+        Reset the identifier generator by clearing all stateful internal values.
+        """
+        self._symbol_counts = {}  # type: Dict[Symbol, int]
+
     cdef str _generate(self, Symbol symbol):
         """
         Return a unique identifier string using the given symbol.

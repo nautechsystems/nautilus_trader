@@ -92,6 +92,40 @@ class BacktestEngineTests(unittest.TestCase):
         self.assertEqual(2881, self.engine.data_client.data_providers[USDJPY_FXCM].iterations[TestStubs.bartype_usdjpy_1min_bid()])
         self.assertEqual(1441, strategies[0].fast_ema.count)
 
+    def test_can_reset_and_rerun_ema_cross_strategy(self):
+        # Arrange
+        instrument = TestStubs.instrument_usdjpy()
+        bar_type = TestStubs.bartype_usdjpy_1min_bid()
+
+        strategies = [EMACross(label='001',
+                               id_tag_trader='001',
+                               id_tag_strategy='001',
+                               instrument=instrument,
+                               bar_type=bar_type,
+                               risk_bp=10,
+                               fast_ema=10,
+                               slow_ema=20,
+                               atr_period=20,
+                               sl_atr_multiple=2.0)]
+
+        self.engine.change_strategies(strategies)
+
+        start = datetime(2013, 1, 2, 0, 0, 0, 0, tzinfo=timezone.utc)
+        stop = datetime(2013, 1, 3, 0, 0, 0, 0, tzinfo=timezone.utc)
+
+        self.engine.run(start, stop)
+
+        # Act
+        result1 = self.engine.portfolio.analyzer.get_returns()
+
+        self.engine.reset()
+        self.engine.run(start, stop)
+
+        result2 = self.engine.portfolio.analyzer.get_returns()
+
+        # Assert
+        self.assertEqual(all(result1), all(result2))
+
     def test_can_run_multiple_strategies(self):
         # Arrange
         instrument = TestStubs.instrument_usdjpy()

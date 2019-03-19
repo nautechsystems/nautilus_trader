@@ -350,6 +350,12 @@ cdef class OrderFactory:
             id_tag_strategy=id_tag_strategy,
             clock=clock)
 
+    cpdef void reset(self):
+        """
+        Reset the order factory by clearing all stateful internal values.
+        """
+        self._id_generator.reset()
+
     cpdef Order market(
             self,
             Symbol symbol,

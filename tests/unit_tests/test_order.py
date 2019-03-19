@@ -106,6 +106,25 @@ class OrderTests(unittest.TestCase):
             UNIX_EPOCH,
             price=None)
 
+    def test_can_reset_order_factory(self):
+        # Arrange
+        self.order_factory.limit(
+            AUDUSD_FXCM,
+            OrderSide.BUY,
+            Quantity(100000),
+            Price('1.00000'))
+
+        # Act
+        self.order_factory.reset()
+
+        order2 = self.order_factory.limit(
+            AUDUSD_FXCM,
+            OrderSide.BUY,
+            Quantity(100000),
+            Price('1.00000'))
+
+        self.assertEqual(OrderId('19700101-000000-001-001-AUDUSD-FXCM-1'), order2.id)
+
     def test_limit_order_can_create_expected_decimal_price(self):
         # Arrange
         # Act

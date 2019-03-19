@@ -747,6 +747,8 @@ cdef class TradeStrategy:
         self.log.info(f"Resetting...")
         self._ticks = {}  # type: Dict[Symbol, Tick]
         self._bars = {}   # type: Dict[BarType, Deque[Bar]]
+        self.order_factory.reset()
+        self.position_id_generator.reset()
 
         # Reset all indicators
         for indicator_list in self._indicators.values():
