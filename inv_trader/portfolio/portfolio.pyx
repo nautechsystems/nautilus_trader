@@ -299,6 +299,31 @@ cdef class Portfolio:
         # Update analyzer
         self.analyzer.add_transaction(event)
 
+    cpdef void reset(self):
+        """
+        Reset the portfolio by returning all stateful internal values to their initial values.
+        """
+        self._position_book = {}                      # type: Dict[PositionId, Position]
+        self._order_p_index = {}                      # type: Dict[OrderId, PositionId]
+
+        # Reset all active positions
+        for strategy_id in self._positions_active.keys():
+            self._positions_active[strategy_id] = {}  # type: Dict[PositionId, Position]
+
+        # Reset all closed positions
+        for strategy_id in self._positions_closed.keys():
+            self._positions_closed[strategy_id] = {}  # type: Dict[PositionId, Position]
+
+        self.positions_count = 0
+        self.positions_active_count = 0
+        self.positions_closed_count = 0
+        self.position_opened_events = []  # type: List[PositionOpened]
+        self.position_closed_events = []  # type: List[PositionClosed]
+
+        self.analyzer = Analyzer()
+
+        self._log.info("Reset.")
+
     cdef void _position_opened(self, Position position, GUID strategy_id):
         cdef PositionOpened event = PositionOpened(
             position,

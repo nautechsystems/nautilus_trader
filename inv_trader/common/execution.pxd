@@ -66,3 +66,5 @@ cdef class ExecutionClient:
     cdef void _submit_atomic_order(self, SubmitAtomicOrder command)
     cdef void _modify_order(self, ModifyOrder command)
     cdef void _cancel_order(self, CancelOrder command)
+    cdef void _reset(self)
+

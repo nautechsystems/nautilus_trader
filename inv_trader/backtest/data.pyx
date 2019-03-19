@@ -179,6 +179,19 @@ cdef class BacktestDataClient(DataClient):
 
         self.iteration += 1
 
+    cpdef void reset(self):
+        """
+        Reset the data client by returning all stateful internal values to their
+        initial values, whilst preserving any constructed bar and tick data.
+        """
+        self.iteration = 0
+
+        for symbol, data_provider in self.data_providers.items():
+            data_provider.reset()
+            self._log.debug(f"Reset data provider for {symbol}.")
+
+        self._log.info("Reset.")
+
     cpdef void connect(self):
         """
         Connect to the data service.
@@ -478,3 +491,13 @@ cdef class DataProvider:
                 self.iterations[bar_type] += 1
 
         return bars_list
+
+    cpdef void reset(self):
+        """
+        Reset the data provider by returning all stateful internal values to their
+        initial values, whilst preserving any constructed bar and tick data.
+        """
+        for bar_type in self.iterations.keys():
+            self.iterations[bar_type] = 0
+
+        self.tick_index = 0

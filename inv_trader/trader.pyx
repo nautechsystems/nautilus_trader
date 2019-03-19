@@ -149,6 +149,9 @@ cdef class Trader:
         self._log.info("Resetting...")
         for strategy in self.strategies:
             strategy.reset()
+
+        self.portfolio.reset()
+
         self._log.info("Reset.")
 
     cpdef void dispose(self):

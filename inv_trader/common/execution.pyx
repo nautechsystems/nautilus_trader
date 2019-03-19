@@ -381,3 +381,18 @@ cdef class ExecutionClient:
         """
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
+
+    cdef void _reset(self):
+        """
+        Reset the execution client by returning all stateful internal values to their initial values.
+        """
+        self._order_book = {}             # type: Dict[OrderId, Order]
+        self._order_strategy_index = {}   # type: Dict[OrderId, GUID]
+
+        # Reset all active orders
+        for strategy_id in self._orders_active.keys():
+            self._orders_active[strategy_id] = {}  # type: Dict[OrderId, Order]
+
+        # Reset all completed orders
+        for strategy_id in self._orders_completed.keys():
+            self._orders_completed[strategy_id] = {}  # type: Dict[OrderId, Order]
