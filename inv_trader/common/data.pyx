@@ -311,4 +311,4 @@ cdef class DataClient:
         self._bar_handlers = {}      # type: Dict[BarType, List[Callable]]
         self._tick_handlers = {}     # type: Dict[Symbol, List[Callable]]
 
-        self._log.info("Initialized.")
+        self._log.debug("Reset.")

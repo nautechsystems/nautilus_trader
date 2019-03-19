@@ -43,5 +43,6 @@ cdef class Account:
     cdef readonly AccountEvent last_event
 
     cpdef list get_events(self)
+    cpdef void initialize(self, AccountEvent event)
     cpdef void apply(self, AccountEvent event)
-    cdef void initialize(self, AccountEvent event)
+    cpdef void reset(self)
