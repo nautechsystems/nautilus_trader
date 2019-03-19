@@ -44,7 +44,7 @@ if __name__ == "__main__":
     config = BacktestConfig(
         starting_capital=1000000,
         slippage_ticks=1,
-        level_console=logging.INFO,
+        level_console=logging.DEBUG,
         log_thread=False,
         log_to_file=False)
 
@@ -63,3 +63,8 @@ if __name__ == "__main__":
     #engine.create_full_tear_sheet()
 
     input("Press Enter to continue...")
+
+    engine.reset()
+
+    input("Press Enter to continue...")
+    engine.run(start, stop)

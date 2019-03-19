@@ -30,6 +30,7 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef readonly list data_minute_index
     cdef readonly int iteration
     cdef readonly int day_number
+    cdef readonly Money starting_capital
     cdef readonly Money account_capital
     cdef readonly Money account_cash_start_day
     cdef readonly Money account_cash_activity_day
@@ -41,6 +42,7 @@ cdef class BacktestExecClient(ExecutionClient):
     cpdef void set_initial_iteration(self, datetime to_time, timedelta time_step)
     cpdef void iterate(self)
     cpdef void process(self)
+    cpdef void reset(self)
 
     cdef dict _prepare_minute_data(self, dict bar_data, str quote_type)
     cpdef list _convert_to_prices(self, double[:] values, int precision)

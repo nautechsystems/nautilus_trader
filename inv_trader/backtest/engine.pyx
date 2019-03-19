@@ -284,9 +284,12 @@ cdef class BacktestEngine:
 
     cpdef void reset(self):
         """
-        Reset the backtest engine. The internal trader and all strategies are reset.
+        Reset the backtest engine. The data client, execution client, trader and all strategies are reset.
         """
+        self.data_client.reset()
+        self.exec_client.reset()
         self.trader.reset()
+        self.log.info("Reset.")
 
     cpdef void dispose(self):
         """
