@@ -228,8 +228,6 @@ cdef class BacktestEngine:
         cdef datetime run_started = self.clock.time_now()
         cdef datetime time = start
 
-        self.exec_client.reset_account()
-
         self._backtest_header(run_started, start, stop, time_step_mins)
         self.test_clock.set_time(time)
 
