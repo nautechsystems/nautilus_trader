@@ -42,6 +42,7 @@ cdef class BacktestExecClient(ExecutionClient):
     cpdef void set_initial_iteration(self, datetime to_time, timedelta time_step)
     cpdef void iterate(self)
     cpdef void process(self)
+    cpdef void reset_account(self)
     cpdef void reset(self)
 
     cdef dict _prepare_minute_data(self, dict bar_data, str quote_type)

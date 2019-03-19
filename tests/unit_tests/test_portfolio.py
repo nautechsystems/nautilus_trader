@@ -77,6 +77,35 @@ class PortfolioTestsTests(unittest.TestCase):
         # Assert
         self.assertFalse(self.portfolio.order_has_position(OrderId('unknown')))
 
+    def test_can_reset_portfolio(self):
+        strategy = TradeStrategy()
+        order_id = OrderId('AUDUSD.FXCM-1-123456')
+        position_id = PositionId('AUDUSD.FXCM-1-123456')
+
+        self.portfolio.register_strategy(strategy)
+        self.portfolio.register_order(order_id, position_id)
+        event = OrderFilled(
+            AUDUSD_FXCM,
+            order_id,
+            ExecutionId('E123456'),
+            ExecutionTicket('T123456'),
+            OrderSide.SELL,
+            Quantity(100000),
+            Price('1.00000'),
+            UNIX_EPOCH,
+            GUID(uuid.uuid4()),
+            UNIX_EPOCH)
+
+        self.portfolio.handle_event(event, strategy.id)
+
+        # Act
+        self.portfolio.reset()
+
+        # Assert
+        self.assertTrue(strategy.id in self.portfolio.registered_strategies())
+        self.assertFalse(self.portfolio.order_has_position(order_id))
+        self.assertEqual({}, self.portfolio.get_positions_all())
+
     def test_opens_new_position_on_order_fill(self):
         # Arrange
         strategy = TradeStrategy()

@@ -62,6 +62,33 @@ class AccountTests(unittest.TestCase):
         self.assertEqual('NONE', account.margin_call_status.value)
         self.assertEqual(UNIX_EPOCH, account.last_updated)
 
+    def test_can_reset_account(self):
+        # Arrange
+        account = Account()
+
+        event = AccountEvent(
+            AccountId('FXCM-D102412895'),
+            Broker.FXCM,
+            AccountNumber('D102412895'),
+            CurrencyCode.AUD,
+            Money(1000000),
+            Money(1000000),
+            Money.zero(),
+            Money.zero(),
+            Money.zero(),
+            Decimal('0'),
+            ValidString('NONE'),
+            GUID(uuid.uuid4()),
+            UNIX_EPOCH)
+
+        account.apply(event)
+
+        # Act
+        account.reset()
+
+        # Assert
+        self.assertFalse(account.initialized)
+
     def test_can_calculate_free_equity_when_greater_than_zero(self):
         # Arrange
         account = Account()

@@ -122,23 +122,7 @@ cdef class BacktestExecClient(ExecutionClient):
         self.atomic_orders = {}   # type: Dict[OrderId, List[Order]]
 
         self._set_slippage_index(slippage_ticks)
-
-        cdef AccountEvent initial_starting = AccountEvent(
-            self._account.id,
-            Broker.SIMULATED,
-            AccountNumber('9999'),
-            CurrencyCode.USD,
-            self.starting_capital,
-            self.starting_capital,
-            Money(0),
-            Money(0),
-            Money(0),
-            Decimal(0),
-            ValidString(),
-            self._guid_factory.generate(),
-            self._clock.time_now())
-
-        self._account.apply(initial_starting)
+        self.reset_account()
 
     cpdef void connect(self):
         """
@@ -257,22 +241,10 @@ cdef class BacktestExecClient(ExecutionClient):
             elif isinstance(item, Command):
                 self._execute_command(item)
 
-    cpdef void reset(self):
+    cpdef void reset_account(self):
         """
-        Reset the execution client by returning all stateful internal values to their
-        initial values, whilst preserving any constructed tick data.
+        Resets the account.
         """
-        self._log.info(f"Resetting...")
-        self._reset()
-        self.iteration = 0
-        self.day_number = 0
-        self.account_capital = self.starting_capital
-        self.account_cash_start_day = self.account_capital
-        self.account_cash_activity_day = Money(0)
-        self.total_commissions = Money(0)
-        self.working_orders = {}  # type: Dict[OrderId, Order]
-        self.atomic_orders = {}   # type: Dict[OrderId, List[Order]]
-
         cdef AccountEvent initial_starting = AccountEvent(
             self._account.id,
             Broker.SIMULATED,
@@ -290,6 +262,24 @@ cdef class BacktestExecClient(ExecutionClient):
 
         self._account.apply(initial_starting)
 
+    cpdef void reset(self):
+        """
+        Reset the execution client by returning all stateful internal values to their
+        initial values, whilst preserving any constructed tick data.
+        """
+        self._log.info(f"Resetting...")
+        self._reset()
+        self._message_bus = deque()
+        self.iteration = 0
+        self.day_number = 0
+        self.account_capital = self.starting_capital
+        self.account_cash_start_day = self.account_capital
+        self.account_cash_activity_day = Money(0)
+        self.total_commissions = Money(0)
+        self.working_orders = {}  # type: Dict[OrderId, Order]
+        self.atomic_orders = {}   # type: Dict[OrderId, List[Order]]
+
+        self.reset_account()
         self._log.info("Reset.")
 
     cdef void _collateral_inquiry(self, CollateralInquiry command):

@@ -79,6 +79,18 @@ cdef class Account:
         """
         return self._events.copy()
 
+    cpdef void initialize(self, AccountEvent event):
+        """
+        Initialize the account with the given event.
+        
+        :param event: The event to initialize with.
+        """
+        self.broker = event.broker
+        self.account_number = event.account_number
+        self.id = event.account_id
+        self.currency = event.currency
+        self.initialized = True
+
     cpdef void apply(self, AccountEvent event):
         """
         Applies the given account event to the account.
@@ -103,14 +115,25 @@ cdef class Account:
 
         self.last_updated = event.timestamp
 
-    cdef void initialize(self, AccountEvent event):
+    cpdef void reset(self):
         """
-        Initialize the account with the given event.
-        
-        :param event: The event to initialize with.
+        Reset the account by returning all stateful internal values to their initial values.
         """
-        self.broker = event.broker
-        self.account_number = event.account_number
-        self.id = event.account_id
-        self.currency = event.currency
-        self.initialized = True
+        self._events = []
+
+        self.initialized = False
+        self.id = None
+        self.broker = Broker.UNKNOWN
+        self.account_number = None
+        self.currency = CurrencyCode.UNKNOWN
+        self.cash_balance = Money.zero()
+        self.cash_start_day = Money.zero()
+        self.cash_activity_day = Money.zero()
+        self.margin_used_liquidation = Money.zero()
+        self.margin_used_maintenance = Money.zero()
+        self.margin_ratio = Money.zero()
+        self.margin_call_status = ValidString('NONE')
+        self.free_equity = Money.zero()
+        self.last_updated = None
+        self.event_count = 0
+        self.last_event = None
