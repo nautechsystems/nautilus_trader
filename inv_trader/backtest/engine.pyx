@@ -14,8 +14,8 @@ import logging
 import psutil
 import platform
 
-from inv_trader.version import __version__
 from cpython.datetime cimport datetime, timedelta
+from decimal import Decimal
 from scipy.stats import kurtosis, skew
 from empyrical.stats import (
     annual_return,
@@ -34,6 +34,7 @@ from pandas import DataFrame
 from typing import List, Dict
 from logging import INFO, DEBUG
 
+from inv_trader.version import __version__
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.core.functions cimport format_zulu_datetime
 from inv_trader.backtest.data cimport BacktestDataClient
@@ -55,6 +56,7 @@ cdef class BacktestConfig:
     def __init__(self,
                  int starting_capital=1000000,
                  int slippage_ticks=0,
+                 commission_rate=Decimal(15),
                  bint bypass_logging=False,
                  level_console: logging=INFO,
                  level_file: logging=DEBUG,
@@ -67,6 +69,7 @@ cdef class BacktestConfig:
 
         :param starting_capital: The starting capital for the engine (> 0).
         :param slippage_ticks: The slippage ticks for the engine (>= 0).
+        :param commission_rate: The commission rate per transaction per million notional value (>= 0).
         :param bypass_logging: The flag indicating whether logging should be bypassed.
         :param level_console: The minimum log level for logging messages to the console.
         :param level_file: The minimum log level for logging messages to the log file.
@@ -77,12 +80,17 @@ cdef class BacktestConfig:
         :raises ValueError: If the starting capital is not positive (> 0).
         :raises ValueError: If the leverage is not positive (> 0).
         :raises ValueError: If the slippage_ticks is negative (< 0).
+        :raises ValueError: If the commission_rate is not of type Decimal.
+        :raises ValueError: If the commission_rate is negative (< 0).
         """
         Precondition.positive(starting_capital, 'starting_capital')
         Precondition.not_negative(slippage_ticks, 'slippage_ticks')
+        Precondition.type(commission_rate, Decimal, 'commission_rate')
+        Precondition.not_negative(commission_rate, 'commission_rate')
 
         self.starting_capital = Money(starting_capital)
         self.slippage_ticks = slippage_ticks
+        self.commission_rate = commission_rate
         self.bypass_logging = bypass_logging
         self.level_console = level_console
         self.level_file = level_file
@@ -169,6 +177,7 @@ cdef class BacktestEngine:
             data_bars_ask=minute_bars_ask,
             starting_capital=config.starting_capital,
             slippage_ticks=config.slippage_ticks,
+            commission_rate=config.commission_rate,
             account=self.account,
             portfolio=self.portfolio,
             clock=self.test_clock,

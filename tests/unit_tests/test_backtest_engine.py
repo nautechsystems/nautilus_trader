@@ -34,8 +34,7 @@ class BacktestEngineTests(unittest.TestCase):
         ask_data = {USDJPY_FXCM: {Resolution.MINUTE: ask_data_1min}}
 
         strategies = [EmptyStrategy()]
-        config = BacktestConfig(
-            slippage_ticks=1)
+        config = BacktestConfig(slippage_ticks=1)
 
         self.engine = BacktestEngine(
             instruments=instruments,

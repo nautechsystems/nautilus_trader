@@ -31,7 +31,7 @@ cdef class PositionSizer:
             int units=*,
             int unit_batch_size=*)
 
-    cdef Money _calculate_risk_money(self,
+    cdef Money _calculate_riskable_money(self,
             Money equity,
             int risk_bp,
             commission_rate,)

@@ -27,6 +27,7 @@ cdef class BacktestConfig:
     """
     cdef readonly Money starting_capital
     cdef readonly int slippage_ticks
+    cdef readonly object commission_rate
     cdef readonly bint bypass_logging
     cdef readonly object level_console
     cdef readonly object level_file
