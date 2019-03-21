@@ -54,6 +54,7 @@ cdef class BacktestExecClient(ExecutionClient):
                  dict data_bars_ask: Dict[Symbol, DataFrame],
                  Money starting_capital,
                  int slippage_ticks,
+                 commission_rate,
                  Account account,
                  Portfolio portfolio,
                  TestClock clock,
@@ -68,6 +69,7 @@ cdef class BacktestExecClient(ExecutionClient):
         :param data_bars_ask: The historical minute ask bars data needed for the backtest.
         :param starting_capital: The starting capital for the backtest account (> 0).
         :param slippage_ticks: The slippage for each order fill in ticks (>= 0).
+        :param commission_rate: The commission rate per transaction per million notional value (>= 0).
         :param clock: The clock for the component.
         :param clock: The GUID factory for the component.
         :param logger: The logger for the component.
@@ -76,14 +78,17 @@ cdef class BacktestExecClient(ExecutionClient):
         :raises ValueError: If the data_bars_bid contains a key other than Symbol or value other than DataFrame.
         :raises ValueError: If the data_bars_ask contains a key other than Symbol or value other than DataFrame.
         :raises ValueError: If the starting capital is not positive (> 0).
-        :raises ValueError: If the leverage is not positive (> 0).
         :raises ValueError: If the slippage_ticks is negative (< 0).
+        :raises ValueError: If the commission_rate is not of type Decimal.
+        :raises ValueError: If the commission_rate is negative (< 0).
         """
         Precondition.list_type(instruments, Instrument, 'instruments')
         Precondition.dict_types(data_ticks, Symbol, DataFrame, 'data_ticks')
         Precondition.dict_types(data_bars_bid, Symbol, DataFrame, 'data_bars_bid')
         Precondition.dict_types(data_bars_ask, Symbol, DataFrame, 'data_bars_ask')
         Precondition.not_negative(slippage_ticks, 'slippage_ticks')
+        Precondition.type(commission_rate, Decimal, 'commission_rate')
+        Precondition.not_negative(commission_rate, 'commission_rate')
 
         super().__init__(account,
                          portfolio,
@@ -116,6 +121,7 @@ cdef class BacktestExecClient(ExecutionClient):
         self.account_capital = starting_capital
         self.account_cash_start_day = self.account_capital
         self.account_cash_activity_day = Money(0)
+        self.commission_rate = commission_rate
         self.total_commissions = Money(0)
         self.slippage_index = {}  # type: Dict[Symbol, Decimal]
         self.working_orders = {}  # type: Dict[OrderId, Order]
@@ -681,7 +687,7 @@ cdef class BacktestExecClient(ExecutionClient):
                 event.average_price,
                 event.filled_quantity)
 
-        cdef Money commission = Money(Decimal(round(float(event.filled_quantity.value) / 1000000 * 15, 2)))
+        cdef Money commission = Money(Decimal(round(float(event.filled_quantity.value) / 1000000 * float(self.commission_rate), 2)))
         self.total_commissions += commission
         pnl -= commission
 

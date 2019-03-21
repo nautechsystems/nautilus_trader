@@ -58,14 +58,13 @@ cdef class PositionSizer:
         :param entry_price: The entry price.
         :param stop_loss_price: The stop loss price.
         :param exchange_rate: The exchange rate for the instrument quote currency vs account currency.
-        :param commission_rate: The commission rate per million notional (>= 0).
+        :param commission_rate: The commission rate per transaction per million notional value (>= 0).
         :param hard_limit: The hard limit for the total quantity (>= 0) (0 = no hard limit).
         :param units: The number of units to batch the position into (> 0).
         :param unit_batch_size: The unit batch size (> 0).
         :raises ValueError: If the risk_bp is not positive (> 0).
         :raises ValueError: If the exchange_rate is not positive (> 0).
         :raises ValueError: If the commission_rate is negative (< 0).
-        :raises ValueError: If the leverage is not positive (> 0).
         :raises ValueError: If the units is not positive (> 0).
         :raises ValueError: If the unit_batch_size is not positive (> 0).
         :return: Quantity.
@@ -73,7 +72,7 @@ cdef class PositionSizer:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cdef Money _calculate_risk_money(
+    cdef Money _calculate_riskable_money(
             self,
             Money equity,
             int risk_bp,
@@ -131,14 +130,13 @@ cdef class FixedRiskSizer(PositionSizer):
         :param entry_price: The entry price.
         :param stop_loss_price: The stop loss price.
         :param exchange_rate: The exchange rate for the instrument quote currency vs account currency.
-        :param commission_rate: The commission rate per million notional (>= 0).
+        :param commission_rate: The commission rate per transaction per million notional value (>= 0).
         :param hard_limit: The hard limit for the total quantity (>= 0) (0 = no hard limit).
         :param units: The number of units to batch the position into (> 0).
         :param unit_batch_size: The unit batch size (> 0).
         :raises ValueError: If the risk_bp is not positive (> 0).
         :raises ValueError: If the exchange_rate is not positive (> 0).
         :raises ValueError: If the commission_rate is negative (< 0).
-        :raises ValueError: If the leverage is not positive (> 0).
         :raises ValueError: If the units is not positive (> 0).
         :raises ValueError: If the unit_batch_size is not positive (> 0).
         :return: Quantity.
@@ -149,7 +147,7 @@ cdef class FixedRiskSizer(PositionSizer):
         Precondition.positive(units, 'units')
         Precondition.positive(unit_batch_size, 'unit_batch_size')
 
-        cdef Money risk_money = self._calculate_risk_money(equity, risk_bp, commission_rate)
+        cdef Money risk_money = self._calculate_riskable_money(equity, risk_bp, commission_rate)
         cdef int risk_points = self._calculate_risk_points(entry_price, stop_loss_price)
         cdef long position_size = long(round(((risk_money.value / risk_points) / (self.instrument.tick_size * exchange_rate)) / self.instrument.contract_size.value))
 

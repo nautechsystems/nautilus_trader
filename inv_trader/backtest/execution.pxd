@@ -34,6 +34,7 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef readonly Money account_capital
     cdef readonly Money account_cash_start_day
     cdef readonly Money account_cash_activity_day
+    cdef readonly object commission_rate
     cdef readonly Money total_commissions
     cdef readonly dict slippage_index
     cdef readonly dict working_orders

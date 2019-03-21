@@ -57,6 +57,7 @@ class BacktestExecClientTests(unittest.TestCase):
                                          data_bars_ask=self.data_bars_ask,
                                          starting_capital=Money(1000000),
                                          slippage_ticks=1,
+                                         commission_rate=Decimal(15),
                                          account=self.account,
                                          portfolio=self.portfolio,
                                          clock=TestClock(),
