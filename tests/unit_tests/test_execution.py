@@ -58,19 +58,17 @@ class ExecutionClientTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000))
 
-        order_id = order.id
-
         # Act
-        self.strategy.submit_order(order, PositionId(order_id.value))
+        self.strategy.submit_order(order, PositionId(order.id.value))
         self.exec_client.process()
 
         # Assert
-        self.assertEqual(order, self.exec_client.get_order(order_id))
-        self.assertEqual(order, self.strategy.order(order_id))
-        self.assertEqual(OrderStatus.WORKING, self.strategy.order(order_id).status)
-        self.assertTrue(self.exec_client.order_exists(order_id))
-        self.assertTrue(self.exec_client.order_active(order_id))
-        self.assertFalse(self.exec_client.order_complete(order_id))
+        self.assertEqual(order, self.exec_client.get_order(order.id))
+        self.assertEqual(order, self.strategy.order(order.id))
+        self.assertEqual(OrderStatus.WORKING, self.strategy.order(order.id).status)
+        self.assertTrue(self.exec_client.order_exists(order.id))
+        self.assertTrue(self.exec_client.order_active(order.id))
+        self.assertFalse(self.exec_client.order_complete(order.id))
 
     def test_can_send_cancel_order_command_to_mock_exec_clint(self):
         # Arrange
@@ -81,15 +79,13 @@ class ExecutionClientTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000))
 
-        order_id = order.id
-
         # Act
-        self.strategy.submit_order(order, PositionId(order_id.value))
+        self.strategy.submit_order(order, PositionId(order.id.value))
         self.strategy.cancel_order(order, 'ORDER_EXPIRED')
         self.exec_client.process()
 
         # Assert
-        self.assertEqual(order, self.strategy.order(order_id))
+        self.assertEqual(order, self.strategy.order(order.id))
         self.assertEqual(OrderStatus.CANCELLED, order.status)
 
     def test_can_send_modify_order_command_to_mock_exec_client(self):
@@ -132,15 +128,8 @@ class LiveExecClientTests(unittest.TestCase):
         self.response_list = []
         self.response_handler = self.response_list.append
 
-        self.server1 = MockServer(
-            context,
-            5555,
-            self.response_handler)
-
-        self.server2 = MockServer(
-            context,
-            5556,
-            self.response_handler)
+        self.server1 = MockServer(context, 5555, self.response_handler)
+        self.server2 = MockServer(context, 5556, self.response_handler)
 
         self.server1.start()
         self.server2.start()
@@ -159,14 +148,12 @@ class LiveExecClientTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000))
 
-        order_id = order.id
-
         # Act
         self.strategy.submit_order(order, self.strategy.generate_position_id(AUDUSD_FXCM))
 
         time.sleep(0.1)
         # Assert
-        self.assertEqual(order, self.strategy.order(order_id))
+        self.assertEqual(order, self.strategy.order(order.id))
         self.assertEqual(1, len(self.response_list))
 
     def test_can_send_submit_atomic_order_no_profit_target_command(self):
@@ -213,8 +200,6 @@ class LiveExecClientTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000))
 
-        order_id = order.id
-
         # Act
         self.strategy.submit_order(order, self.strategy.generate_position_id(AUDUSD_FXCM))
         time.sleep(1)
@@ -222,7 +207,7 @@ class LiveExecClientTests(unittest.TestCase):
 
         # Assert
         time.sleep(1)
-        self.assertEqual(order, self.strategy.order(order_id))
+        self.assertEqual(order, self.strategy.order(order.id))
         self.assertEqual(2, len(self.response_list))
 
     def test_can_send_modify_order_command(self):
@@ -233,8 +218,6 @@ class LiveExecClientTests(unittest.TestCase):
             Quantity(100000),
             Price('1.00000'))
 
-        order_id = order.id
-
         # Act
         self.strategy.submit_order(order, self.strategy.generate_position_id(AUDUSD_FXCM))
         time.sleep(1)
@@ -242,7 +225,7 @@ class LiveExecClientTests(unittest.TestCase):
 
         # Assert
         time.sleep(1)
-        self.assertEqual(order, self.strategy.order(order_id))
+        self.assertEqual(order, self.strategy.order(order.id))
         self.assertEqual(2, len(self.response_list))
 
     def test_can_send_collateral_inquiry(self):
