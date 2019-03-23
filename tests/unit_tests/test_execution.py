@@ -116,8 +116,6 @@ class LiveExecClientTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
-        print("\n")
-
         self.bar_type = TestStubs.bartype_audusd_1min_bid()
         self.strategy = TestStrategy1(bar_type=self.bar_type)
         self.exec_client = LiveExecClient()
