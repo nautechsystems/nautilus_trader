@@ -136,4 +136,5 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 15/03/19  9352490 function calls  (9312786 primitive calls) in 16.069 seconds (add position calculations)
         # 19/03/19  9352531 function calls  (9312827 primitive calls) in 16.249 seconds (perf check)
         # 20/03/19  9352531 function calls  (9312827 primitive calls) in 15.544 seconds (perf check)
-        # 25/03/19  9352619 function calls  (9312915 primitive calls) in 16.268 seconds (more detailed transaction and commission calcs)
+        # 25/03/19  9352619 function calls  (9312915 primitive calls) in 16.268 seconds (more detailed transaction and commission calculations)
+        # 26/03/19  8975755 function calls  (8941827 primitive calls) in 16.211 seconds (improve backtest execution)
