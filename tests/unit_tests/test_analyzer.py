@@ -11,10 +11,6 @@ import unittest
 import uuid
 
 from datetime import datetime
-from pyfolio.tears import (
-    create_returns_tear_sheet,
-    create_full_tear_sheet,
-    create_bayesian_tear_sheet)
 
 
 from inv_trader.common.clock import TestClock
@@ -26,7 +22,6 @@ from inv_trader.model.identifiers import GUID, OrderId, PositionId, ExecutionId,
 from inv_trader.model.position import Position
 from inv_trader.portfolio.analyzer import Analyzer
 from test_kit.stubs import TestStubs
-from test_kit.data import TestDataProvider
 
 UNIX_EPOCH = TestStubs.unix_epoch()
 AUDUSD_FXCM = Symbol('AUDUSD', Venue.FXCM)
@@ -38,30 +33,6 @@ class PortfolioTestsTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
         self.analyzer = Analyzer()
-
-    def test_pyfolio_can_create_full_tear_sheet(self):
-        returns = TestDataProvider.test_returns()
-        positions = TestDataProvider.test_positions()
-        #transactions = TestDataProvider.test_transactions()
-
-        # create_full_tear_sheet(returns,
-        #                        positions=positions,
-        #                        transactions=None,
-        #                        benchmark_rets=returns,
-        #                        slippage=1,
-        #                        live_start_date=returns.index[-20],
-        #                        round_trips=True,
-        #                        hide_positions=True,
-        #                        cone_std=1,
-        #                        bootstrap=True)
-
-    def test_pyfolio_can_create_bayesian_tear_sheet(self):
-        returns = TestDataProvider.test_returns()
-
-        # create_bayesian_tear_sheet(returns=returns,
-        #                            benchmark_rets=None,
-        #                            live_start_date=returns.index[-20],
-        #                            progressbar=True)
 
     def test_can_add_return(self):
         # Arrange
@@ -90,7 +61,7 @@ class PortfolioTestsTests(unittest.TestCase):
         result = self.analyzer.get_returns()
 
         # Assert
-        create_returns_tear_sheet(returns=result)
+        self.assertEqual(10, len(result))
 
     def test_can_add_buy_transaction(self):
         # Arrange
