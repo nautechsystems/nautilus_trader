@@ -27,13 +27,14 @@ class FixedRiskSizerTests(unittest.TestCase):
         # Act
         result = self.sizer.calculate(
             equity,
-            1,
+            10,
             Price('1.00100'),
             Price('1.00000'),
+            exchange_rate=1.0,
             unit_batch_size=1000)
 
         # Assert
-        self.assertEqual(Quantity(9999000), result)
+        self.assertEqual(Quantity(99000), result)
 
     def test_can_calculate_single_unit_size_when_risk_too_high(self):
         # Arrange
@@ -57,8 +58,8 @@ class FixedRiskSizerTests(unittest.TestCase):
         # Act
         result = self.sizer.calculate(
             equity,
-            1,
-            Price('1.00100'),
+            10,
+            Price('1.00010'),
             Price('1.00000'),
             hard_limit=500000,
             units=1,
@@ -74,14 +75,14 @@ class FixedRiskSizerTests(unittest.TestCase):
         # Act
         result = self.sizer.calculate(
             equity,
-            1,
-            Price('1.00100'),
+            10,
+            Price('1.00010'),
             Price('1.00000'),
             units=3,
             unit_batch_size=1000)
 
         # Assert
-        self.assertEqual(Quantity(3333000), result)
+        self.assertEqual(Quantity(333000), result)
 
     def test_can_calculate_multiple_unit_size_larger_batches(self):
         # Arrange
@@ -90,11 +91,11 @@ class FixedRiskSizerTests(unittest.TestCase):
         # Act
         result = self.sizer.calculate(
             equity,
-            1,
+            10,
             Price('1.00087'),
             Price('1.00000'),
             units=4,
             unit_batch_size=25000)
 
         # Assert
-        self.assertEqual(Quantity(2850000), result)
+        self.assertEqual(Quantity(25000), result)

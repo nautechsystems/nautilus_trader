@@ -34,7 +34,7 @@ cdef class CommissionCalculator:
         self.rates = rates
         self.default = default
 
-    cdef Money calculate(
+    cpdef Money calculate(
             self,
             Symbol symbol,
             Quantity filled_quantity,
@@ -54,4 +54,4 @@ cdef class CommissionCalculator:
         else:
             commission_rate = float(self.default)
 
-        return Money(Decimal(round((float(filled_quantity.value) / 1000000) * commission_rate * exchange_rate, 2)))
+        return Money(Decimal((float(filled_quantity.value) / 1000000) * commission_rate))
