@@ -11,8 +11,10 @@
 
 from cpython.datetime cimport datetime, timedelta
 
+from inv_trader.common.brokerage cimport CommissionCalculator
 from inv_trader.common.execution cimport ExecutionClient
 from inv_trader.enums.market_position cimport MarketPosition
+from inv_trader.model.currency cimport CurrencyCalculator
 from inv_trader.model.objects cimport Symbol, Price, Money, Quantity
 from inv_trader.model.order cimport Order, OrderEvent
 
@@ -34,7 +36,8 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef readonly Money account_capital
     cdef readonly Money account_cash_start_day
     cdef readonly Money account_cash_activity_day
-    cdef readonly object commission_rate
+    cdef readonly CurrencyCalculator currency_calculator
+    cdef readonly CommissionCalculator commission_calculator
     cdef readonly Money total_commissions
     cdef readonly dict slippage_index
     cdef readonly dict working_orders
@@ -62,9 +65,6 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef void _work_order(self, Order order)
     cdef void _fill_order(self, Order order, Price fill_price)
     cdef void _adjust_account(self, OrderEvent event)
-    cdef Money _calculate_pnl(
-            self,
-            MarketPosition direction,
-            Price entry_price,
-            Price exit_price,
-            Quantity quantity)
+    cdef dict _build_current_bid_rates(self, datetime current_time)
+    cdef dict _build_current_ask_rates(self, datetime current_time)
+    cdef Money _calculate_pnl(self, MarketPosition direction, Price entry_price, Price exit_price, Quantity quantity, tick_size, tick_value, float exchange_rate)

@@ -14,6 +14,7 @@ from decimal import Decimal
 from datetime import datetime, timezone, timedelta
 
 from inv_trader.common.account import Account
+from inv_trader.common.brokerage import CommissionCalculator
 from inv_trader.common.clock import TestClock
 from inv_trader.common.guid import TestGuidFactory
 from inv_trader.common.logger import TestLogger
@@ -57,7 +58,7 @@ class BacktestExecClientTests(unittest.TestCase):
                                          data_bars_ask=self.data_bars_ask,
                                          starting_capital=Money(1000000),
                                          slippage_ticks=1,
-                                         commission_rate=Decimal(15),
+                                         commission_calculator=CommissionCalculator(),
                                          account=self.account,
                                          portfolio=self.portfolio,
                                          clock=TestClock(),

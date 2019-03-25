@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-# <copyright file="currency.pxd" company="Invariance Pte">
+# <copyright file="brokerage.pxd" company="Invariance Pte">
 #  Copyright (C) 2018-2019 Invariance Pte. All rights reserved.
 #  The use of this source code is governed by the license as found in the LICENSE.md file.
 #  http://www.invariance.com
@@ -9,20 +9,14 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
-
-from inv_trader.enums.currency_code cimport CurrencyCode
-from inv_trader.enums.quote_type cimport QuoteType
+from inv_trader.model.objects cimport Symbol, Money, Quantity
 
 
-cdef class CurrencyCalculator:
+cdef class CommissionCalculator:
     """
-    Provides useful calculations between currencies.
+    Provides a means of calculating commissions.
     """
+    cdef dict rates
+    cdef object default
 
-    cpdef float exchange_rate(
-            self,
-            CurrencyCode from_currency,
-            CurrencyCode to_currency,
-            QuoteType quote_type,
-            dict bid_rates,
-            dict ask_rates)
+    cdef Money calculate(self, Symbol symbol, Quantity filled_quantity, float exchange_rate)

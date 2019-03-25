@@ -9,14 +9,13 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
-
 from inv_trader.enums.currency_code cimport CurrencyCode, currency_code_string
 from inv_trader.enums.quote_type cimport QuoteType
 
 
-cdef class CurrencyConverter:
+cdef class CurrencyCalculator:
     """
-    Provides exchange rate calculations between currencies.
+    Provides useful calculations between currencies.
     """
 
     cpdef float exchange_rate(
@@ -34,10 +33,11 @@ cdef class CurrencyConverter:
         :param from_currency: The currency to convert from.
         :param to_currency: The currency to convert to.
         :param quote_type: The quote type for conversion.
-        :param bid_rates: The dictionary of currency pair bid rates.
-        :param ask_rates: The dictionary of currency pair ask rates.
+        :param bid_rates: The dictionary of currency pair bid rates (Dict[str, float]).
+        :param ask_rates: The dictionary of currency pair ask rates (Dict[str, float]).
         :return: float.
         """
+
         cdef str ccy_pair = currency_code_string(from_currency) + currency_code_string(to_currency)
         cdef str swapped_ccy_pair = currency_code_string(to_currency) + currency_code_string(from_currency)
         cdef dict calculation_rates

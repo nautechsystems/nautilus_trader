@@ -21,9 +21,11 @@ from typing import List, Dict
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.enums.brokerage cimport Broker
 from inv_trader.enums.currency_code cimport CurrencyCode
+from inv_trader.enums.quote_type cimport QuoteType
 from inv_trader.enums.order_type cimport OrderType
 from inv_trader.enums.order_side cimport OrderSide
 from inv_trader.enums.market_position cimport MarketPosition
+from inv_trader.model.currency cimport CurrencyCalculator
 from inv_trader.model.objects cimport ValidString, Symbol, Price, Money, Instrument, Quantity
 from inv_trader.model.order cimport Order
 from inv_trader.model.position cimport Position
@@ -33,6 +35,7 @@ from inv_trader.model.events cimport OrderExpired, OrderModified, OrderCancelled
 from inv_trader.model.events cimport OrderFilled
 from inv_trader.model.identifiers cimport OrderId, ExecutionId, ExecutionTicket, AccountNumber
 from inv_trader.common.account cimport Account
+from inv_trader.common.brokerage cimport CommissionCalculator
 from inv_trader.common.clock cimport TestClock
 from inv_trader.common.guid cimport TestGuidFactory
 from inv_trader.common.logger cimport Logger
@@ -54,7 +57,7 @@ cdef class BacktestExecClient(ExecutionClient):
                  dict data_bars_ask: Dict[Symbol, DataFrame],
                  Money starting_capital,
                  int slippage_ticks,
-                 commission_rate,
+                 CommissionCalculator commission_calculator,
                  Account account,
                  Portfolio portfolio,
                  TestClock clock,
@@ -69,7 +72,7 @@ cdef class BacktestExecClient(ExecutionClient):
         :param data_bars_ask: The historical minute ask bars data needed for the backtest.
         :param starting_capital: The starting capital for the backtest account (> 0).
         :param slippage_ticks: The slippage for each order fill in ticks (>= 0).
-        :param commission_rate: The commission rate per transaction per million notional value (>= 0).
+        :param commission_calculator: The commission calculator.
         :param clock: The clock for the component.
         :param clock: The GUID factory for the component.
         :param logger: The logger for the component.
@@ -79,16 +82,12 @@ cdef class BacktestExecClient(ExecutionClient):
         :raises ValueError: If the data_bars_ask contains a key other than Symbol or value other than DataFrame.
         :raises ValueError: If the starting capital is not positive (> 0).
         :raises ValueError: If the slippage_ticks is negative (< 0).
-        :raises ValueError: If the commission_rate is not of type Decimal.
-        :raises ValueError: If the commission_rate is negative (< 0).
         """
         Precondition.list_type(instruments, Instrument, 'instruments')
         Precondition.dict_types(data_ticks, Symbol, DataFrame, 'data_ticks')
         Precondition.dict_types(data_bars_bid, Symbol, DataFrame, 'data_bars_bid')
         Precondition.dict_types(data_bars_ask, Symbol, DataFrame, 'data_bars_ask')
         Precondition.not_negative(slippage_ticks, 'slippage_ticks')
-        Precondition.type(commission_rate, Decimal, 'commission_rate')
-        Precondition.not_negative(commission_rate, 'commission_rate')
 
         super().__init__(account,
                          portfolio,
@@ -105,7 +104,7 @@ cdef class BacktestExecClient(ExecutionClient):
         self.instruments = instruments_dict  # type: Dict[Symbol, Instrument]
 
         # Prepare data
-        self.data_ticks = data_ticks                                          # type: Dict[Symbol, List]
+        self.data_ticks = data_ticks                                          # type: Dict[Symbol, DataFrame]
         self.data_bars_bid = self._prepare_minute_data(data_bars_bid, 'bid')  # type: Dict[Symbol, List]
         self.data_bars_ask = self._prepare_minute_data(data_bars_ask, 'ask')  # type: Dict[Symbol, List]
 
@@ -121,7 +120,8 @@ cdef class BacktestExecClient(ExecutionClient):
         self.account_capital = starting_capital
         self.account_cash_start_day = self.account_capital
         self.account_cash_activity_day = Money(0)
-        self.commission_rate = commission_rate
+        self.currency_calculator = CurrencyCalculator()
+        self.commission_calculator = commission_calculator
         self.total_commissions = Money(0)
         self.slippage_index = {}  # type: Dict[Symbol, Decimal]
         self.working_orders = {}  # type: Dict[OrderId, Order]
@@ -658,9 +658,13 @@ cdef class BacktestExecClient(ExecutionClient):
             self._guid_factory.generate(),
             self._clock.time_now())
 
-        self._adjust_account(filled)
+        # Adjust account if position exists
+        if self._portfolio.order_has_position(order.id):
+            self._adjust_account(filled)
+
         self.handle_event(filled)
 
+        # Work any atomic child orders
         if order.id in self.atomic_orders:
             for child_order in self.atomic_orders[order.id]:
                 self._work_order(child_order)
@@ -672,25 +676,31 @@ cdef class BacktestExecClient(ExecutionClient):
         
         :param event: The order fill event.
         """
-        # TODO: Improve this calculation to factor in exchange rate.
+        cdef Instrument instrument = self.instruments[event.symbol]
+        cdef float exchange_rate = self.currency_calculator.exchange_rate(
+            from_currency=instrument.quote_currency,
+            to_currency=self._account.currency,
+            bid_rates=self._build_current_bid_rates(event.timestamp),
+            ask_rates=self._build_current_ask_rates(event.timestamp),
+            quote_type=QuoteType.BID if event.order_side is OrderSide.SELL else QuoteType.ASK)
 
-        cdef Position position
-        cdef Price average_entry
-        cdef Money pnl = Money.zero()
+        cdef Position position = self._portfolio.get_position_for_order(event.order_id)
+        cdef Money pnl = self._calculate_pnl(
+            direction=position.market_position,
+            entry_price=position.average_entry_price,
+            exit_price=event.average_price,
+            tick_size=instrument.tick_size,
+            tick_value=instrument.tick_value,
+            quantity=event.filled_quantity,
+            exchange_rate=exchange_rate)
 
-        if self._portfolio.order_has_position(event.order_id):
-            position = self._portfolio.get_position_for_order(event.order_id)
-            average_entry = position.average_entry_price
-            pnl = self._calculate_pnl(
-                position.market_position,
-                average_entry,
-                event.average_price,
-                event.filled_quantity)
+        cdef Money commission = self.commission_calculator.calculate(
+            symbol=event.symbol,
+            filled_quantity=event.filled_quantity,
+            exchange_rate=exchange_rate)
 
-        cdef Money commission = Money(Decimal(round(float(event.filled_quantity.value) / 1000000 * float(self.commission_rate), 2)))
         self.total_commissions += commission
         pnl -= commission
-
         self.account_capital += pnl
         self.account_cash_activity_day += pnl
 
@@ -711,12 +721,43 @@ cdef class BacktestExecClient(ExecutionClient):
 
         self.handle_event(account_event)
 
+    cdef dict _build_current_bid_rates(self, datetime current_time):
+        """
+        Return the current currency bid rates in the market.
+        
+        :param current_time: The current time.
+        :return: Dict[str, float].
+        """
+        cdef dict bid_rates = {}  # type: Dict[str, Price]
+
+        for symbol, prices in self.data_bars_bid.items():
+            bid_rates[symbol.code] = prices[self.iteration][3].as_float()
+
+        return bid_rates
+
+    cdef dict _build_current_ask_rates(self, datetime current_time):
+        """
+        Return the current currency ask rates in the market.
+        
+        :param current_time: The current time.
+        :return: Dict[str, float].
+        """
+        cdef dict ask_rates = {}  # type: Dict[str, Price]
+
+        for symbol, prices in self.data_bars_ask.items():
+            ask_rates[symbol.code] = prices[self.iteration][3].as_float()
+
+        return ask_rates
+
     cdef Money _calculate_pnl(
             self,
             MarketPosition direction,
             Price entry_price,
             Price exit_price,
-            Quantity quantity):
+            Quantity quantity,
+            tick_size: Decimal,
+            tick_value: Decimal,
+            float exchange_rate):
         """
         Return the pnl from the given parameters.
         
@@ -724,14 +765,15 @@ cdef class BacktestExecClient(ExecutionClient):
         :param entry_price: The entry price of the position affecting pnl.
         :param exit_price: The exit price of the position affecting pnl.
         :param quantity: The filled quantity for the position affecting pnl.
+        :param exchange_rate: The exchange rate for the transaction.
         :return: Money.
         """
-        cdef float difference
+        cdef object difference
         if direction is MarketPosition.LONG:
-            difference = exit_price.as_float() - entry_price.as_float()
+            difference = (exit_price - entry_price) / tick_size
         elif direction is MarketPosition.SHORT:
-            difference = entry_price.as_float() - exit_price.as_float()
+            difference = (entry_price - exit_price) / tick_size
         else:
             raise ValueError(f'Cannot calculate the pnl of a {direction} direction.')
 
-        return Money(((difference * quantity.value) / exit_price.as_float()))
+        return Money(difference * tick_value * quantity.value * Decimal(exchange_rate))
