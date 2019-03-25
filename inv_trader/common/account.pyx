@@ -10,7 +10,7 @@
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
 from inv_trader.enums.brokerage cimport Broker
-from inv_trader.enums.currency_code cimport CurrencyCode
+from inv_trader.enums.currency cimport Currency
 from inv_trader.model.events cimport AccountEvent
 from inv_trader.model.objects import ValidString, Money
 
@@ -20,7 +20,7 @@ cdef class Account:
     Represents a brokerage account.
     """
 
-    def __init__(self):
+    def __init__(self, Currency currency=Currency.USD):
         """
         Initializes a new instance of the Account class.
         """
@@ -30,7 +30,7 @@ cdef class Account:
         self.id = None
         self.broker = Broker.UNKNOWN
         self.account_number = None
-        self.currency = CurrencyCode.UNKNOWN
+        self.currency = currency
         self.cash_balance = Money.zero()
         self.cash_start_day = Money.zero()
         self.cash_activity_day = Money.zero()
@@ -125,7 +125,7 @@ cdef class Account:
         self.id = None
         self.broker = Broker.UNKNOWN
         self.account_number = None
-        self.currency = CurrencyCode.UNKNOWN
+        self.currency = Currency.UNKNOWN
         self.cash_balance = Money.zero()
         self.cash_start_day = Money.zero()
         self.cash_activity_day = Money.zero()

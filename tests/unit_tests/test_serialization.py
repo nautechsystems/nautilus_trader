@@ -1007,7 +1007,7 @@ class InstrumentSerializerTests(unittest.TestCase):
         instrument = Instrument(
             Symbol('AUDUSD', Venue.FXCM),
             'AUD/USD',
-            CurrencyCode.USD,
+            Currency.USD,
             SecurityType.FOREX,
             5,
             Decimal('0.00001'),

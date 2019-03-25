@@ -11,7 +11,7 @@
 
 from cpython.datetime cimport datetime
 
-from inv_trader.enums.currency_code cimport CurrencyCode
+from inv_trader.enums.currency cimport Currency
 from inv_trader.enums.security_type cimport SecurityType
 from inv_trader.enums.venue cimport Venue
 from inv_trader.enums.resolution cimport Resolution
@@ -126,7 +126,7 @@ cdef class Instrument:
     """
     cdef readonly Symbol symbol
     cdef readonly str broker_symbol
-    cdef readonly CurrencyCode quote_currency
+    cdef readonly Currency quote_currency
     cdef readonly SecurityType security_type
     cdef readonly int tick_precision
     cdef readonly object tick_size

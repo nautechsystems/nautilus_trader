@@ -18,10 +18,10 @@ from decimal import Decimal
 from cpython.datetime cimport datetime
 
 # Do not reorder imports (enums need to be in below order)
-from inv_trader.model.enums import Venue, CurrencyCode, SecurityType
+from inv_trader.model.enums import Venue, Currency, SecurityType
 from inv_trader.enums.venue cimport Venue
 from inv_trader.enums.security_type cimport SecurityType
-from inv_trader.enums.currency_code cimport CurrencyCode
+from inv_trader.enums.currency cimport Currency
 from inv_trader.model.identifiers cimport GUID, Label
 from inv_trader.model.objects cimport Symbol, Price, Instrument
 from inv_trader.model.order cimport Order
@@ -294,7 +294,7 @@ cdef class InstrumentSerializer:
         return Instrument(
             Symbol(inst_dict['Symbol']['Code'], Venue[inst_dict['Symbol']['Venue'].upper()]),
             inst_dict['BrokerSymbol']['Value'],
-            CurrencyCode[inst_dict['QuoteCurrency'].upper()],
+            Currency[inst_dict['QuoteCurrency'].upper()],
             SecurityType[inst_dict['SecurityType'].upper()],
             inst_dict['TickDecimals'],  # TODO: Change to TickPrecision on C# side
             Decimal(f'{tick_size}'),

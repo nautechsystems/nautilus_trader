@@ -12,7 +12,7 @@
 from cpython.datetime cimport datetime
 
 from inv_trader.enums.brokerage cimport Broker
-from inv_trader.enums.currency_code cimport CurrencyCode
+from inv_trader.enums.currency cimport Currency
 from inv_trader.enums.order_side cimport OrderSide
 from inv_trader.enums.order_type cimport OrderType
 from inv_trader.enums.time_in_force cimport TimeInForce
@@ -37,7 +37,7 @@ cdef class AccountEvent(Event):
     cdef readonly AccountId account_id
     cdef readonly Broker broker
     cdef readonly AccountNumber account_number
-    cdef readonly CurrencyCode currency
+    cdef readonly Currency currency
     cdef readonly Money cash_balance
     cdef readonly Money cash_start_day
     cdef readonly Money cash_activity_day

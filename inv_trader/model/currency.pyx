@@ -9,7 +9,7 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
-from inv_trader.enums.currency_code cimport CurrencyCode, currency_code_string
+from inv_trader.enums.currency cimport Currency, currency_string
 from inv_trader.enums.quote_type cimport QuoteType
 
 
@@ -20,8 +20,8 @@ cdef class CurrencyCalculator:
 
     cpdef float exchange_rate(
             self,
-            CurrencyCode from_currency,
-            CurrencyCode to_currency,
+            Currency from_currency,
+            Currency to_currency,
             QuoteType quote_type,
             dict bid_rates,
             dict ask_rates):
@@ -37,9 +37,11 @@ cdef class CurrencyCalculator:
         :param ask_rates: The dictionary of currency pair ask rates (Dict[str, float]).
         :return: float.
         """
+        if from_currency == to_currency:
+            return 1.0  # No exchange necessary
 
-        cdef str ccy_pair = currency_code_string(from_currency) + currency_code_string(to_currency)
-        cdef str swapped_ccy_pair = currency_code_string(to_currency) + currency_code_string(from_currency)
+        cdef str ccy_pair = currency_string(from_currency) + currency_string(to_currency)
+        cdef str swapped_ccy_pair = currency_string(to_currency) + currency_string(from_currency)
         cdef dict calculation_rates
 
         if quote_type == QuoteType.BID:

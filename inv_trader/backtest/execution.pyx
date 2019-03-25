@@ -20,7 +20,7 @@ from typing import List, Dict
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.enums.brokerage cimport Broker
-from inv_trader.enums.currency_code cimport CurrencyCode
+from inv_trader.enums.currency cimport Currency
 from inv_trader.enums.quote_type cimport QuoteType
 from inv_trader.enums.order_type cimport OrderType
 from inv_trader.enums.order_side cimport OrderSide
@@ -255,7 +255,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._account.id,
             Broker.SIMULATED,
             AccountNumber('9999'),
-            CurrencyCode.USD,
+            Currency.USD,
             self.starting_capital,
             self.starting_capital,
             Money(0),

@@ -10,7 +10,7 @@
 from decimal import Decimal
 from datetime import datetime, timedelta, timezone
 
-from inv_trader.model.enums import Venue, Resolution, QuoteType, CurrencyCode, SecurityType
+from inv_trader.model.enums import Venue, Resolution, QuoteType, Currency, SecurityType
 from inv_trader.model.objects import Quantity, Symbol, Price, BarSpecification, BarType, Bar, Instrument
 
 # Unix epoch is the UTC time at 00:00:00 on 1/1/1970
@@ -45,7 +45,7 @@ class TestStubs:
     def instrument_gbpusd():
         return Instrument(Symbol('GBPUSD', Venue.FXCM),
                           'GBP/USD',
-                          CurrencyCode.USD,
+                          Currency.USD,
                           SecurityType.FOREX,
                           tick_precision=5,
                           tick_size=Decimal('0.00001'),
@@ -68,7 +68,7 @@ class TestStubs:
     def instrument_usdjpy():
         return Instrument(Symbol('USDJPY', Venue.FXCM),
                           'USD/JPY',
-                          CurrencyCode.JPY,
+                          Currency.JPY,
                           SecurityType.FOREX,
                           tick_precision=3,
                           tick_size=Decimal('0.001'),

@@ -17,7 +17,7 @@ from inv_trader.enums.venue cimport Venue, venue_string
 from inv_trader.enums.resolution cimport Resolution, resolution_string
 from inv_trader.enums.quote_type cimport QuoteType, quote_type_string
 from inv_trader.enums.security_type cimport SecurityType
-from inv_trader.enums.currency_code cimport CurrencyCode
+from inv_trader.enums.currency cimport Currency
 
 
 cdef class ValidString:
@@ -853,7 +853,7 @@ cdef class Instrument:
     def __init__(self,
                  Symbol symbol,
                  str broker_symbol,
-                 CurrencyCode quote_currency,
+                 Currency quote_currency,
                  SecurityType security_type,
                  int tick_precision,
                  object tick_size,
