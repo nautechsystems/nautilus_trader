@@ -292,10 +292,10 @@ cdef class EMACross(TradeStrategy):
                 exchange_rate = float(1 / self.last_tick(self.symbol).bid.value)
                 position_size = self.position_sizer.calculate(
                     equity=self.account.free_equity,
-                    exchange_rate=exchange_rate,
                     risk_bp=self.risk_bp,
                     entry_price=entry_price,
                     stop_loss_price=stop_loss_price,
+                    exchange_rate=exchange_rate,
                     commission_rate=Decimal(15),
                     hard_limit=0,
                     units=1,
@@ -321,10 +321,10 @@ cdef class EMACross(TradeStrategy):
                 exchange_rate = float(1 / self.last_tick(self.symbol).ask.value)
                 position_size = self.position_sizer.calculate(
                     equity=self.account.free_equity,
-                    exchange_rate=exchange_rate,
                     risk_bp=self.risk_bp,
                     entry_price=entry_price,
                     stop_loss_price=stop_loss_price,
+                    exchange_rate=exchange_rate,
                     commission_rate=Decimal(15),
                     hard_limit=0,
                     units=1,
