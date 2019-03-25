@@ -13,7 +13,6 @@ import pandas as pd
 
 from math import log
 from cpython.datetime cimport date, datetime, timedelta
-from pyfolio.tears import create_returns_tear_sheet, create_full_tear_sheet
 
 from inv_trader.enums.order_side cimport OrderSide
 from inv_trader.model.events cimport OrderEvent
@@ -126,18 +125,10 @@ cdef class Analyzer:
         """
         Create a pyfolio returns tear sheet based on analyzer data from the last run.
         """
-        create_returns_tear_sheet(returns=self._returns,
-                                  transactions=self._transactions,
-                                  benchmark_rets=self._returns,
-                                  bootstrap=True,
-                                  cone_std=1)
+        # Do nothing
 
     cpdef void create_full_tear_sheet(self):
         """
         Create a pyfolio full tear sheet based on analyzer data from the last run.
         """
-        create_full_tear_sheet(returns=self._returns,
-                               transactions=self._transactions,
-                               benchmark_rets=self._returns,
-                               bootstrap=True,
-                               cone_std=1)
+        # Do nothing
