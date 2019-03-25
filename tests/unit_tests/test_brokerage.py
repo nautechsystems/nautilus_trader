@@ -14,6 +14,7 @@ from inv_trader.common.brokerage import CommissionCalculator
 from test_kit.stubs import TestStubs
 
 GBPUSD_FXCM = TestStubs.instrument_gbpusd().symbol
+USDJPY_FXCM = TestStubs.instrument_usdjpy().symbol
 
 
 class CommissionCalculatorTests(unittest.TestCase):
@@ -30,3 +31,16 @@ class CommissionCalculatorTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(Money(15), result)
+
+    def test_can_calculate_correct_commission_with_exchange_rate(self):
+        # Arrange
+        calculator = CommissionCalculator()
+
+        # Act
+        result = calculator.calculate(
+            USDJPY_FXCM,
+            Quantity(10000000),
+            exchange_rate=0.01)
+
+        # Assert
+        self.assertEqual(Money(1.49), result)

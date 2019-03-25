@@ -699,13 +699,10 @@ cdef class BacktestExecClient(ExecutionClient):
             filled_quantity=event.filled_quantity,
             exchange_rate=exchange_rate)
 
-        print(f"COMMISSION: {commission}")
         self.total_commissions += commission
         pnl -= commission
         self.account_capital += pnl
         self.account_cash_activity_day += pnl
-        print(f"PNL: {pnl}")
-        print(f"CAPITAL: {self.account_capital}")
 
         cdef AccountEvent account_event = AccountEvent(
             self._account.id,
@@ -771,10 +768,10 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         cdef object difference
         if direction is MarketPosition.LONG:
-            difference = (exit_price - entry_price) / tick_size
+            difference = exit_price - entry_price
         elif direction is MarketPosition.SHORT:
-            difference = (entry_price - exit_price) / tick_size
+            difference = entry_price - exit_price
         else:
             raise ValueError(f'Cannot calculate the pnl of a {direction} direction.')
 
-        return Money(difference * tick_value * quantity.value * Decimal(exchange_rate))
+        return Money(difference * quantity.value * Decimal(exchange_rate))

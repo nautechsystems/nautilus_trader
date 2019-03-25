@@ -421,6 +421,7 @@ cdef class BacktestEngine:
     cdef str _print_stat(self, value, int decimals=2):
         """
         Print the given value rounded to the given decimals with signed formatting.
+        
         :param value: The value to print.
         :param decimals: The decimal precision for the value rounding.
         :return: str.

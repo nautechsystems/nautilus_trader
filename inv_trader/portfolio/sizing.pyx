@@ -72,6 +72,15 @@ cdef class PositionSizer:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
+    cdef int _calculate_risk_points(self, Price entry, Price stop_loss):
+        """
+        Return the calculated difference in points between the entry and stop loss.
+        
+        :return int.
+        """
+
+        return int(abs(entry - stop_loss) / self.instrument.tick_size)
+
     cdef Money _calculate_riskable_money(
             self,
             Money equity,
@@ -85,18 +94,10 @@ cdef class PositionSizer:
         """
         if equity.value <= 0:
             return Money.zero()
-        cdef Money risk_money = Money(equity.value * Decimal(risk_bp * 0.01) * Decimal(exchange_rate))
-        cdef Money commission = Money((risk_money.value / 1000000) * commission_rate * Decimal(exchange_rate))
+        cdef Money risk_money = Money(equity.value * Decimal(risk_bp * 0.0001))
+        cdef Money commission = Money((risk_money.value / self.instrument.tick_value / 1000000) * commission_rate)
 
         return risk_money - commission
-
-    cdef int _calculate_risk_points(self, Price entry, Price stop_loss):
-        """
-        Return the calculated difference in points between the entry and stop loss.
-        
-        :return int.
-        """
-        return int(abs(entry - stop_loss) / self.instrument.tick_size)
 
 
 cdef class FixedRiskSizer(PositionSizer):
@@ -148,9 +149,10 @@ cdef class FixedRiskSizer(PositionSizer):
         Precondition.positive(units, 'units')
         Precondition.positive(unit_batch_size, 'unit_batch_size')
 
-        cdef Money risk_money = self._calculate_riskable_money(equity, risk_bp, commission_rate, exchange_rate)
         cdef int risk_points = self._calculate_risk_points(entry_price, stop_loss_price)
-        cdef long position_size = long(long((risk_money.value / risk_points) / self.instrument.tick_value * Decimal(exchange_rate)) / self.instrument.contract_size.value)
+        cdef Money risk_money = self._calculate_riskable_money(equity, risk_bp, commission_rate, exchange_rate)
+
+        cdef long position_size = long(long(((((risk_money.value / Decimal(exchange_rate)) / risk_points) / self.instrument.tick_size) / self.instrument.contract_size.value)))
 
         # Limit size
         if hard_limit > 0:
