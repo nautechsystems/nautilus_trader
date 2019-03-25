@@ -9,16 +9,18 @@
 
 import unittest
 
+from decimal import Decimal
+
 from inv_trader.enums.currency_code import CurrencyCode
 from inv_trader.enums.quote_type import QuoteType
-from inv_trader.model.currency import CurrencyConverter
+from inv_trader.model.currency import CurrencyCalculator
 
 
 class CurrencyConverterTests(unittest.TestCase):
 
     def test_can_calculate_exchange_rate(self):
         # Arrange
-        converter = CurrencyConverter()
+        converter = CurrencyCalculator()
         bid_rates = {'AUDUSD': 0.80000}
         ask_rates = {'AUDUSD': 0.80010}
 
@@ -35,7 +37,7 @@ class CurrencyConverterTests(unittest.TestCase):
 
     def test_can_calculate_exchange_rate_when_rate_needs_swapping(self):
         # Arrange
-        converter = CurrencyConverter()
+        converter = CurrencyCalculator()
         bid_rates = {'USDJPY': 110.100}
         ask_rates = {'USDJPY': 110.130}
 

@@ -39,6 +39,7 @@ from inv_trader.core.precondition cimport Precondition
 from inv_trader.core.functions cimport format_zulu_datetime
 from inv_trader.backtest.data cimport BacktestDataClient
 from inv_trader.backtest.execution cimport BacktestExecClient
+from inv_trader.common.brokerage import CommissionCalculator
 from inv_trader.common.clock cimport LiveClock, TestClock
 from inv_trader.common.guid cimport TestGuidFactory
 from inv_trader.common.logger cimport TestLogger
@@ -177,7 +178,7 @@ cdef class BacktestEngine:
             data_bars_ask=minute_bars_ask,
             starting_capital=config.starting_capital,
             slippage_ticks=config.slippage_ticks,
-            commission_rate=config.commission_rate,
+            commission_calculator=CommissionCalculator(),
             account=self.account,
             portfolio=self.portfolio,
             clock=self.test_clock,

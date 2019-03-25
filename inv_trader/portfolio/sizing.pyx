@@ -45,7 +45,7 @@ cdef class PositionSizer:
             int risk_bp,
             Price entry_price,
             Price stop_loss_price,
-            exchange_rate=Decimal(1),
+            float exchange_rate=1.0,
             commission_rate=Decimal(15),
             int hard_limit=0,
             int units=1,
@@ -76,7 +76,8 @@ cdef class PositionSizer:
             self,
             Money equity,
             int risk_bp,
-            commission_rate):
+            commission_rate,
+            float exchange_rate):
         """
         Return the calculated amount of risk money available.
         
@@ -84,8 +85,8 @@ cdef class PositionSizer:
         """
         if equity.value <= 0:
             return Money.zero()
-        cdef Money risk_money = Money(equity.value * Decimal(round(risk_bp * 0.01, 2)))
-        cdef Money commission = Money((risk_money.value / 1000000) * commission_rate)
+        cdef Money risk_money = Money(equity.value * Decimal(risk_bp * 0.01) * Decimal(exchange_rate))
+        cdef Money commission = Money((risk_money.value / 1000000) * commission_rate * Decimal(exchange_rate))
 
         return risk_money - commission
 
@@ -117,7 +118,7 @@ cdef class FixedRiskSizer(PositionSizer):
             int risk_bp,
             Price entry_price,
             Price stop_loss_price,
-            exchange_rate=Decimal(1),
+            float exchange_rate=1.0,
             commission_rate=Decimal(15),
             int hard_limit=0,
             int units=1,
@@ -147,15 +148,16 @@ cdef class FixedRiskSizer(PositionSizer):
         Precondition.positive(units, 'units')
         Precondition.positive(unit_batch_size, 'unit_batch_size')
 
-        cdef Money risk_money = self._calculate_riskable_money(equity, risk_bp, commission_rate)
+        cdef Money risk_money = self._calculate_riskable_money(equity, risk_bp, commission_rate, exchange_rate)
         cdef int risk_points = self._calculate_risk_points(entry_price, stop_loss_price)
-        cdef long position_size = long(round(((risk_money.value / risk_points) / (self.instrument.tick_size * exchange_rate)) / self.instrument.contract_size.value))
+        cdef object tick_value_size = self.instrument.tick_size * Decimal(exchange_rate)
+        cdef long position_size = long(long((risk_money.value / risk_points) / tick_value_size) / self.instrument.contract_size.value)
 
         # Limit size
         if hard_limit > 0:
             position_size = min(position_size, hard_limit)
 
         # Batch into units
-        cdef long position_size_batched = long(round(position_size / units / unit_batch_size) * unit_batch_size)
+        cdef long position_size_batched = long(long(position_size / units / unit_batch_size) * unit_batch_size)
 
         return Quantity(min(position_size_batched, self.instrument.max_trade_size.value))
