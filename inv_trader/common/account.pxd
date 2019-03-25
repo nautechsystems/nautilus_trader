@@ -12,7 +12,7 @@
 from cpython.datetime cimport datetime
 
 from inv_trader.enums.brokerage cimport Broker
-from inv_trader.enums.currency_code cimport CurrencyCode
+from inv_trader.enums.currency cimport Currency
 from inv_trader.model.events cimport AccountEvent
 from inv_trader.model.objects cimport ValidString
 from inv_trader.model.identifiers cimport AccountId, AccountNumber
@@ -29,7 +29,7 @@ cdef class Account:
     cdef readonly AccountId id
     cdef readonly Broker broker
     cdef readonly AccountNumber account_number
-    cdef readonly CurrencyCode currency
+    cdef readonly Currency currency
     cdef readonly free_equity
     cdef readonly cash_balance
     cdef readonly cash_start_day

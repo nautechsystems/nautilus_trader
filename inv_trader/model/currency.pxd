@@ -10,7 +10,7 @@
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
 
-from inv_trader.enums.currency_code cimport CurrencyCode
+from inv_trader.enums.currency cimport Currency
 from inv_trader.enums.quote_type cimport QuoteType
 
 
@@ -21,8 +21,8 @@ cdef class CurrencyCalculator:
 
     cpdef float exchange_rate(
             self,
-            CurrencyCode from_currency,
-            CurrencyCode to_currency,
+            Currency from_currency,
+            Currency to_currency,
             QuoteType quote_type,
             dict bid_rates,
             dict ask_rates)

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-# <copyright file="currency_code.pxd" company="Invariance Pte">
+# <copyright file="currency.pxd" company="Invariance Pte">
 #  Copyright (C) 2018-2019 Invariance Pte. All rights reserved.
 #  The use of this source code is governed by the license as found in the LICENSE.md file.
 #  http://www.invariance.com
@@ -10,7 +10,7 @@
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
 
-cpdef enum CurrencyCode:
+cpdef enum Currency:
     UNKNOWN = -1,
     AUD = 36,
     CAD = 124,
@@ -35,7 +35,7 @@ cpdef enum CurrencyCode:
     ZAR = 710
 
 
-cdef inline str currency_code_string(int value):
+cdef inline str currency_string(int value):
     if value == 36:
         return "AUD"
     elif value == 124:

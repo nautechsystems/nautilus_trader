@@ -17,12 +17,12 @@ from uuid import UUID
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.commands cimport *
 from inv_trader.commands cimport CollateralInquiry
-from inv_trader.model.enums import Broker, OrderSide, OrderType, TimeInForce, CurrencyCode
+from inv_trader.model.enums import Broker, OrderSide, OrderType, TimeInForce, Currency
 from inv_trader.enums.brokerage cimport Broker
 from inv_trader.enums.time_in_force cimport TimeInForce, time_in_force_string
 from inv_trader.enums.order_side cimport OrderSide, order_side_string
 from inv_trader.enums.order_type cimport OrderType, order_type_string
-from inv_trader.enums.currency_code cimport CurrencyCode
+from inv_trader.enums.currency cimport Currency
 from inv_trader.model.identifiers cimport GUID, Label, OrderId, ExecutionId, ExecutionTicket, AccountId, AccountNumber
 from inv_trader.model.objects cimport ValidString, Quantity, Symbol, Price, Money
 from inv_trader.model.order cimport Order
@@ -371,7 +371,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 AccountId(unpacked[ACCOUNT_ID]),
                 Broker[unpacked[BROKER]],
                 AccountNumber(unpacked[ACCOUNT_NUMBER]),
-                CurrencyCode[unpacked[CURRENCY]],
+                Currency[unpacked[CURRENCY]],
                 Money(unpacked[CASH_BALANCE]),
                 Money(unpacked[CASH_START_DAY]),
                 Money(unpacked[CASH_ACTIVITY_DAY]),

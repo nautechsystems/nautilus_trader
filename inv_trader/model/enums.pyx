@@ -10,7 +10,7 @@
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
 from inv_trader.enums.brokerage import Broker
-from inv_trader.enums.currency_code import CurrencyCode
+from inv_trader.enums.currency import Currency
 from inv_trader.enums.market_position import MarketPosition
 from inv_trader.enums.order_side import OrderSide
 from inv_trader.enums.order_status import OrderStatus

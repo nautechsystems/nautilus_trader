@@ -43,6 +43,7 @@ from inv_trader.common.brokerage import CommissionCalculator
 from inv_trader.common.clock cimport LiveClock, TestClock
 from inv_trader.common.guid cimport TestGuidFactory
 from inv_trader.common.logger cimport TestLogger
+from inv_trader.enums.currency cimport Currency, currency_string
 from inv_trader.enums.resolution cimport Resolution
 from inv_trader.common.account cimport Account
 from inv_trader.model.objects cimport Symbol, Instrument, Money
@@ -56,6 +57,7 @@ cdef class BacktestConfig:
     """
     def __init__(self,
                  int starting_capital=1000000,
+                 Currency account_currency=Currency.USD,
                  int slippage_ticks=0,
                  commission_rate=Decimal(15),
                  bint bypass_logging=False,
@@ -68,9 +70,10 @@ cdef class BacktestConfig:
         """
         Initializes a new instance of the BacktestEngine class.
 
-        :param starting_capital: The starting capital for the engine (> 0).
-        :param slippage_ticks: The slippage ticks for the engine (>= 0).
-        :param commission_rate: The commission rate per transaction per million notional value (>= 0).
+        :param starting_capital: The starting account capital (> 0).
+        :param account_currency: The currency for the account.
+        :param slippage_ticks: The slippage ticks per transaction (>= 0).
+        :param commission_rate: The commission rate per transaction per transaction per million notional value (>= 0).
         :param bypass_logging: The flag indicating whether logging should be bypassed.
         :param level_console: The minimum log level for logging messages to the console.
         :param level_file: The minimum log level for logging messages to the log file.
@@ -90,6 +93,7 @@ cdef class BacktestConfig:
         Precondition.not_negative(commission_rate, 'commission_rate')
 
         self.starting_capital = Money(starting_capital)
+        self.account_currency = account_currency
         self.slippage_ticks = slippage_ticks
         self.commission_rate = commission_rate
         self.bypass_logging = bypass_logging
@@ -149,7 +153,7 @@ cdef class BacktestEngine:
 
         self._engine_header()
 
-        self.account = Account()
+        self.account = Account(currency=config.account_currency)
         self.portfolio = Portfolio(
             clock=self.test_clock,
             guid_factory=TestGuidFactory(),
@@ -340,7 +344,7 @@ cdef class BacktestEngine:
         self.log.info(f"Backtest start datetime: {format_zulu_datetime(start)}")
         self.log.info(f"Backtest stop datetime:  {format_zulu_datetime(stop)}")
         self.log.info(f"Time-step: {time_step_mins} minute")
-        self.log.info(f"Account balance (starting): {self.config.starting_capital}")
+        self.log.info(f"Account balance (starting): {self.config.starting_capital} {currency_string(self.account.currency)}")
         self.log.info("#---------------------------------------------------------------#")
         self.log.info(f"Running backtest...")
 
@@ -363,14 +367,14 @@ cdef class BacktestEngine:
         self.log.info(f"Time-step iterations: {self.exec_client.iteration}")
         self.log.info(f"Backtest start datetime: {format_zulu_datetime(start)}")
         self.log.info(f"Backtest stop datetime:  {format_zulu_datetime(stop)}")
-        self.log.info(f"Account balance (starting): {self.config.starting_capital}")
-        self.log.info(f"Account balance (ending):   {self.account.cash_balance}")
-        self.log.info(f"Commissions (total):       -{self.exec_client.total_commissions}")
+        self.log.info(f"Account balance (starting): {self.config.starting_capital} {currency_string(self.account.currency)}")
+        self.log.info(f"Account balance (ending):   {self.account.cash_balance} {currency_string(self.account.currency)}")
+        self.log.info(f"Commissions (total):       -{self.exec_client.total_commissions} {currency_string(self.account.currency)}")
         self.log.info("")
         self.log.info("#---------------------------------------------------------------#")
         self.log.info("#-------------------- PERFORMANCE STATISTICS -------------------#")
         self.log.info("#---------------------------------------------------------------#")
-        self.log.info(f"PNL:              {self.account.cash_balance - self.config.starting_capital}")
+        self.log.info(f"PNL:              {self.account.cash_balance - self.config.starting_capital} {currency_string(self.account.currency)}")
         self.log.info(f"PNL %:            {self._print_stat(float(((self.account.cash_balance.value - self.config.starting_capital.value) / self.config.starting_capital.value) * 100))}%")
         self.log.info(f"Annual return:    {self._print_stat(annual_return(returns=returns))}%")
         self.log.info(f"Cum returns:      {self._print_stat(cum_returns_final(returns=returns))}%")

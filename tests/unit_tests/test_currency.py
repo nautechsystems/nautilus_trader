@@ -11,7 +11,7 @@ import unittest
 
 from decimal import Decimal
 
-from inv_trader.enums.currency_code import CurrencyCode
+from inv_trader.enums.currency import Currency
 from inv_trader.enums.quote_type import QuoteType
 from inv_trader.model.currency import CurrencyCalculator
 
@@ -26,8 +26,8 @@ class CurrencyConverterTests(unittest.TestCase):
 
         # Act
         result = converter.exchange_rate(
-            CurrencyCode.AUD,
-            CurrencyCode.USD,
+            Currency.AUD,
+            Currency.USD,
             QuoteType.BID,
             bid_rates,
             ask_rates)
@@ -43,8 +43,8 @@ class CurrencyConverterTests(unittest.TestCase):
 
         # Act
         result = converter.exchange_rate(
-            CurrencyCode.JPY,
-            CurrencyCode.USD,
+            Currency.JPY,
+            Currency.USD,
             QuoteType.BID,
             bid_rates,
             ask_rates)
