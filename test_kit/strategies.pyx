@@ -264,7 +264,6 @@ cdef class EMACross(TradeStrategy):
         """
         self.spread = tick.ask - tick.bid
         self.log.info(f"Received Tick({tick})")  # For demonstration purposes
-        self.log.info(f"Spread: {self.spread}")  # For demonstration purposes
 
     cpdef void on_bar(self, BarType bar_type, Bar bar):
         """
@@ -290,9 +289,10 @@ cdef class EMACross(TradeStrategy):
                 entry_price = Price(self.last_bar(self.bar_type).high + self.entry_buffer + self.spread)
                 stop_loss_price = Price(self.last_bar(self.bar_type).low - (self.atr.value * self.SL_atr_multiple))
 
+                exchange_rate = float(1 / self.last_tick(self.symbol).bid.value)
                 position_size = self.position_sizer.calculate(
                     equity=self.account.free_equity,
-                    exchange_rate=Decimal('1'),
+                    exchange_rate=exchange_rate,
                     risk_bp=self.risk_bp,
                     entry_price=entry_price,
                     stop_loss_price=stop_loss_price,
@@ -318,9 +318,10 @@ cdef class EMACross(TradeStrategy):
                 entry_price = Price(self.last_bar(self.bar_type).low - self.entry_buffer)
                 stop_loss_price = Price(self.last_bar(self.bar_type).high + (self.atr.value * self.SL_atr_multiple) + self.spread)
 
+                exchange_rate = float(1 / self.last_tick(self.symbol).ask.value)
                 position_size = self.position_sizer.calculate(
                     equity=self.account.free_equity,
-                    exchange_rate=Decimal('1'),
+                    exchange_rate=exchange_rate,
                     risk_bp=self.risk_bp,
                     entry_price=entry_price,
                     stop_loss_price=stop_loss_price,

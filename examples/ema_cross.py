@@ -71,6 +71,7 @@ class EMACrossPy(TradeStrategy):
         self.entry_buffer = instrument.tick_size
         self.SL_atr_multiple = sl_atr_multiple
         self.SL_buffer = instrument.tick_size * 10
+        self.spread = Decimal(0)
 
         # Create the indicators for the strategy
         self.fast_ema = ExponentialMovingAverage(fast_ema)
@@ -104,6 +105,7 @@ class EMACrossPy(TradeStrategy):
 
         :param tick: The received tick.
         """
+        self.spread = tick.ask - tick.bid
         self.log.info(f"Received Tick({tick})")  # For demonstration purposes
 
     def on_bar(self, bar_type: BarType, bar: Bar):
@@ -119,16 +121,16 @@ class EMACrossPy(TradeStrategy):
             # Wait for indicators to warm up...
             return
 
-        # TODO: Factor in spread, using bid bars only at the moment
         if self.entry_order is None:
             # BUY LOGIC
             if self.fast_ema.value >= self.slow_ema.value:
-                entry_price = Price(self.last_bar(self.bar_type).high + self.entry_buffer)
+                entry_price = Price(self.last_bar(self.bar_type).high + self.entry_buffer + self.spread)
                 stop_loss_price = Price(self.last_bar(self.bar_type).low - (self.atr.value * self.SL_atr_multiple))
 
+                exchange_rate = float(1 / self.last_tick(self.symbol).bid.value)
                 position_size = self.position_sizer.calculate(
                     equity=self.account.free_equity,
-                    exchange_rate=Decimal('1'),
+                    exchange_rate=exchange_rate,
                     risk_bp=self.risk_bp,
                     entry_price=entry_price,
                     stop_loss_price=stop_loss_price,
@@ -152,11 +154,12 @@ class EMACrossPy(TradeStrategy):
             # SELL LOGIC
             elif self.fast_ema.value < self.slow_ema.value:
                 entry_price = Price(self.last_bar(self.bar_type).low - self.entry_buffer)
-                stop_loss_price = Price(self.last_bar(self.bar_type).high + (self.atr.value * self.SL_atr_multiple))
+                stop_loss_price = Price(self.last_bar(self.bar_type).high + (self.atr.value * self.SL_atr_multiple) + self.spread)
 
+                exchange_rate = float(1 / self.last_tick(self.symbol).bid.value)
                 position_size = self.position_sizer.calculate(
                     equity=self.account.free_equity,
-                    exchange_rate=Decimal('1'),
+                    exchange_rate=exchange_rate,
                     risk_bp=self.risk_bp,
                     entry_price=entry_price,
                     stop_loss_price=stop_loss_price,
@@ -192,7 +195,7 @@ class EMACrossPy(TradeStrategy):
                 if self.stop_loss_order.price < temp_price:
                     self.modify_order(self.stop_loss_order, temp_price)
             elif self.stop_loss_order.side is OrderSide.BUY:
-                temp_price = Price(self.last_bar(self.bar_type).high + (self.atr.value * self.SL_atr_multiple))
+                temp_price = Price(self.last_bar(self.bar_type).high + (self.atr.value * self.SL_atr_multiple) + self.spread)
                 if self.stop_loss_order.price > temp_price:
                     self.modify_order(self.stop_loss_order, temp_price)
 

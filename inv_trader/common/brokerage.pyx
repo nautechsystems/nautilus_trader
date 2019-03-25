@@ -54,4 +54,4 @@ cdef class CommissionCalculator:
         else:
             commission_rate = float(self.default)
 
-        return Money(Decimal((float(filled_quantity.value) / 1000000) * commission_rate))
+        return Money(Decimal((float(filled_quantity.value) / 1000000) * commission_rate * exchange_rate))
