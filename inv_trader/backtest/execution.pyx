@@ -680,8 +680,8 @@ cdef class BacktestExecClient(ExecutionClient):
         cdef float exchange_rate = self.currency_calculator.exchange_rate(
             from_currency=instrument.quote_currency,
             to_currency=self._account.currency,
-            bid_rates=self._build_current_bid_rates(event.timestamp),
-            ask_rates=self._build_current_ask_rates(event.timestamp),
+            bid_rates=self._build_current_bid_rates(),
+            ask_rates=self._build_current_ask_rates(),
             quote_type=QuoteType.BID if event.order_side is OrderSide.SELL else QuoteType.ASK)
 
         cdef Position position = self._portfolio.get_position_for_order(event.order_id)
@@ -699,10 +699,13 @@ cdef class BacktestExecClient(ExecutionClient):
             filled_quantity=event.filled_quantity,
             exchange_rate=exchange_rate)
 
+        print(f"COMMISSION: {commission}")
         self.total_commissions += commission
         pnl -= commission
         self.account_capital += pnl
         self.account_cash_activity_day += pnl
+        print(f"PNL: {pnl}")
+        print(f"CAPITAL: {self.account_capital}")
 
         cdef AccountEvent account_event = AccountEvent(
             self._account.id,
@@ -721,28 +724,26 @@ cdef class BacktestExecClient(ExecutionClient):
 
         self.handle_event(account_event)
 
-    cdef dict _build_current_bid_rates(self, datetime current_time):
+    cdef dict _build_current_bid_rates(self):
         """
-        Return the current currency bid rates in the market.
+        Return the current currency bid rates in the markets.
         
-        :param current_time: The current time.
         :return: Dict[str, float].
         """
-        cdef dict bid_rates = {}  # type: Dict[str, Price]
+        cdef dict bid_rates = {}  # type: Dict[str, float]
 
         for symbol, prices in self.data_bars_bid.items():
             bid_rates[symbol.code] = prices[self.iteration][3].as_float()
 
         return bid_rates
 
-    cdef dict _build_current_ask_rates(self, datetime current_time):
+    cdef dict _build_current_ask_rates(self):
         """
-        Return the current currency ask rates in the market.
+        Return the current currency ask rates in the markets.
         
-        :param current_time: The current time.
         :return: Dict[str, float].
         """
-        cdef dict ask_rates = {}  # type: Dict[str, Price]
+        cdef dict ask_rates = {}  # type: Dict[str, float]
 
         for symbol, prices in self.data_bars_ask.items():
             ask_rates[symbol.code] = prices[self.iteration][3].as_float()

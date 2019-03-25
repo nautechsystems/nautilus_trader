@@ -19,4 +19,4 @@ cdef class CommissionCalculator:
     cdef dict rates
     cdef object default
 
-    cdef Money calculate(self, Symbol symbol, Quantity filled_quantity, float exchange_rate)
+    cpdef Money calculate(self, Symbol symbol, Quantity filled_quantity, float exchange_rate)
