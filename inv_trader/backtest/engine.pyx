@@ -10,6 +10,8 @@
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
 import numpy as np
+import pandas as pd
+import scipy
 import logging
 import psutil
 import platform
@@ -321,6 +323,7 @@ cdef class BacktestEngine:
         self.log.info("#----------------------- BACKTEST ENGINE -----------------------#")
         self.log.info("#---------------------------------------------------------------#")
         self.log.info(f"Nautilus Trader v{__version__} for Invariance Pte. Limited.")
+        self.log.info(f"numpy v{np.__version__}")
         self.log.info("Building engine...")
 
     cdef void _backtest_header(

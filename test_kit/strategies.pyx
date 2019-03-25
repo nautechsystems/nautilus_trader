@@ -179,6 +179,7 @@ cdef class EMACross(TradeStrategy):
     cdef readonly object entry_buffer
     cdef readonly float SL_atr_multiple
     cdef readonly object SL_buffer
+    cdef readonly object spread
     cdef readonly object fast_ema
     cdef readonly object slow_ema
     cdef readonly object atr
@@ -226,6 +227,7 @@ cdef class EMACross(TradeStrategy):
         self.entry_buffer = instrument.tick_size
         self.SL_atr_multiple = sl_atr_multiple
         self.SL_buffer = instrument.tick_size * 10
+        self.spread = Decimal(0)
 
         # Create the indicators for the strategy
         self.fast_ema = ExponentialMovingAverage(fast_ema)
@@ -260,7 +262,9 @@ cdef class EMACross(TradeStrategy):
 
         :param tick: The received tick.
         """
+        self.spread = tick.ask - tick.bid
         self.log.info(f"Received Tick({tick})")  # For demonstration purposes
+        self.log.info(f"Spread: {self.spread}")  # For demonstration purposes
 
     cpdef void on_bar(self, BarType bar_type, Bar bar):
         """
@@ -280,11 +284,10 @@ cdef class EMACross(TradeStrategy):
         cdef Quantity position_size
         cdef AtomicOrder atomic_order = None
 
-        # TODO: Factor in spread, using bid bars only at the moment
         if self.entry_order is None:
             # BUY LOGIC
             if self.fast_ema.value >= self.slow_ema.value:
-                entry_price = Price(self.last_bar(self.bar_type).high + self.entry_buffer)
+                entry_price = Price(self.last_bar(self.bar_type).high + self.entry_buffer + self.spread)
                 stop_loss_price = Price(self.last_bar(self.bar_type).low - (self.atr.value * self.SL_atr_multiple))
 
                 position_size = self.position_sizer.calculate(
@@ -313,7 +316,7 @@ cdef class EMACross(TradeStrategy):
             # SELL LOGIC
             elif self.fast_ema.value < self.slow_ema.value:
                 entry_price = Price(self.last_bar(self.bar_type).low - self.entry_buffer)
-                stop_loss_price = Price(self.last_bar(self.bar_type).high + (self.atr.value * self.SL_atr_multiple))
+                stop_loss_price = Price(self.last_bar(self.bar_type).high + (self.atr.value * self.SL_atr_multiple) + self.spread)
 
                 position_size = self.position_sizer.calculate(
                     equity=self.account.free_equity,
@@ -354,7 +357,7 @@ cdef class EMACross(TradeStrategy):
                 if self.stop_loss_order.price < temp_price:
                     self.modify_order(self.stop_loss_order, temp_price)
             elif self.stop_loss_order.side is OrderSide.BUY:
-                temp_price = Price(self.last_bar(self.bar_type).high + (self.atr.value * self.SL_atr_multiple))
+                temp_price = Price(self.last_bar(self.bar_type).high + (self.atr.value * self.SL_atr_multiple) + self.spread)
                 if self.stop_loss_order.price > temp_price:
                     self.modify_order(self.stop_loss_order, temp_price)
 
