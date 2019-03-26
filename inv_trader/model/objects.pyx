@@ -9,7 +9,7 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from cpython.datetime cimport datetime
 
 from inv_trader.core.precondition cimport Precondition
@@ -398,9 +398,17 @@ cdef class Money:
         Note: Only the first two decimal places of precision are retained.
         """
         if isinstance(value, str):
-            self.value = Decimal(_get_money_str(value))
+            try:  # Temporary try-except to catch decimal.ConversionSyntax issue
+                self.value = Decimal(_get_money_str(value))
+            except InvalidOperation as ex:
+                print(f"INVALID OPERATION FOR DECIMAL WITH str value = {value}")
+                raise ex
         else:
-            self.value = Decimal(_get_money_str(str(value)))
+            try:  # Temporary try-except to catch decimal.ConversionSyntax issue
+                self.value = Decimal(_get_money_str(str(value)))
+            except InvalidOperation as ex:
+                print(f"INVALID OPERATION FOR DECIMAL WITH str value = {value}")
+                raise ex
 
     @staticmethod
     def zero():
