@@ -10,7 +10,7 @@
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
 from inv_trader.enums.currency cimport Currency, currency_string
-from inv_trader.enums.quote_type cimport QuoteType
+from inv_trader.enums.quote_type cimport QuoteType, quote_type_string
 
 
 cdef class CurrencyCalculator:
@@ -26,9 +26,9 @@ cdef class CurrencyCalculator:
             dict bid_rates,
             dict ask_rates):
         """
-        Return the calculated exchange rate for the given from currency to the 
-        given to currency for the given quote type using the provided
-        dictionary of bid and ask rates.
+        Return the calculated exchange rate for the given from-currency to the 
+        given to-currency for the given quote type using the given dictionary of 
+        bid and ask rates.
 
         :param from_currency: The currency to convert from.
         :param to_currency: The currency to convert to.
@@ -51,11 +51,11 @@ cdef class CurrencyCalculator:
         elif quote_type == QuoteType.MID:
             calculation_rates = bid_rates + ask_rates / 2.0
         else:
-            raise ValueError(f"Cannot calculate exchange rate for quote type {quote_type}")
+            raise ValueError(f"Cannot calculate exchange rate for quote type {quote_type_string(quote_type)}.")
 
         if ccy_pair in calculation_rates:
             return calculation_rates[ccy_pair]
         elif swapped_ccy_pair in calculation_rates:
             return 1 / calculation_rates[swapped_ccy_pair]
         else:
-            raise ValueError(f"Cannot calculate exchange rate - cannot find rate for {ccy_pair} or {swapped_ccy_pair}")
+            raise ValueError(f"Cannot calculate exchange rate - cannot find rate for {ccy_pair} or {swapped_ccy_pair}.")
