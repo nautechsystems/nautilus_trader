@@ -283,7 +283,7 @@ cdef class EMACross(TradeStrategy):
         cdef Quantity position_size
         cdef AtomicOrder atomic_order = None
 
-        if self.entry_order is None:
+        if self.is_flat() and self.entry_order is None:
             # BUY LOGIC
             if self.fast_ema.value >= self.slow_ema.value:
                 entry_price = Price(self.last_bar(self.bar_type).high + self.entry_buffer + self.spread)
