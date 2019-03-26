@@ -326,6 +326,7 @@ cdef class BacktestEngine:
         self.log.info("#----------------------- BACKTEST ENGINE -----------------------#")
         self.log.info("#---------------------------------------------------------------#")
         self.log.info(f"Nautilus Trader v{__version__} for Invariance Pte. Limited.")
+        self.log.info("#---------------------------------------------------------------#")
         self.log.info(f"cython v{cython.__version__}")
         self.log.info(f"numpy v{np.__version__}")
         self.log.info(f"scipy v{scipy.__version__}")
