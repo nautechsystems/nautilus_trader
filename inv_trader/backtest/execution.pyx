@@ -693,9 +693,15 @@ cdef class BacktestExecClient(ExecutionClient):
             quantity=event.filled_quantity,
             exchange_rate=exchange_rate)
 
-        cdef Money commission = self.commission_calculator.calculate_for_notional(event.symbol, notional_value=pnl)
+        cdef Money commission = self.commission_calculator.calculate(
+            symbol=event.symbol,
+            filled_quantity=event.filled_quantity,
+            exchange_rate=exchange_rate)
 
+        print(pnl)
+        print(commission)
         self.total_commissions += commission
+        print(self.total_commissions)
         pnl -= commission
         self.account_capital += pnl
         self.account_cash_activity_day += pnl
