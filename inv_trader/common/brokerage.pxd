@@ -20,3 +20,6 @@ cdef class CommissionCalculator:
     cdef object default
 
     cpdef Money calculate(self, Symbol symbol, Quantity filled_quantity, float exchange_rate)
+    cpdef Money calculate_for_notional(self, Symbol symbol, Money notional_value)
+
+    cdef float _get_commission_rate(self, Symbol symbol)

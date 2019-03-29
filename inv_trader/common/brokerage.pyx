@@ -47,11 +47,25 @@ cdef class CommissionCalculator:
         :param exchange_rate: The exchange rate (symbol quote currency to account base currency).
         :return: Money.
         """
-        cdef float commission_rate
-
-        if symbol in self.rates:
-            commission_rate = float(self.rates[symbol])
-        else:
-            commission_rate = float(self.default)
-
+        cdef float commission_rate = self._get_commission_rate(symbol)
         return Money(Decimal((float(filled_quantity.value) / 1000000) * commission_rate * exchange_rate))
+
+    cpdef Money calculate_for_notional(self, Symbol symbol, Money notional_value):
+        """
+        Return the calculated commission for the given arguments.
+        
+        :param symbol: The symbol for calculation.
+        :param notional_value: The notional value for the transaction.
+        :return: Money.
+        """
+        cdef float commission_rate = self._get_commission_rate(symbol)
+        return Money(Decimal((float(notional_value.value) / 1000000) * commission_rate))
+
+    cdef float _get_commission_rate(self, Symbol symbol):
+        """
+        Return the commission rate for the given symbol.
+        """
+        if symbol in self.rates:
+            return float(self.rates[symbol])
+        else:
+            return float(self.default)

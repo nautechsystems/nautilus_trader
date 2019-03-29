@@ -127,7 +127,7 @@ class EMACrossPy(TradeStrategy):
                 entry_price = Price(self.last_bar(self.bar_type).high + self.entry_buffer + self.spread)
                 stop_loss_price = Price(self.last_bar(self.bar_type).low - (self.atr.value * self.SL_atr_multiple))
 
-                exchange_rate = float(1 / self.last_tick(self.symbol).bid.value)
+                exchange_rate = self.exchange_rate(self.instrument.quote_currency)
                 position_size = self.position_sizer.calculate(
                     equity=self.account.free_equity,
                     exchange_rate=exchange_rate,
@@ -156,7 +156,7 @@ class EMACrossPy(TradeStrategy):
                 entry_price = Price(self.last_bar(self.bar_type).low - self.entry_buffer)
                 stop_loss_price = Price(self.last_bar(self.bar_type).high + (self.atr.value * self.SL_atr_multiple) + self.spread)
 
-                exchange_rate = float(1 / self.last_tick(self.symbol).bid.value)
+                exchange_rate = self.exchange_rate(self.instrument.quote_currency)
                 position_size = self.position_sizer.calculate(
                     equity=self.account.free_equity,
                     exchange_rate=exchange_rate,
