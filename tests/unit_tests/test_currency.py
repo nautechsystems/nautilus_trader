@@ -9,8 +9,6 @@
 
 import unittest
 
-from decimal import Decimal
-
 from inv_trader.enums.currency import Currency
 from inv_trader.enums.quote_type import QuoteType
 from inv_trader.model.currency import CurrencyCalculator
@@ -51,3 +49,37 @@ class CurrencyConverterTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(0.009082651697099209, result)
+
+    def test_can_calculate_exchange_rate_for_mid_quote_type(self):
+        # Arrange
+        converter = CurrencyCalculator()
+        bid_rates = {'USDJPY': 110.100}
+        ask_rates = {'USDJPY': 110.130}
+
+        # Act
+        result = converter.exchange_rate(
+            Currency.JPY,
+            Currency.USD,
+            QuoteType.MID,
+            bid_rates,
+            ask_rates)
+
+        # Assert
+        self.assertEqual(0.00908141490072012, result)
+
+    def test_can_calculate_exchange_rate_for_mid_quote_type2(self):
+        # Arrange
+        converter = CurrencyCalculator()
+        bid_rates = {'USDJPY': 110.100}
+        ask_rates = {'USDJPY': 110.130}
+
+        # Act
+        result = converter.exchange_rate(
+            Currency.USD,
+            Currency.JPY,
+            QuoteType.MID,
+            bid_rates,
+            ask_rates)
+
+        # Assert
+        self.assertEqual(110.11499786376953, result)

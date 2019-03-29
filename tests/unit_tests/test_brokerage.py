@@ -32,6 +32,18 @@ class CommissionCalculatorTests(unittest.TestCase):
         # Assert
         self.assertEqual(Money(15), result)
 
+    def test_can_calculate_correct_commission_for_notional(self):
+        # Arrange
+        calculator = CommissionCalculator()
+
+        # Act
+        result = calculator.calculate_for_notional(
+            GBPUSD_FXCM,
+            Money(1000000))
+
+        # Assert
+        self.assertEqual(Money(15), result)
+
     def test_can_calculate_correct_commission_with_exchange_rate(self):
         # Arrange
         calculator = CommissionCalculator()

@@ -9,6 +9,9 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
+from typing import Dict
+
+from inv_trader.core.precondition cimport Precondition
 from inv_trader.enums.currency cimport Currency, currency_string
 from inv_trader.enums.quote_type cimport QuoteType, quote_type_string
 
@@ -36,7 +39,10 @@ cdef class CurrencyCalculator:
         :param bid_rates: The dictionary of currency pair bid rates (Dict[str, float]).
         :param ask_rates: The dictionary of currency pair ask rates (Dict[str, float]).
         :return: float.
+        :raises ValueError: If the bid rates is not an equal length to the ask rates.
         """
+        Precondition.true(len(bid_rates) == len(ask_rates), 'len(bid_rates) == len(ask_rates)')
+
         if from_currency == to_currency:
             return 1.0  # No exchange necessary
 
@@ -49,13 +55,15 @@ cdef class CurrencyCalculator:
         elif quote_type == QuoteType.ASK:
             calculation_rates = ask_rates
         elif quote_type == QuoteType.MID:
-            calculation_rates = bid_rates + ask_rates / 2.0
+            calculation_rates = {}  # type: Dict[str, float]
+            for symbol in bid_rates.keys():
+                calculation_rates[symbol] = (bid_rates[symbol] + ask_rates[symbol]) / 2.0
         else:
             raise ValueError(f"Cannot calculate exchange rate for quote type {quote_type_string(quote_type)}.")
 
         if ccy_pair in calculation_rates:
             return calculation_rates[ccy_pair]
         elif swapped_ccy_pair in calculation_rates:
-            return 1 / calculation_rates[swapped_ccy_pair]
+            return 1.0 / calculation_rates[swapped_ccy_pair]
         else:
             raise ValueError(f"Cannot calculate exchange rate - cannot find rate for {ccy_pair} or {swapped_ccy_pair}.")

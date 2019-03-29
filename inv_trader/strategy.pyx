@@ -16,6 +16,8 @@ from collections import deque
 from typing import Callable, Dict, List, Deque
 
 from inv_trader.core.precondition cimport Precondition
+from inv_trader.enums.currency cimport Currency
+from inv_trader.enums.quote_type cimport QuoteType
 from inv_trader.enums.order_side cimport OrderSide
 from inv_trader.enums.market_position cimport MarketPosition
 from inv_trader.common.clock cimport Clock, LiveClock
@@ -23,6 +25,7 @@ from inv_trader.common.logger cimport Logger, LoggerAdapter
 from inv_trader.common.execution cimport ExecutionClient
 from inv_trader.common.data cimport DataClient
 from inv_trader.common.guid cimport GuidFactory, LiveGuidFactory
+from inv_trader.model.currency cimport CurrencyCalculator
 from inv_trader.model.events cimport Event, PositionEvent
 from inv_trader.model.identifiers cimport GUID, Label, OrderId, PositionId, PositionIdGenerator
 from inv_trader.model.objects cimport ValidString, Symbol, Price, Tick, BarType, Bar, Instrument
@@ -74,9 +77,9 @@ cdef class TradeStrategy:
             self.log = LoggerAdapter(f"{self.name.value}")
         else:
             self.log = LoggerAdapter(f"{self.name.value}", logger)
+        self.id = GUID(uuid.uuid4())
         self.id_tag_trader = ValidString(id_tag_trader)
         self.id_tag_strategy = ValidString(id_tag_strategy)
-        self.id = GUID(uuid.uuid4())
         self.position_id_generator = PositionIdGenerator(
             id_tag_trader=self.id_tag_trader,
             id_tag_strategy=self.id_tag_strategy,
@@ -85,12 +88,14 @@ cdef class TradeStrategy:
             id_tag_trader=self.id_tag_trader,
             id_tag_strategy=self.id_tag_strategy,
             clock=self._clock)
+        self._currency_calculator = CurrencyCalculator()
         self.bar_capacity = bar_capacity
         self.is_running = False
         self._ticks = {}               # type: Dict[Symbol, Tick]
         self._bars = {}                # type: Dict[BarType, Deque[Bar]]
         self._indicators = {}          # type: Dict[BarType, List[Indicator]]
         self._indicator_updaters = {}  # type: Dict[BarType, List[IndicatorUpdater]]
+
         self._data_client = None       # Initialized when registered with data client
         self._exec_client = None       # Initialized when registered with execution client
         self._portfolio = None         # Initialized when registered with execution client
@@ -554,6 +559,26 @@ cdef class TradeStrategy:
             return OrderSide.BUY
         else:
             raise ValueError("Cannot flatten a FLAT position.")
+
+    cpdef float exchange_rate(self, Currency from_currency):
+        """
+        Return the calculated exchange rate for the give from currency to the account currency.
+        
+        :param from_currency: The from currency for the exchange rate.
+        :return: float.
+        """
+        cdef dict bid_rates = {}
+        cdef dict ask_rates = {}
+        for symbol, tick in self._ticks.items():
+            bid_rates[symbol.code] = tick.bid.as_float()
+            ask_rates[symbol.code] = tick.ask.as_float()
+
+        return self._currency_calculator.exchange_rate(
+            from_currency,
+            self.account.currency,
+            QuoteType.MID,
+            bid_rates,
+            ask_rates)
 
     cpdef bint order_exists(self, OrderId order_id):
         """

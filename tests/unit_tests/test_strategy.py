@@ -14,7 +14,7 @@ import time
 from datetime import datetime, timezone, timedelta
 
 from inv_trader.common.clock import TestClock, LiveClock
-from inv_trader.model.enums import Venue, Resolution, QuoteType, OrderSide, OrderStatus
+from inv_trader.model.enums import Venue, Resolution, QuoteType, OrderSide, OrderStatus, Currency
 from inv_trader.model.enums import MarketPosition
 from inv_trader.model.objects import Quantity, Symbol, Price, Tick, BarType, Bar
 from inv_trader.model.events import TimeEvent
@@ -398,6 +398,44 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(True)  # No exceptions thrown
+
+    def test_can_get_exchange_rate_with_conversion(self):
+        # Arrange
+        strategy = TradeStrategy()
+        exec_client = MockExecClient()
+        exec_client.register_strategy(strategy)
+
+        tick = Tick(Symbol('USDJPY', Venue.FXCM),
+                    Price('110.80000'),
+                    Price('110.80010'),
+                    datetime(2018, 1, 1, 19, 59, 1, 0, timezone.utc))
+
+        strategy.handle_tick(tick)
+
+        # Act
+        result = strategy.exchange_rate(Currency.JPY)
+
+        # Assert
+        self.assertEqual(0.009025266394019127, result)
+
+    def test_can_get_exchange_rate_with_no_conversion(self):
+        # Arrange
+        strategy = TradeStrategy()
+        exec_client = MockExecClient()
+        exec_client.register_strategy(strategy)
+
+        tick = Tick(Symbol('AUDUSD', Venue.FXCM),
+                    Price('0.80000'),
+                    Price('0.80010'),
+                    datetime(2018, 1, 1, 19, 59, 1, 0, timezone.utc))
+
+        strategy.handle_tick(tick)
+
+        # Act
+        result = strategy.exchange_rate(Currency.USD)
+
+        # Assert
+        self.assertEqual(1.0, result)
 
     def test_can_set_time_alert(self):
         # Arrange
