@@ -123,7 +123,7 @@ cdef class ExecutionClient:
         """
         Register the given strategy with the execution client.
 
-        :raises ValueError: If the strategy is already registered (must have a unique id).
+        :raises ValueError: If the strategy is already registered with the execution client.
         """
         Precondition.not_in(strategy.id, self._registered_strategies, 'strategy', 'registered_strategies')
         Precondition.not_in(strategy.id, self._orders_active, 'strategy', 'orders_active')
@@ -212,6 +212,7 @@ cdef class ExecutionClient:
         
         :param strategy_id: The strategy identifier associated with the orders.
         :return: Dict[OrderId, Order].
+        :raises ValueError: If the strategy identifier is not registered with the execution client.
         """
         Precondition.is_in(strategy_id, self._orders_active, 'strategy_id', 'orders_active')
         Precondition.is_in(strategy_id, self._orders_completed, 'strategy_id', 'orders_completed')
@@ -224,6 +225,7 @@ cdef class ExecutionClient:
         
         :param strategy_id: The strategy identifier associated with the orders.
         :return: Dict[OrderId, Order].
+        :raises ValueError: If the strategy identifier is not registered with the execution client.
         """
         Precondition.is_in(strategy_id, self._orders_active, 'strategy_id', 'orders_active')
 
@@ -235,6 +237,7 @@ cdef class ExecutionClient:
         
         :param strategy_id: The strategy identifier associated with the orders.
         :return: Dict[OrderId, Order].
+        :raises ValueError: If the strategy identifier is not registered with the execution client.
         """
         Precondition.is_in(strategy_id, self._orders_completed, 'strategy_id', 'orders_completed')
 
@@ -267,6 +270,9 @@ cdef class ExecutionClient:
     cdef void _handle_event(self, Event event):
         """
         Handle the given event received from the execution service.
+        
+        :param: event: The event to handle.
+        :raises ValueError: If the events order identifier is not registered with the execution client.
         """
         cdef Order order
         cdef GUID strategy_id
@@ -327,7 +333,7 @@ cdef class ExecutionClient:
         :param order: The order to register.
         :param position_id: The order identifier to associate with the order.
         :param strategy_id: The strategy identifier to associate with the order.
-        :raises ValueError: If the order.id is already in the order_index.
+        :raises ValueError: If the order identifier is already registered with the execution client.
         """
         Precondition.not_in(order.id, self._order_book, 'order.id', 'order_book')
         Precondition.not_in(order.id, self._order_strategy_index, 'order.id', 'order_index')
