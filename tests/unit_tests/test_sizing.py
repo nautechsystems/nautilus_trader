@@ -27,14 +27,14 @@ class FixedRiskSizerTests(unittest.TestCase):
         # Act
         result = self.sizer.calculate(
             equity,
-            100,  # 1%
+            10,  # 0.1%
             Price('1.00100'),
             Price('1.00000'),
             exchange_rate=1.0,
             unit_batch_size=1000)
 
         # Assert
-        self.assertEqual(Quantity(9985000), result)
+        self.assertEqual(Quantity(998000), result)
 
     def test_can_calculate_single_unit_with_exchange_rate(self):
         # Arrange
