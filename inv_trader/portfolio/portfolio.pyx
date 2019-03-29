@@ -159,6 +159,7 @@ cdef class Portfolio:
         
         :param strategy_id: The strategy identifier associated with the positions.
         :return: Dict[PositionId, Position].
+        :raises ValueError: If the strategy identifier is not registered with the portfolio.
         """
         Precondition.is_in(strategy_id, self._positions_active, 'strategy_id', 'positions_active')
         Precondition.is_in(strategy_id, self._positions_closed, 'strategy_id', 'positions_closed')
@@ -171,6 +172,7 @@ cdef class Portfolio:
         
         :param strategy_id: The strategy identifier associated with the positions.
         :return: Dict[PositionId, Position].
+        :raises ValueError: If the strategy identifier is not registered with the portfolio.
         """
         Precondition.is_in(strategy_id, self._positions_active, 'strategy_id', 'positions_active')
 
@@ -182,6 +184,7 @@ cdef class Portfolio:
         
         :param strategy_id: The strategy identifier associated with the positions.
         :return: Dict[PositionId, Position].
+        :raises ValueError: If the strategy identifier is not registered with the portfolio.
         """
         Precondition.is_in(strategy_id, self._positions_closed, 'strategy_id', 'positions_closed')
 
@@ -194,7 +197,10 @@ cdef class Portfolio:
         
         :param strategy_id: The strategy identifier.
         :return: True if the strategy is flat, else False.
+        :raises ValueError: If the strategy identifier is not registered with the portfolio.
         """
+        Precondition.is_in(strategy_id, self._positions_active, 'strategy_id', 'positions_active')
+
         return len(self._positions_active[strategy_id]) == 0
 
     cpdef bint is_flat(self):
@@ -212,7 +218,8 @@ cdef class Portfolio:
         """
         Register the given execution client with the portfolio to receive position events.
         
-        :param client: The client to register
+        :param client: The client to register.
+        :raises ValueError: If the client is None.
         """
         Precondition.not_none(client, 'client')
 
@@ -224,6 +231,7 @@ cdef class Portfolio:
         Register the given strategy identifier with the portfolio.
         
         :param strategy: The strategy to register.
+        :raises ValueError: If the strategy is already registered with the portfolio.
         """
         Precondition.true(strategy.id not in self._registered_strategies, 'strategy_id not in self._registered_strategies')
         Precondition.not_in(strategy.id, self._positions_active, 'strategy_id', 'active_positions')
@@ -240,6 +248,7 @@ cdef class Portfolio:
         
         :param order_id: The order identifier to register.
         :param position_id: The position identifier to register.
+        :raises ValueError: If the order is already registered with the portfolio.
         """
         Precondition.not_in(order_id, self._order_p_index, 'order_id', 'order_position_index')
 
@@ -251,8 +260,11 @@ cdef class Portfolio:
         
         :param event: The event to handle.
         :param strategy_id: The strategy identifier.
+        :raises ValueError: If the events order identifier is not registered with the portfolio.
+        :raises ValueError: If the strategy identifier is not registered with the portfolio.
         """
         Precondition.is_in(event.order_id, self._order_p_index, 'event.order_id', 'order_position_index')
+        Precondition.true(strategy_id in self._registered_strategies, 'strategy_id in registered_strategies')
 
         cdef PositionId position_id = self._order_p_index[event.order_id]
         cdef Position position
