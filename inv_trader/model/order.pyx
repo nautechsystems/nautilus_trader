@@ -65,7 +65,7 @@ cdef class Order:
         :param label: The optional order label / secondary identifier (can be None).
         :param time_in_force: The orders time in force (default DAY).
         :param expire_time: The optional order expire time (can be None).
-        :raises ValueError: If the quantity is not positive (> 0).
+        :raises ValueError: If the order quantity is not positive (> 0).
         :raises ValueError: If the order type should not have a price and the price is not None.
         :raises ValueError: If the order type should have a price and the price is None.
         :raises ValueError: If the time_in_force is GTD and the expire_time is None.
@@ -162,34 +162,42 @@ cdef class Order:
 
     cpdef list get_order_ids_broker(self):
         """
-        :return: A copy of the list of internally held broker order ids. 
+        Return a list of broker order identifiers.
+        
+        :return: List[OrderId]. 
         """
         return self._order_ids_broker.copy()
 
     cpdef list get_execution_ids(self):
         """
-        :return: A copy of the list of internally held execution ids. 
+        Return a list of execution identifiers.
+        
+        :return: List[ExecutionId].
         """
         return self._execution_ids.copy()
 
     cpdef list get_execution_tickets(self):
         """
-        :return: A copy of the list of internally held execution tickets. 
+        Return a list of execution tickets.
+        
+        :return: List[ExecutionTicket]. 
         """
         return self._execution_tickets.copy()
 
     cpdef list get_events(self):
         """
-        :return: A copy of the list of internally held events. 
+        Return a list or order events.
+        
+        :return: List[OrderEvent]. 
         """
         return self._events.copy()
 
     cpdef void apply(self, OrderEvent event):
         """
-        Applies the given order event to the order.
+        Apply the given order event to the order.
 
         :param event: The order event to apply.
-        :raises ValueError: If the order_events order_id is not equal to the id.
+        :raises ValueError: If the order_events order_id is not equal to the order id.
         """
         Precondition.equal(event.order_id, self.id)
 
@@ -369,6 +377,7 @@ cdef class OrderFactory:
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
         :param label: The orders label (can be None).
+        :raises ValueError: If the order quantity is not positive (> 0).
         :return: Order.
         """
         return Order(
@@ -404,6 +413,7 @@ cdef class OrderFactory:
         :param time_in_force: The orders time in force (can be None).
         :param expire_time: The orders expire time (can be None unless time_in_force is GTD).
         :return: Order.
+        :raises ValueError: If the order quantity is not positive (> 0).
         :raises ValueError: If the time_in_force is GTD and the expire_time is None.
         """
         return Order(
@@ -439,6 +449,7 @@ cdef class OrderFactory:
         :param time_in_force: The orders time in force (can be None).
         :param expire_time: The orders expire time (can be None unless time_in_force is GTD).
         :return: Order.
+        :raises ValueError: If the order quantity is not positive (> 0).
         :raises ValueError: If the time_in_force is GTD and the expire_time is None.
         """
         return Order(
@@ -474,6 +485,7 @@ cdef class OrderFactory:
         :param time_in_force: The orders time in force (can be None).
         :param expire_time: The orders expire time (can be None unless time_in_force is GTD).
         :return: Order.
+        :raises ValueError: If the order quantity is not positive (> 0).
         :raises ValueError: If the time_in_force is GTD and the expire_time is None.
         """
         return Order(
@@ -509,6 +521,7 @@ cdef class OrderFactory:
         :param time_in_force: The orders time in force (can be None).
         :param expire_time: The orders expire time (can be None unless time_in_force is GTD).
         :return: Order.
+        :raises ValueError: If the order quantity is not positive (> 0).
         :raises ValueError: If the time_in_force is GTD and the expire_time is None.
         """
         return Order(
@@ -537,6 +550,7 @@ cdef class OrderFactory:
         :param quantity: The orders quantity (> 0).
         :param label: The orders label (can be None).
         :return: Order.
+        :raises ValueError: If the order quantity is not positive (> 0).
         """
         return Order(
             symbol,
@@ -564,6 +578,7 @@ cdef class OrderFactory:
         :param quantity: The orders quantity (> 0).
         :param label: The orders label (can be None).
         :return: Order.
+        :raises ValueError: If the order quantity is not positive (> 0).
         """
         return Order(
             symbol,
@@ -595,6 +610,7 @@ cdef class OrderFactory:
         :param price_profit_target: The optional profit_target_price (can be None).
         :param label: The orders label (can be None).
         :return: AtomicOrder.
+        :raises ValueError: If the order quantity is not positive (> 0).
         """
         cdef Label entry_label = None
         if label is not None:
@@ -637,7 +653,7 @@ cdef class OrderFactory:
         :param time_in_force: The optional order time in force (can be None).
         :param expire_time: The orders expire time (can be None unless time_in_force is GTD).
         :return: AtomicOrder.
-        :raises ValueError: If the quantity is not positive (> 0).
+        :raises ValueError: If the order quantity is not positive (> 0).
         :raises ValueError: If the time_in_force is GTD and the expire_time is None.
         """
         cdef Label entry_label = None
@@ -682,6 +698,7 @@ cdef class OrderFactory:
         :param time_in_force: The orders time in force (can be None).
         :param expire_time: The orders expire time (can be None unless time_in_force is GTD).
         :return: AtomicOrder.
+        :raises ValueError: If the order quantity is not positive (> 0).
         :raises ValueError: If the time_in_force is GTD and the expire_time is None.
         """
         cdef Label entry_label = None
