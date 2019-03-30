@@ -185,6 +185,7 @@ cdef class EMACross(TradeStrategy):
     cdef readonly object atr
     cdef readonly Order entry_order
     cdef readonly Order stop_loss_order
+    cdef readonly Order profit_target_order
     cdef readonly PositionId position_id
 
     def __init__(self,
@@ -242,6 +243,7 @@ cdef class EMACross(TradeStrategy):
         # Users custom order management logic
         self.entry_order = None
         self.stop_loss_order = None
+        self.profit_target_order = None
         self.position_id = None
 
     cpdef void on_start(self):
@@ -278,23 +280,25 @@ cdef class EMACross(TradeStrategy):
             # Wait for indicators to warm up...
             return
 
-        cdef Price entry_price
-        cdef Price stop_loss_price
+        cdef Price price_entry
+        cdef Price price_stop_loss
+        cdef Price price_profit_target
         cdef Quantity position_size
         cdef AtomicOrder atomic_order = None
 
         if self.is_flat() and self.entry_order is None:
             # BUY LOGIC
             if self.fast_ema.value >= self.slow_ema.value:
-                entry_price = Price(self.last_bar(self.bar_type).high + self.entry_buffer + self.spread)
-                stop_loss_price = Price(self.last_bar(self.bar_type).low - (self.atr.value * self.SL_atr_multiple))
+                price_entry = Price(self.last_bar(self.bar_type).high + self.entry_buffer + self.spread)
+                price_stop_loss = Price(self.last_bar(self.bar_type).low - (self.atr.value * self.SL_atr_multiple))
+                price_profit_target = Price(price_entry + (price_entry - price_stop_loss))
 
                 exchange_rate = self.exchange_rate(self.instrument.quote_currency)
                 position_size = self.position_sizer.calculate(
                     equity=self.account.free_equity,
                     risk_bp=self.risk_bp,
-                    entry_price=entry_price,
-                    stop_loss_price=stop_loss_price,
+                    entry_price=price_entry,
+                    stop_loss_price=price_stop_loss,
                     exchange_rate=exchange_rate,
                     commission_rate=Decimal(15),
                     hard_limit=0,
@@ -303,27 +307,28 @@ cdef class EMACross(TradeStrategy):
 
                 if position_size.value > 0:
                     atomic_order = self.order_factory.atomic_stop_market(
-                        self.symbol,
-                        OrderSide.BUY,
-                        position_size,
-                        entry_price,
-                        stop_loss_price,
-                        price_profit_target=None,
+                        symbol=self.symbol,
+                        order_side=OrderSide.BUY,
+                        quantity=position_size,
+                        price_entry=price_entry,
+                        price_stop_loss=price_stop_loss,
+                        price_profit_target=price_profit_target,
                         label=Label('S1'),
                         time_in_force=TimeInForce.GTD,
                         expire_time=self.time_now() + timedelta(minutes=1))
 
             # SELL LOGIC
             elif self.fast_ema.value < self.slow_ema.value:
-                entry_price = Price(self.last_bar(self.bar_type).low - self.entry_buffer)
-                stop_loss_price = Price(self.last_bar(self.bar_type).high + (self.atr.value * self.SL_atr_multiple) + self.spread)
+                price_entry = Price(self.last_bar(self.bar_type).low - self.entry_buffer)
+                price_stop_loss = Price(self.last_bar(self.bar_type).high + (self.atr.value * self.SL_atr_multiple) + self.spread)
+                price_profit_target = Price(price_entry - (price_stop_loss - price_entry))
 
                 exchange_rate = self.exchange_rate(self.instrument.quote_currency)
                 position_size = self.position_sizer.calculate(
                     equity=self.account.free_equity,
                     risk_bp=self.risk_bp,
-                    entry_price=entry_price,
-                    stop_loss_price=stop_loss_price,
+                    entry_price=price_entry,
+                    stop_loss_price=price_stop_loss,
                     exchange_rate=exchange_rate,
                     commission_rate=Decimal(15),
                     hard_limit=0,
@@ -332,12 +337,12 @@ cdef class EMACross(TradeStrategy):
 
                 if position_size.value > 0:
                     atomic_order = self.order_factory.atomic_stop_market(
-                        self.symbol,
-                        OrderSide.SELL,
-                        position_size,
-                        entry_price,
-                        stop_loss_price,
-                        price_profit_target=None,
+                        symbol=self.symbol,
+                        order_side=OrderSide.SELL,
+                        quantity=position_size,
+                        price_entry=price_entry,
+                        price_stop_loss=price_stop_loss,
+                        price_profit_target=price_profit_target,
                         label=Label('S1'),
                         time_in_force=TimeInForce.GTD,
                         expire_time=self.time_now() + timedelta(minutes=1))
@@ -346,6 +351,7 @@ cdef class EMACross(TradeStrategy):
             if atomic_order is not None:
                 self.entry_order = atomic_order.entry
                 self.stop_loss_order = atomic_order.stop_loss
+                self.profit_target_order = atomic_order.profit_target
                 self.position_id = self.generate_position_id(self.symbol)
 
                 self.submit_atomic_order(atomic_order, self.position_id)
@@ -416,6 +422,7 @@ cdef class EMACross(TradeStrategy):
         """
         self.entry_order = None
         self.stop_loss_order = None
+        self.profit_target_order = None
         self.position_id = None
 
     cdef bint _is_stop_loss_active(self):
