@@ -363,14 +363,13 @@ cdef class OrderFactory:
             Quantity quantity,
             Label label=None):
         """
-        Creates and returns a new market order.
+        Return a market order with the given parameters.
 
         :param symbol: The orders symbol.
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
         :param label: The orders label (can be None).
-        :return: The market order.
-        :raises ValueError: If the quantity is not positive (> 0).
+        :return: Order.
         """
         return Order(
             symbol,
@@ -394,9 +393,9 @@ cdef class OrderFactory:
             TimeInForce time_in_force=TimeInForce.DAY,
             datetime expire_time=None):
         """
-        Creates and returns a new limit order.
-        If the time in force is GTD then a valid expire time must be given.
+        Returns a limit order with the given parameters.
 
+        Note: If the time in force is GTD then a valid expire time must be given.
         :param symbol: The orders symbol.
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
@@ -404,8 +403,7 @@ cdef class OrderFactory:
         :param label: The orders label (can be None).
         :param time_in_force: The orders time in force (can be None).
         :param expire_time: The orders expire time (can be None unless time_in_force is GTD).
-        :return: The limit order.
-        :raises ValueError: If the quantity is not positive (> 0).
+        :return: Order.
         :raises ValueError: If the time_in_force is GTD and the expire_time is None.
         """
         return Order(
@@ -430,9 +428,9 @@ cdef class OrderFactory:
             TimeInForce time_in_force=TimeInForce.DAY,
             datetime expire_time=None):
         """
-        Creates and returns a new stop-market order.
-        If the time in force is GTD then a valid expire time must be given.
+        Returns a stop-market order with the given parameters.
 
+        Note: If the time in force is GTD then a valid expire time must be given.
         :param symbol: The orders symbol.
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
@@ -440,8 +438,7 @@ cdef class OrderFactory:
         :param label: The orders label (can be None).
         :param time_in_force: The orders time in force (can be None).
         :param expire_time: The orders expire time (can be None unless time_in_force is GTD).
-        :return: The stop-market order.
-        :raises ValueError: If the quantity is not positive (> 0).
+        :return: Order.
         :raises ValueError: If the time_in_force is GTD and the expire_time is None.
         """
         return Order(
@@ -466,9 +463,9 @@ cdef class OrderFactory:
             TimeInForce time_in_force=TimeInForce.DAY,
             datetime expire_time=None):
         """
-        Creates and returns a new stop-limit order.
-        If the time in force is GTD then a valid expire time must be given.
+        Return a stop-limit order with the given parameters.
 
+        Note: If the time in force is GTD then a valid expire time must be given.
         :param symbol: The orders symbol.
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
@@ -476,8 +473,7 @@ cdef class OrderFactory:
         :param label: The orders label (can be None).
         :param time_in_force: The orders time in force (can be None).
         :param expire_time: The orders expire time (can be None unless time_in_force is GTD).
-        :return: The stop-limit order.
-        :raises ValueError: If the quantity is not positive (> 0).
+        :return: Order.
         :raises ValueError: If the time_in_force is GTD and the expire_time is None.
         """
         return Order(
@@ -502,9 +498,9 @@ cdef class OrderFactory:
             TimeInForce time_in_force=TimeInForce.DAY,
             datetime expire_time=None):
         """
-        Creates and returns a new market-if-touched order
-        If the time in force is GTD then a valid expire time must be given.
-
+        Return a market-if-touched order with the given parameters.
+        
+        Note: If the time in force is GTD then a valid expire time must be given.
         :param symbol: The orders symbol.
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
@@ -512,8 +508,7 @@ cdef class OrderFactory:
         :param label: The orders label (can be None).
         :param time_in_force: The orders time in force (can be None).
         :param expire_time: The orders expire time (can be None unless time_in_force is GTD).
-        :return: The market-if-touched order.
-        :raises ValueError: If the quantity is not positive (> 0).
+        :return: Order.
         :raises ValueError: If the time_in_force is GTD and the expire_time is None.
         """
         return Order(
@@ -535,14 +530,13 @@ cdef class OrderFactory:
             Quantity quantity,
             Label label=None):
         """
-        Creates and returns a new fill-or-kill order.
+        Return a fill-or-kill order with the given parameters.
 
         :param symbol: The orders symbol.
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
         :param label: The orders label (can be None).
-        :return: The fill or kill order.
-        :raises ValueError: If the quantity is not positive (> 0).
+        :return: Order.
         """
         return Order(
             symbol,
@@ -563,14 +557,13 @@ cdef class OrderFactory:
             Quantity quantity,
             Label label=None):
         """
-        Creates and returns a new immediate-or-cancel order.
+        Return a immediate-or-cancel order with the given parameters.
 
         :param symbol: The orders symbol.
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
         :param label: The orders label (can be None).
-        :return: The immediate or cancel order.
-        :raises ValueError: If the quantity is not positive (> 0).
+        :return: Order.
         """
         return Order(
             symbol,
@@ -593,7 +586,7 @@ cdef class OrderFactory:
             Price price_profit_target=None,
             Label label=None):
         """
-        Creates and returns a new atomic order with a market entry.
+        Return a market entry atomic order with the given parameters.
 
         :param symbol: The orders symbol.
         :param order_side: The orders side.
@@ -601,8 +594,7 @@ cdef class OrderFactory:
         :param price_stop_loss: The stop-loss price.
         :param price_profit_target: The optional profit_target_price (can be None).
         :param label: The orders label (can be None).
-        :return: The AtomicOrder with a market entry.
-        :raises ValueError: If the quantity is not positive (> 0).
+        :return: AtomicOrder.
         """
         cdef Label entry_label = None
         if label is not None:
@@ -632,8 +624,8 @@ cdef class OrderFactory:
             TimeInForce time_in_force=TimeInForce.DAY,
             datetime expire_time=None):
         """
-        Creates and returns a new atomic order with a limit entry.
-        If the time in force is GTD then a valid expire time must be given.
+        Return a limit entry atomic order with the given parameters.
+
 
         :param symbol: The orders symbol.
         :param order_side: The orders side.
@@ -644,7 +636,7 @@ cdef class OrderFactory:
         :param label: The optional order label (can be None).
         :param time_in_force: The optional order time in force (can be None).
         :param expire_time: The orders expire time (can be None unless time_in_force is GTD).
-        :return: The atomic order with a limit entry.
+        :return: AtomicOrder.
         :raises ValueError: If the quantity is not positive (> 0).
         :raises ValueError: If the time_in_force is GTD and the expire_time is None.
         """
@@ -678,8 +670,7 @@ cdef class OrderFactory:
             TimeInForce time_in_force=TimeInForce.DAY,
             datetime expire_time=None):
         """
-        Creates and returns a new atomic order with a stop-market entry.
-        If the time in force is GTD then a valid expire time must be given.
+        Return a stop-market entry atomic order with the given parameters.
 
         :param symbol: The orders symbol.
         :param order_side: The orders side.
@@ -690,8 +681,7 @@ cdef class OrderFactory:
         :param label: The orders label (can be None).
         :param time_in_force: The orders time in force (can be None).
         :param expire_time: The orders expire time (can be None unless time_in_force is GTD).
-        :return: The stop-market order.
-        :raises ValueError: If the quantity is not positive (> 0).
+        :return: AtomicOrder.
         :raises ValueError: If the time_in_force is GTD and the expire_time is None.
         """
         cdef Label entry_label = None
