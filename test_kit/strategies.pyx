@@ -291,8 +291,8 @@ cdef class EMACross(TradeStrategy):
                 position_size = self.position_sizer.calculate(
                     equity=self.account.free_equity,
                     risk_bp=self.risk_bp,
-                    entry_price=price_entry,
-                    stop_loss_price=price_stop_loss,
+                    price_entry=price_entry,
+                    price_stop_loss=price_stop_loss,
                     exchange_rate=exchange_rate,
                     commission_rate=Decimal(15),
                     hard_limit=0,
@@ -321,8 +321,8 @@ cdef class EMACross(TradeStrategy):
                 position_size = self.position_sizer.calculate(
                     equity=self.account.free_equity,
                     risk_bp=self.risk_bp,
-                    entry_price=price_entry,
-                    stop_loss_price=price_stop_loss,
+                    price_entry=price_entry,
+                    price_stop_loss=price_stop_loss,
                     exchange_rate=exchange_rate,
                     commission_rate=Decimal(15),
                     hard_limit=0,

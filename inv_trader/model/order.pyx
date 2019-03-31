@@ -29,11 +29,11 @@ from inv_trader.model.identifiers cimport OrderIdGenerator
 
 
 # Order types which require a price to be valid
-cdef list PRICED_ORDER_TYPES = [
+cdef set PRICED_ORDER_TYPES = {
     OrderType.LIMIT,
     OrderType.STOP_MARKET,
     OrderType.STOP_LIMIT,
-    OrderType.MIT]
+    OrderType.MIT}
 
 
 cdef class Order:
@@ -672,7 +672,8 @@ cdef class OrderFactory:
         return self._create_atomic_order(
             entry_order,
             price_stop_loss,
-            price_profit_target)
+            price_profit_target,
+            label)
 
     cpdef AtomicOrder atomic_stop_market(
             self,
@@ -717,14 +718,15 @@ cdef class OrderFactory:
         return self._create_atomic_order(
             entry_order,
             price_stop_loss,
-            price_profit_target)
+            price_profit_target,
+            label)
 
     cdef AtomicOrder _create_atomic_order(
         self,
         Order entry,
         Price price_stop_loss,
-        Price price_profit_target=None,
-        Label original_label=None):
+        Price price_profit_target,
+        Label original_label):
         cdef OrderSide child_order_side = OrderSide.BUY if entry.side is OrderSide.SELL else OrderSide.SELL
 
         cdef Label label_stop_loss = None

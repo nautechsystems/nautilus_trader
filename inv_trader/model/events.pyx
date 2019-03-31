@@ -254,6 +254,13 @@ cdef class OrderRejected(OrderEvent):
         self.rejected_time = rejected_time
         self.rejected_reason = rejected_reason
 
+    def __str__(self) -> str:
+        """
+        :return: The str() string representation of the event.
+        """
+        return (f"{self.__class__.__name__}"
+                f"(id={self.order_id.value}, "
+                f"reason={self.rejected_reason})")
 
 cdef class OrderWorking(OrderEvent):
     """
@@ -307,6 +314,14 @@ cdef class OrderWorking(OrderEvent):
         self.working_time = working_time
         self.expire_time = expire_time
 
+    def __str__(self) -> str:
+        """
+        :return: The str() string representation of the event.
+        """
+        return (f"{self.__class__.__name__}"
+                f"(id={self.order_id.value}, "
+                f"label={self.label.value}, "
+                f"price={self.price})")
 
 cdef class OrderCancelled(OrderEvent):
     """
@@ -372,7 +387,9 @@ cdef class OrderCancelReject(OrderEvent):
         :return: The str() string representation of the event.
         """
         return (f"{self.__class__.__name__}"
-                f"(id={self.order_id.value}, reason={self.cancel_reject_reason})")
+                f"(id={self.order_id.value}, "
+                f"from={self.cancel_reject_response}, "
+                f"reason={self.cancel_reject_reason})")
 
 
 cdef class OrderExpired(OrderEvent):
@@ -476,6 +493,14 @@ cdef class OrderFilled(OrderEvent):
         self.average_price = average_price
         self.execution_time = execution_time
 
+    def __str__(self) -> str:
+        """
+        :return: The str() string representation of the event.
+        """
+        return (f"{self.__class__.__name__}"
+                f"(id={self.order_id.value}, "
+                f"av_filled_price={self.average_price})")
+
 
 cdef class OrderPartiallyFilled(OrderEvent):
     """
@@ -520,6 +545,16 @@ cdef class OrderPartiallyFilled(OrderEvent):
         self.leaves_quantity = leaves_quantity
         self.average_price = average_price
         self.execution_time = execution_time
+
+    def __str__(self) -> str:
+        """
+        :return: The str() string representation of the event.
+        """
+        return (f"{self.__class__.__name__}"
+                f"(id={self.order_id.value}, "
+                f"filled_quantity={self.filled_quantity}, "
+                f"leaves_quantity={self.leaves_quantity}, "
+                f"av_filled_price={self.average_price})")
 
 
 cdef class PositionEvent(Event):

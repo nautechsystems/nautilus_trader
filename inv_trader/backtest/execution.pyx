@@ -43,6 +43,12 @@ from inv_trader.commands cimport Command, CollateralInquiry
 from inv_trader.commands cimport SubmitOrder, SubmitAtomicOrder, ModifyOrder, CancelOrder
 from inv_trader.portfolio.portfolio cimport Portfolio
 
+# Stop order types
+cdef set STOP_ORDER_TYPES = {
+    OrderType.STOP_MARKET,
+    OrderType.STOP_LIMIT,
+    OrderType.MIT}
+
 
 cdef class BacktestExecClient(ExecutionClient):
     """
@@ -315,16 +321,16 @@ cdef class BacktestExecClient(ExecutionClient):
         
         :param command: The command to execute.
         """
-        cdef Order order = command.order
+        # Generate event
         cdef OrderSubmitted submitted = OrderSubmitted(
-            order.symbol,
-            order.id,
+            command.order.symbol,
+            command.order.id,
             self._clock.time_now(),
             self._guid_factory.generate(),
             self._clock.time_now())
         self.handle_event(submitted)
 
-        self._accept_order(order)
+        self._accept_order(command.order)
 
     cdef void _submit_atomic_order(self, SubmitAtomicOrder command):
         """
@@ -340,6 +346,7 @@ cdef class BacktestExecClient(ExecutionClient):
 
         self.atomic_child_orders[command.atomic_order.entry.id] = atomic_orders
 
+        # Generate command
         cdef SubmitOrder submit_order = SubmitOrder(
             command.atomic_order.entry,
             command.position_id,
@@ -356,17 +363,17 @@ cdef class BacktestExecClient(ExecutionClient):
         :param command: The command to execute.
         """
         if command.order.id not in self.working_orders:
-            # Reject the command
+            # Generate event
             event = OrderCancelReject(
                 command.order.symbol,
                 command.order.id,
                 self._clock.time_now(),
-                ValidString(f'order with id={command.order.id.value}'),
-                ValidString(f'modify order command id={command.id.value}'),
+                ValidString(f'{command.id.value}'),
+                ValidString(f'cannot find order with id {command.order.id.value}'),
                 self._guid_factory.generate(),
                 self._clock.time_now())
             self.handle_event(event)
-            return
+            return  # Rejected the modify order command
 
         cdef Order order = command.order
         cdef Price current_ask
@@ -374,25 +381,26 @@ cdef class BacktestExecClient(ExecutionClient):
 
         if order.side is OrderSide.BUY:
             current_ask = self._get_closing_ask(order.symbol)
-            if order.type is OrderType.STOP_MARKET or order.type is OrderType.STOP_LIMIT or order.type is OrderType.MIT:
+            if order.type in STOP_ORDER_TYPES:
                 if order.price < current_ask:
-                    self._reject_modify_order(order, f'Buy stop order price of {order.price} is below the ask {current_ask}')
-                    return
+                    self._reject_modify_order(order, f'buy stop order price of {order.price} is below the ask {current_ask}')
+                    return  # Cannot modify order
             elif order.type is OrderType.LIMIT:
                 if order.price > current_ask:
-                    self._reject_modify_order(order, f'Buy limit order price of {order.price} is above the ask {current_ask}')
-                    return
+                    self._reject_modify_order(order, f'buy limit order price of {order.price} is above the ask {current_ask}')
+                    return  # Cannot modify order
         elif order.side is OrderSide.SELL:
             current_bid = self._get_closing_bid(order.symbol)
-            if order.type is OrderType.STOP_MARKET or order.type is OrderType.STOP_LIMIT or order.type is OrderType.MIT:
+            if order.type in STOP_ORDER_TYPES:
                 if order.price > current_bid:
-                    self._reject_modify_order(order, f'Sell stop order price of {order.price} is above the bid {current_bid}')
-                    return
+                    self._reject_modify_order(order, f'sell stop order price of {order.price} is above the bid {current_bid}')
+                    return  # Cannot modify order
             elif order.type is OrderType.LIMIT:
                 if order.price < current_bid:
-                    self._reject_modify_order(order, f'Sell limit order price of {order.price} is below the bid {current_bid}')
-                    return
+                    self._reject_modify_order(order, f'sell limit order price of {order.price} is below the bid {current_bid}')
+                    return  # Cannot modify order
 
+        # Generate event
         cdef OrderModified modified = OrderModified(
             order.symbol,
             order.id,
@@ -414,6 +422,7 @@ cdef class BacktestExecClient(ExecutionClient):
 
         del self.working_orders[command.order.id]
 
+        # Generate event
         cdef OrderCancelled cancelled = OrderCancelled(
             command.order.symbol,
             command.order.id,
@@ -448,7 +457,7 @@ cdef class BacktestExecClient(ExecutionClient):
         the given precision.
 
         :param values: The values to convert.
-        :return: [Decimal].
+        :return: List[Price].
         """
         return [Price(values[0], precision),
                 Price(values[1], precision),
@@ -520,6 +529,7 @@ cdef class BacktestExecClient(ExecutionClient):
         
         :param order: The order to accept.
         """
+        # Generate event
         cdef OrderAccepted accepted = OrderAccepted(
             order.symbol,
             order.id,
@@ -537,6 +547,7 @@ cdef class BacktestExecClient(ExecutionClient):
         :param order: The order to reject.
         :param order: The reject reason.
         """
+        # Generate event
         cdef OrderRejected rejected = OrderRejected(
             order.symbol,
             order.id,
@@ -556,6 +567,7 @@ cdef class BacktestExecClient(ExecutionClient):
         :param order: The order the modification reject relates to.
         :param reason: The reason for the modification rejection.
         """
+        # Generate event
         cdef OrderCancelReject cancel_reject = OrderCancelReject(
             order.symbol,
             order.id,
@@ -574,6 +586,7 @@ cdef class BacktestExecClient(ExecutionClient):
         
         :param order: The order to expire.
         """
+        # Generate event
         cdef OrderExpired expired = OrderExpired(
             order.symbol,
             order.id,
@@ -601,35 +614,35 @@ cdef class BacktestExecClient(ExecutionClient):
             if order.type is OrderType.MARKET:
                 # Fill market orders immediately
                 self._fill_order(order, Price(closing_ask + self.slippage_index[order.symbol]))
-                return
-            elif order.type is OrderType.STOP_MARKET or order.type is OrderType.STOP_LIMIT or order.type is OrderType.MIT:
+                return  # Order filled - nothing to work
+            elif order.type in STOP_ORDER_TYPES:
                 if order.price < closing_ask:
-                    self._reject_order(order,  f'Buy stop order price of {order.price} is below the ask {closing_ask}')
-                    return
+                    self._reject_order(order,  f'buy stop order price of {order.price} is below the ask {closing_ask}')
+                    return  # Cannot work order
             elif order.type is OrderType.LIMIT:
                 if order.price > closing_ask:
-                    self._reject_order(order,  f'Buy limit order price of {order.price} is above the ask {closing_ask}')
-                    return
+                    self._reject_order(order,  f'buy limit order price of {order.price} is above the ask {closing_ask}')
+                    return  # Cannot work order
         elif order.side is OrderSide.SELL:
             closing_bid = self._get_closing_bid(order.symbol)
             if order.type is OrderType.MARKET:
                 # Fill market orders immediately
                 self._fill_order(order, Price(closing_bid - self.slippage_index[order.symbol]))
-                return
-            elif order.type is OrderType.STOP_MARKET or order.type is OrderType.STOP_LIMIT or order.type is OrderType.MIT:
-                print(order)
+                return  # Order filled - nothing to work
+            elif order.type in STOP_ORDER_TYPES:
                 if order.price > closing_bid:
-                    self._reject_order(order,  f'Sell stop order price of {order.price} is above the bid {closing_bid}')
-                    return
+                    self._reject_order(order,  f'sell stop order price of {order.price} is above the bid {closing_bid}')
+                    return  # Cannot work order
             elif order.type is OrderType.LIMIT:
                 if order.price < closing_bid:
-                    self._reject_order(order,  f'Sell limit order price of {order.price} is below the bid {closing_bid}')
-                    return
+                    self._reject_order(order,  f'sell limit order price of {order.price} is below the bid {closing_bid}')
+                    return  # Cannot work order
 
         # Order now becomes working
-        self._log.debug(f"{order.id} WORKING at {order.price}.")
         self.working_orders[order.id] = order
+        self._log.debug(f"{order.id} WORKING at {order.price}.")
 
+        # Generate event
         cdef OrderWorking working = OrderWorking(
             order.symbol,
             order.id,
@@ -653,6 +666,7 @@ cdef class BacktestExecClient(ExecutionClient):
         :param order: The order to fill.
         :param fill_price: The price to fill the order at.
         """
+        # Generate event
         cdef OrderFilled filled = OrderFilled(
             order.symbol,
             order.id,
@@ -695,6 +709,7 @@ cdef class BacktestExecClient(ExecutionClient):
 
             if oco_order_id in self.working_orders:
                 del self.working_orders[oco_order_id]
+                # Generate event
                 cancelled = OrderCancelled(
                     oco_order.symbol,
                     oco_order.id,

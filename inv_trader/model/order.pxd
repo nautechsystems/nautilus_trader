@@ -188,5 +188,5 @@ cdef class OrderFactory:
         self,
         Order entry,
         Price price_stop_loss,
-        Price price_profit_target=*,
-        Label original_label=*)
+        Price price_profit_target,
+        Label original_label)
