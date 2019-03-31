@@ -280,12 +280,6 @@ cdef class EMACross(TradeStrategy):
             # Wait for indicators to warm up...
             return
 
-        cdef Price price_entry
-        cdef Price price_stop_loss
-        cdef Price price_profit_target
-        cdef Quantity position_size
-        cdef AtomicOrder atomic_order = None
-
         if self.is_flat() and self.entry_order is None:
             # BUY LOGIC
             if self.fast_ema.value >= self.slow_ema.value:
