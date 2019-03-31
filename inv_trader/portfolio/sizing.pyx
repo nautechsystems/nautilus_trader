@@ -43,8 +43,8 @@ cdef class PositionSizer:
             self,
             Money equity,
             int risk_bp,
-            Price entry_price,
-            Price stop_loss_price,
+            Price price_entry,
+            Price price_stop_loss,
             float exchange_rate=1.0,
             commission_rate=Decimal(15),
             int hard_limit=0,
@@ -55,8 +55,8 @@ cdef class PositionSizer:
 
         :param equity: The account equity.
         :param risk_bp: The risk in basis points (1 basis point = 0.01%).
-        :param entry_price: The entry price.
-        :param stop_loss_price: The stop loss price.
+        :param price_entry: The entry price.
+        :param price_stop_loss: The stop loss price.
         :param exchange_rate: The exchange rate for the instrument quote currency vs account currency.
         :param commission_rate: The commission rate per transaction per million notional value (>= 0).
         :param hard_limit: The hard limit for the total quantity (>= 0) (0 = no hard limit).
@@ -117,8 +117,8 @@ cdef class FixedRiskSizer(PositionSizer):
             self,
             Money equity,
             int risk_bp,
-            Price entry_price,
-            Price stop_loss_price,
+            Price price_entry,
+            Price price_stop_loss,
             float exchange_rate=1.0,
             commission_rate=Decimal(15),
             int hard_limit=0,
@@ -129,8 +129,8 @@ cdef class FixedRiskSizer(PositionSizer):
 
         :param equity: The account equity.
         :param risk_bp: The risk in basis points (1 basis point = 0.01%).
-        :param entry_price: The entry price.
-        :param stop_loss_price: The stop loss price.
+        :param price_entry: The entry price.
+        :param price_stop_loss: The stop loss price.
         :param exchange_rate: The exchange rate for the instrument quote currency vs account currency.
         :param commission_rate: The commission rate per transaction per million notional value (>= 0).
         :param hard_limit: The hard limit for the total quantity (>= 0) (0 = no hard limit).
@@ -149,7 +149,7 @@ cdef class FixedRiskSizer(PositionSizer):
         Precondition.positive(units, 'units')
         Precondition.positive(unit_batch_size, 'unit_batch_size')
 
-        cdef int risk_points = self._calculate_risk_points(entry_price, stop_loss_price)
+        cdef int risk_points = self._calculate_risk_points(price_entry, price_stop_loss)
         cdef Money risk_money = self._calculate_riskable_money(equity, risk_bp, commission_rate, exchange_rate)
 
         cdef long position_size = long(long(((((risk_money.value / Decimal(exchange_rate)) / risk_points) / self.instrument.tick_size) / self.instrument.contract_size.value)))
