@@ -124,16 +124,17 @@ class EMACrossPy(TradeStrategy):
         if self.is_flat() and self.entry_order is None:
             # BUY LOGIC
             if self.fast_ema.value >= self.slow_ema.value:
-                entry_price = Price(self.last_bar(self.bar_type).high + self.entry_buffer + self.spread)
-                stop_loss_price = Price(self.last_bar(self.bar_type).low - (self.atr.value * self.SL_atr_multiple))
+                price_entry = Price(self.last_bar(self.bar_type).high + self.entry_buffer + self.spread)
+                price_stop_loss = Price(self.last_bar(self.bar_type).low - (self.atr.value * self.SL_atr_multiple))
+                price_profit_target = Price(price_entry + (price_entry - price_stop_loss))
 
                 exchange_rate = self.exchange_rate(self.instrument.quote_currency)
                 position_size = self.position_sizer.calculate(
                     equity=self.account.free_equity,
                     exchange_rate=exchange_rate,
                     risk_bp=self.risk_bp,
-                    price_entry=entry_price,
-                    price_stop_loss=stop_loss_price,
+                    price_entry=price_entry,
+                    price_stop_loss=price_stop_loss,
                     commission_rate=Decimal(15),
                     hard_limit=20000000,
                     units=1,
@@ -144,25 +145,26 @@ class EMACrossPy(TradeStrategy):
                         symbol=self.symbol,
                         order_side=OrderSide.BUY,
                         quantity=position_size,
-                        price_entry=entry_price,
-                        price_stop_loss=stop_loss_price,
-                        price_profit_target=None,
+                        price_entry=price_entry,
+                        price_stop_loss=price_stop_loss,
+                        price_profit_target=price_profit_target,
                         label=Label('S1'),
                         time_in_force=TimeInForce.GTD,
                         expire_time=self.time_now() + timedelta(minutes=1))
 
             # SELL LOGIC
             elif self.fast_ema.value < self.slow_ema.value:
-                entry_price = Price(self.last_bar(self.bar_type).low - self.entry_buffer)
-                stop_loss_price = Price(self.last_bar(self.bar_type).high + (self.atr.value * self.SL_atr_multiple) + self.spread)
+                price_entry = Price(self.last_bar(self.bar_type).low - self.entry_buffer)
+                price_stop_loss = Price(self.last_bar(self.bar_type).high + (self.atr.value * self.SL_atr_multiple) + self.spread)
+                price_profit_target = Price(price_entry - (price_stop_loss - price_entry))
 
                 exchange_rate = self.exchange_rate(self.instrument.quote_currency)
                 position_size = self.position_sizer.calculate(
                     equity=self.account.free_equity,
                     exchange_rate=exchange_rate,
                     risk_bp=self.risk_bp,
-                    price_entry=entry_price,
-                    price_stop_loss=stop_loss_price,
+                    price_entry=price_entry,
+                    price_stop_loss=price_stop_loss,
                     commission_rate=Decimal(15),
                     hard_limit=20000000,
                     units=1,
@@ -173,9 +175,9 @@ class EMACrossPy(TradeStrategy):
                         symbol=self.symbol,
                         order_side=OrderSide.SELL,
                         quantity=position_size,
-                        price_entry=entry_price,
-                        price_stop_loss=stop_loss_price,
-                        price_profit_target=None,
+                        price_entry=price_entry,
+                        price_stop_loss=price_stop_loss,
+                        price_profit_target=price_profit_target,
                         label=Label('S1'),
                         time_in_force=TimeInForce.GTD,
                         expire_time=self.time_now() + timedelta(minutes=1))
@@ -254,6 +256,7 @@ class EMACrossPy(TradeStrategy):
         """
         self.entry_order = None
         self.stop_loss_order = None
+        self.profit_target_order = None
         self.position_id = None
 
     # Custom internal method for this strategy
