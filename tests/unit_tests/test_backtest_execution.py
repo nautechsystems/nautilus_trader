@@ -161,7 +161,7 @@ class BacktestExecClientTests(unittest.TestCase):
         self.assertEqual(6, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[3], OrderFilled))
         self.assertEqual(Price('80.000'), atomic_order.stop_loss.price)
-        self.assertTrue(atomic_order.stop_loss.id not in self.client.atomic_orders)
+        self.assertTrue(atomic_order.stop_loss.id not in self.client.atomic_child_orders)
 
     def test_can_submit_atomic_stop_order(self):
         # Arrange
@@ -185,9 +185,9 @@ class BacktestExecClientTests(unittest.TestCase):
         print(strategy.object_storer.get_store())
         self.assertEqual(4, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[3], OrderWorking))
-        self.assertTrue(atomic_order.entry.id in self.client.atomic_orders)
-        self.assertTrue(atomic_order.stop_loss in self.client.atomic_orders[atomic_order.entry.id])
-        self.assertTrue(atomic_order.profit_target in self.client.atomic_orders[atomic_order.entry.id])
+        self.assertTrue(atomic_order.entry.id in self.client.atomic_child_orders)
+        self.assertTrue(atomic_order.stop_loss in self.client.atomic_child_orders[atomic_order.entry.id])
+        self.assertTrue(atomic_order.profit_target in self.client.atomic_child_orders[atomic_order.entry.id])
 
     def test_can_modify_stop_order(self):
         # Arrange

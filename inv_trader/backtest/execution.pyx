@@ -23,7 +23,7 @@ from inv_trader.enums.brokerage cimport Broker
 from inv_trader.enums.quote_type cimport QuoteType
 from inv_trader.enums.order_type cimport OrderType
 from inv_trader.enums.order_side cimport OrderSide
-from inv_trader.enums.market_position cimport MarketPosition
+from inv_trader.enums.market_position cimport MarketPosition, market_position_string
 from inv_trader.model.currency cimport CurrencyCalculator
 from inv_trader.model.objects cimport ValidString, Symbol, Price, Money, Instrument, Quantity
 from inv_trader.model.order cimport Order
@@ -122,9 +122,10 @@ cdef class BacktestExecClient(ExecutionClient):
         self.currency_calculator = CurrencyCalculator()
         self.commission_calculator = commission_calculator
         self.total_commissions = Money(0)
-        self.slippage_index = {}  # type: Dict[Symbol, Decimal]
-        self.working_orders = {}  # type: Dict[OrderId, Order]
-        self.atomic_orders = {}   # type: Dict[OrderId, List[Order]]
+        self.slippage_index = {}       # type: Dict[Symbol, Decimal]
+        self.working_orders = {}       # type: Dict[OrderId, Order]
+        self.atomic_child_orders = {}  # type: Dict[OrderId, List[Order]]
+        self.oco_orders = {}           # type: Dict[OrderId, OrderId]
 
         self._set_slippage_index(slippage_ticks)
         self.reset_account()
@@ -189,25 +190,25 @@ cdef class BacktestExecClient(ExecutionClient):
             # Check for order fill
             if order.side is OrderSide.BUY:
                 highest_ask = self._get_highest_ask(order.symbol)
-                if order.type is OrderType.STOP_MARKET or OrderType.STOP_LIMIT or OrderType.MIT:
+                if order.type is OrderType.STOP_MARKET or order.type is OrderType.STOP_LIMIT or order.type is OrderType.MIT:
                     if highest_ask >= order.price:
                         del self.working_orders[order.id]
                         self._fill_order(order, Price(order.price + self.slippage_index[order.symbol]))
                         continue
                 elif order.type is OrderType.LIMIT:
-                    if highest_ask < order.price:
+                    if highest_ask >= order.price:
                         del self.working_orders[order.id]
                         self._fill_order(order, Price(order.price + self.slippage_index[order.symbol]))
                         continue
             elif order.side is OrderSide.SELL:
                 lowest_bid = self._get_lowest_bid(order.symbol)
-                if order.type is OrderType.STOP_MARKET or OrderType.STOP_LIMIT or OrderType.MIT:
+                if order.type is OrderType.STOP_MARKET or order.type is OrderType.STOP_LIMIT or order.type is OrderType.MIT:
                     if lowest_bid <= order.price:
                         del self.working_orders[order.id]
                         self._fill_order(order, Price(order.price - self.slippage_index[order.symbol]))
                         continue
                 elif order.type is OrderType.LIMIT:
-                    if lowest_bid > order.price:
+                    if lowest_bid <= order.price:
                         del self.working_orders[order.id]
                         self._fill_order(order, Price(order.price - self.slippage_index[order.symbol]))
                         continue
@@ -281,8 +282,9 @@ cdef class BacktestExecClient(ExecutionClient):
         self.account_cash_start_day = self.account_capital
         self.account_cash_activity_day = Money(0)
         self.total_commissions = Money(0)
-        self.working_orders = {}  # type: Dict[OrderId, Order]
-        self.atomic_orders = {}   # type: Dict[OrderId, List[Order]]
+        self.working_orders = {}       # type: Dict[OrderId, Order]
+        self.atomic_child_orders = {}  # type: Dict[OrderId, List[Order]]
+        self.oco_orders = {}           # type: Dict[OrderId, OrderId]
 
         self.reset_account()
         self._log.info("Reset.")
@@ -333,8 +335,10 @@ cdef class BacktestExecClient(ExecutionClient):
         cdef list atomic_orders = [command.atomic_order.stop_loss]
         if command.atomic_order.has_profit_target:
             atomic_orders.append(command.atomic_order.profit_target)
+            self.oco_orders[command.atomic_order.profit_target.id] = command.atomic_order.stop_loss.id
+            self.oco_orders[command.atomic_order.stop_loss.id] = command.atomic_order.profit_target.id
 
-        self.atomic_orders[command.atomic_order.entry.id] = atomic_orders
+        self.atomic_child_orders[command.atomic_order.entry.id] = atomic_orders
 
         cdef SubmitOrder submit_order = SubmitOrder(
             command.atomic_order.entry,
@@ -408,6 +412,8 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         Precondition.is_in(command.order.id, self.working_orders, 'order.id', 'working_orders')
 
+        del self.working_orders[command.order.id]
+
         cdef OrderCancelled cancelled = OrderCancelled(
             command.order.symbol,
             command.order.id,
@@ -415,9 +421,8 @@ cdef class BacktestExecClient(ExecutionClient):
             self._guid_factory.generate(),
             self._clock.time_now())
 
-        del self.working_orders[command.order.id]
-
         self.handle_event(cancelled)
+        self._manage_oco_orders(command.order.id)
 
     cdef dict _prepare_minute_data(self, dict bar_data, str quote_type):
         """
@@ -541,6 +546,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._clock.time_now())
 
         self.handle_event(rejected)
+        self._manage_oco_orders(order.id)
 
     cdef void _reject_modify_order(self, Order order, str reason):
         """
@@ -576,6 +582,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._clock.time_now())
 
         self.handle_event(expired)
+        self._manage_oco_orders(order.id)
 
     cdef void _work_order(self, Order order):
         """
@@ -610,6 +617,7 @@ cdef class BacktestExecClient(ExecutionClient):
                 self._fill_order(order, Price(closing_bid - self.slippage_index[order.symbol]))
                 return
             elif order.type is OrderType.STOP_MARKET or order.type is OrderType.STOP_LIMIT or order.type is OrderType.MIT:
+                print(order)
                 if order.price > closing_bid:
                     self._reject_order(order,  f'Sell stop order price of {order.price} is above the bid {closing_bid}')
                     return
@@ -662,12 +670,38 @@ cdef class BacktestExecClient(ExecutionClient):
             self._adjust_account(filled)
 
         self.handle_event(filled)
+        self._manage_oco_orders(order.id)
 
         # Work any atomic child orders
-        if order.id in self.atomic_orders:
-            for child_order in self.atomic_orders[order.id]:
+        if order.id in self.atomic_child_orders:
+            for child_order in self.atomic_child_orders[order.id]:
                 self._work_order(child_order)
-            del self.atomic_orders[order.id]
+            del self.atomic_child_orders[order.id]
+
+    cdef void _manage_oco_orders(self, OrderId order_id):
+        """
+        Adjust the list of OCO orders if applicable.
+        """
+        cdef OrderId oco_order_id
+        cdef Order oco_order
+        cdef OrderCancelled cancelled
+
+        if order_id in self.oco_orders:
+            # Cancel any working OCO orders
+            oco_order_id = self.oco_orders[order_id]
+            oco_order = self._order_book[oco_order_id]
+            del self.oco_orders[order_id]
+            del self.oco_orders[oco_order_id]
+
+            if oco_order_id in self.working_orders:
+                del self.working_orders[oco_order_id]
+                cancelled = OrderCancelled(
+                    oco_order.symbol,
+                    oco_order.id,
+                    self._clock.time_now(),
+                    self._guid_factory.generate(),
+                    self._clock.time_now())
+                self.handle_event(cancelled)
 
     cdef void _adjust_account(self, OrderEvent event):
         """
@@ -774,6 +808,6 @@ cdef class BacktestExecClient(ExecutionClient):
         elif direction is MarketPosition.SHORT:
             difference = entry_price - exit_price
         else:
-            raise ValueError(f'Cannot calculate the pnl of a {direction} direction.')
+            raise ValueError(f'Cannot calculate the pnl of a {market_position_string(direction)} direction.')
 
         return Money(difference * quantity.value * Decimal(exchange_rate))
