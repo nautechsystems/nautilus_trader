@@ -12,7 +12,8 @@
 from decimal import Decimal
 
 from inv_trader.core.precondition cimport Precondition
-from inv_trader.model.objects cimport Symbol, Money, Quantity
+from inv_trader.core.functions cimport basis_points_as_percentage
+from inv_trader.model.objects cimport Symbol, Money, Quantity, Price
 
 
 cdef class CommissionCalculator:
@@ -20,36 +21,42 @@ cdef class CommissionCalculator:
     Provides a means of calculating commissions.
     """
 
-    def __init__(self, dict rates={}, default: Decimal=Decimal(15)):
+    def __init__(
+            self,
+            dict rates={},
+            float default_rate_bp=0.20,
+            Money minimum=Money(2.00)):
         """
         Initializes a new instance of the CommissionCalculator class.
 
-        Note: Commission rates are expressed as Decimals per transaction per million notional.
-        :param rates: The dictionary of commission rates Dict[Symbol, Decimal].
-        :param default: The default rate if not found in dictionary (optional).
+        Note: Commission rates are expressed as basis points of notional transaction value.
+        :param rates: The dictionary of commission rates Dict[Symbol, float].
+        :param default_rate_bp: The default rate if not found in dictionary (optional).
+        :param minimum: The minimum commission charge per transaction.
         """
         Precondition.dict_types(rates, Symbol, Decimal, 'rates')
-        Precondition.type(default, Decimal, 'default')
 
         self.rates = rates
-        self.default = default
+        self.default_rate_bp = default_rate_bp
+        self.minimum = minimum
 
     cpdef Money calculate(
             self,
             Symbol symbol,
             Quantity filled_quantity,
+            Price filled_price,
             float exchange_rate):
         """
         Return the calculated commission for the given arguments.
         
         :param symbol: The symbol for calculation.
         :param filled_quantity: The filled quantity.
+        :param filled_price: The filled price.
         :param exchange_rate: The exchange rate (symbol quote currency to account base currency).
         :return: Money.
         """
-        # TODO: Does calculate account for exchange rate??
-        cdef float commission_rate = self._get_commission_rate(symbol)
-        return Money(Decimal((float(filled_quantity.value) / 1000000) * commission_rate))
+        commission_rate_percent = Decimal(basis_points_as_percentage(self._get_commission_rate(symbol)))
+        return max(self.minimum, Money(filled_quantity.value * filled_price.value * Decimal(exchange_rate) * commission_rate_percent))
 
     cpdef Money calculate_for_notional(self, Symbol symbol, Money notional_value):
         """
@@ -59,8 +66,8 @@ cdef class CommissionCalculator:
         :param notional_value: The notional value for the transaction.
         :return: Money.
         """
-        cdef float commission_rate = self._get_commission_rate(symbol)
-        return Money(Decimal((float(notional_value.value) / 1000000) * commission_rate))
+        commission_rate_percent = Decimal(basis_points_as_percentage(self._get_commission_rate(symbol)))
+        return max(self.minimum, notional_value * commission_rate_percent)
 
     cdef float _get_commission_rate(self, Symbol symbol):
         """
@@ -69,4 +76,4 @@ cdef class CommissionCalculator:
         if symbol in self.rates:
             return float(self.rates[symbol])
         else:
-            return float(self.default)
+            return float(self.default_rate_bp)

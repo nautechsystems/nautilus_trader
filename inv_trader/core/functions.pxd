@@ -27,3 +27,13 @@ cdef inline str format_zulu_datetime(datetime dt, str timespec=None):
             return dt.isoformat().partition('+')[0] + '.000Z'
     else:
         return dt.isoformat().partition('+')[0] + 'Z'
+
+
+cdef inline float basis_points_as_percentage(float basis_points):
+    """
+    Return the given basis points expressed as a percentage where 100% = 1.0.
+    
+    :param basis_points: The basis points to convert to percentage.
+    :return: float.
+    """
+    return basis_points * 0.0001

@@ -50,7 +50,7 @@ class FixedRiskSizerTests(unittest.TestCase):
             unit_batch_size=1000)
 
         # Assert
-        self.assertEqual(Quantity(9985000), result)
+        self.assertEqual(Quantity(9980000), result)
 
     def test_can_calculate_single_unit_size_when_risk_too_high(self):
         # Arrange
@@ -98,7 +98,7 @@ class FixedRiskSizerTests(unittest.TestCase):
             unit_batch_size=1000)
 
         # Assert
-        self.assertEqual(Quantity(3328000), result)
+        self.assertEqual(Quantity(3326000), result)
 
     def test_can_calculate_multiple_unit_size_larger_batches(self):
         # Arrange

@@ -9,7 +9,7 @@
 
 import unittest
 
-from inv_trader.model.objects import Quantity, Money
+from inv_trader.model.objects import Quantity, Money, Price
 from inv_trader.common.brokerage import CommissionCalculator
 from test_kit.stubs import TestStubs
 
@@ -27,10 +27,23 @@ class CommissionCalculatorTests(unittest.TestCase):
         result = calculator.calculate(
             GBPUSD_FXCM,
             Quantity(1000000),
-            exchange_rate=1.0)
+            filled_price=Price('1.63000'),
+            exchange_rate=1.00)
 
         # Assert
-        self.assertEqual(Money(15), result)
+        self.assertEqual(Money(32.59), result)
+
+    def test_can_calculate_correct_minimum_commission(self):
+        # Arrange
+        calculator = CommissionCalculator()
+
+        # Act
+        result = calculator.calculate_for_notional(
+            GBPUSD_FXCM,
+            Money(1000))
+
+        # Assert
+        self.assertEqual(Money(2.00), result)
 
     def test_can_calculate_correct_commission_for_notional(self):
         # Arrange
@@ -42,7 +55,7 @@ class CommissionCalculatorTests(unittest.TestCase):
             Money(1000000))
 
         # Assert
-        self.assertEqual(Money(15), result)
+        self.assertEqual(Money(19.99), result)
 
     def test_can_calculate_correct_commission_with_exchange_rate(self):
         # Arrange
@@ -51,8 +64,9 @@ class CommissionCalculatorTests(unittest.TestCase):
         # Act
         result = calculator.calculate(
             USDJPY_FXCM,
-            Quantity(10000000),
-            exchange_rate=0.01)
+            Quantity(1000000),
+            filled_price=Price('95.000'),
+            exchange_rate=0.01052632)
 
         # Assert
-        self.assertEqual(Money(150.00), result)
+        self.assertEqual(Money(20.00), result)
