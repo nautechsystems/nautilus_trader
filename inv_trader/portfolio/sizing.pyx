@@ -12,6 +12,7 @@
 from decimal import Decimal
 
 from inv_trader.core.precondition cimport Precondition
+from inv_trader.core.functions cimport basis_points_as_percentage
 from inv_trader.model.objects cimport Quantity, Price, Money, Instrument
 
 
@@ -42,23 +43,24 @@ cdef class PositionSizer:
     cpdef Quantity calculate(
             self,
             Money equity,
-            int risk_bp,
+            float risk_bp,
             Price price_entry,
             Price price_stop_loss,
             float exchange_rate=1.0,
-            commission_rate=Decimal(15),
+            float commission_rate=0.20,
             int hard_limit=0,
             int units=1,
             int unit_batch_size=1):
         """
         Return the calculated quantity for the position size.
-
+        
+        Note: 1 basis point = 0.01%.
         :param equity: The account equity.
-        :param risk_bp: The risk in basis points (1 basis point = 0.01%).
+        :param risk_bp: The risk in basis points.
         :param price_entry: The entry price.
         :param price_stop_loss: The stop loss price.
         :param exchange_rate: The exchange rate for the instrument quote currency vs account currency.
-        :param commission_rate: The commission rate per transaction per million notional value (>= 0).
+        :param commission_rate: The commission rate as basis points of notional transaction value (>= 0).
         :param hard_limit: The hard limit for the total quantity (>= 0) (0 = no hard limit).
         :param units: The number of units to batch the position into (> 0).
         :param unit_batch_size: The unit batch size (> 0).
@@ -72,20 +74,19 @@ cdef class PositionSizer:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cdef int _calculate_risk_points(self, Price entry, Price stop_loss):
+    cdef int _calculate_risk_ticks(self, Price entry, Price stop_loss):
         """
-        Return the calculated difference in points between the entry and stop loss.
+        Return the calculated difference in ticks between the entry and stop loss.
         
         :return int.
         """
-
         return int(abs(entry - stop_loss) / self.instrument.tick_size)
 
     cdef Money _calculate_riskable_money(
             self,
             Money equity,
-            int risk_bp,
-            commission_rate,
+            float risk_bp,
+            float commission_rate,
             float exchange_rate):
         """
         Return the calculated amount of risk money available.
@@ -94,8 +95,8 @@ cdef class PositionSizer:
         """
         if equity.value <= 0:
             return Money.zero()
-        cdef Money risk_money = Money(equity.value * Decimal(risk_bp * 0.0001))
-        cdef Money commission = Money((risk_money.value / self.instrument.tick_value / 1000000) * commission_rate)
+        cdef Money risk_money = Money(equity.value * Decimal(basis_points_as_percentage(risk_bp)))
+        cdef Money commission = Money((risk_money.value / self.instrument.tick_value) * Decimal(basis_points_as_percentage(commission_rate)))
 
         return risk_money - commission
 
@@ -116,23 +117,24 @@ cdef class FixedRiskSizer(PositionSizer):
     cpdef Quantity calculate(
             self,
             Money equity,
-            int risk_bp,
+            float risk_bp,
             Price price_entry,
             Price price_stop_loss,
             float exchange_rate=1.0,
-            commission_rate=Decimal(15),
+            float commission_rate=0.20,
             int hard_limit=0,
             int units=1,
             int unit_batch_size=1):
         """
         Return the calculated quantity for the position size.
 
+        Note: 1 basis point = 0.01%.
         :param equity: The account equity.
-        :param risk_bp: The risk in basis points (1 basis point = 0.01%).
+        :param risk_bp: The risk in basis points.
         :param price_entry: The entry price.
         :param price_stop_loss: The stop loss price.
         :param exchange_rate: The exchange rate for the instrument quote currency vs account currency.
-        :param commission_rate: The commission rate per transaction per million notional value (>= 0).
+        :param commission_rate: The commission rate as basis points of notional transaction value (>= 0).
         :param hard_limit: The hard limit for the total quantity (>= 0) (0 = no hard limit).
         :param units: The number of units to batch the position into (> 0).
         :param unit_batch_size: The unit batch size (> 0).
@@ -149,7 +151,7 @@ cdef class FixedRiskSizer(PositionSizer):
         Precondition.positive(units, 'units')
         Precondition.positive(unit_batch_size, 'unit_batch_size')
 
-        cdef int risk_points = self._calculate_risk_points(price_entry, price_stop_loss)
+        cdef int risk_points = self._calculate_risk_ticks(price_entry, price_stop_loss)
         cdef Money risk_money = self._calculate_riskable_money(equity, risk_bp, commission_rate, exchange_rate)
 
         cdef long position_size = long(long(((((risk_money.value / Decimal(exchange_rate)) / risk_points) / self.instrument.tick_size) / self.instrument.contract_size.value)))

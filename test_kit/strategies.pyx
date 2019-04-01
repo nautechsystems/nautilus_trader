@@ -294,7 +294,7 @@ cdef class EMACross(TradeStrategy):
                     price_entry=price_entry,
                     price_stop_loss=price_stop_loss,
                     exchange_rate=exchange_rate,
-                    commission_rate=Decimal(15),
+                    commission_rate=0.15,
                     hard_limit=0,
                     units=1,
                     unit_batch_size=1000)
@@ -324,7 +324,7 @@ cdef class EMACross(TradeStrategy):
                     price_entry=price_entry,
                     price_stop_loss=price_stop_loss,
                     exchange_rate=exchange_rate,
-                    commission_rate=Decimal(15),
+                    commission_rate=0.15,
                     hard_limit=0,
                     units=1,
                     unit_batch_size=1000)

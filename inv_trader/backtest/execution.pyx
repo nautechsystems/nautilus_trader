@@ -749,6 +749,7 @@ cdef class BacktestExecClient(ExecutionClient):
         cdef Money commission = self.commission_calculator.calculate(
             symbol=event.symbol,
             filled_quantity=event.filled_quantity,
+            filled_price=event.average_price,
             exchange_rate=exchange_rate)
 
         self.total_commissions += commission

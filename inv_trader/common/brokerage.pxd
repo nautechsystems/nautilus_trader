@@ -9,7 +9,7 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
-from inv_trader.model.objects cimport Symbol, Money, Quantity
+from inv_trader.model.objects cimport Symbol, Money, Quantity, Price
 
 
 cdef class CommissionCalculator:
@@ -17,9 +17,10 @@ cdef class CommissionCalculator:
     Provides a means of calculating commissions.
     """
     cdef dict rates
-    cdef object default
+    cdef float default_rate_bp
+    cdef Money minimum
 
-    cpdef Money calculate(self, Symbol symbol, Quantity filled_quantity, float exchange_rate)
+    cpdef Money calculate(self, Symbol symbol, Quantity filled_quantity, Price filled_price, float exchange_rate)
     cpdef Money calculate_for_notional(self, Symbol symbol, Money notional_value)
 
     cdef float _get_commission_rate(self, Symbol symbol)
