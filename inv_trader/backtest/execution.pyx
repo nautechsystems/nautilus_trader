@@ -23,6 +23,7 @@ from inv_trader.enums.brokerage cimport Broker
 from inv_trader.enums.quote_type cimport QuoteType
 from inv_trader.enums.order_type cimport OrderType
 from inv_trader.enums.order_side cimport OrderSide
+from inv_trader.enums.order_status cimport OrderStatus
 from inv_trader.enums.market_position cimport MarketPosition, market_position_string
 from inv_trader.model.currency cimport CurrencyCalculator
 from inv_trader.model.objects cimport ValidString, Symbol, Price, Money, Instrument, Quantity
@@ -178,7 +179,7 @@ cdef class BacktestExecClient(ExecutionClient):
 
         cdef datetime time_now = self._clock.time_now()
         if self.day_number is not time_now.day:
-            # Set account statistics
+            # Set account statistics for new day
             self.day_number = time_now.day
             self.account_cash_start_day = self._account.cash_balance
             self.account_cash_activity_day = Money(0)
@@ -194,6 +195,9 @@ cdef class BacktestExecClient(ExecutionClient):
         cdef Price lowest_bid
 
         for order_id, order in self.working_orders.copy().items():  # Copies dict to avoid resize during loop
+            if order.status is not OrderStatus.WORKING:
+                continue  # Orders status has changed since the loop commenced
+
             # Check for order fill
             if order.side is OrderSide.BUY:
                 highest_ask = self._get_highest_ask(order.symbol)
@@ -778,7 +782,7 @@ cdef class BacktestExecClient(ExecutionClient):
         cdef dict bid_rates = {}  # type: Dict[str, float]
 
         for symbol, prices in self.data_bars_bid.items():
-            bid_rates[symbol.code] = prices[self.iteration][3].as_float()
+            bid_rates[symbol.code] = prices[self.iteration][3].as_float()  # [3] index is close price
 
         return bid_rates
 
@@ -791,7 +795,7 @@ cdef class BacktestExecClient(ExecutionClient):
         cdef dict ask_rates = {}  # type: Dict[str, float]
 
         for symbol, prices in self.data_bars_ask.items():
-            ask_rates[symbol.code] = prices[self.iteration][3].as_float()
+            ask_rates[symbol.code] = prices[self.iteration][3].as_float()  # [3] index is close price
 
         return ask_rates
 
