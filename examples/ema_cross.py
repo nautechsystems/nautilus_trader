@@ -27,7 +27,7 @@ class EMACrossPy(TradeStrategy):
     """"
     A simple moving average cross example strategy. When the fast EMA crosses
     the slow EMA then a STOP_MARKET atomic order is placed for that direction
-    with a trailing stop.
+    with a trailing stop and profit target at 1R risk.
     """
 
     def __init__(self,
