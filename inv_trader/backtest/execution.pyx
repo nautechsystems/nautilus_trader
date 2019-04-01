@@ -747,10 +747,7 @@ cdef class BacktestExecClient(ExecutionClient):
             filled_quantity=event.filled_quantity,
             exchange_rate=exchange_rate)
 
-        print(pnl)
-        print(commission)
         self.total_commissions += commission
-        print(self.total_commissions)
         pnl -= commission
         self.account_capital += pnl
         self.account_cash_activity_day += pnl
