@@ -70,4 +70,4 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef void _adjust_account(self, OrderEvent event)
     cdef dict _build_current_bid_rates(self)
     cdef dict _build_current_ask_rates(self)
-    cdef Money _calculate_pnl(self, MarketPosition direction, Price entry_price, Price exit_price, Quantity quantity, tick_size, tick_value, float exchange_rate)
+    cdef Money _calculate_pnl(self, MarketPosition direction, Price entry_price, Price exit_price, Quantity quantity, float exchange_rate)

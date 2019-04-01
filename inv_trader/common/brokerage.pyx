@@ -47,8 +47,9 @@ cdef class CommissionCalculator:
         :param exchange_rate: The exchange rate (symbol quote currency to account base currency).
         :return: Money.
         """
+        # TODO: Does calculate account for exchange rate??
         cdef float commission_rate = self._get_commission_rate(symbol)
-        return Money(Decimal((float(filled_quantity.value) / 1000000) * commission_rate * exchange_rate))
+        return Money(Decimal((float(filled_quantity.value) / 1000000) * commission_rate))
 
     cpdef Money calculate_for_notional(self, Symbol symbol, Money notional_value):
         """
