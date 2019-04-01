@@ -26,7 +26,7 @@ from inv_trader.common.execution cimport ExecutionClient
 from inv_trader.common.data cimport DataClient
 from inv_trader.common.guid cimport GuidFactory, LiveGuidFactory
 from inv_trader.model.currency cimport CurrencyCalculator
-from inv_trader.model.events cimport Event, PositionEvent
+from inv_trader.model.events cimport Event, PositionEvent, OrderRejected, OrderCancelReject
 from inv_trader.model.identifiers cimport GUID, Label, OrderId, PositionId, PositionIdGenerator
 from inv_trader.model.objects cimport ValidString, Symbol, Price, Tick, BarType, Bar, Instrument
 from inv_trader.model.order cimport Order, AtomicOrder, OrderFactory
@@ -266,6 +266,10 @@ cdef class TradeStrategy:
         """
         if isinstance(event, PositionEvent):  # Fixes bug where position events aren't logging?
             self.log.info(f"{event}")
+        elif isinstance(event, OrderRejected):
+            self.log.warning(f"{event}")
+        elif isinstance(event, OrderCancelReject):
+            self.log.warning(f"{event}")
         else:
             self.log.info(f"{event}")
 

@@ -183,6 +183,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self.account_cash_start_day = self._account.cash_balance
             self.account_cash_activity_day = Money(0)
 
+            # Generate command
             command = CollateralInquiry(
             self._guid_factory.generate(),
             self._clock.time_now())
@@ -192,32 +193,32 @@ cdef class BacktestExecClient(ExecutionClient):
         cdef Price highest_ask
         cdef Price lowest_bid
 
-        for order_id, order in self.working_orders.copy().items():  # Copy dict to avoid resize during loop
+        for order_id, order in self.working_orders.copy().items():  # Copies dict to avoid resize during loop
             # Check for order fill
             if order.side is OrderSide.BUY:
                 highest_ask = self._get_highest_ask(order.symbol)
                 if order.type is OrderType.STOP_MARKET or order.type is OrderType.STOP_LIMIT or order.type is OrderType.MIT:
                     if highest_ask >= order.price:
-                        del self.working_orders[order.id]
+                        del self.working_orders[order.id]  # Remove from working orders
                         self._fill_order(order, Price(order.price + self.slippage_index[order.symbol]))
-                        continue
+                        continue  # To next order
                 elif order.type is OrderType.LIMIT:
-                    if highest_ask >= order.price:
-                        del self.working_orders[order.id]
+                    if highest_ask <= order.price:
+                        del self.working_orders[order.id]  # Remove from working orders
                         self._fill_order(order, Price(order.price + self.slippage_index[order.symbol]))
-                        continue
+                        continue  # To next order
             elif order.side is OrderSide.SELL:
                 lowest_bid = self._get_lowest_bid(order.symbol)
                 if order.type is OrderType.STOP_MARKET or order.type is OrderType.STOP_LIMIT or order.type is OrderType.MIT:
                     if lowest_bid <= order.price:
-                        del self.working_orders[order.id]
+                        del self.working_orders[order.id]  # Remove from working orders
                         self._fill_order(order, Price(order.price - self.slippage_index[order.symbol]))
-                        continue
+                        continue  # To next order
                 elif order.type is OrderType.LIMIT:
-                    if lowest_bid <= order.price:
-                        del self.working_orders[order.id]
+                    if lowest_bid >= order.price:
+                        del self.working_orders[order.id]  # Remove from working orders
                         self._fill_order(order, Price(order.price - self.slippage_index[order.symbol]))
-                        continue
+                        continue  # To next order
 
             # Check for order expiry
             if order.expire_time is not None and time_now >= order.expire_time:
@@ -247,7 +248,7 @@ cdef class BacktestExecClient(ExecutionClient):
         Process the message bus of commands and events.
         """
         while self._message_bus:
-            item = self._message_bus.pop()
+            item = self._message_bus.pop()  # Removes from right side of deque
             if isinstance(item, Event):
                 self._handle_event(item)
             elif isinstance(item, Command):
@@ -299,6 +300,7 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         Send a collateral inquiry command to the execution service.
         """
+        # Generate event
         cdef AccountEvent event = AccountEvent(
             self._account.id,
             self._account.broker,
@@ -420,7 +422,7 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         Precondition.is_in(command.order.id, self.working_orders, 'order.id', 'working_orders')
 
-        del self.working_orders[command.order.id]
+        del self.working_orders[command.order.id]  # Remove from working orders
 
         # Generate event
         cdef OrderCancelled cancelled = OrderCancelled(
@@ -525,7 +527,7 @@ cdef class BacktestExecClient(ExecutionClient):
 
     cdef void _accept_order(self, Order order):
         """
-        Accept the given order and generate OrderSubmitted and OrderAccepted events.
+        Accept the given order and generate an OrderAccepted event.
         
         :param order: The order to accept.
         """
