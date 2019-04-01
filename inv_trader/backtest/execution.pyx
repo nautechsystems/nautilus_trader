@@ -739,8 +739,6 @@ cdef class BacktestExecClient(ExecutionClient):
             direction=position.market_position,
             entry_price=position.average_entry_price,
             exit_price=event.average_price,
-            tick_size=instrument.tick_size,
-            tick_value=instrument.tick_value,
             quantity=event.filled_quantity,
             exchange_rate=exchange_rate)
 
@@ -806,8 +804,6 @@ cdef class BacktestExecClient(ExecutionClient):
             Price entry_price,
             Price exit_price,
             Quantity quantity,
-            tick_size: Decimal,
-            tick_value: Decimal,
             float exchange_rate):
         """
         Return the pnl from the given parameters.
