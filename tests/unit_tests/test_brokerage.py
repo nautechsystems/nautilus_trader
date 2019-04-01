@@ -55,4 +55,4 @@ class CommissionCalculatorTests(unittest.TestCase):
             exchange_rate=0.01)
 
         # Assert
-        self.assertEqual(Money(1.49), result)
+        self.assertEqual(Money(150.00), result)
