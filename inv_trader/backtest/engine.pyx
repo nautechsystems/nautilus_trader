@@ -19,6 +19,7 @@ import platform
 import empyrical
 import pymc3
 
+from platform import python_version
 from cpython.datetime cimport datetime, timedelta
 from decimal import Decimal
 from scipy.stats import kurtosis, skew
@@ -330,6 +331,7 @@ cdef class BacktestEngine:
         self.log.info(f"Processors: {platform.processor()}")
         self.log.info(f"RAM-Total: {round(psutil.virtual_memory()[0] / 1000000)}MB")
         self.log.info("#---------------------------------------------------------------#")
+        self.log.info(f"python v{python_version()}")
         self.log.info(f"cython v{cython.__version__}")
         self.log.info(f"numpy v{np.__version__}")
         self.log.info(f"scipy v{scipy.__version__}")
