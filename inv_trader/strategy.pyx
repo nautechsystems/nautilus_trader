@@ -566,7 +566,8 @@ cdef class TradeStrategy:
 
     cpdef float exchange_rate(self, Currency quote_currency):
         """
-        Return the calculated exchange rate for the give quote currency to the account base currency.
+        Return the calculated exchange rate for the give quote currency to the 
+        account base currency.
         
         :param quote_currency: The quote currency for the exchange rate.
         :return: float.
