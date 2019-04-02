@@ -21,8 +21,8 @@ cdef class CurrencyCalculator:
 
     cpdef float exchange_rate(
             self,
-            Currency from_currency,
-            Currency to_currency,
+            Currency quote_currency,
+            Currency base_currency,
             QuoteType quote_type,
             dict bid_rates,
             dict ask_rates)

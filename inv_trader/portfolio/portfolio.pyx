@@ -304,7 +304,7 @@ cdef class Portfolio:
                 if position_id in self._positions_closed[strategy_id]:
                     self._positions_active[strategy_id][position_id] = position
                     del self._positions_closed[strategy_id][position_id]
-                    self._log.debug(f"Moved {position} BACK to active positions due overfill.")
+                    self._log.warning(f"Moved {position} BACK to active positions due overfill.")
                     self._position_opened(position, strategy_id)
                 self._position_modified(position, strategy_id)
 

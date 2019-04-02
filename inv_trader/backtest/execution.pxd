@@ -66,7 +66,7 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef void _expire_order(self, Order order)
     cdef void _work_order(self, Order order)
     cdef void _fill_order(self, Order order, Price fill_price)
-    cdef void _manage_oco_orders(self, OrderId order_id)
+    cdef void _remove_oco_order(self, OrderId order_id)
     cdef void _adjust_account(self, OrderEvent event)
     cdef dict _build_current_bid_rates(self)
     cdef dict _build_current_ask_rates(self)

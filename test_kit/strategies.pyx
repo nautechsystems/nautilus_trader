@@ -287,7 +287,7 @@ cdef class EMACross(TradeStrategy):
                 price_stop_loss = Price(self.last_bar(self.bar_type).low - (self.atr.value * self.SL_atr_multiple))
                 price_profit_target = Price(price_entry + (price_entry - price_stop_loss))
 
-                exchange_rate = self.exchange_rate(self.instrument.quote_currency)
+                exchange_rate = self.exchange_rate(quote_currency=self.instrument.quote_currency)
                 position_size = self.position_sizer.calculate(
                     equity=self.account.free_equity,
                     risk_bp=self.risk_bp,
@@ -317,7 +317,7 @@ cdef class EMACross(TradeStrategy):
                 price_stop_loss = Price(self.last_bar(self.bar_type).high + (self.atr.value * self.SL_atr_multiple) + self.spread)
                 price_profit_target = Price(price_entry - (price_stop_loss - price_entry))
 
-                exchange_rate = self.exchange_rate(self.instrument.quote_currency)
+                exchange_rate = self.exchange_rate(quote_currency=self.instrument.quote_currency)
                 position_size = self.position_sizer.calculate(
                     equity=self.account.free_equity,
                     risk_bp=self.risk_bp,
@@ -378,8 +378,8 @@ cdef class EMACross(TradeStrategy):
             if event.order_id.equals(self.entry_order.id):
                 self._reset_trade()
             # If a stop-loss order is rejected then flatten the entered position
-            elif event.order_id.equals(self.stop_loss_order.id):
-                self.flatten_all_positions()
+            elif event.order_id.equals(self.stop_loss_order.id) and not self.is_flat():
+                self.flatten_position(self.position_id)
                 self._reset_trade()
 
     cpdef void on_stop(self):
