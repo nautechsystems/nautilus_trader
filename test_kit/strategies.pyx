@@ -174,7 +174,7 @@ cdef class EMACross(TradeStrategy):
     cdef readonly Symbol symbol
     cdef readonly BarType bar_type
     cdef readonly PositionSizer position_sizer
-    cdef readonly int risk_bp
+    cdef readonly float risk_bp
     cdef readonly int tick_precision
     cdef readonly object entry_buffer
     cdef readonly float SL_atr_multiple
@@ -194,7 +194,7 @@ cdef class EMACross(TradeStrategy):
                  str id_tag_strategy,
                  Instrument instrument,
                  BarType bar_type,
-                 int risk_bp=10,
+                 float risk_bp=10,
                  int fast_ema=10,
                  int slow_ema=20,
                  int atr_period=20,
@@ -294,7 +294,7 @@ cdef class EMACross(TradeStrategy):
                     price_entry=price_entry,
                     price_stop_loss=price_stop_loss,
                     exchange_rate=exchange_rate,
-                    commission_rate=0.15,
+                    commission_rate_bp=0.15,
                     hard_limit=0,
                     units=1,
                     unit_batch_size=1000)
@@ -324,7 +324,7 @@ cdef class EMACross(TradeStrategy):
                     price_entry=price_entry,
                     price_stop_loss=price_stop_loss,
                     exchange_rate=exchange_rate,
-                    commission_rate=0.15,
+                    commission_rate_bp=0.15,
                     hard_limit=0,
                     units=1,
                     unit_batch_size=1000)

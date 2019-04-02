@@ -36,7 +36,7 @@ class EMACrossPy(TradeStrategy):
                  label: str='001',
                  id_tag_trader: str='001',
                  id_tag_strategy: str='001',
-                 risk_bp: int=10,
+                 risk_bp: float=10.0,
                  fast_ema: int=10,
                  slow_ema: int=20,
                  atr_period: int=20,
@@ -128,14 +128,14 @@ class EMACrossPy(TradeStrategy):
                 price_stop_loss = Price(self.last_bar(self.bar_type).low - (self.atr.value * self.SL_atr_multiple))
                 price_profit_target = Price(price_entry + (price_entry - price_stop_loss))
 
-                exchange_rate = self.exchange_rate(quote_currency=self.instrument.quote_currency)
+                exchange_rate = self.exchange_rate(self.instrument.quote_currency)
                 position_size = self.position_sizer.calculate(
                     equity=self.account.free_equity,
                     exchange_rate=exchange_rate,
                     risk_bp=self.risk_bp,
                     price_entry=price_entry,
                     price_stop_loss=price_stop_loss,
-                    commission_rate=Decimal(15),
+                    commission_rate_bp=0.15,
                     hard_limit=20000000,
                     units=1,
                     unit_batch_size=1000)
@@ -158,14 +158,14 @@ class EMACrossPy(TradeStrategy):
                 price_stop_loss = Price(self.last_bar(self.bar_type).high + (self.atr.value * self.SL_atr_multiple) + self.spread)
                 price_profit_target = Price(price_entry - (price_stop_loss - price_entry))
 
-                exchange_rate = self.exchange_rate(quote_currency=self.instrument.quote_currency)
+                exchange_rate = self.exchange_rate(self.instrument.quote_currency)
                 position_size = self.position_sizer.calculate(
                     equity=self.account.free_equity,
                     exchange_rate=exchange_rate,
                     risk_bp=self.risk_bp,
                     price_entry=price_entry,
                     price_stop_loss=price_stop_loss,
-                    commission_rate=Decimal(15),
+                    commission_rate_bp=0.15,
                     hard_limit=20000000,
                     units=1,
                     unit_batch_size=1000)
