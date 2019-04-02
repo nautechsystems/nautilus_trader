@@ -23,18 +23,18 @@ cdef class CurrencyCalculator:
 
     cpdef float exchange_rate(
             self,
-            Currency from_currency,
-            Currency to_currency,
+            Currency quote_currency,
+            Currency base_currency,
             QuoteType quote_type,
             dict bid_rates,
             dict ask_rates):
         """
-        Return the calculated exchange rate for the given from-currency to the 
-        given to-currency for the given quote type using the given dictionary of 
+        Return the calculated exchange rate for the given quote currency to the 
+        given base currency for the given quote type using the given dictionary of 
         bid and ask rates.
 
-        :param from_currency: The currency to convert from.
-        :param to_currency: The currency to convert to.
+        :param quote_currency: The currency to convert from.
+        :param base_currency: The currency to convert to.
         :param quote_type: The quote type for conversion.
         :param bid_rates: The dictionary of currency pair bid rates (Dict[str, float]).
         :param ask_rates: The dictionary of currency pair ask rates (Dict[str, float]).
@@ -43,11 +43,11 @@ cdef class CurrencyCalculator:
         """
         Precondition.true(len(bid_rates) == len(ask_rates), 'len(bid_rates) == len(ask_rates)')
 
-        if from_currency == to_currency:
+        if quote_currency == base_currency:
             return 1.0  # No exchange necessary
 
-        cdef str ccy_pair = currency_string(from_currency) + currency_string(to_currency)
-        cdef str swapped_ccy_pair = currency_string(to_currency) + currency_string(from_currency)
+        cdef str ccy_pair = currency_string(quote_currency) + currency_string(base_currency)
+        cdef str swapped_ccy_pair = currency_string(base_currency) + currency_string(quote_currency)
         cdef dict calculation_rates
 
         if quote_type == QuoteType.BID:

@@ -102,7 +102,7 @@ cdef class TradeStrategy:
     cpdef PositionId generate_position_id(self, Symbol symbol)
     cpdef OrderSide get_opposite_side(self, OrderSide side)
     cpdef OrderSide get_flatten_side(self, MarketPosition market_position)
-    cpdef float exchange_rate(self, Currency to_currency)
+    cpdef float exchange_rate(self, Currency quote_currency)
     cpdef bint order_exists(self, OrderId order_id)
     cpdef bint order_active(self, OrderId order_id)
     cpdef bint order_complete(self, OrderId order_id)

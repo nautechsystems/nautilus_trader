@@ -564,11 +564,11 @@ cdef class TradeStrategy:
         else:
             raise ValueError("Cannot flatten a FLAT position.")
 
-    cpdef float exchange_rate(self, Currency from_currency):
+    cpdef float exchange_rate(self, Currency quote_currency):
         """
-        Return the calculated exchange rate for the give from currency to the account currency.
+        Return the calculated exchange rate for the give quote currency to the account base currency.
         
-        :param from_currency: The from currency for the exchange rate.
+        :param quote_currency: The quote currency for the exchange rate.
         :return: float.
         """
         cdef dict bid_rates = {}
@@ -578,11 +578,11 @@ cdef class TradeStrategy:
             ask_rates[symbol.code] = tick.ask.as_float()
 
         return self._currency_calculator.exchange_rate(
-            from_currency,
-            self.account.currency,
-            QuoteType.MID,
-            bid_rates,
-            ask_rates)
+            quote_currency=quote_currency,
+            base_currency=self.account.currency,
+            quote_type=QuoteType.MID,
+            bid_rates=bid_rates,
+            ask_rates=ask_rates)
 
     cpdef bint order_exists(self, OrderId order_id):
         """
