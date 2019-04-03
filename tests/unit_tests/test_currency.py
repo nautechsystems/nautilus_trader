@@ -33,7 +33,7 @@ class CurrencyConverterTests(unittest.TestCase):
         # Assert
         self.assertEqual(0.800000011920929, result)
 
-    def test_can_calculate_exchange_rate_for_inverse(self):
+    def test_calculate_exchange_rate_for_inverse(self):
         # Arrange
         converter = CurrencyCalculator()
         bid_rates = {'USDJPY': 110.100}
@@ -50,7 +50,7 @@ class CurrencyConverterTests(unittest.TestCase):
         # Assert
         self.assertEqual(0.009082651697099209, result)
 
-    def test_can_calculate_exchange_rate_by_inference(self):
+    def test_calculate_exchange_rate_by_inference(self):
         # Arrange
         converter = CurrencyCalculator()
         bid_rates = {
@@ -62,17 +62,25 @@ class CurrencyConverterTests(unittest.TestCase):
             'AUDUSD': 0.80010}
 
         # Act
-        result = converter.exchange_rate(
+        result1 = converter.exchange_rate(
             Currency.JPY,
             Currency.AUD,
             QuoteType.BID,
             bid_rates,
             ask_rates)
 
-        # Assert
-        self.assertEqual(0.0, result)
+        result2 = converter.exchange_rate(
+            Currency.AUD,
+            Currency.JPY,
+            QuoteType.ASK,
+            bid_rates,
+            ask_rates)
 
-    def test_can_calculate_exchange_rate_for_mid_quote_type(self):
+        # Assert
+        self.assertEqual(0.011353314854204655, result1)  # JPYAUD
+        self.assertEqual(88.1150131225586, result2)  # AUDJPY
+
+    def test_calculate_exchange_rate_for_mid_quote_type(self):
         # Arrange
         converter = CurrencyCalculator()
         bid_rates = {'USDJPY': 110.100}
@@ -89,7 +97,7 @@ class CurrencyConverterTests(unittest.TestCase):
         # Assert
         self.assertEqual(0.00908141490072012, result)
 
-    def test_can_calculate_exchange_rate_for_mid_quote_type2(self):
+    def test_calculate_exchange_rate_for_mid_quote_type2(self):
         # Arrange
         converter = CurrencyCalculator()
         bid_rates = {'USDJPY': 110.100}
