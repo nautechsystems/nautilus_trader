@@ -65,7 +65,7 @@ cdef class BacktestConfig:
                  int starting_capital=1000000,
                  Currency account_currency=Currency.USD,
                  int slippage_ticks=0,
-                 commission_rate=Decimal(15),
+                 float commission_rate_bp=0.20,
                  bint bypass_logging=False,
                  level_console: logging=INFO,
                  level_file: logging=DEBUG,
@@ -79,7 +79,7 @@ cdef class BacktestConfig:
         :param starting_capital: The starting account capital (> 0).
         :param account_currency: The currency for the account.
         :param slippage_ticks: The slippage ticks per transaction (>= 0).
-        :param commission_rate: The commission rate per transaction per transaction per million notional value (>= 0).
+        :param commission_rate_bp: The commission rate in basis points per notional transaction size.
         :param bypass_logging: The flag indicating whether logging should be bypassed.
         :param level_console: The minimum log level for logging messages to the console.
         :param level_file: The minimum log level for logging messages to the log file.
@@ -95,13 +95,12 @@ cdef class BacktestConfig:
         """
         Precondition.positive(starting_capital, 'starting_capital')
         Precondition.not_negative(slippage_ticks, 'slippage_ticks')
-        Precondition.type(commission_rate, Decimal, 'commission_rate')
-        Precondition.not_negative(commission_rate, 'commission_rate')
+        Precondition.not_negative(commission_rate_bp, 'commission_rate_bp')
 
         self.starting_capital = Money(starting_capital)
         self.account_currency = account_currency
         self.slippage_ticks = slippage_ticks
-        self.commission_rate = commission_rate
+        self.commission_rate_bp = commission_rate_bp
         self.bypass_logging = bypass_logging
         self.level_console = level_console
         self.level_file = level_file
