@@ -93,6 +93,7 @@ cdef class Analyzer:
         """
         if not self._account_initialized:
             self._account_capital = event.cash_balance
+            self._account_initialized = True
             return
 
         cdef Money pnl = event.cash_balance - self._account_capital

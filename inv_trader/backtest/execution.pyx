@@ -319,7 +319,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._account.margin_call_status,
             self._guid_factory.generate(),
             self._clock.time_now())
-        self._handle_event(event)
+        self.handle_event(event)
 
     cdef void _submit_order(self, SubmitOrder command):
         """
@@ -738,7 +738,7 @@ cdef class BacktestExecClient(ExecutionClient):
                     self._clock.time_now(),
                     self._guid_factory.generate(),
                     self._clock.time_now())
-                self._handle_event(cancelled)
+                self.handle_event(cancelled)
 
     cdef void _adjust_account(self, OrderEvent event):
         """
@@ -788,7 +788,7 @@ cdef class BacktestExecClient(ExecutionClient):
             event_id=self._guid_factory.generate(),
             event_timestamp=self._clock.time_now())
 
-        self._handle_event(account_event)
+        self.handle_event(account_event)
 
     cdef dict _build_current_bid_rates(self):
         """
