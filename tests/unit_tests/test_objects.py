@@ -308,7 +308,7 @@ class ObjectTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(InvalidOperation, Money, 'a')
+        self.assertRaises(ValueError, Money, 'a')
 
     def test_money_zero_returns_money_with_zero_value(self):
         # Arrange
@@ -348,7 +348,7 @@ class ObjectTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(Decimal('1000.33'), result1.value)
-        self.assertEqual(Decimal('5005.55'), result2.value)
+        self.assertEqual(Decimal('5005.56'), result2.value)
 
     def test_money_initialized_with_many_scientific_notation_returns_zero(self):
         # Arrange

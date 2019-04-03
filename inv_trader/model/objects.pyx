@@ -9,7 +9,7 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ConversionSyntax
 from cpython.datetime cimport datetime
 
 from inv_trader.core.precondition cimport Precondition
@@ -367,26 +367,6 @@ cdef class Price:
         """
         return float(self.value)
 
-cdef str DECIMAL_POINT = '.'
-
-cdef inline str _get_money_str(str value):
-    cdef tuple partitioned
-    cdef int cents_length
-
-    if value.__contains__('E'):
-        # Reformat without scientific notation and pass back into this function
-        return _get_money_str(format(float(value), 'f'))
-    if not value.__contains__(DECIMAL_POINT):
-        return value + '.00'
-    else:
-        partitioned = value.partition(DECIMAL_POINT)
-        cents_length = len(partitioned[2])
-
-        if cents_length >= 2:
-            return partitioned[0] + DECIMAL_POINT + partitioned[2][:2]
-        else:
-            return partitioned[0] + DECIMAL_POINT + partitioned[2] + ('0' * (2 - cents_length))
-
 
 cdef class Money:
     """
@@ -398,20 +378,13 @@ cdef class Money:
         Initializes a new instance of the Money class.
 
         :param value: The value of the money.
-        Note: Only the first two decimal places of precision are retained.
+        Note: Value is rounded to 2 decimal places of precision.
         """
         if isinstance(value, str):
-            try:
-                self.value = Decimal(_get_money_str(value))
-            except InvalidOperation as ex:
-                print(f"INVALID OPERATION FOR DECIMAL WITH str value = {value}")
-                raise ex
+            self.value = Decimal(f'{float(value):.2f}')
         else:
-            try:
-                self.value = Decimal(_get_money_str(str(value)))
-            except InvalidOperation as ex:
-                print(f"INVALID OPERATION FOR DECIMAL WITH str value = {value}")
-                raise ex
+            self.value = Decimal(f'{value:.2f}')
+
 
     @staticmethod
     def zero():
