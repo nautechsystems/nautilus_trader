@@ -96,7 +96,7 @@ class PortfolioTestsTests(unittest.TestCase):
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
-        self.portfolio.handle_event(event, strategy.id)
+        self.portfolio.handle_order_fill(event, strategy.id)
 
         # Act
         self.portfolio.reset()
@@ -127,7 +127,7 @@ class PortfolioTestsTests(unittest.TestCase):
             UNIX_EPOCH)
 
         # Act
-        self.portfolio.handle_event(event, strategy.id)
+        self.portfolio.handle_order_fill(event, strategy.id)
 
         # Assert
         self.assertTrue(self.portfolio.position_exists(position_id))
@@ -167,8 +167,8 @@ class PortfolioTestsTests(unittest.TestCase):
             UNIX_EPOCH)
 
         # Act
-        self.portfolio.handle_event(event, strategy.id)
-        self.portfolio.handle_event(event, strategy.id)
+        self.portfolio.handle_order_fill(event, strategy.id)
+        self.portfolio.handle_order_fill(event, strategy.id)
 
         # Assert
         self.assertTrue(self.portfolio.position_exists(position_id))
@@ -217,8 +217,8 @@ class PortfolioTestsTests(unittest.TestCase):
             UNIX_EPOCH)
 
         # Act
-        self.portfolio.handle_event(buy, strategy.id)
-        self.portfolio.handle_event(sell, strategy.id)
+        self.portfolio.handle_order_fill(buy, strategy.id)
+        self.portfolio.handle_order_fill(sell, strategy.id)
 
         # Assert
         self.assertTrue(self.portfolio.position_exists(position_id))
@@ -276,8 +276,8 @@ class PortfolioTestsTests(unittest.TestCase):
             UNIX_EPOCH)
 
         # Act
-        self.portfolio.handle_event(buy1, strategy1.id)
-        self.portfolio.handle_event(buy2, strategy2.id)
+        self.portfolio.handle_order_fill(buy1, strategy1.id)
+        self.portfolio.handle_order_fill(buy2, strategy2.id)
 
         # Assert
         self.assertTrue(self.portfolio.position_exists(position_id1))
@@ -360,9 +360,9 @@ class PortfolioTestsTests(unittest.TestCase):
             UNIX_EPOCH)
 
         # Act
-        self.portfolio.handle_event(buy1, strategy1.id)
-        self.portfolio.handle_event(buy2, strategy2.id)
-        self.portfolio.handle_event(sell1, strategy1.id)
+        self.portfolio.handle_order_fill(buy1, strategy1.id)
+        self.portfolio.handle_order_fill(buy2, strategy2.id)
+        self.portfolio.handle_order_fill(sell1, strategy1.id)
 
         # Assert
         self.assertTrue(position_id1 in self.portfolio.get_positions(strategy1.id))

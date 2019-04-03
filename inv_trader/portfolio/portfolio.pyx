@@ -17,7 +17,7 @@ from inv_trader.common.logger cimport Logger, LoggerAdapter
 from inv_trader.common.clock cimport LiveClock
 from inv_trader.common.guid cimport LiveGuidFactory
 from inv_trader.common.execution cimport ExecutionClient
-from inv_trader.model.events cimport Event, PositionOpened, PositionModified, PositionClosed
+from inv_trader.model.events cimport AccountEvent, OrderEvent, PositionOpened, PositionModified, PositionClosed
 from inv_trader.model.identifiers cimport GUID, OrderId, PositionId
 from inv_trader.model.position cimport Position
 from inv_trader.portfolio.analyzer cimport Analyzer
@@ -254,9 +254,9 @@ cdef class Portfolio:
 
         self._order_p_index[order_id] = position_id
 
-    cpdef void handle_event(self, Event event, GUID strategy_id):
+    cpdef void handle_order_fill(self, OrderEvent event, GUID strategy_id):
         """
-        Handle the given event associated with the given strategy identifier.
+        Handle the order fill event associated with the given strategy identifier.
         
         :param event: The event to handle.
         :param strategy_id: The strategy identifier.
@@ -308,7 +308,12 @@ cdef class Portfolio:
                     self._position_opened(position, strategy_id)
                 self._position_modified(position, strategy_id)
 
-        # Update analyzer
+    cpdef void handle_transaction(self, AccountEvent event):
+        """
+        Handle the transaction associated with the given account event.
+
+        :param event: The event to handle.
+        """
         self.analyzer.add_transaction(event)
 
     cpdef void reset(self):
