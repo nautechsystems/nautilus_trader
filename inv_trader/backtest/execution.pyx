@@ -25,7 +25,7 @@ from inv_trader.enums.order_type cimport OrderType
 from inv_trader.enums.order_side cimport OrderSide
 from inv_trader.enums.order_status cimport OrderStatus
 from inv_trader.enums.market_position cimport MarketPosition, market_position_string
-from inv_trader.model.currency cimport CurrencyCalculator
+from inv_trader.model.currency cimport ExchangeRateCalculator
 from inv_trader.model.objects cimport ValidString, Symbol, Price, Money, Instrument, Quantity
 from inv_trader.model.order cimport Order
 from inv_trader.model.position cimport Position
@@ -126,7 +126,7 @@ cdef class BacktestExecClient(ExecutionClient):
         self.account_capital = starting_capital
         self.account_cash_start_day = self.account_capital
         self.account_cash_activity_day = Money(0)
-        self.currency_calculator = CurrencyCalculator()
+        self.exchange_calculator = ExchangeRateCalculator()
         self.commission_calculator = commission_calculator
         self.total_commissions = Money(0)
         self.slippage_index = {}       # type: Dict[Symbol, Decimal]
@@ -747,7 +747,7 @@ cdef class BacktestExecClient(ExecutionClient):
         :param event: The order fill event.
         """
         cdef Instrument instrument = self.instruments[event.symbol]
-        cdef float exchange_rate = self.currency_calculator.exchange_rate(
+        cdef float exchange_rate = self.exchange_calculator.get_rate(
             quote_currency=instrument.quote_currency,
             base_currency=self._account.currency,
             quote_type=QuoteType.BID if event.order_side is OrderSide.SELL else QuoteType.ASK,

@@ -21,7 +21,6 @@ import pymc3
 
 from platform import python_version
 from cpython.datetime cimport datetime, timedelta
-from decimal import Decimal
 from scipy.stats import kurtosis, skew
 from empyrical.stats import (
     annual_return,
@@ -383,7 +382,7 @@ cdef class BacktestEngine:
         self.log.info(f"Backtest stop datetime:  {format_zulu_datetime(stop)}")
         self.log.info(f"Account balance (starting): {self.config.starting_capital} {currency_string(self.account.currency)}")
         self.log.info(f"Account balance (ending):   {self.account.cash_balance} {currency_string(self.account.currency)}")
-        self.log.info(f"Commissions (total):       -{self.exec_client.total_commissions} {currency_string(self.account.currency)}")
+        self.log.info(f"Commissions (total):        {self.exec_client.total_commissions} {currency_string(self.account.currency)}")
         self.log.info("")
         self.log.info("#---------------------------------------------------------------#")
         self.log.info("#-------------------- PERFORMANCE STATISTICS -------------------#")

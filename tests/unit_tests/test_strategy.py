@@ -413,7 +413,7 @@ class TradeStrategyTests(unittest.TestCase):
         strategy.handle_tick(tick)
 
         # Act
-        result = strategy.exchange_rate(Currency.JPY)
+        result = strategy.get_exchange_rate(Currency.JPY)
 
         # Assert
         self.assertEqual(0.009025266394019127, result)
@@ -432,7 +432,7 @@ class TradeStrategyTests(unittest.TestCase):
         strategy.handle_tick(tick)
 
         # Act
-        result = strategy.exchange_rate(Currency.USD)
+        result = strategy.get_exchange_rate(Currency.USD)
 
         # Assert
         self.assertEqual(1.0, result)

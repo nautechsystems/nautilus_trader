@@ -280,6 +280,8 @@ cdef class EMACross(TradeStrategy):
             # Wait for indicators to warm up...
             return
 
+        cdef AtomicOrder atomic_order
+
         if self.is_flat() and self.entry_order is None:
             # BUY LOGIC
             if self.fast_ema.value >= self.slow_ema.value:
@@ -287,7 +289,7 @@ cdef class EMACross(TradeStrategy):
                 price_stop_loss = Price(self.last_bar(self.bar_type).low - (self.atr.value * self.SL_atr_multiple))
                 price_profit_target = Price(price_entry + (price_entry - price_stop_loss))
 
-                exchange_rate = self.exchange_rate(quote_currency=self.instrument.quote_currency)
+                exchange_rate = self.get_exchange_rate(quote_currency=self.instrument.quote_currency)
                 position_size = self.position_sizer.calculate(
                     equity=self.account.free_equity,
                     risk_bp=self.risk_bp,
@@ -317,7 +319,7 @@ cdef class EMACross(TradeStrategy):
                 price_stop_loss = Price(self.last_bar(self.bar_type).high + (self.atr.value * self.SL_atr_multiple) + self.spread)
                 price_profit_target = Price(price_entry - (price_stop_loss - price_entry))
 
-                exchange_rate = self.exchange_rate(quote_currency=self.instrument.quote_currency)
+                exchange_rate = self.get_exchange_rate(quote_currency=self.instrument.quote_currency)
                 position_size = self.position_sizer.calculate(
                     equity=self.account.free_equity,
                     risk_bp=self.risk_bp,

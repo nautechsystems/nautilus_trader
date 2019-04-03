@@ -373,6 +373,9 @@ cdef inline str _get_money_str(str value):
     cdef tuple partitioned
     cdef int cents_length
 
+    if value.__contains__('E'):
+        # Reformat without scientific notation and pass back into this function
+        return _get_money_str(format(float(value), 'f'))
     if not value.__contains__(DECIMAL_POINT):
         return value + '.00'
     else:
@@ -398,13 +401,13 @@ cdef class Money:
         Note: Only the first two decimal places of precision are retained.
         """
         if isinstance(value, str):
-            try:  # Temporary try-except to catch decimal.ConversionSyntax issue
+            try:
                 self.value = Decimal(_get_money_str(value))
             except InvalidOperation as ex:
                 print(f"INVALID OPERATION FOR DECIMAL WITH str value = {value}")
                 raise ex
         else:
-            try:  # Temporary try-except to catch decimal.ConversionSyntax issue
+            try:
                 self.value = Decimal(_get_money_str(str(value)))
             except InvalidOperation as ex:
                 print(f"INVALID OPERATION FOR DECIMAL WITH str value = {value}")

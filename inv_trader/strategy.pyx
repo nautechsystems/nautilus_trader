@@ -25,7 +25,7 @@ from inv_trader.common.logger cimport Logger, LoggerAdapter
 from inv_trader.common.execution cimport ExecutionClient
 from inv_trader.common.data cimport DataClient
 from inv_trader.common.guid cimport GuidFactory, LiveGuidFactory
-from inv_trader.model.currency cimport CurrencyCalculator
+from inv_trader.model.currency cimport ExchangeRateCalculator
 from inv_trader.model.events cimport Event, PositionEvent, OrderRejected, OrderCancelReject
 from inv_trader.model.identifiers cimport GUID, Label, OrderId, PositionId, PositionIdGenerator
 from inv_trader.model.objects cimport ValidString, Symbol, Price, Tick, BarType, Bar, Instrument
@@ -88,7 +88,7 @@ cdef class TradeStrategy:
             id_tag_trader=self.id_tag_trader,
             id_tag_strategy=self.id_tag_strategy,
             clock=self._clock)
-        self._currency_calculator = CurrencyCalculator()
+        self._exchange_calculator = ExchangeRateCalculator()
         self.bar_capacity = bar_capacity
         self.is_running = False
         self._ticks = {}               # type: Dict[Symbol, Tick]
@@ -564,7 +564,7 @@ cdef class TradeStrategy:
         else:
             raise ValueError("Cannot flatten a FLAT position.")
 
-    cpdef float exchange_rate(self, Currency quote_currency):
+    cpdef float get_exchange_rate(self, Currency quote_currency):
         """
         Return the calculated exchange rate for the give quote currency to the 
         account base currency.
@@ -578,7 +578,7 @@ cdef class TradeStrategy:
             bid_rates[symbol.code] = tick.bid.as_float()
             ask_rates[symbol.code] = tick.ask.as_float()
 
-        return self._currency_calculator.exchange_rate(
+        return self._exchange_calculator.get_rate(
             quote_currency=quote_currency,
             base_currency=self.account.currency,
             quote_type=QuoteType.MID,
