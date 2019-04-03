@@ -31,7 +31,7 @@ class CommissionCalculatorTests(unittest.TestCase):
             exchange_rate=1.00)
 
         # Assert
-        self.assertEqual(Money(32.59), result)
+        self.assertEqual(Money(32.60), result)
 
     def test_can_calculate_correct_minimum_commission(self):
         # Arrange
@@ -55,7 +55,7 @@ class CommissionCalculatorTests(unittest.TestCase):
             Money(1000000))
 
         # Assert
-        self.assertEqual(Money(19.99), result)
+        self.assertEqual(Money(20.00), result)
 
     def test_can_calculate_correct_commission_with_exchange_rate(self):
         # Arrange
