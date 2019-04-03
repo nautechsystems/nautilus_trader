@@ -14,12 +14,12 @@ from inv_trader.enums.currency cimport Currency
 from inv_trader.enums.quote_type cimport QuoteType
 
 
-cdef class CurrencyCalculator:
+cdef class ExchangeRateCalculator:
     """
-    Provides useful calculations between currencies.
+    Provides exchange rates between currencies.
     """
 
-    cpdef float exchange_rate(
+    cpdef float get_rate(
             self,
             Currency quote_currency,
             Currency base_currency,

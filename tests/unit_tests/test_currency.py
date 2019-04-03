@@ -11,19 +11,19 @@ import unittest
 
 from inv_trader.enums.currency import Currency
 from inv_trader.enums.quote_type import QuoteType
-from inv_trader.model.currency import CurrencyCalculator
+from inv_trader.model.currency import ExchangeRateCalculator
 
 
-class CurrencyConverterTests(unittest.TestCase):
+class ExchangeRateCalculatorTests(unittest.TestCase):
 
     def test_can_calculate_exchange_rate(self):
         # Arrange
-        converter = CurrencyCalculator()
+        converter = ExchangeRateCalculator()
         bid_rates = {'AUDUSD': 0.80000}
         ask_rates = {'AUDUSD': 0.80010}
 
         # Act
-        result = converter.exchange_rate(
+        result = converter.get_rate(
             Currency.AUD,
             Currency.USD,
             QuoteType.BID,
@@ -35,12 +35,12 @@ class CurrencyConverterTests(unittest.TestCase):
 
     def test_calculate_exchange_rate_for_inverse(self):
         # Arrange
-        converter = CurrencyCalculator()
+        converter = ExchangeRateCalculator()
         bid_rates = {'USDJPY': 110.100}
         ask_rates = {'USDJPY': 110.130}
 
         # Act
-        result = converter.exchange_rate(
+        result = converter.get_rate(
             Currency.JPY,
             Currency.USD,
             QuoteType.BID,
@@ -52,7 +52,7 @@ class CurrencyConverterTests(unittest.TestCase):
 
     def test_calculate_exchange_rate_by_inference(self):
         # Arrange
-        converter = CurrencyCalculator()
+        converter = ExchangeRateCalculator()
         bid_rates = {
             'USDJPY': 110.100,
             'AUDUSD': 0.80000
@@ -62,14 +62,14 @@ class CurrencyConverterTests(unittest.TestCase):
             'AUDUSD': 0.80010}
 
         # Act
-        result1 = converter.exchange_rate(
+        result1 = converter.get_rate(
             Currency.JPY,
             Currency.AUD,
             QuoteType.BID,
             bid_rates,
             ask_rates)
 
-        result2 = converter.exchange_rate(
+        result2 = converter.get_rate(
             Currency.AUD,
             Currency.JPY,
             QuoteType.ASK,
@@ -82,12 +82,12 @@ class CurrencyConverterTests(unittest.TestCase):
 
     def test_calculate_exchange_rate_for_mid_quote_type(self):
         # Arrange
-        converter = CurrencyCalculator()
+        converter = ExchangeRateCalculator()
         bid_rates = {'USDJPY': 110.100}
         ask_rates = {'USDJPY': 110.130}
 
         # Act
-        result = converter.exchange_rate(
+        result = converter.get_rate(
             Currency.JPY,
             Currency.USD,
             QuoteType.MID,
@@ -99,12 +99,12 @@ class CurrencyConverterTests(unittest.TestCase):
 
     def test_calculate_exchange_rate_for_mid_quote_type2(self):
         # Arrange
-        converter = CurrencyCalculator()
+        converter = ExchangeRateCalculator()
         bid_rates = {'USDJPY': 110.100}
         ask_rates = {'USDJPY': 110.130}
 
         # Act
-        result = converter.exchange_rate(
+        result = converter.get_rate(
             Currency.USD,
             Currency.JPY,
             QuoteType.MID,

@@ -20,7 +20,7 @@ from inv_trader.common.data cimport DataClient
 from inv_trader.enums.currency cimport Currency
 from inv_trader.enums.order_side cimport OrderSide
 from inv_trader.enums.market_position cimport MarketPosition
-from inv_trader.model.currency cimport CurrencyCalculator
+from inv_trader.model.currency cimport ExchangeRateCalculator
 from inv_trader.model.events cimport Event
 from inv_trader.model.identifiers cimport GUID, Label, OrderId, PositionId
 from inv_trader.model.identifiers cimport PositionIdGenerator
@@ -41,7 +41,7 @@ cdef class TradeStrategy:
     cdef dict _bars
     cdef dict _indicators
     cdef dict _indicator_updaters
-    cdef CurrencyCalculator _currency_calculator
+    cdef ExchangeRateCalculator _exchange_calculator
     cdef Portfolio _portfolio
 
     cdef readonly Label name
@@ -102,7 +102,7 @@ cdef class TradeStrategy:
     cpdef PositionId generate_position_id(self, Symbol symbol)
     cpdef OrderSide get_opposite_side(self, OrderSide side)
     cpdef OrderSide get_flatten_side(self, MarketPosition market_position)
-    cpdef float exchange_rate(self, Currency quote_currency)
+    cpdef float get_exchange_rate(self, Currency quote_currency)
     cpdef bint order_exists(self, OrderId order_id)
     cpdef bint order_active(self, OrderId order_id)
     cpdef bint order_complete(self, OrderId order_id)

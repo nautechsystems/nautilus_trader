@@ -350,6 +350,21 @@ class ObjectTests(unittest.TestCase):
         self.assertEqual(Decimal('1000.33'), result1.value)
         self.assertEqual(Decimal('5005.55'), result2.value)
 
+    def test_money_initialized_with_many_scientific_notation_returns_zero(self):
+        # Arrange
+        # Act
+        result1 = Money(0E-30)
+        result2 = Money(-0E-33)
+        result3 = Money('0E-30')
+        result4 = Money('-0E-33')
+
+        # Assert
+        self.assertEqual(Decimal('0.00'), result1.value)
+        self.assertEqual(Decimal('0.00'), result2.value)
+        self.assertEqual(Decimal('0.00'), result3.value)
+        self.assertEqual(Decimal('0.00'), result4.value)
+        print(result1)
+
     def test_money_str(self):
         # Arrange
         money1 = Money(1)

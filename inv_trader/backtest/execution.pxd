@@ -14,7 +14,7 @@ from cpython.datetime cimport datetime, timedelta
 from inv_trader.common.brokerage cimport CommissionCalculator
 from inv_trader.common.execution cimport ExecutionClient
 from inv_trader.enums.market_position cimport MarketPosition
-from inv_trader.model.currency cimport CurrencyCalculator
+from inv_trader.model.currency cimport ExchangeRateCalculator
 from inv_trader.model.objects cimport Symbol, Price, Money, Quantity
 from inv_trader.model.order cimport Order, OrderEvent
 from inv_trader.model.identifiers cimport OrderId
@@ -37,7 +37,7 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef readonly Money account_capital
     cdef readonly Money account_cash_start_day
     cdef readonly Money account_cash_activity_day
-    cdef readonly CurrencyCalculator currency_calculator
+    cdef readonly ExchangeRateCalculator exchange_calculator
     cdef readonly CommissionCalculator commission_calculator
     cdef readonly Money total_commissions
     cdef readonly dict slippage_index
