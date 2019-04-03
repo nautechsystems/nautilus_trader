@@ -406,6 +406,7 @@ cdef class BacktestEngine:
         self.log.info(f"Alpha:            {self._print_stat(alpha(returns=returns, factor_returns=returns))}")
         self.log.info(f"Beta:             {self._print_stat(beta(returns=returns, factor_returns=returns))}")
         self.log.info("#-----------------------------------------------------------------#")
+        print(self.portfolio.analyzer.get_transactions())
 
     cdef void _change_strategy_clocks_and_loggers(self, list strategies):
         """

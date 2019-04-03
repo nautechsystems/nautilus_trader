@@ -94,7 +94,7 @@ cdef class AccountEvent(Event):
                  GUID event_id,
                  datetime event_timestamp):
         """
-        Initializes a new instance of the Bar class.
+        Initializes a new instance of the AccountEvent class.
 
         :param currency: The currency for the account.
         :param cash_balance: The events account cash balance.
@@ -568,7 +568,7 @@ cdef class PositionEvent(Event):
                  GUID event_id,
                  datetime event_timestamp):
         """
-        Initializes a new instance of the OrderEvent base class.
+        Initializes a new instance of the PositionEvent base class.
 
         :param position: The events position.
         :param strategy_id: The strategy identifier associated with the position.
@@ -631,7 +631,7 @@ cdef class PositionModified(PositionEvent):
                  GUID event_id,
                  datetime event_timestamp):
         """
-        Initializes a new instance of the PositionOpened class.
+        Initializes a new instance of the PositionModified class.
 
         :param position: The events position.
         :param strategy_id: The strategy identifier associated with the position.

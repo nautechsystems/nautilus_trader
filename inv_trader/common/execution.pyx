@@ -301,7 +301,7 @@ cdef class ExecutionClient:
 
             if isinstance(event, OrderFilled) or isinstance(event, OrderPartiallyFilled):
                 self._log.debug(f"{event}")
-                self._portfolio.handle_event(event, strategy_id)
+                self._portfolio.handle_order_fill(event, strategy_id)
             elif isinstance(event, OrderModified):
                 self._log.debug(f"{event} price to {event.modified_price}")
             elif isinstance(event, OrderCancelled):
@@ -325,6 +325,7 @@ cdef class ExecutionClient:
         elif isinstance(event, AccountEvent):
             self._log.debug(f"{event}")
             self._account.apply(event)
+            self._portfolio.handle_transaction(event)
 
     cdef void _register_order(self, Order order, PositionId position_id, GUID strategy_id):
         """
@@ -393,12 +394,12 @@ cdef class ExecutionClient:
         Reset the execution client by returning all stateful internal values to their initial values.
         """
         self._log.debug(f"Resetting...")
-        self._order_book = {}             # type: Dict[OrderId, Order]
-        self._order_strategy_index = {}   # type: Dict[OrderId, GUID]
+        self._order_book = {}                         # type: Dict[OrderId, Order]
+        self._order_strategy_index = {}               # type: Dict[OrderId, GUID]
 
         # Reset all active orders
         for strategy_id in self._orders_active.keys():
-            self._orders_active[strategy_id] = {}  # type: Dict[OrderId, Order]
+            self._orders_active[strategy_id] = {}     # type: Dict[OrderId, Order]
 
         # Reset all completed orders
         for strategy_id in self._orders_completed.keys():

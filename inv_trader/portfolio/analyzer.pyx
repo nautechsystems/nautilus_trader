@@ -15,7 +15,9 @@ from math import log
 from cpython.datetime cimport date, datetime, timedelta
 
 from inv_trader.enums.order_side cimport OrderSide
-from inv_trader.model.events cimport OrderEvent
+from inv_trader.model.events cimport AccountEvent
+from inv_trader.model.objects cimport Money
+from inv_trader.model.identifiers cimport GUID
 
 
 cdef class Analyzer:
@@ -32,8 +34,12 @@ cdef class Analyzer:
         """
         self._log_returns = log_returns
         self._returns = pd.Series()
-        self._transactions = pd.DataFrame(columns=['amount', 'price', 'symbol'])
         self._positions = pd.DataFrame(columns=['cash'])
+        self._transactions = pd.DataFrame(columns=['amount'])
+        #self._transactions = pd.DataFrame(columns=['amount', 'price', 'symbol'])
+        self._equity_curve = pd.DataFrame(columns=['capital'])
+        self._account_capital = Money.zero()
+        self._account_initialized = False
 
     cpdef void add_return(self, datetime time, float value):
         """
@@ -50,24 +56,6 @@ cdef class Analyzer:
             self._returns.loc[index_date] = 0.0
 
         self._returns.loc[index_date] += value
-
-    cpdef void add_transaction(self, OrderEvent event):
-        """
-        Add transaction data to the analyzer.
-
-        :param event: The transaction event.
-        """
-        cdef datetime index_datetime = pd.to_datetime(event.timestamp)
-        if index_datetime in self._transactions:
-            index_datetime += timedelta(milliseconds=1)
-
-        cdef int quantity
-        if event.order_side == OrderSide.BUY:
-            quantity = event.filled_quantity.value
-        else:
-            quantity = -event.filled_quantity.value
-
-        self._transactions.loc[index_datetime] = [quantity, str(event.average_price), str(event.symbol)]
 
     cpdef void add_positions(
             self,
@@ -97,6 +85,37 @@ cdef class Analyzer:
         # TODO: Cash not being added??
         self._positions.loc[index_date]['cash'] = cash_balance.value
 
+    cpdef void add_transaction(self, AccountEvent event):
+        """
+        Add a transaction to the analyzer.
+        
+        :param event: The account event for the transaction.
+        """
+        if not self._account_initialized:
+            self._account_capital = event.cash_balance
+            return
+
+        cdef Money pnl = event.cash_balance - self._account_capital
+        self._equity_curve[event.timestamp] = pnl
+
+    # cpdef void add_transaction(self, OrderEvent event):
+    #     """
+    #     Add transaction data to the analyzer.
+    #
+    #     :param event: The transaction event.
+    #     """
+    #     cdef datetime index_datetime = pd.to_datetime(event.timestamp)
+    #     if index_datetime in self._transactions:
+    #         index_datetime += timedelta(milliseconds=1)
+    #
+    #     cdef int quantity
+    #     if event.order_side == OrderSide.BUY:
+    #         quantity = event.filled_quantity.value
+    #     else:
+    #         quantity = -event.filled_quantity.value
+    #
+    #     self._transactions.loc[index_datetime] = [quantity, str(event.average_price), str(event.symbol)]
+
     cpdef object get_returns(self):
         """
         Return the returns data.
@@ -105,14 +124,6 @@ cdef class Analyzer:
         """
         return self._returns
 
-    cpdef object get_transactions(self):
-        """
-        Return the transactions data.
-        
-        :return: Pandas.DataFrame.
-        """
-        return self._transactions
-
     cpdef object get_positions(self):
         """
         Return the positions data.
@@ -120,6 +131,14 @@ cdef class Analyzer:
         :return: Pandas.DataFrame.
         """
         return self._positions
+
+    cpdef object get_transactions(self):
+        """
+        Return the transactions data.
+        
+        :return: Pandas.DataFrame.
+        """
+        return self._transactions
 
     cpdef void create_returns_tear_sheet(self):
         """
