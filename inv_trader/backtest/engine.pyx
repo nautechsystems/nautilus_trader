@@ -21,20 +21,6 @@ import pymc3
 
 from platform import python_version
 from cpython.datetime cimport datetime, timedelta
-from scipy.stats import kurtosis, skew
-from empyrical.stats import (
-    annual_return,
-    cum_returns_final,
-    annual_volatility,
-    sharpe_ratio,
-    calmar_ratio,
-    sortino_ratio,
-    omega_ratio,
-    stability_of_timeseries,
-    max_drawdown,
-    alpha,
-    beta,
-    tail_ratio)
 from pandas import DataFrame
 from typing import List, Dict
 from logging import INFO, DEBUG
@@ -369,8 +355,6 @@ cdef class BacktestEngine:
         """
         Create a backtest run log footer.
         """
-        returns = self.trader.portfolio.analyzer.get_returns()
-
         self.log.info("#---------------------------------------------------------------#")
         self.log.info("#-------------------- BACKTEST DIAGNOSTICS ---------------------#")
         self.log.info("#---------------------------------------------------------------#")
@@ -389,22 +373,22 @@ cdef class BacktestEngine:
         self.log.info("#---------------------------------------------------------------#")
         self.log.info(f"PNL:              {self.account.cash_balance - self.config.starting_capital} {currency_string(self.account.currency)}")
         self.log.info(f"PNL %:            {self._print_stat(float(((self.account.cash_balance.value - self.config.starting_capital.value) / self.config.starting_capital.value) * 100))}%")
-        self.log.info(f"Annual return:    {self._print_stat(annual_return(returns=returns))}%")
-        self.log.info(f"Cum returns:      {self._print_stat(cum_returns_final(returns=returns))}%")
-        self.log.info(f"Max drawdown:     {self._print_stat(max_drawdown(returns=returns))}%")
-        self.log.info(f"Annual vol:       {self._print_stat(annual_volatility(returns=returns))}%")
-        self.log.info(f"Sharpe ratio:     {self._print_stat(sharpe_ratio(returns=returns))}")
-        self.log.info(f"Calmar ratio:     {self._print_stat(calmar_ratio(returns=returns))}")
-        self.log.info(f"Sortino ratio:    {self._print_stat(sortino_ratio(returns=returns))}")
-        self.log.info(f"Omega ratio:      {self._print_stat(omega_ratio(returns=returns))}")
-        self.log.info(f"Stability:        {self._print_stat(stability_of_timeseries(returns=returns))}")
-        self.log.info(f"Returns Mean:     {self._print_stat(value=np.mean(returns), decimals=5)}")
-        self.log.info(f"Returns Variance: {self._print_stat(value=np.var(returns), decimals=8)}")
-        self.log.info(f"Returns Skew:     {self._print_stat(skew(returns))}")
-        self.log.info(f"Returns Kurtosis: {self._print_stat(kurtosis(returns))}")
-        self.log.info(f"Tail ratio:       {self._print_stat(tail_ratio(returns=returns))}")
-        self.log.info(f"Alpha:            {self._print_stat(alpha(returns=returns, factor_returns=returns))}")
-        self.log.info(f"Beta:             {self._print_stat(beta(returns=returns, factor_returns=returns))}")
+        self.log.info(f"Annual return:    {self._print_stat(self.portfolio.analyzer.annual_return())}%")
+        self.log.info(f"Cum returns:      {self._print_stat(self.portfolio.analyzer.cum_return())}%")
+        self.log.info(f"Max drawdown:     {self._print_stat(self.portfolio.analyzer.max_drawdown_return())}%")
+        self.log.info(f"Annual vol:       {self._print_stat(self.portfolio.analyzer.annual_volatility())}%")
+        self.log.info(f"Sharpe ratio:     {self._print_stat(self.portfolio.analyzer.sharpe_ratio())}")
+        self.log.info(f"Calmar ratio:     {self._print_stat(self.portfolio.analyzer.calmar_ratio())}")
+        self.log.info(f"Sortino ratio:    {self._print_stat(self.portfolio.analyzer.sortino_ratio())}")
+        self.log.info(f"Omega ratio:      {self._print_stat(self.portfolio.analyzer.omega_ratio())}")
+        self.log.info(f"Stability:        {self._print_stat(self.portfolio.analyzer.stability_of_timeseries())}")
+        self.log.info(f"Returns Mean:     {self._print_stat(self.portfolio.analyzer.returns_mean(), decimals=5)}")
+        self.log.info(f"Returns Variance: {self._print_stat(self.portfolio.analyzer.returns_variance(), decimals=8)}")
+        self.log.info(f"Returns Skew:     {self._print_stat(self.portfolio.analyzer.returns_skew())}")
+        self.log.info(f"Returns Kurtosis: {self._print_stat(self.portfolio.analyzer.returns_kurtosis())}")
+        self.log.info(f"Tail ratio:       {self._print_stat(self.portfolio.analyzer.returns_tail_ratio())}")
+        self.log.info(f"Alpha:            {self._print_stat(self.portfolio.analyzer.alpha())}")
+        self.log.info(f"Beta:             {self._print_stat(self.portfolio.analyzer.beta())}")
         self.log.info("#-----------------------------------------------------------------#")
 
     cdef void _change_strategy_clocks_and_loggers(self, list strategies):

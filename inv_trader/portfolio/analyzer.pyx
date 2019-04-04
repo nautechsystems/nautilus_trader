@@ -9,10 +9,25 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
+import numpy as np
 import pandas as pd
 
 from math import log
 from cpython.datetime cimport date, datetime
+from scipy.stats import kurtosis, skew
+from empyrical.stats import (
+    annual_return,
+    cum_returns_final,
+    annual_volatility,
+    sharpe_ratio,
+    calmar_ratio,
+    sortino_ratio,
+    omega_ratio,
+    stability_of_timeseries,
+    max_drawdown,
+    alpha,
+    beta,
+    tail_ratio)
 
 from inv_trader.enums.order_side cimport OrderSide
 from inv_trader.model.events cimport AccountEvent
@@ -147,6 +162,134 @@ cdef class Analyzer:
         :return: Pandas.DataFrame.
         """
         return self._equity_curve
+
+    cpdef float annual_return(self):
+        """
+        Get the annual return for the portfolio.
+        
+        :return: float.
+        """
+        return annual_return(returns=self._returns)
+
+    cpdef float cum_return(self):
+        """
+        Get the cumulative return for the portfolio.
+        
+        :return: float.
+        """
+        return cum_returns_final(returns=self._returns)
+
+    cpdef float max_drawdown_return(self):
+        """
+        Get the maximum return drawdown for the portfolio.
+        
+        :return: float.
+        """
+        return max_drawdown(returns=self._returns)
+
+    cpdef float annual_volatility(self):
+        """
+        Get the annual volatility for the portfolio.
+        
+        :return: float.
+        """
+        return annual_volatility(returns=self._returns)
+
+    cpdef float sharpe_ratio(self):
+        """
+        Get the sharpe ratio for the portfolio.
+        
+        :return: float.
+        """
+        return sharpe_ratio(returns=self._returns)
+
+    cpdef float calmar_ratio(self):
+        """
+        Get the calmar ratio for the portfolio.
+        
+        :return: float.
+        """
+        return calmar_ratio(returns=self._returns)
+
+    cpdef float sortino_ratio(self):
+        """
+        Get the sortino ratio for the portfolio.
+        
+        :return: float.
+        """
+        return sortino_ratio(returns=self._returns)
+
+    cpdef float omega_ratio(self):
+        """
+        Get the omega ratio for the portfolio.
+        
+        :return: float.
+        """
+        return omega_ratio(returns=self._returns)
+
+    cpdef float stability_of_timeseries(self):
+        """
+        Get the stability of timeseries for the portfolio.
+        
+        :return: float.
+        """
+        return stability_of_timeseries(returns=self._returns)
+
+    cpdef float returns_mean(self):
+        """
+        Get the returns mean for the portfolio.
+        
+        :return: float.
+        """
+        return np.mean(self._returns)
+
+    cpdef float returns_variance(self):
+        """
+        Get the returns variance for the portfolio.
+        
+        :return: float.
+        """
+        return np.var(self._returns)
+
+    cpdef float returns_skew(self):
+        """
+        Get the returns skew for the portfolio.
+        
+        :return: float.
+        """
+        return skew(self._returns)
+
+    cpdef float returns_kurtosis(self):
+        """
+        Get the returns kurtosis for the portfolio.
+        
+        :return: float.
+        """
+        return kurtosis(self._returns)
+
+    cpdef float returns_tail_ratio(self):
+        """
+        Get the returns nail ratio for the portfolio.
+        
+        :return: float.
+        """
+        return tail_ratio(self._returns)
+
+    cpdef float alpha(self):
+        """
+        Get the alpha for the portfolio.
+        
+        :return: float.
+        """
+        return alpha(returns=self._returns, factor_returns=self._returns)
+
+    cpdef float beta(self):
+        """
+        Get the beta for the portfolio.
+    
+        :return: float.
+        """
+        return beta(returns=self._returns, factor_returns=self._returns)
 
     cpdef void create_returns_tear_sheet(self):
         """
