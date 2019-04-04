@@ -66,7 +66,7 @@ if __name__ == "__main__":
     #engine.create_full_tear_sheet()
 
     equity_curve = engine.portfolio.analyzer.get_equity_curve()
-    print(equity_curve)
+
     plt.plot(equity_curve['capital'])
     plt.show()
 

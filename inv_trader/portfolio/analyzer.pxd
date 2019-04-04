@@ -24,7 +24,10 @@ cdef class Analyzer:
     cdef object _positions
     cdef object _transactions
     cdef object _equity_curve
+    cdef Money _starting_capital
+    cdef Money _account_capital
 
+    cpdef void set_starting_capital(self, Money starting_capital)
     cpdef void add_return(self, datetime time, float value)
     cpdef void add_positions(self, datetime time, list positions, Money cash_balance)
     cpdef void add_transaction(self, datetime time, Money account_capital, Money pnl)
@@ -32,6 +35,9 @@ cdef class Analyzer:
     cpdef object get_positions(self)
     cpdef object get_transactions(self)
     cpdef object get_equity_curve(self)
+    cpdef Money total_pnl(self)
+    cpdef float total_pnl_percentage(self)
+    cpdef Money maximum_winner(self)
     cpdef float annual_return(self)
     cpdef float cum_return(self)
     cpdef float max_drawdown_return(self)
