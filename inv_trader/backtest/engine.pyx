@@ -379,7 +379,7 @@ cdef class BacktestEngine:
         self.log.info(f"Min Loser          {self.portfolio.analyzer.min_loser()}")
         self.log.info(f"Avg Loser          {self.portfolio.analyzer.avg_loser()}")
         self.log.info(f"Max Loser          {self.portfolio.analyzer.max_loser()}")
-        self.log.info(f"Win Rate           {self._print_stat(self.portfolio.analyzer.win_rate())}")
+        self.log.info(f"Win Rate           {self._print_stat(self.portfolio.analyzer.win_rate(), decimals=4)}")
         self.log.info(f"Expectancy         {self._print_stat(self.portfolio.analyzer.expectancy())}")
         self.log.info(f"Annual return:     {self._print_stat(self.portfolio.analyzer.annual_return())}%")
         self.log.info(f"Cum returns:       {self._print_stat(self.portfolio.analyzer.cum_return())}%")
