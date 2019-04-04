@@ -317,11 +317,16 @@ cdef class Portfolio:
 
         :param event: The event to handle.
         """
+        # Account data initialization
         if not self._account_initialized:
             self._account_capital = event.cash_balance
             self._account_initialized = True
             return
 
+        if self._account_capital == event.cash_balance:
+            return  # No transaction to handle
+
+        # Calculate transaction data
         cdef Money pnl = event.cash_balance - self._account_capital
         self._account_capital = event.cash_balance
 
