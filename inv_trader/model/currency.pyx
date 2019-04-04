@@ -65,13 +65,14 @@ cdef class ExchangeRateCalculator:
         cdef float common_ccy1
         cdef float common_ccy2
 
+        # Add given currency rates
         for ccy_pair, rate in calculation_rates.items():
             # Get currency pair symbols
             symbol_lhs = ccy_pair[:3]
             symbol_rhs = ccy_pair[3:]
             symbols.add(symbol_lhs)
             symbols.add(symbol_rhs)
-            # Add currency dictionary if it does not exist
+            # Add currency dictionaries if they do not already exist
             if symbol_lhs not in exchange_rates:
                 exchange_rates[symbol_lhs] = {}
             if symbol_rhs not in exchange_rates:
