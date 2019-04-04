@@ -52,6 +52,17 @@ cdef class Analyzer:
         self._transactions = pd.DataFrame(columns=['amount'])
         #self._transactions = pd.DataFrame(columns=['amount', 'price', 'symbol'])
         self._equity_curve = pd.DataFrame(columns=['capital', 'pnl'])
+        self._starting_capital = Money(0)
+        self._account_capital = Money(0)
+
+    cpdef void set_starting_capital(self, Money starting_capital):
+        """
+        Set the starting capital for the analyzer.
+
+        :param starting_capital: The value for the starting capital.
+        """
+        self._starting_capital = starting_capital
+        self._account_capital = starting_capital
 
     cpdef void add_return(self, datetime time, float value):
         """
@@ -105,8 +116,9 @@ cdef class Analyzer:
         :param account_capital: The account capital after the transaction.
         :param pnl: The profit/loss for the transaction.
         """
-        cdef datetime index = pd.to_datetime(time)
+        self._account_capital = account_capital
 
+        # Set index if it does not exist
         if time not in self._equity_curve:
             self._equity_curve.loc[time] = 0
 
@@ -162,6 +174,30 @@ cdef class Analyzer:
         :return: Pandas.DataFrame.
         """
         return self._equity_curve
+
+    cpdef Money total_pnl(self):
+        """
+        Return the total PNL for the portfolio.
+
+        :return: Money. 
+        """
+        return self._account_capital - self._starting_capital
+
+    cpdef float total_pnl_percentage(self):
+        """
+        Return the percentage change of the total PNL for the portfolio.
+        
+        :return: float. 
+        """
+        return float(((self._account_capital.value - self._starting_capital.value) / self._starting_capital.value) * 100)
+
+    cpdef Money maximum_winner(self):
+        """
+        Return the maximum winner for the portfolio.
+        
+        :return: Money.
+        """
+        return Money(np.max(self._transactions['capital']))
 
     cpdef float annual_return(self):
         """
