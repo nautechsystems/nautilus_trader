@@ -65,10 +65,10 @@ if __name__ == "__main__":
     engine.run(start, stop)
     #engine.create_full_tear_sheet()
 
-    equity_curve = engine.portfolio.analyzer.get_equity_curve()
+    #equity_curve = engine.portfolio.analyzer.get_equity_curve()
 
-    plt.plot(equity_curve['capital'])
-    plt.show()
+    #plt.plot(equity_curve['capital'])
+    #plt.show()
 
     input("Press Enter to continue...")
 

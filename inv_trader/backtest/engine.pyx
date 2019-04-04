@@ -371,24 +371,32 @@ cdef class BacktestEngine:
         self.log.info("#---------------------------------------------------------------#")
         self.log.info("#-------------------- PERFORMANCE STATISTICS -------------------#")
         self.log.info("#---------------------------------------------------------------#")
-        self.log.info(f"PNL:              {self.portfolio.analyzer.total_pnl()} {currency_string(self.account.currency)}")
-        self.log.info(f"PNL %:            {self._print_stat(self.portfolio.analyzer.total_pnl_percentage())}%")
-        self.log.info(f"Annual return:    {self._print_stat(self.portfolio.analyzer.annual_return())}%")
-        self.log.info(f"Cum returns:      {self._print_stat(self.portfolio.analyzer.cum_return())}%")
-        self.log.info(f"Max drawdown:     {self._print_stat(self.portfolio.analyzer.max_drawdown_return())}%")
-        self.log.info(f"Annual vol:       {self._print_stat(self.portfolio.analyzer.annual_volatility())}%")
-        self.log.info(f"Sharpe ratio:     {self._print_stat(self.portfolio.analyzer.sharpe_ratio())}")
-        self.log.info(f"Calmar ratio:     {self._print_stat(self.portfolio.analyzer.calmar_ratio())}")
-        self.log.info(f"Sortino ratio:    {self._print_stat(self.portfolio.analyzer.sortino_ratio())}")
-        self.log.info(f"Omega ratio:      {self._print_stat(self.portfolio.analyzer.omega_ratio())}")
-        self.log.info(f"Stability:        {self._print_stat(self.portfolio.analyzer.stability_of_timeseries())}")
-        self.log.info(f"Returns Mean:     {self._print_stat(self.portfolio.analyzer.returns_mean(), decimals=5)}")
-        self.log.info(f"Returns Variance: {self._print_stat(self.portfolio.analyzer.returns_variance(), decimals=8)}")
-        self.log.info(f"Returns Skew:     {self._print_stat(self.portfolio.analyzer.returns_skew())}")
-        self.log.info(f"Returns Kurtosis: {self._print_stat(self.portfolio.analyzer.returns_kurtosis())}")
-        self.log.info(f"Tail ratio:       {self._print_stat(self.portfolio.analyzer.returns_tail_ratio())}")
-        self.log.info(f"Alpha:            {self._print_stat(self.portfolio.analyzer.alpha())}")
-        self.log.info(f"Beta:             {self._print_stat(self.portfolio.analyzer.beta())}")
+        self.log.info(f"PNL:               {self.portfolio.analyzer.total_pnl()} {currency_string(self.account.currency)}")
+        self.log.info(f"PNL %:             {self._print_stat(self.portfolio.analyzer.total_pnl_percentage())}%")
+        self.log.info(f"Max Winner         {self.portfolio.analyzer.max_winner()}")
+        self.log.info(f"Avg Winner         {self.portfolio.analyzer.avg_winner()}")
+        self.log.info(f"Min Winner         {self.portfolio.analyzer.min_winner()}")
+        self.log.info(f"Min Loser          {self.portfolio.analyzer.min_loser()}")
+        self.log.info(f"Avg Loser          {self.portfolio.analyzer.avg_loser()}")
+        self.log.info(f"Max Loser          {self.portfolio.analyzer.max_loser()}")
+        self.log.info(f"Win Rate           {self._print_stat(self.portfolio.analyzer.win_rate())}")
+        self.log.info(f"Expectancy         {self._print_stat(self.portfolio.analyzer.expectancy())}")
+        self.log.info(f"Annual return:     {self._print_stat(self.portfolio.analyzer.annual_return())}%")
+        self.log.info(f"Cum returns:       {self._print_stat(self.portfolio.analyzer.cum_return())}%")
+        self.log.info(f"Max drawdown:      {self._print_stat(self.portfolio.analyzer.max_drawdown_return())}%")
+        self.log.info(f"Annual vol:        {self._print_stat(self.portfolio.analyzer.annual_volatility())}%")
+        self.log.info(f"Sharpe ratio:      {self._print_stat(self.portfolio.analyzer.sharpe_ratio())}")
+        self.log.info(f"Calmar ratio:      {self._print_stat(self.portfolio.analyzer.calmar_ratio())}")
+        self.log.info(f"Sortino ratio:     {self._print_stat(self.portfolio.analyzer.sortino_ratio())}")
+        self.log.info(f"Omega ratio:       {self._print_stat(self.portfolio.analyzer.omega_ratio())}")
+        self.log.info(f"Stability:         {self._print_stat(self.portfolio.analyzer.stability_of_timeseries())}")
+        self.log.info(f"Returns Mean:      {self._print_stat(self.portfolio.analyzer.returns_mean(), decimals=5)}")
+        self.log.info(f"Returns Variance:  {self._print_stat(self.portfolio.analyzer.returns_variance(), decimals=8)}")
+        self.log.info(f"Returns Skew:      {self._print_stat(self.portfolio.analyzer.returns_skew())}")
+        self.log.info(f"Returns Kurtosis:  {self._print_stat(self.portfolio.analyzer.returns_kurtosis())}")
+        self.log.info(f"Tail ratio:        {self._print_stat(self.portfolio.analyzer.returns_tail_ratio())}")
+        self.log.info(f"Alpha:             {self._print_stat(self.portfolio.analyzer.alpha())}")
+        self.log.info(f"Beta:              {self._print_stat(self.portfolio.analyzer.beta())}")
         self.log.info("#-----------------------------------------------------------------#")
 
     cdef void _change_strategy_clocks_and_loggers(self, list strategies):
@@ -411,7 +419,4 @@ cdef class BacktestEngine:
         :param decimals: The decimal precision for the value rounding.
         :return: str.
         """
-        cdef str string_value = f'{value:.{decimals}f}'
-        if not string_value.startswith('-'):
-            string_value = ' ' + string_value
-        return string_value
+        return f'{value:.{decimals}f}'

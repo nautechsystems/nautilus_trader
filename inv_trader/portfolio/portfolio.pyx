@@ -349,6 +349,8 @@ cdef class Portfolio:
         for strategy_id in self._positions_closed.keys():
             self._positions_closed[strategy_id] = {}  # type: Dict[PositionId, Position]
 
+        self._account_capital = Money.zero()
+        self._account_initialized = False
         self.positions_count = 0
         self.positions_active_count = 0
         self.positions_closed_count = 0
