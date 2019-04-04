@@ -29,8 +29,6 @@ from empyrical.stats import (
     beta,
     tail_ratio)
 
-from inv_trader.enums.order_side cimport OrderSide
-from inv_trader.model.events cimport AccountEvent
 from inv_trader.model.objects cimport Money
 
 
@@ -191,13 +189,75 @@ cdef class Analyzer:
         """
         return float(((self._account_capital.value - self._starting_capital.value) / self._starting_capital.value) * 100)
 
-    cpdef Money maximum_winner(self):
+    cpdef Money max_winner(self):
         """
         Return the maximum winner for the portfolio.
         
         :return: Money.
         """
-        return Money(np.max(self._transactions['capital']))
+        return Money(self._equity_curve['pnl'].max())
+
+    cpdef Money max_loser(self):
+        """
+        Return the maximum loser for the portfolio.
+        
+        :return: Money.
+        """
+        return Money(self._equity_curve['pnl'].min())
+
+    cpdef Money min_winner(self):
+        """
+        Return the minimum winner for the portfolio.
+        
+        :return: Money.
+        """
+        return Money(self._equity_curve['pnl'][self._equity_curve['pnl'] >= 0].min())
+
+    cpdef Money min_loser(self):
+        """
+        Return the minimum loser for the portfolio.
+        
+        :return: Money.
+        """
+        return Money(self._equity_curve['pnl'][self._equity_curve['pnl'] < 0].max())
+
+    cpdef Money avg_winner(self):
+        """
+        Return the average winner for the portfolio.
+        
+        :return: Money.
+        """
+        return Money(self._equity_curve['pnl'][self._equity_curve['pnl'] >= 0].mean())
+
+    cpdef Money avg_loser(self):
+        """
+        Return the average loser for the portfolio.
+        
+        :return: Money.
+        """
+        return Money(self._equity_curve['pnl'][self._equity_curve['pnl'] < 0].mean())
+
+    cpdef float win_rate(self):
+        """
+        Return the win rate (after commissions) for the portfolio.
+        
+        :return: float. 
+        """
+        cdef object winners = self._equity_curve['pnl'][self._equity_curve['pnl'] > 0]
+        cdef object losers = self._equity_curve['pnl'][self._equity_curve['pnl'] <= 0]
+
+        return len(winners) / (len(winners) + len(losers))
+
+    cpdef float expectancy(self):
+        """
+        Return the expectancy for the portfolio.
+        
+        :return: float. 
+        """
+        cdef float win_rate = self.win_rate()
+        cdef float loss_rate = 1 - win_rate
+
+        return (float(self.avg_winner().value) * win_rate) - (-float(self.avg_loser().value) * loss_rate)
 
     cpdef float annual_return(self):
         """

@@ -78,6 +78,31 @@ class PortfolioTestsTests(unittest.TestCase):
         # Assert
         self.assertEqual(3, len(result))
 
+    def test_can_get_pnl_statistics(self):
+        # Arrange
+        t1 = datetime(year=2010, month=1, day=1)
+        t2 = datetime(year=2010, month=1, day=2)
+        t3 = datetime(year=2010, month=1, day=3)
+        t4 = datetime(year=2010, month=1, day=4)
+        t5 = datetime(year=2010, month=1, day=5)
+
+        # Act
+        self.analyzer.add_transaction(t1, Money(1000000), Money(-100000))
+        self.analyzer.add_transaction(t2, Money(900000), Money(-50000))
+        self.analyzer.add_transaction(t3, Money(850000), Money(-100000))
+        self.analyzer.add_transaction(t4, Money(950000), Money(150000))
+        self.analyzer.add_transaction(t5, Money(975000), Money(125000))
+
+        # Assert
+        self.assertEqual(Money(150000), self.analyzer.max_winner())
+        self.assertEqual(Money(-100000), self.analyzer.max_loser())
+        self.assertEqual(Money(125000), self.analyzer.min_winner())
+        self.assertEqual(Money(-50000), self.analyzer.min_loser())
+        self.assertEqual(Money(137500.00), self.analyzer.avg_winner())
+        self.assertEqual(Money(-83333.33), self.analyzer.avg_loser())
+        self.assertEqual(0.4000000059604645, self.analyzer.win_rate())
+        self.assertEqual(5000.0009765625, self.analyzer.expectancy())
+
     # def test_can_add_buy_transaction(self):
     #     # Arrange
     #     order_factory = OrderFactory(
