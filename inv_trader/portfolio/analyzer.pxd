@@ -12,7 +12,6 @@
 from cpython.datetime cimport datetime
 
 from inv_trader.model.objects cimport Money
-from inv_trader.model.events cimport AccountEvent
 
 
 cdef class Analyzer:
@@ -25,14 +24,13 @@ cdef class Analyzer:
     cdef object _positions
     cdef object _transactions
     cdef object _equity_curve
-    cdef Money _account_capital
-    cdef bint _account_initialized
 
     cpdef void add_return(self, datetime time, float value)
     cpdef void add_positions(self, datetime time, list positions, Money cash_balance)
-    cpdef void add_transaction(self, AccountEvent event)
+    cpdef void add_transaction(self, datetime time, Money account_capital, Money pnl)
     cpdef object get_returns(self)
     cpdef object get_positions(self)
     cpdef object get_transactions(self)
+    cpdef object get_equity_curve(self)
     cpdef void create_returns_tear_sheet(self)
     cpdef void create_full_tear_sheet(self)

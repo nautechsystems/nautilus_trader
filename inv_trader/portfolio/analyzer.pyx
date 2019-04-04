@@ -12,12 +12,11 @@
 import pandas as pd
 
 from math import log
-from cpython.datetime cimport date, datetime, timedelta
+from cpython.datetime cimport date, datetime
 
 from inv_trader.enums.order_side cimport OrderSide
 from inv_trader.model.events cimport AccountEvent
 from inv_trader.model.objects cimport Money
-from inv_trader.model.identifiers cimport GUID
 
 
 cdef class Analyzer:
@@ -37,9 +36,7 @@ cdef class Analyzer:
         self._positions = pd.DataFrame(columns=['cash'])
         self._transactions = pd.DataFrame(columns=['amount'])
         #self._transactions = pd.DataFrame(columns=['amount', 'price', 'symbol'])
-        self._equity_curve = pd.DataFrame(columns=['capital'])
-        self._account_capital = Money.zero()
-        self._account_initialized = False
+        self._equity_curve = pd.DataFrame(columns=['capital', 'pnl'])
 
     cpdef void add_return(self, datetime time, float value):
         """
@@ -85,19 +82,21 @@ cdef class Analyzer:
         # TODO: Cash not being added??
         self._positions.loc[index_date]['cash'] = cash_balance.value
 
-    cpdef void add_transaction(self, AccountEvent event):
+    cpdef void add_transaction(self, datetime time, Money account_capital, Money pnl):
         """
         Add a transaction to the analyzer.
         
-        :param event: The account event for the transaction.
+        :param time: The timestamp for the transaction entry.
+        :param account_capital: The account capital after the transaction.
+        :param pnl: The profit/loss for the transaction.
         """
-        if not self._account_initialized:
-            self._account_capital = event.cash_balance
-            self._account_initialized = True
-            return
+        cdef datetime index = pd.to_datetime(time)
 
-        cdef Money pnl = event.cash_balance - self._account_capital
-        self._equity_curve[event.timestamp] = pnl
+        if time not in self._equity_curve:
+            self._equity_curve.loc[time] = 0
+
+        self._equity_curve.loc[time]['capital'] = account_capital.value
+        self._equity_curve.loc[time]['pnl'] = pnl.value
 
     # cpdef void add_transaction(self, OrderEvent event):
     #     """
@@ -140,6 +139,14 @@ cdef class Analyzer:
         :return: Pandas.DataFrame.
         """
         return self._transactions
+
+    cpdef object get_equity_curve(self):
+        """
+        Return the transactions data.
+        
+        :return: Pandas.DataFrame.
+        """
+        return self._equity_curve
 
     cpdef void create_returns_tear_sheet(self):
         """
