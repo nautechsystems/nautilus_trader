@@ -8,10 +8,9 @@
 # -------------------------------------------------------------------------------------------------
 
 import unittest
-import uuid
 
 from datetime import datetime
-
+from matplotlib import pyplot as plt
 
 from inv_trader.common.clock import TestClock
 from inv_trader.model.enums import Venue, OrderSide
@@ -34,7 +33,7 @@ class PortfolioTestsTests(unittest.TestCase):
         # Fixture Setup
         self.analyzer = Analyzer()
 
-    def test_can_add_return(self):
+    def test_can_add_returns(self):
         # Arrange
         t1 = datetime(year=2010, month=1, day=1)
         t2 = datetime(year=2010, month=1, day=2)
@@ -62,6 +61,22 @@ class PortfolioTestsTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(10, len(result))
+
+    def test_can_add_transactions(self):
+        # Arrange
+        t1 = datetime(year=2010, month=1, day=1)
+        t2 = datetime(year=2010, month=1, day=2)
+        t3 = datetime(year=2010, month=1, day=3)
+
+        # Act
+        self.analyzer.add_transaction(t1, Money(1000000), Money(-100000))
+        self.analyzer.add_transaction(t2, Money(900000), Money(-100000))
+        self.analyzer.add_transaction(t3, Money(800000), Money(-100000))
+
+        result = self.analyzer.get_equity_curve()
+
+        # Assert
+        self.assertEqual(3, len(result))
 
     # def test_can_add_buy_transaction(self):
     #     # Arrange

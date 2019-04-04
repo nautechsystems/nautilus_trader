@@ -18,6 +18,7 @@ from inv_trader.common.clock cimport LiveClock
 from inv_trader.common.guid cimport LiveGuidFactory
 from inv_trader.common.execution cimport ExecutionClient
 from inv_trader.model.events cimport AccountEvent, OrderEvent, PositionOpened, PositionModified, PositionClosed
+from inv_trader.model.objects cimport Money
 from inv_trader.model.identifiers cimport GUID, OrderId, PositionId
 from inv_trader.model.position cimport Position
 from inv_trader.portfolio.analyzer cimport Analyzer
@@ -52,6 +53,8 @@ cdef class Portfolio:
         self._registered_strategies = []  # type: List[GUID]
         self._positions_active = {}       # type: Dict[GUID, Dict[PositionId, Position]]
         self._positions_closed = {}       # type: Dict[GUID, Dict[PositionId, Position]]
+        self._account_capital = Money.zero()
+        self._account_initialized = False
 
         self.positions_count = 0
         self.positions_active_count = 0
@@ -314,7 +317,15 @@ cdef class Portfolio:
 
         :param event: The event to handle.
         """
-        self.analyzer.add_transaction(event)
+        if not self._account_initialized:
+            self._account_capital = event.cash_balance
+            self._account_initialized = True
+            return
+
+        cdef Money pnl = event.cash_balance - self._account_capital
+        self._account_capital = event.cash_balance
+
+        self.analyzer.add_transaction(event.timestamp, self._account_capital, pnl)
 
     cpdef void reset(self):
         """

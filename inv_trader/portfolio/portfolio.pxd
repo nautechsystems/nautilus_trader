@@ -15,6 +15,7 @@ from inv_trader.common.logger cimport LoggerAdapter
 from inv_trader.common.execution cimport ExecutionClient
 from inv_trader.model.identifiers cimport GUID, OrderId, PositionId
 from inv_trader.model.events cimport AccountEvent, OrderEvent
+from inv_trader.model.objects cimport Money
 from inv_trader.model.position cimport Position
 from inv_trader.strategy cimport TradeStrategy
 from inv_trader.portfolio.analyzer cimport Analyzer
@@ -33,6 +34,8 @@ cdef class Portfolio:
     cdef list _registered_strategies
     cdef dict _positions_active
     cdef dict _positions_closed
+    cdef Money _account_capital
+    cdef bint _account_initialized
 
     cdef readonly int positions_count
     cdef readonly int positions_active_count

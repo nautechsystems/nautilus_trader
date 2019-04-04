@@ -9,7 +9,8 @@
 
 import pandas as pd
 import logging
-
+import matplotlib.pyplot as plt
+from pandas.plotting import register_matplotlib_converters
 from datetime import datetime, timezone
 
 from inv_trader.model.enums import Resolution, Currency
@@ -18,6 +19,7 @@ from test_kit.strategies import EMACross
 from test_kit.data import TestDataProvider
 from test_kit.stubs import TestStubs
 
+register_matplotlib_converters()
 
 if __name__ == "__main__":
     usdjpy = TestStubs.instrument_usdjpy()
@@ -57,11 +59,16 @@ if __name__ == "__main__":
         strategies=strategies,
         config=config)
 
-    start = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
-    stop = datetime(2013, 2, 3, 0, 0, 0, 0, tzinfo=timezone.utc)
+    start = datetime(2013, 1, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
+    stop = datetime(2013, 3, 2, 0, 0, 0, 0, tzinfo=timezone.utc)
 
     engine.run(start, stop)
     #engine.create_full_tear_sheet()
+
+    equity_curve = engine.portfolio.analyzer.get_equity_curve()
+    print(equity_curve)
+    plt.plot(equity_curve['capital'])
+    plt.show()
 
     input("Press Enter to continue...")
 
