@@ -100,7 +100,6 @@ cdef class BacktestExecClient(ExecutionClient):
                          clock,
                          guid_factory,
                          logger)
-        self._message_bus = deque()
 
         # Convert instruments list to dictionary indexed by symbol
         cdef dict instruments_dict = {}      # type: Dict[Symbol, Instrument]
@@ -224,39 +223,30 @@ cdef class BacktestExecClient(ExecutionClient):
                         self._fill_order(order, Price(order.price - self.slippage_index[order.symbol]))
                         continue  # Continue loop to next order
 
+            print("*********** REACHED HERE")
             # Check for order expiry
             if order.expire_time is not None and time_now >= order.expire_time:
-                del self.working_orders[order.id]
-                self._expire_order(order)
+                if order.id in self.working_orders:
+                    del self.working_orders[order.id]
+                    self._expire_order(order)
 
         self.iteration += 1
 
     cpdef void execute_command(self, Command command):
         """
-        Execute the given command by inserting it into the message bus for processing.
+        Execute the given command.
         
         :param command: The command to execute.
         """
-        self._message_bus.appendleft(command)
+        self._execute_command(command)
 
     cpdef void handle_event(self, Event event):
         """
-        Handle the given event by inserting it into the message bus for processing.
+        Handle the given event.
         
         :param event: The event to handle
         """
-        self._message_bus.appendleft(event)
-
-    cpdef void process(self):
-        """
-        Process the message bus of commands and events.
-        """
-        while self._message_bus:
-            item = self._message_bus.pop()  # Removes from right side of deque
-            if isinstance(item, Event):
-                self._handle_event(item)
-            elif isinstance(item, Command):
-                self._execute_command(item)
+        self._handle_event(event)
 
     cpdef void reset_account(self):
         """
@@ -286,7 +276,6 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         self._log.info(f"Resetting...")
         self._reset()
-        self._message_bus = deque()
         self.iteration = 0
         self.day_number = 0
         self.account_capital = self.starting_capital
@@ -319,7 +308,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._account.margin_call_status,
             self._guid_factory.generate(),
             self._clock.time_now())
-        self.handle_event(event)
+        self._handle_event(event)
 
     cdef void _submit_order(self, SubmitOrder command):
         """
@@ -334,7 +323,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._clock.time_now(),
             self._guid_factory.generate(),
             self._clock.time_now())
-        self.handle_event(submitted)
+        self._handle_event(submitted)
 
         self._accept_order(command.order)
 
@@ -378,7 +367,7 @@ cdef class BacktestExecClient(ExecutionClient):
                 ValidString(f'cannot find order with id {command.order.id.value}'),
                 self._guid_factory.generate(),
                 self._clock.time_now())
-            self.handle_event(event)
+            self._handle_event(event)
             return  # Rejected the modify order command
 
         cdef Order order = command.order
@@ -416,7 +405,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._guid_factory.generate(),
             self._clock.time_now())
 
-        self.handle_event(modified)
+        self._handle_event(modified)
 
     cdef void _cancel_order(self, CancelOrder command):
         """
@@ -436,7 +425,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._guid_factory.generate(),
             self._clock.time_now())
 
-        self.handle_event(cancelled)
+        self._handle_event(cancelled)
         self._remove_oco_order(command.order.id)
 
     cdef dict _prepare_minute_data(self, dict bar_data, str quote_type):
@@ -542,7 +531,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._clock.time_now(),
             self._guid_factory.generate(),
             self._clock.time_now())
-        self.handle_event(accepted)
+        self._handle_event(accepted)
 
         self._work_order(order)
 
@@ -562,7 +551,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._guid_factory.generate(),
             self._clock.time_now())
 
-        self.handle_event(rejected)
+        self._handle_event(rejected)
         self._remove_oco_order(order.id)
 
     cdef void _reject_modify_order(self, Order order, str reason):
@@ -583,7 +572,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._guid_factory.generate(),
             self._clock.time_now())
 
-        self.handle_event(cancel_reject)
+        self._handle_event(cancel_reject)
 
     cdef void _expire_order(self, Order order):
         """
@@ -600,7 +589,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._guid_factory.generate(),
             self._clock.time_now())
 
-        self.handle_event(expired)
+        self._handle_event(expired)
         self._remove_oco_order(order.id)
 
     cdef void _work_order(self, Order order):
@@ -663,7 +652,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._guid_factory.generate(),
             self._clock.time_now(),
             order.expire_time)
-        self.handle_event(working)
+        self._handle_event(working)
 
     cdef void _fill_order(self, Order order, Price fill_price):
         """
@@ -689,7 +678,7 @@ cdef class BacktestExecClient(ExecutionClient):
         if self._portfolio.order_has_position(order.id):
             self._adjust_account(filled)
 
-        self.handle_event(filled)
+        self._handle_event(filled)
         self._remove_oco_order(order.id)
 
         # Work any atomic child orders
@@ -726,7 +715,7 @@ cdef class BacktestExecClient(ExecutionClient):
                             ValidString(f"OCO triggered from {order_id}"),
                             self._guid_factory.generate(),
                             self._clock.time_now())
-                        self._handle_event(rejected)  # TODO: Bug if sent to self.handle_event()
+                        self._handle_event(rejected)
 
             # Cancel any working OCO orders
             if oco_order_id in self.working_orders:
@@ -738,7 +727,7 @@ cdef class BacktestExecClient(ExecutionClient):
                     self._clock.time_now(),
                     self._guid_factory.generate(),
                     self._clock.time_now())
-                self.handle_event(cancelled)
+                self._handle_event(cancelled)
 
     cdef void _adjust_account(self, OrderEvent event):
         """
@@ -788,7 +777,7 @@ cdef class BacktestExecClient(ExecutionClient):
             event_id=self._guid_factory.generate(),
             event_timestamp=self._clock.time_now())
 
-        self.handle_event(account_event)
+        self._handle_event(account_event)
 
     cdef dict _build_current_bid_rates(self):
         """

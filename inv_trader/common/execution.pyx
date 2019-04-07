@@ -270,7 +270,7 @@ cdef class ExecutionClient:
     cdef void _handle_event(self, Event event):
         """
         Handle the given event received from the execution service.
-        
+ 
         :param: event: The event to handle.
         :raises ValueError: If the events order identifier is not registered with the execution client.
         """
@@ -299,7 +299,7 @@ cdef class ExecutionClient:
                     if order.id in self._orders_active[strategy_id]:
                         del self._orders_active[strategy_id][order.id]
 
-            if isinstance(event, OrderFilled) or isinstance(event, OrderPartiallyFilled):
+            if isinstance(event, (OrderFilled, OrderPartiallyFilled)):
                 self._log.debug(f"{event}")
                 self._portfolio.handle_order_fill(event, strategy_id)
             elif isinstance(event, OrderModified):
@@ -307,9 +307,7 @@ cdef class ExecutionClient:
             elif isinstance(event, OrderCancelled):
                 self._log.debug(str(event))
             # Warning Events
-            elif isinstance(event, OrderRejected):
-                self._log.debug(f"{event}")  # Also logged as warning by strategy
-            elif isinstance(event, OrderCancelReject):
+            elif isinstance(event, (OrderRejected, OrderCancelReject)):
                 self._log.debug(f"{event}")  # Also logged as warning by strategy
 
             # Send event to strategy

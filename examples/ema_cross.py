@@ -215,7 +215,7 @@ class EMACrossPy(TradeStrategy):
             if self.is_flat():
                 self._reset_trade()
 
-        elif isinstance(event, OrderRejected) or isinstance(event, OrderExpired):
+        elif isinstance(event, (OrderRejected, OrderExpired)):
             if event.order_id.equals(self.entry_order.id):
                 self._reset_trade()
             # If a stop-loss order is rejected then flatten the entered position

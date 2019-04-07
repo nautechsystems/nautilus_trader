@@ -240,7 +240,7 @@ cdef class Order:
             self.broker_id = event.broker_order_id
             self.price = event.modified_price
 
-        elif isinstance(event, OrderFilled) or isinstance(event, OrderPartiallyFilled):
+        elif isinstance(event, (OrderFilled, OrderPartiallyFilled)):
             self._execution_ids.append(event.execution_id)
             self._execution_tickets.append(event.execution_ticket)
             self.execution_id = event.execution_id
