@@ -264,9 +264,7 @@ cdef class TradeStrategy:
 
         :param event: The event received.
         """
-        if isinstance(event, OrderRejected):
-            self.log.warning(f"{event}")
-        elif isinstance(event, OrderCancelReject):
+        if isinstance(event, (OrderRejected, OrderCancelReject)):  # Warning events
             self.log.warning(f"{event}")
         else:
             self.log.info(f"{event}")
