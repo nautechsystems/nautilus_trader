@@ -162,11 +162,10 @@ cdef class BacktestDataClient(DataClient):
         for data_provider in self.data_providers.values():
             if data_provider.has_ticks:
                 ticks = data_provider.iterate_ticks(self._clock.time_now())
-                if ticks:
-                    for tick in ticks:
-                        if tick.symbol in self._tick_handlers:
-                            for handler in self._tick_handlers[tick.symbol]:
-                                handler(tick)
+                for tick in ticks:
+                    if tick.symbol in self._tick_handlers:
+                        for handler in self._tick_handlers[tick.symbol]:
+                            handler(tick)
 
         # Iterate bars
         cdef list bars = []
