@@ -20,7 +20,7 @@ from inv_trader.common.guid import TestGuidFactory
 from inv_trader.common.logger import TestLogger
 from inv_trader.model.enums import Venue, OrderSide
 from inv_trader.model.objects import Quantity, Symbol, Price, Money
-from inv_trader.model.events import OrderRejected, OrderWorking, OrderModified, OrderFilled
+from inv_trader.model.events import OrderRejected, OrderCancelled, OrderWorking, OrderModified, OrderFilled
 from inv_trader.strategy import TradeStrategy
 from inv_trader.backtest.execution import BacktestExecClient
 from inv_trader.portfolio.portfolio import Portfolio
@@ -114,7 +114,7 @@ class BacktestExecClientTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(5, strategy.object_storer.count)
-        self.assertTrue(isinstance(strategy.object_storer.get_store()[4], OrderFilled))
+        self.assertTrue(isinstance(strategy.object_storer.get_store()[3], OrderFilled))
         self.assertEqual(Price('86.711'), strategy.order(order_id).average_price)
 
     def test_can_submit_limit_order(self):
@@ -153,9 +153,9 @@ class BacktestExecClientTests(unittest.TestCase):
         strategy.submit_atomic_order(atomic_order, strategy.generate_position_id(self.usdjpy.symbol))
 
         # Assert
-        print(strategy.object_storer.get_store())
+        # print(strategy.object_storer.get_store())
         self.assertEqual(6, strategy.object_storer.count)
-        self.assertTrue(isinstance(strategy.object_storer.get_store()[4], OrderFilled))
+        self.assertTrue(isinstance(strategy.object_storer.get_store()[3], OrderFilled))
         self.assertEqual(Price('80.000'), atomic_order.stop_loss.price)
         self.assertTrue(atomic_order.stop_loss.id not in self.client.atomic_child_orders)
 
@@ -177,7 +177,7 @@ class BacktestExecClientTests(unittest.TestCase):
         strategy.submit_atomic_order(atomic_order, strategy.generate_position_id(self.usdjpy.symbol))
 
         # Assert
-        print(strategy.object_storer.get_store())
+        # print(strategy.object_storer.get_store())
         self.assertEqual(4, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[3], OrderWorking))
         self.assertTrue(atomic_order.entry.id in self.client.atomic_child_orders)
@@ -249,3 +249,49 @@ class BacktestExecClientTests(unittest.TestCase):
         # Assert
         self.assertEqual(4, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[3], OrderRejected))
+
+    def test_submit_atomic_order_with_invalid_stop_loss_rejects_and_cancels_OCO(self):
+        # Arrange
+        strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
+        self.client.register_strategy(strategy)
+        strategy.start()
+
+        atomic_order = strategy.order_factory.atomic_market(
+            USDJPY_FXCM,
+            OrderSide.BUY,
+            Quantity(100000),
+            price_stop_loss=Price('200.00'),  # Invalid price above market
+            price_profit_target=Price('86.000'))
+
+        # Act
+        strategy.submit_atomic_order(atomic_order, strategy.generate_position_id(self.usdjpy.symbol))
+
+        # Assert
+        # print(strategy.object_storer.get_store())
+        self.assertEqual(7, strategy.object_storer.count)
+        self.assertTrue(isinstance(strategy.object_storer.get_store()[5], OrderRejected))
+        self.assertTrue(isinstance(strategy.object_storer.get_store()[6], OrderRejected))
+
+    def test_submit_atomic_order_with_invalid_profit_target_rejects_and_cancels_OCO(self):
+        # Arrange
+        strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
+        self.client.register_strategy(strategy)
+        strategy.start()
+
+        atomic_order = strategy.order_factory.atomic_market(
+            USDJPY_FXCM,
+            OrderSide.BUY,
+            Quantity(100000),
+            price_stop_loss=Price('84.00'),
+            price_profit_target=Price('50.000'))  # Invalid price below market
+
+        # Act
+        strategy.submit_atomic_order(atomic_order, strategy.generate_position_id(self.usdjpy.symbol))
+
+        # Assert
+        # print(strategy.object_storer.get_store())
+        self.assertEqual(9, strategy.object_storer.count)
+        self.assertTrue(isinstance(strategy.object_storer.get_store()[6], OrderRejected))
+        self.assertTrue(isinstance(strategy.object_storer.get_store()[7], OrderRejected))
+        self.assertTrue(isinstance(strategy.object_storer.get_store()[8], OrderCancelled))
+        self.assertTrue(atomic_order.stop_loss.id not in self.client.working_orders)

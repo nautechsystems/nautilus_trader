@@ -299,8 +299,11 @@ cdef class ExecutionClient:
                     if order.id in self._orders_active[strategy_id]:
                         del self._orders_active[strategy_id][order.id]
 
+            # Send event to strategy
+            self._registered_strategies[strategy_id].handle_event(event)
+
             if isinstance(event, (OrderFilled, OrderPartiallyFilled)):
-                self._log.debug(f"{event}")
+                self._log.debug(f'{event}')
                 self._portfolio.handle_order_fill(event, strategy_id)
             elif isinstance(event, OrderModified):
                 self._log.debug(f"{event} price to {event.modified_price}")
@@ -308,20 +311,19 @@ cdef class ExecutionClient:
                 self._log.debug(str(event))
             # Warning Events
             elif isinstance(event, (OrderRejected, OrderCancelReject)):
-                self._log.debug(f"{event}")  # Also logged as warning by strategy
-
-            # Send event to strategy
-            self._registered_strategies[strategy_id].handle_event(event)
+                self._log.debug(f'{event}')  # Also logged as warning by strategy
+            else:
+                self._log.debug(f'{event}')
 
         # Position events
         elif isinstance(event, PositionEvent):
-            self._log.debug(f"{event}")
+            self._log.debug(f'{event}')
             # Send event to strategy
             self._registered_strategies[event.strategy_id].handle_event(event)
 
         # Account event
         elif isinstance(event, AccountEvent):
-            self._log.debug(f"{event}")
+            self._log.debug(f'{event}')
             self._account.apply(event)
             self._portfolio.handle_transaction(event)
 
