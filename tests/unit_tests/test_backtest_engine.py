@@ -63,6 +63,20 @@ class BacktestEngineTests(unittest.TestCase):
         self.assertEqual(44641, self.engine.data_client.iteration)
         self.assertEqual(44641, self.engine.exec_client.iteration)
 
+    def test_can_reset_engine(self):
+        # Arrange
+        start = datetime(2013, 1, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
+        stop = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
+
+        self.engine.run(start, stop)
+
+        # Act
+        self.engine.reset()
+
+        # Assert
+        self.assertEqual(0, self.engine.data_client.iteration)
+        self.assertEqual(0, self.engine.exec_client.iteration)
+
     def test_can_run_ema_cross_strategy(self):
         # Arrange
         instrument = TestStubs.instrument_usdjpy()

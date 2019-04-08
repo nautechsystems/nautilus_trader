@@ -238,7 +238,7 @@ cdef class BacktestEngine:
         self._change_strategy_clocks_and_loggers(self.trader.strategies)
         self.trader.start()
 
-        self.log.debug("Setting initial iteration...")
+        self.log.info("Setting initial iteration...")
         self.data_client.set_initial_iteration(start, time_step)  # Also sets clock to start time
         self.exec_client.set_initial_iteration(start, time_step)  # Also sets clock to start time
 
