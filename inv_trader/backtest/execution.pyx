@@ -223,7 +223,6 @@ cdef class BacktestExecClient(ExecutionClient):
                         self._fill_order(order, Price(order.price - self.slippage_index[order.symbol]))
                         continue  # Continue loop to next order
 
-            print("*********** REACHED HERE")
             # Check for order expiry
             if order.expire_time is not None and time_now >= order.expire_time:
                 if order.id in self.working_orders:
@@ -426,7 +425,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._clock.time_now())
 
         self._handle_event(cancelled)
-        self._remove_oco_order(command.order.id)
+        self._check_oco_order(command.order.id)
 
     cdef dict _prepare_minute_data(self, dict bar_data, str quote_type):
         """
@@ -552,7 +551,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._clock.time_now())
 
         self._handle_event(rejected)
-        self._remove_oco_order(order.id)
+        self._check_oco_order(order.id)
 
     cdef void _reject_modify_order(self, Order order, str reason):
         """
@@ -590,7 +589,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._clock.time_now())
 
         self._handle_event(expired)
-        self._remove_oco_order(order.id)
+        self._check_oco_order(order.id)
 
     cdef void _work_order(self, Order order):
         """
@@ -679,7 +678,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._adjust_account(filled)
 
         self._handle_event(filled)
-        self._remove_oco_order(order.id)
+        self._check_oco_order(order.id)
 
         # Work any atomic child orders
         if order.id in self.atomic_child_orders:
@@ -688,7 +687,7 @@ cdef class BacktestExecClient(ExecutionClient):
                     self._work_order(child_order)
             del self.atomic_child_orders[order.id]
 
-    cdef void _remove_oco_order(self, OrderId order_id):
+    cdef void _check_oco_order(self, OrderId order_id):
         """
         Remove the order with the given identifier from OCO orders.
         """
@@ -707,27 +706,45 @@ cdef class BacktestExecClient(ExecutionClient):
             for atomic_order_id, child_orders in self.atomic_child_orders.items():
                 for order in child_orders:
                     if oco_order.equals(order):
-                        # Generate event
-                        rejected = OrderRejected(
-                            order.symbol,
-                            order.id,
-                            self._clock.time_now(),
-                            ValidString(f"OCO triggered from {order_id}"),
-                            self._guid_factory.generate(),
-                            self._clock.time_now())
-                        self._handle_event(rejected)
+                        self._reject_oco_order(order, order_id)
 
             # Cancel any working OCO orders
             if oco_order_id in self.working_orders:
+                self._cancel_oco_order(self.working_orders[oco_order_id])
                 del self.working_orders[oco_order_id]
-                # Generate event
-                cancelled = OrderCancelled(
-                    oco_order.symbol,
-                    oco_order.id,
-                    self._clock.time_now(),
-                    self._guid_factory.generate(),
-                    self._clock.time_now())
-                self._handle_event(cancelled)
+
+    cdef void _reject_oco_order(self, Order order, OrderId oco_order_id):
+        """
+        Reject an OCO order.
+        
+        :param order: The OCO order to reject.
+        :param oco_order_id: The other order identifier for this OCO.
+        """
+        # Generate event
+        cdef OrderRejected rejected = OrderRejected(
+            order.symbol,
+            order.id,
+            self._clock.time_now(),
+            ValidString(f"OCO order rejected from {oco_order_id}"),
+            self._guid_factory.generate(),
+            self._clock.time_now())
+        self._handle_event(rejected)
+
+    cdef void _cancel_oco_order(self, Order order):
+        """
+        Cancel an OCO order.
+
+        :param order: The OCO order to cancel.
+        """
+        # Generate event
+        # ValidString(f"OCO triggered from {order_id}")
+        cdef OrderCancelled cancelled = OrderCancelled(
+            order.symbol,
+            order.id,
+            self._clock.time_now(),
+            self._guid_factory.generate(),
+            self._clock.time_now())
+        self._handle_event(cancelled)
 
     cdef void _adjust_account(self, OrderEvent event):
         """

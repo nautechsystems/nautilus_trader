@@ -75,7 +75,8 @@ def make_extension(ext_name) -> Extension:
     return Extension(
         ext_name,
         [ext_path],
-        include_dirs=["."])
+        include_dirs=["."],
+        define_macros=[('CYTHON_TRACE', '1')])
 
 
 # Generate list of extensions
