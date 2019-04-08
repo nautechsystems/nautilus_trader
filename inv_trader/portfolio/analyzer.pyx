@@ -246,7 +246,7 @@ cdef class Analyzer:
         cdef object winners = self._equity_curve['pnl'][self._equity_curve['pnl'] > 0]
         cdef object losers = self._equity_curve['pnl'][self._equity_curve['pnl'] <= 0]
 
-        return len(winners) / (len(winners) + len(losers))
+        return len(winners) / max(1.0, (len(winners) + len(losers)))
 
     cpdef float expectancy(self):
         """
@@ -255,7 +255,7 @@ cdef class Analyzer:
         :return: float. 
         """
         cdef float win_rate = self.win_rate()
-        cdef float loss_rate = 1 - win_rate
+        cdef float loss_rate = 1.0 - win_rate
 
         return (float(self.avg_winner().value) * win_rate) - (-float(self.avg_loser().value) * loss_rate)
 
