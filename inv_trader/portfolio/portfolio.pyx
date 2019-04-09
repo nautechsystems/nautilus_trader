@@ -56,9 +56,6 @@ cdef class Portfolio:
         self._account_capital = Money.zero()
         self._account_initialized = False
 
-        self.positions_count = 0
-        self.positions_active_count = 0
-        self.positions_closed_count = 0
         self.position_opened_events = []  # type: List[PositionOpened]
         self.position_closed_events = []  # type: List[PositionClosed]
 
@@ -217,6 +214,47 @@ cdef class Portfolio:
                     return False
             return True
 
+    cpdef int positions_count(self):
+        """
+        Return the total count of active and closed positions.
+        
+        :return: int.
+        """
+        cdef int positions_total_count = 0
+
+        positions_total_count += self.positions_active_count()
+        positions_total_count += self.positions_closed_count()
+
+        return positions_total_count
+
+    cpdef int positions_active_count(self):
+        """
+        Return the count of active positions held by the portfolio.
+        
+        :return: int.
+        """
+        cdef int active_positions = 0
+
+        for positions_list in self._positions_active.values():
+            for position in positions_list:
+                active_positions += 1
+
+        return active_positions
+
+    cpdef int positions_closed_count(self):
+        """
+        Return the count of closed positions held by the portfolio.
+        
+        :return: int.
+        """
+        cdef int closed_count = 0
+
+        for positions_list in self._positions_closed.values():
+            for position in positions_list:
+                closed_count += 1
+
+        return closed_count
+
     cpdef void register_execution_client(self, ExecutionClient client):
         """
         Register the given execution client with the portfolio to receive position events.
@@ -278,7 +316,6 @@ cdef class Portfolio:
                 event.symbol,
                 position_id,
                 event.execution_time)
-            self.positions_count += 1
             position.apply(event)
 
             # Add position to position book
@@ -351,9 +388,6 @@ cdef class Portfolio:
 
         self._account_capital = Money.zero()
         self._account_initialized = False
-        self.positions_count = 0
-        self.positions_active_count = 0
-        self.positions_closed_count = 0
         self.position_opened_events = []  # type: List[PositionOpened]
         self.position_closed_events = []  # type: List[PositionClosed]
 
@@ -368,7 +402,6 @@ cdef class Portfolio:
             self._clock.time_now())
 
         self.position_opened_events.append(event)
-        self.positions_active_count += 1
         self._exec_client.handle_event(event)
 
     cdef void _position_modified(self, Position position, GUID strategy_id):
@@ -389,7 +422,5 @@ cdef class Portfolio:
             time_now)
 
         self.position_closed_events.append(event)
-        self.positions_closed_count += 1
-        self.positions_active_count -= 1
         self.analyzer.add_return(time_now, position.return_realized)
         self._exec_client.handle_event(event)
