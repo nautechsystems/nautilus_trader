@@ -131,6 +131,8 @@ class PortfolioTestsTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(self.portfolio.position_exists(position_id))
+        self.assertFalse(self.portfolio.is_strategy_flat(strategy.id))
+        self.assertFalse(self.portfolio.is_flat())
         self.assertEqual(Position, type(self.portfolio.get_position(position_id)))
         self.assertTrue(position_id in self.portfolio.get_positions_all())
         self.assertTrue(position_id not in self.portfolio.get_positions_closed(strategy.id))
@@ -172,6 +174,8 @@ class PortfolioTestsTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(self.portfolio.position_exists(position_id))
+        self.assertFalse(self.portfolio.is_strategy_flat(strategy.id))
+        self.assertFalse(self.portfolio.is_flat())
         self.assertEqual(Position, type(self.portfolio.get_position(position_id)))
         self.assertEqual(0, len(self.portfolio.get_positions_closed(strategy.id)))
         self.assertEqual(0, len(self.portfolio.get_positions_closed_all()[strategy.id]))
@@ -222,6 +226,8 @@ class PortfolioTestsTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(self.portfolio.position_exists(position_id))
+        self.assertTrue(self.portfolio.is_strategy_flat(strategy.id))
+        self.assertTrue(self.portfolio.is_flat())
         self.assertEqual(Position, type(self.portfolio.get_position(position_id)))
         self.assertTrue(position_id in self.portfolio.get_positions(strategy.id))
         self.assertTrue(position_id in self.portfolio.get_positions_all())
@@ -282,6 +288,9 @@ class PortfolioTestsTests(unittest.TestCase):
         # Assert
         self.assertTrue(self.portfolio.position_exists(position_id1))
         self.assertTrue(self.portfolio.position_exists(position_id2))
+        self.assertFalse(self.portfolio.is_strategy_flat(strategy1.id))
+        self.assertFalse(self.portfolio.is_strategy_flat(strategy2.id))
+        self.assertFalse(self.portfolio.is_flat())
         self.assertEqual(Position, type(self.portfolio.get_position(position_id1)))
         self.assertEqual(Position, type(self.portfolio.get_position(position_id2)))
         self.assertTrue(position_id1 in self.portfolio.get_positions(strategy1.id))
@@ -365,6 +374,11 @@ class PortfolioTestsTests(unittest.TestCase):
         self.portfolio.handle_order_fill(sell1, strategy1.id)
 
         # Assert
+        self.assertTrue(self.portfolio.position_exists(position_id1))
+        self.assertTrue(self.portfolio.position_exists(position_id2))
+        self.assertTrue(self.portfolio.is_strategy_flat(strategy1.id))
+        self.assertFalse(self.portfolio.is_strategy_flat(strategy2.id))
+        self.assertFalse(self.portfolio.is_flat())
         self.assertTrue(position_id1 in self.portfolio.get_positions(strategy1.id))
         self.assertTrue(position_id2 in self.portfolio.get_positions(strategy2.id))
         self.assertTrue(position_id1 in self.portfolio.get_positions_all())

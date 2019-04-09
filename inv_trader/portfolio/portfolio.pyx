@@ -201,7 +201,7 @@ cdef class Portfolio:
         """
         Precondition.is_in(strategy_id, self._positions_active, 'strategy_id', 'positions_active')
 
-        return len(self._positions_active[strategy_id]) == 0
+        return not self._positions_active[strategy_id]
 
     cpdef bint is_flat(self):
         """
@@ -209,10 +209,10 @@ cdef class Portfolio:
         
         :return: True if the portfolio is flat, else False.
         """
-        for position in self._position_book.values():
-            if not position.is_exited:
-                    return False
-            return True
+        for strategy_id in self._registered_strategies:
+            if not self.is_strategy_flat(strategy_id):
+                return False  # Therefore the portfolio is not flat
+        return True
 
     cpdef int positions_count(self):
         """
