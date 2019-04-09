@@ -29,7 +29,9 @@ from empyrical.stats import (
     beta,
     tail_ratio)
 
+from inv_trader.enums.currency cimport Currency, currency_string
 from inv_trader.model.objects cimport Money
+
 
 
 cdef class Analyzer:
@@ -48,19 +50,21 @@ cdef class Analyzer:
         self._returns = pd.Series()
         self._positions = pd.DataFrame(columns=['cash'])
         self._transactions = pd.DataFrame(columns=['amount'])
-        #self._transactions = pd.DataFrame(columns=['amount', 'price', 'symbol'])
         self._equity_curve = pd.DataFrame(columns=['capital', 'pnl'])
-        self._starting_capital = Money(0)
+        self._account_starting_capital = Money(0)
         self._account_capital = Money(0)
+        self._account_currency = Currency.USD
 
-    cpdef void set_starting_capital(self, Money starting_capital):
+    cpdef void set_starting_capital(self, Money starting_capital, Currency account_currency):
         """
         Set the starting capital for the analyzer.
 
         :param starting_capital: The value for the starting capital.
+        :param account_currency: The account currency.
         """
-        self._starting_capital = starting_capital
+        self._account_starting_capital = starting_capital
         self._account_capital = starting_capital
+        self._account_currency = account_currency
 
     cpdef void add_return(self, datetime time, float value):
         """
@@ -123,24 +127,6 @@ cdef class Analyzer:
         self._equity_curve.loc[time]['capital'] = account_capital.value
         self._equity_curve.loc[time]['pnl'] = pnl.value
 
-    # cpdef void add_transaction(self, OrderEvent event):
-    #     """
-    #     Add transaction data to the analyzer.
-    #
-    #     :param event: The transaction event.
-    #     """
-    #     cdef datetime index_datetime = pd.to_datetime(event.timestamp)
-    #     if index_datetime in self._transactions:
-    #         index_datetime += timedelta(milliseconds=1)
-    #
-    #     cdef int quantity
-    #     if event.order_side == OrderSide.BUY:
-    #         quantity = event.filled_quantity.value
-    #     else:
-    #         quantity = -event.filled_quantity.value
-    #
-    #     self._transactions.loc[index_datetime] = [quantity, str(event.average_price), str(event.symbol)]
-
     cpdef object get_returns(self):
         """
         Return the returns data.
@@ -179,7 +165,7 @@ cdef class Analyzer:
 
         :return: Money. 
         """
-        return self._account_capital - self._starting_capital
+        return self._account_capital - self._account_starting_capital
 
     cpdef float total_pnl_percentage(self):
         """
@@ -187,7 +173,7 @@ cdef class Analyzer:
         
         :return: float. 
         """
-        return float(((self._account_capital.value - self._starting_capital.value) / self._starting_capital.value) * 100)
+        return float(((self._account_capital.value - self._account_starting_capital.value) / self._account_starting_capital.value) * 100)
 
     cpdef Money max_winner(self):
         """
@@ -325,7 +311,7 @@ cdef class Analyzer:
 
     cpdef float stability_of_timeseries(self):
         """
-        Get the stability of timeseries for the portfolio.
+        Get the stability of time series for the portfolio.
         
         :return: float.
         """
@@ -398,3 +384,115 @@ cdef class Analyzer:
         Create a pyfolio full tear sheet based on analyzer data from the last run.
         """
         # Do nothing
+
+    cpdef dict get_performance_stats(self):
+        """
+        Return the performance statistics from the last backtest run.
+        
+        Statistics Keys
+        ---------------
+        - PNL
+        - PNL%
+        - MaxWinner
+        - AvgWinner
+        - MinWinner
+        - MinLoser
+        - AvgLoser
+        - MaxLoser
+        - WinRate
+        - Expectancy
+        - AnnualReturn
+        - CumReturn
+        - MaxDrawdown
+        - AnnualVol
+        - SharpeRatio
+        - CalmarRatio
+        - SortinoRatio
+        - OmegaRatio
+        - Stability
+        - ReturnsMean
+        - ReturnsVariance
+        - ReturnsSkew
+        - ReturnsKurtosis
+        - TailRatio
+        - Alpha
+        - Beta
+        
+        :return: Dict[str, float].
+        """
+        return {
+            'PNL': self.total_pnl(),
+            'PNL%': self.total_pnl_percentage(),
+            'MaxWinner': self.max_winner(),
+            'AvgWinner': self.avg_winner(),
+            'MinWinner': self.min_winner(),
+            'MinLoser': self.min_loser(),
+            'AvgLoser': self.avg_loser(),
+            'MaxLoser': self.max_loser(),
+            'WinRate': self.win_rate(),
+            'Expectancy': self.expectancy(),
+            'AnnualReturn': self.annual_return(),
+            'CumReturn': self.cum_return(),
+            'MaxDrawdown': self.max_drawdown_return(),
+            'AnnualVol': self.annual_volatility(),
+            'SharpeRatio': self.sharpe_ratio(),
+            'CalmarRatio': self.calmar_ratio(),
+            'SortinoRatio': self.sortino_ratio(),
+            'OmegaRatio': self.omega_ratio(),
+            'Stability': self.stability_of_timeseries(),
+            'ReturnsMean': self.returns_mean(),
+            'ReturnsVariance': self.returns_variance(),
+            'ReturnsSkew': self.returns_skew(),
+            'ReturnsKurtosis': self.returns_kurtosis(),
+            'TailRatio': self.returns_tail_ratio(),
+            'Alpha': self.alpha(),
+            'Beta': self.beta()
+        }
+
+    cdef list get_performance_stats_formatted(self):
+        """
+        Return the performance statistics from the last backtest run formatted 
+        for printing in the backtest run footer.
+        
+        :return: List[str].
+        """
+        cdef str account_currency = currency_string(self._account_currency)
+
+        return [
+            f"PNL:               {self.total_pnl()} {account_currency}",
+            f"PNL %:             {self._format_stat(self.total_pnl_percentage())}%",
+            f"Max Winner:        {self.max_winner()} {account_currency}",
+            f"Avg Winner:        {self.avg_winner()} {account_currency}",
+            f"Min Winner:        {self.min_winner()} {account_currency}",
+            f"Min Loser:         {self.min_loser()} {account_currency}",
+            f"Avg Loser:         {self.avg_loser()} {account_currency}",
+            f"Max Loser:         {self.max_loser()} {account_currency}",
+            f"Win Rate:          {self._format_stat(self.win_rate(), decimals=4)}",
+            f"Expectancy:        {self._format_stat(self.expectancy())}",
+            f"Annual return:     {self._format_stat(self.annual_return())}%",
+            f"Cum returns:       {self._format_stat(self.cum_return())}%",
+            f"Max drawdown:      {self._format_stat(self.max_drawdown_return())}%",
+            f"Annual vol:        {self._format_stat(self.annual_volatility())}%",
+            f"Sharpe ratio:      {self._format_stat(self.sharpe_ratio())}",
+            f"Calmar ratio:      {self._format_stat(self.calmar_ratio())}",
+            f"Sortino ratio:     {self._format_stat(self.sortino_ratio())}",
+            f"Omega ratio:       {self._format_stat(self.omega_ratio())}",
+            f"Stability:         {self._format_stat(self.stability_of_timeseries())}",
+            f"Returns Mean:      {self._format_stat(self.returns_mean(), decimals=5)}",
+            f"Returns Variance:  {self._format_stat(self.returns_variance(), decimals=8)}",
+            f"Returns Skew:      {self._format_stat(self.returns_skew())}",
+            f"Returns Kurtosis:  {self._format_stat(self.returns_kurtosis())}",
+            f"Tail ratio:        {self._format_stat(self.returns_tail_ratio())}",
+            f"Alpha:             {self._format_stat(self.alpha())}",
+            f"Beta:              {self._format_stat(self.beta())}"
+        ]
+
+    cdef str _format_stat(self, float value, int decimals=2):
+        """
+        Print the given value rounded to the given decimals with signed formatting.
+        
+        :param value: The value to print.
+        :param decimals: The decimal precision for the value rounding.
+        :return: str.
+        """
+        return f'{value:.{decimals}f}'

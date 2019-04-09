@@ -61,6 +61,7 @@ cdef class BacktestEngine:
     cpdef void run(self, datetime start, datetime stop, int time_step_mins=*)
     cpdef void create_returns_tear_sheet(self)
     cpdef void create_full_tear_sheet(self)
+    cpdef dict get_performance_stats(self)
     cpdef void change_strategies(self, list strategies)
     cpdef void reset(self)
     cpdef void dispose(self)
@@ -69,4 +70,3 @@ cdef class BacktestEngine:
     cdef void _backtest_header(self, datetime run_started, datetime start, datetime stop, int time_step_mins)
     cdef void _backtest_footer(self, datetime run_started, datetime start, datetime stop)
     cdef void _change_strategy_clocks_and_loggers(self, list strategies)
-    cdef str _print_stat(self, value, int decimals=*)
