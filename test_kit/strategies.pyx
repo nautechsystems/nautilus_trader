@@ -379,10 +379,10 @@ cdef class EMACross(TradeStrategy):
                 self._reset_trade()
 
         elif isinstance(event, (OrderRejected, OrderExpired)):
-            if event.order_id.equals(self.entry_order.id):
+            if self.entry_order is not None and event.order_id.equals(self.entry_order.id):
                 self._reset_trade()
             # If a stop-loss order is rejected then flatten the entered position
-            elif event.order_id.equals(self.stop_loss_order.id) and not self.is_flat():
+            elif self.stop_loss_order is not None and event.order_id.equals(self.stop_loss_order.id) and not self.is_flat():
                 self.flatten_position(self.position_id)
                 self._reset_trade()
 
