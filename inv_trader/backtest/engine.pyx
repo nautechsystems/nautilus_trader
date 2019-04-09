@@ -290,6 +290,8 @@ cdef class BacktestEngine:
         """
         Return the performance statistics from the last backtest run.
         
+        Note: Money objects as converted to floats.
+        
         Statistics Keys
         ---------------
         - PNL
