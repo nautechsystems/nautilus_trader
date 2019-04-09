@@ -288,145 +288,6 @@ cdef class BacktestExecClient(ExecutionClient):
         self.reset_account()
         self._log.info("Reset.")
 
-    cdef void _collateral_inquiry(self, CollateralInquiry command):
-        """
-        Send a collateral inquiry command to the execution service.
-        """
-        # Generate event
-        cdef AccountEvent event = AccountEvent(
-            self._account.id,
-            self._account.broker,
-            self._account.account_number,
-            self._account.currency,
-            self._account.cash_balance,
-            self.account_cash_start_day,
-            self.account_cash_activity_day,
-            self._account.margin_used_liquidation,
-            self._account.margin_used_maintenance,
-            self._account.margin_ratio,
-            self._account.margin_call_status,
-            self._guid_factory.generate(),
-            self._clock.time_now())
-        self._handle_event(event)
-
-    cdef void _submit_order(self, SubmitOrder command):
-        """
-        Send a submit order request to the execution service.
-        
-        :param command: The command to execute.
-        """
-        # Generate event
-        cdef OrderSubmitted submitted = OrderSubmitted(
-            command.order.symbol,
-            command.order.id,
-            self._clock.time_now(),
-            self._guid_factory.generate(),
-            self._clock.time_now())
-        self._handle_event(submitted)
-
-        self._accept_order(command.order)
-
-    cdef void _submit_atomic_order(self, SubmitAtomicOrder command):
-        """
-        Send a submit atomic order command to the mock execution service.
-        
-        :param command: The command to execute.
-        """
-        cdef list atomic_orders = [command.atomic_order.stop_loss]
-        if command.atomic_order.has_profit_target:
-            atomic_orders.append(command.atomic_order.profit_target)
-            self.oco_orders[command.atomic_order.profit_target.id] = command.atomic_order.stop_loss.id
-            self.oco_orders[command.atomic_order.stop_loss.id] = command.atomic_order.profit_target.id
-
-        self.atomic_child_orders[command.atomic_order.entry.id] = atomic_orders
-
-        # Generate command
-        cdef SubmitOrder submit_order = SubmitOrder(
-            command.atomic_order.entry,
-            command.position_id,
-            command.strategy_id,
-            command.strategy_name,
-            self._guid_factory.generate(),
-            self._clock.time_now())
-        self._submit_order(submit_order)
-
-    cdef void _modify_order(self, ModifyOrder command):
-        """
-        Send a modify order request to the execution service.
-        
-        :param command: The command to execute.
-        """
-        if command.order.id not in self.working_orders:
-            # Generate event
-            event = OrderCancelReject(
-                command.order.symbol,
-                command.order.id,
-                self._clock.time_now(),
-                ValidString(f'{command.id.value}'),
-                ValidString(f'cannot find order with id {command.order.id.value}'),
-                self._guid_factory.generate(),
-                self._clock.time_now())
-            self._handle_event(event)
-            return  # Rejected the modify order command
-
-        cdef Order order = command.order
-        cdef Price current_ask
-        cdef Price current_bid
-
-        if order.side is OrderSide.BUY:
-            current_ask = self._get_closing_ask(order.symbol)
-            if order.type in STOP_ORDER_TYPES:
-                if order.price < current_ask:
-                    self._reject_modify_order(order, f'buy stop order price of {order.price} is below the ask {current_ask}')
-                    return  # Cannot modify order
-            elif order.type is OrderType.LIMIT:
-                if order.price > current_ask:
-                    self._reject_modify_order(order, f'buy limit order price of {order.price} is above the ask {current_ask}')
-                    return  # Cannot modify order
-        elif order.side is OrderSide.SELL:
-            current_bid = self._get_closing_bid(order.symbol)
-            if order.type in STOP_ORDER_TYPES:
-                if order.price > current_bid:
-                    self._reject_modify_order(order, f'sell stop order price of {order.price} is above the bid {current_bid}')
-                    return  # Cannot modify order
-            elif order.type is OrderType.LIMIT:
-                if order.price < current_bid:
-                    self._reject_modify_order(order, f'sell limit order price of {order.price} is below the bid {current_bid}')
-                    return  # Cannot modify order
-
-        # Generate event
-        cdef OrderModified modified = OrderModified(
-            order.symbol,
-            order.id,
-            order.broker_id,
-            command.modified_price,
-            self._clock.time_now(),
-            self._guid_factory.generate(),
-            self._clock.time_now())
-
-        self._handle_event(modified)
-
-    cdef void _cancel_order(self, CancelOrder command):
-        """
-        Send a cancel order request to the execution service.
-        
-        :param command: The command to execute.
-        """
-        Precondition.is_in(command.order.id, self.working_orders, 'order.id', 'working_orders')
-
-        del self.working_orders[command.order.id]  # Remove from working orders
-
-        # Generate event
-        cdef OrderCancelled cancelled = OrderCancelled(
-            command.order.symbol,
-            command.order.id,
-            self._clock.time_now(),
-            self._guid_factory.generate(),
-            self._clock.time_now())
-
-        self._handle_event(cancelled)
-        self._check_oco_order(command.order.id)
-
     cdef dict _prepare_minute_data(self, dict bar_data, str quote_type):
         """
         Prepare the given minute bars data by converting the dataframes of each
@@ -517,6 +378,149 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         return self.data_bars_ask[symbol][self.iteration][3]
 
+    cdef void _collateral_inquiry(self, CollateralInquiry command):
+        """
+        Send a collateral inquiry command to the execution service.
+        """
+        # Generate event
+        cdef AccountEvent event = AccountEvent(
+            self._account.id,
+            self._account.broker,
+            self._account.account_number,
+            self._account.currency,
+            self._account.cash_balance,
+            self.account_cash_start_day,
+            self.account_cash_activity_day,
+            self._account.margin_used_liquidation,
+            self._account.margin_used_maintenance,
+            self._account.margin_ratio,
+            self._account.margin_call_status,
+            self._guid_factory.generate(),
+            self._clock.time_now())
+
+        self._handle_event(event)
+
+    cdef void _submit_order(self, SubmitOrder command):
+        """
+        Send a submit order command to the execution service.
+        
+        :param command: The command to execute.
+        """
+        # Generate event
+        cdef OrderSubmitted submitted = OrderSubmitted(
+            command.order.symbol,
+            command.order.id,
+            self._clock.time_now(),
+            self._guid_factory.generate(),
+            self._clock.time_now())
+
+        self._handle_event(submitted)
+        self._accept_order(command.order)
+
+    cdef void _submit_atomic_order(self, SubmitAtomicOrder command):
+        """
+        Send a submit atomic order command to the mock execution service.
+        
+        :param command: The command to execute.
+        """
+        cdef list atomic_orders = [command.atomic_order.stop_loss]
+        if command.atomic_order.has_profit_target:
+            atomic_orders.append(command.atomic_order.profit_target)
+            self.oco_orders[command.atomic_order.profit_target.id] = command.atomic_order.stop_loss.id
+            self.oco_orders[command.atomic_order.stop_loss.id] = command.atomic_order.profit_target.id
+
+        self.atomic_child_orders[command.atomic_order.entry.id] = atomic_orders
+
+        # Generate command
+        cdef SubmitOrder submit_order = SubmitOrder(
+            command.atomic_order.entry,
+            command.position_id,
+            command.strategy_id,
+            command.strategy_name,
+            self._guid_factory.generate(),
+            self._clock.time_now())
+
+        self._submit_order(submit_order)
+
+    cdef void _cancel_order(self, CancelOrder command):
+        """
+        Send a cancel order command to the execution service.
+        
+        :param command: The command to execute.
+        """
+        Precondition.is_in(command.order.id, self.working_orders, 'order.id', 'working_orders')
+
+        # Remove from working orders
+        if command.order.id in self.working_orders:
+            del self.working_orders[command.order.id]
+
+        # Generate event
+        cdef OrderCancelled cancelled = OrderCancelled(
+            command.order.symbol,
+            command.order.id,
+            self._clock.time_now(),
+            self._guid_factory.generate(),
+            self._clock.time_now())
+
+        self._handle_event(cancelled)
+        self._check_oco_order(command.order.id)
+
+    cdef void _modify_order(self, ModifyOrder command):
+        """
+        Send a modify order command to the execution service.
+        
+        :param command: The command to execute.
+        """
+        if command.order.id not in self.working_orders:
+            # Generate event
+            event = OrderCancelReject(
+                command.order.symbol,
+                command.order.id,
+                self._clock.time_now(),
+                ValidString(f'{command.id.value}'),
+                ValidString(f'cannot find order with id {command.order.id.value}'),
+                self._guid_factory.generate(),
+                self._clock.time_now())
+            self._handle_event(event)
+            return  # Rejected the modify order command
+
+        cdef Order order = command.order
+        cdef Price current_ask
+        cdef Price current_bid
+
+        if order.side is OrderSide.BUY:
+            current_ask = self._get_closing_ask(order.symbol)
+            if order.type in STOP_ORDER_TYPES:
+                if order.price < current_ask:
+                    self._reject_modify_order(order, f'buy stop order price of {order.price} is below the ask {current_ask}')
+                    return  # Cannot modify order
+            elif order.type is OrderType.LIMIT:
+                if order.price > current_ask:
+                    self._reject_modify_order(order, f'buy limit order price of {order.price} is above the ask {current_ask}')
+                    return  # Cannot modify order
+        elif order.side is OrderSide.SELL:
+            current_bid = self._get_closing_bid(order.symbol)
+            if order.type in STOP_ORDER_TYPES:
+                if order.price > current_bid:
+                    self._reject_modify_order(order, f'sell stop order price of {order.price} is above the bid {current_bid}')
+                    return  # Cannot modify order
+            elif order.type is OrderType.LIMIT:
+                if order.price < current_bid:
+                    self._reject_modify_order(order, f'sell limit order price of {order.price} is below the bid {current_bid}')
+                    return  # Cannot modify order
+
+        # Generate event
+        cdef OrderModified modified = OrderModified(
+            order.symbol,
+            order.id,
+            order.broker_id,
+            command.modified_price,
+            self._clock.time_now(),
+            self._guid_factory.generate(),
+            self._clock.time_now())
+
+        self._handle_event(modified)
+
     cdef void _accept_order(self, Order order):
         """
         Accept the given order and generate an OrderAccepted event.
@@ -530,8 +534,8 @@ cdef class BacktestExecClient(ExecutionClient):
             self._clock.time_now(),
             self._guid_factory.generate(),
             self._clock.time_now())
-        self._handle_event(accepted)
 
+        self._handle_event(accepted)
         self._work_order(order)
 
     cdef void _reject_order(self, Order order, str reason):
@@ -634,7 +638,6 @@ cdef class BacktestExecClient(ExecutionClient):
 
         # Order now becomes working
         self.working_orders[order.id] = order
-        self._log.debug(f"{order.id} WORKING at {order.price}.")
 
         # Generate event
         cdef OrderWorking working = OrderWorking(
@@ -651,7 +654,9 @@ cdef class BacktestExecClient(ExecutionClient):
             self._guid_factory.generate(),
             self._clock.time_now(),
             order.expire_time)
+
         self._handle_event(working)
+        self._log.debug(f"{order.id} WORKING at {order.price}.")
 
     cdef void _fill_order(self, Order order, Price fill_price):
         """
@@ -710,7 +715,7 @@ cdef class BacktestExecClient(ExecutionClient):
 
             # Cancel any working OCO orders
             if oco_order_id in self.working_orders:
-                self._cancel_oco_order(self.working_orders[oco_order_id])
+                self._cancel_oco_order(self.working_orders[oco_order_id], order_id)
                 del self.working_orders[oco_order_id]
 
     cdef void _reject_oco_order(self, Order order, OrderId oco_order_id):
@@ -718,33 +723,36 @@ cdef class BacktestExecClient(ExecutionClient):
         Reject an OCO order.
         
         :param order: The OCO order to reject.
-        :param oco_order_id: The other order identifier for this OCO.
+        :param oco_order_id: The other order identifier for this OCO pair.
         """
         # Generate event
-        cdef OrderRejected rejected = OrderRejected(
+        cdef OrderRejected event = OrderRejected(
             order.symbol,
             order.id,
             self._clock.time_now(),
             ValidString(f"OCO order rejected from {oco_order_id}"),
             self._guid_factory.generate(),
             self._clock.time_now())
-        self._handle_event(rejected)
 
-    cdef void _cancel_oco_order(self, Order order):
+        self._handle_event(event)
+
+    cdef void _cancel_oco_order(self, Order order, OrderId oco_order_id):
         """
         Cancel an OCO order.
 
         :param order: The OCO order to cancel.
+        :param oco_order_id: The other order identifier for this OCO pair.
         """
         # Generate event
-        # ValidString(f"OCO triggered from {order_id}")
-        cdef OrderCancelled cancelled = OrderCancelled(
+        cdef OrderCancelled event = OrderCancelled(
             order.symbol,
             order.id,
             self._clock.time_now(),
             self._guid_factory.generate(),
             self._clock.time_now())
-        self._handle_event(cancelled)
+
+        self._log.debug(f"OCO order cancelled from {oco_order_id}.")
+        self._handle_event(event)
 
     cdef void _adjust_account(self, OrderEvent event):
         """

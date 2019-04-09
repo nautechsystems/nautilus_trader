@@ -461,10 +461,11 @@ class OrderTests(unittest.TestCase):
         order.apply(event)
 
         # Assert
-        print(order)
+        # print(order)
         self.assertEqual(OrderStatus.WORKING, order.status)
         self.assertEqual(OrderId('SOME_BROKER_ID'), order.broker_id)
         self.assertFalse(order.is_complete)
+        self.assertTrue(order.is_active)
 
     def test_can_apply_order_expired_event_to_order(self):
         # Arrange
