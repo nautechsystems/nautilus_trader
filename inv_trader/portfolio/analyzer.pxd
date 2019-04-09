@@ -11,6 +11,7 @@
 
 from cpython.datetime cimport datetime
 
+from inv_trader.enums.currency cimport Currency
 from inv_trader.model.objects cimport Money
 
 
@@ -24,10 +25,11 @@ cdef class Analyzer:
     cdef object _positions
     cdef object _transactions
     cdef object _equity_curve
-    cdef Money _starting_capital
+    cdef Money _account_starting_capital
     cdef Money _account_capital
+    cdef Currency _account_currency
 
-    cpdef void set_starting_capital(self, Money starting_capital)
+    cpdef void set_starting_capital(self, Money starting_capital, Currency account_currency)
     cpdef void add_return(self, datetime time, float value)
     cpdef void add_positions(self, datetime time, list positions, Money cash_balance)
     cpdef void add_transaction(self, datetime time, Money account_capital, Money pnl)
@@ -63,3 +65,7 @@ cdef class Analyzer:
     cpdef float beta(self)
     cpdef void create_returns_tear_sheet(self)
     cpdef void create_full_tear_sheet(self)
+    cpdef dict get_performance_stats(self)
+
+    cdef list get_performance_stats_formatted(self)
+    cdef str _format_stat(self, float value, int decimals=*)

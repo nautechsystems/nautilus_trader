@@ -286,6 +286,43 @@ cdef class BacktestEngine:
         """
         self.trader.create_full_tear_sheet()
 
+    cpdef dict get_performance_stats(self):
+        """
+        Return the performance statistics from the last backtest run.
+        
+        Statistics Keys
+        ---------------
+        - PNL
+        - PNL%
+        - MaxWinner
+        - AvgWinner
+        - MinWinner
+        - MinLoser
+        - AvgLoser
+        - MaxLoser
+        - WinRate
+        - Expectancy
+        - AnnualReturn
+        - CumReturn
+        - MaxDrawdown
+        - AnnualVol
+        - SharpeRatio
+        - CalmarRatio
+        - SortinoRatio
+        - OmegaRatio
+        - Stability
+        - ReturnsMean
+        - ReturnsVariance
+        - ReturnsSkew
+        - ReturnsKurtosis
+        - TailRatio
+        - Alpha
+        - Beta
+        
+        :return: Dict[str, float].
+        """
+        return self.portfolio.analyzer.get_performance_stats()
+
     cpdef void reset(self):
         """
         Reset the backtest engine. The data client, execution client, trader and all strategies are reset.
@@ -352,14 +389,14 @@ cdef class BacktestEngine:
             datetime start,
             datetime stop):
         """
-        Create a backtest run log footer.
+        Create a backtest run log footer. f'{value:.{decimals}f}'
         """
         self.log.info("#---------------------------------------------------------------#")
         self.log.info("#-------------------- BACKTEST DIAGNOSTICS ---------------------#")
         self.log.info("#---------------------------------------------------------------#")
         self.log.info(f"Run started datetime: {format_zulu_datetime(run_started, timespec='milliseconds')}")
-        self.log.info(f"Elapsed time (engine initialization):{self._print_stat(self.time_to_initialize)}s")
-        self.log.info(f"Elapsed time (running backtest):{self._print_stat(self.clock.get_elapsed(run_started))}s")
+        self.log.info(f"Elapsed time (engine initialization): {self.time_to_initialize:.2f}s")
+        self.log.info(f"Elapsed time (running backtest): {self.clock.get_elapsed(run_started):.2f}s")
         self.log.info(f"Time-step iterations: {self.exec_client.iteration}")
         self.log.info(f"Backtest start datetime: {format_zulu_datetime(start)}")
         self.log.info(f"Backtest stop datetime:  {format_zulu_datetime(stop)}")
@@ -370,32 +407,10 @@ cdef class BacktestEngine:
         self.log.info("#---------------------------------------------------------------#")
         self.log.info("#-------------------- PERFORMANCE STATISTICS -------------------#")
         self.log.info("#---------------------------------------------------------------#")
-        self.log.info(f"PNL:               {self.portfolio.analyzer.total_pnl()} {currency_string(self.account.currency)}")
-        self.log.info(f"PNL %:             {self._print_stat(self.portfolio.analyzer.total_pnl_percentage())}%")
-        self.log.info(f"Max Winner         {self.portfolio.analyzer.max_winner()}")
-        self.log.info(f"Avg Winner         {self.portfolio.analyzer.avg_winner()}")
-        self.log.info(f"Min Winner         {self.portfolio.analyzer.min_winner()}")
-        self.log.info(f"Min Loser          {self.portfolio.analyzer.min_loser()}")
-        self.log.info(f"Avg Loser          {self.portfolio.analyzer.avg_loser()}")
-        self.log.info(f"Max Loser          {self.portfolio.analyzer.max_loser()}")
-        self.log.info(f"Win Rate           {self._print_stat(self.portfolio.analyzer.win_rate(), decimals=4)}")
-        self.log.info(f"Expectancy         {self._print_stat(self.portfolio.analyzer.expectancy())}")
-        self.log.info(f"Annual return:     {self._print_stat(self.portfolio.analyzer.annual_return())}%")
-        self.log.info(f"Cum returns:       {self._print_stat(self.portfolio.analyzer.cum_return())}%")
-        self.log.info(f"Max drawdown:      {self._print_stat(self.portfolio.analyzer.max_drawdown_return())}%")
-        self.log.info(f"Annual vol:        {self._print_stat(self.portfolio.analyzer.annual_volatility())}%")
-        self.log.info(f"Sharpe ratio:      {self._print_stat(self.portfolio.analyzer.sharpe_ratio())}")
-        self.log.info(f"Calmar ratio:      {self._print_stat(self.portfolio.analyzer.calmar_ratio())}")
-        self.log.info(f"Sortino ratio:     {self._print_stat(self.portfolio.analyzer.sortino_ratio())}")
-        self.log.info(f"Omega ratio:       {self._print_stat(self.portfolio.analyzer.omega_ratio())}")
-        self.log.info(f"Stability:         {self._print_stat(self.portfolio.analyzer.stability_of_timeseries())}")
-        self.log.info(f"Returns Mean:      {self._print_stat(self.portfolio.analyzer.returns_mean(), decimals=5)}")
-        self.log.info(f"Returns Variance:  {self._print_stat(self.portfolio.analyzer.returns_variance(), decimals=8)}")
-        self.log.info(f"Returns Skew:      {self._print_stat(self.portfolio.analyzer.returns_skew())}")
-        self.log.info(f"Returns Kurtosis:  {self._print_stat(self.portfolio.analyzer.returns_kurtosis())}")
-        self.log.info(f"Tail ratio:        {self._print_stat(self.portfolio.analyzer.returns_tail_ratio())}")
-        self.log.info(f"Alpha:             {self._print_stat(self.portfolio.analyzer.alpha())}")
-        self.log.info(f"Beta:              {self._print_stat(self.portfolio.analyzer.beta())}")
+
+        for stat in self.portfolio.analyzer.get_performance_stats_formatted():
+            self.log.info(stat)
+
         self.log.info("#-----------------------------------------------------------------#")
 
     cdef void _change_strategy_clocks_and_loggers(self, list strategies):
@@ -409,13 +424,3 @@ cdef class BacktestEngine:
             strategy.change_clock(TestClock())  # Separate test clocks to iterate independently
             # Replace the strategies logger with the engines test logger
             strategy.change_logger(self.test_logger)
-
-    cdef str _print_stat(self, value, int decimals=2):
-        """
-        Print the given value rounded to the given decimals with signed formatting.
-        
-        :param value: The value to print.
-        :param decimals: The decimal precision for the value rounding.
-        :return: str.
-        """
-        return f'{value:.{decimals}f}'
