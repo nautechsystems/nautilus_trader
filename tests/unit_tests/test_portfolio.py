@@ -77,6 +77,12 @@ class PortfolioTestsTests(unittest.TestCase):
         # Assert
         self.assertFalse(self.portfolio.order_has_position(OrderId('unknown')))
 
+    def test_is_flat_when_no_registered_strategies_returns_false(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertTrue(self.portfolio.is_flat())
+
     def test_can_reset_portfolio(self):
         strategy = TradeStrategy()
         order_id = OrderId('AUDUSD.FXCM-1-123456')
