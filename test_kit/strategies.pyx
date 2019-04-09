@@ -373,7 +373,9 @@ cdef class EMACross(TradeStrategy):
         :param event: The received event.
         """
         if isinstance(event, OrderFilled):
-            if self.is_flat():
+            if self.stop_loss_order is not None and event.order_id.equals(self.stop_loss_order.id):
+                self._reset_trade()
+            elif self.profit_target_order is not None and event.order_id.equals(self.profit_target_order.id):
                 self._reset_trade()
 
         elif isinstance(event, (OrderRejected, OrderExpired)):

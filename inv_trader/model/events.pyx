@@ -260,7 +260,7 @@ cdef class OrderRejected(OrderEvent):
         """
         return (f"{self.__class__.__name__}"
                 f"(id={self.order_id.value}, "
-                f"reason={self.rejected_reason})")
+                f"rejected_reason={self.rejected_reason})")
 
 cdef class OrderWorking(OrderEvent):
     """
