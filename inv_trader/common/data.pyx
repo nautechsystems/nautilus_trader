@@ -31,8 +31,8 @@ cdef class DataClient:
         """
         Initializes a new instance of the DataClient class.
 
-        :param clock: The internal clock.
-        :param logger: The internal logger.
+        :param clock: The clock for the component.
+        :param logger: The logger for the component.
         """
         self._clock = clock
         if logger is None:

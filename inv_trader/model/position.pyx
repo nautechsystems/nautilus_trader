@@ -107,7 +107,7 @@ cdef class Position:
 
     cpdef list get_order_ids(self):
         """
-        Return a copy of the list of internally held from order identifiers.
+        Return a list of all order identifiers.
         
         :return: List[OrderId]. 
         """
@@ -115,7 +115,7 @@ cdef class Position:
 
     cpdef list get_execution_ids(self):
         """
-        Return A copy of the list of internally held execution ids.
+        Return a list of all execution identifiers.
         
         :return: List[ExecutionId]. 
         """
@@ -123,7 +123,7 @@ cdef class Position:
 
     cpdef list get_execution_tickets(self):
         """
-        Return a copy of the list of internally held execution tickets.
+        Return a list of all execution tickets.
         
         :return: List[ExecutionTicket]. 
         """
@@ -131,7 +131,7 @@ cdef class Position:
 
     cpdef list get_events(self):
         """
-        Return a copy of the list of internally held events.
+        Return a list of all order events.
         
         :return: List[Event].
         """

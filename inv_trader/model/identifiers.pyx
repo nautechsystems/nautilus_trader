@@ -252,7 +252,7 @@ cdef class OrderIdGenerator(IdentifierGenerator):
 
         :param id_tag_trader: The identifier tag for the trader.
         :param id_tag_strategy: The identifier tag for the strategy.
-        :param clock: The internal clock.
+        :param clock: The clock for the component.
         """
         super().__init__(id_tag_trader,
                          id_tag_strategy,
@@ -282,7 +282,7 @@ cdef class PositionIdGenerator(IdentifierGenerator):
 
         :param id_tag_trader: The identifier tag for the trader.
         :param id_tag_strategy: The identifier tag for the strategy.
-        :param clock: The internal clock.
+        :param clock: The clock for the component.
         """
         super().__init__(id_tag_trader,
                          id_tag_strategy,

@@ -36,9 +36,9 @@ cdef class Portfolio:
         """
         Initializes a new instance of the Portfolio class.
 
-        :param clock: The internal clock for the component.
-        :param guid_factory: The internal guid factory for the component.
-        :param logger: The internal logger for the component.
+        :param clock: The clock for the component.
+        :param guid_factory: The guid factory for the component.
+        :param logger: The logger for the component.
         """
         if logger is None:
             self._log = LoggerAdapter(self.__class__.__name__)

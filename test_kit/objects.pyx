@@ -23,7 +23,9 @@ cdef class ObjectStorer:
 
     cpdef list get_store(self):
         """"
-        return: The internal object store.
+        Return the list or stored objects.
+        
+        return: List[Object].
         """
         return self._store
 
