@@ -389,6 +389,8 @@ cdef class Analyzer:
         """
         Return the performance statistics from the last backtest run.
         
+        Note: Money objects as converted to floats.
+
         Statistics Keys
         ---------------
         - PNL
@@ -421,14 +423,14 @@ cdef class Analyzer:
         :return: Dict[str, float].
         """
         return {
-            'PNL': self.total_pnl(),
+            'PNL': self.total_pnl().as_float(),
             'PNL%': self.total_pnl_percentage(),
-            'MaxWinner': self.max_winner(),
-            'AvgWinner': self.avg_winner(),
-            'MinWinner': self.min_winner(),
-            'MinLoser': self.min_loser(),
-            'AvgLoser': self.avg_loser(),
-            'MaxLoser': self.max_loser(),
+            'MaxWinner': self.max_winner().as_float(),
+            'AvgWinner': self.avg_winner().as_float(),
+            'MinWinner': self.min_winner().as_float(),
+            'MinLoser': self.min_loser().as_float(),
+            'AvgLoser': self.avg_loser().as_float(),
+            'MaxLoser': self.max_loser().as_float(),
             'WinRate': self.win_rate(),
             'Expectancy': self.expectancy(),
             'AnnualReturn': self.annual_return(),

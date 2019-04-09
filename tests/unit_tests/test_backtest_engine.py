@@ -13,6 +13,7 @@ import unittest
 from datetime import datetime, timezone
 
 from inv_trader.model.enums import Resolution
+from inv_trader.model.objects import Money
 from inv_trader.backtest.engine import BacktestConfig, BacktestEngine
 from test_kit.strategies import EmptyStrategy, EMACross
 from test_kit.data import TestDataProvider
@@ -104,6 +105,7 @@ class BacktestEngineTests(unittest.TestCase):
         # Assert
         self.assertEqual(2881, self.engine.data_client.data_providers[USDJPY_FXCM].iterations[TestStubs.bartype_usdjpy_1min_bid()])
         self.assertEqual(1441, strategies[0].fast_ema.count)
+        self.assertEqual(-31297.2109375, self.engine.get_performance_stats()['PNL'])
 
     def test_can_reset_and_rerun_ema_cross_strategy(self):
         # Arrange
