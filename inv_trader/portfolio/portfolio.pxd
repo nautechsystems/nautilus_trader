@@ -37,9 +37,6 @@ cdef class Portfolio:
     cdef Money _account_capital
     cdef bint _account_initialized
 
-    cdef readonly int positions_count
-    cdef readonly int positions_active_count
-    cdef readonly int positions_closed_count
     cdef readonly list position_opened_events
     cdef readonly list position_closed_events
     cdef readonly Analyzer analyzer
@@ -59,6 +56,9 @@ cdef class Portfolio:
     cpdef dict get_positions_closed(self, GUID strategy_id)
     cpdef bint is_strategy_flat(self, GUID strategy_id)
     cpdef bint is_flat(self)
+    cpdef int positions_count(self)
+    cpdef int positions_active_count(self)
+    cpdef int positions_closed_count(self)
 
     cpdef void register_execution_client(self, ExecutionClient client)
     cpdef void register_strategy(self, TradeStrategy strategy)
