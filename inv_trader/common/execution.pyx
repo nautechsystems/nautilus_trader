@@ -43,9 +43,11 @@ cdef class ExecutionClient:
         """
         Initializes a new instance of the ExecutionClient class.
 
-        :param clock: The internal clock.
-        :param guid_factory: The internal GUID factory.
-        :param logger: The internal logger.
+        :param account: The account for the execution client.
+        :param portfolio: The portfolio for the execution client.
+        :param clock: The clock for the component.
+        :param guid_factory: The GUID factory for the component.
+        :param logger: The logger for the component.
         """
         self._clock = clock
         self._guid_factory = guid_factory
@@ -103,7 +105,7 @@ cdef class ExecutionClient:
 
     cpdef void execute_command(self, Command command):
         """
-        Execute the given command by inserting it into the message bus for processing.
+        Execute the given command with the execution client.
         
         :param command: The command to execute.
         """
@@ -112,7 +114,7 @@ cdef class ExecutionClient:
 
     cpdef void handle_event(self, Event event):
         """
-        Handle the given event by inserting it into the message bus for processing.
+        Handle the given event with the execution client.
         
         :param event: The event to handle
         """

@@ -53,7 +53,7 @@ cdef class LiveDataClient(DataClient):
 
         :param host: The data service host IP address (default=127.0.0.1).
         :param port: The data service port (default=6379).
-        :param clock: The internal clock for the component.
+        :param clock: The clock for the component.
         :param logger: The logger for the component.
         :raises ValueError: If the host is not a valid string.
         :raises ValueError: If the port is not in range [0, 65535]

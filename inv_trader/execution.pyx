@@ -66,8 +66,8 @@ cdef class LiveExecClient(ExecutionClient):
         :param events_port: The execution service events port.
         :param command_serializer: The command serializer for the client.
         :param event_serializer: The event serializer for the client.
-        :param clock: The internal clock for the component.
-        :param guid_factory: The internal GUID factory for the component.
+        :param clock: The clock for the component.
+        :param guid_factory: The GUID factory for the component.
         :param logger: The logger for the component (can be None).
         :raises ValueError: If the host is not a valid string.
         :raises ValueError: If the commands_port is not in range [0, 65535]

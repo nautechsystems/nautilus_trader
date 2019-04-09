@@ -56,8 +56,8 @@ cdef class TradeStrategy:
         :param id_tag_trader: The unique order identifier tag for the trader.
         :param id_tag_strategy: The unique order identifier tag for the strategy.
         :param bar_capacity: The capacity for the internal bar deque(s).
-        :param clock: The clock for the strategy.
-        :param guid_factory: The GUID factory for the strategy.
+        :param clock: The clock for the component.
+        :param guid_factory: The GUID factory for the component.
         :param logger: The logger (can be None, and will print).
         :raises ValueError: If the label is not a valid string.
         :raises ValueError: If the id_tag_trader is not a valid string.
@@ -1047,7 +1047,7 @@ cdef class TradeStrategy:
 
     cpdef void change_clock(self, Clock clock):
         """
-        Backtest method. Change the strategies internal clock with the given clock.
+        Backtest method. Change the strategies clock with the given clock.
         
         :param clock: The clock to change to.
         """
@@ -1063,7 +1063,7 @@ cdef class TradeStrategy:
 
     cpdef void change_guid_factory(self, GuidFactory guid_factory):
         """
-        Backtest method. Change the strategies internal GUID factory with the given GUID factory.
+        Backtest method. Change the strategies GUID factory with the given GUID factory.
         
         :param guid_factory: The GUID factory to change to.
         """
@@ -1071,7 +1071,7 @@ cdef class TradeStrategy:
 
     cpdef void change_logger(self, Logger logger):
         """
-        Backtest method. Change the strategies internal logger with the given logger.
+        Backtest method. Change the strategies logger with the given logger.
         
         :param logger: The logger to change to.
         """

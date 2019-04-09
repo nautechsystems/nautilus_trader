@@ -350,7 +350,7 @@ cdef class OrderFactory:
 
         :param id_tag_trader: The identifier tag for the trader.
         :param id_tag_strategy: The identifier tag for the strategy.
-        :param clock: The internal clock.
+        :param clock: The clock for the component.
         """
         self._clock = clock
         self._id_generator = OrderIdGenerator(
