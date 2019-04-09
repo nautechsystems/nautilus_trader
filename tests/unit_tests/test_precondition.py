@@ -28,7 +28,7 @@ class PreconditionTests(unittest.TestCase):
         # Act
         # Assert
         PyPrecondition.true(True, "predicate")
-        self.assertTrue(True)  # ValueError not raised.
+        self.assertTrue(True)  # ValueError not raised
 
     def test_precondition_type_when_type_is_incorrect_raises_value_error(self):
         # Arrange
@@ -41,7 +41,7 @@ class PreconditionTests(unittest.TestCase):
         # Act
         # Assert
         PyPrecondition.type("a string", str, "param_name")
-        self.assertTrue(True)  # ValueError not raised.
+        self.assertTrue(True)  # ValueError not raised
 
     def test_precondition_type_or_none_when_type_is_incorrect_raises_value_error(self):
         # Arrange
@@ -55,7 +55,7 @@ class PreconditionTests(unittest.TestCase):
         # Assert
         PyPrecondition.type_or_none("a string", str, "param_name")
         PyPrecondition.type_or_none(None, str, "param_name")
-        self.assertTrue(True)  # ValueError not raised.
+        self.assertTrue(True)  # ValueError not raised
 
     def test_precondition_is_in_when_key_not_in_dictionary_raises_value_error(self):
         # Arrange
@@ -68,7 +68,7 @@ class PreconditionTests(unittest.TestCase):
         # Act
         # Assert
         PyPrecondition.is_in('a', {'a': 1}, 'key', 'dict')
-        self.assertTrue(True)  # ValueError not raised.
+        self.assertTrue(True)  # ValueError not raised
 
     def test_precondition_not_in_when_key_is_in_dictionary_raises_value_error(self):
         # Arrange
@@ -81,7 +81,7 @@ class PreconditionTests(unittest.TestCase):
         # Act
         # Assert
         PyPrecondition.not_in('b', {'a': 1}, 'key', 'dict')
-        self.assertTrue(True)  # ValueError not raised.
+        self.assertTrue(True)  # ValueError not raised
 
     def test_precondition_list_type_when_contains_incorrect_types_raises_value_error(self):
         # Arrange
@@ -95,7 +95,7 @@ class PreconditionTests(unittest.TestCase):
         # Assert
         PyPrecondition.list_type(['a', 'b', 'c'], str, "param_name")
         PyPrecondition.list_type([], None, "param_name")
-        self.assertTrue(True)  # ValueError not raised.
+        self.assertTrue(True)  # ValueError not raised
 
     def test_precondition_dict_types_when_contains_incorrect_types_raises_value_error(self):
         # Arrange
@@ -111,7 +111,7 @@ class PreconditionTests(unittest.TestCase):
         # Assert
         PyPrecondition.dict_types({'key': 1}, str, int, "param_name")
         PyPrecondition.dict_types({}, str, str, "param_name")
-        self.assertTrue(True)  # ValueError not raised.
+        self.assertTrue(True)  # ValueError not raised
 
     def test_precondition_is_none_when_arg_not_none_raises_value_error(self):
         # Arrange
@@ -124,7 +124,7 @@ class PreconditionTests(unittest.TestCase):
         # Act
         # Assert
         PyPrecondition.none(None, "param_name")
-        self.assertTrue(True)  # ValueError not raised.
+        self.assertTrue(True)  # ValueError not raised
 
     def test_precondition_not_none_when_arg_none_raises_value_error(self):
         # Arrange
@@ -137,7 +137,7 @@ class PreconditionTests(unittest.TestCase):
         # Act
         # Assert
         PyPrecondition.not_none("something", "param_name")
-        self.assertTrue(True)  # ValueError not raised.
+        self.assertTrue(True)  # ValueError not raised
 
     def test_precondition_valid_with_various_invalid_strings_raises_value_error(self):
         # Arrange
@@ -161,7 +161,7 @@ class PreconditionTests(unittest.TestCase):
         PyPrecondition.valid_string("123", "param_name")
         PyPrecondition.valid_string(" 123", "param_name")
         PyPrecondition.valid_string("abc  ", "param_name")
-        self.assertTrue(True)  # ValueError not raised.
+        self.assertTrue(True)  # ValueError not raised
 
     def test_precondition_equal_when_args_not_equal_raises_value_error(self):
         # Arrange
@@ -174,7 +174,7 @@ class PreconditionTests(unittest.TestCase):
         # Act
         # Assert
         PyPrecondition.equal(OrderId('123456'), OrderId('123456'))
-        self.assertTrue(True)  # ValueError not raised.
+        self.assertTrue(True)  # ValueError not raised
 
     def test_precondition_equal_lengths_when_args_not_equal_lengths_raises_value_error(self):
         # Arrange
@@ -189,7 +189,7 @@ class PreconditionTests(unittest.TestCase):
         # Assert
         PyPrecondition.equal_lengths([1], [1], "collection1", "collection2")
         PyPrecondition.equal_lengths([1, 2, 3], [1, 2, 3], "collection1", "collection2")
-        self.assertTrue(True)  # ValueError not raised.
+        self.assertTrue(True)  # ValueError not raised
 
     def test_precondition_not_negative_when_arg_negative_raises_value_error(self):
         # Arrange
@@ -209,7 +209,7 @@ class PreconditionTests(unittest.TestCase):
         PyPrecondition.not_negative(-0.0, "param_name")
         PyPrecondition.not_negative(Decimal('0'), "param_name")
         PyPrecondition.not_negative(float("inf"), "param_name")
-        self.assertTrue(True)  # ValueError not raised.
+        self.assertTrue(True)  # ValueError not raised
 
     def test_precondition_positive_when_args_negative_or_zero_raises_value_error(self):
         # Arrange
@@ -230,7 +230,7 @@ class PreconditionTests(unittest.TestCase):
         PyPrecondition.positive(1, "param_name")
         PyPrecondition.positive(1.0, "param_name")
         PyPrecondition.positive(Decimal('1.0'), "param_name")
-        self.assertTrue(True)  # AssertionError not raised.
+        self.assertTrue(True)  # AssertionError not raised
 
     def test_precondition_in_range_when_arg_out_of_range_raises_value_error(self):
         # Arrange
@@ -246,7 +246,7 @@ class PreconditionTests(unittest.TestCase):
         # Act
         PyPrecondition.in_range(0, "param_name", 0, 1)
         PyPrecondition.in_range(1, "param_name", 0, 1)
-        self.assertTrue(True)  # ValueError not raised.
+        self.assertTrue(True)  # ValueError not raised
 
     def test_precondition_not_empty_when_collection_empty_raises_value_error(self):
         # Arrange
@@ -259,7 +259,7 @@ class PreconditionTests(unittest.TestCase):
         # Act
         # Assert
         PyPrecondition.not_empty([1], "some_collection")
-        self.assertTrue(True)  # ValueError not raised.
+        self.assertTrue(True)  # ValueError not raised
 
     def test_precondition_empty_when_collection_not_empty_raises_value_error(self):
         # Arrange
@@ -272,4 +272,4 @@ class PreconditionTests(unittest.TestCase):
         # Act
         # Assert
         PyPrecondition.empty([], "some_collection")
-        self.assertTrue(True)  # ValueError not raised.
+        self.assertTrue(True)  # ValueError not raised
