@@ -60,7 +60,7 @@ if __name__ == "__main__":
         config=config)
 
     start = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
-    stop = datetime(2013, 4, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
+    stop = datetime(2013, 2, 3, 0, 0, 0, 0, tzinfo=timezone.utc)
 
     # start = datetime(2013, 1, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
     # stop = datetime(2013, 1, 3, 0, 0, 0, 0, tzinfo=timezone.utc)
