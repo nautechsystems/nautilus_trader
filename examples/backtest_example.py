@@ -47,7 +47,7 @@ if __name__ == "__main__":
         starting_capital=1000000,
         account_currency=Currency.USD,
         slippage_ticks=1,
-        level_console=logging.DEBUG,
+        level_console=logging.INFO,
         log_thread=False,
         log_to_file=False)
 
@@ -59,8 +59,8 @@ if __name__ == "__main__":
         strategies=strategies,
         config=config)
 
-    start = datetime(2013, 9, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
-    stop = datetime(2013, 12, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
+    start = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
+    stop = datetime(2013, 4, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
 
     # start = datetime(2013, 1, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
     # stop = datetime(2013, 1, 3, 0, 0, 0, 0, tzinfo=timezone.utc)
