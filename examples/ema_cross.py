@@ -16,7 +16,7 @@ from inv_trader.enums.time_in_force import TimeInForce
 from inv_trader.model.objects import Price, Tick, BarType, Bar, Instrument
 from inv_trader.model.events import Event
 from inv_trader.model.identifiers import Label
-from inv_trader.model.events import OrderFilled, OrderExpired, OrderRejected
+from inv_trader.model.events import OrderCancelled, OrderFilled, OrderExpired, OrderRejected
 from inv_trader.strategy import TradeStrategy
 from inv_trader.portfolio.sizing import FixedRiskSizer
 from inv_indicators.average.ema import ExponentialMovingAverage
@@ -211,19 +211,32 @@ class EMACrossPy(TradeStrategy):
 
         :param event: The received event.
         """
-        if isinstance(event, OrderFilled):
-            if self.stop_loss_order is not None and event.order_id.equals(self.stop_loss_order.id):
-                self._reset_trade()
-            elif self.profit_target_order is not None and event.order_id.equals(self.profit_target_order.id):
-                self._reset_trade()
+        # RAW ORDER MANAGEMENT
 
-        elif isinstance(event, (OrderRejected, OrderExpired)):
-            if self.entry_order is not None and event.order_id.equals(self.entry_order.id):
-                self._reset_trade()
-            # If a stop-loss order is rejected then flatten the entered position
-            elif self.stop_loss_order is not None and event.order_id.equals(self.stop_loss_order.id) and not self.is_flat():
-                self.flatten_position(self.position_id)
-                self._reset_trade()
+        # Entry order rejected or expired -> reset trade
+        if (isinstance(event, (OrderRejected, OrderExpired))
+                and self.entry_order is not None
+                and event.order_id.equals(self.entry_order.id)):
+            self._reset_trade()
+
+        # Stop-loss order rejected -> flatten any entered position and reset trade
+        if (isinstance(event, OrderRejected)
+                and self.stop_loss_order is not None
+                and event.order_id.equals(self.stop_loss_order.id)
+                and not self.is_flat()):
+            self.flatten_position(self.position_id)
+            self._reset_trade()
+
+        # Stop-loss order filled or cancelled -> reset trade
+        if (isinstance(event, (OrderCancelled, OrderFilled))
+                and self.stop_loss_order is not None
+                and event.order_id.equals(self.stop_loss_order.id)):
+            self._reset_trade()
+        # Profit target order filled or cancelled -> reset trade
+        elif (isinstance(event, (OrderCancelled, OrderFilled))
+                and self.profit_target_order is not None
+                and event.order_id.equals(self.profit_target_order.id)):
+            self._reset_trade()
 
     def on_stop(self):
         """
