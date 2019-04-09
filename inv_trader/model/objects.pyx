@@ -472,6 +472,14 @@ cdef class Money:
         else:
             raise NotImplementedError(f"Cannot multiply money with {type(other)}.")
 
+    cpdef float as_float(self):
+        """
+        Return a float representation of the money.
+        
+        :return: float.
+        """
+        return float(self.value)
+
 
 cdef class Tick:
     """

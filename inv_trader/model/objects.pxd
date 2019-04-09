@@ -60,6 +60,7 @@ cdef class Money:
     Represents money.
     """
     cdef readonly object value
+    cpdef float as_float(self)
 
 
 cdef class Tick:

@@ -363,7 +363,8 @@ class ObjectTests(unittest.TestCase):
         self.assertEqual(Decimal('0.00'), result2.value)
         self.assertEqual(Decimal('0.00'), result3.value)
         self.assertEqual(Decimal('0.00'), result4.value)
-        print(result1)
+        self.assertEqual(0, result1.as_float())
+        #print(result1)
 
     def test_money_str(self):
         # Arrange
@@ -462,6 +463,19 @@ class ObjectTests(unittest.TestCase):
         self.assertEqual(Money(2), result11)
         self.assertEqual(Money, type(result12))
         self.assertEqual(Money(2), result12)
+
+    def test_money_as_float(self):
+        # Arrange
+        money1 = Money.zero()
+        money2 = Money('1.00')
+
+        # Act
+        result1 = money1.as_float()
+        result2 = money2.as_float()
+
+        # Assert
+        self.assertEqual(0, result1)
+        self.assertEqual(1.0, result2)
 
     def test_bar_spec_equality(self):
         # Arrange
