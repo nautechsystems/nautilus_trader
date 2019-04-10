@@ -505,21 +505,21 @@ cdef class BacktestExecClient(ExecutionClient):
         if order.side is OrderSide.BUY:
             current_ask = self._get_closing_ask(order.symbol)
             if order.type in STOP_ORDER_TYPES:
-                if order.price.value < current_ask + (instrument.min_stop_distance_entry * instrument.tick_size):
+                if order.price.value < current_ask + (instrument.min_stop_distance * instrument.tick_size):
                     self._reject_modify_order(order, f'BUY STOP order price of {order.price} is too far from the market, ask={current_ask}')
                     return  # Cannot modify order
             elif order.type is OrderType.LIMIT:
-                if order.price.value > current_ask + (instrument.min_limit_distance_entry * instrument.tick_size):
+                if order.price.value > current_ask + (instrument.min_limit_distance * instrument.tick_size):
                     self._reject_modify_order(order, f'BUY LIMIT order price of {order.price} is too far from the market, ask={current_ask}')
                     return  # Cannot modify order
         elif order.side is OrderSide.SELL:
             current_bid = self._get_closing_bid(order.symbol)
             if order.type in STOP_ORDER_TYPES:
-                if order.price.value > current_bid - (instrument.min_stop_distance_entry * instrument.tick_size):
+                if order.price.value > current_bid - (instrument.min_stop_distance * instrument.tick_size):
                     self._reject_modify_order(order, f'SELL STOP order price of {order.price} is too far from the market, bid={current_bid}')
                     return  # Cannot modify order
             elif order.type is OrderType.LIMIT:
-                if order.price.value < current_bid - (instrument.min_limit_distance_entry * instrument.tick_size):
+                if order.price.value < current_bid - (instrument.min_limit_distance * instrument.tick_size):
                     self._reject_modify_order(order, f'SELL LIMIT order price of {order.price} is too far from the market, bid={current_bid}')
                     return  # Cannot modify order
 
