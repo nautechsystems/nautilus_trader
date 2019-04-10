@@ -355,11 +355,11 @@ cdef class EMACross(TradeStrategy):
         # TRAILING STOP LOGIC
         cdef Price temp_price
         if self._is_stop_loss_active():
-            if self.stop_loss_order.side is OrderSide.SELL:
+            if self.stop_loss_order.side == OrderSide.SELL:
                 temp_price = Price(self.last_bar(self.bar_type).low - (self.atr.value * self.SL_atr_multiple))
                 if self.stop_loss_order.price < temp_price:
                     self.modify_order(self.stop_loss_order, temp_price)
-            elif self.stop_loss_order.side is OrderSide.BUY:
+            elif self.stop_loss_order.side == OrderSide.BUY:
                 temp_price = Price(self.last_bar(self.bar_type).high + (self.atr.value * self.SL_atr_multiple) + self.spread)
                 if self.stop_loss_order.price > temp_price:
                     self.modify_order(self.stop_loss_order, temp_price)
@@ -427,6 +427,7 @@ cdef class EMACross(TradeStrategy):
         self.unsubscribe_bars(self.bar_type)
         self.unsubscribe_ticks(self.symbol)
 
+    # Custom internal method for this strategy
     cdef void _reset_trade(self):
         """
         Reset the trade by clearing all order and position values.
@@ -436,6 +437,7 @@ cdef class EMACross(TradeStrategy):
         self.profit_target_order = None
         self.position_id = None
 
+    # Custom internal method for this strategy
     cdef bint _is_stop_loss_active(self):
         """
         Return a value indicating whether the stop-loss is active.

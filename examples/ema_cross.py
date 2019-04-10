@@ -86,6 +86,7 @@ class EMACrossPy(TradeStrategy):
         # Users custom order management logic
         self.entry_order = None
         self.stop_loss_order = None
+        self.profit_target_order = None
         self.position_id = None
 
     def on_start(self):
@@ -188,17 +189,18 @@ class EMACrossPy(TradeStrategy):
             if atomic_order is not None:
                 self.entry_order = atomic_order.entry
                 self.stop_loss_order = atomic_order.stop_loss
+                self.profit_target_order = atomic_order.profit_target
                 self.position_id = self.generate_position_id(self.symbol)
 
                 self.submit_atomic_order(atomic_order, self.position_id)
 
         # TRAILING STOP LOGIC
         if self._is_stop_loss_active():
-            if self.stop_loss_order.side is OrderSide.SELL:
+            if self.stop_loss_order.side == OrderSide.SELL:
                 temp_price = Price(self.last_bar(self.bar_type).low - (self.atr.value * self.SL_atr_multiple))
                 if self.stop_loss_order.price < temp_price:
                     self.modify_order(self.stop_loss_order, temp_price)
-            elif self.stop_loss_order.side is OrderSide.BUY:
+            elif self.stop_loss_order.side == OrderSide.BUY:
                 temp_price = Price(self.last_bar(self.bar_type).high + (self.atr.value * self.SL_atr_multiple) + self.spread)
                 if self.stop_loss_order.price > temp_price:
                     self.modify_order(self.stop_loss_order, temp_price)
