@@ -142,3 +142,4 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 09/04/19  8418269 function calls  (8395079 primitive calls) in 19.168 seconds (removed redundant deque processing for backtest execution)
         # --------------------------------------------------------------------------------------------------------------------------------------------------------------------
         # 10/04/19 27162891 function calls (26849875 primitive calls) in 27.461 seconds (after fixing bug strategy is processing properly with many more orders and positions)
+        # 11/04/19 27094455 function calls (26782489 primitive calls) in 26.730 seconds (even after enhancing execution detail)
