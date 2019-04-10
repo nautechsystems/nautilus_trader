@@ -110,16 +110,12 @@ cdef class BacktestDataClient(DataClient):
                     indexs[resolution] = dataframe.index
                 assert(dataframe.shape == shapes[resolution], f'{dataframe} shape is not equal.')
                 assert(dataframe.index == indexs[resolution], f'{dataframe} index is not equal.')
-
         for symbol, data in data_bars_ask.items():
             for resolution, dataframe in data.items():
                 assert(dataframe.shape == shapes[resolution], f'{dataframe} shape is not equal.')
                 assert(dataframe.index == indexs[resolution], f'{dataframe} index is not equal.')
 
-    cpdef void create_data_providers(self):
-        """
-        Create the data providers for the client based on the given instruments.
-        """
+        # Create the data providers for the client based on the given instruments
         for symbol, instrument in self._instruments.items():
             self._log.debug(f'Creating data provider for {symbol}...')
             self.data_providers[symbol] = DataProvider(instrument=instrument,
@@ -158,6 +154,7 @@ cdef class BacktestDataClient(DataClient):
         Iterate the data client one time step.
         """
         # Iterate ticks
+        cdef Tick tick
         cdef list ticks = []
         for data_provider in self.data_providers.values():
             if data_provider.has_ticks:
@@ -168,6 +165,8 @@ cdef class BacktestDataClient(DataClient):
                             handler(tick)
 
         # Iterate bars
+        cdef BarType bar_type
+        cdef Bar bar
         cdef list bars = []
         for data_provider in self.data_providers.values():
             bars = data_provider.iterate_bars(self._clock.time_now())

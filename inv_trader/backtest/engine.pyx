@@ -184,8 +184,6 @@ cdef class BacktestEngine:
         assert(all(self.data_minute_index) == all(self.data_client.data_minute_index))
         assert(all(self.data_minute_index) == all(self.exec_client.data_minute_index))
 
-        self.data_client.create_data_providers()
-
         for strategy in strategies:
             # Replace strategies clocks with test clocks
             strategy.change_clock(TestClock())  # Separate test clock to iterate independently
@@ -248,13 +246,12 @@ cdef class BacktestEngine:
 
         self.log.info("Running...")
         while time <= stop:
-            # Iterate execution first to simulate correct order of events,
-            # as order fills should occur before the bar closes.
             self.test_clock.set_time(time)
+            self.exec_client.process_market()
+            self.data_client.iterate()
             self.exec_client.iterate()
             for strategy in self.trader.strategies:
                 strategy.iterate(time)
-            self.data_client.iterate()
             time += time_step
 
         self.log.info("Stopping...")

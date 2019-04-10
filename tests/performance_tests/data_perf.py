@@ -9,6 +9,7 @@
 
 import unittest
 import timeit
+import pandas as pd
 
 from time import time
 from datetime import timedelta
@@ -30,6 +31,7 @@ class DataProviderPerformanceTest:
         ask_data = {Resolution.MINUTE: TestDataProvider.usdjpy_1min_ask()[:100000]}
 
         self.data_provider = DataProvider(instrument,
+                                          pd.DataFrame(),
                                           bid_data,
                                           ask_data)
 

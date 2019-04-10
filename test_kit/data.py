@@ -12,7 +12,7 @@ import pandas as pd
 import gzip
 
 from pandas import Series, DataFrame, read_csv
-from pyfolio.utils import (to_utc, to_series)
+from pyfolio.utils import (to_utc, to_series)  # TODO: Remove reference to pyfolio
 
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -55,10 +55,3 @@ class TestDataProvider:
                         index_col=0,
                         parse_dates=True)
         return to_utc(data)
-
-    # @staticmethod
-    # def test_transactions() -> DataFrame:
-    #     data = read_csv(gzip.open(os.path.join(ROOT_DIR, 'test_txn.csv.gz')),
-    #                     index_col=0,
-    #                     parse_dates=True)
-    #     return to_utc(data)

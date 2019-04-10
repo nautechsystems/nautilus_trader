@@ -41,8 +41,6 @@ class BacktestDataClientTests(unittest.TestCase):
             clock=self.test_clock,
             logger=TestLogger())
 
-        self.client.create_data_providers()
-
     def test_can_initialize_client_with_data(self):
         # Arrange
         # Act
@@ -134,7 +132,7 @@ class BacktestDataClientTests(unittest.TestCase):
             self.test_clock.set_time(start_datetime + timedelta(minutes=x))
             self.client.iterate()
 
-        print(receiver.get_store())
+        # print(receiver.get_store())
         # Assert
         self.assertTrue(self.client.data_providers[USDJPY_FXCM].has_ticks)
         self.assertEqual(685, len(receiver.get_store()))
