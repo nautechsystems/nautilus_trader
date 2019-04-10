@@ -67,7 +67,7 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef void _reject_order(self, Order order, str reason)
     cdef void _reject_modify_order(self, Order order, str reason)
     cdef void _expire_order(self, Order order)
-    cdef void _work_order(self, Order order)
+    cdef void _process_order(self, Order order)
     cdef void _fill_order(self, Order order, Price fill_price)
     cdef void _check_oco_order(self, OrderId order_id)
     cdef void _reject_oco_order(self, Order order, OrderId oco_order_id)
