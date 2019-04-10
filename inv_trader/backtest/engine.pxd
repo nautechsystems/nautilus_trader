@@ -39,6 +39,18 @@ cdef class BacktestConfig:
     cdef readonly str log_file_path
 
 
+cdef class MarketModel:
+    """
+    Represents the parameters for market dynamics including probabilistic modeling
+    of order fill and slippage behaviour per order type.
+    """
+    cdef readonly float prob_fill_limit_best
+    cdef readonly float prob_fill_limit_mid
+    cdef readonly float prob_fill_limit_cross
+    cdef readonly float prob_fill_stop
+    cdef readonly float prob_slippage
+
+
 cdef class BacktestEngine:
     """
     Provides a backtest engine to run a trader on historical data.

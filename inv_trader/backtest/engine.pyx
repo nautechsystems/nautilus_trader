@@ -95,6 +95,50 @@ cdef class BacktestConfig:
         self.log_file_path = log_file_path
 
 
+cdef class MarketModel:
+    """
+    Represents the parameters for market dynamics including probabilistic modeling
+    of order fill and slippage behaviour by order type.
+    """
+
+    def __init__(self,
+                 float prob_fill_limit_best=0.2,
+                 float prob_fill_limit_mid=0.5,
+                 float prob_fill_limit_cross=0.8,
+                 float prob_fill_stop=0.95,
+                 float prob_slippage=0.0):
+        """
+        Initializes a new instance of the MarketModel class.
+
+        Fill Modelling
+        --------------
+         BUY-LIMIT fill price 'best'  = BID.
+         BUY-LIMIT fill price 'mid'   = MID.
+         BUY-LIMIT fill price 'cross' = ASK.
+        SELL-LIMIT fill price 'best'  = ASK.
+        SELL-LIMIT fill price 'mid'   = MID.
+        SELL-LIMIT fill price 'cross' = BID.
+
+        :param prob_fill_limit_best: The probability of working limit orders filling at the best price.
+        :param prob_fill_limit_mid: The probability of working limit orders filling at the mid price.
+        :param prob_fill_limit_cross: The probability of working limit orders filling at the spread crossing price.
+        :param prob_fill_stop: The probability of working stop orders filling at their price.
+        :param prob_slippage: The probability of order fill prices slipping by a tick.
+        :raises ValueError: If any probability argument is not within range [0, 1].
+        """
+        Precondition.in_range(prob_fill_limit_best, 'prob_fill_limit_best', 0.0, 1.0)
+        Precondition.in_range(prob_fill_limit_mid, 'prob_fill_limit_mid', 0.0, 1.0)
+        Precondition.in_range(prob_fill_limit_cross, 'prob_fill_limit_cross', 0.0, 1.0)
+        Precondition.in_range(prob_fill_stop, 'prob_fill_stop', 0.0, 1.0)
+        Precondition.in_range(prob_slippage, 'prob_slippage', 0.0, 1.0)
+
+        self.prob_fill_limit_best = prob_fill_limit_best
+        self.prob_fill_limit_mid = prob_fill_limit_mid
+        self.prob_fill_limit_cross = prob_fill_limit_cross
+        self.prob_fill_stop = prob_fill_stop
+        self.prob_slippage = prob_slippage
+
+
 cdef class BacktestEngine:
     """
     Provides a backtest engine to run a portfolio of strategies inside a Trader
@@ -172,7 +216,7 @@ cdef class BacktestEngine:
             data_bars_ask=minute_bars_ask,
             starting_capital=config.starting_capital,
             slippage_ticks=config.slippage_ticks,
-            commission_calculator=CommissionCalculator(),
+            commission_calculator=CommissionCalculator(default_rate_bp=config.commission_rate_bp),
             account=self.account,
             portfolio=self.portfolio,
             clock=self.test_clock,
