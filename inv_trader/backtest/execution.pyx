@@ -212,25 +212,25 @@ cdef class BacktestExecClient(ExecutionClient):
             # Check for order fill
             if order.side is OrderSide.BUY:
                 highest_ask = self._get_highest_ask(order.symbol)
-                if order.type is OrderType.STOP_MARKET or order.type is OrderType.STOP_LIMIT or order.type is OrderType.MIT:
+                if order.type in STOP_ORDER_TYPES:
                     if highest_ask >= order.price:
                         del self.working_orders[order.id]  # Remove order from working orders
                         self._fill_order(order, Price(order.price + self.slippage_index[order.symbol]))
                         continue  # Continue loop to next order
                 elif order.type is OrderType.LIMIT:
-                    if highest_ask <= order.price:
+                    if highest_ask < order.price:
                         del self.working_orders[order.id]  # Remove order from working orders
                         self._fill_order(order, Price(order.price + self.slippage_index[order.symbol]))
                         continue  # Continue loop to next order
             elif order.side is OrderSide.SELL:
                 lowest_bid = self._get_lowest_bid(order.symbol)
-                if order.type is OrderType.STOP_MARKET or order.type is OrderType.STOP_LIMIT or order.type is OrderType.MIT:
+                if order.type in STOP_ORDER_TYPES:
                     if lowest_bid <= order.price:
                         del self.working_orders[order.id]  # Remove order from working orders
                         self._fill_order(order, Price(order.price - self.slippage_index[order.symbol]))
                         continue  # Continue loop to next order
                 elif order.type is OrderType.LIMIT:
-                    if lowest_bid >= order.price:
+                    if lowest_bid > order.price:
                         del self.working_orders[order.id]  # Remove order from working orders
                         self._fill_order(order, Price(order.price - self.slippage_index[order.symbol]))
                         continue  # Continue loop to next order
@@ -428,7 +428,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._clock.time_now())
 
         self._handle_event(submitted)
-        self._accept_order(command.order)
+        self._process_order(command.order)
 
     cdef void _submit_atomic_order(self, SubmitAtomicOrder command):
         """
@@ -498,28 +498,29 @@ cdef class BacktestExecClient(ExecutionClient):
             return  # Rejected the modify order command
 
         cdef Order order = command.order
+        cdef Instrument instrument = self.instruments[order.symbol]
         cdef Price current_ask
         cdef Price current_bid
 
         if order.side is OrderSide.BUY:
             current_ask = self._get_closing_ask(order.symbol)
             if order.type in STOP_ORDER_TYPES:
-                if order.price < current_ask:
-                    self._reject_modify_order(order, f'buy stop order price of {order.price} is below the ask {current_ask}')
+                if order.price.value < current_ask + (instrument.min_stop_distance_entry * instrument.tick_size):
+                    self._reject_modify_order(order, f'BUY STOP order price of {order.price} is too far from the market, ask={current_ask}')
                     return  # Cannot modify order
             elif order.type is OrderType.LIMIT:
-                if order.price > current_ask:
-                    self._reject_modify_order(order, f'buy limit order price of {order.price} is above the ask {current_ask}')
+                if order.price.value > current_ask + (instrument.min_limit_distance_entry * instrument.tick_size):
+                    self._reject_modify_order(order, f'BUY LIMIT order price of {order.price} is too far from the market, ask={current_ask}')
                     return  # Cannot modify order
         elif order.side is OrderSide.SELL:
             current_bid = self._get_closing_bid(order.symbol)
             if order.type in STOP_ORDER_TYPES:
-                if order.price > current_bid:
-                    self._reject_modify_order(order, f'sell stop order price of {order.price} is above the bid {current_bid}')
+                if order.price.value > current_bid - (instrument.min_stop_distance_entry * instrument.tick_size):
+                    self._reject_modify_order(order, f'SELL STOP order price of {order.price} is too far from the market, bid={current_bid}')
                     return  # Cannot modify order
             elif order.type is OrderType.LIMIT:
-                if order.price < current_bid:
-                    self._reject_modify_order(order, f'sell limit order price of {order.price} is below the bid {current_bid}')
+                if order.price.value < current_bid - (instrument.min_limit_distance_entry * instrument.tick_size):
+                    self._reject_modify_order(order, f'SELL LIMIT order price of {order.price} is too far from the market, bid={current_bid}')
                     return  # Cannot modify order
 
         # Generate event
@@ -552,7 +553,6 @@ cdef class BacktestExecClient(ExecutionClient):
             self._clock.time_now())
 
         self._handle_event(accepted)
-        self._work_order(order)
 
     cdef void _reject_order(self, Order order, str reason):
         """
@@ -611,7 +611,7 @@ cdef class BacktestExecClient(ExecutionClient):
         self._handle_event(expired)
         self._check_oco_order(order.id)
 
-    cdef void _work_order(self, Order order):
+    cdef void _process_order(self, Order order):
         """
         Work the given order.
         
@@ -619,38 +619,52 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         Precondition.not_in(order.id, self.working_orders, 'order.id', 'working_orders')
 
+        cdef Instrument instrument = self.instruments[order.symbol]
         cdef Price closing_ask
         cdef Price closing_bid
+
+        # Check order size is valid or reject
+        if order.quantity > instrument.max_trade_size:
+            self._reject_order(order,  f'order quantity of {order.quantity} exceeds the maximum trade size of {instrument.max_trade_size}')
+            return  # Cannot accept order
+        if order.quantity < instrument.min_trade_size:
+            self._reject_order(order,  f'order quantity of {order.quantity} is less than the minimum trade size of {instrument.min_trade_size}')
+            return  # Cannot accept order
 
         # Check order price is valid or reject
         if order.side is OrderSide.BUY:
             closing_ask = self._get_closing_ask(order.symbol)
             if order.type is OrderType.MARKET:
-                # Fill market orders immediately
+                # Accept and fill market orders immediately
+                self._accept_order(order)
                 self._fill_order(order, Price(closing_ask + self.slippage_index[order.symbol]))
-                return  # Order filled - nothing to work
+                return  # Order filled - nothing further to process
             elif order.type in STOP_ORDER_TYPES:
-                if order.price < closing_ask:
-                    self._reject_order(order,  f'buy stop order price of {order.price} is below the ask {closing_ask}')
-                    return  # Cannot work order
+                if order.price.value < closing_ask + (instrument.min_stop_distance_entry * instrument.tick_size):
+                    self._reject_order(order,  f'BUY STOP order price of {order.price} is too far from the market, ask={closing_ask}')
+                    return  # Cannot accept order
             elif order.type is OrderType.LIMIT:
-                if order.price > closing_ask:
-                    self._reject_order(order,  f'buy limit order price of {order.price} is above the ask {closing_ask}')
-                    return  # Cannot work order
+                if order.price.value > closing_ask + (instrument.min_limit_distance_entry * instrument.tick_size):
+                    self._reject_order(order,  f'BUY LIMIT order price of {order.price} is too far from the market, ask={closing_ask}')
+                    return  # Cannot accept order
         elif order.side is OrderSide.SELL:
             closing_bid = self._get_closing_bid(order.symbol)
             if order.type is OrderType.MARKET:
-                # Fill market orders immediately
+                # Accept and fill market orders immediately
+                self._accept_order(order)
                 self._fill_order(order, Price(closing_bid - self.slippage_index[order.symbol]))
-                return  # Order filled - nothing to work
+                return  # Order filled - nothing further to process
             elif order.type in STOP_ORDER_TYPES:
-                if order.price > closing_bid:
-                    self._reject_order(order,  f'sell stop order price of {order.price} is above the bid {closing_bid}')
-                    return  # Cannot work order
+                if order.price.value > closing_bid - (instrument.min_stop_distance_entry * instrument.tick_size):
+                    self._reject_order(order,  f'SELL STOP order price of {order.price} is too far from the market, bid={closing_bid}')
+                    return  # Cannot accept order
             elif order.type is OrderType.LIMIT:
-                if order.price < closing_bid:
-                    self._reject_order(order,  f'sell limit order price of {order.price} is below the bid {closing_bid}')
-                    return  # Cannot work order
+                if order.price.value < closing_bid - (instrument.min_limit_distance_entry * instrument.tick_size):
+                    self._reject_order(order,  f'SELL LIMIT order price of {order.price} is too far from the market, bid={closing_bid}')
+                    return  # Cannot accept order
+
+        # Order is valid and accepted
+        self._accept_order(order)
 
         # Order now becomes working
         self.working_orders[order.id] = order
@@ -705,7 +719,7 @@ cdef class BacktestExecClient(ExecutionClient):
         if order.id in self.atomic_child_orders:
             for child_order in self.atomic_child_orders[order.id]:
                 if not child_order.is_complete:
-                    self._work_order(child_order)
+                    self._process_order(child_order)
             del self.atomic_child_orders[order.id]
 
     cdef void _check_oco_order(self, OrderId order_id):
@@ -714,8 +728,6 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         cdef OrderId oco_order_id
         cdef Order oco_order
-        cdef OrderRejected rejected
-        cdef OrderCancelled cancelled
 
         if order_id in self.oco_orders:
             oco_order_id = self.oco_orders[order_id]
