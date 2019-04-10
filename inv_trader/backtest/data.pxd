@@ -26,7 +26,7 @@ cdef class BacktestDataClient(DataClient):
     cdef readonly dict data_providers
     cdef readonly int iteration
 
-    cpdef void create_data_providers(self)
+    # cpdef void create_data_providers(self)
     cpdef void set_initial_iteration(self, datetime to_time, timedelta time_step)
     cpdef void iterate(self)
     cpdef void reset(self)

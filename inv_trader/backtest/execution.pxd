@@ -31,6 +31,7 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef readonly dict data_bars_bid
     cdef readonly dict data_bars_ask
     cdef readonly list data_minute_index
+    cdef readonly int data_minute_index_length
     cdef readonly int iteration
     cdef readonly int day_number
     cdef readonly Money starting_capital
@@ -47,6 +48,7 @@ cdef class BacktestExecClient(ExecutionClient):
 
     cpdef void set_initial_iteration(self, datetime to_time, timedelta time_step)
     cpdef void iterate(self)
+    cpdef void process_market(self)
     cpdef void reset_account(self)
     cpdef void reset(self)
 
@@ -59,6 +61,8 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef Price _get_highest_ask(self, Symbol symbol)
     cdef Price _get_lowest_ask(self, Symbol symbol)
     cdef Price _get_closing_ask(self, Symbol symbol)
+
+# -- EVENT HANDLING ------------------------------------------------------------------------------ #
     cdef void _accept_order(self, Order order)
     cdef void _reject_order(self, Order order, str reason)
     cdef void _reject_modify_order(self, Order order, str reason)

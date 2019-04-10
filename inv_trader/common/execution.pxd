@@ -61,6 +61,8 @@ cdef class ExecutionClient:
     cdef void _execute_command(self, Command command)
     cdef void _handle_event(self, Event event)
     cdef void _register_order(self, Order order, PositionId position_id, GUID strategy_id)
+
+# -- ABSTRACT METHODS ---------------------------------------------------------------------------- #
     cdef void _collateral_inquiry(self, CollateralInquiry command)
     cdef void _submit_order(self, SubmitOrder command)
     cdef void _submit_atomic_order(self, SubmitAtomicOrder command)

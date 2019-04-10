@@ -346,6 +346,9 @@ cdef class ExecutionClient:
         self._portfolio.register_order(order.id, position_id)
         self._log.debug(f"Registered {order.id} with {position_id} for strategy with id {strategy_id}.")
 
+
+# -- ABSTRACT METHODS ---------------------------------------------------------------------------- #
+
     cdef void _collateral_inquiry(self, CollateralInquiry command):
         """
         Send a collateral inquiry command to the execution service.

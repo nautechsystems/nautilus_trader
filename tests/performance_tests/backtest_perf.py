@@ -140,3 +140,5 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 02/04/19  9189830 function calls  (9152734 primitive calls) in 17.560 seconds (added OCO order handling)
         # 03/04/19  9189830 function calls  (9152734 primitive calls) in 17.493 seconds (added enhanced exchange rate calculations)
         # 09/04/19  8418269 function calls  (8395079 primitive calls) in 19.168 seconds (removed redundant deque processing for backtest execution)
+        # --------------------------------------------------------------------------------------------------------------------------------------------------------------------
+        # 10/04/19 27162891 function calls (26849875 primitive calls) in 27.461 seconds (after fixing bug strategy is processing properly with many more orders and positions)

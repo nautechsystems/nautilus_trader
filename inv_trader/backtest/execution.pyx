@@ -13,7 +13,6 @@ import pandas as pd
 
 from decimal import Decimal
 from cpython.datetime cimport datetime
-from collections import deque
 from functools import partial
 from pandas import DataFrame
 from typing import List, Dict
@@ -116,7 +115,7 @@ cdef class BacktestExecClient(ExecutionClient):
         # Set minute data index
         first_dataframe = data_bars_bid[next(iter(data_bars_bid))]
         self.data_minute_index = list(pd.to_datetime(first_dataframe.index, utc=True))  # type: List[datetime]
-
+        self.data_minute_index_length = len(self.data_minute_index)
         assert(isinstance(self.data_minute_index[0], datetime))
 
         self.iteration = 0
@@ -141,12 +140,14 @@ cdef class BacktestExecClient(ExecutionClient):
         Connect to the execution service.
         """
         self._log.info("Connected.")
+        # Do nothing else
 
     cpdef void disconnect(self):
         """
         Disconnect from the execution service.
         """
         self._log.info("Disconnected.")
+        # Do nothing else
 
     cpdef void set_initial_iteration(
             self,
@@ -172,7 +173,7 @@ cdef class BacktestExecClient(ExecutionClient):
 
     cpdef void iterate(self):
         """
-        Iterate the data client one time step.
+        Iterate the execution client one time step.
         """
         cdef CollateralInquiry command
 
@@ -188,6 +189,17 @@ cdef class BacktestExecClient(ExecutionClient):
             self._guid_factory.generate(),
             self._clock.time_now())
             self._collateral_inquiry(command)
+
+    cpdef void process_market(self):
+        """
+        Process the working orders by simulating market dynamics with bar data.
+        """
+        cdef datetime time_now = self._clock.time_now()
+
+        if self.iteration + 1 < self.data_minute_index_length and self.data_minute_index[self.iteration + 1] == time_now:
+            self.iteration += 1
+        else:
+            return  # No price changes to process
 
         # Simulate market dynamics
         cdef Price highest_ask
@@ -228,8 +240,6 @@ cdef class BacktestExecClient(ExecutionClient):
                 if order.id in self.working_orders:
                     del self.working_orders[order.id]
                     self._expire_order(order)
-
-        self.iteration += 1
 
     cpdef void execute_command(self, Command command):
         """
@@ -336,7 +346,7 @@ cdef class BacktestExecClient(ExecutionClient):
         
         :return: Price.
         """
-        return self.data_bars_bid[symbol][self.iteration][1]
+        return self.data_bars_bid[symbol][self.iteration][1]  # High
 
     cdef Price _get_lowest_bid(self, Symbol symbol):
         """
@@ -344,7 +354,7 @@ cdef class BacktestExecClient(ExecutionClient):
         
         :return: Price.
         """
-        return self.data_bars_bid[symbol][self.iteration][2]
+        return self.data_bars_bid[symbol][self.iteration][2]  # Low
 
     cdef Price _get_closing_bid(self, Symbol symbol):
         """
@@ -352,7 +362,7 @@ cdef class BacktestExecClient(ExecutionClient):
         
         :return: Price
         """
-        return self.data_bars_bid[symbol][self.iteration][3]
+        return self.data_bars_bid[symbol][self.iteration][3]  # Close
 
     cdef Price _get_highest_ask(self, Symbol symbol):
         """
@@ -360,7 +370,7 @@ cdef class BacktestExecClient(ExecutionClient):
         
         :return: Price.
         """
-        return self.data_bars_ask[symbol][self.iteration][1]
+        return self.data_bars_ask[symbol][self.iteration][1]  # High
 
     cdef Price _get_lowest_ask(self, Symbol symbol):
         """
@@ -368,7 +378,7 @@ cdef class BacktestExecClient(ExecutionClient):
         
         :return: Price.
         """
-        return self.data_bars_ask[symbol][self.iteration][2]
+        return self.data_bars_ask[symbol][self.iteration][2]  # Low
 
     cdef Price _get_closing_ask(self, Symbol symbol):
         """
@@ -376,7 +386,10 @@ cdef class BacktestExecClient(ExecutionClient):
         
         :return: Price.
         """
-        return self.data_bars_ask[symbol][self.iteration][3]
+        return self.data_bars_ask[symbol][self.iteration][3]  # Close
+
+
+# -- COMMAND EXECUTION --------------------------------------------------------------------------- #
 
     cdef void _collateral_inquiry(self, CollateralInquiry command):
         """
@@ -520,6 +533,9 @@ cdef class BacktestExecClient(ExecutionClient):
             self._clock.time_now())
 
         self._handle_event(modified)
+
+
+# -- EVENT HANDLING ------------------------------------------------------------------------------ #
 
     cdef void _accept_order(self, Order order):
         """
