@@ -226,6 +226,8 @@ cdef class BacktestEngine:
         Precondition.true(stop <= self.data_minute_index[len(self.data_minute_index) - 1], 'stop <= last_timestamp')
         Precondition.positive(time_step_mins, 'time_step_mins')
 
+        self.log.info("Running...")
+
         cdef timedelta time_step = timedelta(minutes=time_step_mins)
         cdef datetime run_started = self.clock.time_now()
         cdef datetime time = start
@@ -236,7 +238,7 @@ cdef class BacktestEngine:
         self._change_strategy_clocks_and_loggers(self.trader.strategies)
         self.trader.start()
 
-        self.log.info("Setting initial iteration...")
+        self.log.debug("Setting initial iterations...")
         self.data_client.set_initial_iteration(start, time_step)  # Also sets clock to start time
         self.exec_client.set_initial_iteration(start, time_step)  # Also sets clock to start time
 
@@ -244,7 +246,6 @@ cdef class BacktestEngine:
         assert(self.data_client.time_now() == start)
         assert(self.exec_client.time_now() == start)
 
-        self.log.info("Running...")
         while time <= stop:
             self.test_clock.set_time(time)
             self.exec_client.process_market()
