@@ -203,7 +203,6 @@ class EMACrossPy(TradeStrategy):
 
         :param event: The received event.
         """
-        # Custom user event handling
         pass
 
     def on_stop(self):
@@ -211,7 +210,6 @@ class EMACrossPy(TradeStrategy):
         This method is called when self.stop() is called before internal
         stopping logic.
         """
-        # Custom user event handling
         if not self.is_flat():
             self.flatten_all_positions()
 
@@ -225,7 +223,6 @@ class EMACrossPy(TradeStrategy):
 
         Put custom code to be run on a strategy reset here.
         """
-        # Custom user reset logic
         pass
 
     def on_dispose(self):
