@@ -154,7 +154,7 @@ class LiveExecClientTests(unittest.TestCase):
         self.assertEqual(order, self.strategy.order(order.id))
         self.assertEqual(1, len(self.response_list))
 
-    def test_can_send_submit_atomic_order_no_profit_target_command(self):
+    def test_can_send_submit_atomic_order_no_take_profit_command(self):
         # Arrange
         atomic_order = self.strategy.order_factory.atomic_market(
             AUDUSD_FXCM,
@@ -171,7 +171,7 @@ class LiveExecClientTests(unittest.TestCase):
         self.assertEqual(atomic_order.stop_loss, self.strategy.order(atomic_order.stop_loss.id))
         self.assertEqual(1, len(self.response_list))
 
-    def test_can_send_submit_atomic_order_with_profit_target_command(self):
+    def test_can_send_submit_atomic_order_with_take_profit_command(self):
         # Arrange
         atomic_order = self.strategy.order_factory.atomic_limit(
             AUDUSD_FXCM,
@@ -188,7 +188,7 @@ class LiveExecClientTests(unittest.TestCase):
         # Assert
         self.assertEqual(atomic_order.entry, self.strategy.order(atomic_order.entry.id))
         self.assertEqual(atomic_order.stop_loss, self.strategy.order(atomic_order.stop_loss.id))
-        self.assertEqual(atomic_order.profit_target, self.strategy.order(atomic_order.profit_target.id))
+        self.assertEqual(atomic_order.take_profit, self.strategy.order(atomic_order.take_profit.id))
         self.assertEqual(1, len(self.response_list))
 
     def test_can_send_cancel_order_command(self):

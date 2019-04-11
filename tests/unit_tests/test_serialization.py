@@ -255,7 +255,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         print(serialized.hex())
         print(command)
 
-    def test_can_serialize_and_deserialize_submit_atomic_order_no_profit_target_commands(self):
+    def test_can_serialize_and_deserialize_submit_atomic_order_no_take_profit_commands(self):
         # Arrange
         serializer = MsgPackCommandSerializer()
 
@@ -283,7 +283,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         print(serialized.hex())
         print(command)
 
-    def test_can_serialize_and_deserialize_submit_atomic_order_with_profit_target_commands(self):
+    def test_can_serialize_and_deserialize_submit_atomic_order_with_take_profit_commands(self):
         # Arrange
         serializer = MsgPackCommandSerializer()
 

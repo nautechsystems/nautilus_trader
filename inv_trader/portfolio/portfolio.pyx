@@ -94,6 +94,26 @@ cdef class Portfolio:
         """
         return position_id in self._position_book
 
+    cpdef bint position_active(self, PositionId position_id):
+        """
+        Return a value indicating whether a position with the given identifier exists
+        and is entered (active).
+
+        :param position_id: The position identifier.
+        :return: True if the position exists and is exited, else False.
+        """
+        return position_id in self._position_book and self._position_book[position_id].is_entered
+
+    cpdef bint position_closed(self, PositionId position_id):
+        """
+        Return a value indicating whether a position with the given identifier exists
+        and is exited (closed).
+
+        :param position_id: The position identifier.
+        :return: True if the position does not exist or is closed, else False.
+        """
+        return position_id in self._position_book and self._position_book[position_id].is_exited
+
     cpdef bint order_has_position(self, OrderId order_id):
         """
         Return a value indicating whether there is a position associated with the given

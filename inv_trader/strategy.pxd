@@ -43,6 +43,11 @@ cdef class TradeStrategy:
     cdef dict _indicator_updaters
     cdef ExchangeRateCalculator _exchange_calculator
     cdef Portfolio _portfolio
+    cdef dict _registered_orders
+    cdef dict _entry_orders
+    cdef dict _stop_loss_orders
+    cdef dict _take_profit_orders
+    cdef dict _modify_order_buffer
 
     cdef readonly Label name
     cdef readonly LoggerAdapter log
@@ -99,6 +104,9 @@ cdef class TradeStrategy:
     cpdef readonly bint indicators_initialized_all(self)
 
 # -- MANAGEMENT METHODS -------------------------------------------------------------------------- #
+    cpdef void register_entry_order(self, Order order, PositionId position_id)
+    cpdef void register_stop_loss_order(self, Order order, PositionId position_id)
+    cpdef void register_take_profit_order(self, Order order, PositionId position_id)
     cpdef PositionId generate_position_id(self, Symbol symbol)
     cpdef OrderSide get_opposite_side(self, OrderSide side)
     cpdef OrderSide get_flatten_side(self, MarketPosition market_position)
@@ -110,6 +118,21 @@ cdef class TradeStrategy:
     cpdef dict orders_all(self)
     cpdef dict orders_active(self)
     cpdef dict orders_completed(self)
+    cpdef dict entry_orders(self)
+    cpdef dict stop_loss_orders(self)
+    cpdef dict take_profit_orders(self)
+    cpdef list entry_order_ids(self)
+    cpdef list stop_loss_order_ids(self)
+    cpdef list take_profit_order_ids(self)
+    cpdef Order entry_order(self, OrderId order_id)
+    cpdef Order stop_loss_order(self, OrderId order_id)
+    cpdef Order take_profit_order(self, OrderId order_id)
+    cpdef int entry_orders_count(self)
+    cpdef int stop_loss_orders_count(self)
+    cpdef int take_profit_orders_count(self)
+    cpdef bint is_entry_order_active(self, OrderId order_id)
+    cpdef bint is_stop_loss_order_active(self, OrderId order_id)
+    cpdef bint is_take_profit_order_active(self, OrderId order_id)
     cpdef bint position_exists(self, PositionId position_id)
     cpdef Position position(self, PositionId position_id)
     cpdef dict positions_all(self)
@@ -124,7 +147,10 @@ cdef class TradeStrategy:
     cpdef void dispose(self)
     cpdef void collateral_inquiry(self)
     cpdef void submit_order(self, Order order, PositionId position_id)
-    cpdef void submit_atomic_order(self, AtomicOrder order, PositionId position_id)
+    cpdef void submit_entry_order(self, Order order, PositionId position_id)
+    cpdef void submit_stop_loss_order(self, Order order, PositionId position_id)
+    cpdef void submit_take_profit_order(self, Order order, PositionId position_id)
+    cpdef void submit_atomic_order(self, AtomicOrder atomic_order, PositionId position_id)
     cpdef void modify_order(self, Order order, Price new_price)
     cpdef void cancel_order(self, Order order, str cancel_reason=*)
     cpdef void cancel_all_orders(self, str cancel_reason=*)

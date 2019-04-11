@@ -45,6 +45,8 @@ cdef class Portfolio:
     cpdef list registered_order_ids(self)
     cpdef list registered_position_ids(self)
     cpdef bint position_exists(self, PositionId position_id)
+    cpdef bint position_active(self, PositionId position_id)
+    cpdef bint position_closed(self, PositionId position_id)
     cpdef bint order_has_position(self, OrderId order_id)
     cpdef Position get_position_for_order(self, OrderId order_id)
     cpdef Position get_position(self, PositionId position_id)
