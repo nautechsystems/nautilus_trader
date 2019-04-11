@@ -359,7 +359,6 @@ cdef class EMACross(TradeStrategy):
 
         :param event: The received event.
         """
-        # Custom user event handling
         pass
 
     cpdef void on_stop(self):
@@ -367,7 +366,6 @@ cdef class EMACross(TradeStrategy):
         This method is called when self.stop() is called before internal
         stopping logic.
         """
-        # Custom user stop logic
         if not self.is_flat():
             self.flatten_all_positions()
 
@@ -381,7 +379,6 @@ cdef class EMACross(TradeStrategy):
 
         Put custom code to be run on a strategy reset here.
         """
-        # Custom user reset logic
         pass
 
     cpdef void on_dispose(self):
@@ -391,5 +388,3 @@ cdef class EMACross(TradeStrategy):
         """
         self.unsubscribe_bars(self.bar_type)
         self.unsubscribe_ticks(self.symbol)
-
-

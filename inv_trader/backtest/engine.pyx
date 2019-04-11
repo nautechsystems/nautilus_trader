@@ -270,8 +270,6 @@ cdef class BacktestEngine:
         Precondition.true(stop <= self.data_minute_index[len(self.data_minute_index) - 1], 'stop <= last_timestamp')
         Precondition.positive(time_step_mins, 'time_step_mins')
 
-        self.log.info("Running...")
-
         cdef timedelta time_step = timedelta(minutes=time_step_mins)
         cdef datetime run_started = self.clock.time_now()
         cdef datetime time = start
@@ -290,6 +288,7 @@ cdef class BacktestEngine:
         assert(self.data_client.time_now() == start)
         assert(self.exec_client.time_now() == start)
 
+        self.log.info(f"Running backtest...")
         while time <= stop:
             self.test_clock.set_time(time)
             self.exec_client.process_market()
@@ -425,7 +424,6 @@ cdef class BacktestEngine:
         self.log.info(f"Time-step: {time_step_mins} minute")
         self.log.info(f"Account balance (starting): {self.config.starting_capital} {currency_string(self.account.currency)}")
         self.log.info("#---------------------------------------------------------------#")
-        self.log.info(f"Running backtest...")
 
     cdef void _backtest_footer(
             self,
