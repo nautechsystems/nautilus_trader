@@ -18,9 +18,8 @@ from inv_trader.enums.order_side cimport OrderSide
 from inv_trader.enums.time_in_force cimport TimeInForce
 from inv_trader.model.objects cimport Symbol, Price, Tick, BarType, Bar, Instrument
 from inv_trader.model.events cimport Event
-from inv_trader.model.identifiers cimport Label, PositionId
+from inv_trader.model.identifiers cimport Label, OrderId, PositionId
 from inv_trader.model.order cimport Order, AtomicOrder
-from inv_trader.model.events cimport OrderFilled, OrderExpired, OrderRejected, OrderCancelled
 from inv_trader.strategy cimport TradeStrategy
 from inv_trader.portfolio.sizing cimport PositionSizer, FixedRiskSizer
 from inv_indicators.average.ema import ExponentialMovingAverage
@@ -183,10 +182,6 @@ cdef class EMACross(TradeStrategy):
     cdef readonly object fast_ema
     cdef readonly object slow_ema
     cdef readonly object atr
-    cdef readonly Order entry_order
-    cdef readonly Order stop_loss_order
-    cdef readonly Order profit_target_order
-    cdef readonly PositionId position_id
 
     def __init__(self,
                  str label,
@@ -240,12 +235,6 @@ cdef class EMACross(TradeStrategy):
         self.register_indicator(self.bar_type, self.slow_ema, self.slow_ema.update)
         self.register_indicator(self.bar_type, self.atr, self.atr.update)
 
-        # Users custom order management logic
-        self.entry_order = None
-        self.stop_loss_order = None
-        self.profit_target_order = None
-        self.position_id = None
-
     cpdef void on_start(self):
         """
         This method is called when self.start() is called, and after internal
@@ -282,12 +271,12 @@ cdef class EMACross(TradeStrategy):
 
         cdef AtomicOrder atomic_order
 
-        if self.is_flat() and self.entry_order is None:
+        if self.entry_orders_count() == 0 and self.is_flat():
             # BUY LOGIC
             if self.fast_ema.value >= self.slow_ema.value:
                 price_entry = Price(self.last_bar(self.bar_type).high + self.entry_buffer + self.spread)
                 price_stop_loss = Price(self.last_bar(self.bar_type).low - (self.atr.value * self.SL_atr_multiple))
-                price_profit_target = Price(price_entry + (price_entry - price_stop_loss))
+                price_take_profit = Price(price_entry + (price_entry - price_stop_loss))
 
                 exchange_rate = self.get_exchange_rate(quote_currency=self.instrument.quote_currency)
                 position_size = self.position_sizer.calculate(
@@ -308,7 +297,7 @@ cdef class EMACross(TradeStrategy):
                         quantity=position_size,
                         price_entry=price_entry,
                         price_stop_loss=price_stop_loss,
-                        price_profit_target=price_profit_target,
+                        price_take_profit=price_take_profit,
                         label=Label('S1'),
                         time_in_force=TimeInForce.GTD,
                         expire_time=self.time_now() + timedelta(minutes=1))
@@ -317,7 +306,7 @@ cdef class EMACross(TradeStrategy):
             elif self.fast_ema.value < self.slow_ema.value:
                 price_entry = Price(self.last_bar(self.bar_type).low - self.entry_buffer)
                 price_stop_loss = Price(self.last_bar(self.bar_type).high + (self.atr.value * self.SL_atr_multiple) + self.spread)
-                price_profit_target = Price(price_entry - (price_stop_loss - price_entry))
+                price_take_profit = Price(price_entry - (price_stop_loss - price_entry))
 
                 exchange_rate = self.get_exchange_rate(quote_currency=self.instrument.quote_currency)
                 position_size = self.position_sizer.calculate(
@@ -338,31 +327,29 @@ cdef class EMACross(TradeStrategy):
                         quantity=position_size,
                         price_entry=price_entry,
                         price_stop_loss=price_stop_loss,
-                        price_profit_target=price_profit_target,
+                        price_take_profit=price_take_profit,
                         label=Label('S1'),
                         time_in_force=TimeInForce.GTD,
                         expire_time=self.time_now() + timedelta(minutes=1))
 
             # ENTRY ORDER SUBMISSION
             if atomic_order is not None:
-                self.entry_order = atomic_order.entry
-                self.stop_loss_order = atomic_order.stop_loss
-                self.profit_target_order = atomic_order.profit_target
-                self.position_id = self.generate_position_id(self.symbol)
-
-                self.submit_atomic_order(atomic_order, self.position_id)
+                self.submit_atomic_order(atomic_order, self.generate_position_id(self.symbol))
 
         # TRAILING STOP LOGIC
+        cdef Order stop_loss_order
         cdef Price temp_price
-        if self._is_stop_loss_active():
-            if self.stop_loss_order.side == OrderSide.SELL:
-                temp_price = Price(self.last_bar(self.bar_type).low - (self.atr.value * self.SL_atr_multiple))
-                if self.stop_loss_order.price < temp_price:
-                    self.modify_order(self.stop_loss_order, temp_price)
-            elif self.stop_loss_order.side == OrderSide.BUY:
-                temp_price = Price(self.last_bar(self.bar_type).high + (self.atr.value * self.SL_atr_multiple) + self.spread)
-                if self.stop_loss_order.price > temp_price:
-                    self.modify_order(self.stop_loss_order, temp_price)
+        for order_id in self.stop_loss_order_ids():
+            if self.is_stop_loss_order_active(order_id):
+                stop_loss_order = self.stop_loss_order(order_id)
+                if stop_loss_order.side == OrderSide.SELL:
+                    temp_price = Price(self.last_bar(self.bar_type).low - (self.atr.value * self.SL_atr_multiple))
+                    if stop_loss_order.price < temp_price:
+                        self.modify_order(stop_loss_order, temp_price)
+                elif stop_loss_order.side == OrderSide.BUY:
+                    temp_price = Price(self.last_bar(self.bar_type).high + (self.atr.value * self.SL_atr_multiple) + self.spread)
+                    if stop_loss_order.price > temp_price:
+                        self.modify_order(stop_loss_order, temp_price)
 
     cpdef void on_event(self, Event event):
         """
@@ -372,38 +359,15 @@ cdef class EMACross(TradeStrategy):
 
         :param event: The received event.
         """
-        # RAW ORDER MANAGEMENT
-
-        # Entry order rejected or expired -> reset trade
-        if (isinstance(event, (OrderRejected, OrderExpired))
-                and self.entry_order is not None
-                and event.order_id.equals(self.entry_order.id)):
-            self._reset_trade()
-
-        # Stop-loss order rejected -> flatten any entered position and reset trade
-        if (isinstance(event, OrderRejected)
-                and self.stop_loss_order is not None
-                and event.order_id.equals(self.stop_loss_order.id)
-                and not self.is_flat()):
-            self.flatten_position(self.position_id)
-            self._reset_trade()
-
-        # Stop-loss order filled or cancelled -> reset trade
-        if (isinstance(event, (OrderCancelled, OrderFilled))
-                and self.stop_loss_order is not None
-                and event.order_id.equals(self.stop_loss_order.id)):
-            self._reset_trade()
-        # Profit target order filled or cancelled -> reset trade
-        elif (isinstance(event, (OrderCancelled, OrderFilled))
-                and self.profit_target_order is not None
-                and event.order_id.equals(self.profit_target_order.id)):
-            self._reset_trade()
+        # Custom user event handling
+        pass
 
     cpdef void on_stop(self):
         """
         This method is called when self.stop() is called before internal
         stopping logic.
         """
+        # Custom user stop logic
         if not self.is_flat():
             self.flatten_all_positions()
 
@@ -417,7 +381,8 @@ cdef class EMACross(TradeStrategy):
 
         Put custom code to be run on a strategy reset here.
         """
-        self._reset_trade()
+        # Custom user reset logic
+        pass
 
     cpdef void on_dispose(self):
         """
@@ -427,23 +392,4 @@ cdef class EMACross(TradeStrategy):
         self.unsubscribe_bars(self.bar_type)
         self.unsubscribe_ticks(self.symbol)
 
-    # Custom internal method for this strategy
-    cdef void _reset_trade(self):
-        """
-        Reset the trade by clearing all order and position values.
-        """
-        self.entry_order = None
-        self.stop_loss_order = None
-        self.profit_target_order = None
-        self.position_id = None
 
-    # Custom internal method for this strategy
-    cdef bint _is_stop_loss_active(self):
-        """
-        Return a value indicating whether the stop-loss is active.
-        
-        :return: True if active, else False.
-        """
-        return (self.stop_loss_order is not None
-                and self.order_exists(self.stop_loss_order.id)
-                and self.order_active(self.stop_loss_order.id))

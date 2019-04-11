@@ -293,7 +293,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(OrderStatus.INITIALIZED, order.status)
         self.assertFalse(order.is_complete)
 
-    def test_can_initialize_atomic_order_market_with_no_profit_target_or_label(self):
+    def test_can_initialize_atomic_order_market_with_no_take_profit_or_label(self):
         # Arrange
         # Act
         atomic_order = self.order_factory.atomic_market(
@@ -304,7 +304,7 @@ class OrderTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(AUDUSD_FXCM, atomic_order.stop_loss.symbol)
-        self.assertFalse(atomic_order.has_profit_target)
+        self.assertFalse(atomic_order.has_take_profit)
         self.assertEqual(OrderId('19700101-000000-001-001-AUDUSD-FXCM-1'), atomic_order.entry.id)
         self.assertEqual(OrderId('19700101-000000-001-001-AUDUSD-FXCM-2'), atomic_order.stop_loss.id)
         self.assertEqual(OrderSide.SELL, atomic_order.stop_loss.side)
@@ -319,7 +319,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(OrderId('19700101-000000-001-001-AUDUSD-FXCM-1-A'), atomic_order.id)
         self.assertEqual(UNIX_EPOCH, atomic_order.timestamp)
 
-    def test_can_initialize_atomic_order_market_with_profit_target_and_label(self):
+    def test_can_initialize_atomic_order_market_with_take_profit_and_label(self):
         # Arrange
         # Act
         atomic_order = self.order_factory.atomic_market(
@@ -332,25 +332,25 @@ class OrderTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(AUDUSD_FXCM, atomic_order.stop_loss.symbol)
-        self.assertTrue(atomic_order.has_profit_target)
-        self.assertEqual(AUDUSD_FXCM, atomic_order.profit_target.symbol)
+        self.assertTrue(atomic_order.has_take_profit)
+        self.assertEqual(AUDUSD_FXCM, atomic_order.take_profit.symbol)
         self.assertEqual(OrderId('19700101-000000-001-001-AUDUSD-FXCM-1'), atomic_order.entry.id)
         self.assertEqual(OrderId('19700101-000000-001-001-AUDUSD-FXCM-2'), atomic_order.stop_loss.id)
-        self.assertEqual(OrderId('19700101-000000-001-001-AUDUSD-FXCM-3'), atomic_order.profit_target.id)
+        self.assertEqual(OrderId('19700101-000000-001-001-AUDUSD-FXCM-3'), atomic_order.take_profit.id)
         self.assertEqual(OrderSide.SELL, atomic_order.stop_loss.side)
-        self.assertEqual(OrderSide.SELL, atomic_order.profit_target.side)
+        self.assertEqual(OrderSide.SELL, atomic_order.take_profit.side)
         self.assertEqual(Quantity(100000), atomic_order.stop_loss.quantity)
-        self.assertEqual(Quantity(100000), atomic_order.profit_target.quantity)
+        self.assertEqual(Quantity(100000), atomic_order.take_profit.quantity)
         self.assertEqual(Price('0.99990'), atomic_order.stop_loss.price)
-        self.assertEqual(Price('1.00010'), atomic_order.profit_target.price)
+        self.assertEqual(Price('1.00010'), atomic_order.take_profit.price)
         self.assertEqual(Label('U1_E'), atomic_order.entry.label)
         self.assertEqual(Label('U1_SL'), atomic_order.stop_loss.label)
-        self.assertEqual(Label('U1_PT'), atomic_order.profit_target.label)
+        self.assertEqual(Label('U1_PT'), atomic_order.take_profit.label)
         self.assertEqual(TimeInForce.GTC, atomic_order.stop_loss.time_in_force)
-        self.assertEqual(TimeInForce.GTC, atomic_order.profit_target.time_in_force)
+        self.assertEqual(TimeInForce.GTC, atomic_order.take_profit.time_in_force)
         self.assertEqual(None, atomic_order.entry.expire_time)
         self.assertEqual(None, atomic_order.stop_loss.expire_time)
-        self.assertEqual(None, atomic_order.profit_target.expire_time)
+        self.assertEqual(None, atomic_order.take_profit.expire_time)
         self.assertEqual(OrderId('19700101-000000-001-001-AUDUSD-FXCM-1-A'), atomic_order.id)
         self.assertEqual(UNIX_EPOCH, atomic_order.timestamp)
 
@@ -366,8 +366,8 @@ class OrderTests(unittest.TestCase):
             Label('U1'))
 
         # Assert
-        self.assertEqual('AtomicOrder(EntryOrder(id=19700101-000000-001-001-AUDUSD-FXCM-1, label=U1_E, status=INITIALIZED) BUY 100,000 AUDUSD.FXCM MARKET DAY, has_profit_target=True)', str(atomic_order))
-        self.assertTrue(repr(atomic_order).startswith('<AtomicOrder(EntryOrder(id=19700101-000000-001-001-AUDUSD-FXCM-1, label=U1_E, status=INITIALIZED) BUY 100,000 AUDUSD.FXCM MARKET DAY, has_profit_target=True) object at'))
+        self.assertEqual('AtomicOrder(EntryOrder(id=19700101-000000-001-001-AUDUSD-FXCM-1, label=U1_E, status=INITIALIZED) BUY 100,000 AUDUSD.FXCM MARKET DAY, has_take_profit=True)', str(atomic_order))
+        self.assertTrue(repr(atomic_order).startswith('<AtomicOrder(EntryOrder(id=19700101-000000-001-001-AUDUSD-FXCM-1, label=U1_E, status=INITIALIZED) BUY 100,000 AUDUSD.FXCM MARKET DAY, has_take_profit=True) object at'))
 
     def test_can_apply_order_submitted_event_to_order(self):
         # Arrange

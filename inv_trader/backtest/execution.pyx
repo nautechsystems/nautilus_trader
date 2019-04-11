@@ -437,10 +437,10 @@ cdef class BacktestExecClient(ExecutionClient):
         :param command: The command to execute.
         """
         cdef list atomic_orders = [command.atomic_order.stop_loss]
-        if command.atomic_order.has_profit_target:
-            atomic_orders.append(command.atomic_order.profit_target)
-            self.oco_orders[command.atomic_order.profit_target.id] = command.atomic_order.stop_loss.id
-            self.oco_orders[command.atomic_order.stop_loss.id] = command.atomic_order.profit_target.id
+        if command.atomic_order.has_take_profit:
+            atomic_orders.append(command.atomic_order.take_profit)
+            self.oco_orders[command.atomic_order.take_profit.id] = command.atomic_order.stop_loss.id
+            self.oco_orders[command.atomic_order.stop_loss.id] = command.atomic_order.take_profit.id
 
         self.atomic_child_orders[command.atomic_order.entry.id] = atomic_orders
 

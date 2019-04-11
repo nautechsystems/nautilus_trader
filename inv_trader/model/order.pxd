@@ -72,10 +72,10 @@ cdef class AtomicOrder:
     """
     cdef readonly Order entry
     cdef readonly Order stop_loss
-    cdef readonly Order profit_target
+    cdef readonly Order take_profit
     cdef readonly OrderId id
     cdef readonly datetime timestamp
-    cdef readonly bint has_profit_target
+    cdef readonly bint has_take_profit
 
     cdef bint equals(self, AtomicOrder other)
 
@@ -157,7 +157,7 @@ cdef class OrderFactory:
             OrderSide order_side,
             Quantity quantity,
             Price price_stop_loss,
-            Price price_profit_target=*,
+            Price price_take_profit=*,
             Label label=*)
 
     cpdef AtomicOrder atomic_limit(
@@ -167,7 +167,7 @@ cdef class OrderFactory:
             Quantity quantity,
             Price price_entry,
             Price price_stop_loss,
-            Price price_profit_target=*,
+            Price price_take_profit=*,
             Label label=*,
             TimeInForce time_in_force=*,
             datetime expire_time=*)
@@ -179,7 +179,7 @@ cdef class OrderFactory:
             Quantity quantity,
             Price price_entry,
             Price price_stop_loss,
-            Price price_profit_target=*,
+            Price price_take_profit=*,
             Label label=*,
             TimeInForce time_in_force=*,
             datetime expire_time=*)
@@ -188,5 +188,5 @@ cdef class OrderFactory:
         self,
         Order entry,
         Price price_stop_loss,
-        Price price_profit_target,
+        Price price_take_profit,
         Label original_label)

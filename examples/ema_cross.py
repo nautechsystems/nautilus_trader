@@ -16,7 +16,6 @@ from inv_trader.enums.time_in_force import TimeInForce
 from inv_trader.model.objects import Price, Tick, BarType, Bar, Instrument
 from inv_trader.model.events import Event
 from inv_trader.model.identifiers import Label
-from inv_trader.model.events import OrderCancelled, OrderFilled, OrderExpired, OrderRejected
 from inv_trader.strategy import TradeStrategy
 from inv_trader.portfolio.sizing import FixedRiskSizer
 from inv_indicators.average.ema import ExponentialMovingAverage
@@ -83,12 +82,6 @@ class EMACrossPy(TradeStrategy):
         self.register_indicator(self.bar_type, self.slow_ema, self.slow_ema.update)
         self.register_indicator(self.bar_type, self.atr, self.atr.update)
 
-        # Users custom order management logic
-        self.entry_order = None
-        self.stop_loss_order = None
-        self.profit_target_order = None
-        self.position_id = None
-
     def on_start(self):
         """
         This method is called when self.start() is called, and after internal start logic.
@@ -122,14 +115,14 @@ class EMACrossPy(TradeStrategy):
             # Wait for indicators to warm up...
             return
 
-        if self.is_flat() and self.entry_order is None:
+        if self.entry_orders_count() == 0 and self.is_flat():
             atomic_order = None
 
             # BUY LOGIC
             if self.fast_ema.value >= self.slow_ema.value:
                 price_entry = Price(self.last_bar(self.bar_type).high + self.entry_buffer + self.spread)
                 price_stop_loss = Price(self.last_bar(self.bar_type).low - (self.atr.value * self.SL_atr_multiple))
-                price_profit_target = Price(price_entry + (price_entry - price_stop_loss))
+                price_take_profit = Price(price_entry + (price_entry - price_stop_loss))
 
                 exchange_rate = self.get_exchange_rate(self.instrument.quote_currency)
                 position_size = self.position_sizer.calculate(
@@ -150,7 +143,7 @@ class EMACrossPy(TradeStrategy):
                         quantity=position_size,
                         price_entry=price_entry,
                         price_stop_loss=price_stop_loss,
-                        price_profit_target=price_profit_target,
+                        price_take_profit=price_take_profit,
                         label=Label('S1'),
                         time_in_force=TimeInForce.GTD,
                         expire_time=self.time_now() + timedelta(minutes=1))
@@ -159,7 +152,7 @@ class EMACrossPy(TradeStrategy):
             elif self.fast_ema.value < self.slow_ema.value:
                 price_entry = Price(self.last_bar(self.bar_type).low - self.entry_buffer)
                 price_stop_loss = Price(self.last_bar(self.bar_type).high + (self.atr.value * self.SL_atr_multiple) + self.spread)
-                price_profit_target = Price(price_entry - (price_stop_loss - price_entry))
+                price_take_profit = Price(price_entry - (price_stop_loss - price_entry))
 
                 exchange_rate = self.get_exchange_rate(self.instrument.quote_currency)
                 position_size = self.position_sizer.calculate(
@@ -180,30 +173,27 @@ class EMACrossPy(TradeStrategy):
                         quantity=position_size,
                         price_entry=price_entry,
                         price_stop_loss=price_stop_loss,
-                        price_profit_target=price_profit_target,
+                        price_take_profit=price_take_profit,
                         label=Label('S1'),
                         time_in_force=TimeInForce.GTD,
                         expire_time=self.time_now() + timedelta(minutes=1))
 
             # ENTRY ORDER SUBMISSION
             if atomic_order is not None:
-                self.entry_order = atomic_order.entry
-                self.stop_loss_order = atomic_order.stop_loss
-                self.profit_target_order = atomic_order.profit_target
-                self.position_id = self.generate_position_id(self.symbol)
-
-                self.submit_atomic_order(atomic_order, self.position_id)
+                self.submit_atomic_order(atomic_order, self.generate_position_id(self.symbol))
 
         # TRAILING STOP LOGIC
-        if self._is_stop_loss_active():
-            if self.stop_loss_order.side == OrderSide.SELL:
-                temp_price = Price(self.last_bar(self.bar_type).low - (self.atr.value * self.SL_atr_multiple))
-                if self.stop_loss_order.price < temp_price:
-                    self.modify_order(self.stop_loss_order, temp_price)
-            elif self.stop_loss_order.side == OrderSide.BUY:
-                temp_price = Price(self.last_bar(self.bar_type).high + (self.atr.value * self.SL_atr_multiple) + self.spread)
-                if self.stop_loss_order.price > temp_price:
-                    self.modify_order(self.stop_loss_order, temp_price)
+        for order_id in self.stop_loss_order_ids():
+            if self.is_stop_loss_order_active(order_id):
+                stop_loss_order = self.stop_loss_order(order_id)
+                if stop_loss_order.side == OrderSide.SELL:
+                    temp_price = Price(self.last_bar(self.bar_type).low - (self.atr.value * self.SL_atr_multiple))
+                    if stop_loss_order.price < temp_price:
+                        self.modify_order(stop_loss_order, temp_price)
+                elif stop_loss_order.side == OrderSide.BUY:
+                    temp_price = Price(self.last_bar(self.bar_type).high + (self.atr.value * self.SL_atr_multiple) + self.spread)
+                    if stop_loss_order.price > temp_price:
+                        self.modify_order(stop_loss_order, temp_price)
 
     def on_event(self, event: Event):
         """
@@ -213,38 +203,15 @@ class EMACrossPy(TradeStrategy):
 
         :param event: The received event.
         """
-        # RAW ORDER MANAGEMENT
-
-        # Entry order rejected or expired -> reset trade
-        if (isinstance(event, (OrderRejected, OrderExpired))
-                and self.entry_order is not None
-                and event.order_id.equals(self.entry_order.id)):
-            self._reset_trade()
-
-        # Stop-loss order rejected -> flatten any entered position and reset trade
-        if (isinstance(event, OrderRejected)
-                and self.stop_loss_order is not None
-                and event.order_id.equals(self.stop_loss_order.id)
-                and not self.is_flat()):
-            self.flatten_position(self.position_id)
-            self._reset_trade()
-
-        # Stop-loss order filled or cancelled -> reset trade
-        if (isinstance(event, (OrderCancelled, OrderFilled))
-                and self.stop_loss_order is not None
-                and event.order_id.equals(self.stop_loss_order.id)):
-            self._reset_trade()
-        # Profit target order filled or cancelled -> reset trade
-        elif (isinstance(event, (OrderCancelled, OrderFilled))
-                and self.profit_target_order is not None
-                and event.order_id.equals(self.profit_target_order.id)):
-            self._reset_trade()
+        # Custom user event handling
+        pass
 
     def on_stop(self):
         """
         This method is called when self.stop() is called before internal
         stopping logic.
         """
+        # Custom user event handling
         if not self.is_flat():
             self.flatten_all_positions()
 
@@ -258,7 +225,8 @@ class EMACrossPy(TradeStrategy):
 
         Put custom code to be run on a strategy reset here.
         """
-        self._reset_trade()
+        # Custom user reset logic
+        pass
 
     def on_dispose(self):
         """
@@ -267,24 +235,3 @@ class EMACrossPy(TradeStrategy):
         """
         self.unsubscribe_bars(self.bar_type)
         self.unsubscribe_ticks(self.symbol)
-
-    # Custom internal method for this strategy
-    def _reset_trade(self):
-        """
-        Reset the trade by clearing all order and position values.
-        """
-        self.entry_order = None
-        self.stop_loss_order = None
-        self.profit_target_order = None
-        self.position_id = None
-
-    # Custom internal method for this strategy
-    def _is_stop_loss_active(self):
-        """
-        Return a value indicating whether the stop-loss is active.
-
-        :return: True if active, else False.
-        """
-        return (self.stop_loss_order is not None
-                and self.order_exists(self.stop_loss_order.id)
-                and self.order_active(self.stop_loss_order.id))

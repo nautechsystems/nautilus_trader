@@ -328,8 +328,8 @@ cdef class MockExecClient(ExecutionClient):
         Send a submit atomic order command to the mock execution service.
         """
         cdef list atomic_orders = [command.atomic_order.stop_loss]
-        if command.atomic_order.has_profit_target:
-            atomic_orders.append(command.atomic_order.profit_target)
+        if command.atomic_order.has_take_profit:
+            atomic_orders.append(command.atomic_order.take_profit)
 
         self.atomic_orders[command.atomic_order.id] = atomic_orders
         self._work_order(command.atomic_order.entry)

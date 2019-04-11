@@ -182,7 +182,7 @@ class BacktestExecClientTests(unittest.TestCase):
         self.assertTrue(isinstance(strategy.object_storer.get_store()[3], OrderWorking))
         self.assertTrue(atomic_order.entry.id in self.client.atomic_child_orders)
         self.assertTrue(atomic_order.stop_loss in self.client.atomic_child_orders[atomic_order.entry.id])
-        self.assertTrue(atomic_order.profit_target in self.client.atomic_child_orders[atomic_order.entry.id])
+        self.assertTrue(atomic_order.take_profit in self.client.atomic_child_orders[atomic_order.entry.id])
 
     def test_can_modify_stop_order(self):
         # Arrange
@@ -261,18 +261,18 @@ class BacktestExecClientTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000),
             price_stop_loss=Price('200.00'),  # Invalid price above market
-            price_profit_target=Price('86.000'))
+            price_take_profit=Price('86.000'))
 
         # Act
         strategy.submit_atomic_order(atomic_order, strategy.generate_position_id(self.usdjpy.symbol))
 
         # Assert
-        # print(strategy.object_storer.get_store())
-        self.assertEqual(7, strategy.object_storer.count)
-        self.assertTrue(isinstance(strategy.object_storer.get_store()[5], OrderRejected))
-        self.assertTrue(isinstance(strategy.object_storer.get_store()[6], OrderRejected))
+        print(strategy.object_storer.get_store())
+        self.assertEqual(11, strategy.object_storer.count)
+        self.assertTrue(isinstance(strategy.object_storer.get_store()[9], OrderRejected))
+        self.assertTrue(isinstance(strategy.object_storer.get_store()[10], OrderRejected))
 
-    def test_submit_atomic_order_with_invalid_profit_target_rejects_and_cancels_OCO(self):
+    def test_submit_atomic_order_with_invalid_take_profit_rejects_and_cancels_OCO(self):
         # Arrange
         strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
         self.client.register_strategy(strategy)
@@ -283,15 +283,15 @@ class BacktestExecClientTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000),
             price_stop_loss=Price('84.00'),
-            price_profit_target=Price('50.000'))  # Invalid price below market
+            price_take_profit=Price('50.000'))  # Invalid price below market
 
         # Act
         strategy.submit_atomic_order(atomic_order, strategy.generate_position_id(self.usdjpy.symbol))
 
         # Assert
-        print(strategy.object_storer.get_store())
-        self.assertEqual(10, strategy.object_storer.count)
+        # print(strategy.object_storer.get_store())
+        self.assertEqual(14, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[7], OrderRejected))
-        self.assertTrue(isinstance(strategy.object_storer.get_store()[8], OrderRejected))
-        self.assertTrue(isinstance(strategy.object_storer.get_store()[9], OrderCancelled))
+        self.assertTrue(isinstance(strategy.object_storer.get_store()[12], OrderRejected))
+        self.assertTrue(isinstance(strategy.object_storer.get_store()[13], OrderCancelled))
         self.assertTrue(atomic_order.stop_loss.id not in self.client.working_orders)
