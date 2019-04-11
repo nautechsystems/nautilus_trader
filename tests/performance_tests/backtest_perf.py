@@ -143,3 +143,4 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # --------------------------------------------------------------------------------------------------------------------------------------------------------------------
         # 10/04/19 27162891 function calls (26849875 primitive calls) in 27.461 seconds (after fixing bug strategy is processing properly with many more orders and positions)
         # 11/04/19 27094455 function calls (26782489 primitive calls) in 26.730 seconds (even after enhancing execution detail)
+        # 11/04/19 27094455 function calls (26782489 primitive calls) in 57.559 seconds (new order registration has slowed things down alot)
