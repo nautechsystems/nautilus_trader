@@ -32,7 +32,7 @@ from inv_trader.portfolio.portfolio cimport Portfolio
 
 cdef class TradeStrategy:
     """
-    The abstract base class for all trade strategies.
+    The base class for all trade strategies.
     """
     cdef Clock _clock
     cdef GuidFactory _guid_factory
@@ -43,7 +43,6 @@ cdef class TradeStrategy:
     cdef dict _indicator_updaters
     cdef ExchangeRateCalculator _exchange_calculator
     cdef Portfolio _portfolio
-    cdef dict _registered_orders
     cdef dict _entry_orders
     cdef dict _stop_loss_orders
     cdef dict _take_profit_orders
@@ -59,6 +58,9 @@ cdef class TradeStrategy:
     cdef readonly Account account
     cdef readonly OrderFactory order_factory
     cdef readonly PositionIdGenerator position_id_generator
+    cdef readonly bint flatten_on_sl_reject
+    cdef readonly bint flatten_on_stop
+    cdef readonly bint cancel_all_orders_on_stop
 
     cdef readonly DataClient _data_client
     cdef readonly ExecutionClient _exec_client
@@ -80,6 +82,9 @@ cdef class TradeStrategy:
     cpdef void handle_tick(self, Tick tick)
     cpdef void handle_bar(self, BarType bar_type, Bar bar)
     cpdef void handle_event(self, Event event)
+
+    cdef void _remove_from_registered_orders(self, OrderId order_id)
+    cdef void _process_modify_order_buffer(self, OrderId order_id)
 
 # -- DATA METHODS -------------------------------------------------------------------------------- #
     cpdef readonly datetime time_now(self)
@@ -167,3 +172,12 @@ cdef class TradeStrategy:
     cpdef void change_logger(self, Logger logger)
     cpdef void set_time(self, datetime time)
     cpdef void iterate(self, datetime time)
+
+
+cdef class IndexedOrderPositionId:
+    """
+    An internal class which represents a registered order and position identifier
+    pair to be managed together.
+    """
+    cdef readonly Order order
+    cdef readonly PositionId position_id

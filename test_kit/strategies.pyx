@@ -13,7 +13,6 @@ from decimal import Decimal
 from datetime import timedelta
 
 from inv_trader.common.clock cimport Clock, TestClock
-from inv_trader.common.logger cimport Logger
 from inv_trader.enums.order_side cimport OrderSide
 from inv_trader.enums.time_in_force cimport TimeInForce
 from inv_trader.model.objects cimport Symbol, Price, Tick, BarType, Bar, Instrument
@@ -22,6 +21,7 @@ from inv_trader.model.identifiers cimport Label, OrderId, PositionId
 from inv_trader.model.order cimport Order, AtomicOrder
 from inv_trader.strategy cimport TradeStrategy
 from inv_trader.portfolio.sizing cimport PositionSizer, FixedRiskSizer
+
 from inv_indicators.average.ema import ExponentialMovingAverage
 from inv_indicators.atr import AverageTrueRange
 from test_kit.objects cimport ObjectStorer
@@ -182,6 +182,7 @@ cdef class EMACross(TradeStrategy):
     cdef readonly object fast_ema
     cdef readonly object slow_ema
     cdef readonly object atr
+    cdef readonly list trailing_stops
 
     def __init__(self,
                  str label,
@@ -193,8 +194,7 @@ cdef class EMACross(TradeStrategy):
                  int fast_ema=10,
                  int slow_ema=20,
                  int atr_period=20,
-                 float sl_atr_multiple=2.0,
-                 Logger logger=None):
+                 float sl_atr_multiple=2.0):
         """
         Initializes a new instance of the EMACross class.
 
@@ -207,12 +207,10 @@ cdef class EMACross(TradeStrategy):
         :param slow_ema: The slow EMA period.
         :param atr_period: The ATR period.
         :param sl_atr_multiple: The ATR multiple for stop-loss prices.
-        :param logger: The logger for the strategy (can be None, will just print).
         """
-        super().__init__(label,
+        super().__init__(label=label,
                          id_tag_trader=id_tag_trader,
-                         id_tag_strategy=id_tag_strategy,
-                         logger=logger)
+                         id_tag_strategy=id_tag_strategy)
 
         self.instrument = instrument
         self.symbol = instrument.symbol
@@ -337,19 +335,18 @@ cdef class EMACross(TradeStrategy):
                 self.submit_atomic_order(atomic_order, self.generate_position_id(self.symbol))
 
         # TRAILING STOP LOGIC
-        cdef Order stop_loss_order
+        cdef Order trailing_stop
         cdef Price temp_price
-        for order_id in self.stop_loss_order_ids():
-            if self.is_stop_loss_order_active(order_id):
-                stop_loss_order = self.stop_loss_order(order_id)
-                if stop_loss_order.side == OrderSide.SELL:
-                    temp_price = Price(self.last_bar(self.bar_type).low - (self.atr.value * self.SL_atr_multiple))
-                    if stop_loss_order.price < temp_price:
-                        self.modify_order(stop_loss_order, temp_price)
-                elif stop_loss_order.side == OrderSide.BUY:
-                    temp_price = Price(self.last_bar(self.bar_type).high + (self.atr.value * self.SL_atr_multiple) + self.spread)
-                    if stop_loss_order.price > temp_price:
-                        self.modify_order(stop_loss_order, temp_price)
+        for trailing_stop in self.stop_loss_orders().values():
+            if trailing_stop.is_active:
+                if trailing_stop.side == OrderSide.SELL:
+                    temp_price = Price(bar.low - (self.atr.value * self.SL_atr_multiple))
+                    if temp_price > trailing_stop.price:
+                        self.modify_order(trailing_stop, temp_price)
+                elif trailing_stop.side == OrderSide.BUY:
+                    temp_price = Price(bar.high + (self.atr.value * self.SL_atr_multiple) + self.spread)
+                    if temp_price < trailing_stop.price:
+                        self.modify_order(trailing_stop, temp_price)
 
     cpdef void on_event(self, Event event):
         """
@@ -363,13 +360,10 @@ cdef class EMACross(TradeStrategy):
 
     cpdef void on_stop(self):
         """
-        This method is called when self.stop() is called before internal
+        This method is called when self.stop() is called after internal
         stopping logic.
         """
-        if not self.is_flat():
-            self.flatten_all_positions()
-
-        self.cancel_all_orders("STOPPING STRATEGY")
+        pass
 
     cpdef void on_reset(self):
         """
