@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from inv_trader.model.enums import Resolution
 from inv_trader.model.enums import Venue
 from inv_trader.model.objects import Symbol
+from inv_trader.backtest.execution import FillModel
 from inv_trader.backtest.engine import BacktestConfig, BacktestEngine
 from test_kit.strategies import EmptyStrategy, EMACross
 from test_kit.data import TestDataProvider
@@ -47,6 +48,7 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
                                 data_bars_bid=bid_data,
                                 data_bars_ask=ask_data,
                                 strategies=strategies,
+                                fill_model=FillModel(),
                                 config=config)
 
         start = datetime(2013, 1, 1, 22, 0, 0, 0, tzinfo=timezone.utc)
@@ -77,26 +79,35 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         bid_data = {usdjpy.symbol: {Resolution.MINUTE: bid_data_1min}}
         ask_data = {usdjpy.symbol: {Resolution.MINUTE: ask_data_1min}}
 
-        strategies = [EMACross(label='001',
-                               id_tag_trader='001',
-                               id_tag_strategy='001',
-                               instrument=usdjpy,
-                               bar_type=TestStubs.bartype_usdjpy_1min_bid(),
-                               risk_bp=10,
-                               fast_ema=10,
-                               slow_ema=20,
-                               atr_period=20,
-                               sl_atr_multiple=2.0)]
+        strategies = [EMACross(
+            label='001',
+            id_tag_trader='001',
+            id_tag_strategy='001',
+            instrument=usdjpy,
+            bar_type=TestStubs.bartype_usdjpy_1min_bid(),
+            risk_bp=10,
+            fast_ema=10,
+            slow_ema=20,
+            atr_period=20,
+            sl_atr_multiple=2.0)]
 
-        config = BacktestConfig(slippage_ticks=1,
-                                bypass_logging=True,
-                                console_prints=False)
-        engine = BacktestEngine(instruments=instruments,
-                                data_ticks=tick_data,
-                                data_bars_bid=bid_data,
-                                data_bars_ask=ask_data,
-                                strategies=strategies,
-                                config=config)
+        config = BacktestConfig(
+            bypass_logging=True,
+            console_prints=False)
+
+        fill_model = FillModel(
+            prob_fill_at_limit=0.2,
+            prob_fill_at_stop=0.95,
+            prob_slippage=0.5)
+
+        engine = BacktestEngine(
+            instruments=instruments,
+            data_ticks=tick_data,
+            data_bars_bid=bid_data,
+            data_bars_ask=ask_data,
+            strategies=strategies,
+            fill_model=FillModel(),
+            config=config)
 
         start = datetime(2013, 1, 1, 22, 0, 0, 0, tzinfo=timezone.utc)
         stop = datetime(2013, 3, 10, 0, 0, 0, 0, tzinfo=timezone.utc)
@@ -146,3 +157,4 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 11/04/19 27094455 function calls (26782489 primitive calls) in 26.730 seconds (even after enhancing execution detail)
         # 11/04/19 27094455 function calls (26782489 primitive calls) in 57.559 seconds (new order registration has slowed things down a lot)
         # 13/04/19 27087701 function calls (26775735 primitive calls) in 28.216 seconds (found bugs in execution, cleaned up residual objects)
+        # 13/04/19 27203159 function calls (26890143 primitive calls) in 28.170 seconds (with fill modelling)
