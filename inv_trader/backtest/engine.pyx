@@ -173,6 +173,17 @@ cdef class BacktestEngine:
 
         self.test_clock = TestClock()
         self.test_clock.set_time(self.clock.time_now())
+        self.logger = TestLogger(
+            name='backtest',
+            bypass_logging=False,
+            level_console=logging.INFO,
+            level_file=logging.INFO,
+            console_prints=True,
+            log_thread=config.log_thread,
+            log_to_file=config.log_to_file,
+            log_file_path=config.log_file_path,
+            clock=self.test_clock)
+        self.log = LoggerAdapter(component_name='BacktestEngine', logger=self.logger)
         self.test_logger = TestLogger(
             name='backtest',
             bypass_logging=config.bypass_logging,
@@ -183,7 +194,6 @@ cdef class BacktestEngine:
             log_to_file=config.log_to_file,
             log_file_path=config.log_file_path,
             clock=self.test_clock)
-        self.log = LoggerAdapter(component_name='BacktestEngine', logger=self.test_logger)
 
         self._engine_header()
         self.log.info("Building engine...")
@@ -275,7 +285,14 @@ cdef class BacktestEngine:
         cdef datetime run_started = self.clock.time_now()
         cdef datetime time = start
 
+        # Setup log files
+        if self.config.log_to_file:
+            backtest_log_name = self.logger.name + '-' + format_zulu_datetime(run_started)
+            self.logger.change_log_file_name(backtest_log_name)
+            self.test_logger.change_log_file_name(backtest_log_name)
+
         self._backtest_header(run_started, start, stop, time_step_mins)
+        self.log.info(f"Setting up backtest...")
         self.test_clock.set_time(time)
 
         self._change_strategy_clocks_and_loggers(self.trader.strategies)

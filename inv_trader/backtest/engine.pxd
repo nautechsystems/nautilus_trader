@@ -59,6 +59,7 @@ cdef class BacktestEngine:
     cdef readonly Clock test_clock
     cdef readonly BacktestConfig config
     cdef readonly LoggerAdapter log
+    cdef readonly Logger logger
     cdef readonly Logger test_logger
     cdef readonly datetime created_time
     cdef readonly float time_to_initialize

@@ -24,13 +24,16 @@ cdef class Logger:
     cdef bint _console_prints
     cdef bint _log_thread
     cdef bint _log_to_file
+    cdef str _log_file_path
     cdef str _log_file
     cdef object _log_file_handler
     cdef object _logger
 
+    cdef readonly str name
     cdef readonly bint bypass_logging
     cdef readonly Clock clock
 
+    cpdef void change_log_file_name(self, str name)
     cpdef void log(self, int log_level, ValidString message)
     cpdef void _debug(self, datetime timestamp, ValidString message)
     cpdef void _info(self, datetime timestamp, ValidString message)

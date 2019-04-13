@@ -48,7 +48,9 @@ if __name__ == "__main__":
         starting_capital=1000000,
         account_currency=Currency.USD,
         slippage_ticks=1,
+        bypass_logging=False,
         level_console=logging.INFO,
+        level_file=logging.INFO,
         log_thread=False,
         log_to_file=False)
 
