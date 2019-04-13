@@ -67,6 +67,7 @@ cdef class Portfolio:
     cpdef void register_order(self, OrderId order_id, PositionId position_id)
     cpdef void handle_order_fill(self, OrderEvent event, GUID strategy_id)
     cpdef void handle_transaction(self, AccountEvent event)
+    cpdef void check_residuals(self)
     cpdef void reset(self)
 
     cdef void _position_opened(self, Position position, GUID strategy_id)
