@@ -49,6 +49,7 @@ cdef class BacktestExecClient(ExecutionClient):
     cpdef void set_initial_iteration(self, datetime to_time, timedelta time_step)
     cpdef void iterate(self)
     cpdef void process_market(self)
+    cpdef void check_residuals(self)
     cpdef void reset_account(self)
     cpdef void reset(self)
 
@@ -69,6 +70,7 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef void _expire_order(self, Order order)
     cdef void _process_order(self, Order order)
     cdef void _fill_order(self, Order order, Price fill_price)
+    cdef void _clean_up_child_orders(self, OrderId order_id)
     cdef void _check_oco_order(self, OrderId order_id)
     cdef void _reject_oco_order(self, Order order, OrderId oco_order_id)
     cdef void _cancel_oco_order(self, Order order, OrderId oco_order_id)
