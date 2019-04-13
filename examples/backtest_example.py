@@ -57,7 +57,8 @@ if __name__ == "__main__":
     fill_model = FillModel(
         prob_fill_at_limit=0.2,
         prob_fill_at_stop=0.95,
-        prob_slippage=0.5)
+        prob_slippage=0.5,
+        seed=0)
 
     engine = BacktestEngine(
         instruments=instruments,
