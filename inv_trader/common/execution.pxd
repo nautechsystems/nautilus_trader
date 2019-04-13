@@ -44,6 +44,7 @@ cdef class ExecutionClient:
     cpdef Portfolio get_portfolio(self)
     cpdef void connect(self)
     cpdef void disconnect(self)
+    cpdef void check_residuals(self)
     cpdef void execute_command(self, Command command)
     cpdef void handle_event(self, Event event)
     cpdef void register_strategy(self, TradeStrategy strategy)
@@ -68,5 +69,5 @@ cdef class ExecutionClient:
     cdef void _submit_atomic_order(self, SubmitAtomicOrder command)
     cdef void _modify_order(self, ModifyOrder command)
     cdef void _cancel_order(self, CancelOrder command)
+    cdef void _check_residuals(self)
     cdef void _reset(self)
-

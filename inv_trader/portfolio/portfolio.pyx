@@ -390,6 +390,14 @@ cdef class Portfolio:
 
         self.analyzer.add_transaction(event.timestamp, self._account_capital, pnl)
 
+    cpdef void check_residuals(self):
+        """
+        Check for any residual objects and log warnings if any are found.
+        """
+        for positions in self._positions_active.values():
+            for position in positions.values():
+                self._log.warning(f"Residual position {position}")
+
     cpdef void reset(self):
         """
         Reset the portfolio by returning all stateful internal values to their initial values.

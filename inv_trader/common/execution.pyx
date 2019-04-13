@@ -103,6 +103,13 @@ cdef class ExecutionClient:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
+    cpdef void check_residuals(self):
+        """
+        Check for any residual objects and log warnings if any are found.
+        """
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
     cpdef void execute_command(self, Command command):
         """
         Execute the given command with the execution client.
@@ -393,6 +400,14 @@ cdef class ExecutionClient:
         """
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
+
+    cdef void _check_residuals(self):
+        """
+        Check for any residual active orders and log warnings if any are found.
+        """
+        for orders in self._orders_active.values():
+            for order in orders.values():
+                self._log.warning(f"Residual active {order}")
 
     cdef void _reset(self):
         """

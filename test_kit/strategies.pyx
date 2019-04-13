@@ -194,7 +194,10 @@ cdef class EMACross(TradeStrategy):
                  int fast_ema=10,
                  int slow_ema=20,
                  int atr_period=20,
-                 float sl_atr_multiple=2.0):
+                 float sl_atr_multiple=2.0,
+                 flatten_on_sl_reject=True,
+                 flatten_on_stop=True,
+                 cancel_all_orders_on_stop=True):
         """
         Initializes a new instance of the EMACross class.
 
@@ -207,13 +210,19 @@ cdef class EMACross(TradeStrategy):
         :param slow_ema: The slow EMA period.
         :param atr_period: The ATR period.
         :param sl_atr_multiple: The ATR multiple for stop-loss prices.
+        :param flatten_on_sl_reject: The flag indicating whether the position with an
+        associated stop order should be flattened if the order is rejected.
+        :param flatten_on_stop: The flag indicating whether the strategy should
+        be flattened on stop.
+        :param cancel_all_orders_on_stop: The flag indicating whether all residual
+        orders should be cancelled on stop.
         """
         super().__init__(label=label,
                          id_tag_trader=id_tag_trader,
                          id_tag_strategy=id_tag_strategy,
-                         flatten_on_sl_reject=True,
-                         flatten_on_stop=True,
-                         cancel_all_orders_on_stop=True)
+                         flatten_on_sl_reject=flatten_on_sl_reject,
+                         flatten_on_stop=flatten_on_stop,
+                         cancel_all_orders_on_stop=cancel_all_orders_on_stop)
 
         self.instrument = instrument
         self.symbol = instrument.symbol

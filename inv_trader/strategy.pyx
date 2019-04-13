@@ -765,7 +765,7 @@ cdef class TradeStrategy:
 
     cpdef dict entry_orders(self):
         """
-        Return a dictionary of pending entry orders.
+        Return a dictionary of pending or active entry orders.
         
         :return: Dict[OrderId, Order].
         """

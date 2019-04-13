@@ -125,6 +125,8 @@ cdef class Trader:
             strategy.stop()
         self.is_running = False
         self._log.info("Stopped.")
+        self._exec_client.check_residuals()
+        self.portfolio.check_residuals()
 
     cpdef void change_strategies(self, list strategies: List[TradeStrategy]):
         """

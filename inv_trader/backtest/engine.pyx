@@ -301,7 +301,6 @@ cdef class BacktestEngine:
 
         self.log.info("Stopping...")
         self.trader.stop()
-        self.exec_client.check_residuals()
         self._backtest_footer(run_started, start, stop)
         self.log.info("Stopped.")
 

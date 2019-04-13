@@ -259,17 +259,16 @@ cdef class BacktestExecClient(ExecutionClient):
 
     cpdef void check_residuals(self):
         """
-        Check for any residual objects and log warnings.
+        Check for any residual objects and log warnings if any are found.
         """
-        for order in self.working_orders.values():
-            self._log.warning(f"Residual working {order}")
+        self._check_residuals()
 
         for order_list in self.atomic_child_orders.values():
             for order in order_list:
-                self._log.warning(f"Residual child order {order}")
+                self._log.warning(f"Residual child-order {order}")
 
         for order_id in self.oco_orders.values():
-            self._log.warning(f"Residual OCO order {order_id}")
+            self._log.warning(f"Residual OCO {order_id}")
 
     cpdef void reset_account(self):
         """

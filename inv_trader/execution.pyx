@@ -120,6 +120,12 @@ cdef class LiveExecClient(ExecutionClient):
         self._commands_worker.stop()
         self._events_worker.stop()
 
+    cpdef void check_residuals(self):
+        """
+        Check for any residual objects and log warnings if any are found.
+        """
+        self._check_residuals()
+
     cpdef void execute_command(self, Command command):
         """
         Execute the given command by inserting it into the message bus for processing.
