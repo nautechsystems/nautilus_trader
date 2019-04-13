@@ -69,6 +69,8 @@ if __name__ == "__main__":
         fill_model=fill_model,
         config=config)
 
+    input("Press Enter to continue...")
+
     start = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
     stop = datetime(2013, 3, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
 

@@ -266,7 +266,8 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         cdef datetime time_now = self._clock.time_now()
 
-        if self.iteration + 1 < self.data_minute_index_length and self.data_minute_index[self.iteration + 1] == time_now:
+        if (self.iteration + 1 < self.data_minute_index_length
+            and self.data_minute_index[self.iteration + 1] == time_now):
             self.iteration += 1
         else:
             return  # No price changes to process
