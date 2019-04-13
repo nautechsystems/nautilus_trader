@@ -104,13 +104,13 @@ cdef class Trader:
 
     cpdef void create_returns_tear_sheet(self):
         """
-        Create a pyfolio returns tear sheet based on analyzer data from the last run.
+        Create a returns tear sheet based on analyzer data from the last run.
         """
         self.portfolio.analyzer.create_returns_tear_sheet()
 
     cpdef void create_full_tear_sheet(self):
         """
-        Create a pyfolio full tear sheet based on analyzer data from the last run.
+        Create a full tear sheet based on analyzer data from the last run.
         """
         self.portfolio.analyzer.create_full_tear_sheet()
 
