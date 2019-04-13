@@ -22,7 +22,7 @@ from inv_trader.model.enums import Venue, OrderSide
 from inv_trader.model.objects import Quantity, Symbol, Price, Money
 from inv_trader.model.events import OrderRejected, OrderCancelled, OrderWorking, OrderModified, OrderFilled
 from inv_trader.strategy import TradeStrategy
-from inv_trader.backtest.execution import BacktestExecClient
+from inv_trader.backtest.execution import BacktestExecClient, FillModel
 from inv_trader.portfolio.portfolio import Portfolio
 from test_kit.strategies import TestStrategy1
 from test_kit.data import TestDataProvider
@@ -57,7 +57,7 @@ class BacktestExecClientTests(unittest.TestCase):
                                          data_bars_bid=self.data_bars_bid,
                                          data_bars_ask=self.data_bars_ask,
                                          starting_capital=Money(1000000),
-                                         slippage_ticks=1,
+                                         fill_model=FillModel(),
                                          commission_calculator=CommissionCalculator(),
                                          account=self.account,
                                          portfolio=self.portfolio,

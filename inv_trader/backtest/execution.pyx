@@ -10,6 +10,7 @@
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
 import pandas as pd
+import random
 
 from decimal import Decimal
 from cpython.datetime cimport datetime
@@ -42,12 +43,75 @@ from inv_trader.common.execution cimport ExecutionClient
 from inv_trader.commands cimport Command, CollateralInquiry
 from inv_trader.commands cimport SubmitOrder, SubmitAtomicOrder, ModifyOrder, CancelOrder
 from inv_trader.portfolio.portfolio cimport Portfolio
+from inv_trader.backtest.engine cimport FillModel
 
 # Stop order types
 cdef set STOP_ORDER_TYPES = {
     OrderType.STOP_MARKET,
     OrderType.STOP_LIMIT,
     OrderType.MIT}
+
+
+cdef class FillModel:
+    """
+    Provides probabilistic modeling for order fill dynamics including probability
+    of fills and slippage by order type.
+    """
+
+    def __init__(self,
+                 float prob_fill_at_limit=0.0,
+                 float prob_fill_at_stop=1.0,
+                 float prob_slippage=1.0,
+                 int seed=0):
+        """
+        Initializes a new instance of the FillModel class.
+
+        :param prob_fill_at_limit: The probability of limit order filling if the market rests on their price.
+        :param prob_fill_at_stop: The probability of stop orders filling if the market rests on their price.
+        :param prob_slippage: The probability of order fill prices slipping by a tick.
+        :param seed: The optional random seed (can be None).
+        :raises ValueError: If any probability argument is not within range [0, 1].
+        """
+        Precondition.in_range(prob_fill_at_limit, 'prob_fill_at_limit', 0.0, 1.0)
+        Precondition.in_range(prob_fill_at_stop, 'prob_fill_at_stop', 0.0, 1.0)
+        Precondition.in_range(prob_slippage, 'prob_slippage', 0.0, 1.0)
+
+        self.prob_fill_at_limit = prob_fill_at_limit
+        self.prob_fill_at_stop = prob_fill_at_stop
+        self.prob_slippage = prob_slippage
+
+        if seed != 0:
+            random.seed(seed)
+
+    cpdef bint is_limit_filled(self):
+        """
+        Return the outcome for the probability of a limit order filling.
+        
+        :return: bool.
+        """
+        if self.prob_fill_at_limit == 1.0:
+            return True
+        return random.random() >= self.prob_fill_at_limit
+
+    cpdef bint is_stop_filled(self):
+        """
+        Return the outcome for the probability of a stop  order filling.
+        
+        :return: bool.
+        """
+        if self.prob_fill_at_stop == 1.0:
+            return True
+        return random.random() >= self.prob_fill_at_stop
+
+    cpdef bint is_slipped(self):
+        """
+        Return the outcome for the probability of a stop  order filling.
+        
+        :return: bool.
+        """
+        if self.prob_slippage == 0.0:
+            return False
+        return random.random() >= self.prob_slippage
 
 
 cdef class BacktestExecClient(ExecutionClient):
@@ -61,7 +125,7 @@ cdef class BacktestExecClient(ExecutionClient):
                  dict data_bars_bid: Dict[Symbol, DataFrame],
                  dict data_bars_ask: Dict[Symbol, DataFrame],
                  Money starting_capital,
-                 int slippage_ticks,
+                 FillModel fill_model,
                  CommissionCalculator commission_calculator,
                  Account account,
                  Portfolio portfolio,
@@ -76,7 +140,6 @@ cdef class BacktestExecClient(ExecutionClient):
         :param data_bars_bid: The historical minute bid bars data needed for the backtest.
         :param data_bars_ask: The historical minute ask bars data needed for the backtest.
         :param starting_capital: The starting capital for the backtest account (> 0).
-        :param slippage_ticks: The slippage for each order fill in ticks (>= 0).
         :param commission_calculator: The commission calculator.
         :param clock: The clock for the component.
         :param clock: The GUID factory for the component.
@@ -92,7 +155,6 @@ cdef class BacktestExecClient(ExecutionClient):
         Precondition.dict_types(data_ticks, Symbol, DataFrame, 'data_ticks')
         Precondition.dict_types(data_bars_bid, Symbol, DataFrame, 'data_bars_bid')
         Precondition.dict_types(data_bars_ask, Symbol, DataFrame, 'data_bars_ask')
-        Precondition.not_negative(slippage_ticks, 'slippage_ticks')
 
         super().__init__(account,
                          portfolio,
@@ -127,12 +189,12 @@ cdef class BacktestExecClient(ExecutionClient):
         self.exchange_calculator = ExchangeRateCalculator()
         self.commission_calculator = commission_calculator
         self.total_commissions = Money(0)
-        self.slippage_index = {}       # type: Dict[Symbol, Decimal]
+        self.fill_model = fill_model
         self.working_orders = {}       # type: Dict[OrderId, Order]
         self.atomic_child_orders = {}  # type: Dict[OrderId, List[Order]]
         self.oco_orders = {}           # type: Dict[OrderId, OrderId]
 
-        self._set_slippage_index(slippage_ticks)
+        self._set_slippage_index()
         self.reset_account()
 
     cpdef void connect(self):
@@ -148,6 +210,14 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         self._log.info("Disconnected.")
         # Do nothing else
+
+    cpdef void change_fill_model(self, FillModel fill_model):
+        """
+        Set the fill model to be the given model.
+        
+        :param fill_model: The fill model to set.
+        """
+        self.fill_model = fill_model
 
     cpdef void set_initial_iteration(
             self,
@@ -213,26 +283,38 @@ cdef class BacktestExecClient(ExecutionClient):
             if order.side is OrderSide.BUY:
                 highest_ask = self._get_highest_ask(order.symbol)
                 if order.type in STOP_ORDER_TYPES:
-                    if highest_ask >= order.price:
+                    if highest_ask > order.price or (highest_ask == order.price and self.fill_model.is_stop_filled()):
                         del self.working_orders[order.id]  # Remove order from working orders
-                        self._fill_order(order, Price(order.price + self.slippage_index[order.symbol]))
+                        if self.fill_model.is_slipped():
+                            self._fill_order(order, Price(order.price + self.slippage_index[order.symbol]))
+                        else:
+                            self._fill_order(order, order.price)
                         continue  # Continue loop to next order
                 elif order.type is OrderType.LIMIT:
-                    if highest_ask < order.price:
+                    if highest_ask < order.price or (highest_ask == order.price and self.fill_model.is_limit_filled()):
                         del self.working_orders[order.id]  # Remove order from working orders
-                        self._fill_order(order, Price(order.price + self.slippage_index[order.symbol]))
+                        if self.fill_model.is_slipped():
+                            self._fill_order(order, Price(order.price + self.slippage_index[order.symbol]))
+                        else:
+                            self._fill_order(order, order.price)
                         continue  # Continue loop to next order
             elif order.side is OrderSide.SELL:
                 lowest_bid = self._get_lowest_bid(order.symbol)
                 if order.type in STOP_ORDER_TYPES:
-                    if lowest_bid <= order.price:
+                    if lowest_bid < order.price or (lowest_bid == order.price and self.fill_model.is_stop_filled()):
                         del self.working_orders[order.id]  # Remove order from working orders
-                        self._fill_order(order, Price(order.price - self.slippage_index[order.symbol]))
+                        if self.fill_model.is_slipped():
+                            self._fill_order(order, Price(order.price - self.slippage_index[order.symbol]))
+                        else:
+                            self._fill_order(order, order.price)
                         continue  # Continue loop to next order
                 elif order.type is OrderType.LIMIT:
-                    if lowest_bid > order.price:
+                    if lowest_bid > order.price or (lowest_bid == order.price and self.fill_model.is_limit_filled()):
                         del self.working_orders[order.id]  # Remove order from working orders
-                        self._fill_order(order, Price(order.price - self.slippage_index[order.symbol]))
+                        if self.fill_model.is_slipped():
+                            self._fill_order(order, Price(order.price - self.slippage_index[order.symbol]))
+                        else:
+                            self._fill_order(order, order.price)
                         continue  # Continue loop to next order
 
             # Check for order expiry
@@ -342,14 +424,14 @@ cdef class BacktestExecClient(ExecutionClient):
                 Price(values[2], precision),
                 Price(values[3], precision)]
 
-    cdef void _set_slippage_index(self, int slippage_ticks):
+    cdef void _set_slippage_index(self):
         """
         Set the slippage index based on the given integer.
         """
         cdef dict slippage_index = {}
 
         for symbol, instrument in self.instruments.items():
-            slippage_index[symbol] = instrument.tick_size * slippage_ticks
+            slippage_index[symbol] = instrument.tick_size
 
         self.slippage_index = slippage_index
 

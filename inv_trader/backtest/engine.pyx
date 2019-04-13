@@ -29,7 +29,7 @@ from inv_trader.version import __version__
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.core.functions cimport format_zulu_datetime
 from inv_trader.backtest.data cimport BacktestDataClient
-from inv_trader.backtest.execution cimport BacktestExecClient
+from inv_trader.backtest.execution cimport BacktestExecClient, FillModel
 from inv_trader.common.brokerage import CommissionCalculator
 from inv_trader.common.clock cimport LiveClock, TestClock
 from inv_trader.common.guid cimport TestGuidFactory
@@ -49,7 +49,6 @@ cdef class BacktestConfig:
     def __init__(self,
                  int starting_capital=1000000,
                  Currency account_currency=Currency.USD,
-                 int slippage_ticks=0,
                  float commission_rate_bp=0.20,
                  bint bypass_logging=False,
                  level_console: logging=INFO,
@@ -63,7 +62,6 @@ cdef class BacktestConfig:
 
         :param starting_capital: The starting account capital (> 0).
         :param account_currency: The currency for the account.
-        :param slippage_ticks: The slippage ticks per transaction (>= 0).
         :param commission_rate_bp: The commission rate in basis points per notional transaction size.
         :param bypass_logging: The flag indicating whether logging should be bypassed.
         :param level_console: The minimum log level for logging messages to the console.
@@ -79,12 +77,10 @@ cdef class BacktestConfig:
         :raises ValueError: If the commission_rate is negative (< 0).
         """
         Precondition.positive(starting_capital, 'starting_capital')
-        Precondition.not_negative(slippage_ticks, 'slippage_ticks')
         Precondition.not_negative(commission_rate_bp, 'commission_rate_bp')
 
         self.starting_capital = Money(starting_capital)
         self.account_currency = account_currency
-        self.slippage_ticks = slippage_ticks
         self.commission_rate_bp = commission_rate_bp
         self.bypass_logging = bypass_logging
         self.level_console = level_console
@@ -93,50 +89,6 @@ cdef class BacktestConfig:
         self.log_thread = log_thread
         self.log_to_file = log_to_file
         self.log_file_path = log_file_path
-
-
-cdef class MarketModel:
-    """
-    Represents the parameters for market dynamics including probabilistic modeling
-    of order fill and slippage behaviour by order type.
-    """
-
-    def __init__(self,
-                 float prob_fill_limit_best=0.2,
-                 float prob_fill_limit_mid=0.5,
-                 float prob_fill_limit_cross=0.8,
-                 float prob_fill_stop=0.95,
-                 float prob_slippage=0.0):
-        """
-        Initializes a new instance of the MarketModel class.
-
-        Fill Modelling
-        --------------
-         BUY-LIMIT fill price 'best'  = BID.
-         BUY-LIMIT fill price 'mid'   = MID.
-         BUY-LIMIT fill price 'cross' = ASK.
-        SELL-LIMIT fill price 'best'  = ASK.
-        SELL-LIMIT fill price 'mid'   = MID.
-        SELL-LIMIT fill price 'cross' = BID.
-
-        :param prob_fill_limit_best: The probability of working limit orders filling at the best price.
-        :param prob_fill_limit_mid: The probability of working limit orders filling at the mid price.
-        :param prob_fill_limit_cross: The probability of working limit orders filling at the spread crossing price.
-        :param prob_fill_stop: The probability of working stop orders filling at their price.
-        :param prob_slippage: The probability of order fill prices slipping by a tick.
-        :raises ValueError: If any probability argument is not within range [0, 1].
-        """
-        Precondition.in_range(prob_fill_limit_best, 'prob_fill_limit_best', 0.0, 1.0)
-        Precondition.in_range(prob_fill_limit_mid, 'prob_fill_limit_mid', 0.0, 1.0)
-        Precondition.in_range(prob_fill_limit_cross, 'prob_fill_limit_cross', 0.0, 1.0)
-        Precondition.in_range(prob_fill_stop, 'prob_fill_stop', 0.0, 1.0)
-        Precondition.in_range(prob_slippage, 'prob_slippage', 0.0, 1.0)
-
-        self.prob_fill_limit_best = prob_fill_limit_best
-        self.prob_fill_limit_mid = prob_fill_limit_mid
-        self.prob_fill_limit_cross = prob_fill_limit_cross
-        self.prob_fill_stop = prob_fill_stop
-        self.prob_slippage = prob_slippage
 
 
 cdef class BacktestEngine:
@@ -151,6 +103,7 @@ cdef class BacktestEngine:
                  dict data_bars_bid: Dict[Symbol, Dict[Resolution, DataFrame]],
                  dict data_bars_ask: Dict[Symbol, Dict[Resolution, DataFrame]],
                  list strategies: List[TradeStrategy],
+                 FillModel fill_model=FillModel(),
                  BacktestConfig config=BacktestConfig()):
         """
         Initializes a new instance of the BacktestEngine class.
@@ -159,6 +112,7 @@ cdef class BacktestEngine:
         :param data_bars_bid: The historical bid market data needed for the backtest.
         :param data_bars_ask: The historical ask market data needed for the backtest.
         :param strategies: The strategies for the backtest.
+        :param fill_model: The initial fill model for the backtest engine.
         :param config: The configuration for the backtest.
         :raises ValueError: If the instruments list contains a type other than Instrument.
         :raises ValueError: If the strategies list contains a type other than TradeStrategy.
@@ -226,7 +180,7 @@ cdef class BacktestEngine:
             data_bars_bid=minute_bars_bid,
             data_bars_ask=minute_bars_ask,
             starting_capital=config.starting_capital,
-            slippage_ticks=config.slippage_ticks,
+            fill_model=fill_model,
             commission_calculator=CommissionCalculator(default_rate_bp=config.commission_rate_bp),
             account=self.account,
             portfolio=self.portfolio,
@@ -262,12 +216,14 @@ cdef class BacktestEngine:
             self,
             datetime start,
             datetime stop,
+            FillModel fill_model=None,
             int time_step_mins=1):
         """
         Run the backtest.
         
         :param start: The start time for the backtest (must be >= first_timestamp and < stop).
         :param stop: The stop time for the backtest (must be <= last_timestamp and > start).
+        :param fill_model: The optional fill model change for the backtest run (can be None).
         :param time_step_mins: The time step in minutes for each test clock iterations (> 0)
         
         Note: The default time_step_mins is 1 and shouldn't need to be changed.
@@ -301,6 +257,8 @@ cdef class BacktestEngine:
         self.log.debug("Setting initial iterations...")
         self.data_client.set_initial_iteration(start, time_step)  # Also sets clock to start time
         self.exec_client.set_initial_iteration(start, time_step)  # Also sets clock to start time
+        if fill_model is not None:
+            self.exec_client.change_fill_model(fill_model)
 
         assert(self.data_client.iteration == self.exec_client.iteration)
         assert(self.data_client.time_now() == start)
@@ -467,8 +425,8 @@ cdef class BacktestEngine:
         self.log.info("#-------------------- PERFORMANCE STATISTICS -------------------#")
         self.log.info("#---------------------------------------------------------------#")
 
-        for stat in self.portfolio.analyzer.get_performance_stats_formatted():
-            self.log.info(stat)
+        for statistic in self.portfolio.analyzer.get_performance_stats_formatted():
+            self.log.info(statistic)
 
         self.log.info("#-----------------------------------------------------------------#")
 
@@ -479,7 +437,7 @@ cdef class BacktestEngine:
         :param strategies: The list of strategies.
         """
         for strategy in strategies:
-            # Replace the strategies clock with the engines test clock
-            strategy.change_clock(TestClock())  # Separate test clocks to iterate independently
+            # Separate test clocks to iterate independently
+            strategy.change_clock(TestClock())
             # Replace the strategies logger with the engines test logger
             strategy.change_logger(self.test_logger)
