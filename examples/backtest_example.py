@@ -9,6 +9,7 @@
 
 import pandas as pd
 import logging
+
 from datetime import datetime, timezone
 
 from inv_trader.model.enums import Resolution, Currency
@@ -68,8 +69,6 @@ if __name__ == "__main__":
         strategies=strategies,
         fill_model=fill_model,
         config=config)
-
-    input("Press Enter to continue...")
 
     start = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
     stop = datetime(2013, 3, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
