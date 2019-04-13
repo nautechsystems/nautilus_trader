@@ -70,6 +70,7 @@ cdef class Logger:
 
         Precondition.valid_string(log_file_path, 'log_file_path')
 
+        self.name = name
         self.bypass_logging = bypass_logging
         self.clock = clock
         self._log_level_console = level_console
@@ -77,7 +78,8 @@ cdef class Logger:
         self._console_prints = console_prints
         self._log_thread = log_thread
         self._log_to_file = log_to_file
-        self._log_file = f'{log_file_path}{name}.log'
+        self._log_file_path = log_file_path
+        self._log_file = f'{self._log_file_path}{self.name}.log'
         self._logger = logging.getLogger(name)
         self._logger.setLevel(level_file)
 
@@ -88,6 +90,19 @@ cdef class Logger:
                 os.makedirs(log_file_path)
             self._log_file_handler = logging.FileHandler(self._log_file)
             self._logger.addHandler(self._log_file_handler)
+
+    cpdef void change_log_file_name(self, str name):
+        """
+        Change the log file name.
+        
+        :param name: The new name of the log file.
+        """
+        Precondition.valid_string(name, 'name')
+
+        self._log_file = f'{self._log_file_path}{name}.log'
+        self._logger.removeHandler(self._log_file_handler)
+        self._log_file_handler = logging.FileHandler(self._log_file)
+        self._logger.addHandler(self._log_file_handler)
 
     cpdef void log(self, int log_level, ValidString message):
         """
