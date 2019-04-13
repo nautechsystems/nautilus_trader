@@ -257,6 +257,20 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         self._handle_event(event)
 
+    cpdef void check_residuals(self):
+        """
+        Check for any residual objects and log warnings.
+        """
+        for order in self.working_orders.values():
+            self._log.warning(f"Residual working {order}")
+
+        for order_list in self.atomic_child_orders.values():
+            for order in order_list:
+                self._log.warning(f"Residual child order {order}")
+
+        for order_id in self.oco_orders.values():
+            self._log.warning(f"Residual OCO order {order_id}")
+
     cpdef void reset_account(self):
         """
         Resets the account.
@@ -416,7 +430,7 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef void _submit_order(self, SubmitOrder command):
         """
         Send a submit order command to the execution service.
-        
+
         :param command: The command to execute.
         """
         # Generate event
@@ -572,6 +586,7 @@ cdef class BacktestExecClient(ExecutionClient):
 
         self._handle_event(rejected)
         self._check_oco_order(order.id)
+        self._clean_up_child_orders(order.id)
 
     cdef void _reject_modify_order(self, Order order, str reason):
         """
@@ -609,7 +624,19 @@ cdef class BacktestExecClient(ExecutionClient):
             self._clock.time_now())
 
         self._handle_event(expired)
-        self._check_oco_order(order.id)
+
+        cdef OrderId first_child_order_id
+        cdef OrderId other_oco_order_id
+        if order.id in self.atomic_child_orders:
+            # Remove any unprocessed atomic child order OCO identifiers
+            first_child_order_id = self.atomic_child_orders[order.id][0].id
+            if first_child_order_id in self.oco_orders:
+                other_oco_order_id = self.oco_orders[first_child_order_id]
+                del self.oco_orders[first_child_order_id]
+                del self.oco_orders[other_oco_order_id]
+        else:
+            self._check_oco_order(order.id)
+        self._clean_up_child_orders(order.id)
 
     cdef void _process_order(self, Order order):
         """
@@ -718,13 +745,21 @@ cdef class BacktestExecClient(ExecutionClient):
         # Work any atomic child orders
         if order.id in self.atomic_child_orders:
             for child_order in self.atomic_child_orders[order.id]:
-                if not child_order.is_complete:
+                if not child_order.is_complete:  # The order may already be cancelled or rejected
                     self._process_order(child_order)
             del self.atomic_child_orders[order.id]
 
+    cdef void _clean_up_child_orders(self, OrderId order_id):
+        """
+        Clean up any residual child orders from the completed order associated
+        with the given identifier.
+        """
+        if order_id in self.atomic_child_orders:
+            del self.atomic_child_orders[order_id]
+
     cdef void _check_oco_order(self, OrderId order_id):
         """
-        Remove the order with the given identifier from OCO orders.
+        Check held OCO orders and remove any paired with the given order identifier.
         """
         cdef OrderId oco_order_id
         cdef Order oco_order

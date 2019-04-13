@@ -210,7 +210,10 @@ cdef class EMACross(TradeStrategy):
         """
         super().__init__(label=label,
                          id_tag_trader=id_tag_trader,
-                         id_tag_strategy=id_tag_strategy)
+                         id_tag_strategy=id_tag_strategy,
+                         flatten_on_sl_reject=True,
+                         flatten_on_stop=True,
+                         cancel_all_orders_on_stop=True)
 
         self.instrument = instrument
         self.symbol = instrument.symbol

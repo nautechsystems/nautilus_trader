@@ -186,6 +186,7 @@ cdef class BacktestEngine:
         self.log = LoggerAdapter(component_name='BacktestEngine', logger=self.test_logger)
 
         self._engine_header()
+        self.log.info("Building engine...")
 
         self.account = Account(currency=config.account_currency)
         self.portfolio = Portfolio(
@@ -300,6 +301,7 @@ cdef class BacktestEngine:
 
         self.log.info("Stopping...")
         self.trader.stop()
+        self.exec_client.check_residuals()
         self._backtest_footer(run_started, start, stop)
         self.log.info("Stopped.")
 
@@ -402,7 +404,6 @@ cdef class BacktestEngine:
         self.log.info(f"empyrical v{empyrical.__version__}")
         self.log.info(f"pymc3 v{pymc3.__version__}")
         self.log.info("#---------------------------------------------------------------#")
-        self.log.info("Building engine...")
 
     cdef void _backtest_header(
             self,

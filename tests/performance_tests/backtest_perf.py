@@ -64,6 +64,7 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 26/02/19 4450292 function calls (4450288 primitive calls) in 0.823 seconds
         # 08/03/19    5194 function calls    (5194 primitive calls) in 0.167 seconds (removed performance hooks)
         # 13/03/19    8691 function calls    (8613 primitive calls) in 0.162 seconds (added analyzer)
+        # 13/03/19  614197 function calls  (614015 primitive calls) in 0.694 seconds (numerous changes)
 
     def test_run_with_ema_cross_strategy(self):
         # Arrange
@@ -143,4 +144,5 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # --------------------------------------------------------------------------------------------------------------------------------------------------------------------
         # 10/04/19 27162891 function calls (26849875 primitive calls) in 27.461 seconds (after fixing bug strategy is processing properly with many more orders and positions)
         # 11/04/19 27094455 function calls (26782489 primitive calls) in 26.730 seconds (even after enhancing execution detail)
-        # 11/04/19 27094455 function calls (26782489 primitive calls) in 57.559 seconds (new order registration has slowed things down alot)
+        # 11/04/19 27094455 function calls (26782489 primitive calls) in 57.559 seconds (new order registration has slowed things down a lot)
+        # 13/04/19 27087701 function calls (26775735 primitive calls) in 28.216 seconds (found bugs in execution, cleaned up residual objects)

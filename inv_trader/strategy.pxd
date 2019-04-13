@@ -46,6 +46,7 @@ cdef class TradeStrategy:
     cdef dict _entry_orders
     cdef dict _stop_loss_orders
     cdef dict _take_profit_orders
+    cdef dict _atomic_order_ids
     cdef dict _modify_order_buffer
 
     cdef readonly Label name
@@ -76,13 +77,20 @@ cdef class TradeStrategy:
     cpdef void on_reset(self)
     cpdef void on_dispose(self)
 
-# -- REGISTRATION AND HANDLER METHODS ------------------------------------------------------------ #
+# -- REGISTRATION METHODS ------------------------------------------------------------------------ #
     cpdef void register_data_client(self, DataClient client)
     cpdef void register_execution_client(self, ExecutionClient client)
+    cpdef void register_indicator(self, BarType bar_type, indicator, update_method)
+    cpdef void register_entry_order(self, Order order, PositionId position_id)
+    cpdef void register_stop_loss_order(self, Order order, PositionId position_id)
+    cpdef void register_take_profit_order(self, Order order, PositionId position_id)
+
+# -- HANDLER METHODS ----------------------------------------------------------------------------- #
     cpdef void handle_tick(self, Tick tick)
     cpdef void handle_bar(self, BarType bar_type, Bar bar)
     cpdef void handle_event(self, Event event)
 
+    cdef void _remove_atomic_child_orders(self, OrderId order_id)
     cdef void _remove_from_registered_orders(self, OrderId order_id)
     cdef void _process_modify_order_buffer(self, OrderId order_id)
 
@@ -103,15 +111,11 @@ cdef class TradeStrategy:
     cpdef Tick last_tick(self, Symbol symbol)
 
 # -- INDICATOR METHODS --------------------------------------------------------------------------- #
-    cpdef void register_indicator(self, BarType bar_type, indicator, update_method)
     cpdef list indicators(self, BarType bar_type)
     cpdef readonly bint indicators_initialized(self, BarType bar_type)
     cpdef readonly bint indicators_initialized_all(self)
 
 # -- MANAGEMENT METHODS -------------------------------------------------------------------------- #
-    cpdef void register_entry_order(self, Order order, PositionId position_id)
-    cpdef void register_stop_loss_order(self, Order order, PositionId position_id)
-    cpdef void register_take_profit_order(self, Order order, PositionId position_id)
     cpdef PositionId generate_position_id(self, Symbol symbol)
     cpdef OrderSide get_opposite_side(self, OrderSide side)
     cpdef OrderSide get_flatten_side(self, MarketPosition market_position)
@@ -135,9 +139,6 @@ cdef class TradeStrategy:
     cpdef int entry_orders_count(self)
     cpdef int stop_loss_orders_count(self)
     cpdef int take_profit_orders_count(self)
-    cpdef bint is_entry_order_active(self, OrderId order_id)
-    cpdef bint is_stop_loss_order_active(self, OrderId order_id)
-    cpdef bint is_take_profit_order_active(self, OrderId order_id)
     cpdef bint position_exists(self, PositionId position_id)
     cpdef Position position(self, PositionId position_id)
     cpdef dict positions_all(self)
@@ -172,12 +173,3 @@ cdef class TradeStrategy:
     cpdef void change_logger(self, Logger logger)
     cpdef void set_time(self, datetime time)
     cpdef void iterate(self, datetime time)
-
-
-cdef class IndexedOrderPositionId:
-    """
-    An internal class which represents a registered order and position identifier
-    pair to be managed together.
-    """
-    cdef readonly Order order
-    cdef readonly PositionId position_id
