@@ -13,7 +13,7 @@ import unittest
 from datetime import datetime, timezone
 
 from inv_trader.model.enums import Resolution
-from inv_trader.model.objects import Money
+from inv_trader.backtest.execution import FillModel
 from inv_trader.backtest.engine import BacktestConfig, BacktestEngine
 from test_kit.strategies import EmptyStrategy, EMACross
 from test_kit.data import TestDataProvider
@@ -35,7 +35,7 @@ class BacktestEngineTests(unittest.TestCase):
         ask_data = {USDJPY_FXCM: {Resolution.MINUTE: ask_data_1min}}
 
         strategies = [EmptyStrategy()]
-        config = BacktestConfig(slippage_ticks=1)
+        config = BacktestConfig()
 
         self.engine = BacktestEngine(
             instruments=instruments,
@@ -43,6 +43,7 @@ class BacktestEngineTests(unittest.TestCase):
             data_bars_bid=bid_data,
             data_bars_ask=ask_data,
             strategies=strategies,
+            fill_model=FillModel(),
             config=config)
 
     def tearDown(self):
@@ -105,7 +106,7 @@ class BacktestEngineTests(unittest.TestCase):
         # Assert
         self.assertEqual(2881, self.engine.data_client.data_providers[USDJPY_FXCM].iterations[TestStubs.bartype_usdjpy_1min_bid()])
         self.assertEqual(1441, strategies[0].fast_ema.count)
-        self.assertEqual(-22553.00, self.engine.get_performance_stats()['PNL'])
+        self.assertEqual(-19511.19921875, self.engine.get_performance_stats()['PNL'])
 
     def test_can_reset_and_rerun_ema_cross_strategy(self):
         # Arrange

@@ -20,6 +20,20 @@ from inv_trader.model.order cimport Order, OrderEvent
 from inv_trader.model.identifiers cimport OrderId
 
 
+cdef class FillModel:
+    """
+    Provides probabilistic modeling for order fill dynamics including probability
+    of fills and slippage by order type.
+    """
+    cdef readonly float prob_fill_at_limit
+    cdef readonly float prob_fill_at_stop
+    cdef readonly float prob_slippage
+
+    cpdef bint is_limit_filled(self)
+    cpdef bint is_stop_filled(self)
+    cpdef bint is_slipped(self)
+
+
 cdef class BacktestExecClient(ExecutionClient):
     """
     Provides an execution client for the BacktestEngine.
@@ -41,11 +55,13 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef readonly ExchangeRateCalculator exchange_calculator
     cdef readonly CommissionCalculator commission_calculator
     cdef readonly Money total_commissions
+    cdef readonly FillModel fill_model
     cdef readonly dict slippage_index
     cdef readonly dict working_orders
     cdef readonly dict atomic_child_orders
     cdef readonly dict oco_orders
 
+    cpdef void change_fill_model(self, FillModel fill_model)
     cpdef void set_initial_iteration(self, datetime to_time, timedelta time_step)
     cpdef void iterate(self)
     cpdef void process_market(self)
@@ -55,7 +71,7 @@ cdef class BacktestExecClient(ExecutionClient):
 
     cdef dict _prepare_minute_data(self, dict bar_data, str quote_type)
     cpdef list _convert_to_prices(self, double[:] values, int precision)
-    cdef void _set_slippage_index(self, int slippage_ticks)
+    cdef void _set_slippage_index(self)
     cdef Price _get_highest_bid(self, Symbol symbol)
     cdef Price _get_lowest_bid(self, Symbol symbol)
     cdef Price _get_closing_bid(self, Symbol symbol)

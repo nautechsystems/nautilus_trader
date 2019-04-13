@@ -17,7 +17,7 @@ from inv_trader.common.account cimport Account
 from inv_trader.common.clock cimport Clock
 from inv_trader.common.logger cimport Logger, LoggerAdapter
 from inv_trader.backtest.data cimport BacktestDataClient
-from inv_trader.backtest.execution cimport BacktestExecClient
+from inv_trader.backtest.execution cimport BacktestExecClient, FillModel
 from inv_trader.portfolio.portfolio cimport Portfolio
 from inv_trader.trader cimport Trader
 
@@ -37,18 +37,6 @@ cdef class BacktestConfig:
     cdef readonly bint log_thread
     cdef readonly bint log_to_file
     cdef readonly str log_file_path
-
-
-cdef class MarketModel:
-    """
-    Represents the parameters for market dynamics including probabilistic modeling
-    of order fill and slippage behaviour per order type.
-    """
-    cdef readonly float prob_fill_limit_best
-    cdef readonly float prob_fill_limit_mid
-    cdef readonly float prob_fill_limit_cross
-    cdef readonly float prob_fill_stop
-    cdef readonly float prob_slippage
 
 
 cdef class BacktestEngine:
@@ -71,7 +59,7 @@ cdef class BacktestEngine:
     cdef readonly Trader trader
     cdef readonly list data_minute_index
 
-    cpdef void run(self, datetime start, datetime stop, int time_step_mins=*)
+    cpdef void run(self, datetime start, datetime stop, FillModel fill_model=*, int time_step_mins=*)
     cpdef void create_returns_tear_sheet(self)
     cpdef void create_full_tear_sheet(self)
     cpdef dict get_performance_stats(self)

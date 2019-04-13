@@ -13,6 +13,7 @@ import logging
 from datetime import datetime, timezone
 
 from inv_trader.model.enums import Resolution, Currency
+from inv_trader.backtest.execution import FillModel
 from inv_trader.backtest.engine import BacktestConfig, BacktestEngine
 from examples.ema_cross import EMACrossPy
 from test_kit.data import TestDataProvider
@@ -36,10 +37,14 @@ if __name__ == "__main__":
     config = BacktestConfig(
         starting_capital=1000000,
         account_currency=Currency.USD,
-        slippage_ticks=1,
         level_console=logging.INFO,
         log_thread=False,
         log_to_file=False)
+
+    fill_model = FillModel(
+        prob_fill_at_limit=0.2,
+        prob_fill_at_stop=0.95,
+        prob_slippage=0.5)
 
     engine = BacktestEngine(
         instruments=instruments,
