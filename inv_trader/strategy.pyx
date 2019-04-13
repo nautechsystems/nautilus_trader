@@ -186,7 +186,7 @@ cdef class TradeStrategy:
         :param bar: The bar received.
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the strategy (or just add Pass).")
+        raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
 
     cpdef void on_event(self, Event event):
         """
@@ -195,28 +195,28 @@ cdef class TradeStrategy:
         :param event: The event received.
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the strategy (or just add Pass).")
+        raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
 
     cpdef void on_stop(self):
         """
         Called when the strategy is stopped.
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the strategy (or just add Pass).")
+        raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
 
     cpdef void on_reset(self):
         """
         Called when the strategy is reset.
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the strategy (or just add Pass).")
+        raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
 
     cpdef void on_dispose(self):
         """
         Called when the strategy is disposed.
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the strategy (or just add Pass).")
+        raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
 
 
 # -- REGISTRATION METHODS ------------------------------------------------------------------------ #

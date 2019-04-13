@@ -62,6 +62,7 @@ class EMACrossPy(TradeStrategy):
         :param cancel_all_orders_on_stop: The flag indicating whether all residual
         orders should be cancelled on stop.
         """
+        # Send the below arguments into the base class
         super().__init__(label=label,
                          id_tag_trader=id_tag_trader,
                          id_tag_strategy=id_tag_strategy,
@@ -69,6 +70,7 @@ class EMACrossPy(TradeStrategy):
                          flatten_on_stop=flatten_on_stop,
                          cancel_all_orders_on_stop=cancel_all_orders_on_stop)
 
+        # Custom strategy variables
         self.instrument = instrument
         self.symbol = instrument.symbol
         self.bar_type = bar_type
@@ -94,15 +96,15 @@ class EMACrossPy(TradeStrategy):
         """
         This method is called when self.start() is called, and after internal start logic.
         """
+        # Put custom code to be run on strategy start here (or pass)
         self.historical_bars(self.bar_type)
         self.subscribe_bars(self.bar_type)
         self.subscribe_ticks(self.symbol)
 
     def on_tick(self, tick: Tick):
         """
-        This method is called whenever a Tick is received by the strategy, after
-        the Tick has been processed by the base class (update last received Tick
-        for the Symbol).
+        This method is called whenever a Tick is received by the strategy, and
+        after the Tick has been processed by the base class.
         The received Tick object is then passed into this method.
 
         :param tick: The received tick.
@@ -112,8 +114,8 @@ class EMACrossPy(TradeStrategy):
 
     def on_bar(self, bar_type: BarType, bar: Bar):
         """
-        This method is called whenever the strategy receives a Bar, after the
-        Bar has been processed by the base class (update indicators etc).
+        This method is called whenever the strategy receives a Bar, and after the
+        Bar has been processed by the base class.
         The received BarType and Bar objects are then passed into this method.
 
         :param bar_type: The received bar type.
@@ -206,18 +208,20 @@ class EMACrossPy(TradeStrategy):
     def on_event(self, event: Event):
         """
         This method is called whenever the strategy receives an Event object,
-        after the event has been processed by the base class (updating any objects it needs to).
-        These events could be AccountEvent, OrderEvent.
+        and after the event has been processed by the TradeStrategy base class.
+        These events could be AccountEvent, OrderEvent, PositionEvent, TimeEvent.
 
         :param event: The received event.
         """
+        # Put custom code for event handling here (or pass)
         pass
 
     def on_stop(self):
         """
-        This method is called when self.stop() is called after internal
+        This method is called when self.stop() is called and after internal
         stopping logic.
         """
+        # Put custom code to be run on strategy stop here (or pass)
         pass
 
     def on_reset(self):
@@ -225,9 +229,8 @@ class EMACrossPy(TradeStrategy):
         This method is called when self.reset() is called, and after internal
         reset logic such as clearing the internally held bars, ticks and resetting
         all indicators.
-
-        Put custom code to be run on a strategy reset here.
         """
+        # Put custom code to be run on a strategy reset here (or pass)
         pass
 
     def on_dispose(self):
@@ -235,5 +238,6 @@ class EMACrossPy(TradeStrategy):
         This method is called when self.dispose() is called. Dispose of any
         resources that had been used by the strategy here.
         """
+        # Put custom code to be run on a strategy disposal here (or pass)
         self.unsubscribe_bars(self.bar_type)
         self.unsubscribe_ticks(self.symbol)
