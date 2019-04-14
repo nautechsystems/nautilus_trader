@@ -451,7 +451,7 @@ cdef class LiveDataClient(DataClient):
         """
         return str(f'{bar_type.symbol.code.lower()}.'
                    f'{bar_type.symbol.venue_string().lower()}-'
-                   f'{bar_type.bar_spec.period}-'
+                   f'{bar_type.specification.period}-'
                    f'{bar_type.resolution_string().lower()}['
                    f'{bar_type.quote_type_string().lower()}]')
 

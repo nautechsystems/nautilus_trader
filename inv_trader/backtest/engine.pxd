@@ -57,6 +57,7 @@ cdef class BacktestEngine:
     cdef readonly BacktestExecClient exec_client
     cdef readonly Trader trader
     cdef readonly list data_minute_index
+    cdef readonly int iteration
 
     cpdef void run(self, datetime start, datetime stop, FillModel fill_model=*, int time_step_mins=*)
     cpdef void create_returns_tear_sheet(self)

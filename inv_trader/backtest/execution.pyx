@@ -9,13 +9,10 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
-import pandas as pd
 import random
 
 from decimal import Decimal
 from cpython.datetime cimport datetime
-from functools import partial
-from pandas import DataFrame
 from typing import List, Dict
 
 from inv_trader.core.precondition cimport Precondition
@@ -26,7 +23,7 @@ from inv_trader.enums.order_side cimport OrderSide
 from inv_trader.enums.order_status cimport OrderStatus
 from inv_trader.enums.market_position cimport MarketPosition, market_position_string
 from inv_trader.model.currency cimport ExchangeRateCalculator
-from inv_trader.model.objects cimport ValidString, Symbol, Price, Money, Instrument, Quantity
+from inv_trader.model.objects cimport ValidString, Symbol, Price, Tick, Bar, Money, Instrument, Quantity
 from inv_trader.model.order cimport Order
 from inv_trader.model.position cimport Position
 from inv_trader.model.events cimport Event, OrderEvent, AccountEvent
@@ -43,7 +40,6 @@ from inv_trader.common.execution cimport ExecutionClient
 from inv_trader.commands cimport Command, CollateralInquiry
 from inv_trader.commands cimport SubmitOrder, SubmitAtomicOrder, ModifyOrder, CancelOrder
 from inv_trader.portfolio.portfolio cimport Portfolio
-from inv_trader.backtest.engine cimport FillModel
 
 # Stop order types
 cdef set STOP_ORDER_TYPES = {
@@ -81,7 +77,7 @@ cdef class FillModel:
         self.prob_fill_at_limit = prob_fill_at_limit
         self.prob_fill_at_stop = prob_fill_at_stop
         self.prob_slippage = prob_slippage
-        #random.seed(random_seed)
+        random.seed(random_seed)
 
     cpdef bint is_limit_filled(self):
         """
@@ -130,9 +126,6 @@ cdef class BacktestExecClient(ExecutionClient):
 
     def __init__(self,
                  list instruments: List[Instrument],
-                 dict data_ticks: Dict[Symbol, DataFrame],
-                 dict data_bars_bid: Dict[Symbol, DataFrame],
-                 dict data_bars_ask: Dict[Symbol, DataFrame],
                  Money starting_capital,
                  FillModel fill_model,
                  CommissionCalculator commission_calculator,
@@ -145,25 +138,14 @@ cdef class BacktestExecClient(ExecutionClient):
         Initializes a new instance of the BacktestExecClient class.
 
         :param instruments: The instruments needed for the backtest.
-        :param data_ticks: The historical tick market data needed for the backtest.
-        :param data_bars_bid: The historical minute bid bars data needed for the backtest.
-        :param data_bars_ask: The historical minute ask bars data needed for the backtest.
         :param starting_capital: The starting capital for the backtest account (> 0).
         :param commission_calculator: The commission calculator.
         :param clock: The clock for the component.
         :param clock: The GUID factory for the component.
         :param logger: The logger for the component.
         :raises ValueError: If the instruments list contains a type other than Instrument.
-        :raises ValueError: If the data_ticks contains a key other than Symbol or value other than DataFrame.
-        :raises ValueError: If the data_bars_bid contains a key other than Symbol or value other than DataFrame.
-        :raises ValueError: If the data_bars_ask contains a key other than Symbol or value other than DataFrame.
-        :raises ValueError: If the starting capital is not positive (> 0).
-        :raises ValueError: If the slippage_ticks is negative (< 0).
         """
         Precondition.list_type(instruments, Instrument, 'instruments')
-        Precondition.dict_types(data_ticks, Symbol, DataFrame, 'data_ticks')
-        Precondition.dict_types(data_bars_bid, Symbol, DataFrame, 'data_bars_bid')
-        Precondition.dict_types(data_bars_ask, Symbol, DataFrame, 'data_bars_ask')
 
         super().__init__(account,
                          portfolio,
@@ -178,18 +160,6 @@ cdef class BacktestExecClient(ExecutionClient):
 
         self.instruments = instruments_dict  # type: Dict[Symbol, Instrument]
 
-        # Prepare data
-        self.data_ticks = data_ticks                                          # type: Dict[Symbol, DataFrame]
-        self.data_bars_bid = self._prepare_minute_data(data_bars_bid, 'bid')  # type: Dict[Symbol, List]
-        self.data_bars_ask = self._prepare_minute_data(data_bars_ask, 'ask')  # type: Dict[Symbol, List]
-
-        # Set minute data index
-        first_dataframe = data_bars_bid[next(iter(data_bars_bid))]
-        self.data_minute_index = list(pd.to_datetime(first_dataframe.index, utc=True))  # type: List[datetime]
-        self.data_minute_index_length = len(self.data_minute_index)
-        assert(isinstance(self.data_minute_index[0], datetime))
-
-        self.iteration = 0
         self.day_number = 0
         self.starting_capital = starting_capital
         self.account_capital = starting_capital
@@ -199,6 +169,9 @@ cdef class BacktestExecClient(ExecutionClient):
         self.commission_calculator = commission_calculator
         self.total_commissions = Money(0)
         self.fill_model = fill_model
+
+        self.current_bids = {}         # type: Dict[Symbol, Price]
+        self.current_asks = {}         # type: Dict[Symbol, Price]
         self.working_orders = {}       # type: Dict[OrderId, Order]
         self.atomic_child_orders = {}  # type: Dict[OrderId, List[Order]]
         self.oco_orders = {}           # type: Dict[OrderId, OrderId]
@@ -228,35 +201,45 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         self.fill_model = fill_model
 
-    cpdef void set_initial_iteration(
+    cpdef void process_tick(self, Tick tick):
+        """
+        Update the execution client with the given data.
+
+        :param tick: The tick data to update with.
+        """
+        self.current_bids[tick.symbol] = tick.bid
+        self.current_asks[tick.symbol] = tick.ask
+        self._process_market(tick.symbol, tick.bid, tick.ask)
+
+    cpdef void process_bars(
             self,
-            datetime to_time,
-            timedelta time_step):
+            Symbol symbol,
+            Bar bid_bar,
+            Bar ask_bar):
         """
-        Wind the execution clients iteration forwards to the given to_time with 
-        the given time_step.
-
-        :param to_time: The time to wind the execution client to.
-        :param time_step: The time step to iterate at.
+        Update the execution client with the given data.
+        
+        :param symbol: The symbol for the update data.
+        :param bid_bar: The bid bar data to update with.
+        :param ask_bar: The ask bar data to update with.
         """
-        cdef datetime current = self.data_minute_index[0]
-        cdef int next_index = 0
+        self.current_bids[symbol] = bid_bar.close
+        self.current_asks[symbol] = ask_bar.close
+        self._process_market(symbol, bid_bar.low, ask_bar.high)
 
-        while current < to_time:
-            if self.data_minute_index[next_index] == current:
-                next_index += 1
-                self.iteration += 1
-            current += time_step
-
-        self._clock.set_time(current)
-
-    cpdef void iterate(self):
+    cdef void _process_market(
+            self,
+            Symbol symbol,
+            Price lowest_bid,
+            Price highest_ask):
         """
-        Iterate the execution client one time step.
+        Process the working orders by simulating market dynamics with bar data.
+        
+        
         """
         cdef CollateralInquiry command
-
         cdef datetime time_now = self._clock.time_now()
+
         if self.day_number is not time_now.day:
             # Set account statistics for new day
             self.day_number = time_now.day
@@ -269,29 +252,15 @@ cdef class BacktestExecClient(ExecutionClient):
             self._clock.time_now())
             self._collateral_inquiry(command)
 
-    cpdef void process_market(self):
-        """
-        Process the working orders by simulating market dynamics with bar data.
-        """
-        cdef datetime time_now = self._clock.time_now()
-
-        if (self.iteration + 1 < self.data_minute_index_length
-            and self.data_minute_index[self.iteration + 1] == time_now):
-            self.iteration += 1
-        else:
-            return  # No price changes to process
-
         # Simulate market dynamics
-        cdef Price highest_ask
-        cdef Price lowest_bid
-
         for order_id, order in self.working_orders.copy().items():  # Copies dict to avoid resize during loop
-            if order.status is not OrderStatus.WORKING:
+            if order.symbol != symbol:
+                continue  # Order is for a different symbol
+            if order.status != OrderStatus.WORKING:
                 continue  # Orders status has changed since the loop commenced
 
             # Check for order fill
             if order.side is OrderSide.BUY:
-                highest_ask = self._get_highest_ask(order.symbol)
                 if order.type in STOP_ORDER_TYPES:
                     if highest_ask > order.price or (highest_ask == order.price and self.fill_model.is_stop_filled()):
                         del self.working_orders[order.id]  # Remove order from working orders
@@ -309,7 +278,6 @@ cdef class BacktestExecClient(ExecutionClient):
                             self._fill_order(order, order.price)
                         continue  # Continue loop to next order
             elif order.side is OrderSide.SELL:
-                lowest_bid = self._get_lowest_bid(order.symbol)
                 if order.type in STOP_ORDER_TYPES:
                     if lowest_bid < order.price or (lowest_bid == order.price and self.fill_model.is_stop_filled()):
                         del self.working_orders[order.id]  # Remove order from working orders
@@ -390,7 +358,6 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         self._log.info(f"Resetting...")
         self._reset()
-        self.iteration = 0
         self.day_number = 0
         self.account_capital = self.starting_capital
         self.account_cash_start_day = self.account_capital
@@ -403,37 +370,6 @@ cdef class BacktestExecClient(ExecutionClient):
         self.reset_account()
         self._log.info("Reset.")
 
-    cdef dict _prepare_minute_data(self, dict bar_data, str quote_type):
-        """
-        Prepare the given minute bars data by converting the dataframes of each
-        symbol in the dictionary to a list of arrays of Decimal.
-        
-        :param bar_data: The data to prepare.
-        :param quote_type: The quote type of data (bid or ask).
-        :return: Dict[Symbol, List[Decimal]].
-        """
-        cdef dict minute_data = {}  # type: Dict[Symbol, List]
-        for symbol, data in bar_data.items():
-            start = datetime.utcnow()
-            map_func = partial(self._convert_to_prices, precision=self.instruments[symbol].tick_precision)
-            minute_data[symbol] = list(map(map_func, data.values))
-            self._log.info(f"Prepared minute {quote_type} prices for {symbol} in {round((datetime.utcnow() - start).total_seconds(), 2)}s.")
-
-        return minute_data
-
-    cpdef list _convert_to_prices(self, double[:] values, int precision):
-        """
-        Convert the given array of double values to an array of Decimals with
-        the given precision.
-
-        :param values: The values to convert.
-        :return: List[Price].
-        """
-        return [Price(values[0], precision),
-                Price(values[1], precision),
-                Price(values[2], precision),
-                Price(values[3], precision)]
-
     cdef void _set_slippage_index(self):
         """
         Set the slippage index based on the given integer.
@@ -444,54 +380,6 @@ cdef class BacktestExecClient(ExecutionClient):
             slippage_index[symbol] = instrument.tick_size
 
         self.slippage_index = slippage_index
-
-    cdef Price _get_highest_bid(self, Symbol symbol):
-        """
-        Return the highest bid price of the current iteration.
-        
-        :return: Price.
-        """
-        return self.data_bars_bid[symbol][self.iteration][1]  # High
-
-    cdef Price _get_lowest_bid(self, Symbol symbol):
-        """
-        Return the lowest bid price of the current iteration.
-        
-        :return: Price.
-        """
-        return self.data_bars_bid[symbol][self.iteration][2]  # Low
-
-    cdef Price _get_closing_bid(self, Symbol symbol):
-        """
-        Return the closing bid price of the current iteration.
-        
-        :return: Price
-        """
-        return self.data_bars_bid[symbol][self.iteration][3]  # Close
-
-    cdef Price _get_highest_ask(self, Symbol symbol):
-        """
-        Return the highest ask price of the current iteration.
-        
-        :return: Price.
-        """
-        return self.data_bars_ask[symbol][self.iteration][1]  # High
-
-    cdef Price _get_lowest_ask(self, Symbol symbol):
-        """
-        Return the lowest ask price of the current iteration.
-        
-        :return: Price.
-        """
-        return self.data_bars_ask[symbol][self.iteration][2]  # Low
-
-    cdef Price _get_closing_ask(self, Symbol symbol):
-        """
-        Return the closing ask price of the current iteration.
-        
-        :return: Price.
-        """
-        return self.data_bars_ask[symbol][self.iteration][3]  # Close
 
 
 # -- COMMAND EXECUTION --------------------------------------------------------------------------- #
@@ -601,7 +489,7 @@ cdef class BacktestExecClient(ExecutionClient):
         cdef Price current_bid
 
         if order.side is OrderSide.BUY:
-            current_ask = self._get_closing_ask(order.symbol)
+            current_ask = self.current_asks[order.symbol]
             if order.type in STOP_ORDER_TYPES:
                 if order.price.value < current_ask + (instrument.min_stop_distance * instrument.tick_size):
                     self._cancel_reject_order(order, 'modify order', f'BUY STOP order price of {order.price} is too far from the market, ask={current_ask}')
@@ -611,7 +499,7 @@ cdef class BacktestExecClient(ExecutionClient):
                     self._cancel_reject_order(order, 'modify order', f'BUY LIMIT order price of {order.price} is too far from the market, ask={current_ask}')
                     return  # Cannot modify order
         elif order.side is OrderSide.SELL:
-            current_bid = self._get_closing_bid(order.symbol)
+            current_bid = self.current_bids[order.symbol]
             if order.type in STOP_ORDER_TYPES:
                 if order.price.value > current_bid - (instrument.min_stop_distance * instrument.tick_size):
                     self._cancel_reject_order(order, 'modify order', f'SELL STOP order price of {order.price} is too far from the market, bid={current_bid}')
@@ -736,8 +624,8 @@ cdef class BacktestExecClient(ExecutionClient):
         Precondition.not_in(order.id, self.working_orders, 'order.id', 'working_orders')
 
         cdef Instrument instrument = self.instruments[order.symbol]
-        cdef Price closing_ask
-        cdef Price closing_bid
+        cdef Price current_ask
+        cdef Price current_bid
 
         # Check order size is valid or reject
         if order.quantity > instrument.max_trade_size:
@@ -749,34 +637,34 @@ cdef class BacktestExecClient(ExecutionClient):
 
         # Check order price is valid or reject
         if order.side is OrderSide.BUY:
-            closing_ask = self._get_closing_ask(order.symbol)
+            current_ask = self.current_asks[order.symbol]
             if order.type is OrderType.MARKET:
                 # Accept and fill market orders immediately
                 self._accept_order(order)
-                self._fill_order(order, Price(closing_ask + self.slippage_index[order.symbol]))
+                self._fill_order(order, Price(current_ask + self.slippage_index[order.symbol]))
                 return  # Order filled - nothing further to process
             elif order.type in STOP_ORDER_TYPES:
-                if order.price.value < closing_ask + (instrument.min_stop_distance_entry * instrument.tick_size):
-                    self._reject_order(order,  f'BUY STOP order price of {order.price} is too far from the market, ask={closing_ask}')
+                if order.price.value < current_ask + (instrument.min_stop_distance_entry * instrument.tick_size):
+                    self._reject_order(order,  f'BUY STOP order price of {order.price} is too far from the market, ask={current_ask}')
                     return  # Cannot accept order
             elif order.type is OrderType.LIMIT:
-                if order.price.value > closing_ask + (instrument.min_limit_distance_entry * instrument.tick_size):
-                    self._reject_order(order,  f'BUY LIMIT order price of {order.price} is too far from the market, ask={closing_ask}')
+                if order.price.value > current_ask + (instrument.min_limit_distance_entry * instrument.tick_size):
+                    self._reject_order(order,  f'BUY LIMIT order price of {order.price} is too far from the market, ask={current_ask}')
                     return  # Cannot accept order
         elif order.side is OrderSide.SELL:
-            closing_bid = self._get_closing_bid(order.symbol)
+            current_bid = self.current_bids(order.symbol)
             if order.type is OrderType.MARKET:
                 # Accept and fill market orders immediately
                 self._accept_order(order)
-                self._fill_order(order, Price(closing_bid - self.slippage_index[order.symbol]))
+                self._fill_order(order, Price(current_bid - self.slippage_index[order.symbol]))
                 return  # Order filled - nothing further to process
             elif order.type in STOP_ORDER_TYPES:
-                if order.price.value > closing_bid - (instrument.min_stop_distance_entry * instrument.tick_size):
-                    self._reject_order(order,  f'SELL STOP order price of {order.price} is too far from the market, bid={closing_bid}')
+                if order.price.value > current_bid - (instrument.min_stop_distance_entry * instrument.tick_size):
+                    self._reject_order(order,  f'SELL STOP order price of {order.price} is too far from the market, bid={current_bid}')
                     return  # Cannot accept order
             elif order.type is OrderType.LIMIT:
-                if order.price.value < closing_bid - (instrument.min_limit_distance_entry * instrument.tick_size):
-                    self._reject_order(order,  f'SELL LIMIT order price of {order.price} is too far from the market, bid={closing_bid}')
+                if order.price.value < current_bid - (instrument.min_limit_distance_entry * instrument.tick_size):
+                    self._reject_order(order,  f'SELL LIMIT order price of {order.price} is too far from the market, bid={current_bid}')
                     return  # Cannot accept order
 
         # Order is valid and accepted
@@ -963,9 +851,8 @@ cdef class BacktestExecClient(ExecutionClient):
         :return: Dict[str, float].
         """
         cdef dict bid_rates = {}  # type: Dict[str, float]
-        for symbol, prices in self.data_bars_bid.items():
-            bid_rates[symbol.code] = prices[self.iteration][3].as_float()  # [3] index is close price
-
+        for symbol, price in self.current_bids.items():
+            bid_rates[symbol.code] = price.as_float()
         return bid_rates
 
     cdef dict _build_current_ask_rates(self):
@@ -975,9 +862,8 @@ cdef class BacktestExecClient(ExecutionClient):
         :return: Dict[str, float].
         """
         cdef dict ask_rates = {}  # type: Dict[str, float]
-        for symbol, prices in self.data_bars_ask.items():
-            ask_rates[symbol.code] = prices[self.iteration][3].as_float()  # [3] index is close price
-
+        for symbol, prices in self.current_asks.items():
+            ask_rates[symbol.code] = prices.as_float()
         return ask_rates
 
     cdef Money _calculate_pnl(

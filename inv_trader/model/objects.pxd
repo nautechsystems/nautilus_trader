@@ -90,7 +90,7 @@ cdef class BarType:
     Represents a financial market symbol and bar specification.
     """
     cdef readonly Symbol symbol
-    cdef readonly BarSpecification bar_spec
+    cdef readonly BarSpecification specification
     cdef bint equals(self, BarType other)
     cdef str resolution_string(self)
     cdef str quote_type_string(self)

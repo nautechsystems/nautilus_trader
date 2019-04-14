@@ -635,7 +635,7 @@ cdef class BarType:
         :param bar_spec: The bar specification.
         """
         self.symbol = symbol
-        self.bar_spec = bar_spec
+        self.specification = bar_spec
 
     cdef str resolution_string(self):
         """
@@ -643,7 +643,7 @@ cdef class BarType:
         
         :return: str.
         """
-        return self.bar_spec.resolution_string()
+        return self.specification.resolution_string()
 
     cdef str quote_type_string(self):
         """
@@ -651,7 +651,7 @@ cdef class BarType:
         
         :return: str.
         """
-        return self.bar_spec.quote_type_string()
+        return self.specification.quote_type_string()
 
     cdef bint equals(self, BarType other):
         """
@@ -660,7 +660,7 @@ cdef class BarType:
         :param other: The other object to compare
         :return: True if the objects are equal, otherwise False.
         """
-        return self.symbol.equals(other.symbol) and self.bar_spec.equals(other.bar_spec)
+        return self.symbol.equals(other.symbol) and self.specification.equals(other.specification)
 
     def __eq__(self, BarType other) -> bool:
         """
@@ -678,13 +678,13 @@ cdef class BarType:
         """"
         Override the default hash implementation.
         """
-        return hash((self.symbol, self.bar_spec))
+        return hash((self.symbol, self.specification))
 
     def __str__(self) -> str:
         """
         :return: The str() string representation of the bar type.
         """
-        return f"{str(self.symbol)}-{self.bar_spec}"
+        return f"{str(self.symbol)}-{self.specification}"
 
     def __repr__(self) -> str:
         """
