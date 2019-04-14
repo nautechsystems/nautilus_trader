@@ -11,32 +11,15 @@
 
 from cpython.datetime cimport datetime
 
-from inv_trader.enums.currency cimport Currency
-from inv_trader.model.objects cimport Money
 from inv_trader.common.account cimport Account
 from inv_trader.common.clock cimport Clock
 from inv_trader.common.logger cimport Logger, LoggerAdapter
+from inv_trader.backtest.config cimport BacktestConfig
 from inv_trader.backtest.data cimport BacktestDataClient
 from inv_trader.backtest.execution cimport BacktestExecClient
 from inv_trader.backtest.models cimport FillModel
 from inv_trader.portfolio.portfolio cimport Portfolio
 from inv_trader.trader cimport Trader
-
-
-cdef class BacktestConfig:
-    """
-    Represents a configuration for a BacktestEngine.
-    """
-    cdef readonly Money starting_capital
-    cdef readonly Currency account_currency
-    cdef readonly float commission_rate_bp
-    cdef readonly bint bypass_logging
-    cdef readonly object level_console
-    cdef readonly object level_file
-    cdef readonly bint console_prints
-    cdef readonly bint log_thread
-    cdef readonly bint log_to_file
-    cdef readonly str log_file_path
 
 
 cdef class BacktestEngine:
