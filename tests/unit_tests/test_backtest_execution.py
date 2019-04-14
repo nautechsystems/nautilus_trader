@@ -10,9 +10,6 @@
 import pandas as pd
 import unittest
 
-from decimal import Decimal
-from datetime import datetime, timezone, timedelta
-
 from inv_trader.common.account import Account
 from inv_trader.common.brokerage import CommissionCalculator
 from inv_trader.common.clock import TestClock
@@ -22,7 +19,8 @@ from inv_trader.model.enums import Venue, OrderSide
 from inv_trader.model.objects import Quantity, Symbol, Price, Money
 from inv_trader.model.events import OrderRejected, OrderCancelled, OrderWorking, OrderModified, OrderFilled
 from inv_trader.strategy import TradeStrategy
-from inv_trader.backtest.execution import BacktestExecClient, FillModel
+from inv_trader.backtest.execution import BacktestExecClient
+from inv_trader.backtest.models import FillModel
 from inv_trader.portfolio.portfolio import Portfolio
 from test_kit.strategies import TestStrategy1
 from test_kit.data import TestDataProvider
@@ -63,24 +61,6 @@ class BacktestExecClientTests(unittest.TestCase):
                                          logger=TestLogger())
 
         self.portfolio.register_execution_client(self.client)
-
-    def test_can_initialize_client_with_data(self):
-        # Arrange
-        # Act
-        # Assert
-        self.assertEqual(all(self.bid_data_1min.index), all(self.client.data_minute_index))
-        self.assertEqual(Decimal('0.001'), self.client.slippage_index[self.usdjpy.symbol])
-
-    def test_can_set_initial_iteration(self):
-        # Arrange
-        start = datetime(2013, 1, 2, 0, 0, 0, 0, tzinfo=timezone.utc)
-
-        # Act
-        self.client.set_initial_iteration(start, timedelta(minutes=1))
-
-        # Assert
-        self.assertEqual(1440, self.client.iteration)
-        self.assertEqual(start, self.client.time_now())
 
     def test_can_send_collateral_inquiry(self):
         # Arrange
