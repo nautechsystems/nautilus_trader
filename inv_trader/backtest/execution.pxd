@@ -33,6 +33,8 @@ cdef class FillModel:
     cpdef bint is_stop_filled(self)
     cpdef bint is_slipped(self)
 
+    cdef bint _did_event_occur(self, float probability)
+
 
 cdef class BacktestExecClient(ExecutionClient):
     """
