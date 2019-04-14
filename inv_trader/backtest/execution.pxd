@@ -84,7 +84,7 @@ cdef class BacktestExecClient(ExecutionClient):
 # -- EVENT HANDLING ------------------------------------------------------------------------------ #
     cdef void _accept_order(self, Order order)
     cdef void _reject_order(self, Order order, str reason)
-    cdef void _reject_modify_order(self, Order order, str reason)
+    cdef void _cancel_reject_order(self, Order order, str response, str reason)
     cdef void _expire_order(self, Order order)
     cdef void _process_order(self, Order order)
     cdef void _fill_order(self, Order order, Price fill_price)
