@@ -262,6 +262,7 @@ cdef class OrderRejected(OrderEvent):
                 f"(id={self.order_id.value}, "
                 f"rejected_reason={self.rejected_reason})")
 
+
 cdef class OrderWorking(OrderEvent):
     """
     Represents an event where an order is working with the broker.
@@ -322,6 +323,7 @@ cdef class OrderWorking(OrderEvent):
                 f"(id={self.order_id.value}, "
                 f"label={self.label.value}, "
                 f"price={self.price})")
+
 
 cdef class OrderCancelled(OrderEvent):
     """

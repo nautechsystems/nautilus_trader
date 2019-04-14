@@ -566,7 +566,9 @@ cdef class BacktestExecClient(ExecutionClient):
         
         :param command: The command to execute.
         """
-        Precondition.is_in(command.order.id, self.working_orders, 'order.id', 'working_orders')
+        if command.order.id not in self.working_orders:
+            self._cancel_reject_order(command.order, 'cancel order', 'order not found')
+            return  # Rejected the cancel order command
 
         # Remove from working orders
         if command.order.id in self.working_orders:
@@ -590,16 +592,7 @@ cdef class BacktestExecClient(ExecutionClient):
         :param command: The command to execute.
         """
         if command.order.id not in self.working_orders:
-            # Generate event
-            event = OrderCancelReject(
-                command.order.symbol,
-                command.order.id,
-                self._clock.time_now(),
-                ValidString(f'{command.id.value}'),
-                ValidString(f'cannot find order with id {command.order.id.value}'),
-                self._guid_factory.generate(),
-                self._clock.time_now())
-            self._handle_event(event)
+            self._cancel_reject_order(command.order, 'modify order', 'order not found')
             return  # Rejected the modify order command
 
         cdef Order order = command.order
@@ -611,21 +604,21 @@ cdef class BacktestExecClient(ExecutionClient):
             current_ask = self._get_closing_ask(order.symbol)
             if order.type in STOP_ORDER_TYPES:
                 if order.price.value < current_ask + (instrument.min_stop_distance * instrument.tick_size):
-                    self._reject_modify_order(order, f'BUY STOP order price of {order.price} is too far from the market, ask={current_ask}')
+                    self._cancel_reject_order(order, 'modify order', f'BUY STOP order price of {order.price} is too far from the market, ask={current_ask}')
                     return  # Cannot modify order
             elif order.type is OrderType.LIMIT:
                 if order.price.value > current_ask + (instrument.min_limit_distance * instrument.tick_size):
-                    self._reject_modify_order(order, f'BUY LIMIT order price of {order.price} is too far from the market, ask={current_ask}')
+                    self._cancel_reject_order(order, 'modify order', f'BUY LIMIT order price of {order.price} is too far from the market, ask={current_ask}')
                     return  # Cannot modify order
         elif order.side is OrderSide.SELL:
             current_bid = self._get_closing_bid(order.symbol)
             if order.type in STOP_ORDER_TYPES:
                 if order.price.value > current_bid - (instrument.min_stop_distance * instrument.tick_size):
-                    self._reject_modify_order(order, f'SELL STOP order price of {order.price} is too far from the market, bid={current_bid}')
+                    self._cancel_reject_order(order, 'modify order', f'SELL STOP order price of {order.price} is too far from the market, bid={current_bid}')
                     return  # Cannot modify order
             elif order.type is OrderType.LIMIT:
                 if order.price.value < current_bid - (instrument.min_limit_distance * instrument.tick_size):
-                    self._reject_modify_order(order, f'SELL LIMIT order price of {order.price} is too far from the market, bid={current_bid}')
+                    self._cancel_reject_order(order, 'modify order', f'SELL LIMIT order price of {order.price} is too far from the market, bid={current_bid}')
                     return  # Cannot modify order
 
         # Generate event
@@ -679,20 +672,25 @@ cdef class BacktestExecClient(ExecutionClient):
         self._check_oco_order(order.id)
         self._clean_up_child_orders(order.id)
 
-    cdef void _reject_modify_order(self, Order order, str reason):
+    cdef void _cancel_reject_order(
+            self,
+            Order order,
+            str response,
+            str reason):
         """
-        Reject the command to modify the given order by sending an 
-        OrderCancelReject event to the event handler.
+        Reject the cancellation/modification command for the given order with
+        the given response and reason..
         
         :param order: The order the modification reject relates to.
-        :param reason: The reason for the modification rejection.
+        :param response: The cancel reject response.
+        :param reason: The cancel reject reason.
         """
         # Generate event
         cdef OrderCancelReject cancel_reject = OrderCancelReject(
             order.symbol,
             order.id,
             self._clock.time_now(),
-            ValidString('INVALID PRICE'),
+            ValidString(response),
             ValidString(reason),
             self._guid_factory.generate(),
             self._clock.time_now())
