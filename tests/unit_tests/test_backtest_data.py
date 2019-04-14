@@ -60,7 +60,6 @@ class BacktestDataClientTests(unittest.TestCase):
         self.client.set_initial_iteration(start, timedelta(minutes=1))
 
         # Assert
-        self.assertEqual(1440, self.client.iteration)
         self.assertEqual(start, self.client.time_now())
         self.assertTrue(self.client.data_providers[USDJPY_FXCM].has_ticks)
         self.assertEqual(999, self.client.data_providers[USDJPY_FXCM].tick_index)
@@ -77,7 +76,9 @@ class BacktestDataClientTests(unittest.TestCase):
         # Act
         for x in range(1000):
             self.test_clock.set_time(start_datetime + timedelta(minutes=x))
-            self.client.iterate()
+            ticks_list = self.client.iterate_ticks(self.test_clock.time_now())
+            for tick in ticks_list:
+                self.client.process_tick(tick)
 
         # Assert
         self.assertEqual(len(self.client.data_providers[USDJPY_FXCM].ticks), len(receiver.get_store()))
@@ -93,7 +94,9 @@ class BacktestDataClientTests(unittest.TestCase):
         # Act
         for x in range(30):
             self.test_clock.set_time(start_datetime + timedelta(minutes=x))
-            self.client.iterate()
+            ticks_list = self.client.iterate_ticks(self.test_clock.time_now())
+            for tick in ticks_list:
+                self.client.process_tick(tick)
 
         # Assert
         self.assertTrue(self.client.data_providers[USDJPY_FXCM].has_ticks)
@@ -110,7 +113,8 @@ class BacktestDataClientTests(unittest.TestCase):
         # Act
         for x in range(1000):
             self.test_clock.set_time(start_datetime + timedelta(minutes=x))
-            self.client.iterate()
+            bars = self.client.iterate_bars(self.test_clock.time_now())
+            self.client.process_bars(bars)
 
         # Assert
         self.assertEqual(1000, len(receiver.get_store()))
@@ -122,6 +126,7 @@ class BacktestDataClientTests(unittest.TestCase):
         receiver = ObjectStorer()
         self.client.subscribe_ticks(USDJPY_FXCM, receiver.store)
         self.client.subscribe_bars(TestStubs.bartype_usdjpy_1min_bid(), receiver.store_2)
+        self.client.subscribe_bars(TestStubs.bartype_usdjpy_1min_ask(), receiver.store_2)
 
         start_datetime = datetime(2013, 1, 1, 22, 0, 0, 0, tzinfo=timezone.utc)
 
@@ -130,10 +135,15 @@ class BacktestDataClientTests(unittest.TestCase):
         # Act
         for x in range(30):
             self.test_clock.set_time(start_datetime + timedelta(minutes=x))
-            self.client.iterate()
+            ticks_list = self.client.iterate_ticks(self.test_clock.time_now())
+            for tick in ticks_list:
+                self.client.process_tick(tick)
+            self.client.get_next_minute_bars(self.test_clock.time_now())  # Testing this does not cause iteration errors
+            bars = self.client.iterate_bars(self.test_clock.time_now())
+            self.client.process_bars(bars)
 
-        # print(receiver.get_store())
+        print(receiver.get_store())
         # Assert
         self.assertTrue(self.client.data_providers[USDJPY_FXCM].has_ticks)
-        self.assertEqual(685, len(receiver.get_store()))
+        self.assertEqual(715, len(receiver.get_store()))
         self.assertEqual(Timestamp('2013-01-01 22:29:00+0000', tz='UTC'), receiver.get_store().pop()[1].timestamp)

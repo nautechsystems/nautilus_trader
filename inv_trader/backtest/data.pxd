@@ -25,7 +25,6 @@ cdef class BacktestDataClient(DataClient):
     cdef readonly list data_minute_index
     cdef readonly dict data_providers
     cdef readonly bint use_ticks
-    cdef readonly int iteration
 
     cpdef void set_initial_iteration(self, datetime to_time, timedelta time_step)
     cpdef list iterate_ticks(self, datetime to_time)

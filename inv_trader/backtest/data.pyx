@@ -80,7 +80,6 @@ cdef class BacktestDataClient(DataClient):
         assert(isinstance(self.data_minute_index[0], datetime))
 
         self.data_providers = {}  # type: Dict[Symbol, DataProvider]
-        self.iteration = 0
 
         # Convert instruments list to dictionary indexed by symbol
         cdef dict instruments_dict = {}  # type: Dict[Symbol, Instrument]
@@ -155,7 +154,6 @@ cdef class BacktestDataClient(DataClient):
         while current < to_time:
             if self.data_minute_index[next_index] == current:
                 next_index += 1
-                self.iteration += 1
             current += time_step
 
         for symbol, data_provider in self.data_providers.items():
@@ -165,7 +163,7 @@ cdef class BacktestDataClient(DataClient):
 
     cpdef list iterate_ticks(self, datetime to_time):
         """
-        Return the iterated ticks up to the given datetime.
+        Return the iterated ticks up to the given time.
         
         :param to_time: The datetime to iterate to.
         :return: List[Tick].
@@ -173,13 +171,13 @@ cdef class BacktestDataClient(DataClient):
         cdef list ticks = []
         for data_provider in self.data_providers.values():
             if data_provider.has_ticks:
-                ticks.append(data_provider.iterate_ticks(to_time))
-
-        return ticks.sort()
+                ticks += data_provider.iterate_ticks(to_time)
+        ticks.sort()
+        return ticks
 
     cpdef dict iterate_bars(self, datetime to_time):
         """
-        Return the iterated bars up to the given datetime.
+        Return the iterated bars up to the given time.
 
         :param to_time: The datetime to iterate to.
         :return: Dict[BarType, Bar].
@@ -188,15 +186,21 @@ cdef class BacktestDataClient(DataClient):
         for data_provider in self.data_providers.values():
             for bar_type, bar in data_provider.iterate_bars(to_time).items():
                 bars[bar_type] = bar
-
         return bars
 
     cpdef dict get_next_minute_bars(self, datetime time):
-        cdef dict minute_bars = {}
-        for symbol, data_provider in self.data_providers.values():
-            if data_provider.is_next_minute_bar_at_time(time):
-                minute_bars[symbol] = (data_provider.get_next_minute_bid_bar, data_provider.get_next_minute_ask_bar)
+        """
+        Return a dictionary of the next bid and ask minute bars if they exist 
+        at the given time.
 
+        Note: Values are a tuple of the bid bar [0], then the ask bar [1].
+        :param time: The index time for the minute bars.
+        :return: Dict[Symbol, (Bar, Bar)].
+        """
+        cdef dict minute_bars = {}
+        for symbol, data_provider in self.data_providers.items():
+            if data_provider.is_next_minute_bars_at_time(time):
+                minute_bars[symbol] = (data_provider.get_next_minute_bid_bar(time), data_provider.get_next_minute_ask_bar(time))
         return minute_bars
 
     cpdef void process_tick(self, Tick tick):
