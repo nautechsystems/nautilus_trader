@@ -14,7 +14,8 @@ from datetime import datetime, timezone
 
 from inv_trader.model.enums import Resolution, Currency
 from inv_trader.backtest.models import FillModel
-from inv_trader.backtest.engine import BacktestConfig, BacktestEngine
+from inv_trader.backtest.config import BacktestConfig
+from inv_trader.backtest.engine import BacktestEngine
 from test_kit.strategies import EMACross
 from test_kit.data import TestDataProvider
 from test_kit.stubs import TestStubs

@@ -506,20 +506,34 @@ cdef class Tick:
         self.ask = ask
         self.timestamp = timestamp
 
+    def __lt__(self, Tick other) -> bool:
+        return self.timestamp < other.timestamp
+
+    def __le__(self, Tick other) -> bool:
+        return self.timestamp <= other.timestamp
+
     def __eq__(self, Tick other) -> bool:
-        """
-        Override the default equality comparison.
-        """
-        return (self.symbol == other.symbol
-                    and self.bid == other.bid
-                    and self.ask == other.ask
-                    and self.timestamp == other.timestamp)
+        return self.timestamp == other.timestamp
 
     def __ne__(self, Tick other) -> bool:
+        return self.timestamp != other.timestamp
+
+    def __gt__(self, Tick other) -> bool:
+        return self.timestamp > other.timestamp
+
+    def __ge__(self, Tick other) -> bool:
+        return self.timestamp >= other.timestamp
+
+    def __cmp__(self, Tick other) -> int:
         """
-        Override the default not-equals comparison.
+        Override the default comparison.
         """
-        return not self.__eq__(other)
+        if self.timestamp < other.timestamp:
+            return -1
+        elif self.timestamp == other.timestamp:
+            return 0
+        else:
+            return 1
 
     def __hash__(self) -> int:
         """"
