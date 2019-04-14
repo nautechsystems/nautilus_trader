@@ -9,13 +9,11 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
-from cpython.datetime cimport datetime, timedelta
-
 from inv_trader.common.brokerage cimport CommissionCalculator
 from inv_trader.common.execution cimport ExecutionClient
 from inv_trader.enums.market_position cimport MarketPosition
 from inv_trader.model.currency cimport ExchangeRateCalculator
-from inv_trader.model.objects cimport Symbol, Price, Money, Quantity
+from inv_trader.model.objects cimport Symbol, Price, Tick, Bar, Money, Quantity
 from inv_trader.model.order cimport Order, OrderEvent
 from inv_trader.model.identifiers cimport OrderId
 
@@ -58,28 +56,22 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef readonly CommissionCalculator commission_calculator
     cdef readonly Money total_commissions
     cdef readonly FillModel fill_model
+    cdef readonly dict current_bids
+    cdef readonly dict current_asks
     cdef readonly dict slippage_index
     cdef readonly dict working_orders
     cdef readonly dict atomic_child_orders
     cdef readonly dict oco_orders
 
     cpdef void change_fill_model(self, FillModel fill_model)
-    cpdef void set_initial_iteration(self, datetime to_time, timedelta time_step)
-    cpdef void iterate(self)
-    cpdef void process_market(self)
+    cpdef void process_tick(self, Tick tick)
+    cpdef void process_bars(self, Symbol symbol, Bar bid_bar, Bar ask_bar)
+    cdef void _process_market(self, Symbol symbol, Price lowest_bid, Price highest_ask)
     cpdef void check_residuals(self)
     cpdef void reset_account(self)
     cpdef void reset(self)
 
-    cdef dict _prepare_minute_data(self, dict bar_data, str quote_type)
-    cpdef list _convert_to_prices(self, double[:] values, int precision)
     cdef void _set_slippage_index(self)
-    cdef Price _get_highest_bid(self, Symbol symbol)
-    cdef Price _get_lowest_bid(self, Symbol symbol)
-    cdef Price _get_closing_bid(self, Symbol symbol)
-    cdef Price _get_highest_ask(self, Symbol symbol)
-    cdef Price _get_lowest_ask(self, Symbol symbol)
-    cdef Price _get_closing_ask(self, Symbol symbol)
 
 # -- EVENT HANDLING ------------------------------------------------------------------------------ #
     cdef void _accept_order(self, Order order)

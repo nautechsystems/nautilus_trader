@@ -53,9 +53,6 @@ class BacktestExecClientTests(unittest.TestCase):
             guid_factory=TestGuidFactory(),
             logger=TestLogger())
         self.client = BacktestExecClient(instruments=self.instruments,
-                                         data_ticks=self.data_ticks,
-                                         data_bars_bid=self.data_bars_bid,
-                                         data_bars_ask=self.data_bars_ask,
                                          starting_capital=Money(1000000),
                                          fill_model=FillModel(),
                                          commission_calculator=CommissionCalculator(),
