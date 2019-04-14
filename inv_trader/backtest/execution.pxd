@@ -16,22 +16,7 @@ from inv_trader.model.currency cimport ExchangeRateCalculator
 from inv_trader.model.objects cimport Symbol, Price, Tick, Bar, Money, Quantity
 from inv_trader.model.order cimport Order, OrderEvent
 from inv_trader.model.identifiers cimport OrderId
-
-
-cdef class FillModel:
-    """
-    Provides probabilistic modeling for order fill dynamics including probability
-    of fills and slippage by order type.
-    """
-    cdef readonly float prob_fill_at_limit
-    cdef readonly float prob_fill_at_stop
-    cdef readonly float prob_slippage
-
-    cpdef bint is_limit_filled(self)
-    cpdef bint is_stop_filled(self)
-    cpdef bint is_slipped(self)
-
-    cdef bint _did_event_occur(self, float probability)
+from inv_trader.backtest.models cimport FillModel
 
 
 cdef class BacktestExecClient(ExecutionClient):

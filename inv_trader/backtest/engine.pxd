@@ -17,7 +17,8 @@ from inv_trader.common.account cimport Account
 from inv_trader.common.clock cimport Clock
 from inv_trader.common.logger cimport Logger, LoggerAdapter
 from inv_trader.backtest.data cimport BacktestDataClient
-from inv_trader.backtest.execution cimport BacktestExecClient, FillModel
+from inv_trader.backtest.execution cimport BacktestExecClient
+from inv_trader.backtest.models cimport FillModel
 from inv_trader.portfolio.portfolio cimport Portfolio
 from inv_trader.trader cimport Trader
 
