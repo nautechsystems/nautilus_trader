@@ -29,7 +29,8 @@ from inv_trader.version import __version__
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.core.functions cimport format_zulu_datetime
 from inv_trader.backtest.data cimport BacktestDataClient
-from inv_trader.backtest.execution cimport BacktestExecClient, FillModel
+from inv_trader.backtest.execution cimport BacktestExecClient
+from inv_trader.backtest.models cimport FillModel
 from inv_trader.common.account cimport Account
 from inv_trader.common.brokerage import CommissionCalculator
 from inv_trader.common.clock cimport LiveClock, TestClock

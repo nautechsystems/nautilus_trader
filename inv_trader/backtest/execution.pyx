@@ -9,13 +9,12 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
-import random
-
 from decimal import Decimal
 from cpython.datetime cimport datetime
 from typing import List, Dict
 
 from inv_trader.core.precondition cimport Precondition
+from inv_trader.backtest.models cimport FillModel
 from inv_trader.enums.brokerage cimport Broker
 from inv_trader.enums.quote_type cimport QuoteType
 from inv_trader.enums.order_type cimport OrderType
@@ -46,77 +45,6 @@ cdef set STOP_ORDER_TYPES = {
     OrderType.STOP_MARKET,
     OrderType.STOP_LIMIT,
     OrderType.MIT}
-
-
-cdef class FillModel:
-    """
-    Provides probabilistic modeling for order fill dynamics including probability
-    of fills and slippage by order type.
-    """
-
-    def __init__(self,
-                 float prob_fill_at_limit=0.0,
-                 float prob_fill_at_stop=1.0,
-                 float prob_slippage=1.0,
-                 random_seed=None):
-        """
-        Initializes a new instance of the FillModel class.
-
-        :param prob_fill_at_limit: The probability of limit order filling if the market rests on their price.
-        :param prob_fill_at_stop: The probability of stop orders filling if the market rests on their price.
-        :param prob_slippage: The probability of order fill prices slipping by a tick.
-        :param random_seed: The optional random seed (can be None).
-        :raises ValueError: If any probability argument is not within range [0, 1].
-        """
-        Precondition.in_range(prob_fill_at_limit, 'prob_fill_at_limit', 0.0, 1.0)
-        Precondition.in_range(prob_fill_at_stop, 'prob_fill_at_stop', 0.0, 1.0)
-        Precondition.in_range(prob_slippage, 'prob_slippage', 0.0, 1.0)
-        if random_seed is not None:
-            Precondition.type(random_seed, int, 'random_seed')
-
-        self.prob_fill_at_limit = prob_fill_at_limit
-        self.prob_fill_at_stop = prob_fill_at_stop
-        self.prob_slippage = prob_slippage
-        random.seed(random_seed)
-
-    cpdef bint is_limit_filled(self):
-        """
-        Return the models outcome for the probability of a LIMIT order filling.
-        
-        :return: bool.
-        """
-        return self._did_event_occur(self.prob_fill_at_limit)
-
-    cpdef bint is_stop_filled(self):
-        """
-        Return the models outcome for the probability of a STOP order filling.
-        
-        :return: bool.
-        """
-        return self._did_event_occur(self.prob_fill_at_stop)
-
-    cpdef bint is_slipped(self):
-        """
-        Return the models outcome for the probability of an order fill slipping.
-        
-        :return: bool.
-        """
-        return self._did_event_occur(self.prob_slippage)
-
-    cdef bint _did_event_occur(self, float probability):
-        """
-        Return a result indicating whether an event occurred based on the given 
-        probability.
-        
-        :param probability: The probability of the event occurring [0, 1].
-        :return: bool.
-        """
-        if probability == 0.0:
-            return False
-        elif probability == 1.0:
-            return True
-        else:
-            return probability >= random.random()
 
 
 cdef class BacktestExecClient(ExecutionClient):
