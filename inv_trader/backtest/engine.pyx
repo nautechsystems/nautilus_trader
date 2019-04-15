@@ -38,7 +38,7 @@ from inv_trader.common.guid cimport TestGuidFactory
 from inv_trader.common.logger cimport TestLogger
 from inv_trader.enums.currency cimport currency_string
 from inv_trader.enums.resolution cimport Resolution
-from inv_trader.model.objects cimport Symbol, Instrument
+from inv_trader.model.objects cimport Symbol, Instrument, Tick
 from inv_trader.portfolio.portfolio cimport Portfolio
 from inv_trader.strategy cimport TradeStrategy
 
@@ -171,8 +171,8 @@ cdef class BacktestEngine:
         :raises: ValueError: If the time_step_mins is not positive (> 0).
         """
         Precondition.true(start < stop, 'start < stop')
-        Precondition.true(start >= self.data_minute_index[0], 'start >= first_timestamp')
-        Precondition.true(stop <= self.data_minute_index[len(self.data_minute_index) - 1], 'stop <= last_timestamp')
+        Precondition.true(start >= self.data_client.data_minute_index[0], 'start >= first_timestamp')
+        Precondition.true(stop <= self.data_client.data_minute_index[len(self.data_client.data_minute_index) - 1], 'stop <= last_timestamp')
         Precondition.positive(time_step_mins, 'time_step_mins')
 
         if fill_model is not None:
@@ -182,7 +182,7 @@ cdef class BacktestEngine:
         cdef datetime run_started = self.clock.time_now()
         cdef datetime time = start
 
-        # Setup log files
+        # Setup log file
         if self.config.log_to_file:
             backtest_log_name = self.logger.name + '-' + format_zulu_datetime(run_started)
             self.logger.change_log_file_name(backtest_log_name)
@@ -195,37 +195,32 @@ cdef class BacktestEngine:
         self._change_strategy_clocks_and_loggers(self.trader.strategies)
         self.trader.start()
 
+        self.log.info(f"Running backtest...")
         self.log.debug("Setting initial iterations...")
         self.data_client.set_initial_iteration(start, time_step)  # Also sets clock to start time
 
         assert(self.data_client.time_now() == start)
         assert(self.exec_client.time_now() == start)
 
-        self.log.info(f"Running backtest...")
-
         # -- MAIN BACKTEST LOOP -----------------------------------------------#
-        cdef list ticks
+        cdef Tick tick
         cdef TradeStrategy strategy
         cdef Symbol symbol
         cdef tuple bid_ask_bars
-        cdef dict minute_bars
-        cdef dict bars
 
         while time <= stop:
-            ticks = self.data_client.iterate_ticks(time)
-            for tick in ticks:
+            for tick in self.data_client.iterate_ticks(time):
                 self.test_clock.set_time(tick.timestamp)
-                self.exec_client.process_tick(tick)
+                if self.data_client.use_ticks:
+                    self.exec_client.process_tick(tick)
                 for strategy in self.trader.strategies:
                     strategy.iterate(tick.timestamp)
                 self.data_client.process_tick(tick)
+            self.test_clock.set_time(time)
             if not self.data_client.use_ticks:
-                minute_bars = self.data_client.get_next_minute_bars(time)
-                for symbol, bid_ask_bars in minute_bars.items():
-                    self.exec_client.process_bars(symbol, bars[0], bars[1])
-            bars = self.data_client.iterate_bars(time)
-            for bar_type, bar in bars.items:
-                self.data_client.process_bars(bars)
+                for symbol, bid_ask_bars in self.data_client.get_next_minute_bars(time).items():
+                    self.exec_client.process_bars(symbol, bid_ask_bars[0], bid_ask_bars[1])
+            self.data_client.process_bars(self.data_client.iterate_bars(time))
             time += time_step
             self.iteration += 1
         # ---------------------------------------------------------------------#
@@ -303,6 +298,7 @@ cdef class BacktestEngine:
         Reset the backtest engine. The data client, execution client, trader and all strategies are reset.
         """
         self.log.info(f"Resetting...")
+        self.iteration = 0
         self.data_client.reset()
         self.exec_client.reset()
         self.trader.reset()
@@ -362,7 +358,7 @@ cdef class BacktestEngine:
             datetime start,
             datetime stop):
         """
-        Create a backtest run log footer. f'{value:.{decimals}f}'
+        Create a backtest run log footer.
         """
         self.log.info("#---------------------------------------------------------------#")
         self.log.info("#-------------------- BACKTEST DIAGNOSTICS ---------------------#")
@@ -370,7 +366,7 @@ cdef class BacktestEngine:
         self.log.info(f"Run started datetime: {format_zulu_datetime(run_started, timespec='milliseconds')}")
         self.log.info(f"Elapsed time (engine initialization): {self.time_to_initialize:.2f}s")
         self.log.info(f"Elapsed time (running backtest): {self.clock.get_elapsed(run_started):.2f}s")
-        self.log.info(f"Time-step iterations: {self.exec_client.iteration}")
+        self.log.info(f"Time-step iterations: {self.iteration}")
         self.log.info(f"Backtest start datetime: {format_zulu_datetime(start)}")
         self.log.info(f"Backtest stop datetime:  {format_zulu_datetime(stop)}")
         self.log.info(f"Account balance (starting): {self.config.starting_capital} {currency_string(self.account.currency)}")

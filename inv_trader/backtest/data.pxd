@@ -26,6 +26,7 @@ cdef class BacktestDataClient(DataClient):
     cdef readonly dict data_providers
     cdef readonly bint use_ticks
 
+    cdef void _build_bars(self, BarType bar_type)
     cpdef void set_initial_iteration(self, datetime to_time, timedelta time_step)
     cpdef list iterate_ticks(self, datetime to_time)
     cpdef dict iterate_bars(self, datetime to_time)
@@ -53,7 +54,6 @@ cdef class DataProvider:
 
     cpdef void register_ticks(self)
     cpdef void deregister_ticks(self)
-    cpdef void build_minute_bars(self)
     cpdef void register_bars(self, BarType bar_type)
     cpdef void deregister_bars(self, BarType bar_type)
     cpdef void set_initial_iterations(self, datetime from_time, datetime to_time, timedelta time_step)

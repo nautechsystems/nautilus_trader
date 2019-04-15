@@ -13,8 +13,9 @@ import unittest
 from datetime import datetime, timezone
 
 from inv_trader.model.enums import Resolution
+from inv_trader.backtest.config import BacktestConfig
 from inv_trader.backtest.models import FillModel
-from inv_trader.backtest.engine import BacktestConfig, BacktestEngine
+from inv_trader.backtest.engine import BacktestEngine
 from test_kit.strategies import EmptyStrategy, EMACross
 from test_kit.data import TestDataProvider
 from test_kit.stubs import TestStubs
@@ -62,8 +63,7 @@ class BacktestEngineTests(unittest.TestCase):
         self.engine.run(start, stop)
 
         # Assert
-        self.assertEqual(44641, self.engine.data_client.iteration)
-        self.assertEqual(33120, self.engine.exec_client.iteration)
+        self.assertEqual(44641, self.engine.iteration)
 
     def test_can_reset_engine(self):
         # Arrange
@@ -76,8 +76,7 @@ class BacktestEngineTests(unittest.TestCase):
         self.engine.reset()
 
         # Assert
-        self.assertEqual(0, self.engine.data_client.iteration)
-        self.assertEqual(0, self.engine.exec_client.iteration)
+        self.assertEqual(0, self.engine.iteration)
 
     def test_can_run_ema_cross_strategy(self):
         # Arrange

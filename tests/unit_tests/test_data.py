@@ -303,7 +303,7 @@ class LiveDataClientTests(unittest.TestCase):
         bar = TestStubs.bar_5decimal()
 
         # Act
-        self.redis_tester.publish('audusd.fxcm-1-minute[bid]', '1.00001,1.00004,1.00002,1.00003,100000,1970-01-01T00:00:00+00:00')
+        self.redis_tester.publish('audusd.fxcm-1-minute[bid]', '1.00002,1.00004,1.00001,1.00003,100000,1970-01-01T00:00:00+00:00')
 
         # Assert
         time.sleep(0.1)  # Allow threads to work.

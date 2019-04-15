@@ -17,8 +17,9 @@ from datetime import datetime, timezone
 from inv_trader.model.enums import Resolution
 from inv_trader.model.enums import Venue
 from inv_trader.model.objects import Symbol
-from inv_trader.backtest.execution import FillModel
-from inv_trader.backtest.engine import BacktestConfig, BacktestEngine
+from inv_trader.backtest.config import BacktestConfig
+from inv_trader.backtest.engine import BacktestEngine
+from inv_trader.backtest.models import FillModel
 from test_kit.strategies import EmptyStrategy, EMACross
 from test_kit.data import TestDataProvider
 from test_kit.stubs import TestStubs
@@ -158,3 +159,4 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 11/04/19 27094455 function calls (26782489 primitive calls) in 57.559 seconds (new order registration has slowed things down a lot)
         # 13/04/19 27087701 function calls (26775735 primitive calls) in 28.216 seconds (found bugs in execution, cleaned up residual objects)
         # 13/04/19 27203159 function calls (26890143 primitive calls) in 28.170 seconds (with fill modelling)
+        # 14/04/19 20930405 function calls (20666038 primitive calls) in 20.681 seconds (improved backtest loop!)

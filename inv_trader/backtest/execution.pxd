@@ -27,11 +27,6 @@ cdef class BacktestExecClient(ExecutionClient):
 
     cdef readonly dict instruments
     cdef readonly dict data_ticks
-    cdef readonly dict data_bars_bid
-    cdef readonly dict data_bars_ask
-    cdef readonly list data_minute_index
-    cdef readonly int data_minute_index_length
-    cdef readonly int iteration
     cdef readonly int day_number
     cdef readonly Money starting_capital
     cdef readonly Money account_capital
