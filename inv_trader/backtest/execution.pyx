@@ -163,7 +163,9 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         Process the working orders by simulating market dynamics with bar data.
         
-        
+        :param symbol: The market symbol to process.
+        :param symbol: The lowest bid price for the process.
+        :param symbol: The highest ask price for the process.
         """
         cdef CollateralInquiry command
         cdef datetime time_now = self._clock.time_now()
@@ -225,7 +227,7 @@ cdef class BacktestExecClient(ExecutionClient):
 
             # Check for order expiry
             if order.expire_time is not None and time_now >= order.expire_time:
-                if order.id in self.working_orders:
+                if order.id in self.working_orders:  # Order may have been removed since loop started
                     del self.working_orders[order.id]
                     self._expire_order(order)
 
@@ -562,15 +564,15 @@ cdef class BacktestExecClient(ExecutionClient):
             return  # Cannot accept order
 
         # Check market exists
-        if order.symbol not in self.current_bids or order.symbol not in self.current_asks:
+        if order.symbol not in self.current_bids:  # Market not initialized
             self._reject_order(order,  f'no market for {order.symbol}')
             return  # Cannot accept order
 
-        cdef Price current_ask
-        cdef Price current_bid
+        cdef Price current_bid = self.current_bids[order.symbol]
+        cdef Price current_ask = self.current_asks[order.symbol]
+
         # Check order price is valid or reject
         if order.side is OrderSide.BUY:
-            current_ask = self.current_asks[order.symbol]
             if order.type is OrderType.MARKET:
                 # Accept and fill market orders immediately
                 self._accept_order(order)
@@ -585,7 +587,6 @@ cdef class BacktestExecClient(ExecutionClient):
                     self._reject_order(order,  f'BUY LIMIT order price of {order.price} is too far from the market, ask={current_ask}')
                     return  # Cannot accept order
         elif order.side is OrderSide.SELL:
-            current_bid = self.current_bids[order.symbol]
             if order.type is OrderType.MARKET:
                 # Accept and fill market orders immediately
                 self._accept_order(order)
