@@ -138,7 +138,7 @@ cdef class BacktestEngine:
             strategy.change_logger(self.test_logger)
 
         self.trader = Trader(
-            'Backtest',
+            'Backtester',
             strategies,
             self.data_client,
             self.exec_client,
@@ -175,6 +175,9 @@ cdef class BacktestEngine:
         Precondition.true(stop <= self.data_minute_index[len(self.data_minute_index) - 1], 'stop <= last_timestamp')
         Precondition.positive(time_step_mins, 'time_step_mins')
 
+        if fill_model is not None:
+            self.exec_client.change_fill_model(fill_model)
+
         cdef timedelta time_step = timedelta(minutes=time_step_mins)
         cdef datetime run_started = self.clock.time_now()
         cdef datetime time = start
@@ -194,15 +197,13 @@ cdef class BacktestEngine:
 
         self.log.debug("Setting initial iterations...")
         self.data_client.set_initial_iteration(start, time_step)  # Also sets clock to start time
-        if fill_model is not None:
-            self.exec_client.change_fill_model(fill_model)
 
         assert(self.data_client.time_now() == start)
         assert(self.exec_client.time_now() == start)
 
         self.log.info(f"Running backtest...")
 
-        # -- MAIN BACKTEST LOOP------------------------------------------------#
+        # -- MAIN BACKTEST LOOP -----------------------------------------------#
         cdef list ticks
         cdef TradeStrategy strategy
         cdef Symbol symbol
@@ -226,6 +227,7 @@ cdef class BacktestEngine:
             for bar_type, bar in bars.items:
                 self.data_client.process_bars(bars)
             time += time_step
+            self.iteration += 1
         # ---------------------------------------------------------------------#
 
         self.log.info("Stopping...")
