@@ -116,10 +116,19 @@ class TestStubs:
         return BarType(USDJPY_FXCM, ONE_MINUTE_ASK)
 
     @staticmethod
-    def bar():
-        return Bar(Price('1.00001'),
+    def bar_5decimal():
+        return Bar(Price('1.00002'),
                    Price('1.00004'),
-                   Price('1.00002'),
+                   Price('1.00001'),
                    Price('1.00003'),
+                   100000,
+                   UNIX_EPOCH)
+
+    @staticmethod
+    def bar_3decimal():
+        return Bar(Price('90.002'),
+                   Price('90.004'),
+                   Price('90.001'),
+                   Price('90.003'),
                    100000,
                    UNIX_EPOCH)

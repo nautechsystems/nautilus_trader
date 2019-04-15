@@ -50,22 +50,23 @@ class BacktestExecClientTests(unittest.TestCase):
             clock=TestClock(),
             guid_factory=TestGuidFactory(),
             logger=TestLogger())
-        self.client = BacktestExecClient(instruments=self.instruments,
-                                         starting_capital=Money(1000000),
-                                         fill_model=FillModel(),
-                                         commission_calculator=CommissionCalculator(),
-                                         account=self.account,
-                                         portfolio=self.portfolio,
-                                         clock=TestClock(),
-                                         guid_factory=TestGuidFactory(),
-                                         logger=TestLogger())
+        self.exec_client = BacktestExecClient(
+            instruments=self.instruments,
+            starting_capital=Money(1000000),
+            fill_model=FillModel(),
+            commission_calculator=CommissionCalculator(),
+            account=self.account,
+            portfolio=self.portfolio,
+            clock=TestClock(),
+            guid_factory=TestGuidFactory(),
+            logger=TestLogger())
 
-        self.portfolio.register_execution_client(self.client)
+        self.portfolio.register_execution_client(self.exec_client)
 
     def test_can_send_collateral_inquiry(self):
         # Arrange
         strategy = TradeStrategy()
-        self.client.register_strategy(strategy)
+        self.exec_client.register_strategy(strategy)
 
         # Act
         strategy.collateral_inquiry()
@@ -76,15 +77,15 @@ class BacktestExecClientTests(unittest.TestCase):
     def test_can_submit_market_order(self):
         # Arrange
         strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
-        self.client.register_strategy(strategy)
+        self.exec_client.register_strategy(strategy)
         strategy.start()
 
+        bar = TestStubs.bar_3decimal()
+        self.exec_client.process_bars(self.usdjpy.symbol, bar, bar)  # Prepare market
         order = strategy.order_factory.market(
             USDJPY_FXCM,
             OrderSide.BUY,
             Quantity(100000))
-
-        order_id = order.id
 
         # Act
         strategy.submit_order(order, strategy.generate_position_id(self.usdjpy.symbol))
@@ -92,14 +93,16 @@ class BacktestExecClientTests(unittest.TestCase):
         # Assert
         self.assertEqual(5, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[3], OrderFilled))
-        self.assertEqual(Price('86.711'), strategy.order(order_id).average_price)
+        self.assertEqual(Price('90.004'), strategy.order(order.id).average_price)  # slipped 1 tick
 
     def test_can_submit_limit_order(self):
         # Arrange
         strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
-        self.client.register_strategy(strategy)
+        self.exec_client.register_strategy(strategy)
         strategy.start()
 
+        bar = TestStubs.bar_3decimal()
+        self.exec_client.process_bars(self.usdjpy.symbol, bar, bar)  # Prepare market
         order = strategy.order_factory.limit(
             USDJPY_FXCM,
             OrderSide.BUY,
@@ -117,9 +120,11 @@ class BacktestExecClientTests(unittest.TestCase):
     def test_can_submit_atomic_market_order(self):
         # Arrange
         strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
-        self.client.register_strategy(strategy)
+        self.exec_client.register_strategy(strategy)
         strategy.start()
 
+        bar = TestStubs.bar_3decimal()
+        self.exec_client.process_bars(self.usdjpy.symbol, bar, bar)  # Prepare market
         atomic_order = strategy.order_factory.atomic_market(
             USDJPY_FXCM,
             OrderSide.BUY,
@@ -134,20 +139,22 @@ class BacktestExecClientTests(unittest.TestCase):
         self.assertEqual(7, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[3], OrderFilled))
         self.assertEqual(Price('80.000'), atomic_order.stop_loss.price)
-        self.assertTrue(atomic_order.stop_loss.id not in self.client.atomic_child_orders)
+        self.assertTrue(atomic_order.stop_loss.id not in self.exec_client.atomic_child_orders)
 
     def test_can_submit_atomic_stop_order(self):
         # Arrange
         strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
-        self.client.register_strategy(strategy)
+        self.exec_client.register_strategy(strategy)
         strategy.start()
 
+        bar = TestStubs.bar_3decimal()
+        self.exec_client.process_bars(self.usdjpy.symbol, bar, bar)  # Prepare market
         atomic_order = strategy.order_factory.atomic_stop_market(
             USDJPY_FXCM,
             OrderSide.BUY,
             Quantity(100000),
-            Price('87.000'),
-            Price('86.710'),
+            Price('97.000'),
+            Price('96.710'),
             Price('86.000'))
 
         # Act
@@ -157,63 +164,85 @@ class BacktestExecClientTests(unittest.TestCase):
         # print(strategy.object_storer.get_store())
         self.assertEqual(4, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[3], OrderWorking))
-        self.assertTrue(atomic_order.entry.id in self.client.atomic_child_orders)
-        self.assertTrue(atomic_order.stop_loss in self.client.atomic_child_orders[atomic_order.entry.id])
-        self.assertTrue(atomic_order.take_profit in self.client.atomic_child_orders[atomic_order.entry.id])
+        self.assertTrue(atomic_order.entry.id in self.exec_client.atomic_child_orders)
+        self.assertTrue(atomic_order.stop_loss in self.exec_client.atomic_child_orders[atomic_order.entry.id])
+        self.assertTrue(atomic_order.take_profit in self.exec_client.atomic_child_orders[atomic_order.entry.id])
 
     def test_can_modify_stop_order(self):
         # Arrange
         strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
-        self.client.register_strategy(strategy)
+        self.exec_client.register_strategy(strategy)
         strategy.start()
 
+        bar = TestStubs.bar_3decimal()
+        self.exec_client.process_bars(self.usdjpy.symbol, bar, bar)  # Prepare market
         order = strategy.order_factory.stop_market(
             USDJPY_FXCM,
             OrderSide.BUY,
             Quantity(100000),
-            Price('86.711'))
-
-        order_id = order.id
+            Price('96.711'))
 
         strategy.submit_order(order, strategy.generate_position_id(self.usdjpy.symbol))
 
         # Act
-        strategy.modify_order(order, Price('86.712'))
+        strategy.modify_order(order, Price('96.714'))
 
         # Assert
-        self.assertEqual(Price('86.712'), strategy.order(order_id).price)
+        self.assertEqual(Price('96.714'), strategy.order(order.id).price)
         self.assertEqual(5, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[4], OrderModified))
 
     def test_can_modify_atomic_order_working_stop_loss(self):
         # Arrange
         strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
-        self.client.register_strategy(strategy)
+        self.exec_client.register_strategy(strategy)
         strategy.start()
 
+        bar = TestStubs.bar_3decimal()
+        self.exec_client.process_bars(self.usdjpy.symbol, bar, bar)  # Prepare market
         atomic_order = strategy.order_factory.atomic_market(
             USDJPY_FXCM,
             OrderSide.BUY,
             Quantity(100000),
             Price('85.000'))
 
-        stop_loss_order_id = atomic_order.stop_loss.id
         strategy.submit_atomic_order(atomic_order, strategy.generate_position_id(self.usdjpy.symbol))
 
         # Act
         strategy.modify_order(atomic_order.stop_loss, Price('85.100'))
 
         # Assert
-        self.assertEqual(Price('85.100'), strategy.order(stop_loss_order_id).price)
+        self.assertEqual(Price('85.100'), strategy.order(atomic_order.stop_loss.id).price)
         self.assertEqual(8, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[7], OrderModified))
 
-    def test_order_with_invalid_price_gets_rejected(self):
+    def test_submit_order_with_no_market_rejects_order(self):
         # Arrange
         strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
-        self.client.register_strategy(strategy)
+        self.exec_client.register_strategy(strategy)
         strategy.start()
 
+        order = strategy.order_factory.stop_market(
+            USDJPY_FXCM,
+            OrderSide.BUY,
+            Quantity(100000),
+            Price('80.000'))
+
+        # Act
+        strategy.submit_order(order, strategy.generate_position_id(self.usdjpy.symbol))
+
+        # Assert
+        self.assertEqual(3, strategy.object_storer.count)
+        self.assertTrue(isinstance(strategy.object_storer.get_store()[2], OrderRejected))
+
+    def test_submit_order_with_invalid_price_gets_rejected(self):
+        # Arrange
+        strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
+        self.exec_client.register_strategy(strategy)
+        strategy.start()
+
+        bar = TestStubs.bar_3decimal()
+        self.exec_client.process_bars(self.usdjpy.symbol, bar, bar)  # Prepare market
         order = strategy.order_factory.stop_market(
             USDJPY_FXCM,
             OrderSide.BUY,
@@ -230,21 +259,23 @@ class BacktestExecClientTests(unittest.TestCase):
     def test_submit_atomic_order_with_invalid_stop_loss_rejects_and_cancels_OCO(self):
         # Arrange
         strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
-        self.client.register_strategy(strategy)
+        self.exec_client.register_strategy(strategy)
         strategy.start()
 
+        bar = TestStubs.bar_3decimal()
+        self.exec_client.process_bars(self.usdjpy.symbol, bar, bar)  # Prepare market
         atomic_order = strategy.order_factory.atomic_market(
             USDJPY_FXCM,
             OrderSide.BUY,
             Quantity(100000),
             price_stop_loss=Price('200.00'),  # Invalid price above market
-            price_take_profit=Price('86.000'))
+            price_take_profit=Price('96.000'))
 
         # Act
         strategy.submit_atomic_order(atomic_order, strategy.generate_position_id(self.usdjpy.symbol))
 
         # Assert
-        print(strategy.object_storer.get_store())
+        # print(strategy.object_storer.get_store())
         self.assertEqual(11, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[9], OrderRejected))
         self.assertTrue(isinstance(strategy.object_storer.get_store()[10], OrderRejected))
@@ -252,9 +283,11 @@ class BacktestExecClientTests(unittest.TestCase):
     def test_submit_atomic_order_with_invalid_take_profit_rejects_and_cancels_OCO(self):
         # Arrange
         strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
-        self.client.register_strategy(strategy)
+        self.exec_client.register_strategy(strategy)
         strategy.start()
 
+        bar = TestStubs.bar_3decimal()
+        self.exec_client.process_bars(self.usdjpy.symbol, bar, bar)  # Prepare market
         atomic_order = strategy.order_factory.atomic_market(
             USDJPY_FXCM,
             OrderSide.BUY,
@@ -271,4 +304,4 @@ class BacktestExecClientTests(unittest.TestCase):
         self.assertTrue(isinstance(strategy.object_storer.get_store()[7], OrderRejected))
         self.assertTrue(isinstance(strategy.object_storer.get_store()[12], OrderRejected))
         self.assertTrue(isinstance(strategy.object_storer.get_store()[13], OrderCancelled))
-        self.assertTrue(atomic_order.stop_loss.id not in self.client.working_orders)
+        self.assertTrue(atomic_order.stop_loss.id not in self.exec_client.working_orders)

@@ -300,7 +300,7 @@ class LiveDataClientTests(unittest.TestCase):
         self.data_client.connect()
         self.data_client.subscribe_bars(TestStubs.bartype_audusd_1min_bid(), storer.store_2)
 
-        bar = TestStubs.bar()
+        bar = TestStubs.bar_5decimal()
 
         # Act
         self.redis_tester.publish('audusd.fxcm-1-minute[bid]', '1.00001,1.00004,1.00002,1.00003,100000,1970-01-01T00:00:00+00:00')
@@ -360,7 +360,7 @@ class LiveDataClientTests(unittest.TestCase):
     def test_can_add_bartype_to_dict(self):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
-        bar = TestStubs.bar()
+        bar = TestStubs.bar_5decimal()
 
         # Act
         bar_dictionary = {bar_type: bar}
