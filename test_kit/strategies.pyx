@@ -277,6 +277,7 @@ cdef class EMACross(TradeStrategy):
         :param bar_type: The received bar type.
         :param bar: The received bar.
         """
+        # self.log.critical(f"Received {bar}")  # uncomment for testing
         if not self.fast_ema.initialized or not self.slow_ema.initialized:
             # Wait for indicators to warm up...
             return

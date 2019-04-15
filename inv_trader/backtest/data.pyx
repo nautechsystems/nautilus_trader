@@ -70,9 +70,7 @@ cdef class BacktestDataClient(DataClient):
         self.data_bars_bid = data_bars_bid  # type: Dict[Symbol, Dict[Resolution, DataFrame]]
         self.data_bars_ask = data_bars_ask  # type: Dict[Symbol, Dict[Resolution, DataFrame]]
 
-        if len(self.data_ticks) > 0:
-            self.use_ticks = True
-
+        self._log.info("Preparing data...")
         # Set minute data index
         first_dataframe = data_bars_bid[next(iter(data_bars_bid))][Resolution.MINUTE]
         self.data_minute_index = list(pd.to_datetime(first_dataframe.index, utc=True))  # type: List[datetime]
@@ -117,9 +115,17 @@ cdef class BacktestDataClient(DataClient):
                 assert(dataframe.shape == shapes[resolution], f'{dataframe} shape is not equal.')
                 assert(dataframe.index == indexs[resolution], f'{dataframe} index is not equal.')
 
+        # Determine if tick data should be used for execution processing
+        if len(self.data_ticks[next(iter(data_ticks))]) > 0:
+            self.use_ticks = True
+            self._log.info("Market execution using TICK data.")
+        else:
+            self.use_ticks = False
+            self._log.info("Market execution using 1-MINUTE bar data.")
+
         # Create the data providers for the client based on the given instruments
         for symbol, instrument in self._instruments.items():
-            self._log.debug(f'Creating data provider for {symbol}...')
+            self._log.info(f'Creating DataProvider for {symbol}...')
             self.data_providers[symbol] = DataProvider(instrument=instrument,
                                                        data_ticks=None if symbol not in self.data_ticks else self.data_ticks[symbol].tz_localize('UTC'),
                                                        data_bars_bid=self.data_bars_bid[symbol],
@@ -133,8 +139,24 @@ cdef class BacktestDataClient(DataClient):
             self._log.info(f"Built {len(self.data_providers[symbol].ticks)} {symbol} ticks in {round((datetime.utcnow() - start).total_seconds(), 2)}s.")
 
         if not self.use_ticks:
+            # Build 1-MINUTE bars for execution processing
             for data_provider in self.data_providers.values():
-                data_provider.build_minute_bars()
+                self._build_bars(data_provider.bar_type_min_bid)
+                self._build_bars(data_provider.bar_type_min_ask)
+
+    cdef void _build_bars(self, BarType bar_type):
+        """
+        Build bars of the given bar type inside the data provider.
+        
+        :param bar_type: THe bar type to build.
+        :return: 
+        """
+        Precondition.is_in(bar_type.symbol, self.data_providers, 'symbol', 'data_providers')
+
+        cdef datetime start = datetime.utcnow()
+        self._log.info(f"Building {bar_type} bars...")
+        self.data_providers[bar_type.symbol].register_bars(bar_type)
+        self._log.info(f"Built {len(self.data_providers[bar_type.symbol].bars[bar_type])} {bar_type} bars in {round((datetime.utcnow() - start).total_seconds(), 2)}s.")
 
     cpdef void set_initial_iteration(
             self,
@@ -206,6 +228,8 @@ cdef class BacktestDataClient(DataClient):
     cpdef void process_tick(self, Tick tick):
         """
         Iterate the data client one time step.
+        
+        :param tick: The tick to process.
         """
         if tick.symbol in self._tick_handlers:
             for handler in self._tick_handlers[tick.symbol]:
@@ -214,6 +238,8 @@ cdef class BacktestDataClient(DataClient):
     cpdef void process_bars(self, dict bars):
         """
         Iterate the data client one time step.
+        
+        :param bars: The dictionary of bars to process Dict[BarType, Bar].
         """
         # Iterate bars
         cdef BarType bar_type
@@ -348,9 +374,7 @@ cdef class BacktestDataClient(DataClient):
 
         cdef start = datetime.utcnow()
         if bar_type not in self.data_providers[bar_type.symbol].bars:
-            self._log.info(f"Building {bar_type} bars...")
-            self.data_providers[bar_type.symbol].register_bars(bar_type)
-            self._log.info(f"Built {len(self.data_providers[bar_type.symbol].bars[bar_type])} {bar_type} bars in {round((datetime.utcnow() - start).total_seconds(), 2)}s.")
+            self._build_bars(bar_type)
 
         self._subscribe_bars(bar_type, handler)
 
@@ -431,13 +455,6 @@ cdef class DataProvider:
         """
         self.ticks = []
         self.has_ticks = False
-
-    cpdef void build_minute_bars(self):
-        """
-        Build bars for 1-MINUTE BID and ASK.
-        """
-        self.bars[self.bar_type_min_bid] = BarBuilder(self.instrument.tick_precision, self._dataframes_bars_bid[Resolution.MINUTE]).build_bars_all()
-        self.bars[self.bar_type_min_ask] = BarBuilder(self.instrument.tick_precision, self._dataframes_bars_ask[Resolution.MINUTE]).build_bars_all()
 
     cpdef void register_bars(self, BarType bar_type):
         """
