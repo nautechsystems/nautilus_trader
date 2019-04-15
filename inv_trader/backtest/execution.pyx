@@ -552,8 +552,6 @@ cdef class BacktestExecClient(ExecutionClient):
         Precondition.not_in(order.id, self.working_orders, 'order.id', 'working_orders')
 
         cdef Instrument instrument = self.instruments[order.symbol]
-        cdef Price current_ask
-        cdef Price current_bid
 
         # Check order size is valid or reject
         if order.quantity > instrument.max_trade_size:
@@ -563,6 +561,13 @@ cdef class BacktestExecClient(ExecutionClient):
             self._reject_order(order,  f'order quantity of {order.quantity} is less than the minimum trade size of {instrument.min_trade_size}')
             return  # Cannot accept order
 
+        # Check market exists
+        if order.symbol not in self.current_bids or order.symbol not in self.current_asks:
+            self._reject_order(order,  f'no market for {order.symbol}')
+            return  # Cannot accept order
+
+        cdef Price current_ask
+        cdef Price current_bid
         # Check order price is valid or reject
         if order.side is OrderSide.BUY:
             current_ask = self.current_asks[order.symbol]
@@ -580,7 +585,7 @@ cdef class BacktestExecClient(ExecutionClient):
                     self._reject_order(order,  f'BUY LIMIT order price of {order.price} is too far from the market, ask={current_ask}')
                     return  # Cannot accept order
         elif order.side is OrderSide.SELL:
-            current_bid = self.current_bids(order.symbol)
+            current_bid = self.current_bids[order.symbol]
             if order.type is OrderType.MARKET:
                 # Accept and fill market orders immediately
                 self._accept_order(order)
