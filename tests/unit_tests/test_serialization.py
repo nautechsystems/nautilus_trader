@@ -105,8 +105,8 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
         self.order_factory = OrderFactory(
-            id_tag_trader=ValidString('001'),
-            id_tag_strategy=ValidString('001'),
+            id_tag_trader='001',
+            id_tag_strategy='001',
             clock=TestClock())
         print('\n')
 
@@ -224,8 +224,8 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
         self.order_factory = OrderFactory(
-            id_tag_trader=ValidString('001'),
-            id_tag_strategy=ValidString('001'),
+            id_tag_trader='001',
+            id_tag_strategy='001',
             clock=TestClock())
         print('\n')
 
@@ -239,9 +239,9 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             Quantity(100000))
 
         command = SubmitOrder(order,
+                              TraderId('Trader-001'),
+                              StrategyId('SCALPER01'),
                               PositionId('some-position'),
-                              GUID(uuid.uuid4()),
-                              Label('SCALPER01'),
                               GUID(uuid.uuid4()),
                               UNIX_EPOCH)
 
@@ -267,9 +267,9 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
 
         command = SubmitAtomicOrder(
             atomic_order,
+            TraderId('Trader-001'),
+            StrategyId('SCALPER01'),
             PositionId('some-position'),
-            GUID(uuid.uuid4()),
-            Label('SCALPER01'),
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
@@ -297,9 +297,9 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
 
         command = SubmitAtomicOrder(
             atomic_order,
+            TraderId('Trader-001'),
+            StrategyId('SCALPER01'),
             PositionId('some-position'),
-            GUID(uuid.uuid4()),
-            Label('SCALPER01'),
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
