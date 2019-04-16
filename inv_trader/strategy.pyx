@@ -62,7 +62,7 @@ cdef class TradeStrategy:
         :param bar_capacity: The capacity for the internal bar deque(s).
         :param clock: The clock for the strategy.
         :param guid_factory: The GUID factory for the strategy.
-        :param logger: The logger (can be None, and will print).
+        :param logger: The logger for the strategy (can be None, and will print).
         :raises ValueError: If the label is not a valid string.
         :raises ValueError: If the order_id_tag is not a valid string.
         :raises ValueError: If the bar_capacity is not positive (> 0).
@@ -160,7 +160,7 @@ cdef class TradeStrategy:
         """
         :return: The str() string representation of the strategy.
         """
-        return f"TradeStrategy({self.id.value})"
+        return f"{self.__class__.__name__}({self.id.value})"
 
     def __repr__(self) -> str:
         """
@@ -232,7 +232,7 @@ cdef class TradeStrategy:
 
     cpdef void register_trader_id(self, TraderId trader_id, ValidString order_id_tag):
         """
-        Register the trader order identifier tag with the strategy.
+        Register the trader identifier and order identifier tag with the strategy.
 
         :param trader_id: The trader identifier to register.
         :param order_id_tag: The trader order identifier tag to register.
