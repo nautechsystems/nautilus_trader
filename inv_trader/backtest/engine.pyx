@@ -168,20 +168,19 @@ cdef class BacktestEngine:
             self,
             datetime start,
             datetime stop,
-            int time_step_mins=1,
+            timedelta time_step=timedelta(minutes=1),
             FillModel fill_model=None,
             bint print_log_store=True):
         """
         Run the backtest.
-        
+
         :param start: The start time for the backtest (must be >= first_timestamp and < stop).
         :param stop: The stop time for the backtest (must be <= last_timestamp and > start).
-        :param time_step_mins: The time step in minutes for each test clock iterations (> 0).
+        :param time_step: The time step for each backtest loop iteration (default minutes=1).
         :param fill_model: The optional fill model change for the backtest run (can be None).
-        :param time_step_mins: The time step in minutes for each test clock iterations (> 0).
         :param print_log_store: The flag for if the log store should be printed at the end of the backtest.
 
-        Note: The default time_step_mins is 1 and shouldn't need to be changed.
+        Note: The default time_step should not to be changed unless you want second bar or tick bar resolution.
         :raises: ValueError: If the start datetime is not < the stop datetime.
         :raises: ValueError: If the start datetime is not >= the first index timestamp of data.
         :raises: ValueError: If the start datetime is not <= the last index timestamp of data.
@@ -190,12 +189,10 @@ cdef class BacktestEngine:
         Precondition.true(start < stop, 'start < stop')
         Precondition.true(start >= self.data_client.data_minute_index[0], 'start >= first_timestamp')
         Precondition.true(stop <= self.data_client.data_minute_index[len(self.data_client.data_minute_index) - 1], 'stop <= last_timestamp')
-        Precondition.positive(time_step_mins, 'time_step_mins')
 
         if fill_model is not None:
             self.exec_client.change_fill_model(fill_model)
 
-        cdef timedelta time_step = timedelta(minutes=time_step_mins)
         cdef datetime run_started = self.clock.time_now()
         cdef datetime time = start
 
@@ -206,7 +203,7 @@ cdef class BacktestEngine:
             self.logger.change_log_file_name(backtest_log_name)
             self.test_logger.change_log_file_name(backtest_log_name)
 
-        self._backtest_header(run_started, start, stop, time_step_mins)
+        self._backtest_header(run_started, start, stop, time_step)
         self.log.info(f"Setting up backtest...")
         self.test_clock.set_time(time)
 
@@ -246,7 +243,7 @@ cdef class BacktestEngine:
         self.log.info("Stopping...")
         self.trader.stop()
         self.log.info("Stopped.")
-        self._backtest_footer(run_started, start, stop)
+        self._backtest_footer(run_started, start, stop, time_step)
         if print_log_store:
             self.print_log_store()
 
@@ -363,10 +360,12 @@ cdef class BacktestEngine:
             datetime run_started,
             datetime start,
             datetime stop,
-            int time_step_mins):
+            timedelta time_step):
         """
         Create a backtest run log header.
         """
+        cdef str execution_res = "TICKS" if self.data_client.use_ticks else "1-MINUTE BARS"
+
         self.log.info("#---------------------------------------------------------------#")
         self.log.info("#----------------------- BACKTEST RUN --------------------------#")
         self.log.info("#---------------------------------------------------------------#")
@@ -375,7 +374,8 @@ cdef class BacktestEngine:
         self.log.info(f"Run started datetime: {format_zulu_datetime(run_started, timespec='milliseconds')}")
         self.log.info(f"Backtest start datetime: {format_zulu_datetime(start)}")
         self.log.info(f"Backtest stop datetime:  {format_zulu_datetime(stop)}")
-        self.log.info(f"Time-step: {time_step_mins} minute")
+        self.log.info(f"Time-step: {time_step}")
+        self.log.info(f"Execution resolution: {execution_res}")
         self.log.info(f"Account balance (starting): {self.config.starting_capital} {currency_string(self.account.currency)}")
         self.log.info("#---------------------------------------------------------------#")
 
@@ -383,7 +383,8 @@ cdef class BacktestEngine:
             self,
             datetime run_started,
             datetime start,
-            datetime stop):
+            datetime stop,
+            timedelta time_step):
         """
         Create a backtest run log footer.
         """
@@ -393,7 +394,7 @@ cdef class BacktestEngine:
         self.log.info(f"Run started datetime: {format_zulu_datetime(run_started, timespec='milliseconds')}")
         self.log.info(f"Elapsed time (engine initialization): {self.time_to_initialize:.2f}s")
         self.log.info(f"Elapsed time (running backtest): {self.clock.get_elapsed(run_started):.2f}s")
-        self.log.info(f"Time-step iterations: {self.iteration}")
+        self.log.info(f"Time-step iterations: {self.iteration} of {time_step}")
         self.log.info(f"Backtest start datetime: {format_zulu_datetime(start)}")
         self.log.info(f"Backtest stop datetime:  {format_zulu_datetime(stop)}")
         self.log.info(f"Account balance (starting): {self.config.starting_capital} {currency_string(self.account.currency)}")
