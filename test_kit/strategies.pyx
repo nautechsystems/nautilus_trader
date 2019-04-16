@@ -174,7 +174,6 @@ cdef class EMACross(TradeStrategy):
     cdef readonly BarType bar_type
     cdef readonly PositionSizer position_sizer
     cdef readonly float risk_bp
-    cdef readonly int tick_precision
     cdef readonly object entry_buffer
     cdef readonly float SL_atr_multiple
     cdef readonly object SL_buffer
@@ -226,7 +225,6 @@ cdef class EMACross(TradeStrategy):
         self.bar_type = bar_type
         self.risk_bp = risk_bp
         self.position_sizer = FixedRiskSizer(self.instrument)
-        self.tick_precision = instrument.tick_precision
         self.entry_buffer = instrument.tick_size
         self.SL_atr_multiple = sl_atr_multiple
         self.SL_buffer = instrument.tick_size * 10
