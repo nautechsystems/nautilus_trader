@@ -16,7 +16,6 @@ import threading
 from cpython.datetime cimport datetime
 from threading import Thread
 from queue import Queue
-from logging import INFO, DEBUG
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.core.functions cimport format_zulu_datetime
@@ -42,8 +41,9 @@ cdef class Logger:
     def __init__(self,
                  str name=None,
                  bint bypass_logging=False,
-                 level_console: logging=INFO,
-                 level_file: logging=DEBUG,
+                 int level_console: logging=logging.INFO,
+                 int level_file: logging=logging.DEBUG,
+                 int level_store: logging=logging.WARNING,
                  bint console_prints=True,
                  bint log_thread=False,
                  bint log_to_file=False,
@@ -55,6 +55,7 @@ cdef class Logger:
         :param name: The name of the logger.
         :param level_console: The minimum log level for logging messages to the console.
         :param level_file: The minimum log level for logging messages to the log file.
+        :param level_store: The minimum log level for storing log messages in memory.
         :param console_prints: The boolean flag indicating whether log messages should print.
         :param log_thread: The boolean flag indicating whether log messages should log the thread.
         :param log_to_file: The boolean flag indicating whether log messages should log to file.
@@ -75,11 +76,13 @@ cdef class Logger:
         self.clock = clock
         self._log_level_console = level_console
         self._log_level_file = level_file
+        self._log_level_store = level_store
         self._console_prints = console_prints
         self._log_thread = log_thread
         self._log_to_file = log_to_file
         self._log_file_path = log_file_path
         self._log_file = f'{self._log_file_path}{self.name}.log'
+        self._log_store = []
         self._logger = logging.getLogger(name)
         self._logger.setLevel(level_file)
 
@@ -114,6 +117,20 @@ cdef class Logger:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
+    cpdef list get_log_store(self):
+        """
+        Return the log store of message strings.
+        
+        :return: List[str].
+        """
+        return self._log_store
+
+    cpdef void clear_log_store(self):
+        """
+        Clear the log store.
+        """
+        self._log_store = []
+
     cpdef void _debug(self, datetime timestamp, ValidString message):
         """
         Log the given debug message with the logger.
@@ -122,6 +139,7 @@ cdef class Logger:
         :param message: The debug message to log.
         """
         cdef str log_message = self._format_message(timestamp, 'DBG', message.value)
+        self._log_store_handler(logging.DEBUG, log_message)
         self._console_print_handler(logging.DEBUG, log_message)
 
         if self._log_to_file:
@@ -138,6 +156,7 @@ cdef class Logger:
         :param message: The information message to log.
         """
         cdef str log_message = self._format_message(timestamp, 'INF', message.value)
+        self._log_store_handler(logging.INFO, log_message)
         self._console_print_handler(logging.INFO, log_message)
 
         if self._log_to_file:
@@ -154,6 +173,7 @@ cdef class Logger:
         :param message: The warning message to log.
         """
         cdef str log_message = self._format_message(timestamp, WARNING + 'WRN' + ENDC, WARNING + message.value + ENDC)
+        self._log_store_handler(logging.WARNING, log_message)
         self._console_print_handler(logging.WARNING, log_message)
 
         if self._log_to_file:
@@ -170,6 +190,7 @@ cdef class Logger:
         :param message: The error message to log.
         """
         cdef str log_message = self._format_message(timestamp, FAIL + 'ERR' + ENDC, FAIL + message.value + ENDC)
+        self._log_store_handler(logging.ERROR, log_message)
         self._console_print_handler(logging.ERROR, log_message)
 
         if self._log_to_file:
@@ -186,6 +207,7 @@ cdef class Logger:
         :param message: The critical message to log.
         """
         cdef str log_message = self._format_message(timestamp, FAIL + 'CRT' + ENDC, FAIL + message.value + ENDC)
+        self._log_store_handler(logging.CRITICAL, log_message)
         self._console_print_handler(logging.CRITICAL, log_message)
 
         if self._log_to_file:
@@ -199,7 +221,11 @@ cdef class Logger:
         cdef str thread = '' if self._log_thread is False else f'[{threading.current_thread().ident}]'
         return f"{BOLD}{time}{ENDC} {thread}[{log_level}] {message}"
 
-    cdef void _console_print_handler(self, log_level: logging, str message):
+    cdef void _log_store_handler(self, int log_level, str message):
+        if log_level >= self._log_level_store:
+            self._log_store.append(message)
+
+    cdef void _console_print_handler(self, int log_level, str message):
         if self._console_prints and log_level >= self._log_level_console:
             print(message)
 
@@ -232,8 +258,9 @@ cdef class LiveLogger(Logger):
     def __init__(self,
                  str name=None,
                  bint bypass_logging=False,
-                 level_console: logging=INFO,
-                 level_file: logging=DEBUG,
+                 int level_console: logging=logging.INFO,
+                 int level_file: logging=logging.DEBUG,
+                 int level_store: logging=logging.WARNING,
                  bint console_prints=True,
                  bint log_thread=False,
                  bint log_to_file=False,
@@ -244,6 +271,7 @@ cdef class LiveLogger(Logger):
         :param name: The name of the logger.
         :param level_console: The minimum log level for logging messages to the console.
         :param level_file: The minimum log level for logging messages to the log file.
+        :param level_store: The minimum log level for storing log messages in memory.
         :param console_prints: The boolean flag indicating whether log messages should print.
         :param log_thread: The boolean flag indicating whether log messages should log the thread.
         :param log_to_file: The boolean flag indicating whether log messages should log to file.
@@ -255,6 +283,7 @@ cdef class LiveLogger(Logger):
                          bypass_logging,
                          level_console,
                          level_file,
+                         level_store,
                          console_prints,
                          log_thread,
                          log_to_file,
@@ -302,8 +331,9 @@ cdef class TestLogger(Logger):
     def __init__(self,
                  str name=None,
                  bint bypass_logging=False,
-                 level_console: logging=INFO,
-                 level_file: logging=DEBUG,
+                 int level_console: logging=logging.INFO,
+                 int level_file: logging=logging.DEBUG,
+                 int level_store: logging=logging.WARNING,
                  bint console_prints=True,
                  bint log_thread=False,
                  bint log_to_file=False,
@@ -315,6 +345,7 @@ cdef class TestLogger(Logger):
         :param name: The name of the logger.
         :param level_console: The minimum log level for logging messages to the console.
         :param level_file: The minimum log level for logging messages to the log file.
+        :param level_store: The minimum log level for storing log messages in memory.
         :param console_prints: The boolean flag indicating whether log messages should print.
         :param log_thread: The boolean flag indicating whether log messages should log the thread.
         :param log_to_file: The boolean flag indicating whether log messages should log to file.
@@ -329,6 +360,7 @@ cdef class TestLogger(Logger):
                          bypass_logging,
                          level_console,
                          level_file,
+                         level_store,
                          console_prints,
                          log_thread,
                          log_to_file,

@@ -43,11 +43,13 @@ cdef class BacktestEngine:
     cdef readonly list data_minute_index
     cdef readonly int iteration
 
-    cpdef void run(self, datetime start, datetime stop, FillModel fill_model=*, int time_step_mins=*)
+    cpdef void change_strategies(self, list strategies)
+    cpdef void run(self, datetime start, datetime stop, int time_step_mins=*, FillModel fill_model=*, bint print_log_store=*)
     cpdef void create_returns_tear_sheet(self)
     cpdef void create_full_tear_sheet(self)
     cpdef dict get_performance_stats(self)
-    cpdef void change_strategies(self, list strategies)
+    cpdef list get_log_store(self)
+    cpdef void print_log_store(self)
     cpdef void reset(self)
     cpdef void dispose(self)
 

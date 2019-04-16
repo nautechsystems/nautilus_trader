@@ -86,6 +86,7 @@ cdef class BacktestEngine:
             bypass_logging=False,
             level_console=logging.INFO,
             level_file=logging.INFO,
+            level_store=logging.WARNING,
             console_prints=True,
             log_thread=config.log_thread,
             log_to_file=config.log_to_file,
@@ -97,6 +98,7 @@ cdef class BacktestEngine:
             bypass_logging=config.bypass_logging,
             level_console=config.level_console,
             level_file=config.level_file,
+            level_store=config.level_store,
             console_prints=config.console_prints,
             log_thread=config.log_thread,
             log_to_file=config.log_to_file,
@@ -150,20 +152,35 @@ cdef class BacktestEngine:
         self.time_to_initialize = self.clock.get_elapsed(self.created_time)
         self.log.info(f'Initialized in {round(self.time_to_initialize, 2)}s.')
 
+    cpdef void change_strategies(self, list strategies: List[TradeStrategy]):
+        """
+        Change the engine traders strategies with the given list of trade strategies.
+        
+        :param strategies: The list of strategies to load into the engine.
+        :raises ValueError: If the strategies list contains a type other than TradeStrategy.
+        """
+        Precondition.list_type(strategies, TradeStrategy, 'strategies')
+
+        self._change_strategy_clocks_and_loggers(strategies)
+        self.trader.change_strategies(strategies)
+
     cpdef void run(
             self,
             datetime start,
             datetime stop,
+            int time_step_mins=1,
             FillModel fill_model=None,
-            int time_step_mins=1):
+            bint print_log_store=True):
         """
         Run the backtest.
         
         :param start: The start time for the backtest (must be >= first_timestamp and < stop).
         :param stop: The stop time for the backtest (must be <= last_timestamp and > start).
+        :param time_step_mins: The time step in minutes for each test clock iterations (> 0).
         :param fill_model: The optional fill model change for the backtest run (can be None).
-        :param time_step_mins: The time step in minutes for each test clock iterations (> 0)
-        
+        :param time_step_mins: The time step in minutes for each test clock iterations (> 0).
+        :param print_log_store: The flag for if the log store should be printed at the end of the backtest.
+
         Note: The default time_step_mins is 1 and shouldn't need to be changed.
         :raises: ValueError: If the start datetime is not < the stop datetime.
         :raises: ValueError: If the start datetime is not >= the first index timestamp of data.
@@ -182,7 +199,8 @@ cdef class BacktestEngine:
         cdef datetime run_started = self.clock.time_now()
         cdef datetime time = start
 
-        # Setup log file
+        # Setup logging
+        self.test_logger.clear_log_store()
         if self.config.log_to_file:
             backtest_log_name = self.logger.name + '-' + format_zulu_datetime(run_started)
             self.logger.change_log_file_name(backtest_log_name)
@@ -227,20 +245,10 @@ cdef class BacktestEngine:
 
         self.log.info("Stopping...")
         self.trader.stop()
-        self._backtest_footer(run_started, start, stop)
         self.log.info("Stopped.")
-
-    cpdef void change_strategies(self, list strategies: List[TradeStrategy]):
-        """
-        Change strategies with the given list of trade strategies.
-        
-        :param strategies: The list of strategies to load into the engine.
-        :raises ValueError: If the strategies list contains a type other than TradeStrategy.
-        """
-        Precondition.list_type(strategies, TradeStrategy, 'strategies')
-
-        self._change_strategy_clocks_and_loggers(strategies)
-        self.trader.change_strategies(strategies)
+        self._backtest_footer(run_started, start, stop)
+        if print_log_store:
+            self.print_log_store()
 
     cpdef void create_returns_tear_sheet(self):
         """
@@ -292,6 +300,25 @@ cdef class BacktestEngine:
         :return: Dict[str, float].
         """
         return self.portfolio.analyzer.get_performance_stats()
+
+    cpdef list get_log_store(self):
+        """
+        Return the store of log message strings for the test logger.
+        
+        :return: List[str].
+        """
+        return self.test_logger.get_log_store()
+
+    cpdef void print_log_store(self):
+        """
+        Print the contents of the test loggers store to the console.
+        """
+        self.log.info("")
+        self.log.info("#---------------------------------------------------------------#")
+        self.log.info("#-------------------------- LOG STORE --------------------------#")
+        self.log.info("#---------------------------------------------------------------#")
+        for message in self.test_logger.get_log_store():
+            print(message)
 
     cpdef void reset(self):
         """
@@ -379,8 +406,6 @@ cdef class BacktestEngine:
 
         for statistic in self.portfolio.analyzer.get_performance_stats_formatted():
             self.log.info(statistic)
-
-        self.log.info("#-----------------------------------------------------------------#")
 
     cdef void _change_strategy_clocks_and_loggers(self, list strategies):
         """

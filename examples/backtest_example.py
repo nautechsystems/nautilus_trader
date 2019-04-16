@@ -50,6 +50,7 @@ if __name__ == "__main__":
         bypass_logging=False,
         level_console=logging.INFO,
         level_file=logging.INFO,
+        level_store=logging.WARNING,
         log_thread=False,
         log_to_file=False)
 
