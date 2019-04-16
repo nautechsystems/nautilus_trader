@@ -23,7 +23,7 @@ cdef class FillModel:
     def __init__(self,
                  float prob_fill_at_limit=0.0,
                  float prob_fill_at_stop=1.0,
-                 float prob_slippage=1.0,
+                 float prob_slippage=0.0,
                  random_seed=None):
         """
         Initializes a new instance of the FillModel class.

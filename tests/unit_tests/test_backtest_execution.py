@@ -93,7 +93,7 @@ class BacktestExecClientTests(unittest.TestCase):
         # Assert
         self.assertEqual(5, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[3], OrderFilled))
-        self.assertEqual(Price('90.004'), strategy.order(order.id).average_price)  # slipped 1 tick
+        self.assertEqual(Price('90.003'), strategy.order(order.id).average_price)
 
     def test_can_submit_limit_order(self):
         # Arrange

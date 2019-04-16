@@ -576,7 +576,10 @@ cdef class BacktestExecClient(ExecutionClient):
             if order.type is OrderType.MARKET:
                 # Accept and fill market orders immediately
                 self._accept_order(order)
-                self._fill_order(order, Price(current_ask + self.slippage_index[order.symbol]))
+                if self.fill_model.is_slipped():
+                    self._fill_order(order, current_ask + self.slippage_index[order.symbol])
+                else:
+                    self._fill_order(order, current_ask)
                 return  # Order filled - nothing further to process
             elif order.type in STOP_ORDER_TYPES:
                 if order.price.value < current_ask + (instrument.min_stop_distance_entry * instrument.tick_size):
@@ -590,7 +593,10 @@ cdef class BacktestExecClient(ExecutionClient):
             if order.type is OrderType.MARKET:
                 # Accept and fill market orders immediately
                 self._accept_order(order)
-                self._fill_order(order, Price(current_bid - self.slippage_index[order.symbol]))
+                if self.fill_model.is_slipped():
+                    self._fill_order(order, current_bid - self.slippage_index[order.symbol])
+                else:
+                    self._fill_order(order, current_bid)
                 return  # Order filled - nothing further to process
             elif order.type in STOP_ORDER_TYPES:
                 if order.price.value > current_bid - (instrument.min_stop_distance_entry * instrument.tick_size):
