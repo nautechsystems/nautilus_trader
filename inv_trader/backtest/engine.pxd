@@ -9,7 +9,7 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
-from cpython.datetime cimport datetime
+from cpython.datetime cimport datetime, timedelta
 
 from inv_trader.common.account cimport Account
 from inv_trader.common.clock cimport Clock
@@ -44,7 +44,7 @@ cdef class BacktestEngine:
     cdef readonly int iteration
 
     cpdef void change_strategies(self, list strategies)
-    cpdef void run(self, datetime start, datetime stop, int time_step_mins=*, FillModel fill_model=*, bint print_log_store=*)
+    cpdef void run(self, datetime start, datetime stop, timedelta time_step=*, FillModel fill_model=*, bint print_log_store=*)
     cpdef void create_returns_tear_sheet(self)
     cpdef void create_full_tear_sheet(self)
     cpdef dict get_performance_stats(self)
@@ -54,6 +54,6 @@ cdef class BacktestEngine:
     cpdef void dispose(self)
 
     cdef void _engine_header(self)
-    cdef void _backtest_header(self, datetime run_started, datetime start, datetime stop, int time_step_mins)
-    cdef void _backtest_footer(self, datetime run_started, datetime start, datetime stop)
+    cdef void _backtest_header(self, datetime run_started, datetime start, datetime stop, timedelta time_step)
+    cdef void _backtest_footer(self, datetime run_started, datetime start, datetime stop, timedelta time_step)
     cdef void _change_strategy_clocks_and_loggers(self, list strategies)
