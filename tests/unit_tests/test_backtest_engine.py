@@ -65,7 +65,7 @@ class BacktestEngineTests(unittest.TestCase):
         # Assert
         self.assertEqual(44641, self.engine.iteration)
 
-    def test_can_reset_engine(self):
+    def test_can_reset_engine_(self):
         # Arrange
         start = datetime(2013, 1, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
         stop = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
@@ -76,7 +76,7 @@ class BacktestEngineTests(unittest.TestCase):
         self.engine.reset()
 
         # Assert
-        self.assertEqual(0, self.engine.iteration)
+        self.assertEqual(0, self.engine.iteration)  # No exceptions raised
 
     def test_can_run_ema_cross_strategy(self):
         # Arrange
@@ -84,6 +84,9 @@ class BacktestEngineTests(unittest.TestCase):
         bar_type = TestStubs.bartype_usdjpy_1min_bid()
 
         strategies = [EMACross(order_id_tag='001',
+                               flatten_on_sl_reject=True,
+                               flatten_on_stop=True,
+                               cancel_all_orders_on_stop=True,
                                instrument=instrument,
                                bar_type=bar_type,
                                risk_bp=10,
@@ -93,7 +96,6 @@ class BacktestEngineTests(unittest.TestCase):
                                sl_atr_multiple=2.0)]
 
         self.engine.change_strategies(strategies)
-
         start = datetime(2013, 1, 2, 0, 0, 0, 0, tzinfo=timezone.utc)
         stop = datetime(2013, 1, 3, 0, 0, 0, 0, tzinfo=timezone.utc)
 
@@ -105,12 +107,15 @@ class BacktestEngineTests(unittest.TestCase):
         self.assertEqual(1441, strategies[0].fast_ema.count)
         self.assertEqual(-17613.419921875, self.engine.get_performance_stats()['PNL'])  # Money represented as float here
 
-    def test_can_reset_and_rerun_ema_cross_strategy(self):
+    def test_can_reset_and_rerun_ema_cross_strategy_returns_identical_performance(self):
         # Arrange
         instrument = TestStubs.instrument_usdjpy()
         bar_type = TestStubs.bartype_usdjpy_1min_bid()
 
         strategies = [EMACross(order_id_tag='001',
+                               flatten_on_sl_reject=True,
+                               flatten_on_stop=True,
+                               cancel_all_orders_on_stop=True,
                                instrument=instrument,
                                bar_type=bar_type,
                                risk_bp=10,
@@ -143,6 +148,9 @@ class BacktestEngineTests(unittest.TestCase):
         bar_type = TestStubs.bartype_usdjpy_1min_bid()
 
         strategies = [EMACross(order_id_tag='001',
+                               flatten_on_sl_reject=True,
+                               flatten_on_stop=True,
+                               cancel_all_orders_on_stop=True,
                                instrument=instrument,
                                bar_type=bar_type,
                                risk_bp=10,
@@ -151,6 +159,9 @@ class BacktestEngineTests(unittest.TestCase):
                                atr_period=20,
                                sl_atr_multiple=2.0),
                       EMACross(order_id_tag='002',
+                               flatten_on_sl_reject=True,
+                               flatten_on_stop=True,
+                               cancel_all_orders_on_stop=True,
                                instrument=instrument,
                                bar_type=bar_type,
                                risk_bp=10,

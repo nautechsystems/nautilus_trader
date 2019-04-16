@@ -1017,7 +1017,7 @@ cdef class TradeStrategy:
         Then call on_reset().
         """
         if self.is_running:
-            self.log.warning(f"Cannot reset a running strategy...")
+            self.log.error(f"Cannot reset (cannot reset a running strategy).")
             return
 
         self.log.info(f"Resetting...")

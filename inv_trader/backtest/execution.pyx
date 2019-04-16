@@ -577,7 +577,7 @@ cdef class BacktestExecClient(ExecutionClient):
                 # Accept and fill market orders immediately
                 self._accept_order(order)
                 if self.fill_model.is_slipped():
-                    self._fill_order(order, current_ask + self.slippage_index[order.symbol])
+                    self._fill_order(order, Price(current_ask + self.slippage_index[order.symbol]))
                 else:
                     self._fill_order(order, current_ask)
                 return  # Order filled - nothing further to process
@@ -594,7 +594,7 @@ cdef class BacktestExecClient(ExecutionClient):
                 # Accept and fill market orders immediately
                 self._accept_order(order)
                 if self.fill_model.is_slipped():
-                    self._fill_order(order, current_bid - self.slippage_index[order.symbol])
+                    self._fill_order(order, Price(current_bid - self.slippage_index[order.symbol]))
                 else:
                     self._fill_order(order, current_bid)
                 return  # Order filled - nothing further to process

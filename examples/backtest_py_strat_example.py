@@ -13,8 +13,10 @@ import logging
 from datetime import datetime, timezone
 
 from inv_trader.model.enums import Resolution, Currency
-from inv_trader.backtest.execution import FillModel
-from inv_trader.backtest.engine import BacktestConfig, BacktestEngine
+from inv_trader.backtest.config import BacktestConfig
+from inv_trader.backtest.engine import BacktestEngine
+from inv_trader.backtest.models import FillModel
+
 from examples.ema_cross import EMACrossPy
 from test_kit.data import TestDataProvider
 from test_kit.stubs import TestStubs
@@ -31,6 +33,10 @@ if __name__ == "__main__":
     ask_data = {usdjpy.symbol: {Resolution.MINUTE: ask_data_1min}}
 
     strategies = [EMACrossPy(
+        order_id_tag='001',
+        flatten_on_sl_reject=True,
+        flatten_on_stop=True,
+        cancel_all_orders_on_stop=True,
         instrument=usdjpy,
         bar_type=TestStubs.bartype_usdjpy_1min_bid())]
 
@@ -44,7 +50,8 @@ if __name__ == "__main__":
     fill_model = FillModel(
         prob_fill_at_limit=0.2,
         prob_fill_at_stop=0.95,
-        prob_slippage=0.5)
+        prob_slippage=0.5,
+        random_seed=None)
 
     engine = BacktestEngine(
         instruments=instruments,
