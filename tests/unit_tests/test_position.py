@@ -31,8 +31,8 @@ class PositionTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
         self.order_factory = OrderFactory(
-            id_tag_trader=ValidString('001'),
-            id_tag_strategy=ValidString('001'),
+            id_tag_trader='001',
+            id_tag_strategy='001',
             clock=TestClock())
         print('\n')
 

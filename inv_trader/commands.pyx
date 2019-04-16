@@ -12,7 +12,7 @@
 from cpython.datetime cimport datetime
 
 from inv_trader.model.objects cimport ValidString, Price
-from inv_trader.model.identifiers cimport GUID, Label, PositionId
+from inv_trader.model.identifiers cimport GUID, Label, PositionId, TraderId, StrategyId
 from inv_trader.model.order cimport Order, AtomicOrder
 
 
@@ -123,27 +123,27 @@ cdef class SubmitOrder(OrderCommand):
 
     def __init__(self,
                  Order order,
+                 TraderId trader_id,
+                 StrategyId strategy_id,
                  PositionId position_id,
-                 GUID strategy_id,
-                 Label strategy_name,
                  GUID command_id,
                  datetime command_timestamp):
         """
         Initializes a new instance of the SubmitOrder class.
 
         :param order: The commands order to submit.
-        :param position_id: The command position identifier.
+        :param trader_id: The name of the trader associated with the order.
         :param strategy_id: The strategy identifier to associate with the order.
-        :param strategy_name: The name of the strategy associated with the order.
+        :param position_id: The command position identifier.
         :param command_id: The commands identifier.
         :param command_timestamp: The commands timestamp.
         """
         super().__init__(order,
                          command_id,
                          command_timestamp)
-        self.position_id = position_id
+        self.trader_id = trader_id
         self.strategy_id = strategy_id
-        self.strategy_name = strategy_name
+        self.position_id = position_id
 
 
 cdef class SubmitAtomicOrder(Command):
@@ -153,27 +153,27 @@ cdef class SubmitAtomicOrder(Command):
 
     def __init__(self,
                  AtomicOrder atomic_order,
+                 TraderId trader_id,
+                 StrategyId strategy_id,
                  PositionId position_id,
-                 GUID strategy_id,
-                 Label strategy_name,
                  GUID command_id,
                  datetime command_timestamp):
         """
         Initializes a new instance of the SubmitOrder class.
 
         :param atomic_order: The commands atomic order to submit.
-        :param position_id: The command position identifier.
+        :param trader_id: The name of the trader associated with the order.
         :param strategy_id: The strategy identifier to associate with the order.
-        :param strategy_name: The name of the strategy associated with the order.
+        :param position_id: The command position identifier.
         :param command_id: The commands identifier.
         :param command_timestamp: The commands timestamp.
         """
         super().__init__(command_id,
                          command_timestamp)
         self.atomic_order = atomic_order
-        self.position_id = position_id
+        self.trader_id = trader_id
         self.strategy_id = strategy_id
-        self.strategy_name = strategy_name
+        self.position_id = position_id
 
     def __str__(self) -> str:
         """
@@ -186,6 +186,7 @@ cdef class SubmitAtomicOrder(Command):
         :return: The repr() string representation of the command.
         """
         return f"<{str(self)} object at {id(self)}>"
+
 
 cdef class ModifyOrder(OrderCommand):
     """

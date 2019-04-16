@@ -18,7 +18,7 @@ from inv_trader.enums.order_side cimport OrderSide, order_side_string
 from inv_trader.enums.order_type cimport OrderType
 from inv_trader.enums.time_in_force cimport TimeInForce
 from inv_trader.model.identifiers cimport GUID, Label, AccountNumber, AccountId
-from inv_trader.model.identifiers cimport OrderId, ExecutionId, ExecutionTicket
+from inv_trader.model.identifiers cimport StrategyId, OrderId, ExecutionId, ExecutionTicket
 from inv_trader.model.objects cimport ValidString, Quantity, Symbol, Price
 from inv_trader.model.position cimport Position
 
@@ -566,7 +566,7 @@ cdef class PositionEvent(Event):
 
     def __init__(self,
                  Position position,
-                 GUID strategy_id,
+                 StrategyId strategy_id,
                  GUID event_id,
                  datetime event_timestamp):
         """
@@ -595,7 +595,7 @@ cdef class PositionOpened(PositionEvent):
 
     def __init__(self,
                  Position position,
-                 GUID strategy_id,
+                 StrategyId strategy_id,
                  GUID event_id,
                  datetime event_timestamp):
         """
@@ -629,7 +629,7 @@ cdef class PositionModified(PositionEvent):
 
     def __init__(self,
                  Position position,
-                 GUID strategy_id,
+                 StrategyId strategy_id,
                  GUID event_id,
                  datetime event_timestamp):
         """
@@ -664,7 +664,7 @@ cdef class PositionClosed(PositionEvent):
 
     def __init__(self,
                  Position position,
-                 GUID strategy_id,
+                 StrategyId strategy_id,
                  GUID event_id,
                  datetime event_timestamp):
         """

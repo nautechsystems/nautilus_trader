@@ -31,9 +31,7 @@ class EMACrossPy(TradeStrategy):
     def __init__(self,
                  instrument: Instrument,
                  bar_type: BarType,
-                 label: str='001',
-                 id_tag_trader: str='001',
-                 id_tag_strategy: str='001',
+                 order_id_tag: str='001',
                  risk_bp: float=10.0,
                  fast_ema: int=10,
                  slow_ema: int=20,
@@ -47,9 +45,7 @@ class EMACrossPy(TradeStrategy):
 
         :param instrument: The instrument for the strategy.
         :param bar_type: The bar type for the strategy.
-        :param label: The optional unique label for the strategy.
-        :param id_tag_trader: The unique order identifier tag for the trader.
-        :param id_tag_strategy: The unique order identifier tag for the strategy.
+        :param order_id_tag: The unique order identifier tag for the strategy.
         :param risk_bp: The risk per trade (basis points).
         :param fast_ema: The fast EMA period.
         :param slow_ema: The slow EMA period.
@@ -63,9 +59,7 @@ class EMACrossPy(TradeStrategy):
         orders should be cancelled on stop.
         """
         # Send the below arguments into the base class
-        super().__init__(label=label,
-                         id_tag_trader=id_tag_trader,
-                         id_tag_strategy=id_tag_strategy,
+        super().__init__(order_id_tag=order_id_tag,
                          flatten_on_sl_reject=flatten_on_sl_reject,
                          flatten_on_stop=flatten_on_stop,
                          cancel_all_orders_on_stop=cancel_all_orders_on_stop)

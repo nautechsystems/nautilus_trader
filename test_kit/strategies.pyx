@@ -185,9 +185,7 @@ cdef class EMACross(TradeStrategy):
     cdef readonly list trailing_stops
 
     def __init__(self,
-                 str label,
-                 str id_tag_trader,
-                 str id_tag_strategy,
+                 str order_id_tag,
                  Instrument instrument,
                  BarType bar_type,
                  float risk_bp=10,
@@ -201,9 +199,7 @@ cdef class EMACross(TradeStrategy):
         """
         Initializes a new instance of the EMACross class.
 
-        :param label: The optional unique label for the strategy.
-        :param id_tag_trader: The unique order identifier tag for the trader.
-        :param id_tag_strategy: The unique order identifier tag for the strategy.
+        :param order_id_tag: The unique order identifier tag for the strategy.
         :param bar_type: The bar type for the strategy (could also input any number of them)
         :param risk_bp: The risk per trade (basis points).
         :param fast_ema: The fast EMA period.
@@ -218,9 +214,7 @@ cdef class EMACross(TradeStrategy):
         orders should be cancelled on stop.
         """
         # Send the below arguments into the base class
-        super().__init__(label=label,
-                         id_tag_trader=id_tag_trader,
-                         id_tag_strategy=id_tag_strategy,
+        super().__init__(order_id_tag=order_id_tag,
                          flatten_on_sl_reject=flatten_on_sl_reject,
                          flatten_on_stop=flatten_on_stop,
                          cancel_all_orders_on_stop=cancel_all_orders_on_stop)

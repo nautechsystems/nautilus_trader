@@ -18,7 +18,7 @@ from inv_trader.enums.order_type cimport OrderType
 from inv_trader.enums.time_in_force cimport TimeInForce
 from inv_trader.model.objects cimport ValidString, Quantity, Symbol, Price, Money
 from inv_trader.model.identifiers cimport GUID, Label, AccountId, AccountNumber
-from inv_trader.model.identifiers cimport OrderId, ExecutionId, ExecutionTicket
+from inv_trader.model.identifiers cimport StrategyId, OrderId, ExecutionId, ExecutionTicket
 from inv_trader.model.position cimport Position
 
 
@@ -154,7 +154,7 @@ cdef class PositionEvent(Event):
     The base class for all position events.
     """
     cdef readonly Position position
-    cdef readonly GUID strategy_id
+    cdef readonly StrategyId strategy_id
 
 
 cdef class PositionOpened(PositionEvent):

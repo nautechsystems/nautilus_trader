@@ -9,8 +9,6 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
-import uuid
-
 from cpython.datetime cimport datetime, timedelta
 from collections import deque
 from typing import Callable, Dict, List, Deque
@@ -28,7 +26,7 @@ from inv_trader.common.guid cimport GuidFactory, LiveGuidFactory
 from inv_trader.model.currency cimport ExchangeRateCalculator
 from inv_trader.model.events cimport Event, OrderRejected, OrderExpired, OrderCancelled
 from inv_trader.model.events cimport OrderCancelReject, OrderModified, OrderFilled, OrderPartiallyFilled
-from inv_trader.model.identifiers cimport GUID, Label, OrderId, PositionId, PositionIdGenerator
+from inv_trader.model.identifiers cimport Label, TraderId, StrategyId, OrderId, PositionId, PositionIdGenerator
 from inv_trader.model.objects cimport ValidString, Symbol, Price, Tick, BarType, Bar, Instrument
 from inv_trader.model.order cimport Order, AtomicOrder, OrderFactory
 from inv_trader.model.position cimport Position
@@ -43,82 +41,93 @@ cdef class TradeStrategy:
     """
 
     def __init__(self,
-                 str label='001',
-                 str id_tag_trader='001',
-                 str id_tag_strategy='001',
-                 int bar_capacity=1000,
+                 str order_id_tag='001',
                  flatten_on_sl_reject=True,
                  flatten_on_stop=True,
                  cancel_all_orders_on_stop=True,
+                 int bar_capacity=1000,
                  Clock clock=LiveClock(),
                  GuidFactory guid_factory=LiveGuidFactory(),
                  Logger logger=None):
         """
         Initializes a new instance of the TradeStrategy class.
 
-        :param label: The unique label for the strategy.
-        :param id_tag_trader: The unique order identifier tag for the trader.
-        :param id_tag_strategy: The unique order identifier tag for the strategy.
-        :param bar_capacity: The capacity for the internal bar deque(s).
+        :param order_id_tag: The order identifier tag for the strategy (unique for the Trader).
         :param flatten_on_sl_reject: The flag indicating whether the position with an
         associated stop order should be flattened if the order is rejected.
         :param flatten_on_stop: The flag indicating whether the strategy should
         be flattened on stop.
         :param cancel_all_orders_on_stop: The flag indicating whether all residual
         orders should be cancelled on stop.
+        :param bar_capacity: The capacity for the internal bar deque(s).
         :param clock: The clock for the strategy.
         :param guid_factory: The GUID factory for the strategy.
         :param logger: The logger (can be None, and will print).
         :raises ValueError: If the label is not a valid string.
-        :raises ValueError: If the id_tag_trader is not a valid string.
         :raises ValueError: If the order_id_tag is not a valid string.
         :raises ValueError: If the bar_capacity is not positive (> 0).
         """
         Precondition.positive(bar_capacity, 'bar_capacity')
 
+        # Components
         self._clock = clock
         self._guid_factory = guid_factory
-        self.name = Label(self.__class__.__name__ + '-' + label)
-        if logger is None:
-            self.log = LoggerAdapter(f"{self.name.value}")
-        else:
-            self.log = LoggerAdapter(f"{self.name.value}", logger)
-        self.id = GUID(uuid.uuid4())
-        self.id_tag_trader = ValidString(id_tag_trader)
-        self.id_tag_strategy = ValidString(id_tag_strategy)
-        self.position_id_generator = PositionIdGenerator(
-            id_tag_trader=self.id_tag_trader,
-            id_tag_strategy=self.id_tag_strategy,
-            clock=self._clock)
-        self.order_factory = OrderFactory(
-            id_tag_trader=self.id_tag_trader,
-            id_tag_strategy=self.id_tag_strategy,
-            clock=self._clock)
-        self._exchange_calculator = ExchangeRateCalculator()
-        self.bar_capacity = bar_capacity
         self.is_running = False
-        self._ticks = {}                 # type: Dict[Symbol, Tick]
-        self._bars = {}                  # type: Dict[BarType, Deque[Bar]]
-        self._indicators = {}            # type: Dict[BarType, List[Indicator]]
-        self._indicator_updaters = {}    # type: Dict[BarType, List[IndicatorUpdater]]
+
+        # Identification
+        self.trader_id = TraderId('Trader-000')
+        self.id = StrategyId(self.__class__.__name__ + '-' + order_id_tag)
+        self.order_id_tag_trader = ValidString('000')
+        self.order_id_tag_strategy = ValidString(order_id_tag)
+
+        # Logger
+        if logger is None:
+            self.log = LoggerAdapter(f"{self.id.value}")
+        else:
+            self.log = LoggerAdapter(f"{self.id.value}", logger)
 
         # Order management flags
         self.flatten_on_sl_reject = flatten_on_sl_reject
         self.flatten_on_stop = flatten_on_stop
         self.cancel_all_orders_on_stop = cancel_all_orders_on_stop
 
-        # Registered Orders
+        # Order / Position components
+        self.order_factory = OrderFactory(
+            id_tag_trader=self.order_id_tag_trader.value,
+            id_tag_strategy=self.order_id_tag_strategy.value,
+            clock=self._clock)
+        self.position_id_generator = PositionIdGenerator(
+            id_tag_trader=self.order_id_tag_trader.value,
+            id_tag_strategy=self.order_id_tag_strategy.value,
+            clock=self._clock)
+
+        # Registered orders
         self._entry_orders = {}          # type: Dict[OrderId, Order]
         self._stop_loss_orders = {}      # type: Dict[OrderId, Order]
         self._take_profit_orders = {}    # type: Dict[OrderId, Order]
         self._atomic_order_ids = {}      # type: Dict[OrderId, List[OrderId]]
 
+        # Data
+        self.bar_capacity = bar_capacity
+        self._ticks = {}                 # type: Dict[Symbol, Tick]
+        self._bars = {}                  # type: Dict[BarType, Deque[Bar]]
+        self._indicators = {}            # type: Dict[BarType, List[Indicator]]
+        self._indicator_updaters = {}    # type: Dict[BarType, List[IndicatorUpdater]]
+        self._exchange_calculator = ExchangeRateCalculator()
+
+        # Command buffers
         self._modify_order_buffer = {}   # type: Dict[OrderId, ModifyOrder]
 
+        # Registered modules
         self._data_client = None         # Initialized when registered with data client
         self._exec_client = None         # Initialized when registered with execution client
         self._portfolio = None           # Initialized when registered with execution client
         self.account = None              # Initialized when registered with execution client
+
+        # Registration flags
+        self.is_data_client_registered = False
+        self.is_exec_client_registered = False
+        self.is_portfolio_registered = False
 
     cdef bint equals(self, TradeStrategy other):
         """
@@ -145,13 +154,13 @@ cdef class TradeStrategy:
         """"
         Override the default hash implementation.
         """
-        return hash(self.name)
+        return hash(self.id.value)
 
     def __str__(self) -> str:
         """
         :return: The str() string representation of the strategy.
         """
-        return f"TradeStrategy({self.name.value})"
+        return f"TradeStrategy({self.id.value})"
 
     def __repr__(self) -> str:
         """
@@ -221,6 +230,16 @@ cdef class TradeStrategy:
 
 # -- REGISTRATION METHODS ------------------------------------------------------------------------ #
 
+    cpdef void register_trader_id(self, TraderId trader_id, ValidString order_id_tag):
+        """
+        Register the trader order identifier tag with the strategy.
+
+        :param trader_id: The trader identifier to register.
+        :param order_id_tag: The trader order identifier tag to register.
+        """
+        self.trader_id = trader_id
+        self.order_id_tag_trader = order_id_tag
+
     cpdef void register_data_client(self, DataClient client):
         """
         Register the strategy with the given data client.
@@ -228,6 +247,7 @@ cdef class TradeStrategy:
         :param client: The data client to register.
         """
         self._data_client = client
+        self.is_data_client_registered = True
         self.log.debug("Registered data client.")
 
     cpdef void register_execution_client(self, ExecutionClient client):
@@ -239,7 +259,9 @@ cdef class TradeStrategy:
         self._exec_client = client
         self._portfolio = client.get_portfolio()
         self.account = client.get_account()
-        self.log.debug("Registered execution client.")
+        self.is_exec_client_registered = True
+        self.is_portfolio_registered = True
+        self.log.debug("Registered execution client, portfolio, and account.")
 
     cpdef void register_indicator(
             self,
@@ -471,11 +493,13 @@ cdef class TradeStrategy:
         :param bar_type: The historical bar type to download.
         :param quantity: The number of historical bars to download (>= 0)
         Note: If zero then will download to specified bar capacity.
-        :raises ValueError: If strategy has not been registered with a data client.
         :raises ValueError: If the quantity is negative (< 0).
         """
-        Precondition.not_none(self._data_client, 'data_client')
         Precondition.not_negative(quantity, 'quantity')
+
+        if not self.is_data_client_registered:
+            self.log.error("Cannot download historical bars (data client not registered).")
+            return
 
         if quantity == 0:
             quantity = self.bar_capacity
@@ -490,12 +514,14 @@ cdef class TradeStrategy:
 
         :param bar_type: The historical bar type to download.
         :param from_datetime: The datetime from which the historical bars should be downloaded.
-        :raises ValueError: If strategy has not been registered with a data client.
         :raises ValueError: If the from_datetime is not less than datetime.utcnow().
         """
-        Precondition.not_none(self._data_client, 'data_client')
         Precondition.true(from_datetime < self._clock.time_now(),
                           'from_datetime < self.clock.time_now()')
+
+        if not self.is_data_client_registered:
+            self.log.error("Cannot download historical bars (data client not registered).")
+            return
 
         self._data_client.historical_bars_from(bar_type, from_datetime, self.handle_bar)
 
@@ -504,9 +530,10 @@ cdef class TradeStrategy:
         Subscribe to bar data for the given bar type.
 
         :param bar_type: The bar type to subscribe to.
-        :raises ValueError: If strategy has not been registered with a data client.
         """
-        Precondition.not_none(self._data_client, 'data_client')
+        if not self.is_data_client_registered:
+            self.log.error("Cannot subscribe to bars (data client not registered).")
+            return
 
         self._data_client.subscribe_bars(bar_type, self.handle_bar)
         self.log.info(f"Subscribed to bar data for {bar_type}.")
@@ -516,9 +543,10 @@ cdef class TradeStrategy:
         Unsubscribe from bar data for the given bar type.
 
         :param bar_type: The bar type to unsubscribe from.
-        :raises ValueError: If strategy has not been registered with a data client.
         """
-        Precondition.not_none(self._data_client, 'data_client')
+        if not self.is_data_client_registered:
+            self.log.error("Cannot unsubscribe from bars (data client not registered).")
+            return
 
         self._data_client.unsubscribe_bars(bar_type, self.handle_bar)
         self.log.info(f"Unsubscribed from bar data for {bar_type}.")
@@ -528,9 +556,10 @@ cdef class TradeStrategy:
         Subscribe to tick data for the given symbol.
 
         :param symbol: The tick symbol to subscribe to.
-        :raises ValueError: If strategy has not been registered with a data client.
         """
-        Precondition.not_none(self._data_client, 'data_client')
+        if not self.is_data_client_registered:
+            self.log.error("Cannot subscribe to ticks (data client not registered).")
+            return
 
         self._data_client.subscribe_ticks(symbol, self.handle_tick)
         self.log.info(f"Subscribed to tick data for {symbol}.")
@@ -540,9 +569,10 @@ cdef class TradeStrategy:
         Unsubscribe from tick data for the given symbol.
 
         :param symbol: The tick symbol to unsubscribe from.
-        :raises ValueError: If strategy has not been registered with a data client.
         """
-        Precondition.not_none(self._data_client, 'data_client')
+        if not self.is_data_client_registered:
+            self.log.error("Cannot unsubscribe from ticks (data client not registered).")
+            return
 
         self._data_client.unsubscribe_ticks(symbol, self.handle_tick)
         self.log.info(f"Unsubscribed from tick data for {symbol}.")
@@ -705,7 +735,6 @@ cdef class TradeStrategy:
         
         :param order_id: The order identifier.
         :return: True if the order exists, else False.
-        :raises ValueError: If the execution client is not registered.
         """
         return self._exec_client.order_exists(order_id)
 
@@ -992,10 +1021,10 @@ cdef class TradeStrategy:
             return
 
         self.log.info(f"Resetting...")
-        self._ticks = {}  # type: Dict[Symbol, Tick]
-        self._bars = {}   # type: Dict[BarType, Deque[Bar]]
         self.order_factory.reset()
         self.position_id_generator.reset()
+        self._ticks = {}  # type: Dict[Symbol, Tick]
+        self._bars = {}   # type: Dict[BarType, Deque[Bar]]
 
         # Reset all indicators
         for indicator_list in self._indicators.values():
@@ -1029,17 +1058,18 @@ cdef class TradeStrategy:
 
         :param order: The order to submit.
         :param position_id: The position identifier to associate with this order.
-        :raises ValueError: If the strategy has not been registered with an execution client.
         """
-        Precondition.not_none(self._exec_client, 'exec_client')
+        if not self.is_exec_client_registered:
+            self.log.error("Cannot submit order (execution client not registered).")
+            return
 
         self.log.info(f"Submitting {order} with {position_id}")
 
         cdef SubmitOrder command = SubmitOrder(
             order,
-            position_id,
+            self.trader_id,
             self.id,
-            self.name,
+            position_id,
             self._guid_factory.generate(),
             self._clock.time_now())
 
@@ -1076,9 +1106,10 @@ cdef class TradeStrategy:
         
         :param atomic_order: The atomic order to submit.
         :param position_id: The position identifier to associate with this order.
-        :raises ValueError: If the strategy has not been registered with an execution client.
         """
-        Precondition.not_none(self._exec_client, 'exec_client')
+        if not self.is_exec_client_registered:
+            self.log.error("Cannot submit atomic order (execution client not registered).")
+            return
 
         self.log.info(f"Submitting {atomic_order} for {position_id}")
 
@@ -1096,9 +1127,9 @@ cdef class TradeStrategy:
 
         cdef SubmitAtomicOrder command = SubmitAtomicOrder(
             atomic_order,
-            position_id,
+            self.trader_id,
             self.id,
-            self.name,
+            position_id,
             self._guid_factory.generate(),
             self._clock.time_now())
 
@@ -1111,9 +1142,10 @@ cdef class TradeStrategy:
 
         :param order: The order to modify.
         :param new_price: The new price for the given order.
-        :raises ValueError: If the strategy has not been registered with an execution client.
         """
-        Precondition.not_none(self._exec_client, 'exec_client')
+        if not self.is_exec_client_registered:
+            self.log.error("Cannot modify order (execution client not registered).")
+            return
 
         cdef ModifyOrder command = ModifyOrder(
             order,
@@ -1140,7 +1172,9 @@ cdef class TradeStrategy:
         :param cancel_reason: The reason for cancellation (will be logged).
         :raises ValueError: If the strategy has not been registered with an execution client.
         """
-        Precondition.not_none(self._exec_client, 'exec_client')
+        if not self.is_exec_client_registered:
+            self.log.error("Cannot cancel order (execution client not registered).")
+            return
 
         self.log.info(f"Cancelling {order}")
 
@@ -1158,10 +1192,11 @@ cdef class TradeStrategy:
         order book with the given cancel_reason - to the execution service.
 
         :param cancel_reason: The reason for cancellation (will be logged).
-        :raises ValueError: If the strategy has not been registered with an execution client.
         :raises ValueError: If the cancel_reason is not a valid string.
         """
-        Precondition.not_none(self._exec_client, 'exec_client')
+        if not self.is_exec_client_registered:
+            self.log.error("Cannot cancel all orders (execution client not registered).")
+            return
 
         cdef dict all_orders = self._exec_client.get_orders(self.id)
         cdef CancelOrder command
@@ -1183,10 +1218,11 @@ cdef class TradeStrategy:
         If the position is None or already FLAT will log a warning.
 
         :param position_id: The position identifier to flatten.
-        :raises ValueError: If the strategy has not been registered with an execution client.
         :raises ValueError: If the position_id is not found in the position book.
         """
-        Precondition.not_none(self._exec_client, 'exec_client')
+        if not self.is_exec_client_registered:
+            self.log.error("Cannot flatten position (execution client not registered).")
+            return
 
         cdef Position position = self._portfolio.get_position(position_id)
 
@@ -1208,15 +1244,15 @@ cdef class TradeStrategy:
         Flatten all positions by generating the required market orders and sending
         them to the execution service. If no positions found or a position is None
         then will log a warning.
-        
-        :raises ValueError: If the strategy has not been registered with an execution client.
         """
-        Precondition.not_none(self._exec_client, 'exec_client')
+        if not self.is_exec_client_registered:
+            self.log.error("Cannot flatten all positions (execution client not registered).")
+            return
 
         cdef dict positions = self._portfolio.get_positions_active(self.id)
 
         if len(positions) == 0:
-            self.log.warning("Cannot flatten positions (no active positions to flatten).")
+            self.log.warning("Did not flatten all positions (no active positions to flatten).")
             return
 
         cdef Order order
@@ -1316,12 +1352,12 @@ cdef class TradeStrategy:
         """
         self._clock = clock
         self.order_factory = OrderFactory(
-            id_tag_trader=self.id_tag_trader,
-            id_tag_strategy=self.id_tag_strategy,
+            id_tag_trader=self.order_id_tag_trader.value,
+            id_tag_strategy=self.order_id_tag_strategy.value,
             clock=clock)
         self.position_id_generator = PositionIdGenerator(
-            id_tag_trader=self.id_tag_trader,
-            id_tag_strategy=self.id_tag_strategy,
+            id_tag_trader=self.order_id_tag_trader.value,
+            id_tag_strategy=self.order_id_tag_strategy.value,
             clock=clock)
 
     cpdef void change_guid_factory(self, GuidFactory guid_factory):
@@ -1338,7 +1374,7 @@ cdef class TradeStrategy:
         
         :param logger: The logger to change to.
         """
-        self.log = LoggerAdapter(f"{self.name.value}", logger)
+        self.log = LoggerAdapter(f"{self.id.value}", logger)
 
     cpdef void set_time(self, datetime time):
         """

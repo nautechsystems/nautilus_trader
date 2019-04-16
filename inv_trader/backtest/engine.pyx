@@ -138,7 +138,7 @@ cdef class BacktestEngine:
             strategy.change_logger(self.test_logger)
 
         self.trader = Trader(
-            'Backtester',
+            'BACKTEST',
             strategies,
             self.data_client,
             self.exec_client,

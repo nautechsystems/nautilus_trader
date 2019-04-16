@@ -83,9 +83,7 @@ class BacktestEngineTests(unittest.TestCase):
         instrument = TestStubs.instrument_usdjpy()
         bar_type = TestStubs.bartype_usdjpy_1min_bid()
 
-        strategies = [EMACross(label='001',
-                               id_tag_trader='001',
-                               id_tag_strategy='001',
+        strategies = [EMACross(order_id_tag='001',
                                instrument=instrument,
                                bar_type=bar_type,
                                risk_bp=10,
@@ -112,9 +110,7 @@ class BacktestEngineTests(unittest.TestCase):
         instrument = TestStubs.instrument_usdjpy()
         bar_type = TestStubs.bartype_usdjpy_1min_bid()
 
-        strategies = [EMACross(label='001',
-                               id_tag_trader='001',
-                               id_tag_strategy='001',
+        strategies = [EMACross(order_id_tag='001',
                                instrument=instrument,
                                bar_type=bar_type,
                                risk_bp=10,
@@ -146,9 +142,7 @@ class BacktestEngineTests(unittest.TestCase):
         instrument = TestStubs.instrument_usdjpy()
         bar_type = TestStubs.bartype_usdjpy_1min_bid()
 
-        strategies = [EMACross(label='001',
-                               id_tag_trader='001',
-                               id_tag_strategy='001',
+        strategies = [EMACross(order_id_tag='001',
                                instrument=instrument,
                                bar_type=bar_type,
                                risk_bp=10,
@@ -156,9 +150,7 @@ class BacktestEngineTests(unittest.TestCase):
                                slow_ema=20,
                                atr_period=20,
                                sl_atr_multiple=2.0),
-                      EMACross(label='002',
-                               id_tag_trader='002',
-                               id_tag_strategy='002',
+                      EMACross(order_id_tag='002',
                                instrument=instrument,
                                bar_type=bar_type,
                                risk_bp=10,

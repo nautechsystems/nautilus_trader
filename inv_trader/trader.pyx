@@ -9,8 +9,6 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
-import uuid
-
 from cpython.datetime cimport datetime
 from typing import List
 
@@ -30,7 +28,7 @@ cdef class Trader:
     """
 
     def __init__(self,
-                 str label,
+                 str order_id_tag,
                  list strategies,
                  DataClient data_client,
                  ExecutionClient exec_client,
@@ -41,7 +39,7 @@ cdef class Trader:
         """
         Initializes a new instance of the Trader class.
 
-        :param label: The unique label for the trader.
+        :param order_id_tag: The unique order identifier tag for the trader (unique at fund level).
         :param strategies: The initial list of strategies to manage (cannot be empty).
         :param logger: The logger for the trader (can be None).
         :raise ValueError: If the label is an invalid string.
@@ -51,7 +49,7 @@ cdef class Trader:
         :raise ValueError: If the exec client is None.
         :raise ValueError: If the clock is None.
         """
-        Precondition.valid_string(label, 'label')
+        Precondition.valid_string(order_id_tag, 'order_id_tag')
         Precondition.not_empty(strategies, 'strategies')
         Precondition.list_type(strategies, TradeStrategy, 'strategies')
         Precondition.not_none(data_client, 'data_client')
@@ -59,18 +57,19 @@ cdef class Trader:
         Precondition.not_none(clock, 'clock')
 
         self._clock = clock
-        self.name = Label(self.__class__.__name__ + '-' + label)
+        self.id = TraderId(self.__class__.__name__ + '-' + order_id_tag)
+        self.order_id_tag = ValidString(order_id_tag)
         if logger is None:
-            self._log = LoggerAdapter(f"{self.name.value}")
+            self._log = LoggerAdapter(f"{self.id.value}")
         else:
-            self._log = LoggerAdapter(f"{self.name.value}", logger)
-        self.id = GUID(uuid.uuid4())
-        self._data_client = data_client
-        self._exec_client = exec_client
+            self._log = LoggerAdapter(f"{self.id.value}", logger)
+
+        self.is_running = False
         self.started_datetimes = []  # type: List[datetime]
         self.stopped_datetimes = []  # type: List[datetime]
-        self.is_running = False
 
+        self._data_client = data_client
+        self._exec_client = exec_client
         self.account = account
         self.portfolio = portfolio
         self.portfolio.register_execution_client(self._exec_client)
@@ -169,6 +168,7 @@ cdef class Trader:
 
     cdef void _initialize_strategies(self):
         for strategy in self.strategies:
+            strategy.register_trader_id(self.id, self.order_id_tag)
             self._data_client.register_strategy(strategy)
             self._exec_client.register_strategy(strategy)
             self._log.info(f"Initialized {strategy}.")
