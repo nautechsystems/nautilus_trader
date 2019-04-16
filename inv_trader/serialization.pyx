@@ -23,7 +23,7 @@ from inv_trader.enums.time_in_force cimport TimeInForce, time_in_force_string
 from inv_trader.enums.order_side cimport OrderSide, order_side_string
 from inv_trader.enums.order_type cimport OrderType, order_type_string
 from inv_trader.enums.currency cimport Currency
-from inv_trader.model.identifiers cimport GUID, Label, OrderId, ExecutionId, ExecutionTicket, AccountId, AccountNumber
+from inv_trader.model.identifiers cimport GUID, Label, TraderId, StrategyId, OrderId, ExecutionId, ExecutionTicket, AccountId, AccountNumber
 from inv_trader.model.objects cimport ValidString, Quantity, Symbol, Price, Money
 from inv_trader.model.order cimport Order
 from inv_trader.model.events cimport Event, OrderEvent, AccountEvent
@@ -199,9 +199,9 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
                 package[PROFIT_TARGET] = self.order_serializer.serialize(command.atomic_order.take_profit).hex()
             else:
                 package[PROFIT_TARGET] = NONE
-            package[POSITION_ID] = command.position_id.value
+            package[TRADER_ID] = command.trader_id.value
             package[STRATEGY_ID] = command.strategy_id.value
-            package[STRATEGY_NAME] = command.strategy_name.value
+            package[POSITION_ID] = command.position_id.value
             return msgpack.packb(package)
         elif isinstance(command, CollateralInquiry):
             package[COMMAND_TYPE] = COLLATERAL_INQUIRY
@@ -240,9 +240,9 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
                 AtomicOrder(self.order_serializer.deserialize(bytes.fromhex(unpacked[ENTRY])),
                             self.order_serializer.deserialize(bytes.fromhex(unpacked[STOP_LOSS])),
                             take_profit),
+                TraderId(unpacked[TRADER_ID]),
+                StrategyId(unpacked[STRATEGY_ID]),
                 PositionId(unpacked[POSITION_ID]),
-                GUID(unpacked[STRATEGY_ID]),
-                Label(unpacked[STRATEGY_NAME]),
                 command_id,
                 command_timestamp)
         elif command_type == COLLATERAL_INQUIRY:
@@ -270,9 +270,9 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
 
         if isinstance(order_command, SubmitOrder):
             package[ORDER_COMMAND] = SUBMIT_ORDER
-            package[POSITION_ID] = order_command.position_id.value
+            package[TRADER_ID] = order_command.trader_id.value
             package[STRATEGY_ID] = order_command.strategy_id.value
-            package[STRATEGY_NAME] = order_command.strategy_name.value
+            package[POSITION_ID] = order_command.position_id.value
             return msgpack.packb(package)
         elif isinstance(order_command, CancelOrder):
             package[ORDER_COMMAND] = CANCEL_ORDER
@@ -305,9 +305,9 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         if order_command == SUBMIT_ORDER:
             return SubmitOrder(
                 order,
+                TraderId(unpacked[TRADER_ID]),
+                StrategyId(unpacked[STRATEGY_ID]),
                 PositionId(unpacked[POSITION_ID]),
-                GUID(unpacked[STRATEGY_ID]),
-                Label(unpacked[STRATEGY_NAME]),
                 command_id,
                 command_timestamp)
         elif order_command == CANCEL_ORDER:
