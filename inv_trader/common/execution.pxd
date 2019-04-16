@@ -61,7 +61,7 @@ cdef class ExecutionClient:
 
     cdef void _execute_command(self, Command command)
     cdef void _handle_event(self, Event event)
-    cdef void _register_order(self, Order order, PositionId position_id, StrategyId strategy_id)
+    cdef void _register_order(self, Order order, StrategyId strategy_id, PositionId position_id)
 
 # -- ABSTRACT METHODS ---------------------------------------------------------------------------- #
     cdef void _collateral_inquiry(self, CollateralInquiry command)
