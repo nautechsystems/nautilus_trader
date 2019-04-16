@@ -103,7 +103,7 @@ class BacktestEngineTests(unittest.TestCase):
         # Assert
         self.assertEqual(2881, self.engine.data_client.data_providers[USDJPY_FXCM].iterations[TestStubs.bartype_usdjpy_1min_bid()])
         self.assertEqual(1441, strategies[0].fast_ema.count)
-        self.assertEqual(-22553.0, self.engine.get_performance_stats()['PNL'])
+        self.assertEqual(-17642.259765625, self.engine.get_performance_stats()['PNL'])
 
     def test_can_reset_and_rerun_ema_cross_strategy(self):
         # Arrange

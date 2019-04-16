@@ -209,6 +209,9 @@ cdef class BacktestEngine:
         cdef tuple bid_ask_bars
 
         while time <= stop:
+            if not self.data_client.use_ticks:
+                for symbol, bid_ask_bars in self.data_client.get_next_minute_bars(time).items():
+                    self.exec_client.process_bars(symbol, bid_ask_bars[0], bid_ask_bars[1])
             for tick in self.data_client.iterate_ticks(time):
                 self.test_clock.set_time(tick.timestamp)
                 if self.data_client.use_ticks:
@@ -217,9 +220,6 @@ cdef class BacktestEngine:
                     strategy.iterate(tick.timestamp)
                 self.data_client.process_tick(tick)
             self.test_clock.set_time(time)
-            if not self.data_client.use_ticks:
-                for symbol, bid_ask_bars in self.data_client.get_next_minute_bars(time).items():
-                    self.exec_client.process_bars(symbol, bid_ask_bars[0], bid_ask_bars[1])
             self.data_client.process_bars(self.data_client.iterate_bars(time))
             time += time_step
             self.iteration += 1

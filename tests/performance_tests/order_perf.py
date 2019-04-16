@@ -11,7 +11,7 @@ import unittest
 import timeit
 from time import time
 
-from inv_trader.model.objects import Symbol, ValidString
+from inv_trader.model.objects import Symbol
 from inv_trader.model.enums import Venue
 from inv_trader.model.identifiers import OrderIdGenerator
 
@@ -22,7 +22,7 @@ AUDUSD_FXCM = Symbol('USDJPY', Venue.FXCM)
 class OrderIdGeneratorPerformanceTest:
     def __init__(self):
         self.symbol = AUDUSD_FXCM
-        self.generator = OrderIdGenerator(ValidString('001'), ValidString('001'))
+        self.generator = OrderIdGenerator('001', '001')
 
     def generate(self):
         self.generator.generate(self.symbol)
