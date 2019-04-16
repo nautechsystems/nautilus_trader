@@ -263,13 +263,13 @@ cdef class ExecutionClient:
         if isinstance(command, CollateralInquiry):
             self._collateral_inquiry(command)
         elif isinstance(command, SubmitOrder):
-            self._register_order(command.order, command.position_id, command.strategy_id)
+            self._register_order(command.order, command.strategy_id, command.position_id)
             self._submit_order(command)
         elif isinstance(command, SubmitAtomicOrder):
-            self._register_order(command.atomic_order.entry, command.position_id, command.strategy_id)
-            self._register_order(command.atomic_order.stop_loss, command.position_id, command.strategy_id)
+            self._register_order(command.atomic_order.entry, command.strategy_id, command.position_id)
+            self._register_order(command.atomic_order.stop_loss, command.strategy_id, command.position_id)
             if command.atomic_order.has_take_profit:
-                self._register_order(command.atomic_order.take_profit, command.position_id, command.strategy_id)
+                self._register_order(command.atomic_order.take_profit, command.strategy_id, command.position_id)
             self._submit_atomic_order(command)
         elif isinstance(command, ModifyOrder):
             self._modify_order(command)
@@ -336,13 +336,13 @@ cdef class ExecutionClient:
             self._account.apply(event)
             self._portfolio.handle_transaction(event)
 
-    cdef void _register_order(self, Order order, PositionId position_id, StrategyId strategy_id):
+    cdef void _register_order(self, Order order, StrategyId strategy_id, PositionId position_id):
         """
         Register the given order with the execution client.
 
         :param order: The order to register.
-        :param position_id: The order identifier to associate with the order.
         :param strategy_id: The strategy identifier to associate with the order.
+        :param position_id: The order identifier to associate with the order.
         :raises ValueError: If the order identifier is already registered with the execution client.
         """
         Precondition.not_in(order.id, self._order_book, 'order.id', 'order_book')
@@ -351,7 +351,7 @@ cdef class ExecutionClient:
         self._order_book[order.id] = order
         self._order_strategy_index[order.id] = strategy_id
         self._portfolio.register_order(order.id, position_id)
-        self._log.debug(f"Registered {order.id} with {position_id} for strategy with id {strategy_id}.")
+        self._log.debug(f"Registered {order.id} for strategy {strategy_id} with {position_id}.")
 
 
 # -- ABSTRACT METHODS ---------------------------------------------------------------------------- #
