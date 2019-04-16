@@ -71,7 +71,6 @@ class EMACrossPy(TradeStrategy):
         self.bar_type = bar_type
         self.risk_bp = risk_bp
         self.position_sizer = FixedRiskSizer(self.instrument)
-        self.tick_precision = instrument.tick_precision
         self.entry_buffer = instrument.tick_size
         self.SL_atr_multiple = sl_atr_multiple
         self.SL_buffer = instrument.tick_size * 10
