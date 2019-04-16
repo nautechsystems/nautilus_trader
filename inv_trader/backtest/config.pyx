@@ -9,7 +9,7 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
-from logging import INFO, DEBUG
+import logging
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.enums.currency cimport Currency
@@ -25,8 +25,9 @@ cdef class BacktestConfig:
                  Currency account_currency=Currency.USD,
                  float commission_rate_bp=0.20,
                  bint bypass_logging=False,
-                 level_console=INFO,
-                 level_file=DEBUG,
+                 int level_console=logging.INFO,
+                 int level_file=logging.DEBUG,
+                 int level_store=logging.WARNING,
                  bint console_prints=True,
                  bint log_thread=False,
                  bint log_to_file=False,
@@ -40,6 +41,7 @@ cdef class BacktestConfig:
         :param bypass_logging: The flag indicating whether logging should be bypassed.
         :param level_console: The minimum log level for logging messages to the console.
         :param level_file: The minimum log level for logging messages to the log file.
+        :param level_store: The minimum log level for storing log messages in memory.
         :param console_prints: The boolean flag indicating whether log messages should print.
         :param log_thread: The boolean flag indicating whether log messages should log the thread.
         :param log_to_file: The boolean flag indicating whether log messages should log to file.
@@ -56,6 +58,7 @@ cdef class BacktestConfig:
         self.bypass_logging = bypass_logging
         self.level_console = level_console
         self.level_file = level_file
+        self.level_store = level_store
         self.console_prints = console_prints
         self.log_thread = log_thread
         self.log_to_file = log_to_file

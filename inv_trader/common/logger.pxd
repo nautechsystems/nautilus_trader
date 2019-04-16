@@ -19,13 +19,15 @@ cdef class Logger:
     """
     Provides a logger for the trader client which wraps the Python logging module.
     """
-    cdef object _log_level_console
-    cdef object _log_level_file
+    cdef int _log_level_console
+    cdef int _log_level_file
+    cdef int _log_level_store
     cdef bint _console_prints
     cdef bint _log_thread
     cdef bint _log_to_file
     cdef str _log_file_path
     cdef str _log_file
+    cdef list _log_store
     cdef object _log_file_handler
     cdef object _logger
 
@@ -35,13 +37,16 @@ cdef class Logger:
 
     cpdef void change_log_file_name(self, str name)
     cpdef void log(self, int log_level, ValidString message)
+    cpdef list get_log_store(self)
+    cpdef void clear_log_store(self)
     cpdef void _debug(self, datetime timestamp, ValidString message)
     cpdef void _info(self, datetime timestamp, ValidString message)
     cpdef void _warning(self, datetime timestamp, ValidString message)
     cpdef void _error(self, datetime timestamp, ValidString message)
     cpdef void _critical(self, datetime timestamp, ValidString message)
     cdef str _format_message(self, datetime timestamp, str log_level, str message)
-    cdef void _console_print_handler(self, log_level, str message, )
+    cdef void _log_store_handler(self, int log_level, str message)
+    cdef void _console_print_handler(self, int log_level, str message)
 
 
 cdef class LogMessage:

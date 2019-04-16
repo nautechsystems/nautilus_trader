@@ -20,8 +20,9 @@ cdef class BacktestConfig:
     cdef readonly Currency account_currency
     cdef readonly float commission_rate_bp
     cdef readonly bint bypass_logging
-    cdef readonly object level_console
-    cdef readonly object level_file
+    cdef readonly int level_console
+    cdef readonly int level_file
+    cdef readonly int level_store
     cdef readonly bint console_prints
     cdef readonly bint log_thread
     cdef readonly bint log_to_file
