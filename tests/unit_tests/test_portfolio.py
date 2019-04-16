@@ -324,8 +324,8 @@ class PortfolioTestsTests(unittest.TestCase):
 
     def test_multiple_strategy_positions_one_active_one_closed(self):
         # Arrange
-        strategy1 = TradeStrategy()
-        strategy2 = TradeStrategy()
+        strategy1 = TradeStrategy('001')
+        strategy2 = TradeStrategy('002')
         order_id1 = OrderId('AUDUSD.FXCM-1-1')
         order_id2 = OrderId('AUDUSD.FXCM-1-2')
         order_id3 = OrderId('AUDUSD.FXCM-1-3')
