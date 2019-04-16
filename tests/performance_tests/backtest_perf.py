@@ -83,6 +83,7 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
 
         strategies = [EMACross(
             order_id_tag='001',
+
             instrument=usdjpy,
             bar_type=TestStubs.bartype_usdjpy_1min_bid(),
             risk_bp=10,

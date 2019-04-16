@@ -216,6 +216,46 @@ class BacktestExecClientTests(unittest.TestCase):
         self.assertEqual(8, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[7], OrderModified))
 
+    def test_submit_market_order_with_slippage_fill_model_slips_order(self):
+        # Arrange
+        fill_model = FillModel(
+            prob_fill_at_limit=0.0,
+            prob_fill_at_stop=1.0,
+            prob_slippage=1.0,
+            random_seed=None)
+
+        self.exec_client = BacktestExecClient(
+            instruments=self.instruments,
+            starting_capital=Money(1000000),
+            fill_model=fill_model,
+            commission_calculator=CommissionCalculator(),
+            account=self.account,
+            portfolio=self.portfolio,
+            clock=TestClock(),
+            guid_factory=TestGuidFactory(),
+            logger=TestLogger())
+
+        self.portfolio.register_execution_client(self.exec_client)
+
+        strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
+        self.exec_client.register_strategy(strategy)
+        strategy.start()
+
+        bar = TestStubs.bar_3decimal()
+        self.exec_client.process_bars(self.usdjpy.symbol, bar, bar)  # Prepare market
+        order = strategy.order_factory.market(
+            USDJPY_FXCM,
+            OrderSide.BUY,
+            Quantity(100000))
+
+        # Act
+        strategy.submit_order(order, strategy.generate_position_id(self.usdjpy.symbol))
+
+        # Assert
+        self.assertEqual(5, strategy.object_storer.count)
+        self.assertTrue(isinstance(strategy.object_storer.get_store()[3], OrderFilled))
+        self.assertEqual(Price('90.004'), strategy.order(order.id).average_price)
+
     def test_submit_order_with_no_market_rejects_order(self):
         # Arrange
         strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())

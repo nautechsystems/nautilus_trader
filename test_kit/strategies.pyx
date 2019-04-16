@@ -186,6 +186,9 @@ cdef class EMACross(TradeStrategy):
 
     def __init__(self,
                  str order_id_tag,
+                 bint flatten_on_sl_reject,
+                 bint flatten_on_stop,
+                 bint cancel_all_orders_on_stop,
                  Instrument instrument,
                  BarType bar_type,
                  float risk_bp=10,
@@ -193,25 +196,23 @@ cdef class EMACross(TradeStrategy):
                  int slow_ema=20,
                  int atr_period=20,
                  float sl_atr_multiple=2.0,
-                 flatten_on_sl_reject=True,
-                 flatten_on_stop=True,
-                 cancel_all_orders_on_stop=True):
+):
         """
         Initializes a new instance of the EMACross class.
 
-        :param order_id_tag: The unique order identifier tag for the strategy.
-        :param bar_type: The bar type for the strategy (could also input any number of them)
-        :param risk_bp: The risk per trade (basis points).
-        :param fast_ema: The fast EMA period.
-        :param slow_ema: The slow EMA period.
-        :param atr_period: The ATR period.
-        :param sl_atr_multiple: The ATR multiple for stop-loss prices.
+        :param order_id_tag: The order identifier tag for the strategy (must be unique at trader level).
         :param flatten_on_sl_reject: The flag indicating whether the position with an
         associated stop order should be flattened if the order is rejected.
         :param flatten_on_stop: The flag indicating whether the strategy should
         be flattened on stop.
         :param cancel_all_orders_on_stop: The flag indicating whether all residual
         orders should be cancelled on stop.
+        :param bar_type: The bar type for the strategy (could also input any number of them)
+        :param risk_bp: The risk per trade (basis points).
+        :param fast_ema: The fast EMA period.
+        :param slow_ema: The slow EMA period.
+        :param atr_period: The ATR period.
+        :param sl_atr_multiple: The ATR multiple for stop-loss prices.
         """
         # Send the below arguments into the base class
         super().__init__(order_id_tag=order_id_tag,
