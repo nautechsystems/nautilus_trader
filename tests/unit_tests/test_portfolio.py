@@ -32,8 +32,8 @@ class PortfolioTestsTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
         self.order_factory = OrderFactory(
-            id_tag_trader=ValidString('001'),
-            id_tag_strategy=ValidString('001'),
+            id_tag_trader='001',
+            id_tag_strategy='001',
             clock=TestClock())
         self.portfolio = Portfolio()
         self.portfolio.register_execution_client(MockExecClient())
@@ -251,8 +251,8 @@ class PortfolioTestsTests(unittest.TestCase):
 
     def test_multiple_strategy_positions_opened(self):
         # Arrange
-        strategy1 = TradeStrategy()
-        strategy2 = TradeStrategy()
+        strategy1 = TradeStrategy('001')
+        strategy2 = TradeStrategy('002')
         order_id1 = OrderId('AUDUSD.FXCM-1-1')
         order_id2 = OrderId('AUDUSD.FXCM-1-2')
         position_id1 = PositionId('AUDUSD.FXCM-1-1')

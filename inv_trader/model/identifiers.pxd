@@ -23,6 +23,12 @@ cdef class GUID(Identifier):
 cdef class Label(Identifier):
     pass
 
+cdef class TraderId(Identifier):
+    pass
+
+cdef class StrategyId(Identifier):
+    pass
+
 cdef class AccountId(Identifier):
     pass
 
@@ -49,8 +55,8 @@ cdef class IdentifierGenerator:
     cdef Clock _clock
     cdef dict _symbol_counts
 
-    cdef readonly ValidString id_tag_trader
-    cdef readonly ValidString id_tag_strategy
+    cdef readonly str id_tag_trader
+    cdef readonly str id_tag_strategy
 
     cpdef void reset(self)
 

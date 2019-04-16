@@ -13,7 +13,7 @@ from inv_trader.common.clock cimport Clock
 from inv_trader.common.guid cimport GuidFactory
 from inv_trader.common.logger cimport LoggerAdapter
 from inv_trader.common.execution cimport ExecutionClient
-from inv_trader.model.identifiers cimport GUID, OrderId, PositionId
+from inv_trader.model.identifiers cimport StrategyId, OrderId, PositionId
 from inv_trader.model.events cimport AccountEvent, OrderEvent
 from inv_trader.model.objects cimport Money
 from inv_trader.model.position cimport Position
@@ -53,10 +53,10 @@ cdef class Portfolio:
     cpdef dict get_positions_all(self)
     cpdef dict get_positions_active_all(self)
     cpdef dict get_positions_closed_all(self)
-    cpdef dict get_positions(self, GUID strategy_id)
-    cpdef dict get_positions_active(self, GUID strategy_id)
-    cpdef dict get_positions_closed(self, GUID strategy_id)
-    cpdef bint is_strategy_flat(self, GUID strategy_id)
+    cpdef dict get_positions(self, StrategyId strategy_id)
+    cpdef dict get_positions_active(self, StrategyId strategy_id)
+    cpdef dict get_positions_closed(self, StrategyId strategy_id)
+    cpdef bint is_strategy_flat(self, StrategyId strategy_id)
     cpdef bint is_flat(self)
     cpdef int positions_count(self)
     cpdef int positions_active_count(self)
@@ -65,11 +65,11 @@ cdef class Portfolio:
     cpdef void register_execution_client(self, ExecutionClient client)
     cpdef void register_strategy(self, TradeStrategy strategy)
     cpdef void register_order(self, OrderId order_id, PositionId position_id)
-    cpdef void handle_order_fill(self, OrderEvent event, GUID strategy_id)
+    cpdef void handle_order_fill(self, OrderEvent event, StrategyId strategy_id)
     cpdef void handle_transaction(self, AccountEvent event)
     cpdef void check_residuals(self)
     cpdef void reset(self)
 
-    cdef void _position_opened(self, Position position, GUID strategy_id)
-    cdef void _position_modified(self, Position position, GUID strategy_id)
-    cdef void _position_closed(self, Position position, GUID strategy_id)
+    cdef void _position_opened(self, Position position, StrategyId strategy_id)
+    cdef void _position_modified(self, Position position, StrategyId strategy_id)
+    cdef void _position_closed(self, Position position, StrategyId strategy_id)

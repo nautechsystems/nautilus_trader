@@ -13,7 +13,7 @@ from inv_trader.common.clock cimport Clock
 from inv_trader.common.logger cimport LoggerAdapter
 from inv_trader.common.data cimport DataClient
 from inv_trader.common.execution cimport ExecutionClient
-from inv_trader.model.identifiers cimport Label, GUID
+from inv_trader.model.identifiers cimport ValidString, TraderId
 from inv_trader.common.account cimport Account
 from inv_trader.portfolio.portfolio cimport Portfolio
 
@@ -24,17 +24,18 @@ cdef class Trader:
     """
     cdef Clock _clock
     cdef LoggerAdapter _log
+
+    cdef readonly TraderId id
+    cdef readonly ValidString order_id_tag
+    cdef readonly bint is_running
+    cdef readonly list started_datetimes
+    cdef readonly list stopped_datetimes
+
     cdef DataClient _data_client
     cdef ExecutionClient _exec_client
-
-    cdef readonly Label name
-    cdef readonly GUID id
     cdef readonly Account account
     cdef readonly Portfolio portfolio
     cdef readonly list strategies
-    cdef readonly list started_datetimes
-    cdef readonly list stopped_datetimes
-    cdef readonly bint is_running
 
     cpdef int strategy_count(self)
     cpdef void start(self)

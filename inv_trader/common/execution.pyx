@@ -20,7 +20,7 @@ from inv_trader.common.account cimport Account
 from inv_trader.model.order cimport Order
 from inv_trader.model.events cimport Event, OrderEvent, PositionEvent, AccountEvent, OrderModified
 from inv_trader.model.events cimport OrderRejected, OrderCancelled, OrderCancelReject, OrderFilled, OrderPartiallyFilled
-from inv_trader.model.identifiers cimport GUID, OrderId, PositionId
+from inv_trader.model.identifiers cimport StrategyId, OrderId, PositionId
 from inv_trader.commands cimport Command, CollateralInquiry
 from inv_trader.commands cimport SubmitOrder, SubmitAtomicOrder, ModifyOrder, CancelOrder
 from inv_trader.strategy cimport TradeStrategy
@@ -57,11 +57,11 @@ cdef class ExecutionClient:
             self._log = LoggerAdapter(f"ExecClient", logger)
         self._account = account
         self._portfolio = portfolio
-        self._registered_strategies = {}  # type: Dict[GUID, TradeStrategy]
+        self._registered_strategies = {}  # type: Dict[StrategyId, TradeStrategy]
         self._order_book = {}             # type: Dict[OrderId, Order]
-        self._order_strategy_index = {}   # type: Dict[OrderId, GUID]
-        self._orders_active = {}          # type: Dict[GUID, Dict[OrderId, Order]]
-        self._orders_completed = {}       # type: Dict[GUID, Dict[OrderId, Order]]
+        self._order_strategy_index = {}   # type: Dict[OrderId, StrategyId]
+        self._orders_active = {}          # type: Dict[StrategyId, Dict[OrderId, Order]]
+        self._orders_completed = {}       # type: Dict[StrategyId, Dict[OrderId, Order]]
 
         self._log.info(f"Initialized.")
 
@@ -215,7 +215,7 @@ cdef class ExecutionClient:
         """
         return self._orders_completed.copy()
 
-    cpdef dict get_orders(self, GUID strategy_id):
+    cpdef dict get_orders(self, StrategyId strategy_id):
         """
         Return a dictionary of all orders associated with the strategy identifier.
         
@@ -228,7 +228,7 @@ cdef class ExecutionClient:
 
         return {**self._orders_active[strategy_id], **self._orders_completed[strategy_id]}
 
-    cpdef dict get_orders_active(self, GUID strategy_id):
+    cpdef dict get_orders_active(self, StrategyId strategy_id):
         """
         Return a dictionary of all active orders associated with the strategy identifier.
         
@@ -240,7 +240,7 @@ cdef class ExecutionClient:
 
         return self._orders_active[strategy_id].copy()
 
-    cpdef dict get_orders_completed(self, GUID strategy_id):
+    cpdef dict get_orders_completed(self, StrategyId strategy_id):
         """
         Return a list of all completed orders associated with the strategy identifier.
         
@@ -284,7 +284,7 @@ cdef class ExecutionClient:
         :raises ValueError: If the events order identifier is not registered with the execution client.
         """
         cdef Order order
-        cdef GUID strategy_id
+        cdef StrategyId strategy_id
 
         # Order events
         if isinstance(event, OrderEvent):
@@ -336,7 +336,7 @@ cdef class ExecutionClient:
             self._account.apply(event)
             self._portfolio.handle_transaction(event)
 
-    cdef void _register_order(self, Order order, PositionId position_id, GUID strategy_id):
+    cdef void _register_order(self, Order order, PositionId position_id, StrategyId strategy_id):
         """
         Register the given order with the execution client.
 
@@ -415,7 +415,7 @@ cdef class ExecutionClient:
         """
         self._log.debug(f"Resetting...")
         self._order_book = {}                         # type: Dict[OrderId, Order]
-        self._order_strategy_index = {}               # type: Dict[OrderId, GUID]
+        self._order_strategy_index = {}               # type: Dict[OrderId, StrategyId]
 
         # Reset all active orders
         for strategy_id in self._orders_active.keys():

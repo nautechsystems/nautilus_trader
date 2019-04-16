@@ -19,7 +19,7 @@ from inv_trader.common.guid cimport LiveGuidFactory
 from inv_trader.common.execution cimport ExecutionClient
 from inv_trader.model.events cimport AccountEvent, OrderEvent, PositionOpened, PositionModified, PositionClosed
 from inv_trader.model.objects cimport Money
-from inv_trader.model.identifiers cimport GUID, OrderId, PositionId
+from inv_trader.model.identifiers cimport StrategyId, OrderId, PositionId
 from inv_trader.model.position cimport Position
 from inv_trader.portfolio.analyzer cimport Analyzer
 
@@ -50,9 +50,9 @@ cdef class Portfolio:
         self._exec_client = None          # Initialized when registered with execution client
         self._position_book = {}          # type: Dict[PositionId, Position]
         self._order_p_index = {}          # type: Dict[OrderId, PositionId]
-        self._registered_strategies = []  # type: List[GUID]
-        self._positions_active = {}       # type: Dict[GUID, Dict[PositionId, Position]]
-        self._positions_closed = {}       # type: Dict[GUID, Dict[PositionId, Position]]
+        self._registered_strategies = []  # type: List[StrategyId]
+        self._positions_active = {}       # type: Dict[StrategyId, Dict[PositionId, Position]]
+        self._positions_closed = {}       # type: Dict[StrategyId, Dict[PositionId, Position]]
         self._account_capital = Money.zero()
         self._account_initialized = False
 
@@ -173,7 +173,7 @@ cdef class Portfolio:
         """
         return self._positions_closed.copy()
 
-    cpdef dict get_positions(self, GUID strategy_id):
+    cpdef dict get_positions(self, StrategyId strategy_id):
         """
         Return a list of all positions associated with the given strategy identifier.
         
@@ -186,7 +186,7 @@ cdef class Portfolio:
 
         return {**self._positions_active[strategy_id], **self._positions_closed[strategy_id]}  # type: Dict[PositionId, Position]
 
-    cpdef dict get_positions_active(self, GUID strategy_id):
+    cpdef dict get_positions_active(self, StrategyId strategy_id):
         """
         Return a list of all active positions associated with the given strategy identifier.
         
@@ -198,7 +198,7 @@ cdef class Portfolio:
 
         return self._positions_active[strategy_id].copy()
 
-    cpdef dict get_positions_closed(self, GUID strategy_id):
+    cpdef dict get_positions_closed(self, StrategyId strategy_id):
         """
         Return a list of all active positions associated with the given strategy identifier.
         
@@ -210,7 +210,7 @@ cdef class Portfolio:
 
         return self._positions_closed[strategy_id].copy()
 
-    cpdef bint is_strategy_flat(self, GUID strategy_id):
+    cpdef bint is_strategy_flat(self, StrategyId strategy_id):
         """
         Return a value indicating whether the strategy given identifier is flat 
         (all associated positions FLAT).
@@ -315,7 +315,7 @@ cdef class Portfolio:
 
         self._order_p_index[order_id] = position_id
 
-    cpdef void handle_order_fill(self, OrderEvent event, GUID strategy_id):
+    cpdef void handle_order_fill(self, OrderEvent event, StrategyId strategy_id):
         """
         Handle the order fill event associated with the given strategy identifier.
         
@@ -422,7 +422,7 @@ cdef class Portfolio:
         self.analyzer = Analyzer()
         self._log.info("Reset.")
 
-    cdef void _position_opened(self, Position position, GUID strategy_id):
+    cdef void _position_opened(self, Position position, StrategyId strategy_id):
         cdef PositionOpened event = PositionOpened(
             position,
             strategy_id,
@@ -432,7 +432,7 @@ cdef class Portfolio:
         self.position_opened_events.append(event)
         self._exec_client.handle_event(event)
 
-    cdef void _position_modified(self, Position position, GUID strategy_id):
+    cdef void _position_modified(self, Position position, StrategyId strategy_id):
         cdef PositionModified event = PositionModified(
             position,
             strategy_id,
@@ -441,7 +441,7 @@ cdef class Portfolio:
 
         self._exec_client.handle_event(event)
 
-    cdef void _position_closed(self, Position position, GUID strategy_id):
+    cdef void _position_closed(self, Position position, StrategyId strategy_id):
         cdef datetime time_now = self._clock.time_now()
         cdef PositionClosed event = PositionClosed(
             position,

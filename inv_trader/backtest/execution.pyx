@@ -370,9 +370,9 @@ cdef class BacktestExecClient(ExecutionClient):
         # Generate command
         cdef SubmitOrder submit_order = SubmitOrder(
             command.atomic_order.entry,
-            command.position_id,
+            command.trader_id,
             command.strategy_id,
-            command.strategy_name,
+            command.position_id,
             self._guid_factory.generate(),
             self._clock.time_now())
 

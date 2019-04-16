@@ -103,9 +103,37 @@ cdef class Label(Identifier):
         super().__init__(value)
 
 
+cdef class TraderId(Identifier):
+    """
+    Represents a valid trader identifier (should be fund level unique).
+    """
+
+    def __init__(self, str value):
+        """
+        Initializes a new instance of the TraderId class.
+
+        :param value: The value of the trader identifier.
+        """
+        super().__init__(value)
+
+
+cdef class StrategyId(Identifier):
+    """
+    Represents a valid strategy identifier (should be trader level unique).
+    """
+
+    def __init__(self, str value):
+        """
+        Initializes a new instance of the StrategyId class.
+
+        :param value: The value of the strategy identifier.
+        """
+        super().__init__(value)
+
+
 cdef class AccountId(Identifier):
     """
-    Represents a valid account identifier (should be unique).
+    Represents a valid account identifier (should be fund level unique).
     """
 
     def __init__(self, str value):
@@ -196,8 +224,8 @@ cdef class IdentifierGenerator:
     """
 
     def __init__(self,
-                 ValidString id_tag_trader,
-                 ValidString id_tag_strategy,
+                 str id_tag_trader,
+                 str id_tag_strategy,
                  Clock clock):
         """
         Initializes a new instance of the IdentifierGenerator class.
@@ -208,6 +236,9 @@ cdef class IdentifierGenerator:
         :raises ValueError: If the id_tag_trader is not a valid string.
         :raises ValueError: If the id_tag_strategy is not a valid string.
         """
+        Precondition.valid_string(id_tag_trader, 'id_tag_trader')
+        Precondition.valid_string(id_tag_strategy, 'id_tag_strategy')
+
         self._clock = clock
         self._symbol_counts = {}  # type: Dict[Symbol, int]
         self.id_tag_trader = id_tag_trader
@@ -231,8 +262,8 @@ cdef class IdentifierGenerator:
         self._symbol_counts[symbol] += 1
 
         return (self._clock.get_datetime_tag()
-                + SEPARATOR + self.id_tag_trader.value
-                + SEPARATOR + self.id_tag_strategy.value
+                + SEPARATOR + self.id_tag_trader
+                + SEPARATOR + self.id_tag_strategy
                 + SEPARATOR + symbol.code
                 + SEPARATOR + symbol.venue_string()
                 + SEPARATOR + str(self._symbol_counts[symbol]))
@@ -244,16 +275,17 @@ cdef class OrderIdGenerator(IdentifierGenerator):
     """
 
     def __init__(self,
-                 ValidString id_tag_trader,
-                 ValidString id_tag_strategy,
+                 str id_tag_trader,
+                 str id_tag_strategy,
                  Clock clock=LiveClock()):
         """
         Initializes a new instance of the OrderIdGenerator class.
 
-        :param id_tag_trader: The identifier tag for the trader.
-        :param id_tag_strategy: The identifier tag for the strategy.
+        :param id_tag_trader: The order identifier tag for the trader.
+        :param id_tag_strategy: The order identifier tag for the strategy.
         :param clock: The clock for the component.
         """
+        # Tags checked in base class
         super().__init__(id_tag_trader,
                          id_tag_strategy,
                          clock)
@@ -274,16 +306,17 @@ cdef class PositionIdGenerator(IdentifierGenerator):
     """
 
     def __init__(self,
-                 ValidString id_tag_trader,
-                 ValidString id_tag_strategy,
+                 str id_tag_trader,
+                 str id_tag_strategy,
                  Clock clock=LiveClock()):
         """
         Initializes a new instance of the PositionIdGenerator class.
 
-        :param id_tag_trader: The identifier tag for the trader.
-        :param id_tag_strategy: The identifier tag for the strategy.
+        :param id_tag_trader: The position identifier tag for the trader.
+        :param id_tag_strategy: The position identifier tag for the strategy.
         :param clock: The clock for the component.
         """
+        # Tags checked in base class
         super().__init__(id_tag_trader,
                          id_tag_strategy,
                          clock)

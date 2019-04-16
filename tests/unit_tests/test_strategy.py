@@ -14,11 +14,11 @@ import time
 from datetime import datetime, timezone, timedelta
 
 from inv_trader.common.clock import TestClock, LiveClock
-from inv_trader.model.enums import Venue, Resolution, QuoteType, OrderSide, OrderStatus, Currency
+from inv_trader.model.enums import Venue, OrderSide, OrderStatus, Currency
 from inv_trader.model.enums import MarketPosition
-from inv_trader.model.objects import Quantity, Symbol, Price, Tick, BarType, Bar
+from inv_trader.model.objects import Quantity, Symbol, Price, Tick, Bar
 from inv_trader.model.events import TimeEvent
-from inv_trader.model.identifiers import GUID, Label, OrderId, PositionId
+from inv_trader.model.identifiers import StrategyId, Label, OrderId, PositionId
 from inv_trader.model.position import Position
 from inv_trader.strategy import TradeStrategy
 from test_kit.stubs import TestStubs
@@ -78,25 +78,13 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertTrue(result2.startswith('<TradeStrategy(TradeStrategy-GBPUSD-MM) object at'))
         self.assertTrue(result2.endswith('>'))
 
-    def test_can_get_strategy_name(self):
-        # Arrange
-        strategy = TradeStrategy()
-
-        # Act
-        result = strategy.name
-
-        # Assert
-        self.assertEqual(Label('TradeStrategy-001'), result)
-
     def test_can_get_strategy_id(self):
         # Arrange
         strategy = TradeStrategy()
 
         # Act
-        result = strategy.id
-
         # Assert
-        self.assertTrue(isinstance(result, GUID))
+        self.assertEqual(StrategyId('TradeStrategy-001'), strategy.id)
 
     def test_can_get_current_time(self):
         # Arrange
@@ -637,7 +625,7 @@ class TradeStrategyTests(unittest.TestCase):
         result = strategy.generate_position_id(AUDUSD_FXCM)
 
         # Assert
-        self.assertEqual(PositionId('19700101-000000-001-001-AUDUSD-FXCM-1'), result)
+        self.assertEqual(PositionId('19700101-000000-000-001-AUDUSD-FXCM-1'), result)
 
     def test_get_opposite_side_returns_expected_sides(self):
         # Arrange
@@ -673,7 +661,7 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(clock.unix_epoch(), strategy.time_now())
-        self.assertEqual(PositionId('19700101-000000-001-001-AUDUSD-FXCM-1'), strategy.generate_position_id(AUDUSD_FXCM))
+        self.assertEqual(PositionId('19700101-000000-000-001-AUDUSD-FXCM-1'), strategy.generate_position_id(AUDUSD_FXCM))
 
     def test_strategy_can_submit_order(self):
         # Arrange
@@ -908,13 +896,13 @@ class TradeStrategyTests(unittest.TestCase):
         # Act
         # Assert
         exec_client.process()
-        self.assertTrue(OrderId('19700101-000000-001-001-AUDUSD-FXCM-1') in strategy.orders_all())
-        self.assertTrue(PositionId('19700101-000000-001-001-AUDUSD-FXCM-1') in strategy.positions_all())
+        self.assertTrue(OrderId('19700101-000000-000-001-AUDUSD-FXCM-1') in strategy.orders_all())
+        self.assertTrue(PositionId('19700101-000000-000-001-AUDUSD-FXCM-1') in strategy.positions_all())
         self.assertEqual(0, len(strategy.orders_active()))
         self.assertEqual(order, strategy.orders_completed()[order.id])
         self.assertEqual(0, len(strategy.positions_closed()))
-        self.assertTrue(OrderId('19700101-000000-001-001-AUDUSD-FXCM-1') in strategy.orders_completed())
-        self.assertTrue(PositionId('19700101-000000-001-001-AUDUSD-FXCM-1') in strategy.positions_active())
+        self.assertTrue(OrderId('19700101-000000-000-001-AUDUSD-FXCM-1') in strategy.orders_completed())
+        self.assertTrue(PositionId('19700101-000000-000-001-AUDUSD-FXCM-1') in strategy.positions_active())
         self.assertFalse(strategy.is_flat())
 
     def test_can_track_orders_for_a_closing_position(self):

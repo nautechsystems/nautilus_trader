@@ -11,7 +11,7 @@
 
 from cpython.datetime cimport datetime
 
-from inv_trader.model.identifiers cimport GUID, Label, PositionId
+from inv_trader.model.identifiers cimport GUID, PositionId, TraderId, StrategyId
 from inv_trader.model.objects cimport ValidString, Price
 from inv_trader.model.order cimport Order, AtomicOrder
 
@@ -41,9 +41,9 @@ cdef class SubmitOrder(OrderCommand):
     """
     Represents a command to submit an order.
     """
+    cdef readonly TraderId trader_id
+    cdef readonly StrategyId strategy_id
     cdef readonly PositionId position_id
-    cdef readonly GUID strategy_id
-    cdef readonly Label strategy_name
 
 
 cdef class SubmitAtomicOrder(Command):
@@ -51,9 +51,9 @@ cdef class SubmitAtomicOrder(Command):
     Represents a command to submit an atomic order.
     """
     cdef readonly AtomicOrder atomic_order
+    cdef readonly TraderId trader_id
+    cdef readonly StrategyId strategy_id
     cdef readonly PositionId position_id
-    cdef readonly GUID strategy_id
-    cdef readonly Label strategy_name
 
 
 cdef class ModifyOrder(OrderCommand):

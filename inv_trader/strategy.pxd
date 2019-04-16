@@ -22,7 +22,7 @@ from inv_trader.enums.order_side cimport OrderSide
 from inv_trader.enums.market_position cimport MarketPosition
 from inv_trader.model.currency cimport ExchangeRateCalculator
 from inv_trader.model.events cimport Event
-from inv_trader.model.identifiers cimport GUID, Label, OrderId, PositionId
+from inv_trader.model.identifiers cimport Label, TraderId, StrategyId, OrderId, PositionId
 from inv_trader.model.identifiers cimport PositionIdGenerator
 from inv_trader.model.objects cimport ValidString, Symbol, Price, Tick, BarType, Bar, Instrument
 from inv_trader.model.order cimport Order, AtomicOrder, OrderFactory
@@ -36,35 +36,41 @@ cdef class TradeStrategy:
     """
     cdef Clock _clock
     cdef GuidFactory _guid_factory
-    cdef dict _timers
-    cdef dict _ticks
-    cdef dict _bars
-    cdef dict _indicators
-    cdef dict _indicator_updaters
-    cdef ExchangeRateCalculator _exchange_calculator
-    cdef Portfolio _portfolio
+    cdef readonly bint is_running
+    cdef readonly LoggerAdapter log
+
+    cdef readonly TraderId trader_id
+    cdef readonly StrategyId id
+    cdef readonly ValidString order_id_tag_trader
+    cdef readonly ValidString order_id_tag_strategy
+
+    cdef readonly bint flatten_on_sl_reject
+    cdef readonly bint flatten_on_stop
+    cdef readonly bint cancel_all_orders_on_stop
+    cdef readonly OrderFactory order_factory
+    cdef readonly PositionIdGenerator position_id_generator
     cdef dict _entry_orders
     cdef dict _stop_loss_orders
     cdef dict _take_profit_orders
     cdef dict _atomic_order_ids
     cdef dict _modify_order_buffer
 
-    cdef readonly Label name
-    cdef readonly LoggerAdapter log
-    cdef readonly GUID id
-    cdef readonly ValidString id_tag_trader
-    cdef readonly ValidString id_tag_strategy
     cdef readonly int bar_capacity
-    cdef readonly bint is_running
-    cdef readonly Account account
-    cdef readonly OrderFactory order_factory
-    cdef readonly PositionIdGenerator position_id_generator
-    cdef readonly bint flatten_on_sl_reject
-    cdef readonly bint flatten_on_stop
-    cdef readonly bint cancel_all_orders_on_stop
+    cdef dict _timers
+    cdef dict _ticks
+    cdef dict _bars
+    cdef dict _indicators
+    cdef dict _indicator_updaters
+    cdef ExchangeRateCalculator _exchange_calculator
 
-    cdef readonly DataClient _data_client
-    cdef readonly ExecutionClient _exec_client
+    cdef readonly Account account
+    cdef DataClient _data_client
+    cdef ExecutionClient _exec_client
+    cdef Portfolio _portfolio
+
+    cdef readonly bint is_data_client_registered
+    cdef readonly bint is_exec_client_registered
+    cdef readonly bint is_portfolio_registered
 
     cdef bint equals(self, TradeStrategy other)
 
@@ -78,6 +84,7 @@ cdef class TradeStrategy:
     cpdef void on_dispose(self)
 
 # -- REGISTRATION METHODS ------------------------------------------------------------------------ #
+    cpdef void register_trader_id(self, TraderId trader_id, ValidString order_id_tag_trader)
     cpdef void register_data_client(self, DataClient client)
     cpdef void register_execution_client(self, ExecutionClient client)
     cpdef void register_indicator(self, BarType bar_type, indicator, update_method)

@@ -32,9 +32,7 @@ if __name__ == "__main__":
     ask_data = {usdjpy.symbol: {Resolution.MINUTE: ask_data_1min}}
 
     strategies = [EMACross(
-        label='001',
-        id_tag_trader='001',
-        id_tag_strategy='001',
+        order_id_tag='001',
         instrument=usdjpy,
         bar_type=TestStubs.bartype_usdjpy_1min_bid(),
         risk_bp=10,

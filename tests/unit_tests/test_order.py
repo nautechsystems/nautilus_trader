@@ -32,8 +32,8 @@ class OrderTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
         self.order_factory = OrderFactory(
-            id_tag_trader=ValidString('001'),
-            id_tag_strategy=ValidString('001'),
+            id_tag_trader='001',
+            id_tag_strategy='001',
             clock=TestClock())
 
     def test_market_order_with_quantity_zero_raises_exception(self):

@@ -342,8 +342,8 @@ cdef class OrderFactory:
     """
 
     def __init__(self,
-                 ValidString id_tag_trader,
-                 ValidString id_tag_strategy,
+                 str id_tag_trader,
+                 str id_tag_strategy,
                  Clock clock=LiveClock()):
         """
         Initializes a new instance of the OrderFactory class.

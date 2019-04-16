@@ -16,7 +16,7 @@ from inv_trader.common.clock cimport Clock
 from inv_trader.common.guid cimport GuidFactory
 from inv_trader.common.logger cimport LoggerAdapter
 from inv_trader.model.events cimport Event
-from inv_trader.model.identifiers cimport GUID, OrderId, PositionId
+from inv_trader.model.identifiers cimport StrategyId, OrderId, PositionId
 from inv_trader.model.order cimport Order
 from inv_trader.commands cimport Command, CollateralInquiry
 from inv_trader.commands cimport SubmitOrder, SubmitAtomicOrder, ModifyOrder, CancelOrder
@@ -55,13 +55,13 @@ cdef class ExecutionClient:
     cpdef dict get_orders_all(self)
     cpdef dict get_orders_active_all(self)
     cpdef dict get_orders_completed_all(self)
-    cpdef dict get_orders(self, GUID strategy_id)
-    cpdef dict get_orders_active(self, GUID strategy_id)
-    cpdef dict get_orders_completed(self, GUID strategy_id)
+    cpdef dict get_orders(self, StrategyId strategy_id)
+    cpdef dict get_orders_active(self, StrategyId strategy_id)
+    cpdef dict get_orders_completed(self, StrategyId strategy_id)
 
     cdef void _execute_command(self, Command command)
     cdef void _handle_event(self, Event event)
-    cdef void _register_order(self, Order order, PositionId position_id, GUID strategy_id)
+    cdef void _register_order(self, Order order, PositionId position_id, StrategyId strategy_id)
 
 # -- ABSTRACT METHODS ---------------------------------------------------------------------------- #
     cdef void _collateral_inquiry(self, CollateralInquiry command)

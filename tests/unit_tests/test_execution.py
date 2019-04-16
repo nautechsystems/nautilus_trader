@@ -44,10 +44,8 @@ class ExecutionClientTests(unittest.TestCase):
         self.exec_client.register_strategy(self.strategy)
 
         # Act
-        result = self.strategy._exec_client
-
         # Assert
-        self.assertEqual(self.exec_client, result)
+        self.assertTrue(self.strategy.is_exec_client_registered)
 
     def test_can_send_submit_order_command_to_mock_exec_client(self):
         # Arrange
