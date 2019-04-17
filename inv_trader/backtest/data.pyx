@@ -118,10 +118,8 @@ cdef class BacktestDataClient(DataClient):
         # Determine if tick data should be used for execution processing
         if len(self.data_ticks[next(iter(data_ticks))]) > 0:
             self.use_ticks = True
-            self._log.info("Market execution using TICK data.")
         else:
             self.use_ticks = False
-            self._log.info("Market execution using 1-MINUTE bar data.")
 
         # Create the data providers for the client based on the given instruments
         for symbol, instrument in self._instruments.items():

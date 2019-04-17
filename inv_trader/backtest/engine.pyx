@@ -314,8 +314,13 @@ cdef class BacktestEngine:
         self.log.info("#---------------------------------------------------------------#")
         self.log.info("#-------------------------- LOG STORE --------------------------#")
         self.log.info("#---------------------------------------------------------------#")
-        for message in self.test_logger.get_log_store():
-            print(message)
+
+        cdef list log_store = self.test_logger.get_log_store()
+        if len(log_store) == 0:
+            self.log.info("No log messages stored.")
+        else:
+            for message in self.test_logger.get_log_store():
+                print(message)
 
     cpdef void reset(self):
         """
