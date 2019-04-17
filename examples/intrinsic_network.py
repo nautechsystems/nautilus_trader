@@ -7,16 +7,15 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from decimal import Decimal
-
-from inv_trader.enums.order_side import OrderSide
-from inv_trader.model.objects import Tick, BarType, Bar, Instrument
-from inv_trader.model.events import Event
+from inv_trader.model.enums import OrderSide, MarketPosition
+from inv_trader.model.objects import Tick, BarType, Bar, Instrument, Quantity
+from inv_trader.model.events import Event, PositionOpened
 from inv_trader.strategy import TradeStrategy
+
 from inv_indicators.intrinsic_network import IntrinsicNetwork
 
 
-class IntrinsicNetworkExample(TradeStrategy):
+class INStrategyExample(TradeStrategy):
     """"
     An example strategy utilizing an Intrinsic Network.
     """
@@ -28,7 +27,9 @@ class IntrinsicNetworkExample(TradeStrategy):
                  cancel_all_orders_on_stop: bool,
                  instrument: Instrument,
                  bar_type: BarType,
-                 position_size=1000000):
+                 position_size=1000000,
+                 threshold_entry=0.0020,
+                 threshold_close=0.0020):
         """
         Initializes a new instance of the IntrinsicNetworkExample class.
 
@@ -42,6 +43,8 @@ class IntrinsicNetworkExample(TradeStrategy):
         :param instrument: The instrument for the strategy.
         :param bar_type: The bar type for the strategy.
         :param position_size: The position size.
+        :param threshold_entry: The threshold for the IntrinsicNetwork entry direction.
+        :param threshold_entry: The threshold for the IntrinsicNetwork close direction.
         """
         # Send the below arguments into the base class
         super().__init__(order_id_tag=order_id_tag,
@@ -54,13 +57,15 @@ class IntrinsicNetworkExample(TradeStrategy):
         self.symbol = instrument.symbol
         self.bar_type = bar_type
         self.position_size = position_size
-        self.spread = Decimal(0)
+        self.in_state = 0
+        self.position = None
 
         # Create the indicators for the strategy
-        self.intrinsic_network = IntrinsicNetwork()
+        self.intrinsic_network = IntrinsicNetwork(threshold_entry, threshold_close)
 
         # Register the indicators for updating
-        self.register_indicator(self.bar_type, self.intrinsic_network, self.intrinsic_network.update)
+        self.register_indicator(self.bar_type, self.intrinsic_network,
+                                self.intrinsic_network.update)
 
     def on_start(self):
         """
@@ -79,8 +84,7 @@ class IntrinsicNetworkExample(TradeStrategy):
 
         :param tick: The received tick.
         """
-        self.spread = tick.ask - tick.bid        # For demonstration purposes
-        self.log.info(f"Received Tick({tick})")  # For demonstration purposes
+        # self.log.info(f"Received Tick({tick})")  # For demonstration purposes
 
     def on_bar(self, bar_type: BarType, bar: Bar):
         """
@@ -95,29 +99,34 @@ class IntrinsicNetworkExample(TradeStrategy):
             # Wait for indicator to warm up...
             return
 
+        # User logging example
+        if self.in_state != self.intrinsic_network.state:
+            self.log.info(f"IN STATE CHANGE from {self.in_state} to {self.intrinsic_network.state}")
+            self.in_state = self.intrinsic_network.state
+
         # BUY LOGIC
-        if self.intrinsic_network.value == -1:
-            if not self.is_flat():
-                self.flatten_all_positions()
-
-            entry = self.order_factory.market(
-                symbol=self.symbol,
-                order_side=OrderSide.BUY,
-                quantity=self.position_size)
-
-            self.submit_entry_order(entry, self.generate_position_id())
+        if self.intrinsic_network.state == -1:
+            if self.position is None:
+                self._go_long()
+            elif self.position.market_position == MarketPosition.FLAT:
+                self._go_long()
+            elif self.position.market_position == MarketPosition.LONG:
+                pass  # Stay long
+            elif self.position.market_position == MarketPosition.SHORT:
+                self.flatten_position(self.position.id)
+                self._go_long()
 
         # SELL LOGIC
-        elif self.intrinsic_network.value == 1:
-            if not self.is_flat():
-                self.flatten_all_positions()
-
-            entry = self.order_factory.market(
-                symbol=self.symbol,
-                order_side=OrderSide.SELL,
-                quantity=self.position_size)
-
-            self.submit_entry_order(entry, self.generate_position_id())
+        elif self.intrinsic_network.state == 1:
+            if self.position is None:
+                self._go_short()
+            elif self.position.market_position == MarketPosition.FLAT:
+                self._go_short()
+            elif self.position.market_position == MarketPosition.SHORT:
+                pass  # Stay short
+            elif self.position.market_position == MarketPosition.LONG:
+                self.flatten_position(self.position.id)
+                self._go_short()
 
     def on_event(self, event: Event):
         """
@@ -128,7 +137,8 @@ class IntrinsicNetworkExample(TradeStrategy):
         :param event: The received event.
         """
         # Put custom code for event handling here (or pass)
-        pass
+        if isinstance(event, PositionOpened):
+            self.position = event.position
 
     def on_stop(self):
         """
@@ -155,3 +165,25 @@ class IntrinsicNetworkExample(TradeStrategy):
         # Put custom code to be run on a strategy disposal here (or pass)
         self.unsubscribe_bars(self.bar_type)
         self.unsubscribe_ticks(self.symbol)
+
+    def _go_long(self):
+        """
+        Custom method for going long.
+        """
+        entry = self.order_factory.market(
+            symbol=self.symbol,
+            order_side=OrderSide.BUY,
+            quantity=Quantity(self.position_size))
+
+        self.submit_entry_order(entry, self.generate_position_id(self.symbol))
+
+    def _go_short(self):
+        """
+        Custom method for going short.
+        """
+        entry = self.order_factory.market(
+            symbol=self.symbol,
+            order_side=OrderSide.SELL,
+            quantity=Quantity(self.position_size))
+
+        self.submit_entry_order(entry, self.generate_position_id(self.symbol))

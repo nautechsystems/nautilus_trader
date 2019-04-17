@@ -17,6 +17,7 @@ from inv_trader.model.events import Event
 from inv_trader.model.identifiers import Label
 from inv_trader.strategy import TradeStrategy
 from inv_trader.portfolio.sizing import FixedRiskSizer
+
 from inv_indicators.average.ema import ExponentialMovingAverage
 from inv_indicators.atr import AverageTrueRange
 
