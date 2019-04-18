@@ -176,7 +176,7 @@ cdef class BacktestEngine:
 
         :param start: The start time for the backtest (must be >= first_timestamp and < stop).
         :param stop: The stop time for the backtest (must be <= last_timestamp and > start).
-        :param time_step: The time step for each backtest loop iteration (default minutes=1).
+        :param time_step: The time-step timedelta for each backtest loop iteration, default is timedelta(minutes=1).
         :param fill_model: The optional fill model change for the backtest run (can be None).
         :param print_log_store: The flag for if the log store should be printed at the end of the backtest.
 
@@ -184,7 +184,6 @@ cdef class BacktestEngine:
         :raises: ValueError: If the start datetime is not < the stop datetime.
         :raises: ValueError: If the start datetime is not >= the first index timestamp of data.
         :raises: ValueError: If the start datetime is not <= the last index timestamp of data.
-        :raises: ValueError: If the time_step_mins is not positive (> 0).
         """
         Precondition.true(start < stop, 'start < stop')
         Precondition.true(start >= self.data_client.data_minute_index[0], 'start >= first_timestamp')
