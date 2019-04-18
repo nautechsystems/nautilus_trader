@@ -168,7 +168,7 @@ cdef class Trader:
         
         :return: Dict[StrategyId, bool].
         """
-        cdef status_list = []
+        cdef status_list = {}
         for strategy in self.strategies:
             if strategy.is_running:
                 status_list[strategy.id] = True

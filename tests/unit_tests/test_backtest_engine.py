@@ -52,7 +52,7 @@ class BacktestEngineTests(unittest.TestCase):
 
     def test_initialization(self):
         self.assertEqual(TestStubs.instrument_usdjpy(), self.engine.instruments[0])
-        self.assertEqual(1, self.engine.trader.strategy_count())
+        self.assertEqual(1, len(self.engine.trader.strategy_status()))
 
     def test_can_run_empty_strategy(self):
         # Arrange
