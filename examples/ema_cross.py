@@ -40,8 +40,7 @@ class EMACrossPy(TradeStrategy):
                  fast_ema: int=10,
                  slow_ema: int=20,
                  atr_period: int=20,
-                 sl_atr_multiple: float=2.0,
-):
+                 sl_atr_multiple: float=2.0):
         """
         Initializes a new instance of the EMACrossPy class.
 
