@@ -26,7 +26,7 @@ from inv_trader.portfolio.analyzer cimport Analyzer
 
 cdef class Portfolio:
     """
-    Represents a trading portfolio of positions.
+    Provides a trading portfolio of positions.
     """
 
     def __init__(self,

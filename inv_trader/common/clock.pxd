@@ -47,7 +47,7 @@ cdef class Clock:
 
 cdef class LiveClock(Clock):
     """
-    Implements a clock for live trading.
+    Provides a clock for live trading.
     """
     cpdef void _raise_time_event(
             self,
@@ -63,12 +63,12 @@ cdef class LiveClock(Clock):
 
 cdef class TestTimer:
     """
-    Implements a fake timer for backtesting and unit testing.
+    Provides a fake timer for backtesting and unit testing.
     """
     cdef readonly Label label
+    cdef readonly timedelta interval
     cdef readonly datetime start
     cdef readonly datetime stop
-    cdef readonly timedelta interval
     cdef readonly datetime next_alert
     cdef readonly object handler
     cdef readonly bint repeating
@@ -79,7 +79,7 @@ cdef class TestTimer:
 
 cdef class TestClock(Clock):
     """
-    Implements a clock for backtesting and unit testing.
+    Provides a clock for backtesting and unit testing.
     """
     cdef readonly timedelta time_step
     cdef datetime _time

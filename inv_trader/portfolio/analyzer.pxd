@@ -17,7 +17,7 @@ from inv_trader.model.objects cimport Money
 
 cdef class Analyzer:
     """
-    Represents a trading portfolio analyzer for generating performance metrics
+    Provides a trading portfolio analyzer for generating performance metrics
     and statistics.
     """
     cdef bint _log_returns
