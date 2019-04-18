@@ -76,14 +76,6 @@ cdef class Trader:
         self.strategies = strategies
         self._initialize_strategies()
 
-    cpdef int strategy_count(self):
-        """
-        Return the number of strategies held by the trader.
-        
-        :return: int.
-        """
-        return len(self.strategies)
-
     cpdef void start(self):
         """
         Start the trader.
@@ -98,8 +90,24 @@ cdef class Trader:
 
         for strategy in self.strategies:
             strategy.start()
+
         self.is_running = True
         self._log.info("Running...")
+
+    cpdef void stop(self):
+        """
+        Stop the trader.
+        """
+        self.stopped_datetimes.append(self._clock.time_now())
+
+        self._log.info("Stopping...")
+        for strategy in self.strategies:
+            strategy.stop()
+
+        self.is_running = False
+        self._log.info("Stopped.")
+        self._exec_client.check_residuals()
+        self.portfolio.check_residuals()
 
     cpdef void create_returns_tear_sheet(self):
         """
@@ -112,20 +120,6 @@ cdef class Trader:
         Create a full tear sheet based on analyzer data from the last run.
         """
         self.portfolio.analyzer.create_full_tear_sheet()
-
-    cpdef void stop(self):
-        """
-        Stop the trader.
-        """
-        self.stopped_datetimes.append(self._clock.time_now())
-
-        self._log.info("Stopping...")
-        for strategy in self.strategies:
-            strategy.stop()
-        self.is_running = False
-        self._log.info("Stopped.")
-        self._exec_client.check_residuals()
-        self.portfolio.check_residuals()
 
     cpdef void change_strategies(self, list strategies: List[TradeStrategy]):
         """
@@ -166,8 +160,26 @@ cdef class Trader:
         self._exec_client.disconnect()
         self._log.info("Disposed.")
 
+    cpdef dict strategy_status(self):
+        """
+        Return a dictionary containing the traders strategy status.
+        The key is the strategy identifier.
+        The value is a bool which is True if the strategy is running else False.
+        
+        :return: Dict[StrategyId, bool].
+        """
+        cdef status_list = []
+        for strategy in self.strategies:
+            if strategy.is_running:
+                status_list[strategy.id] = True
+            else:
+                status_list[strategy.id] = False
+
+        return status_list
+
     cdef void _initialize_strategies(self):
         for strategy in self.strategies:
+            # TODO: Check for matching ids
             strategy.register_trader_id(self.id, self.order_id_tag)
             self._data_client.register_strategy(strategy)
             self._exec_client.register_strategy(strategy)

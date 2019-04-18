@@ -37,7 +37,6 @@ cdef class Trader:
     cdef readonly Portfolio portfolio
     cdef readonly list strategies
 
-    cpdef int strategy_count(self)
     cpdef void start(self)
     cpdef void stop(self)
     cpdef void create_returns_tear_sheet(self)
@@ -45,5 +44,7 @@ cdef class Trader:
     cpdef void change_strategies(self, list strategies)
     cpdef void reset(self)
     cpdef void dispose(self)
+
+    cpdef dict strategy_status(self)
 
     cdef void _initialize_strategies(self)
