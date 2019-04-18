@@ -163,3 +163,4 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 13/04/19 27203159 function calls (26890143 primitive calls) in 28.170 seconds (with fill modelling)
         # 16/04/19 20079206 function calls (19785106 primitive calls) in 17.252 seconds (improved backtest loop!)
         # 17/04/19 20079230 function calls (19785130 primitive calls) in 17.806 seconds (added log store)
+        # 18/04/19 20079246 function calls (19785146 primitive calls) in 17.291 seconds (changed order and position objects)

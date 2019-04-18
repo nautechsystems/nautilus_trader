@@ -22,7 +22,7 @@ cdef class Position:
     """
     Represents a position in a financial market.
     """
-    cdef set _order_ids
+    cdef list _order_ids
     cdef list _execution_ids
     cdef list _execution_tickets
     cdef list _events
@@ -45,10 +45,11 @@ cdef class Position:
     cdef readonly Price average_exit_price
     cdef readonly object points_realized
     cdef readonly float return_realized
+    cdef readonly bint is_flat
+    cdef readonly bint is_long
+    cdef readonly bint is_short
     cdef readonly bint is_entered
     cdef readonly bint is_exited
-
-    cdef readonly int event_count
     cdef readonly OrderEvent last_event
 
     cdef bint equals(self, Position other)
@@ -57,6 +58,7 @@ cdef class Position:
     cpdef list get_execution_ids(self)
     cpdef list get_execution_tickets(self)
     cpdef list get_events(self)
+    cpdef int event_count(self)
     cpdef void apply(self, OrderEvent event)
     cpdef object points_unrealized(self, Price current_price)
     cpdef float return_unrealized(self, Price current_price)

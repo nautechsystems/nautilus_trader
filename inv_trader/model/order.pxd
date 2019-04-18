@@ -49,8 +49,9 @@ cdef class Order:
     cdef readonly Price average_price
     cdef readonly object slippage
     cdef readonly OrderStatus status
-    cdef readonly int event_count
     cdef readonly OrderEvent last_event
+    cdef readonly bint is_buy
+    cdef readonly bint is_sell
     cdef readonly bint is_active
     cdef readonly bint is_complete
 
@@ -60,6 +61,7 @@ cdef class Order:
     cpdef list get_execution_ids(self)
     cpdef list get_execution_tickets(self)
     cpdef list get_events(self)
+    cpdef int event_count(self)
     cpdef void apply(self, OrderEvent order_event)
     cdef void _set_slippage(self)
     cdef void _set_fill_status(self)
