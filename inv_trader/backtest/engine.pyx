@@ -404,6 +404,8 @@ cdef class BacktestEngine:
         self.log.info(f"Account balance (starting): {self.config.starting_capital} {currency_string(self.account.currency)}")
         self.log.info(f"Account balance (ending):   {self.account.cash_balance} {currency_string(self.account.currency)}")
         self.log.info(f"Commissions (total):        {self.exec_client.total_commissions} {currency_string(self.account.currency)}")
+        self.log.info(f"Total orders generated:  {len(self.exec_client.get_orders_all())}")
+        self.log.info(f"Total positions closed:  {len(self.portfolio.get_positions_all())}")
         self.log.info("")
         self.log.info("#---------------------------------------------------------------#")
         self.log.info("#-------------------- PERFORMANCE STATISTICS -------------------#")
