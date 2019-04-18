@@ -24,7 +24,7 @@ from inv_trader.strategy cimport TradeStrategy
 
 cdef class Trader:
     """
-    Represents a trader for managing a portfolio of trade strategies.
+    Provides a trader for managing a portfolio of trade strategies.
     """
 
     def __init__(self,

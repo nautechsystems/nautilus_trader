@@ -132,7 +132,7 @@ cdef class Clock:
 
 cdef class LiveClock(Clock):
     """
-    Implements a clock for live trading.
+    Provides a clock for live trading.
     """
 
     def __init__(self):
@@ -237,10 +237,6 @@ cdef class LiveClock(Clock):
             Precondition.true(start_time + interval <= stop_time,
                               'start_time + interval <= stop_time')
 
-        if label in self._timers:
-            raise KeyError(
-                f"Cannot set timer (the label {label} was not unique for this strategy).")
-
         cdef datetime alert_time = start_time + interval
         cdef float delay = (alert_time - self.time_now()).total_seconds()
         if repeat:
@@ -284,10 +280,7 @@ cdef class LiveClock(Clock):
         for label, timer in self._timers.items():
             timer[0].cancel()
 
-    cpdef void _raise_time_event(
-            self,
-            Label label,
-            datetime alert_time):
+    cpdef void _raise_time_event(self, Label label, datetime alert_time):
         """
         Create a new TimeEvent and pass it to the registered handler.
         """
@@ -324,7 +317,7 @@ cdef class LiveClock(Clock):
 
 cdef class TestTimer:
     """
-    Implements a fake timer for backtesting and unit testing.
+    Provides a fake timer for backtesting and unit testing.
     """
 
     def __init__(self,
@@ -338,11 +331,16 @@ cdef class TestTimer:
         Initializes a new instance of the TestTimer class.
 
         :param label: The label for the timer.
+        :param interval: The timedelta interval for the timer.
+        :param start: The start datetime for the timer.
+        :param stop: The stop datetime for the timer.
+        :param repeating: The flag indicating whether the timer is repeating.
+        :param handler: The handler to call when time events are raised.
         """
         self.label = label
+        self.interval = interval
         self.start = start
         self.stop = stop
-        self.interval = interval
         self.next_alert = start + interval
         self.repeating = repeating
         self.handler = handler
@@ -350,9 +348,9 @@ cdef class TestTimer:
 
     cpdef void advance(self, datetime time):
         """
-        Wind the timer forward.
+        Advance the timer forward to the given time.
         
-        :param time: The time to wind the timer to.
+        :param time: The time to advance the timer to.
         """
         while time >= self.next_alert and self.expired is False:
             self.handler(TimeEvent(self.label, GUID(uuid4()), self.next_alert))
@@ -363,7 +361,7 @@ cdef class TestTimer:
 
 cdef class TestClock(Clock):
     """
-    Implements a clock for backtesting and unit testing.
+    Provides a clock for backtesting and unit testing.
     """
 
     def __init__(self, datetime initial_time=UNIX_EPOCH):
@@ -395,15 +393,17 @@ cdef class TestClock(Clock):
         """
         Iterates the clocks time to the given time at time_step intervals.
         
-        :raises ValueError: If the given times timezone is not UTC.
-        :raises ValueError: If the given time is <= the clocks internal time.
+        Note: Preconditions commented out for performance reasons (assumes 
+        backtest implementation is correct).
         """
-        #Precondition.true(time.tzinfo == self.timezone, 'time.tzinfo == self.timezone')
+        # Precondition.true(time.tzinfo == self.timezone, 'time.tzinfo == self.timezone')
+        # Precondition.true(time > self.time_now(), 'time > self.time_now()')
 
         cdef list expired_alerts = []
         cdef list expired_timers = []
+        cdef Label label
 
-        # Time alerts
+        # Iterate time alerts
         for label, alert in self._time_alerts.items():
             if time >= alert[0]:
                 alert[1](TimeEvent(label, GUID(uuid4()), alert[0]))
@@ -413,7 +413,7 @@ cdef class TestClock(Clock):
         for label in expired_alerts:
             del self._time_alerts[label]
 
-        # Timers
+        # Iterate timers
         for label, timer in self._timers.items():
             timer.advance(time)
             if timer.expired:
@@ -503,10 +503,6 @@ cdef class TestClock(Clock):
             Precondition.true(start_time + interval <= stop_time,
                               'start_time + interval <= stop_time')
 
-        if label in self._timers:
-            raise KeyError(
-                f"Cannot set timer (the label {label} was not unique for this strategy).")
-
         cdef TestTimer timer = TestTimer(label,
                                          interval,
                                          start_time,
@@ -529,7 +525,7 @@ cdef class TestClock(Clock):
 
     cpdef list get_labels(self):
         """
-        Return the timer labels held by the clock
+        Return the timer labels held by the clock.
         
         :return: List[Label].
         """

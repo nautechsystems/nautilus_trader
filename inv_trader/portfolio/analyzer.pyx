@@ -36,7 +36,7 @@ from inv_trader.model.objects cimport Money
 
 cdef class Analyzer:
     """
-    Represents a trading portfolio analyzer for generating performance metrics
+    Provides a trading portfolio analyzer for generating performance metrics
     and statistics.
     """
 
@@ -44,7 +44,7 @@ cdef class Analyzer:
         """
         Initializes a new instance of the Analyzer class.
 
-        :param log_returns: A boolean flag indicating whether log returns will be used.
+        :param log_returns: A flag indicating whether log returns will be used.
         """
         self._log_returns = log_returns
         self._returns = pd.Series()

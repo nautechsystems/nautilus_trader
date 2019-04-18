@@ -91,29 +91,29 @@ cdef class DataClient:
         Connect to the data service.
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the data client.")
+        raise NotImplementedError("Method must be implemented in the subclass.")
 
     cpdef void disconnect(self):
         """
         Disconnect from the data service.
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the data client.")
+        raise NotImplementedError("Method must be implemented in the subclass.")
 
     cpdef void update_all_instruments(self):
         """
         Update all instruments from the database.
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the data client.")
+        raise NotImplementedError("Method must be implemented in the subclass.")
 
     cpdef void update_instrument(self, Symbol symbol):
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the data client.")
+        raise NotImplementedError("Method must be implemented in the subclass.")
 
     cpdef dict get_all_instruments(self):
         """
-        Return a copy of the dictionary of all instruments.
+        Return a dictionary of all instruments.
         
         :return: Dict[Symbol, Instrument].
         """
@@ -125,7 +125,7 @@ cdef class DataClient:
 
         :param symbol: The symbol of the instrument to return.
         :return: The instrument (if found)
-        :raises KeyError: If the instrument is not found.
+        :raises ValueError: If the instrument is not found.
         """
         Precondition.is_in(symbol, self._instruments, 'symbol', 'instruments')
 
@@ -136,7 +136,6 @@ cdef class DataClient:
         Register the given trade strategy with the data client.
 
         :param strategy: The strategy to register.
-        :raise ValueError: If the strategy does not inherit from TradeStrategy.
         """
         strategy.register_data_client(self)
 
@@ -150,9 +149,6 @@ cdef class DataClient:
         """
         Download the historical bars for the given parameters from the data
         service, then pass them to the callable bar handler.
-
-        Note: A log warnings are given if the downloaded bars quantity does not
-        equal the requested quantity.
 
         :param bar_type: The historical bar type to download.
         :param quantity: The number of historical bars to download (can be None, will download all).
@@ -170,9 +166,6 @@ cdef class DataClient:
         """
         Download the historical bars for the given parameters from the data
         service, then pass them to the callable bar handler.
-
-        Note: A log warning is given if the downloaded bars first timestamp is
-        greater than the requested datetime.
 
         :param bar_type: The historical bar type to download.
         :param from_datetime: The datetime from which the historical bars should be downloaded.

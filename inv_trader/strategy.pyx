@@ -478,7 +478,7 @@ cdef class TradeStrategy:
         :param symbol: The symbol of the instrument to return.
         :return: Instrument (if found)
         :raises ValueError: If strategy has not been registered with a data client.
-        :raises KeyError: If the instrument is not found.
+        :raises ValueError: If the instrument is not found.
         """
         Precondition.not_none(self._data_client, 'data_client')
 
@@ -583,7 +583,7 @@ cdef class TradeStrategy:
 
         :param bar_type: The bar type to get.
         :return: List[Bar] (if found).
-        :raises KeyError: If the strategies bars dictionary does not contain the bar type.
+        :raises ValueError: If the strategies bars dictionary does not contain the bar type.
         """
         Precondition.is_in(bar_type, self._bars, 'bar_type', 'bars')
 
@@ -625,7 +625,7 @@ cdef class TradeStrategy:
 
         :param symbol: The last ticks symbol.
         :return: Tick (if found).
-        :raises KeyError: If the strategies tick dictionary does not contain a tick for the given symbol.
+        :raises ValueError: If the strategies tick dictionary does not contain a tick for the given symbol.
         """
         Precondition.is_in(symbol, self._ticks, 'symbol', 'ticks')
 
@@ -1294,7 +1294,7 @@ cdef class TradeStrategy:
         Cancel the time alert corresponding to the given label.
 
         :param label: The label for the alert to cancel.
-        :raises KeyError: If the label is not found in the internal timers.
+        :raises ValueError: If the label is not found in the internal timers.
         """
         self._clock.cancel_time_alert(label)
         self.log.info(f"Cancelled time alert for {label}.")
