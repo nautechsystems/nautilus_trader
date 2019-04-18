@@ -99,34 +99,33 @@ class INStrategyExample(TradeStrategy):
             # Wait for indicator to warm up...
             return
 
-        # User logging example
         if self.in_state != self.intrinsic_network.state:
             self.log.info(f"IN STATE CHANGE from {self.in_state} to {self.intrinsic_network.state}")
             self.in_state = self.intrinsic_network.state
 
-        # BUY LOGIC
-        if self.intrinsic_network.state == -1:
-            if self.position is None:
-                self._go_long()
-            elif self.position.market_position == MarketPosition.FLAT:
-                self._go_long()
-            elif self.position.market_position == MarketPosition.LONG:
-                pass  # Stay long
-            elif self.position.market_position == MarketPosition.SHORT:
-                self.flatten_position(self.position.id)
-                self._go_long()
+            # BUY LOGIC
+            if self.intrinsic_network.state == -1:
+                if self.position is None:
+                    self._go_long()
+                elif self.position.is_flat:
+                    self._go_long()
+                elif self.position.is_long:
+                    pass  # Stay long
+                elif self.position.is_short:
+                    self.flatten_position(self.position.id)
+                    self._go_long()
 
-        # SELL LOGIC
-        elif self.intrinsic_network.state == 1:
-            if self.position is None:
-                self._go_short()
-            elif self.position.market_position == MarketPosition.FLAT:
-                self._go_short()
-            elif self.position.market_position == MarketPosition.SHORT:
-                pass  # Stay short
-            elif self.position.market_position == MarketPosition.LONG:
-                self.flatten_position(self.position.id)
-                self._go_short()
+            # SELL LOGIC
+            elif self.intrinsic_network.state == 1:
+                if self.position is None:
+                    self._go_short()
+                elif self.position.is_flat:
+                    self._go_short()
+                elif self.position.is_short:
+                    pass  # Stay short
+                elif self.position.is_long:
+                    self.flatten_position(self.position.id)
+                    self._go_short()
 
     def on_event(self, event: Event):
         """

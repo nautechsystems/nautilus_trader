@@ -10,7 +10,7 @@
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 from decimal import Decimal
 from cpython.datetime cimport datetime
-from typing import Set, List
+from typing import List
 
 from inv_trader.enums.market_position cimport MarketPosition, market_position_string
 from inv_trader.enums.order_side cimport OrderSide
@@ -35,7 +35,7 @@ cdef class Position:
         :param position_id: The positions identifier.
         :param timestamp: The positions initialization timestamp.
         """
-        self._order_ids = set()       # type: Set[OrderId]
+        self._order_ids = []          # type: List[OrderId]
         self._execution_ids = []      # type: List[ExecutionId]
         self._execution_tickets = []  # type: List[ExecutionTicket]
         self._events = []             # type: List[OrderEvent]
@@ -58,9 +58,11 @@ cdef class Position:
         self.average_exit_price = None
         self.points_realized = Decimal(0)
         self.return_realized = 0.0
+        self.is_flat = True
+        self.is_long = False
+        self.is_short = False
         self.is_entered = False
         self.is_exited = False
-        self.event_count = 0
         self.last_event = None
 
     cdef bint equals(self, Position other):
@@ -111,7 +113,7 @@ cdef class Position:
         
         :return: List[OrderId]. 
         """
-        return list(self._order_ids.copy())
+        return self._order_ids.copy()
 
     cpdef list get_execution_ids(self):
         """
@@ -137,6 +139,14 @@ cdef class Position:
         """
         return self._events.copy()
 
+    cpdef int event_count(self):
+        """
+        Return the count of events applied to the position.
+        
+        :return: int.
+        """
+        return len(self._events)
+
     cpdef void apply(self, OrderEvent event):
         """
         Applies the given order event to the position. The given event type must
@@ -144,12 +154,13 @@ cdef class Position:
 
         :param event: The order event to apply.
         """
+        # Update events
         self._events.append(event)
-        self.event_count += 1
         self.last_event = event
 
-        # Handle event
-        self._order_ids.add(event.order_id)
+        # Update identifiers
+        if event.order_id not in self._order_ids:
+            self._order_ids.append(event.order_id)
         self._execution_ids.append(event.execution_id)
         self._execution_tickets.append(event.execution_ticket)
         self.last_order_id = event.order_id
@@ -180,6 +191,7 @@ cdef class Position:
 
         self.quantity = Quantity(abs(self.relative_quantity))
 
+        # Update peak quantity
         if self.quantity > self.peak_quantity:
             self.peak_quantity = self.quantity
 
@@ -192,12 +204,20 @@ cdef class Position:
         # Market position logic
         if self.relative_quantity > 0:
             self.market_position = MarketPosition.LONG
+            self.is_long = True
+            self.is_flat = False
+            self.is_short = False
         elif self.relative_quantity < 0:
             self.market_position = MarketPosition.SHORT
+            self.is_short = True
+            self.is_flat = False
+            self.is_long = False
         else:
             self.market_position = MarketPosition.FLAT
+            self.is_flat = True
+            self.is_long = False
+            self.is_short = False
 
-        # Check overfill
         if self.is_exited and self.relative_quantity != 0:
             self.is_exited = False
 

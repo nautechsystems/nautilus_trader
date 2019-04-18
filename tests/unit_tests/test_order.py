@@ -49,6 +49,19 @@ class OrderTests(unittest.TestCase):
             Quantity(0),
             UNIX_EPOCH)
 
+    def test_market_order_with_order_side_none_raises_exception(self):
+        # Arrange
+        # Act
+        self.assertRaises(
+            ValueError,
+            Order,
+            AUDUSD_FXCM,
+            OrderId('AUDUSD-FXCM-123456-1'),
+            OrderSide.UNKNOWN,
+            OrderType.MARKET,
+            Quantity(100000),
+            UNIX_EPOCH)
+
     def test_priced_order_with_GTD_time_in_force_and_expire_time_none_raises_exception(self):
         # Arrange
         # Act
@@ -158,7 +171,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(Price('1.00000'), order3.price)
         self.assertEqual(Price('1.00001'), order4.price)
 
-    def test_can_initialize_market_order(self):
+    def test_can_initialize_buy_market_order(self):
         # Arrange
         # Act
         order = self.order_factory.market(
@@ -169,8 +182,28 @@ class OrderTests(unittest.TestCase):
         # Assert
         self.assertEqual(OrderType.MARKET, order.type)
         self.assertEqual(OrderStatus.INITIALIZED, order.status)
+        self.assertEqual(0, order.event_count())
+        self.assertFalse(order.is_active)
         self.assertFalse(order.is_complete)
-        print(order)
+        self.assertTrue(order.is_buy)
+        self.assertFalse(order.is_sell)
+
+    def test_can_initialize_sell_market_order(self):
+        # Arrange
+        # Act
+        order = self.order_factory.market(
+            AUDUSD_FXCM,
+            OrderSide.SELL,
+            Quantity(100000),)
+
+        # Assert
+        self.assertEqual(OrderType.MARKET, order.type)
+        self.assertEqual(OrderStatus.INITIALIZED, order.status)
+        self.assertEqual(0, order.event_count())
+        self.assertFalse(order.is_active)
+        self.assertFalse(order.is_complete)
+        self.assertFalse(order.is_buy)
+        self.assertTrue(order.is_sell)
 
     def test_order_str_and_repr(self):
         # Arrange
@@ -198,7 +231,6 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(OrderStatus.INITIALIZED, order.status)
         self.assertEqual(TimeInForce.DAY, order.time_in_force)
         self.assertFalse(order.is_complete)
-        print(order)
 
     def test_can_initialize_limit_order_with_expire_time(self):
         # Arrange
@@ -220,7 +252,6 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(TimeInForce.GTD, order.time_in_force)
         self.assertEqual(UNIX_EPOCH, order.expire_time)
         self.assertFalse(order.is_complete)
-        print(order)
 
     def test_can_initialize_stop_market_order(self):
         # Arrange
@@ -388,7 +419,7 @@ class OrderTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(OrderStatus.SUBMITTED, order.status)
-        self.assertEqual(1, order.event_count)
+        self.assertEqual(1, order.event_count())
         self.assertEqual(event, order.last_event)
         self.assertFalse(order.is_complete)
 
@@ -571,7 +602,9 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(OrderStatus.WORKING, order.status)
         self.assertEqual(OrderId('SOME_BROKER_ID_2'), order.broker_id)
         self.assertEqual(Price('1.00001'), order.price)
+        self.assertTrue(order.is_active)
         self.assertFalse(order.is_complete)
+        self.assertEqual(2, order.event_count())
 
     def test_can_apply_order_filled_event_to_market_order(self):
         # Arrange

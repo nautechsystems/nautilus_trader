@@ -66,11 +66,13 @@ cdef class Order:
         :param time_in_force: The orders time in force (default DAY).
         :param expire_time: The optional order expire time (can be None).
         :raises ValueError: If the order quantity is not positive (> 0).
+        :raises ValueError: If the order side is UNKNOWN.
         :raises ValueError: If the order type should not have a price and the price is not None.
         :raises ValueError: If the order type should have a price and the price is None.
         :raises ValueError: If the time_in_force is GTD and the expire_time is None.
         """
         Precondition.positive(quantity.value, 'quantity')
+        Precondition.true(order_side != OrderSide.UNKNOWN, 'order_side != UNKNOWN')
 
         # For orders which require a price
         if order_type in PRICED_ORDER_TYPES:
@@ -89,9 +91,9 @@ cdef class Order:
 
         self.symbol = symbol
         self.id = order_id
-        self.broker_id = None
-        self.execution_id = None
-        self.execution_ticket = None
+        self.broker_id = None               # Can be None
+        self.execution_id = None            # Can be None
+        self.execution_ticket = None        # Can be None
         self.side = order_side
         self.type = order_type
         self.quantity = quantity
@@ -101,11 +103,12 @@ cdef class Order:
         self.time_in_force = time_in_force  # Can be None
         self.expire_time = expire_time      # Can be None
         self.filled_quantity = Quantity(0)
-        self.average_price = None
+        self.average_price = None           # Can be None
         self.slippage = Decimal(0.0)
         self.status = OrderStatus.INITIALIZED
-        self.event_count = 0
-        self.last_event = None
+        self.last_event = None              # Can be None
+        self.is_buy = True if self.side == OrderSide.BUY else False
+        self.is_sell = True if self.side == OrderSide.SELL else False
         self.is_active = False
         self.is_complete = False
 
@@ -192,17 +195,25 @@ cdef class Order:
         """
         return self._events.copy()
 
+    cpdef int event_count(self):
+        """
+        Return the count of events applied to the order.
+        
+        :return: int.
+        """
+        return len(self._events)
+
     cpdef void apply(self, OrderEvent event):
         """
         Apply the given order event to the order.
 
         :param event: The order event to apply.
-        :raises ValueError: If the order_events order_id is not equal to the order id.
+        :raises ValueError: If the order_events order_id is not equal to the order identifier.
         """
         Precondition.equal(event.order_id, self.id)
 
+        # Update events
         self._events.append(event)
-        self.event_count += 1
         self.last_event = event
 
         # Handle event
