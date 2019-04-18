@@ -33,6 +33,7 @@ cdef class FillModel:
         :param prob_slippage: The probability of order fill prices slipping by a tick.
         :param random_seed: The optional random seed (can be None).
         :raises ValueError: If any probability argument is not within range [0, 1].
+        :raises ValueError: If the random_seed is not None and not of type int.
         """
         Precondition.in_range(prob_fill_at_limit, 'prob_fill_at_limit', 0.0, 1.0)
         Precondition.in_range(prob_fill_at_stop, 'prob_fill_at_stop', 0.0, 1.0)
