@@ -256,8 +256,7 @@ cdef class Portfolio:
         cdef int active_positions = 0
 
         for positions_list in self._positions_active.values():
-            for position in positions_list:
-                active_positions += 1
+            active_positions += len(positions_list)
 
         return active_positions
 
@@ -270,8 +269,7 @@ cdef class Portfolio:
         cdef int closed_count = 0
 
         for positions_list in self._positions_closed.values():
-            for position in positions_list:
-                closed_count += 1
+            closed_count += len(positions_list)
 
         return closed_count
 
@@ -332,6 +330,7 @@ cdef class Portfolio:
 
         # Position does not exist yet
         if position_id not in self._position_book:
+            # Create position
             position = Position(
                 event.symbol,
                 position_id,
@@ -342,7 +341,6 @@ cdef class Portfolio:
             self._position_book[position_id] = position
 
             # Add position to active positions
-            assert(position_id not in self._positions_active[strategy_id])
             self._positions_active[strategy_id][position_id] = position
             self._log.debug(f"Added {position} to active positions.")
             self._position_opened(position, strategy_id)

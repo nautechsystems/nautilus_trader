@@ -281,17 +281,18 @@ cdef class ExecutionClient:
         Handle the given event received from the execution service.
  
         :param: event: The event to handle.
-        :raises ValueError: If the events order identifier is not registered with the execution client.
         """
         cdef Order order
         cdef StrategyId strategy_id
 
         # Order events
         if isinstance(event, OrderEvent):
-            Precondition.is_in(event.order_id, self._order_book, 'order_id', 'order_book')
-            Precondition.is_in(event.order_id, self._order_strategy_index, 'order_id', 'order_strategy_index')
+            if event.order_id in self._order_book:
+                order = self._order_book[event.order_id]
+            else:
+                self._log.error(f"order for {event.order_id} not found")
+                return # Cannot apply event to an order
 
-            order = self._order_book[event.order_id]
             order.apply(event)
 
             strategy_id = self._order_strategy_index[event.order_id]
