@@ -7,7 +7,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from inv_trader.model.enums import OrderSide, MarketPosition
+from inv_trader.model.enums import OrderSide
 from inv_trader.model.objects import Tick, BarType, Bar, Instrument, Quantity
 from inv_trader.model.events import Event, PositionOpened
 from inv_trader.strategy import TradeStrategy
@@ -22,24 +22,15 @@ class INStrategyExample(TradeStrategy):
 
     def __init__(self,
                  order_id_tag: str,
-                 flatten_on_sl_reject: bool,
-                 flatten_on_stop: bool,
-                 cancel_all_orders_on_stop: bool,
                  instrument: Instrument,
                  bar_type: BarType,
                  position_size=1000000,
                  threshold_entry=0.0020,
                  threshold_close=0.0020):
         """
-        Initializes a new instance of the IntrinsicNetworkExample class.
+        Initializes a new instance of the INStrategyExample class.
 
         :param order_id_tag: The order identifier tag for the strategy (must be unique at trader level).
-        :param flatten_on_sl_reject: The flag indicating whether the position with an
-        associated stop order should be flattened if the order is rejected.
-        :param flatten_on_stop: The flag indicating whether the strategy should
-        be flattened on stop.
-        :param cancel_all_orders_on_stop: The flag indicating whether all residual
-        orders should be cancelled on stop.
         :param instrument: The instrument for the strategy.
         :param bar_type: The bar type for the strategy.
         :param position_size: The position size.
@@ -47,10 +38,7 @@ class INStrategyExample(TradeStrategy):
         :param threshold_entry: The threshold for the IntrinsicNetwork close direction.
         """
         # Send the below arguments into the base class
-        super().__init__(order_id_tag=order_id_tag,
-                         flatten_on_sl_reject=flatten_on_sl_reject,
-                         flatten_on_stop=flatten_on_stop,
-                         cancel_all_orders_on_stop=cancel_all_orders_on_stop)
+        super().__init__(order_id_tag=order_id_tag)
 
         # Custom strategy variables
         self.instrument = instrument
