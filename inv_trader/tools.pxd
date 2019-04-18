@@ -52,7 +52,7 @@ cdef class BarBuilder:
 cdef class IndicatorUpdater:
     """
     Provides an adapter for updating an indicator with a bar. When instantiated
-    with a live indicator update method, the updater will inspect the method and
+    with an indicator update method, the updater will inspect the method and
     construct the required parameter list for updates.
     """
     cdef object _indicator

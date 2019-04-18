@@ -250,7 +250,7 @@ cdef class BarBuilder:
 cdef class IndicatorUpdater:
     """
     Provides an adapter for updating an indicator with a bar. When instantiated
-    with a live indicator update method, the updater will inspect the method and
+    with an indicator update method, the updater will inspect the method and
     construct the required parameter list for updates.
     """
 
@@ -264,7 +264,7 @@ cdef class IndicatorUpdater:
         :param indicator: The indicator for updating.
         :param input_method: The indicators input method.
         :param outputs: The list of the indicators output properties.
-        :raises ValueError: If the input_method is not of type Callable.
+        :raises ValueError: If the input_method is not None and not of type Callable.
         """
         Precondition.type_or_none(input_method, Callable, 'input_method')
 
@@ -349,8 +349,9 @@ cdef class IndicatorUpdater:
 
     cdef list _get_values(self):
         """
-        Create a list of the current indicator outputs.
+        Create a list of the current indicator outputs. The list will contain
+        a tuple of the name of the output and the float value.
         
-        :return: List[tuple].
+        :return: List[(str, float)].
         """
         return [(output, self._indicator.__getattribute__(output)) for output in self._outputs]
