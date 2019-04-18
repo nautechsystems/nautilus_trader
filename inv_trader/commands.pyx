@@ -12,7 +12,7 @@
 from cpython.datetime cimport datetime
 
 from inv_trader.model.objects cimport ValidString, Price
-from inv_trader.model.identifiers cimport GUID, Label, PositionId, TraderId, StrategyId
+from inv_trader.model.identifiers cimport GUID, PositionId, TraderId, StrategyId
 from inv_trader.model.order cimport Order, AtomicOrder
 
 
