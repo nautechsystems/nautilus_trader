@@ -14,7 +14,7 @@ from typing import Dict
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.common.clock cimport Clock, LiveClock
-from inv_trader.model.objects cimport ValidString, Symbol
+from inv_trader.model.objects cimport Symbol
 
 
 cdef class Identifier:

@@ -92,10 +92,11 @@ class LiveDataClientTests(unittest.TestCase):
 
     def test_can_subscribe_to_tick_data(self):
         # Arrange
+        dummy_handler = [].append
         self.data_client.connect()
 
         # Act
-        self.data_client.subscribe_ticks(Symbol('AUDUSD', Venue.FXCM), handler=None)
+        self.data_client.subscribe_ticks(Symbol('AUDUSD', Venue.FXCM), handler=dummy_handler)
 
         # Assert
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), self.data_client.subscribed_ticks()[0])
@@ -103,11 +104,12 @@ class LiveDataClientTests(unittest.TestCase):
 
     def test_can_unsubscribe_from_tick_data(self):
         # Arrange
+        dummy_handler = [].append
         self.data_client.connect()
-        self.data_client.subscribe_ticks(Symbol('AUDUSD', Venue.FXCM), handler=None)
+        self.data_client.subscribe_ticks(Symbol('AUDUSD', Venue.FXCM), handler=dummy_handler)
 
         # Act
-        self.data_client.unsubscribe_ticks(Symbol('AUDUSD', Venue.FXCM), handler=None)
+        self.data_client.unsubscribe_ticks(Symbol('AUDUSD', Venue.FXCM), handler=dummy_handler)
 
         # Assert
         self.assertEqual(0, len(self.data_client.subscribed_ticks()))
@@ -115,10 +117,11 @@ class LiveDataClientTests(unittest.TestCase):
 
     def test_can_subscribe_to_bar_data(self):
         # Arrange
+        dummy_handler = [].append
         self.data_client.connect()
 
         # Act
-        self.data_client.subscribe_bars(TestStubs.bartype_audusd_1min_bid(), handler=None)
+        self.data_client.subscribe_bars(TestStubs.bartype_audusd_1min_bid(), handler=dummy_handler)
 
         # Assert
         self.assertEqual(TestStubs.bartype_audusd_1min_bid(), self.data_client.subscribed_bars()[0])
@@ -126,13 +129,12 @@ class LiveDataClientTests(unittest.TestCase):
 
     def test_can_unsubscribe_from_bar_data(self):
         # Arrange
-        x = []
-        handler = x.append
+        dummy_handler = [].append
         self.data_client.connect()
-        self.data_client.subscribe_bars(TestStubs.bartype_audusd_1min_bid(), handler=handler)
+        self.data_client.subscribe_bars(TestStubs.bartype_audusd_1min_bid(), handler=dummy_handler)
 
         # Act
-        self.data_client.unsubscribe_bars(TestStubs.bartype_audusd_1min_bid(), handler=handler)
+        self.data_client.unsubscribe_bars(TestStubs.bartype_audusd_1min_bid(), handler=dummy_handler)
 
         # Assert
         self.assertEqual(0, len(self.data_client.subscribed_bars()))
@@ -140,11 +142,13 @@ class LiveDataClientTests(unittest.TestCase):
 
     def test_disconnecting_when_subscribed_to_multiple_channels_then_unsubscribes(self):
         # Arrange
+        list = []
+        dummy_handler = list.append
         self.data_client.connect()
-        self.data_client.subscribe_ticks(Symbol('AUDUSD', Venue.FXCM), handler=None)
-        self.data_client.subscribe_ticks(Symbol('GBPUSD', Venue.FXCM), handler=None)
-        self.data_client.subscribe_ticks(Symbol('EURJPY', Venue.FXCM), handler=None)
-        self.data_client.subscribe_ticks(Symbol('USDCAD', Venue.FXCM), handler=None)
+        self.data_client.subscribe_ticks(Symbol('AUDUSD', Venue.FXCM), handler=dummy_handler)
+        self.data_client.subscribe_ticks(Symbol('GBPUSD', Venue.FXCM), handler=dummy_handler)
+        self.data_client.subscribe_ticks(Symbol('EURJPY', Venue.FXCM), handler=dummy_handler)
+        self.data_client.subscribe_ticks(Symbol('USDCAD', Venue.FXCM), handler=dummy_handler)
 
         # Act
         self.data_client.disconnect()
@@ -205,24 +209,24 @@ class LiveDataClientTests(unittest.TestCase):
         # Assert
         self.assertEqual(bar_type, result)
 
-    def test_tick_handler_with_no_subscribers_prints(self):
+    def test_process_tick_with_no_subscribers_prints(self):
         # Arrange
         # Act
-        self.data_client._handle_tick(
+        self.data_client._process_tick(
             {'channel': b'audusd.fxcm', 'data': b'1.00000,1.00001,2018-01-01T19:59:01.000Z'})
 
         # Assert
-        # Should print to console.
+        self.assertTrue(True)  # No exceptions raised
 
-    def test_bar_handler_with_no_subscribers_prints(self):
+    def test_process_bar_with_no_subscribers_prints(self):
         # Arrange
         # Act
-        self.data_client._handle_bar(
+        self.data_client._process_bar(
             {'channel': b'audusd.fxcm-1-second[bid]',
              'data': b'1.00001,1.00004,1.00002,1.00003,100000,2018-01-01T19:59:01+00:00'})
 
         # Assert
-        # Should print to console.
+        self.assertTrue(True)  # No exceptions raised
 
     def test_can_receive_one_tick(self):
         # Arrange
