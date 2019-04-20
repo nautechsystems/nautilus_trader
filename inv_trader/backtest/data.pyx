@@ -76,6 +76,10 @@ cdef class BacktestDataClient(DataClient):
         self.data_minute_index = list(pd.to_datetime(first_dataframe.index, utc=True))  # type: List[datetime]
 
         assert(isinstance(self.data_minute_index[0], datetime))
+        cdef int last_index = len(self.data_minute_index) - 1
+        cdef str index0_pad = (len(str(last_index)) - 1) * " "
+        self._log.info(f"Data datetime minute index[0]{index0_pad} = {self.data_minute_index[0]}")
+        self._log.info(f"Data datetime minute index[{last_index}] = {self.data_minute_index[last_index]}")
 
         self.data_providers = {}  # type: Dict[Symbol, DataProvider]
 
@@ -98,22 +102,6 @@ cdef class BacktestDataClient(DataClient):
         # Check there is the needed instrument for each data symbol
         for key in self._instruments.keys():
             assert(key in data_symbols, f'The needed instrument {key} was not provided.')
-
-        # Check that all resolution DataFrames are of the same shape and index
-        cdef dict shapes = {}  # type: Dict[Resolution, tuple]
-        cdef dict indexs = {}  # type: Dict[Resolution, datetime]
-        for symbol, data in data_bars_bid.items():
-            for resolution, dataframe in data.items():
-                if resolution not in shapes:
-                    shapes[resolution] = dataframe.shape
-                if resolution not in indexs:
-                    indexs[resolution] = dataframe.index
-                assert(dataframe.shape == shapes[resolution], f'{dataframe} shape is not equal.')
-                assert(dataframe.index == indexs[resolution], f'{dataframe} index is not equal.')
-        for symbol, data in data_bars_ask.items():
-            for resolution, dataframe in data.items():
-                assert(dataframe.shape == shapes[resolution], f'{dataframe} shape is not equal.')
-                assert(dataframe.index == indexs[resolution], f'{dataframe} index is not equal.')
 
         # Determine if tick data should be used for execution processing
         if len(self.data_ticks[next(iter(data_ticks))]) > 0:

@@ -55,7 +55,7 @@ class LiveClockTests(unittest.TestCase):
         # Assert
         self.assertEqual(timezone.utc, result.tzinfo)
 
-    def test_get_elapsed(self):
+    def test_get_delta(self):
         # Arrange
         start = datetime.now(timezone.utc)
         time.sleep(0.1)
@@ -64,8 +64,8 @@ class LiveClockTests(unittest.TestCase):
         result = self.clock.get_delta(start)
 
         # Assert
-        self.assertTrue(result > 0.0)
-        self.assertEqual(float, type(result))
+        self.assertTrue(result > timedelta(seconds=0))
+        self.assertEqual(timedelta, type(result))
 
 
 class TestClockTests(unittest.TestCase):
@@ -96,7 +96,7 @@ class TestClockTests(unittest.TestCase):
         # Assert
         self.assertEqual(new_time, result)
 
-    def test_get_elapsed(self):
+    def test_get_delta(self):
         # Arrange
         start = datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc)
         self.clock.set_time(start + timedelta(seconds=1))
@@ -105,8 +105,8 @@ class TestClockTests(unittest.TestCase):
         result = self.clock.get_delta(start)
 
         # Assert
-        self.assertEqual(1.00, result)
-        self.assertEqual(float, type(result))
+        self.assertEqual(timedelta(seconds=1), result)
+        self.assertEqual(timedelta, type(result))
 
     def test_iterate_time(self):
         # Arrange
