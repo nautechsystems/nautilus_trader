@@ -13,7 +13,7 @@ from cpython.datetime cimport datetime
 
 from inv_trader.common.clock cimport Clock
 from inv_trader.common.logger cimport LoggerAdapter
-from inv_trader.model.objects cimport Symbol, BarType, Instrument
+from inv_trader.model.objects cimport Symbol, Tick, BarType, Bar, Instrument
 from inv_trader.strategy cimport TradeStrategy
 
 
@@ -42,13 +42,15 @@ cdef class DataClient:
     cpdef void register_strategy(self, TradeStrategy strategy)
     cpdef void historical_bars(self, BarType bar_type, int quantity, handler)
     cpdef void historical_bars_from(self, BarType bar_type, datetime from_datetime, handler)
-    cpdef void subscribe_ticks(self, Symbol symbol, handler=*)
-    cpdef void unsubscribe_ticks(self, Symbol symbol, handler=*)
-    cpdef void subscribe_bars(self, BarType bar_type, handler=*)
-    cpdef void unsubscribe_bars(self, BarType bar_type, handler=*)
+    cpdef void subscribe_ticks(self, Symbol symbol, handler)
+    cpdef void unsubscribe_ticks(self, Symbol symbol, handler)
+    cpdef void subscribe_bars(self, BarType bar_type, handler)
+    cpdef void unsubscribe_bars(self, BarType bar_type, handler)
 
-    cdef void _subscribe_ticks(self, Symbol symbol, handler=*)
-    cdef void _unsubscribe_ticks(self, Symbol symbol, handler=*)
-    cdef void _subscribe_bars(self, BarType bar_type, handler=*)
-    cdef void _unsubscribe_bars(self, BarType bar_type, handler=*)
+    cdef void _subscribe_ticks(self, Symbol symbol, handler)
+    cdef void _unsubscribe_ticks(self, Symbol symbol, handler)
+    cdef void _subscribe_bars(self, BarType bar_type, handler)
+    cdef void _unsubscribe_bars(self, BarType bar_type, handler)
+    cdef void _handle_tick(self, Tick tick)
+    cdef void _handle_bar(self, BarType bar_type, Bar bar)
     cdef void _reset(self)

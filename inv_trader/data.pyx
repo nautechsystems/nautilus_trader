@@ -20,6 +20,7 @@ from typing import Callable
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.common.clock cimport Clock, LiveClock
 from inv_trader.common.logger cimport Logger
+from inv_trader.common.handlers cimport TickHandler
 from inv_trader.common.data cimport DataClient
 from inv_trader.common.serialization cimport InstrumentSerializer
 from inv_trader.model.enums import Resolution, QuoteType, Venue
@@ -86,11 +87,11 @@ cdef class LiveDataClient(DataClient):
         """
         for symbol in self._tick_handlers.copy():
             for handler in self._tick_handlers[symbol].copy():
-                self.unsubscribe_ticks(symbol, handler)
+                self.unsubscribe_ticks(symbol, handler.handle)
 
         for bar_type in self._bar_handlers.copy():
             for handler in self._bar_handlers[bar_type].copy():
-                self.unsubscribe_bars(bar_type, handler)
+                self.unsubscribe_bars(bar_type, handler.handle)
 
         if self._pubsub is not None:
             self._pubsub.unsubscribe()
@@ -194,15 +195,13 @@ cdef class LiveDataClient(DataClient):
         :raises ValueError: If the handler is not of type Callable.
         :raises ValueError: If the quantity is not None and not positive (> 0).
         """
-        Precondition.type(handler, Callable, 'handler')
-
         if quantity is not None:
             Precondition.positive(quantity, 'quantity')
+        Precondition.type(handler, Callable, 'handler')
 
         self._check_connection()
 
         cdef list keys = self._get_redis_bar_keys(bar_type)
-
         if len(keys) == 0:
             self._log.warning(
                 "Cannot get historical bars (No bar keys found for the given parameters).")
@@ -251,11 +250,11 @@ cdef class LiveDataClient(DataClient):
         :param bar_type: The historical bar type to download.
         :param from_datetime: The datetime from which the historical bars should be downloaded.
         :param handler: The handler to pass the bars to.
-        :raises ValueError: If the handler is not of type Callable.
         :raises ValueError: If the from_datetime is not less than that current datetime.
+        :raises ValueError: If the handler is not of type Callable.
         """
-        Precondition.type(handler, Callable, 'handler')
         Precondition.true(from_datetime < self._clock.time_now(), 'from_datetime < self._clock.time_now().')
+        Precondition.type(handler, Callable, 'handler')
 
         self._check_connection()
 
@@ -288,36 +287,36 @@ cdef class LiveDataClient(DataClient):
             handler(bar_type, bar)
         self._log.debug(f"Historical bars hydrated to handler {handler}.")
 
-    cpdef void subscribe_ticks(self, Symbol symbol, handler: Callable=None):
+    cpdef void subscribe_ticks(self, Symbol symbol, handler: Callable):
         """
         Subscribe to live tick data for the given symbol and handler.
 
         :param symbol: The tick symbol to subscribe to.
         :param handler: The callable handler for subscription (if None will just call print).
-        :raises ValueError: If the handler is not of type None or Callable.
+        :raises ValueError: If the handler is not of type Callable.
         """
-        Precondition.type_or_none(handler, Callable, 'handler')
+        Precondition.type(handler, Callable, 'handler')
 
         self._check_connection()
 
         cdef str ticks_channel = self._get_tick_channel_name(symbol)
         if symbol not in self._tick_handlers:
-            self._pubsub.subscribe(**{ticks_channel: self._handle_tick})
+            self._pubsub.subscribe(**{ticks_channel: self._process_tick})
 
             if self._pubsub_thread is None:
                 self._pubsub_thread = self._pubsub.run_in_thread(0.001)
 
         self._subscribe_ticks(symbol, handler)
 
-    cpdef void unsubscribe_ticks(self, Symbol symbol, handler: Callable=None):
+    cpdef void unsubscribe_ticks(self, Symbol symbol, handler: Callable):
         """
         Unsubscribe from live tick data for the given symbol and handler.
 
         :param symbol: The tick symbol to unsubscribe from.
-        :param handler: The callable handler which was subscribed (can be None).
-        :raises ValueError: If the handler is not of type None or Callable.
+        :param handler: The callable handler which was subscribed.
+        :raises ValueError: If the handler is not of type Callable.
         """
-        Precondition.type_or_none(handler, Callable, 'handler')
+        Precondition.type(handler, Callable, 'handler')
 
         self._check_connection()
         self._unsubscribe_ticks(symbol, handler)
@@ -327,35 +326,36 @@ cdef class LiveDataClient(DataClient):
             tick_channel = self._get_tick_channel_name(symbol)
             self._pubsub.unsubscribe(tick_channel)
 
-    cpdef void subscribe_bars(self, BarType bar_type, handler: Callable=None):
+    cpdef void subscribe_bars(self, BarType bar_type, handler: Callable):
         """
         Subscribe to live bar data for the given bar type and handler.
 
         :param bar_type: The bar type to subscribe to.
-        :param handler: The callable handler for subscription (if None will just call print).
-        :raises ValueError: If the handler is not of type None or Callable.
+        :param handler: The callable handler for subscription.
+        :raises ValueError: If the handler is not of type Callable.
         """
-        Precondition.type_or_none(handler, Callable, 'handler')
+        Precondition.type(handler, Callable, 'handler')
 
         self._check_connection()
 
         cdef str bars_channel = self._get_bar_channel_name(bar_type)
         if bar_type not in self._bar_handlers:
-            self._pubsub.subscribe(**{bars_channel: self._handle_bar})
+            self._pubsub.subscribe(**{bars_channel: self._process_bar})
 
             if self._pubsub_thread is None:
                 self._pubsub_thread = self._pubsub.run_in_thread(0.001)
 
         self._subscribe_bars(bar_type, handler)
 
-    cpdef void unsubscribe_bars(self, BarType bar_type, handler: Callable=None):
+    cpdef void unsubscribe_bars(self, BarType bar_type, handler: Callable):
         """
         Unsubscribe from live bar data for the given symbol and handler.
 
         :param bar_type: The bar type to unsubscribe from.
-        :param handler: The callable handler which was subscribed (can be None).
+        :param handler: The callable handler which was subscribed.
+        :raises ValueError: If the handler is not of type Callable.
         """
-        Precondition.type_or_none(handler, Callable, 'handler')
+        Precondition.type(handler, Callable, 'handler')
 
         self._check_connection()
         self._unsubscribe_bars(bar_type, handler)
@@ -416,7 +416,6 @@ cdef class LiveDataClient(DataClient):
         cdef BarSpecification bar_spec = BarSpecification(int(split_string[2]),
                                                           Resolution[resolution.upper()],
                                                           QuoteType[quote_type.upper()])
-
         return BarType(symbol, bar_spec)
 
     cpdef Bar _parse_bar(self, str bar_string):
@@ -468,7 +467,7 @@ cdef class LiveDataClient(DataClient):
         if not self.is_connected():
             raise ConnectionError("No connection is established with the live database.")
 
-    cpdef void _handle_tick(self, dict message):
+    cpdef void _process_tick(self, dict message):
         """"
         Handle the tick message by parsing to a Tick and sending to all subscribers.
 
@@ -477,15 +476,9 @@ cdef class LiveDataClient(DataClient):
         cdef Symbol symbol = self._parse_tick_symbol(message['channel'].decode(UTF8))
         cdef Tick tick = self._parse_tick(symbol, message['data'].decode(UTF8))
 
-        if symbol not in self._tick_handlers:
-            # If no tick handlers then print message to console
-            print(f"Received {tick}")
-            return
+        self._handle_tick(tick)
 
-        for handler in self._tick_handlers[symbol]:
-            handler(tick)
-
-    cpdef void _handle_bar(self, dict message):
+    cpdef void _process_bar(self, dict message):
         """"
         Handle the bar message by parsing to a Bar and sending to all subscribers.
 
@@ -494,10 +487,4 @@ cdef class LiveDataClient(DataClient):
         cdef BarType bar_type = self._parse_bar_type(message['channel'].decode(UTF8))
         cdef Bar bar = self._parse_bar(message['data'].decode(UTF8))
 
-        if bar_type not in self._bar_handlers:
-            # If no bar handlers then print message to console
-            print(f"Received {bar_type}, {bar}")
-            return
-
-        for handler in self._bar_handlers[bar_type]:
-            handler(bar_type, bar)
+        self._handle_bar(bar_type, bar)
