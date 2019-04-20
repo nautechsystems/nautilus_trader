@@ -347,12 +347,15 @@ cdef class EMACross(TradeStrategy):
         cdef Price temp_price
         for trailing_stop in self.stop_loss_orders().values():
             if trailing_stop.is_active:
-                if trailing_stop.side == OrderSide.SELL:
+                # SELL SIDE ORDERS
+                if trailing_stop.is_sell:
                     temp_price = Price(bar.low - (self.atr.value * self.SL_atr_multiple))
                     if temp_price > trailing_stop.price:
                         self.modify_order(trailing_stop, temp_price)
-                elif trailing_stop.side == OrderSide.BUY:
-                    temp_price = Price(bar.high + (self.atr.value * self.SL_atr_multiple) + self.spread)
+                # BUY SIDE ORDERS
+                elif trailing_stop.is_buy:
+                    temp_price = Price(
+                        bar.high + (self.atr.value * self.SL_atr_multiple) + self.spread)
                     if temp_price < trailing_stop.price:
                         self.modify_order(trailing_stop, temp_price)
 
