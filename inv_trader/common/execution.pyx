@@ -62,6 +62,7 @@ cdef class ExecutionClient:
         self._order_strategy_index = {}   # type: Dict[OrderId, StrategyId]
         self._orders_active = {}          # type: Dict[StrategyId, Dict[OrderId, Order]]
         self._orders_completed = {}       # type: Dict[StrategyId, Dict[OrderId, Order]]
+        self.event_count = 0
 
         self._log.info(f"Initialized.")
 
@@ -282,6 +283,8 @@ cdef class ExecutionClient:
  
         :param: event: The event to handle.
         """
+        self.event_count += 1
+
         cdef Order order
         cdef StrategyId strategy_id
 

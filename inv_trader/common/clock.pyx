@@ -57,19 +57,16 @@ cdef class Clock:
         """
         return self._unix_epoch
 
-    cpdef float get_elapsed(self, datetime start):
+    cpdef timedelta get_delta(self, datetime time):
         """
-        Return the number of seconds elapsed since the given start time rounded
-        to two decimal places.
+        Return the timedelta from the given time.
         
-        :return: float.
+        :return: timedelta.
         :raises: ValueError: If the start timezone is not equal to the clocks timezone.
-        :raises: ValueError: If the start datetime is not <= the clocks current time.
         """
-        Precondition.true(start.tzinfo == self.timezone, 'time.tzinfo == self.timezone')
-        Precondition.true(start <= self.time_now(), 'start <= self.time_now()')
+        Precondition.true(time.tzinfo == self.timezone, 'time.tzinfo == self.timezone')
 
-        return (self.time_now() - start).total_seconds()
+        return self.time_now() - time
 
     cdef str get_datetime_tag(self):
         """

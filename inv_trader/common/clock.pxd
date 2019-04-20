@@ -24,7 +24,7 @@ cdef class Clock:
 
     cpdef datetime time_now(self)
     cpdef datetime unix_epoch(self)
-    cpdef float get_elapsed(self, datetime start)
+    cpdef timedelta get_delta(self, datetime time)
     cdef str get_datetime_tag(self)
     cpdef set_time_alert(
             self,

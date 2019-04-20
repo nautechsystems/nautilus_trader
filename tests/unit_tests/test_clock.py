@@ -61,7 +61,7 @@ class LiveClockTests(unittest.TestCase):
         time.sleep(0.1)
 
         # Act
-        result = self.clock.get_elapsed(start)
+        result = self.clock.get_delta(start)
 
         # Assert
         self.assertTrue(result > 0.0)
@@ -102,7 +102,7 @@ class TestClockTests(unittest.TestCase):
         self.clock.set_time(start + timedelta(seconds=1))
 
         # Act
-        result = self.clock.get_elapsed(start)
+        result = self.clock.get_delta(start)
 
         # Assert
         self.assertEqual(1.00, result)
