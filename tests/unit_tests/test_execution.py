@@ -64,9 +64,9 @@ class ExecutionClientTests(unittest.TestCase):
         self.assertEqual(order, self.exec_client.get_order(order.id))
         self.assertEqual(order, self.strategy.order(order.id))
         self.assertEqual(OrderStatus.WORKING, self.strategy.order(order.id).status)
-        self.assertTrue(self.exec_client.order_exists(order.id))
-        self.assertTrue(self.exec_client.order_active(order.id))
-        self.assertFalse(self.exec_client.order_complete(order.id))
+        self.assertTrue(self.exec_client.is_order_exists(order.id))
+        self.assertTrue(self.exec_client.is_order_active(order.id))
+        self.assertFalse(self.exec_client.is_order_complete(order.id))
 
     def test_can_send_cancel_order_command_to_mock_exec_clint(self):
         # Arrange

@@ -148,39 +148,6 @@ cdef class ExecutionClient:
 
         self._log.debug(f"Registered {strategy}.")
 
-    cpdef bint order_exists(self, OrderId order_id):
-        """
-        Return a value indicating whether an order with the given identifier exists.
-        
-        :param order_id: The order identifier.
-        :return: True if the order exists, else False.
-        """
-        return order_id in self._order_book
-
-    cpdef bint order_active(self, OrderId order_id):
-        """
-        Return a value indicating whether an order with the given identifier is active.
-         
-        :param order_id: The order identifier.
-        :return: True if the order exists and is active, else False.
-        :raises ValueError: If the order is not found.
-        """
-        Precondition.is_in(order_id, self._order_book, 'order_id', 'order_book')
-
-        return self._order_book[order_id].is_active
-
-    cpdef bint order_complete(self, OrderId order_id):
-        """
-        Return a value indicating whether an order with the given identifier is complete.
-         
-        :param order_id: The order identifier.
-        :return: True if the order does not exist or is complete, else False.
-        :raises ValueError: If the order is not found.
-        """
-        Precondition.is_in(order_id, self._order_book, 'order_id', 'order_book')
-
-        return self._order_book[order_id].is_complete
-
     cpdef Order get_order(self, OrderId order_id):
         """
         Return the order with the given identifier (if found).
@@ -252,6 +219,39 @@ cdef class ExecutionClient:
         Precondition.is_in(strategy_id, self._orders_completed, 'strategy_id', 'orders_completed')
 
         return self._orders_completed[strategy_id].copy()
+
+    cpdef bint is_order_exists(self, OrderId order_id):
+        """
+        Return a value indicating whether an order with the given identifier exists.
+        
+        :param order_id: The order identifier to check.
+        :return: True if the order exists, else False.
+        """
+        return order_id in self._order_book
+
+    cpdef bint is_order_active(self, OrderId order_id):
+        """
+        Return a value indicating whether an order with the given identifier is active.
+         
+        :param order_id: The order identifier to check.
+        :return: True if the order is active, else False.
+        :raises ValueError: If the order is not found.
+        """
+        Precondition.is_in(order_id, self._order_book, 'order_id', 'order_book')
+
+        return self._order_book[order_id].is_active
+
+    cpdef bint is_order_complete(self, OrderId order_id):
+        """
+        Return a value indicating whether an order with the given identifier is complete.
+         
+        :param order_id: The order identifier to check.
+        :return: True if the order is complete, else False.
+        :raises ValueError: If the order is not found.
+        """
+        Precondition.is_in(order_id, self._order_book, 'order_id', 'order_book')
+
+        return self._order_book[order_id].is_complete
 
     cdef void _execute_command(self, Command command):
         """
@@ -420,6 +420,7 @@ cdef class ExecutionClient:
         self._log.debug(f"Resetting...")
         self._order_book = {}                         # type: Dict[OrderId, Order]
         self._order_strategy_index = {}               # type: Dict[OrderId, StrategyId]
+        self.event_count = 0
 
         # Reset all active orders
         for strategy_id in self._orders_active.keys():

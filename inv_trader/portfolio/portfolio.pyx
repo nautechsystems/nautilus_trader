@@ -85,45 +85,6 @@ cdef class Portfolio:
         """
         return list(self._order_p_index.values())
 
-    cpdef bint position_exists(self, PositionId position_id):
-        """
-        Return a value indicating whether a position with the given identifier exists.
-
-        :param position_id: The position identifier.
-        :return: True if the position exists, else False.
-        """
-        return position_id in self._position_book
-
-    cpdef bint position_active(self, PositionId position_id):
-        """
-        Return a value indicating whether a position with the given identifier exists
-        and is entered (active).
-
-        :param position_id: The position identifier.
-        :return: True if the position exists and is exited, else False.
-        """
-        return position_id in self._position_book and self._position_book[position_id].is_entered
-
-    cpdef bint position_closed(self, PositionId position_id):
-        """
-        Return a value indicating whether a position with the given identifier exists
-        and is exited (closed).
-
-        :param position_id: The position identifier.
-        :return: True if the position does not exist or is closed, else False.
-        """
-        return position_id in self._position_book and self._position_book[position_id].is_exited
-
-    cpdef bint order_has_position(self, OrderId order_id):
-        """
-        Return a value indicating whether there is a position associated with the given
-        order identifier.
-        
-        :param order_id: The order identifier.
-        :return: True if an associated position exists, else False.
-        """
-        return order_id in self._order_p_index and self._order_p_index[order_id] in self._position_book
-
     cpdef Position get_position_for_order(self, OrderId order_id):
         """
         Return the position associated with the given order identifier.
@@ -209,6 +170,45 @@ cdef class Portfolio:
         Precondition.is_in(strategy_id, self._positions_closed, 'strategy_id', 'positions_closed')
 
         return self._positions_closed[strategy_id].copy()
+
+    cpdef bint is_position_exists(self, PositionId position_id):
+        """
+        Return a value indicating whether a position with the given identifier exists.
+
+        :param position_id: The position identifier.
+        :return: True if the position exists, else False.
+        """
+        return position_id in self._position_book
+
+    cpdef bint is_position_active(self, PositionId position_id):
+        """
+        Return a value indicating whether a position with the given identifier exists
+        and is entered (active).
+
+        :param position_id: The position identifier.
+        :return: True if the position exists and is exited, else False.
+        """
+        return position_id in self._position_book and not self._position_book[position_id].is_flat
+
+    cpdef bint is_position_closed(self, PositionId position_id):
+        """
+        Return a value indicating whether a position with the given identifier exists
+        and is exited (closed).
+
+        :param position_id: The position identifier.
+        :return: True if the position does not exist or is closed, else False.
+        """
+        return position_id in self._position_book and self._position_book[position_id].is_exited
+
+    cpdef bint is_position_for_order(self, OrderId order_id):
+        """
+        Return a value indicating whether there is a position associated with the given
+        order identifier.
+        
+        :param order_id: The order identifier.
+        :return: True if an associated position exists, else False.
+        """
+        return order_id in self._order_p_index and self._order_p_index[order_id] in self._position_book
 
     cpdef bint is_strategy_flat(self, StrategyId strategy_id):
         """

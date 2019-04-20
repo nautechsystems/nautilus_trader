@@ -653,7 +653,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._clock.time_now())
 
         # Adjust account if position exists
-        if self._portfolio.order_has_position(order.id):
+        if self._portfolio.is_position_for_order(order.id):
             self._adjust_account(filled)
 
         self._handle_event(filled)
