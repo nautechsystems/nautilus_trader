@@ -149,8 +149,8 @@ cdef class BacktestEngine:
             self.test_clock,
             self.test_logger)
 
-        self.time_to_initialize = self.clock.get_elapsed(self.created_time)
-        self.log.info(f'Initialized in {round(self.time_to_initialize, 2)}s.')
+        self.time_to_initialize = self.clock.get_delta(self.created_time)
+        self.log.info(f'Initialized in {self.time_to_initialize}.')
 
     cpdef void change_strategies(self, list strategies: List[TradeStrategy]):
         """
@@ -315,6 +315,7 @@ cdef class BacktestEngine:
         self.log.info("#---------------------------------------------------------------#")
 
         cdef list log_store = self.test_logger.get_log_store()
+        cdef str message
         if len(log_store) == 0:
             self.log.info("No log messages stored.")
         else:
@@ -396,17 +397,19 @@ cdef class BacktestEngine:
         self.log.info("#-------------------- BACKTEST DIAGNOSTICS ---------------------#")
         self.log.info("#---------------------------------------------------------------#")
         self.log.info(f"Run started datetime: {format_zulu_datetime(run_started, timespec='milliseconds')}")
-        self.log.info(f"Elapsed time (engine initialization): {self.time_to_initialize:.2f}s")
-        self.log.info(f"Elapsed time (running backtest): {self.clock.get_elapsed(run_started):.2f}s")
-        self.log.info(f"Time-step iterations: {self.iteration} of {time_step}")
+        self.log.info(f"Elapsed time (engine initialization): {self.time_to_initialize}")
+        self.log.info(f"Elapsed time (running backtest):      {self.clock.get_delta(run_started)}")
         self.log.info(f"Backtest start datetime: {format_zulu_datetime(start)}")
         self.log.info(f"Backtest stop datetime:  {format_zulu_datetime(stop)}")
+        self.log.info(f"Time-step iterations: {self.iteration} of {time_step}")
+        self.log.info(f"Total events:    {self.exec_client.event_count}")
+        self.log.info(f"Total orders:    {len(self.exec_client.get_orders_all())}")
+        self.log.info(f"Total positions: {len(self.portfolio.get_positions_all())}")
         self.log.info(f"Account balance (starting): {self.config.starting_capital} {currency_string(self.account.currency)}")
         self.log.info(f"Account balance (ending):   {self.account.cash_balance} {currency_string(self.account.currency)}")
         self.log.info(f"Commissions (total):        {self.exec_client.total_commissions} {currency_string(self.account.currency)}")
-        self.log.info(f"Total orders generated:  {len(self.exec_client.get_orders_all())}")
-        self.log.info(f"Total positions closed:  {len(self.portfolio.get_positions_all())}")
         self.log.info("")
+
         self.log.info("#---------------------------------------------------------------#")
         self.log.info("#-------------------- PERFORMANCE STATISTICS -------------------#")
         self.log.info("#---------------------------------------------------------------#")
@@ -420,6 +423,7 @@ cdef class BacktestEngine:
         
         :param strategies: The list of strategies.
         """
+        cdef TradeStrategy strategy
         for strategy in strategies:
             # Separate test clocks to iterate independently
             strategy.change_clock(TestClock())

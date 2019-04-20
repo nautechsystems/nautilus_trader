@@ -33,7 +33,7 @@ cdef class BacktestEngine:
     cdef readonly Logger logger
     cdef readonly Logger test_logger
     cdef readonly datetime created_time
-    cdef readonly float time_to_initialize
+    cdef readonly timedelta time_to_initialize
     cdef readonly Account account
     cdef readonly Portfolio portfolio
     cdef readonly list instruments
