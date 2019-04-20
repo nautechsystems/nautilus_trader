@@ -69,13 +69,13 @@ class PortfolioTestsTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertFalse(self.portfolio.position_exists(PositionId('unknown')))
+        self.assertFalse(self.portfolio.is_position_exists(PositionId('unknown')))
 
     def test_position_for_order_has_position_when_no_position_returns_false(self):
         # Arrange
         # Act
         # Assert
-        self.assertFalse(self.portfolio.order_has_position(OrderId('unknown')))
+        self.assertFalse(self.portfolio.is_position_for_order(OrderId('unknown')))
 
     def test_is_flat_when_no_registered_strategies_returns_false(self):
         # Arrange
@@ -109,7 +109,7 @@ class PortfolioTestsTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(strategy.id in self.portfolio.registered_strategies())
-        self.assertFalse(self.portfolio.order_has_position(order_id))
+        self.assertFalse(self.portfolio.is_position_for_order(order_id))
         self.assertEqual({}, self.portfolio.get_positions_all())
 
     def test_opens_new_position_on_order_fill(self):
@@ -136,7 +136,9 @@ class PortfolioTestsTests(unittest.TestCase):
         self.portfolio.handle_order_fill(event, strategy.id)
 
         # Assert
-        self.assertTrue(self.portfolio.position_exists(position_id))
+        self.assertTrue(self.portfolio.is_position_exists(position_id))
+        self.assertTrue(self.portfolio.is_position_active(position_id))
+        self.assertFalse(self.portfolio.is_position_closed(position_id))
         self.assertFalse(self.portfolio.is_strategy_flat(strategy.id))
         self.assertFalse(self.portfolio.is_flat())
         self.assertEqual(Position, type(self.portfolio.get_position(position_id)))
@@ -150,7 +152,7 @@ class PortfolioTestsTests(unittest.TestCase):
         self.assertEqual(0, self.portfolio.positions_closed_count())
         self.assertEqual(1, len(self.portfolio.position_opened_events))
         self.assertEqual(0, len(self.portfolio.position_closed_events))
-        self.assertTrue(self.portfolio.order_has_position(order_id))
+        self.assertTrue(self.portfolio.is_position_for_order(order_id))
         self.assertEqual(Position, type(self.portfolio.get_position_for_order(order_id)))
 
     def test_adds_to_existing_position_on_order_fill(self):
@@ -179,7 +181,9 @@ class PortfolioTestsTests(unittest.TestCase):
         self.portfolio.handle_order_fill(event, strategy.id)
 
         # Assert
-        self.assertTrue(self.portfolio.position_exists(position_id))
+        self.assertTrue(self.portfolio.is_position_exists(position_id))
+        self.assertTrue(self.portfolio.is_position_active(position_id))
+        self.assertFalse(self.portfolio.is_position_closed(position_id))
         self.assertFalse(self.portfolio.is_strategy_flat(strategy.id))
         self.assertFalse(self.portfolio.is_flat())
         self.assertEqual(Position, type(self.portfolio.get_position(position_id)))
@@ -196,15 +200,17 @@ class PortfolioTestsTests(unittest.TestCase):
     def test_closes_position_on_order_fill(self):
         # Arrange
         strategy = TradeStrategy()
-        order_id = OrderId('AUDUSD.FXCM-1-123456')
+        order_id1 = OrderId('AUDUSD.FXCM-1-123456-1')
+        order_id2 = OrderId('AUDUSD.FXCM-1-123456-2')
         position_id = PositionId('AUDUSD.FXCM-1-123456')
 
         self.portfolio.register_strategy(strategy)
-        self.portfolio.register_order(order_id, position_id)
+        self.portfolio.register_order(order_id1, position_id)
+        self.portfolio.register_order(order_id2, position_id)
 
         buy = OrderFilled(
             AUDUSD_FXCM,
-            order_id,
+            order_id1,
             ExecutionId('E123456'),
             ExecutionTicket('T123456'),
             OrderSide.BUY,
@@ -216,7 +222,7 @@ class PortfolioTestsTests(unittest.TestCase):
 
         sell = OrderFilled(
             AUDUSD_FXCM,
-            order_id,
+            order_id2,
             ExecutionId('E1234567'),
             ExecutionTicket('T1234567'),
             OrderSide.SELL,
@@ -231,10 +237,12 @@ class PortfolioTestsTests(unittest.TestCase):
         self.portfolio.handle_order_fill(sell, strategy.id)
 
         # Assert
-        self.assertTrue(self.portfolio.position_exists(position_id))
+        self.assertTrue(self.portfolio.is_position_exists(position_id))
+        self.assertFalse(self.portfolio.is_position_active(position_id))
+        self.assertTrue(self.portfolio.is_position_closed(position_id))
         self.assertTrue(self.portfolio.is_strategy_flat(strategy.id))
         self.assertTrue(self.portfolio.is_flat())
-        self.assertEqual(Position, type(self.portfolio.get_position(position_id)))
+        self.assertEqual(position_id, self.portfolio.get_position(position_id).id)
         self.assertTrue(position_id in self.portfolio.get_positions(strategy.id))
         self.assertTrue(position_id in self.portfolio.get_positions_all())
         self.assertEqual(0, len(self.portfolio.get_positions_active(strategy.id)))
@@ -292,8 +300,12 @@ class PortfolioTestsTests(unittest.TestCase):
         self.portfolio.handle_order_fill(buy2, strategy2.id)
 
         # Assert
-        self.assertTrue(self.portfolio.position_exists(position_id1))
-        self.assertTrue(self.portfolio.position_exists(position_id2))
+        self.assertTrue(self.portfolio.is_position_exists(position_id1))
+        self.assertTrue(self.portfolio.is_position_exists(position_id2))
+        self.assertTrue(self.portfolio.is_position_active(position_id1))
+        self.assertTrue(self.portfolio.is_position_active(position_id2))
+        self.assertFalse(self.portfolio.is_position_closed(position_id1))
+        self.assertFalse(self.portfolio.is_position_closed(position_id2))
         self.assertFalse(self.portfolio.is_strategy_flat(strategy1.id))
         self.assertFalse(self.portfolio.is_strategy_flat(strategy2.id))
         self.assertFalse(self.portfolio.is_flat())
@@ -380,8 +392,9 @@ class PortfolioTestsTests(unittest.TestCase):
         self.portfolio.handle_order_fill(sell1, strategy1.id)
 
         # Assert
-        self.assertTrue(self.portfolio.position_exists(position_id1))
-        self.assertTrue(self.portfolio.position_exists(position_id2))
+        # Tested .is_position_active and .is_position_closed above
+        self.assertTrue(self.portfolio.is_position_exists(position_id1))
+        self.assertTrue(self.portfolio.is_position_exists(position_id2))
         self.assertTrue(self.portfolio.is_strategy_flat(strategy1.id))
         self.assertFalse(self.portfolio.is_strategy_flat(strategy2.id))
         self.assertFalse(self.portfolio.is_flat())

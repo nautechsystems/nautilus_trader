@@ -729,35 +729,6 @@ cdef class TradeStrategy:
             bid_rates=bid_rates,
             ask_rates=ask_rates)
 
-    cpdef bint order_exists(self, OrderId order_id):
-        """
-        Return a value indicating whether an order with the given identifier exists.
-        
-        :param order_id: The order identifier.
-        :return: True if the order exists, else False.
-        """
-        return self._exec_client.order_exists(order_id)
-
-    cpdef bint order_active(self, OrderId order_id):
-        """
-        Return a value indicating whether an order with the given identifier is active.
-         
-        :param order_id: The order identifier.
-        :return: True if the order exists and is active, else False.
-        :raises ValueError: If the order is not found.
-        """
-        return self._exec_client.order_active(order_id)
-
-    cpdef bint order_complete(self, OrderId order_id):
-        """
-        Return a value indicating whether an order with the given identifier is complete.
-         
-        :param order_id: The order identifier.
-        :return: True if the order does not exist or is complete, else False.
-        :raises ValueError: If the order is not found.
-        """
-        return self._exec_client.order_complete(order_id)
-
     cpdef Order order(self, OrderId order_id):
         """
         Return the order with the given identifier.
@@ -878,39 +849,6 @@ cdef class TradeStrategy:
 
         return self._take_profit_orders[order_id].order
 
-    cpdef int entry_orders_count(self):
-        """
-        Return the count of pending entry orders registered with the strategy.
-        
-        :return: int.
-        """
-        return len(self._entry_orders)
-
-    cpdef int stop_loss_orders_count(self):
-        """
-        Return the count of stop-loss orders registered with the strategy.
-        
-        :return: int.
-        """
-        return len(self._stop_loss_orders)
-
-    cpdef int take_profit_orders_count(self):
-        """
-        Return the count of take-profit orders registered with the strategy.
-        
-        :return: int.
-        """
-        return len(self._take_profit_orders)
-
-    cpdef bint position_exists(self, PositionId position_id):
-        """
-        Return a value indicating whether a position with the given identifier exists.
-        
-        :param position_id: The position identifier.
-        :return: True if the position exists, else False.
-        """
-        return self._portfolio.position_exists(position_id)
-
     cpdef Position position(self, PositionId position_id):
         """
         Return the position associated with the given position identifier.
@@ -945,6 +883,44 @@ cdef class TradeStrategy:
         """
         return self._portfolio.get_positions_closed(self.id)
 
+    cpdef bint is_position_exists(self, PositionId position_id):
+        """
+        Return a value indicating whether a position with the given identifier exists.
+        
+        :param position_id: The position identifier.
+        :return: True if the position exists, else False.
+        """
+        return self._portfolio.is_position_exists(position_id)
+
+    cpdef bint is_order_exists(self, OrderId order_id):
+        """
+        Return a value indicating whether an order with the given identifier exists.
+        
+        :param order_id: The order identifier.
+        :return: True if the order exists, else False.
+        """
+        return self._exec_client.is_order_exists(order_id)
+
+    cpdef bint is_order_active(self, OrderId order_id):
+        """
+        Return a value indicating whether an order with the given identifier is active.
+         
+        :param order_id: The order identifier.
+        :return: True if the order exists and is active, else False.
+        :raises ValueError: If the order is not found.
+        """
+        return self._exec_client.is_order_active(order_id)
+
+    cpdef bint is_order_complete(self, OrderId order_id):
+        """
+        Return a value indicating whether an order with the given identifier is complete.
+         
+        :param order_id: The order identifier.
+        :return: True if the order does not exist or is complete, else False.
+        :raises ValueError: If the order is not found.
+        """
+        return self._exec_client.is_order_complete(order_id)
+
     cpdef bint is_flat(self):
         """
         Return a value indicating whether the strategy is completely flat (i.e no market positions
@@ -953,6 +929,30 @@ cdef class TradeStrategy:
         :return: True if flat, else False.
         """
         return self._portfolio.is_strategy_flat(self.id)
+
+    cpdef int entry_orders_count(self):
+        """
+        Return the count of pending entry orders registered with the strategy.
+        
+        :return: int.
+        """
+        return len(self._entry_orders)
+
+    cpdef int stop_loss_orders_count(self):
+        """
+        Return the count of stop-loss orders registered with the strategy.
+        
+        :return: int.
+        """
+        return len(self._stop_loss_orders)
+
+    cpdef int take_profit_orders_count(self):
+        """
+        Return the count of take-profit orders registered with the strategy.
+        
+        :return: int.
+        """
+        return len(self._take_profit_orders)
 
 
 # -- COMMAND METHODS ----------------------------------------------------------------------------- #
@@ -1226,7 +1226,7 @@ cdef class TradeStrategy:
 
         cdef Position position = self._portfolio.get_position(position_id)
 
-        if position.market_position == MarketPosition.FLAT:
+        if position.is_flat:
             self.log.warning(f"Cannot flatten position (the position {position_id} was already FLAT).")
             return
 
@@ -1257,7 +1257,7 @@ cdef class TradeStrategy:
 
         cdef Order order
         for position_id, position in positions.items():
-            if position.market_position == MarketPosition.FLAT:
+            if position.is_flat:
                 self.log.warning(f"Cannot flatten position (the position {position_id} was already FLAT.")
                 continue
 
@@ -1341,6 +1341,7 @@ cdef class TradeStrategy:
         """
         self._clock.cancel_timer(label)
         self.log.info(f"Cancelled timer for {label}.")
+
 
 # -- BACKTEST METHODS ---------------------------------------------------------------------------- #
 
