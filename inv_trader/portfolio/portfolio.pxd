@@ -18,7 +18,7 @@ from inv_trader.model.events cimport AccountEvent, OrderEvent
 from inv_trader.model.objects cimport Money
 from inv_trader.model.position cimport Position
 from inv_trader.strategy cimport TradeStrategy
-from inv_trader.portfolio.analyzer cimport Analyzer
+from inv_trader.portfolio.performance cimport PerformanceAnalyzer
 
 
 cdef class Portfolio:
@@ -39,7 +39,7 @@ cdef class Portfolio:
 
     cdef readonly list position_opened_events
     cdef readonly list position_closed_events
-    cdef readonly Analyzer analyzer
+    cdef readonly PerformanceAnalyzer analyzer
 
     cpdef list registered_strategies(self)
     cpdef list registered_order_ids(self)
