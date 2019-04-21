@@ -301,13 +301,13 @@ cdef class BacktestEngine:
         """
         Return an order fill report dataframe.
         """
-        self.trader.get_order_fills_report()
+        return self.trader.get_order_fills_report()
 
     cpdef object get_trades_report(self):
         """
         Return a trades report dataframe.
         """
-        self.trader.get_trades_report()
+        return self.trader.get_trades_report()
 
     cpdef list get_log_store(self):
         """
