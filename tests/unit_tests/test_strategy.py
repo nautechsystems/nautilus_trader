@@ -264,7 +264,7 @@ class TradeStrategyTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000))
 
-        strategy.submit_order(order, strategy.generate_position_id(AUDUSD_FXCM))
+        strategy.submit_order(order, strategy.position_id_generator.generate())
         exec_client.process()
 
         # Act
@@ -296,7 +296,7 @@ class TradeStrategyTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000))
 
-        position_id = strategy.generate_position_id(AUDUSD_FXCM)
+        position_id = strategy.position_id_generator.generate()
 
         strategy.submit_order(order, position_id)
         exec_client.process()
@@ -622,10 +622,10 @@ class TradeStrategyTests(unittest.TestCase):
         strategy = TradeStrategy(clock=TestClock())
 
         # Act
-        result = strategy.generate_position_id(AUDUSD_FXCM)
+        result = strategy.position_id_generator.generate()
 
         # Assert
-        self.assertEqual(PositionId('19700101-000000-000-001-AUDUSD-FXCM-1'), result)
+        self.assertEqual(PositionId('P-19700101-000000-000-001-1'), result)
 
     def test_get_opposite_side_returns_expected_sides(self):
         # Arrange
@@ -661,7 +661,7 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(clock.unix_epoch(), strategy.time_now())
-        self.assertEqual(PositionId('19700101-000000-000-001-AUDUSD-FXCM-1'), strategy.generate_position_id(AUDUSD_FXCM))
+        self.assertEqual(PositionId('P-19700101-000000-000-001-1'), strategy.position_id_generator.generate())
 
     def test_strategy_can_submit_order(self):
         # Arrange
@@ -675,7 +675,7 @@ class TradeStrategyTests(unittest.TestCase):
             Quantity(100000))
 
         # Act
-        strategy.submit_order(order, strategy.generate_position_id(AUDUSD_FXCM))
+        strategy.submit_order(order, strategy.position_id_generator.generate())
         exec_client.process()
 
         # Assert
@@ -698,7 +698,7 @@ class TradeStrategyTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000))
 
-        strategy.submit_order(order, strategy.generate_position_id(AUDUSD_FXCM))
+        strategy.submit_order(order, strategy.position_id_generator.generate())
         exec_client.process()
 
         # Act
@@ -726,7 +726,7 @@ class TradeStrategyTests(unittest.TestCase):
             Quantity(100000),
             Price(1.00000, 5))
 
-        strategy.submit_order(order, strategy.generate_position_id(AUDUSD_FXCM))
+        strategy.submit_order(order, strategy.position_id_generator.generate())
         exec_client.process()
 
         # Act
@@ -760,7 +760,7 @@ class TradeStrategyTests(unittest.TestCase):
             Quantity(100000),
             Price(1.00010, 5))
 
-        position_id = strategy.generate_position_id(AUDUSD_FXCM)
+        position_id = strategy.position_id_generator.generate()
 
         strategy.submit_order(order1, position_id)
         strategy.submit_order(order2, position_id)
@@ -789,7 +789,7 @@ class TradeStrategyTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000))
 
-        position_id = strategy.generate_position_id(AUDUSD_FXCM)
+        position_id = strategy.position_id_generator.generate()
 
         strategy.submit_order(order, position_id)
         exec_client.process()
@@ -826,8 +826,8 @@ class TradeStrategyTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000))
 
-        position_id1 = strategy.generate_position_id(AUDUSD_FXCM)
-        position_id2 = strategy.generate_position_id(AUDUSD_FXCM)
+        position_id1 = strategy.position_id_generator.generate()
+        position_id2 = strategy.position_id_generator.generate()
 
         strategy.submit_order(order1, position_id1)
         strategy.submit_order(order2, position_id2)
@@ -889,20 +889,20 @@ class TradeStrategyTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000))
 
-        strategy.submit_order(order, strategy.generate_position_id(AUDUSD_FXCM))
+        strategy.submit_order(order, strategy.position_id_generator.generate())
         exec_client.process()
         exec_client.fill_last_order()
 
         # Act
         # Assert
         exec_client.process()
-        self.assertTrue(OrderId('19700101-000000-000-001-AUDUSD-FXCM-1') in strategy.orders_all())
-        self.assertTrue(PositionId('19700101-000000-000-001-AUDUSD-FXCM-1') in strategy.positions_all())
+        self.assertTrue(OrderId('O-19700101-000000-000-001-1') in strategy.orders_all())
+        self.assertTrue(PositionId('P-19700101-000000-000-001-1') in strategy.positions_all())
         self.assertEqual(0, len(strategy.orders_active()))
         self.assertEqual(order, strategy.orders_completed()[order.id])
         self.assertEqual(0, len(strategy.positions_closed()))
-        self.assertTrue(OrderId('19700101-000000-000-001-AUDUSD-FXCM-1') in strategy.orders_completed())
-        self.assertTrue(PositionId('19700101-000000-000-001-AUDUSD-FXCM-1') in strategy.positions_active())
+        self.assertTrue(OrderId('O-19700101-000000-000-001-1') in strategy.orders_completed())
+        self.assertTrue(PositionId('P-19700101-000000-000-001-1') in strategy.positions_active())
         self.assertFalse(strategy.is_flat())
 
     def test_can_track_orders_for_a_closing_position(self):

@@ -145,7 +145,7 @@ class LiveExecClientTests(unittest.TestCase):
             Quantity(100000))
 
         # Act
-        self.strategy.submit_order(order, self.strategy.generate_position_id(AUDUSD_FXCM))
+        self.strategy.submit_order(order, self.strategy.position_id_generator.generate())
 
         time.sleep(0.1)
         # Assert
@@ -161,7 +161,7 @@ class LiveExecClientTests(unittest.TestCase):
             Price('0.99900'))
 
         # Act
-        self.strategy.submit_atomic_order(atomic_order, self.strategy.generate_position_id(AUDUSD_FXCM))
+        self.strategy.submit_atomic_order(atomic_order, self.strategy.position_id_generator.generate())
 
         time.sleep(0.1)
         # Assert
@@ -180,7 +180,7 @@ class LiveExecClientTests(unittest.TestCase):
             Price('0.99900'))
 
         # Act
-        self.strategy.submit_atomic_order(atomic_order, self.strategy.generate_position_id(AUDUSD_FXCM))
+        self.strategy.submit_atomic_order(atomic_order, self.strategy.position_id_generator.generate())
 
         time.sleep(0.1)
         # Assert
@@ -197,7 +197,7 @@ class LiveExecClientTests(unittest.TestCase):
             Quantity(100000))
 
         # Act
-        self.strategy.submit_order(order, self.strategy.generate_position_id(AUDUSD_FXCM))
+        self.strategy.submit_order(order, self.strategy.position_id_generator.generate())
         time.sleep(1)
         self.strategy.cancel_order(order, 'ORDER_EXPIRED')
 
@@ -215,7 +215,7 @@ class LiveExecClientTests(unittest.TestCase):
             Price('1.00000'))
 
         # Act
-        self.strategy.submit_order(order, self.strategy.generate_position_id(AUDUSD_FXCM))
+        self.strategy.submit_order(order, self.strategy.position_id_generator.generate())
         time.sleep(1)
         self.strategy.modify_order(order, Price('1.00001'))
 

@@ -123,7 +123,6 @@ cdef class TradeStrategy:
     cpdef readonly bint indicators_initialized_all(self)
 
 # -- MANAGEMENT METHODS -------------------------------------------------------------------------- #
-    cpdef PositionId generate_position_id(self, Symbol symbol)
     cpdef OrderSide get_opposite_side(self, OrderSide side)
     cpdef OrderSide get_flatten_side(self, MarketPosition market_position)
     cpdef float get_exchange_rate(self, Currency quote_currency)

@@ -112,12 +112,26 @@ class LiquidityAnalyzerTests(unittest.TestCase):
         self.assertFalse(analyzer.is_liquid)
         self.assertTrue(analyzer.is_not_liquid)
 
+    def test_updating_with_zero_average_spread_does_nothing(self):
+        # Arrange
+        analyzer = LiquidityAnalyzer()
+
+        # Act
+        analyzer.update(Decimal(0), 0.00020)
+
+        # Assert
+        self.assertEqual(0.0, analyzer.value)
+        self.assertFalse(analyzer.initialized)
+        self.assertFalse(analyzer.is_liquid)
+        self.assertTrue(analyzer.is_not_liquid)
+
     def test_can_update_with_tick_and_volatility_when_illiquid(self):
         # Arrange
         analyzer = LiquidityAnalyzer()
 
         # Act
         analyzer.update(Decimal('0.00010'), 0.00010)
+
         # Assert
         self.assertEqual(1.0, analyzer.value)
         self.assertTrue(analyzer.initialized)
@@ -130,6 +144,7 @@ class LiquidityAnalyzerTests(unittest.TestCase):
 
         # Act
         analyzer.update(Decimal('0.00002'), 0.00004)
+
         # Assert
         self.assertEqual(2.0, analyzer.value)
         self.assertTrue(analyzer.initialized)

@@ -33,7 +33,6 @@ if __name__ == "__main__":
     ask_data = {usdjpy.symbol: {Resolution.MINUTE: ask_data_1min}}
 
     strategies = [EMACrossPy(
-        order_id_tag='001',
         instrument=usdjpy,
         bar_type=TestStubs.bartype_usdjpy_1min_bid())]
 

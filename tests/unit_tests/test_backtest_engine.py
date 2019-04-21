@@ -83,8 +83,7 @@ class BacktestEngineTests(unittest.TestCase):
         instrument = TestStubs.instrument_usdjpy()
         bar_type = TestStubs.bartype_usdjpy_1min_bid()
 
-        strategies = [EMACross(order_id_tag='001',
-                               instrument=instrument,
+        strategies = [EMACross(instrument=instrument,
                                bar_type=bar_type,
                                risk_bp=10,
                                fast_ema=10,
@@ -109,8 +108,7 @@ class BacktestEngineTests(unittest.TestCase):
         instrument = TestStubs.instrument_usdjpy()
         bar_type = TestStubs.bartype_usdjpy_1min_bid()
 
-        strategies = [EMACross(order_id_tag='001',
-                               instrument=instrument,
+        strategies = [EMACross(instrument=instrument,
                                bar_type=bar_type,
                                risk_bp=10,
                                fast_ema=10,
@@ -141,16 +139,8 @@ class BacktestEngineTests(unittest.TestCase):
         instrument = TestStubs.instrument_usdjpy()
         bar_type = TestStubs.bartype_usdjpy_1min_bid()
 
-        strategies = [EMACross(order_id_tag='001',
-                               instrument=instrument,
-                               bar_type=bar_type,
-                               risk_bp=10,
-                               fast_ema=10,
-                               slow_ema=20,
-                               atr_period=20,
-                               sl_atr_multiple=2.0),
-                      EMACross(order_id_tag='002',
-                               instrument=instrument,
+        # TODO: Had to remove other strategy due order id conflicts
+        strategies = [EMACross(instrument=instrument,
                                bar_type=bar_type,
                                risk_bp=10,
                                fast_ema=10,

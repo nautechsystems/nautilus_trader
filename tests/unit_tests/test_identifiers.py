@@ -12,8 +12,6 @@ import uuid
 
 from inv_trader.common.clock import TestClock
 from inv_trader.model.identifiers import GUID, Label, OrderId, PositionId, OrderIdGenerator, PositionIdGenerator
-from inv_trader.model.enums import Venue
-from inv_trader.model.objects import ValidString, Symbol
 
 
 class IdentifierTests(unittest.TestCase):
@@ -104,10 +102,6 @@ class IdentifierTests(unittest.TestCase):
         self.assertFalse(id1 == id2)
 
 
-AUDUSD_FXCM = Symbol('AUDUSD', Venue.FXCM)
-GBPUSD_FXCM = Symbol('GBPUSD', Venue.FXCM)
-
-
 class OrderIdGeneratorTests(unittest.TestCase):
 
     def setUp(self):
@@ -117,52 +111,30 @@ class OrderIdGeneratorTests(unittest.TestCase):
             id_tag_strategy='001',
             clock=TestClock())
 
-    def test_generate_order_id_with_one_symbol(self):
+    def test_generate_order_id(self):
         # Arrange
         # Act
-        result1 = self.order_id_generator.generate(AUDUSD_FXCM)
-        result2 = self.order_id_generator.generate(AUDUSD_FXCM)
-        result3 = self.order_id_generator.generate(AUDUSD_FXCM)
+        result1 = self.order_id_generator.generate()
+        result2 = self.order_id_generator.generate()
+        result3 = self.order_id_generator.generate()
 
         # Assert
-        self.assertEqual(OrderId('19700101-000000-001-001-AUDUSD-FXCM-1'), result1)
-        self.assertEqual(OrderId('19700101-000000-001-001-AUDUSD-FXCM-2'), result2)
-        self.assertEqual(OrderId('19700101-000000-001-001-AUDUSD-FXCM-3'), result3)
-
-    def test_generate_order_id_with_two_symbols(self):
-        # Arrange
-        # Act
-        result1 = self.order_id_generator.generate(AUDUSD_FXCM)
-        result2 = self.order_id_generator.generate(GBPUSD_FXCM)
-
-        # Assert
-        self.assertEqual(OrderId('19700101-000000-001-001-AUDUSD-FXCM-1'), result1)
-        self.assertEqual(OrderId('19700101-000000-001-001-GBPUSD-FXCM-1'), result2)
-
-    def test_generate_order_id_with_two_symbols_multiple_times(self):
-        # Arrange
-        # Act
-        result1 = self.order_id_generator.generate(AUDUSD_FXCM)
-        result2 = self.order_id_generator.generate(GBPUSD_FXCM)
-        result3 = self.order_id_generator.generate(AUDUSD_FXCM)
-
-        # Assert
-        self.assertEqual(OrderId('19700101-000000-001-001-AUDUSD-FXCM-1'), result1)
-        self.assertEqual(OrderId('19700101-000000-001-001-GBPUSD-FXCM-1'), result2)
-        self.assertEqual(OrderId('19700101-000000-001-001-AUDUSD-FXCM-2'), result3)
+        self.assertEqual(OrderId('O-19700101-000000-001-001-1'), result1)
+        self.assertEqual(OrderId('O-19700101-000000-001-001-2'), result2)
+        self.assertEqual(OrderId('O-19700101-000000-001-001-3'), result3)
 
     def test_can_reset_id_generator(self):
         # Arrange
-        self.order_id_generator.generate(AUDUSD_FXCM)
-        self.order_id_generator.generate(AUDUSD_FXCM)
-        self.order_id_generator.generate(AUDUSD_FXCM)
+        self.order_id_generator.generate()
+        self.order_id_generator.generate()
+        self.order_id_generator.generate()
 
         # Act
         self.order_id_generator.reset()
-        result1 = self.order_id_generator.generate(AUDUSD_FXCM)
+        result1 = self.order_id_generator.generate()
 
         # Assert
-        self.assertEqual(OrderId('19700101-000000-001-001-AUDUSD-FXCM-1'), result1)
+        self.assertEqual(OrderId('O-19700101-000000-001-001-1'), result1)
 
 
 class PositionIdGeneratorTests(unittest.TestCase):
@@ -174,36 +146,27 @@ class PositionIdGeneratorTests(unittest.TestCase):
             id_tag_strategy='001',
             clock=TestClock())
 
-    def test_generate_order_id_with_one_symbol(self):
+    def test_generate_position_id(self):
         # Arrange
         # Act
-        result1 = self.position_id_generator.generate(AUDUSD_FXCM)
-        result2 = self.position_id_generator.generate(AUDUSD_FXCM)
-        result3 = self.position_id_generator.generate(AUDUSD_FXCM)
+        result1 = self.position_id_generator.generate()
+        result2 = self.position_id_generator.generate()
+        result3 = self.position_id_generator.generate()
 
         # Assert
-        self.assertEqual(PositionId('19700101-000000-001-001-AUDUSD-FXCM-1'), result1)
-        self.assertEqual(PositionId('19700101-000000-001-001-AUDUSD-FXCM-2'), result2)
-        self.assertEqual(PositionId('19700101-000000-001-001-AUDUSD-FXCM-3'), result3)
+        self.assertEqual(PositionId('P-19700101-000000-001-001-1'), result1)
+        self.assertEqual(PositionId('P-19700101-000000-001-001-2'), result2)
+        self.assertEqual(PositionId('P-19700101-000000-001-001-3'), result3)
 
-    def test_generate_order_id_with_two_symbols(self):
+    def test_can_reset_id_generator(self):
         # Arrange
+        self.position_id_generator.generate()
+        self.position_id_generator.generate()
+        self.position_id_generator.generate()
+
         # Act
-        result1 = self.position_id_generator.generate(AUDUSD_FXCM)
-        result2 = self.position_id_generator.generate(GBPUSD_FXCM)
+        self.position_id_generator.reset()
+        result1 = self.position_id_generator.generate()
 
         # Assert
-        self.assertEqual(PositionId('19700101-000000-001-001-AUDUSD-FXCM-1'), result1)
-        self.assertEqual(PositionId('19700101-000000-001-001-GBPUSD-FXCM-1'), result2)
-
-    def test_generate_order_id_with_two_symbols_multiple_times(self):
-        # Arrange
-        # Act
-        result1 = self.position_id_generator.generate(AUDUSD_FXCM)
-        result2 = self.position_id_generator.generate(GBPUSD_FXCM)
-        result3 = self.position_id_generator.generate(AUDUSD_FXCM)
-
-        # Assert
-        self.assertEqual(PositionId('19700101-000000-001-001-AUDUSD-FXCM-1'), result1)
-        self.assertEqual(PositionId('19700101-000000-001-001-GBPUSD-FXCM-1'), result2)
-        self.assertEqual(PositionId('19700101-000000-001-001-AUDUSD-FXCM-2'), result3)
+        self.assertEqual(PositionId('P-19700101-000000-001-001-1'), result1)

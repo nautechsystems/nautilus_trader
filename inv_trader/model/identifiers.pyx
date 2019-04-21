@@ -215,63 +215,57 @@ cdef class ExecutionTicket(Identifier):
         super().__init__(value)
 
 
-cdef str SEPARATOR = '-'
-
-
 cdef class IdentifierGenerator:
     """
     Provides a generator for unique identifier strings.
     """
 
     def __init__(self,
+                 str prefix,
                  str id_tag_trader,
                  str id_tag_strategy,
                  Clock clock):
         """
         Initializes a new instance of the IdentifierGenerator class.
 
+        :param prefix: The prefix for each generated identifier.
         :param id_tag_trader: The identifier tag for the trader.
         :param id_tag_strategy: The identifier tag for the strategy.
         :param clock: The internal clock.
+        :raises ValueError: If the prefix is not a valid string.
         :raises ValueError: If the id_tag_trader is not a valid string.
         :raises ValueError: If the id_tag_strategy is not a valid string.
         """
+        Precondition.valid_string(prefix, 'prefix')
         Precondition.valid_string(id_tag_trader, 'id_tag_trader')
         Precondition.valid_string(id_tag_strategy, 'id_tag_strategy')
 
         self._clock = clock
-        self._symbol_counts = {}  # type: Dict[Symbol, int]
+        self.prefix = prefix
         self.id_tag_trader = id_tag_trader
         self.id_tag_strategy = id_tag_strategy
+        self.counter = 0
 
     cpdef void reset(self):
         """
         Reset the identifier generator by clearing all stateful internal values.
         """
-        self._symbol_counts = {}  # type: Dict[Symbol, int]
+        self.counter = 0
 
-    cdef str _generate(self, Symbol symbol):
+    cdef str _generate(self):
         """
-        Return a unique identifier string using the given symbol.
+        Return a unique identifier string.
 
-        :param symbol: The symbol for the unique identifier.
         :return: str.
         """
-        if symbol not in self._symbol_counts:
-            self._symbol_counts[symbol] = 0
-        self._symbol_counts[symbol] += 1
+        self.counter += 1
 
-        return (self._clock.get_datetime_tag()
-                + SEPARATOR + self.id_tag_trader
-                + SEPARATOR + self.id_tag_strategy
-                + SEPARATOR + symbol.code
-                + SEPARATOR + symbol.venue_string()
-                + SEPARATOR + str(self._symbol_counts[symbol]))
+        return f'{self.prefix}-{self._clock.get_datetime_tag()}-{self.id_tag_trader}-{self.id_tag_strategy}-{self.counter}'
 
 
 cdef class OrderIdGenerator(IdentifierGenerator):
     """
-    Provides a generator for unique OrderIds.
+    Provides a generator for unique OrderId(s).
     """
 
     def __init__(self,
@@ -285,24 +279,24 @@ cdef class OrderIdGenerator(IdentifierGenerator):
         :param id_tag_strategy: The order identifier tag for the strategy.
         :param clock: The clock for the component.
         """
-        # Tags checked in base class
-        super().__init__(id_tag_trader,
+        # Strings checked in base class
+        super().__init__('O',
+                         id_tag_trader,
                          id_tag_strategy,
                          clock)
 
-    cpdef OrderId generate(self, Symbol symbol):
+    cpdef OrderId generate(self):
         """
-        Return a unique order identifier using the given symbol.
+        Return a unique order identifier.
 
-        :param symbol: The symbol for the unique identifier.
         :return: OrderId.
         """
-        return OrderId(self._generate(symbol))
+        return OrderId(self._generate())
 
 
 cdef class PositionIdGenerator(IdentifierGenerator):
     """
-    Provides a generator for unique PositionIds.
+    Provides a generator for unique PositionId(s).
     """
 
     def __init__(self,
@@ -316,16 +310,16 @@ cdef class PositionIdGenerator(IdentifierGenerator):
         :param id_tag_strategy: The position identifier tag for the strategy.
         :param clock: The clock for the component.
         """
-        # Tags checked in base class
-        super().__init__(id_tag_trader,
+        # Strings checked in base class
+        super().__init__('P',
+                         id_tag_trader,
                          id_tag_strategy,
                          clock)
 
-    cpdef PositionId generate(self, Symbol symbol):
+    cpdef PositionId generate(self):
         """
-        Return a unique position identifier using the given symbol.
+        Return a unique position identifier.
 
-        :param symbol: The symbol for the unique identifier.
         :return: PositionId.
         """
-        return PositionId(self._generate(symbol))
+        return PositionId(self._generate())

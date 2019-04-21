@@ -53,25 +53,26 @@ cdef class IdentifierGenerator:
     Provides a generator for unique order identifiers.
     """
     cdef Clock _clock
-    cdef dict _symbol_counts
 
+    cdef readonly str prefix
     cdef readonly str id_tag_trader
     cdef readonly str id_tag_strategy
+    cdef readonly int counter
 
     cpdef void reset(self)
 
-    cdef str _generate(self, Symbol symbol)
+    cdef str _generate(self)
 
 
 cdef class OrderIdGenerator(IdentifierGenerator):
     """
-    Provides a generator for unique OrderIds.
+    Provides a generator for unique OrderId(s).
     """
-    cpdef OrderId generate(self, Symbol symbol)
+    cpdef OrderId generate(self)
 
 
 cdef class PositionIdGenerator(IdentifierGenerator):
     """
-    Provides a generator for unique PositionIds.
+    Provides a generator for unique PositionId(s).
     """
-    cpdef PositionId generate(self, Symbol symbol)
+    cpdef PositionId generate(self)
