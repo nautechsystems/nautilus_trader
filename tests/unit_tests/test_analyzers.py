@@ -11,7 +11,7 @@ import unittest
 
 from decimal import Decimal
 
-from inv_trader.analyzers import SpreadAnalyzer
+from inv_trader.analyzers import SpreadAnalyzer, LiquidityAnalyzer
 from inv_trader.model.enums import Venue
 from inv_trader.model.objects import Symbol, Price, Tick
 from test_kit.stubs import TestStubs
@@ -48,6 +48,19 @@ class SpreadAnalyzerTests(unittest.TestCase):
         self.assertEqual(Decimal('0.00002'), analyzer.average)
         self.assertFalse(analyzer.initialized)
 
+    def test_can_reset(self):
+        # Arrange
+        analyzer = SpreadAnalyzer(decimal_precision=5)
+        analyzer.update(Tick(AUDUSD_FXCM, Price('0.89000'), Price('0.89001'), UNIX_EPOCH))
+        analyzer.update(Tick(AUDUSD_FXCM, Price('0.89000'), Price('0.89002'), UNIX_EPOCH))
+
+        # Act
+        analyzer.reset()
+
+        # Assert
+        self.assertEqual(Decimal(0), analyzer.average)
+        self.assertFalse(analyzer.initialized)
+
     def test_can_snapshot_average(self):
         # Arrange
         analyzer = SpreadAnalyzer(decimal_precision=5)
@@ -69,3 +82,55 @@ class SpreadAnalyzerTests(unittest.TestCase):
         self.assertEqual(Decimal('0.00001'), result2)
         self.assertTrue(analyzer.initialized)
         self.assertTrue([Decimal('0.00001')], analyzer.get_average_spreads())
+
+
+class LiquidityAnalyzerTests(unittest.TestCase):
+
+    def test_values_with_no_update_are_correct(self):
+        # Arrange
+        analyzer = LiquidityAnalyzer()
+
+        # Act
+        # Assert
+        self.assertEqual(0.0, analyzer.value)
+        self.assertFalse(analyzer.initialized)
+        self.assertFalse(analyzer.is_liquid)
+        self.assertTrue(analyzer.is_not_liquid)
+
+    def test_can_update_with_tick_and_volatility_when_illiquid(self):
+        # Arrange
+        analyzer = LiquidityAnalyzer()
+
+        # Act
+        analyzer.update(Decimal('0.00010'), 0.00010)
+        # Assert
+        self.assertEqual(1.0, analyzer.value)
+        self.assertTrue(analyzer.initialized)
+        self.assertFalse(analyzer.is_liquid)
+        self.assertTrue(analyzer.is_not_liquid)
+
+    def test_can_update_with_tick_and_volatility_when_liquid(self):
+        # Arrange
+        analyzer = LiquidityAnalyzer()
+
+        # Act
+        analyzer.update(Decimal('0.00002'), 0.00004)
+        # Assert
+        self.assertEqual(2.0, analyzer.value)
+        self.assertTrue(analyzer.initialized)
+        self.assertTrue(analyzer.is_liquid)
+        self.assertFalse(analyzer.is_not_liquid)
+
+    def test_can_reset(self):
+        # Arrange
+        analyzer = LiquidityAnalyzer()
+        analyzer.update(Decimal('0.00002'), 0.00004)
+
+        # Act
+        analyzer.reset()
+
+        # Assert
+        self.assertEqual(0.0, analyzer.value)
+        self.assertFalse(analyzer.initialized)
+        self.assertFalse(analyzer.is_liquid)
+        self.assertTrue(analyzer.is_not_liquid)

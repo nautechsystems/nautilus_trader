@@ -31,3 +31,18 @@ cdef class SpreadAnalyzer:
     cpdef void reset(self)
 
     cdef void _calculate_average(self)
+
+
+cdef class LiquidityAnalyzer:
+    """
+    Provides a means of analyzing the liquidity in a market and tracking various
+    metrics.
+    """
+    cdef readonly float liquidity_threshold
+    cdef readonly float value
+    cdef readonly bint initialized
+    cdef readonly bint is_liquid
+    cdef readonly bint is_not_liquid
+
+    cpdef void update(self, average_spread, float volatility)
+    cpdef void reset(self)
