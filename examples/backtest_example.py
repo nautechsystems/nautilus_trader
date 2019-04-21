@@ -74,6 +74,8 @@ if __name__ == "__main__":
     stop = datetime(2013, 3, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
 
     engine.run(start, stop)
+    engine.get_trades_report()
+    engine.get_order_fills_report()
 
     input("Press Enter to continue...")
 

@@ -187,6 +187,7 @@ class OrderTests(unittest.TestCase):
         self.assertFalse(order.is_complete)
         self.assertTrue(order.is_buy)
         self.assertFalse(order.is_sell)
+        self.assertEqual(None, order.filled_timestamp)
 
     def test_can_initialize_sell_market_order(self):
         # Arrange
@@ -204,6 +205,7 @@ class OrderTests(unittest.TestCase):
         self.assertFalse(order.is_complete)
         self.assertFalse(order.is_buy)
         self.assertTrue(order.is_sell)
+        self.assertEqual(None, order.filled_timestamp)
 
     def test_order_str_and_repr(self):
         # Arrange
@@ -497,6 +499,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(OrderId('SOME_BROKER_ID'), order.broker_id)
         self.assertFalse(order.is_complete)
         self.assertTrue(order.is_active)
+        self.assertEqual(None, order.filled_timestamp)
 
     def test_can_apply_order_expired_event_to_order(self):
         # Arrange
@@ -633,6 +636,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(Quantity(100000), order.filled_quantity)
         self.assertEqual(Price('1.00001'), order.average_price)
         self.assertTrue(order.is_complete)
+        self.assertEqual(UNIX_EPOCH, order.filled_timestamp)
 
     def test_can_apply_order_filled_event_to_buy_limit_order(self):
         # Arrange
@@ -664,6 +668,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(Price('1.00001'), order.average_price)
         self.assertEqual(Decimal('0.00001'), order.slippage)
         self.assertTrue(order.is_complete)
+        self.assertEqual(UNIX_EPOCH, order.filled_timestamp)
 
     def test_can_apply_order_partially_filled_event_to_buy_limit_order(self):
         # Arrange
@@ -696,6 +701,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(Price('0.99999'), order.average_price)
         self.assertEqual(Decimal('-0.00001'), order.slippage)
         self.assertFalse(order.is_complete)
+        self.assertEqual(UNIX_EPOCH, order.filled_timestamp)
 
     def test_can_apply_order_overfilled_event_to_buy_limit_order(self):
         # Arrange
@@ -724,3 +730,4 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(OrderStatus.OVER_FILLED, order.status)
         self.assertEqual(Quantity(150000), order.filled_quantity)
         self.assertFalse(order.is_complete)
+        self.assertEqual(UNIX_EPOCH, order.filled_timestamp)

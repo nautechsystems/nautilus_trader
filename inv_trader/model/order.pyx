@@ -103,6 +103,7 @@ cdef class Order:
         self.time_in_force = time_in_force  # Can be None
         self.expire_time = expire_time      # Can be None
         self.filled_quantity = Quantity(0)
+        self.filled_timestamp = None        # Can be None
         self.average_price = None           # Can be None
         self.slippage = Decimal(0.0)
         self.status = OrderStatus.INITIALIZED
@@ -257,6 +258,7 @@ cdef class Order:
             self.execution_id = event.execution_id
             self.execution_ticket = event.execution_ticket
             self.filled_quantity = event.filled_quantity
+            self.filled_timestamp = event.timestamp
             self.average_price = event.average_price
             self._set_slippage()
             self._set_fill_status()
@@ -266,13 +268,13 @@ cdef class Order:
 
     cdef void _set_slippage(self):
         if self.type not in PRICED_ORDER_TYPES:
-            # Slippage not applicable to orders with entry prices.
+            # Slippage only applicable to priced order types
             return
 
         if self.side is OrderSide.BUY:
-            self.slippage = Decimal(f'{self.average_price.as_float() - self.price.as_float():.{self.price.precision}f}')
-        else:  # side is OrderSide.SELL:
-            self.slippage = Decimal(f'{self.price.as_float() - self.average_price.as_float():.{self.price.precision}f}')
+            self.slippage = self.average_price - self.price
+        else:  # self.side is OrderSide.SELL:
+            self.slippage = self.price - self.average_price
 
     cdef void _set_fill_status(self):
         if self.filled_quantity < self.quantity:
