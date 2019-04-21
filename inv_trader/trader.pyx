@@ -20,6 +20,7 @@ from inv_trader.common.data cimport DataClient
 from inv_trader.common.execution cimport ExecutionClient
 from inv_trader.portfolio.portfolio cimport Portfolio
 from inv_trader.strategy cimport TradeStrategy
+from inv_trader.reports cimport ReportProvider
 
 
 cdef class Trader:
@@ -63,6 +64,7 @@ cdef class Trader:
             self._log = LoggerAdapter(f"{self.id.value}")
         else:
             self._log = LoggerAdapter(f"{self.id.value}", logger)
+        self._report_provider = ReportProvider()
 
         self.is_running = False
         self.started_datetimes = []  # type: List[datetime]
@@ -120,6 +122,22 @@ cdef class Trader:
         Create a full tear sheet based on analyzer data from the last run.
         """
         self.portfolio.analyzer.create_full_tear_sheet()
+
+    cpdef object get_order_fills_report(self):
+        """
+        Return an order fill report dataframe.
+        
+        :return: pd.DataFrame.
+        """
+        self._report_provider.get_order_fills_report(self._exec_client.get_orders_all())
+
+    cpdef object get_trades_report(self):
+        """
+        Return a trades report dataframe.
+
+        :return: pd.DataFrame.
+        """
+        self._report_provider.get_trades_report(self.portfolio.get_positions_all())
 
     cpdef void change_strategies(self, list strategies: List[TradeStrategy]):
         """

@@ -16,6 +16,7 @@ from inv_trader.common.execution cimport ExecutionClient
 from inv_trader.model.identifiers cimport ValidString, TraderId
 from inv_trader.common.account cimport Account
 from inv_trader.portfolio.portfolio cimport Portfolio
+from inv_trader.reports cimport ReportProvider
 
 
 cdef class Trader:
@@ -24,6 +25,7 @@ cdef class Trader:
     """
     cdef Clock _clock
     cdef LoggerAdapter _log
+    cdef ReportProvider _report_provider
 
     cdef readonly TraderId id
     cdef readonly ValidString order_id_tag
@@ -41,6 +43,8 @@ cdef class Trader:
     cpdef void stop(self)
     cpdef void create_returns_tear_sheet(self)
     cpdef void create_full_tear_sheet(self)
+    cpdef object get_order_fills_report(self)
+    cpdef object get_trades_report(self)
     cpdef void change_strategies(self, list strategies)
     cpdef void reset(self)
     cpdef void dispose(self)

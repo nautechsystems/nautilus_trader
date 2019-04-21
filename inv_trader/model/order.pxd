@@ -46,6 +46,7 @@ cdef class Order:
     cdef readonly TimeInForce time_in_force
     cdef readonly datetime expire_time
     cdef readonly Quantity filled_quantity
+    cdef readonly datetime filled_timestamp
     cdef readonly Price average_price
     cdef readonly object slippage
     cdef readonly OrderStatus status

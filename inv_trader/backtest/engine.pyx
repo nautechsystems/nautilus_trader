@@ -297,6 +297,18 @@ cdef class BacktestEngine:
         """
         return self.portfolio.analyzer.get_performance_stats()
 
+    cpdef object get_order_fills_report(self):
+        """
+        Return an order fill report dataframe.
+        """
+        self.trader.get_order_fills_report()
+
+    cpdef object get_trades_report(self):
+        """
+        Return a trades report dataframe.
+        """
+        self.trader.get_trades_report()
+
     cpdef list get_log_store(self):
         """
         Return the store of log message strings for the test logger.
