@@ -37,7 +37,7 @@ cdef class ReportProvider:
         :return: pd.DataFrame.
         """
         order_fill_report = pd.DataFrame(columns=['timestamp', 'symbol', 'side', 'type', 'quantity', 'avg_price', 'slippage'] )
-        order_fill_report.index_name = 'order_id'
+        order_fill_report.index.name = 'order_id'
 
         cdef OrderId order_id
         cdef Order order
@@ -63,7 +63,7 @@ cdef class ReportProvider:
         :return: pd.DataFrame.
         """
         trades_report = pd.DataFrame(columns=['symbol', 'direction', 'peak_quantity', 'entry_time', 'exit_time', 'avg_entry_price', 'avg_exit_price', 'points', 'return'] )
-        trades_report.index_name = 'position_id'
+        trades_report.index.name = 'position_id'
 
         cdef PositionId position_id
         cdef Position position
