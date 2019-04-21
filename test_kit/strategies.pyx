@@ -20,7 +20,7 @@ from inv_trader.model.identifiers cimport Label, PositionId
 from inv_trader.model.order cimport Order, AtomicOrder
 from inv_trader.strategy cimport TradeStrategy
 from inv_trader.portfolio.sizing cimport PositionSizer, FixedRiskSizer
-from inv_trader.analyzers cimport SpreadAnalyzer
+from inv_trader.analyzers cimport SpreadAnalyzer, LiquidityAnalyzer
 
 from inv_indicators.average.ema import ExponentialMovingAverage
 from inv_indicators.atr import AverageTrueRange
@@ -174,6 +174,7 @@ cdef class EMACross(TradeStrategy):
     cdef readonly BarType bar_type
     cdef readonly PositionSizer position_sizer
     cdef readonly SpreadAnalyzer spread_analyzer
+    cdef readonly LiquidityAnalyzer liquidity
     cdef readonly float risk_bp
     cdef readonly object entry_buffer
     cdef readonly float SL_atr_multiple
@@ -226,6 +227,7 @@ cdef class EMACross(TradeStrategy):
         self.risk_bp = risk_bp
         self.position_sizer = FixedRiskSizer(self.instrument)
         self.spread_analyzer = SpreadAnalyzer(self.instrument.tick_precision)
+        self.liquidity = LiquidityAnalyzer()
         self.entry_buffer = instrument.tick_size
         self.SL_atr_multiple = sl_atr_multiple
         self.SL_buffer = instrument.tick_size * 10
@@ -274,13 +276,16 @@ cdef class EMACross(TradeStrategy):
 
         self.spread_analyzer.snapshot_average()
 
+        if self.atr.initialized:
+            self.liquidity.update(self.spread_analyzer.average, self.atr.value)
+
         if not self.fast_ema.initialized or not self.slow_ema.initialized:
             # Wait for indicators to warm up...
             return
 
         cdef AtomicOrder atomic_order
 
-        if self.entry_orders_count() == 0 and self.is_flat():
+        if self.liquidity.is_liquid and self.entry_orders_count() == 0 and self.is_flat():
             # BUY LOGIC
             if self.fast_ema.value >= self.slow_ema.value:
                 price_entry = Price(self.last_bar(self.bar_type).high + self.entry_buffer + self.spread_analyzer.average)
@@ -388,7 +393,8 @@ cdef class EMACross(TradeStrategy):
         all indicators.
         """
         # Put custom code to be run on a strategy reset here (or pass)
-        pass
+        self.spread_analyzer.reset()
+        self.liquidity.reset()
 
     cpdef void on_dispose(self):
         """

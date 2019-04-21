@@ -7,7 +7,6 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from decimal import Decimal
 from datetime import timedelta
 
 from inv_trader.enums.order_side import OrderSide
@@ -17,7 +16,7 @@ from inv_trader.model.events import Event
 from inv_trader.model.identifiers import Label
 from inv_trader.strategy import TradeStrategy
 from inv_trader.portfolio.sizing import FixedRiskSizer
-from inv_trader.analyzers import SpreadAnalyzer
+from inv_trader.analyzers import SpreadAnalyzer, LiquidityAnalyzer
 
 from inv_indicators.average.ema import ExponentialMovingAverage
 from inv_indicators.atr import AverageTrueRange
@@ -73,6 +72,7 @@ class EMACrossPy(TradeStrategy):
         self.risk_bp = risk_bp
         self.position_sizer = FixedRiskSizer(self.instrument)
         self.spread_analyzer = SpreadAnalyzer(self.instrument.tick_precision)
+        self.liquidity = LiquidityAnalyzer()
         self.entry_buffer = instrument.tick_size
         self.SL_atr_multiple = sl_atr_multiple
         self.SL_buffer = instrument.tick_size * 10
@@ -118,11 +118,14 @@ class EMACrossPy(TradeStrategy):
         """
         self.spread_analyzer.snapshot_average()
 
+        if self.atr.initialized:
+            self.liquidity.update(self.spread_analyzer.average, self.atr.value)
+
         if not self.fast_ema.initialized or not self.slow_ema.initialized:
             # Wait for indicators to warm up...
             return
 
-        if self.entry_orders_count() == 0 and self.is_flat():
+        if self.liquidity.is_liquid and self.entry_orders_count() == 0 and self.is_flat():
             atomic_order = None
 
             # BUY LOGIC
@@ -230,7 +233,8 @@ class EMACrossPy(TradeStrategy):
         all indicators.
         """
         # Put custom code to be run on a strategy reset here (or pass)
-        pass
+        self.spread_analyzer.reset()
+        self.liquidity.reset()
 
     def on_dispose(self):
         """

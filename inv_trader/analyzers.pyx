@@ -13,7 +13,9 @@ from collections import deque
 from decimal import Decimal
 from typing import List, Deque
 
+from inv_trader.core.precondition cimport Precondition
 from inv_trader.model.objects cimport Tick
+
 
 cdef class SpreadAnalyzer:
     """
@@ -78,3 +80,60 @@ cdef class SpreadAnalyzer:
         Calculate and set the average spread then reset the list of spreads. 
         """
         self.average = Decimal(round(sum(self._spreads) / max(1, len(self._spreads)), self._decimal_precision))
+
+
+cdef class LiquidityAnalyzer:
+    """
+    Provides a means of analyzing the liquidity in a market and tracking various
+    metrics.
+    """
+
+    def __init__(self, float liquidity_threshold=2.0):
+        """
+        Initializes a new instance of the LiquidityAnalyzer class.
+
+        :param liquidity_threshold: The multiple of spread to average volatility
+        which constitutes a liquid market (> 0) (default=2.0).
+        :raises ValueError: If the liquidity threshold is not positive (> 0).
+        """
+        Precondition.positive(liquidity_threshold, 'liquidity_threshold')
+
+        self.liquidity_threshold = liquidity_threshold
+        self.value = 0.0
+        self.initialized = False
+        self.is_liquid = False
+        self.is_not_liquid = True
+
+    cpdef void update(self, average_spread, float volatility):
+        """
+        Update the analyzer with the current average spread and volatility
+        measurement.
+        
+        Note: The suggested value for volatility is the current average true range (ATR).
+        :param average_spread: The current average spread of the market.
+        :param volatility: The current volatility of the market.
+        :raises ValueError: If the volatility is not positive (> 0).
+        """
+        Precondition.positive(volatility, 'volatility')
+
+        self.value = volatility / float(average_spread)
+
+        if self.value >= self.liquidity_threshold:
+            self.is_liquid = True
+            self.is_not_liquid = False
+        else:
+            self.is_liquid = False
+            self.is_not_liquid = True
+
+        if not self.initialized:
+            self.initialized = True
+
+    cpdef void reset(self):
+        """
+        Reset the spread analyzer by clearing all internally held values and 
+        returning it to a fresh state.
+        """
+        self.value = 0.0
+        self.initialized = False
+        self.is_liquid = False
+        self.is_not_liquid = True
