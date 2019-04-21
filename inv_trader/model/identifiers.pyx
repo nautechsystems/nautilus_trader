@@ -10,11 +10,10 @@
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
 from uuid import UUID
-from typing import Dict
+from cpython.datetime cimport datetime
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.common.clock cimport Clock, LiveClock
-from inv_trader.model.objects cimport Symbol
 
 
 cdef class Identifier:
@@ -260,7 +259,22 @@ cdef class IdentifierGenerator:
         """
         self.counter += 1
 
-        return f'{self.prefix}-{self._clock.get_datetime_tag()}-{self.id_tag_trader}-{self.id_tag_strategy}-{self.counter}'
+        return f'{self.prefix}-{self._get_datetime_tag()}-{self.id_tag_trader}-{self.id_tag_strategy}-{self.counter}'
+
+    cdef str _get_datetime_tag(self):
+        """
+        Return the datetime tag string for the current time.
+
+        :return: str.
+        """
+        cdef datetime time_now = self._clock.time_now()
+        return (f'{time_now.year}'
+                f'{time_now.month:02d}'
+                f'{time_now.day:02d}'
+                f'-'
+                f'{time_now.hour:02d}'
+                f'{time_now.minute:02d}'
+                f'{time_now.second:02d}')
 
 
 cdef class OrderIdGenerator(IdentifierGenerator):

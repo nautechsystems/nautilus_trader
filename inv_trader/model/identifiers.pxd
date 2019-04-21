@@ -62,6 +62,7 @@ cdef class IdentifierGenerator:
     cpdef void reset(self)
 
     cdef str _generate(self)
+    cdef str _get_datetime_tag(self)
 
 
 cdef class OrderIdGenerator(IdentifierGenerator):
