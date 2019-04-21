@@ -146,5 +146,7 @@ class ReportProviderTests(unittest.TestCase):
         self.assertEqual(1000000, report.iloc[0]['peak_quantity'])
         self.assertEqual(Decimal('0.80000'), report.iloc[0]['avg_entry_price'])
         self.assertEqual(Decimal('0.80010'), report.iloc[0]['avg_exit_price'])
+        self.assertEqual(UNIX_EPOCH, report.iloc[0]['entry_time'])
+        self.assertEqual(UNIX_EPOCH + timedelta(minutes=5), report.iloc[0]['exit_time'])
         self.assertEqual(Decimal('0.00010'), report.iloc[0]['points'])
         self.assertEqual(0.00012500511365942657, report.iloc[0]['return'])

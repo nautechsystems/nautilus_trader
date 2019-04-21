@@ -62,7 +62,7 @@ cdef class ReportProvider:
         :param positions: The list of position objects.
         :return: pd.DataFrame.
         """
-        trades_report = pd.DataFrame(columns=['symbol', 'direction', 'peak_quantity', 'entry_time', 'exited_time', 'avg_entry_price', 'avg_exit_price', 'points', 'return'] )
+        trades_report = pd.DataFrame(columns=['symbol', 'direction', 'peak_quantity', 'entry_time', 'exit_time', 'avg_entry_price', 'avg_exit_price', 'points', 'return'] )
         trades_report.index_name = 'position_id'
 
         cdef PositionId position_id
