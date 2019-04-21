@@ -9,7 +9,6 @@
 
 # cython: language_level=3, boundscheck=False
 
-from decimal import Decimal
 from datetime import timedelta
 
 from inv_trader.common.clock cimport Clock, TestClock
@@ -21,6 +20,7 @@ from inv_trader.model.identifiers cimport Label, PositionId
 from inv_trader.model.order cimport Order, AtomicOrder
 from inv_trader.strategy cimport TradeStrategy
 from inv_trader.portfolio.sizing cimport PositionSizer, FixedRiskSizer
+from inv_trader.analyzers cimport SpreadAnalyzer
 
 from inv_indicators.average.ema import ExponentialMovingAverage
 from inv_indicators.atr import AverageTrueRange
@@ -173,11 +173,11 @@ cdef class EMACross(TradeStrategy):
     cdef readonly Symbol symbol
     cdef readonly BarType bar_type
     cdef readonly PositionSizer position_sizer
+    cdef readonly SpreadAnalyzer spread_analyzer
     cdef readonly float risk_bp
     cdef readonly object entry_buffer
     cdef readonly float SL_atr_multiple
     cdef readonly object SL_buffer
-    cdef readonly object spread
     cdef readonly object fast_ema
     cdef readonly object slow_ema
     cdef readonly object atr
@@ -225,10 +225,10 @@ cdef class EMACross(TradeStrategy):
         self.bar_type = bar_type
         self.risk_bp = risk_bp
         self.position_sizer = FixedRiskSizer(self.instrument)
+        self.spread_analyzer = SpreadAnalyzer(self.instrument.tick_precision)
         self.entry_buffer = instrument.tick_size
         self.SL_atr_multiple = sl_atr_multiple
         self.SL_buffer = instrument.tick_size * 10
-        self.spread = Decimal(0)
 
         # Create the indicators for the strategy
         self.fast_ema = ExponentialMovingAverage(fast_ema)
@@ -258,8 +258,8 @@ cdef class EMACross(TradeStrategy):
 
         :param tick: The received tick.
         """
-        self.spread = tick.ask - tick.bid
         self.log.info(f"Received Tick({tick})")  # For demonstration purposes
+        self.spread_analyzer.update(tick)
 
     cpdef void on_bar(self, BarType bar_type, Bar bar):
         """
@@ -271,6 +271,9 @@ cdef class EMACross(TradeStrategy):
         :param bar: The received bar.
         """
         # self.log.critical(f"Received {bar}")  # uncomment for testing
+
+        self.spread_analyzer.snapshot_average()
+
         if not self.fast_ema.initialized or not self.slow_ema.initialized:
             # Wait for indicators to warm up...
             return
@@ -280,7 +283,7 @@ cdef class EMACross(TradeStrategy):
         if self.entry_orders_count() == 0 and self.is_flat():
             # BUY LOGIC
             if self.fast_ema.value >= self.slow_ema.value:
-                price_entry = Price(self.last_bar(self.bar_type).high + self.entry_buffer + self.spread)
+                price_entry = Price(self.last_bar(self.bar_type).high + self.entry_buffer + self.spread_analyzer.average)
                 price_stop_loss = Price(self.last_bar(self.bar_type).low - (self.atr.value * self.SL_atr_multiple))
                 price_take_profit = Price(price_entry + (price_entry - price_stop_loss))
 
@@ -311,7 +314,7 @@ cdef class EMACross(TradeStrategy):
             # SELL LOGIC
             elif self.fast_ema.value < self.slow_ema.value:
                 price_entry = Price(self.last_bar(self.bar_type).low - self.entry_buffer)
-                price_stop_loss = Price(self.last_bar(self.bar_type).high + (self.atr.value * self.SL_atr_multiple) + self.spread)
+                price_stop_loss = Price(self.last_bar(self.bar_type).high + (self.atr.value * self.SL_atr_multiple) + self.spread_analyzer.average)
                 price_take_profit = Price(price_entry - (price_stop_loss - price_entry))
 
                 exchange_rate = self.get_exchange_rate(quote_currency=self.instrument.quote_currency)
@@ -355,7 +358,7 @@ cdef class EMACross(TradeStrategy):
                 # BUY SIDE ORDERS
                 elif trailing_stop.is_buy:
                     temp_price = Price(
-                        bar.high + (self.atr.value * self.SL_atr_multiple) + self.spread)
+                        bar.high + (self.atr.value * self.SL_atr_multiple) + self.spread_analyzer.average)
                     if temp_price < trailing_stop.price:
                         self.modify_order(trailing_stop, temp_price)
 
