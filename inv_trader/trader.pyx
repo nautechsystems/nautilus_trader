@@ -129,7 +129,7 @@ cdef class Trader:
         
         :return: pd.DataFrame.
         """
-        self._report_provider.get_order_fills_report(self._exec_client.get_orders_all())
+        return self._report_provider.get_order_fills_report(self._exec_client.get_orders_all())
 
     cpdef object get_trades_report(self):
         """
@@ -137,7 +137,7 @@ cdef class Trader:
 
         :return: pd.DataFrame.
         """
-        self._report_provider.get_trades_report(self.portfolio.get_positions_all())
+        return self._report_provider.get_trades_report(self.portfolio.get_positions_all())
 
     cpdef void change_strategies(self, list strategies: List[TradeStrategy]):
         """
