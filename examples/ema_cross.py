@@ -49,7 +49,7 @@ class EMACrossPy(TradeStrategy):
         :param sl_atr_multiple: The ATR multiple for stop-loss prices.
         """
         # Order id tag must be unique at trader level
-        super().__init__(order_id_tag=f'EC-{instrument.symbol.code}')
+        super().__init__(order_id_tag=instrument.symbol.code)
 
         # Custom strategy variables
         self.warmed_up = False
@@ -220,6 +220,7 @@ class EMACrossPy(TradeStrategy):
         all indicators.
         """
         # Put custom code to be run on a strategy reset here (or pass)
+        self.warmed_up = False
         self.spread_analyzer.reset()
         self.liquidity.reset()
 
