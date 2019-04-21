@@ -19,7 +19,7 @@ from inv_trader.model.order import OrderFactory
 from inv_trader.model.events import OrderFilled
 from inv_trader.model.identifiers import GUID, OrderId, PositionId, ExecutionId, ExecutionTicket
 from inv_trader.model.position import Position
-from inv_trader.portfolio.analyzer import Analyzer
+from inv_trader.portfolio.performance import PerformanceAnalyzer
 from test_kit.stubs import TestStubs
 
 UNIX_EPOCH = TestStubs.unix_epoch()
@@ -31,7 +31,7 @@ class PortfolioTestsTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
-        self.analyzer = Analyzer()
+        self.analyzer = PerformanceAnalyzer()
 
     def test_can_add_returns(self):
         # Arrange

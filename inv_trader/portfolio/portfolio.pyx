@@ -21,7 +21,7 @@ from inv_trader.model.events cimport AccountEvent, OrderEvent, PositionOpened, P
 from inv_trader.model.objects cimport Money
 from inv_trader.model.identifiers cimport StrategyId, OrderId, PositionId
 from inv_trader.model.position cimport Position
-from inv_trader.portfolio.analyzer cimport Analyzer
+from inv_trader.portfolio.performance cimport PerformanceAnalyzer
 
 
 cdef class Portfolio:
@@ -59,7 +59,7 @@ cdef class Portfolio:
         self.position_opened_events = []  # type: List[PositionOpened]
         self.position_closed_events = []  # type: List[PositionClosed]
 
-        self.analyzer = Analyzer()
+        self.analyzer = PerformanceAnalyzer()
 
     cpdef list registered_strategies(self):
         """
@@ -417,7 +417,7 @@ cdef class Portfolio:
         self.position_opened_events = []  # type: List[PositionOpened]
         self.position_closed_events = []  # type: List[PositionClosed]
 
-        self.analyzer = Analyzer()
+        self.analyzer = PerformanceAnalyzer()
         self._log.info("Reset.")
 
     cdef void _position_opened(self, Position position, StrategyId strategy_id):
