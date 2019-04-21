@@ -169,6 +169,7 @@ cdef class EMACross(TradeStrategy):
     the slow EMA then a STOP_MARKET atomic order is placed for that direction
     with a trailing stop and profit target at 1R risk.
     """
+    cdef readonly bint warmed_up
     cdef readonly Instrument instrument
     cdef readonly Symbol symbol
     cdef readonly BarType bar_type
@@ -186,9 +187,6 @@ cdef class EMACross(TradeStrategy):
 
     def __init__(self,
                  str order_id_tag,
-                 bint flatten_on_sl_reject,
-                 bint flatten_on_stop,
-                 bint cancel_all_orders_on_stop,
                  Instrument instrument,
                  BarType bar_type,
                  float risk_bp=10,
@@ -201,12 +199,6 @@ cdef class EMACross(TradeStrategy):
         Initializes a new instance of the EMACross class.
 
         :param order_id_tag: The order identifier tag for the strategy (must be unique at trader level).
-        :param flatten_on_sl_reject: The flag indicating whether the position with an
-        associated stop order should be flattened if the order is rejected.
-        :param flatten_on_stop: The flag indicating whether the strategy should
-        be flattened on stop.
-        :param cancel_all_orders_on_stop: The flag indicating whether all residual
-        orders should be cancelled on stop.
         :param bar_type: The bar type for the strategy (could also input any number of them)
         :param risk_bp: The risk per trade (basis points).
         :param fast_ema: The fast EMA period.
@@ -215,12 +207,10 @@ cdef class EMACross(TradeStrategy):
         :param sl_atr_multiple: The ATR multiple for stop-loss prices.
         """
         # Send the below arguments into the base class
-        super().__init__(order_id_tag=order_id_tag,
-                         flatten_on_sl_reject=flatten_on_sl_reject,
-                         flatten_on_stop=flatten_on_stop,
-                         cancel_all_orders_on_stop=cancel_all_orders_on_stop)
+        super().__init__(order_id_tag=order_id_tag)
 
         # Custom strategy variables
+        self.warmed_up = False
         self.instrument = instrument
         self.symbol = instrument.symbol
         self.bar_type = bar_type
@@ -272,23 +262,21 @@ cdef class EMACross(TradeStrategy):
         :param bar_type: The received bar type.
         :param bar: The received bar.
         """
-        # self.log.critical(f"Received {bar}")  # uncomment for testing
-
-        self.spread_analyzer.snapshot_average()
-
-        if self.atr.initialized:
-            self.liquidity.update(self.spread_analyzer.average, self.atr.value)
-
-        if not self.fast_ema.initialized or not self.slow_ema.initialized:
-            # Wait for indicators to warm up...
-            return
+        if not self.warmed_up:
+            if self.fast_ema.initialized and self.slow_ema.initialized and self.atr.initialized:
+                self.warmed_up = True
+            else:
+                return  # Wait for indicators to warm up...
 
         cdef AtomicOrder atomic_order
+
+        self.spread_analyzer.calculate_metrics()
+        self.liquidity.update(self.spread_analyzer.average_spread, self.atr.value)
 
         if self.liquidity.is_liquid and self.entry_orders_count() == 0 and self.is_flat():
             # BUY LOGIC
             if self.fast_ema.value >= self.slow_ema.value:
-                price_entry = Price(self.last_bar(self.bar_type).high + self.entry_buffer + self.spread_analyzer.average)
+                price_entry = Price(self.last_bar(self.bar_type).high + self.entry_buffer + self.spread_analyzer.average_spread)
                 price_stop_loss = Price(self.last_bar(self.bar_type).low - (self.atr.value * self.SL_atr_multiple))
                 price_take_profit = Price(price_entry + (price_entry - price_stop_loss))
 
@@ -319,7 +307,7 @@ cdef class EMACross(TradeStrategy):
             # SELL LOGIC
             elif self.fast_ema.value < self.slow_ema.value:
                 price_entry = Price(self.last_bar(self.bar_type).low - self.entry_buffer)
-                price_stop_loss = Price(self.last_bar(self.bar_type).high + (self.atr.value * self.SL_atr_multiple) + self.spread_analyzer.average)
+                price_stop_loss = Price(self.last_bar(self.bar_type).high + (self.atr.value * self.SL_atr_multiple) + self.spread_analyzer.average_spread)
                 price_take_profit = Price(price_entry - (price_stop_loss - price_entry))
 
                 exchange_rate = self.get_exchange_rate(quote_currency=self.instrument.quote_currency)
@@ -363,7 +351,7 @@ cdef class EMACross(TradeStrategy):
                 # BUY SIDE ORDERS
                 elif trailing_stop.is_buy:
                     temp_price = Price(
-                        bar.high + (self.atr.value * self.SL_atr_multiple) + self.spread_analyzer.average)
+                        bar.high + (self.atr.value * self.SL_atr_multiple) + self.spread_analyzer.average_spread)
                     if temp_price < trailing_stop.price:
                         self.modify_order(trailing_stop, temp_price)
 

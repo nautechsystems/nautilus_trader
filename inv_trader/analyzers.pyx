@@ -31,7 +31,10 @@ cdef class SpreadAnalyzer:
         self._spreads = []                                                   # type: List[Decimal]
         self._average_spreads = deque(maxlen=self._average_spread_capacity)  # type: Deque[Decimal]
         self.initialized = False
-        self.average = Decimal(0)
+        self.current_spread = Decimal(0)
+        self.average_spread = Decimal(0)
+        self.maximum_spread = Decimal(0)
+        self.minimum_spread = Decimal(0)
 
     cpdef void update(self, Tick tick):
         """
@@ -39,21 +42,24 @@ cdef class SpreadAnalyzer:
         
         :param tick: The tick to update with.
         """
-        self._spreads.append(tick.ask - tick.bid)
+        self.current_spread = tick.ask - tick.bid
+        self._spreads.append(self.current_spread)
 
         if not self.initialized:
-            self._calculate_average()
+            self._calculate_and_set_metrics()
 
-    cpdef void snapshot_average(self):
+    cpdef void calculate_metrics(self):
         """
-        Take a snapshot of the average spread from the current list of spreads.
+        Calculate and set the spread metrics from the current list of sampled spreads.
         """
-        self._calculate_average()
-        self._average_spreads.append(self.average)
+        self._calculate_and_set_metrics()
+        self._average_spreads.append(self.average_spread)
+
+        # Clear spreads
         self._spreads = []  # type: List[Decimal]
 
         if not self.initialized:
-            if self.average != Decimal(0):
+            if self.average_spread != Decimal(0):
                 self.initialized = True
 
     cpdef list get_average_spreads(self):
@@ -72,13 +78,18 @@ cdef class SpreadAnalyzer:
         self._spreads = []                                                   # type: List[Decimal]
         self._average_spreads = deque(maxlen=self._average_spread_capacity)  # type: Deque[Decimal]
         self.initialized = False
-        self.average = Decimal(0)
+        self.current_spread = Decimal(0)
+        self.average_spread = Decimal(0)
+        self.maximum_spread = Decimal(0)
+        self.minimum_spread = Decimal(0)
 
-    cdef void _calculate_average(self):
+    cdef void _calculate_and_set_metrics(self):
         """
         Calculate and set the average spread then reset the list of spreads. 
         """
-        self.average = Decimal(round(sum(self._spreads) / max(1, len(self._spreads)), self._decimal_precision))
+        self.average_spread = Decimal(round(sum(self._spreads) / max(1, len(self._spreads)), self._decimal_precision))
+        self.maximum_spread = Decimal(0) if not self._spreads else max(self._spreads)
+        self.minimum_spread = Decimal(0) if not self._spreads else min(self._spreads)
 
 
 cdef class LiquidityAnalyzer:
@@ -110,9 +121,9 @@ cdef class LiquidityAnalyzer:
         Note: The suggested value for volatility is the current average true range (ATR).
         :param average_spread: The current average spread of the market.
         :param volatility: The current volatility of the market.
-        :raises ValueError: If the volatility is not positive (> 0).
+        :raises ValueError: If the volatility is negative (< 0).
         """
-        Precondition.positive(volatility, 'volatility')
+        Precondition.not_negative(volatility, 'volatility')
 
         self.value = volatility / float(average_spread)
 

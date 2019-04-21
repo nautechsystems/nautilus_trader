@@ -83,9 +83,6 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
 
         strategies = [EMACross(
             order_id_tag='001',
-            flatten_on_sl_reject=True,
-            flatten_on_stop=True,
-            cancel_all_orders_on_stop=True,
             instrument=usdjpy,
             bar_type=TestStubs.bartype_usdjpy_1min_bid(),
             risk_bp=10,
@@ -166,3 +163,4 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 18/04/19 20079246 function calls (19785146 primitive calls) in 17.217 seconds (changed order and position objects)
         # 20/04/19 20124704 function calls (19830594 primitive calls) in 17.214 seconds (improve data base class)
         # 21/04/19 15806081 function calls (15577303 primitive calls) in 14.045 seconds (new analyzers reduce number of trades)
+        # 22/04/19 15759926 function calls (15531162 primitive calls) in 14.068 seconds

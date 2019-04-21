@@ -33,9 +33,6 @@ if __name__ == "__main__":
 
     strategies = [EMACross(
         order_id_tag='001',
-        flatten_on_sl_reject=True,
-        flatten_on_stop=True,
-        cancel_all_orders_on_stop=True,
         instrument=usdjpy,
         bar_type=TestStubs.bartype_usdjpy_1min_bid(),
         risk_bp=10,
