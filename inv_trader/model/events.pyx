@@ -162,7 +162,7 @@ cdef class OrderEvent(Event):
         """
         :return: The str() string representation of the event.
         """
-        return f"{self.__class__.__name__}(id={self.order_id.value})"
+        return f"{self.__class__.__name__}({self.order_id.value})"
 
     def __repr__(self) -> str:
         """
@@ -259,7 +259,7 @@ cdef class OrderRejected(OrderEvent):
         :return: The str() string representation of the event.
         """
         return (f"{self.__class__.__name__}"
-                f"(id={self.order_id.value}, "
+                f"({self.order_id.value}, "
                 f"rejected_reason={self.rejected_reason})")
 
 
@@ -320,7 +320,7 @@ cdef class OrderWorking(OrderEvent):
         :return: The str() string representation of the event.
         """
         return (f"{self.__class__.__name__}"
-                f"(id={self.order_id.value}, "
+                f"({self.order_id.value}, "
                 f"label={self.label.value}, "
                 f"price={self.price})")
 
@@ -389,7 +389,7 @@ cdef class OrderCancelReject(OrderEvent):
         :return: The str() string representation of the event.
         """
         return (f"{self.__class__.__name__}"
-                f"(id={self.order_id.value}, "
+                f"({self.order_id.value}, "
                 f"from={self.cancel_reject_response}, "
                 f"reason={self.cancel_reject_reason})")
 
@@ -500,8 +500,8 @@ cdef class OrderFilled(OrderEvent):
         :return: The str() string representation of the event.
         """
         return (f"{self.__class__.__name__}"
-                f"(id={self.order_id.value}, "
-                f"av_filled_price={self.average_price})")
+                f"({self.order_id.value}, "
+                f"avg_filled_price={self.average_price})")
 
 
 cdef class OrderPartiallyFilled(OrderEvent):
@@ -553,7 +553,7 @@ cdef class OrderPartiallyFilled(OrderEvent):
         :return: The str() string representation of the event.
         """
         return (f"{self.__class__.__name__}"
-                f"(id={self.order_id.value}, "
+                f"({self.order_id.value}, "
                 f"filled_quantity={self.filled_quantity}, "
                 f"leaves_quantity={self.leaves_quantity}, "
                 f"av_filled_price={self.average_price})")
@@ -616,7 +616,7 @@ cdef class PositionOpened(PositionEvent):
         :return: The str() string representation of the event.
         """
         return (f"{self.__class__.__name__}("
-                f"id={self.position.id.value}, "
+                f"{self.position.id.value}, "
                 f"entry_direction={order_side_string(self.position.entry_direction)}, "
                 f"av_entry_price={self.position.average_entry_price}) "
                 f"{self.position.status_string()}")
@@ -650,7 +650,7 @@ cdef class PositionModified(PositionEvent):
         :return: The str() string representation of the event.
         """
         return (f"{self.__class__.__name__}("
-                f"id={self.position.id.value}, "
+                f"{self.position.id.value}, "
                 f"entry_direction={order_side_string(self.position.entry_direction)}, "
                 f"av_entry_price={self.position.average_entry_price}, "
                 f"points_realized={self.position.points_realized}) "
@@ -685,7 +685,7 @@ cdef class PositionClosed(PositionEvent):
         :return: The str() string representation of the event.
         """
         return (f"{self.__class__.__name__}("
-                f"id={self.position.id.value}, "
+                f"{self.position.id.value}, "
                 f"entry_direction={order_side_string(self.position.entry_direction)}, "
                 f"av_entry_price={self.position.average_entry_price}, "
                 f"av_exit_price={self.position.average_exit_price}, "

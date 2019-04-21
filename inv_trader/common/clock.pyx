@@ -68,21 +68,6 @@ cdef class Clock:
 
         return self.time_now() - time
 
-    cdef str get_datetime_tag(self):
-        """
-        Return the datetime tag string for the current time.
-        
-        :return: str.
-        """
-        cdef datetime time_now = self.time_now()
-        return (f'{time_now.year}'
-                f'{time_now.month:02d}'
-                f'{time_now.day:02d}'
-                f'-'
-                f'{time_now.hour:02d}'
-                f'{time_now.minute:02d}'
-                f'{time_now.second:02d}')
-
     cpdef set_time_alert(
             self,
             Label label,
