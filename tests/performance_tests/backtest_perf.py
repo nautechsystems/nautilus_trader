@@ -165,3 +165,4 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 17/04/19 20079230 function calls (19785130 primitive calls) in 17.806 seconds (added log store)
         # 18/04/19 20079246 function calls (19785146 primitive calls) in 17.217 seconds (changed order and position objects)
         # 20/04/19 20124704 function calls (19830594 primitive calls) in 17.214 seconds (improve data base class)
+        # 21/04/19 15806081 function calls (15577303 primitive calls) in 14.045 seconds (new analyzers reduce number of trades)
