@@ -22,14 +22,17 @@ cdef class SpreadAnalyzer:
     cdef object _average_spreads
 
     cdef readonly bint initialized
-    cdef readonly object average
+    cdef readonly object current_spread
+    cdef readonly object average_spread
+    cdef readonly object maximum_spread
+    cdef readonly object minimum_spread
 
     cpdef void update(self, Tick tick)
-    cpdef void snapshot_average(self)
+    cpdef void calculate_metrics(self)
     cpdef list get_average_spreads(self)
     cpdef void reset(self)
 
-    cdef void _calculate_average(self)
+    cdef void _calculate_and_set_metrics(self)
 
 
 cdef class LiquidityAnalyzer:

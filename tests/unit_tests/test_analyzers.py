@@ -22,18 +22,21 @@ AUDUSD_FXCM = Symbol('AUDUSD', Venue.FXCM)
 
 class SpreadAnalyzerTests(unittest.TestCase):
 
-    def test_can_snapshot_with_no_updates(self):
+    def test_can_calculate_metrics_with_no_updates(self):
         # Arrange
         analyzer = SpreadAnalyzer(decimal_precision=5)
 
         # Act
-        analyzer.snapshot_average()
+        analyzer.calculate_metrics()
 
         # Assert
         self.assertFalse(analyzer.initialized)
         self.assertEqual([0.0], analyzer.get_average_spreads())
-        self.assertEqual(Decimal(0), analyzer.average)
-        self.assertEqual(Decimal, type(analyzer.average))
+        self.assertEqual(Decimal(0), analyzer.current_spread)
+        self.assertEqual(Decimal(0), analyzer.average_spread)
+        self.assertEqual(Decimal(0), analyzer.maximum_spread)
+        self.assertEqual(Decimal(0), analyzer.minimum_spread)
+        self.assertEqual(Decimal, type(analyzer.average_spread))
         self.assertEqual(Decimal, type(analyzer.get_average_spreads()[0]))
 
     def test_can_update_with_ticks(self):
@@ -45,8 +48,11 @@ class SpreadAnalyzerTests(unittest.TestCase):
         analyzer.update(Tick(AUDUSD_FXCM, Price('0.89000'), Price('0.89002'), UNIX_EPOCH))
 
         # Assert
-        self.assertEqual(Decimal('0.00002'), analyzer.average)
         self.assertFalse(analyzer.initialized)
+        self.assertEqual(Decimal('0.00002'), analyzer.current_spread)
+        self.assertEqual(Decimal('0.00002'), analyzer.average_spread)
+        self.assertEqual(Decimal('0.00002'), analyzer.maximum_spread)
+        self.assertEqual(Decimal('0.00001'), analyzer.minimum_spread)
 
     def test_can_reset(self):
         # Arrange
@@ -54,14 +60,20 @@ class SpreadAnalyzerTests(unittest.TestCase):
         analyzer.update(Tick(AUDUSD_FXCM, Price('0.89000'), Price('0.89001'), UNIX_EPOCH))
         analyzer.update(Tick(AUDUSD_FXCM, Price('0.89000'), Price('0.89002'), UNIX_EPOCH))
 
+        analyzer.calculate_metrics()
+
         # Act
         analyzer.reset()
 
         # Assert
-        self.assertEqual(Decimal(0), analyzer.average)
         self.assertFalse(analyzer.initialized)
+        self.assertEqual(Decimal(0), analyzer.current_spread)
+        self.assertEqual(Decimal(0), analyzer.average_spread)
+        self.assertEqual(Decimal(0), analyzer.maximum_spread)
+        self.assertEqual(Decimal(0), analyzer.minimum_spread)
+        self.assertEqual([], analyzer.get_average_spreads())
 
-    def test_can_snapshot_average(self):
+    def test_can_calculate_and_set_metrics(self):
         # Arrange
         analyzer = SpreadAnalyzer(decimal_precision=5)
 
@@ -70,17 +82,20 @@ class SpreadAnalyzerTests(unittest.TestCase):
         analyzer.update(Tick(AUDUSD_FXCM, Price('0.89001'), Price('0.89004'), UNIX_EPOCH))
         analyzer.update(Tick(AUDUSD_FXCM, Price('0.89001'), Price('0.89001'), UNIX_EPOCH))
         analyzer.update(Tick(AUDUSD_FXCM, Price('0.89002'), Price('0.89001'), UNIX_EPOCH))
+        analyzer.update(Tick(AUDUSD_FXCM, Price('0.89001'), Price('0.89001'), UNIX_EPOCH))
 
-        result1 = analyzer.average
+        first_average = analyzer.average_spread
 
         # Act
-        analyzer.snapshot_average()
-        result2 = analyzer.average
+        analyzer.calculate_metrics()
 
         # Assert
-        self.assertEqual(Decimal('0.00001'), result1)
-        self.assertEqual(Decimal('0.00001'), result2)
         self.assertTrue(analyzer.initialized)
+        self.assertEqual(Decimal('0.00001'), first_average)
+        self.assertEqual(Decimal('0.00000'), analyzer.current_spread)
+        self.assertEqual(Decimal('0.00001'), analyzer.average_spread)
+        self.assertEqual(Decimal('0.00003'), analyzer.maximum_spread)
+        self.assertEqual(Decimal('-0.00001'), analyzer.minimum_spread)
         self.assertTrue([Decimal('0.00001')], analyzer.get_average_spreads())
 
 

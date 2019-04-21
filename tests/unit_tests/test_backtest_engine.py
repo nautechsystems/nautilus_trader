@@ -84,9 +84,6 @@ class BacktestEngineTests(unittest.TestCase):
         bar_type = TestStubs.bartype_usdjpy_1min_bid()
 
         strategies = [EMACross(order_id_tag='001',
-                               flatten_on_sl_reject=True,
-                               flatten_on_stop=True,
-                               cancel_all_orders_on_stop=True,
                                instrument=instrument,
                                bar_type=bar_type,
                                risk_bp=10,
@@ -113,9 +110,6 @@ class BacktestEngineTests(unittest.TestCase):
         bar_type = TestStubs.bartype_usdjpy_1min_bid()
 
         strategies = [EMACross(order_id_tag='001',
-                               flatten_on_sl_reject=True,
-                               flatten_on_stop=True,
-                               cancel_all_orders_on_stop=True,
                                instrument=instrument,
                                bar_type=bar_type,
                                risk_bp=10,
@@ -148,9 +142,6 @@ class BacktestEngineTests(unittest.TestCase):
         bar_type = TestStubs.bartype_usdjpy_1min_bid()
 
         strategies = [EMACross(order_id_tag='001',
-                               flatten_on_sl_reject=True,
-                               flatten_on_stop=True,
-                               cancel_all_orders_on_stop=True,
                                instrument=instrument,
                                bar_type=bar_type,
                                risk_bp=10,
@@ -159,9 +150,6 @@ class BacktestEngineTests(unittest.TestCase):
                                atr_period=20,
                                sl_atr_multiple=2.0),
                       EMACross(order_id_tag='002',
-                               flatten_on_sl_reject=True,
-                               flatten_on_stop=True,
-                               cancel_all_orders_on_stop=True,
                                instrument=instrument,
                                bar_type=bar_type,
                                risk_bp=10,
