@@ -30,7 +30,6 @@ class EMACrossPy(TradeStrategy):
     """
 
     def __init__(self,
-                 order_id_tag: str,
                  instrument: Instrument,
                  bar_type: BarType,
                  risk_bp: float=10.0,
@@ -41,7 +40,6 @@ class EMACrossPy(TradeStrategy):
         """
         Initializes a new instance of the EMACrossPy class.
 
-        :param order_id_tag: The order identifier tag for the strategy (must be unique at trader level).
         :param instrument: The instrument for the strategy.
         :param bar_type: The bar type for the strategy.
         :param risk_bp: The risk per trade (basis points).
@@ -50,8 +48,8 @@ class EMACrossPy(TradeStrategy):
         :param atr_period: The ATR period.
         :param sl_atr_multiple: The ATR multiple for stop-loss prices.
         """
-        # Send the below arguments into the base class
-        super().__init__(order_id_tag=order_id_tag)
+        # Order id tag must be unique at trader level
+        super().__init__(order_id_tag=f'EC-{instrument.symbol.code}')
 
         # Custom strategy variables
         self.warmed_up = False
@@ -179,7 +177,7 @@ class EMACrossPy(TradeStrategy):
 
             # ENTRY ORDER SUBMISSION
             if atomic_order is not None:
-                self.submit_atomic_order(atomic_order, self.generate_position_id(self.symbol))
+                self.submit_atomic_order(atomic_order, self.position_id_generator.generate())
 
         # TRAILING STOP LOGIC
         for trailing_stop in self.stop_loss_orders().values():

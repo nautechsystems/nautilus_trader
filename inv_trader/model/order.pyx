@@ -19,7 +19,7 @@ from inv_trader.enums.order_side cimport OrderSide, order_side_string
 from inv_trader.enums.order_type cimport OrderType, order_type_string
 from inv_trader.enums.order_status cimport OrderStatus, order_status_string
 from inv_trader.enums.time_in_force cimport TimeInForce, time_in_force_string
-from inv_trader.model.objects cimport ValidString, Quantity, Symbol, Price
+from inv_trader.model.objects cimport Quantity, Symbol, Price
 from inv_trader.model.events cimport OrderEvent
 from inv_trader.model.events cimport OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
 from inv_trader.model.events cimport OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
@@ -395,7 +395,7 @@ cdef class OrderFactory:
         """
         return Order(
             symbol,
-            self._id_generator.generate(symbol),
+            self._id_generator.generate(),
             order_side,
             OrderType.MARKET,
             quantity,
@@ -431,7 +431,7 @@ cdef class OrderFactory:
         """
         return Order(
             symbol,
-            self._id_generator.generate(symbol),
+            self._id_generator.generate(),
             order_side,
             OrderType.LIMIT,
             quantity,
@@ -467,7 +467,7 @@ cdef class OrderFactory:
         """
         return Order(
             symbol,
-            self._id_generator.generate(symbol),
+            self._id_generator.generate(),
             order_side,
             OrderType.STOP_MARKET,
             quantity,
@@ -503,7 +503,7 @@ cdef class OrderFactory:
         """
         return Order(
             symbol,
-            self._id_generator.generate(symbol),
+            self._id_generator.generate(),
             order_side,
             OrderType.STOP_LIMIT,
             quantity,
@@ -539,7 +539,7 @@ cdef class OrderFactory:
         """
         return Order(
             symbol,
-            self._id_generator.generate(symbol),
+            self._id_generator.generate(),
             order_side,
             OrderType.MIT,
             quantity,
@@ -567,7 +567,7 @@ cdef class OrderFactory:
         """
         return Order(
             symbol,
-            self._id_generator.generate(symbol),
+            self._id_generator.generate(),
             order_side,
             OrderType.MARKET,
             quantity,
@@ -595,7 +595,7 @@ cdef class OrderFactory:
         """
         return Order(
             symbol,
-            self._id_generator.generate(symbol),
+            self._id_generator.generate(),
             order_side,
             OrderType.MARKET,
             quantity,

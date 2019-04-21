@@ -89,7 +89,7 @@ class PositionTests(unittest.TestCase):
         position.apply(order_filled)
 
         # Assert
-        self.assertEqual(OrderId('19700101-000000-001-001-AUDUSD-FXCM-1'), position.from_order_id)
+        self.assertEqual(OrderId('O-19700101-000000-001-001-1'), position.from_order_id)
         self.assertEqual(Quantity(100000), position.quantity)
         self.assertEqual(MarketPosition.LONG, position.market_position)
         self.assertEqual(UNIX_EPOCH, position.entry_time)

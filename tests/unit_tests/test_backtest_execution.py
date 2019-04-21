@@ -88,7 +88,7 @@ class BacktestExecClientTests(unittest.TestCase):
             Quantity(100000))
 
         # Act
-        strategy.submit_order(order, strategy.generate_position_id(self.usdjpy.symbol))
+        strategy.submit_order(order, strategy.position_id_generator.generate())
 
         # Assert
         self.assertEqual(5, strategy.object_storer.count)
@@ -110,7 +110,7 @@ class BacktestExecClientTests(unittest.TestCase):
             Price('80.000'))
 
         # Act
-        strategy.submit_order(order, strategy.generate_position_id(self.usdjpy.symbol))
+        strategy.submit_order(order, strategy.position_id_generator.generate())
 
         # Assert
         self.assertEqual(4, strategy.object_storer.count)
@@ -132,7 +132,7 @@ class BacktestExecClientTests(unittest.TestCase):
             Price('80.000'))
 
         # Act
-        strategy.submit_atomic_order(atomic_order, strategy.generate_position_id(self.usdjpy.symbol))
+        strategy.submit_atomic_order(atomic_order, strategy.position_id_generator.generate())
 
         # Assert
         # print(strategy.object_storer.get_store())
@@ -158,7 +158,7 @@ class BacktestExecClientTests(unittest.TestCase):
             Price('86.000'))
 
         # Act
-        strategy.submit_atomic_order(atomic_order, strategy.generate_position_id(self.usdjpy.symbol))
+        strategy.submit_atomic_order(atomic_order, strategy.position_id_generator.generate())
 
         # Assert
         # print(strategy.object_storer.get_store())
@@ -182,7 +182,7 @@ class BacktestExecClientTests(unittest.TestCase):
             Quantity(100000),
             Price('96.711'))
 
-        strategy.submit_order(order, strategy.generate_position_id(self.usdjpy.symbol))
+        strategy.submit_order(order, strategy.position_id_generator.generate())
 
         # Act
         strategy.modify_order(order, Price('96.714'))
@@ -206,7 +206,7 @@ class BacktestExecClientTests(unittest.TestCase):
             Quantity(100000),
             Price('85.000'))
 
-        strategy.submit_atomic_order(atomic_order, strategy.generate_position_id(self.usdjpy.symbol))
+        strategy.submit_atomic_order(atomic_order, strategy.position_id_generator.generate())
 
         # Act
         strategy.modify_order(atomic_order.stop_loss, Price('85.100'))
@@ -249,7 +249,7 @@ class BacktestExecClientTests(unittest.TestCase):
             Quantity(100000))
 
         # Act
-        strategy.submit_order(order, strategy.generate_position_id(self.usdjpy.symbol))
+        strategy.submit_order(order, strategy.position_id_generator.generate())
 
         # Assert
         self.assertEqual(5, strategy.object_storer.count)
@@ -269,7 +269,7 @@ class BacktestExecClientTests(unittest.TestCase):
             Price('80.000'))
 
         # Act
-        strategy.submit_order(order, strategy.generate_position_id(self.usdjpy.symbol))
+        strategy.submit_order(order, strategy.position_id_generator.generate())
 
         # Assert
         self.assertEqual(3, strategy.object_storer.count)
@@ -290,7 +290,7 @@ class BacktestExecClientTests(unittest.TestCase):
             Price('80.000'))
 
         # Act
-        strategy.submit_order(order, strategy.generate_position_id(self.usdjpy.symbol))
+        strategy.submit_order(order, strategy.position_id_generator.generate())
 
         # Assert
         self.assertEqual(3, strategy.object_storer.count)
@@ -312,7 +312,7 @@ class BacktestExecClientTests(unittest.TestCase):
             price_take_profit=Price('96.000'))
 
         # Act
-        strategy.submit_atomic_order(atomic_order, strategy.generate_position_id(self.usdjpy.symbol))
+        strategy.submit_atomic_order(atomic_order, strategy.position_id_generator.generate())
 
         # Assert
         # print(strategy.object_storer.get_store())
@@ -336,7 +336,7 @@ class BacktestExecClientTests(unittest.TestCase):
             price_take_profit=Price('50.000'))  # Invalid price below market
 
         # Act
-        strategy.submit_atomic_order(atomic_order, strategy.generate_position_id(self.usdjpy.symbol))
+        strategy.submit_atomic_order(atomic_order, strategy.position_id_generator.generate())
 
         # Assert
         # print(strategy.object_storer.get_store())

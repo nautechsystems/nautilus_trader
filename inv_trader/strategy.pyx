@@ -675,15 +675,6 @@ cdef class TradeStrategy:
 
 # -- MANAGEMENT METHODS -------------------------------------------------------------------------- #
 
-    cpdef PositionId generate_position_id(self, Symbol symbol):
-        """
-        Return a generated unique position identifier from the given symbol.
-
-        :param symbol: The symbol.
-        :return: PositionId.
-        """
-        return self.position_id_generator.generate(symbol)
-
     cpdef OrderSide get_opposite_side(self, OrderSide side):
         """
         Return the opposite order side from the given side.

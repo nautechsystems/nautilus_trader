@@ -19,7 +19,7 @@ from inv_trader.model.objects cimport Tick
 
 cdef class SpreadAnalyzer:
     """
-    Provides a means of analyzing the spread of a market and track various metrics.
+    Provides a means of analyzing the spread of a market by track various metrics.
     """
 
     def __init__(self, int decimal_precision, int average_spread_capacity=100):
@@ -94,7 +94,7 @@ cdef class SpreadAnalyzer:
 
 cdef class LiquidityAnalyzer:
     """
-    Provides a means of analyzing the liquidity of a market and track various metrics.
+    Provides a means of analyzing the liquidity of a market by track various metrics.
     """
 
     def __init__(self, float liquidity_threshold=2.0):
@@ -124,6 +124,9 @@ cdef class LiquidityAnalyzer:
         :raises ValueError: If the volatility is negative (< 0).
         """
         Precondition.not_negative(volatility, 'volatility')
+
+        if average_spread == 0:
+            return  # Divide by zero protection
 
         self.value = volatility / float(average_spread)
 
