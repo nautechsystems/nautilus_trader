@@ -73,6 +73,7 @@ class ReportProviderTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(1, len(report))
+        self.assertEqual('order_id', report.index.name)
         self.assertEqual(order1.id.value, report.index[0])
         self.assertEqual('AUDUSD.FXCM', report.iloc[0]['symbol'])
         self.assertEqual('BUY', report.iloc[0]['side'])
@@ -140,6 +141,7 @@ class ReportProviderTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(1, len(report))
+        self.assertEqual('position_id', report.index.name)
         self.assertEqual(position1.id.value, report.index[0])
         self.assertEqual('AUDUSD.FXCM', report.iloc[0]['symbol'])
         self.assertEqual('BUY', report.iloc[0]['direction'])
