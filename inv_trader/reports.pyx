@@ -36,13 +36,11 @@ cdef class ReportProvider:
         :param orders: The list of order objects.
         :return: pd.DataFrame.
         """
-
-
         cdef dict filled_orders = {k: v for k, v in orders.items() if v.status == OrderStatus.FILLED}
 
         order_fills_report = pd.DataFrame(data = filled_orders)
-
         order_fills_report.index.name = 'order_id'
+
         return order_fills_report
 
     cpdef object get_trades_report(self, dict positions):
