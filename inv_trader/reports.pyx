@@ -36,7 +36,13 @@ cdef class ReportProvider:
         :param orders: The list of order objects.
         :return: pd.DataFrame.
         """
-        order_fills_report = pd.DataFrame(columns=['timestamp', 'symbol', 'side', 'type', 'quantity', 'avg_price', 'slippage'] )
+        order_fills_report = pd.DataFrame(columns=['timestamp',
+                                                   'symbol',
+                                                   'side', 'type',
+                                                   'quantity',
+                                                   'avg_price',
+                                                   'slippage'] )
+
         order_fills_report.index.name = 'order_id'
 
         cdef dict filled_orders = {k:v for k, v in orders.items() if v.status == OrderStatus.FILLED}
@@ -51,7 +57,16 @@ cdef class ReportProvider:
         :param positions: The list of position objects.
         :return: pd.DataFrame.
         """
-        trades_report = pd.DataFrame(columns=['symbol', 'direction', 'peak_quantity', 'entry_time', 'exit_time', 'avg_entry_price', 'avg_exit_price', 'points', 'return'] )
+        trades_report = pd.DataFrame(columns=['symbol',
+                                              'direction',
+                                              'peak_quantity',
+                                              'entry_time',
+                                              'exit_time',
+                                              'avg_entry_price',
+                                              'avg_exit_price',
+                                              'points',
+                                              'return'] )
+
         trades_report.index.name = 'position_id'
 
         cdef dict completed_trades = {k:v for k, v in positions.items() if v.is_exited}
