@@ -72,10 +72,11 @@ class ReportProviderTests(unittest.TestCase):
         report = report_provider.get_order_fills_report(orders)
 
         # Assert
+        print(report)
         self.assertEqual(1, len(report))
         self.assertEqual('order_id', report.index.name)
         self.assertEqual(order1.id.value, report.index[0])
-        self.assertEqual('AUDUSD.FXCM', report.iloc[0]['symbol'])
+        self.assertEqual('AUDUSD', report.iloc[0]['symbol'])
         self.assertEqual('BUY', report.iloc[0]['side'])
         self.assertEqual('LIMIT', report.iloc[0]['type'])
         self.assertEqual(1500000, report.iloc[0]['quantity'])
@@ -143,7 +144,7 @@ class ReportProviderTests(unittest.TestCase):
         self.assertEqual(1, len(report))
         self.assertEqual('position_id', report.index.name)
         self.assertEqual(position1.id.value, report.index[0])
-        self.assertEqual('AUDUSD.FXCM', report.iloc[0]['symbol'])
+        self.assertEqual('AUDUSD', report.iloc[0]['symbol'])
         self.assertEqual('BUY', report.iloc[0]['direction'])
         self.assertEqual(1000000, report.iloc[0]['peak_quantity'])
         self.assertEqual(Decimal('0.80000'), report.iloc[0]['avg_entry_price'])
