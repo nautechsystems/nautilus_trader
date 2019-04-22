@@ -11,7 +11,6 @@
 
 from inv_trader.model.order cimport Order
 from inv_trader.model.position cimport Position
-from inv_trader.model.identifiers cimport OrderId, PositionId
 
 
 cdef class ReportProvider:
@@ -21,5 +20,5 @@ cdef class ReportProvider:
     cpdef object get_order_fills_report(self, dict orders)
     cpdef object get_trades_report(self, dict positions)
 
-    cdef void _add_order_to_df(self, OrderId order_id, Order order, dataframe)
-    cdef void _add_position_to_df(self, PositionId position_id, Position position, dataframe)
+    cdef dict _order_to_dict(self, Order order)
+    cdef dict _position_to_dict(self, Position position)
