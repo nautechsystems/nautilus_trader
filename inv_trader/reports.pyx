@@ -32,7 +32,7 @@ cdef class ReportProvider:
         """
         Return an order fill report dataframe.
         
-        :param orders: The list of order objects.
+        :param orders: The dictionary of order identifiers and order objects.
         :return: pd.DataFrame.
         """
         cdef list filled_orders = [self._order_to_dict(o) for o in orders.values() if o.status == OrderStatus.FILLED]
@@ -43,7 +43,7 @@ cdef class ReportProvider:
         """
         Return a trades report dataframe.
         
-        :param positions: The list of position objects.
+        :param positions: The dictionary of position identifiers and objects.
         :return: pd.DataFrame.
         """
         cdef list trades = [self._position_to_dict(p) for p in positions.values() if p.is_exited]
