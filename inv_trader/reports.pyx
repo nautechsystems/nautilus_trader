@@ -37,9 +37,7 @@ cdef class ReportProvider:
         """
         cdef list filled_orders = [self._order_to_dict(o) for o in orders.values() if o.status == OrderStatus.FILLED]
 
-        order_fills_report = pd.DataFrame(data=filled_orders).set_index('order_id')
-
-        return order_fills_report
+        return pd.DataFrame(data=filled_orders).set_index('order_id')
 
     cpdef object get_trades_report(self, dict positions):
         """
@@ -50,9 +48,7 @@ cdef class ReportProvider:
         """
         cdef list trades = [self._position_to_dict(p) for p in positions.values() if p.is_exited]
 
-        trades_report = pd.DataFrame(data=trades).set_index('position_id')
-
-        return trades_report
+        return pd.DataFrame(data=trades).set_index('position_id')
 
     cdef dict _order_to_dict(self, Order order):
         return {'order_id': order.id.value,
