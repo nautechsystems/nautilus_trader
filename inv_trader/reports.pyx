@@ -40,13 +40,7 @@ cdef class ReportProvider:
 
         cdef dict filled_orders = {k: v for k, v in orders.items() if v.status == OrderStatus.FILLED}
 
-        order_fills_report = pd.DataFrame(data = filled_orders,
-                                          columns=['timestamp',
-                                                   'symbol',
-                                                   'side', 'type',
-                                                   'quantity',
-                                                   'avg_price',
-                                                   'slippage'])
+        order_fills_report = pd.DataFrame(data = filled_orders)
 
         order_fills_report.index.name = 'order_id'
         return order_fills_report
