@@ -36,18 +36,19 @@ cdef class ReportProvider:
         :param orders: The list of order objects.
         :return: pd.DataFrame.
         """
-        order_fills_report = pd.DataFrame(columns=['timestamp',
+
+
+        cdef dict filled_orders = {k: v for k, v in orders.items() if v.status == OrderStatus.FILLED}
+
+        order_fills_report = pd.DataFrame(data = filled_orders,
+                                          columns=['timestamp',
                                                    'symbol',
                                                    'side', 'type',
                                                    'quantity',
                                                    'avg_price',
-                                                   'slippage'] )
+                                                   'slippage'])
 
         order_fills_report.index.name = 'order_id'
-
-        cdef dict filled_orders = {k:v for k, v in orders.items() if v.status == OrderStatus.FILLED}
-        [self._add_order_to_df(k, v, order_fills_report) for k, v in filled_orders.items()]
-
         return order_fills_report
 
     cpdef object get_trades_report(self, dict positions):
