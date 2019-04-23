@@ -37,6 +37,51 @@ class ReportProviderTests(unittest.TestCase):
             id_tag_strategy='001',
             clock=TestClock())
 
+    def test_can_produce_orders_report(self):
+        # Arrange
+        report_provider = ReportProvider()
+        order1 = self.order_factory.limit(
+            AUDUSD_FXCM,
+            OrderSide.BUY,
+            Quantity(1500000),
+            Price('0.80010'))
+
+        order2 = self.order_factory.limit(
+            AUDUSD_FXCM,
+            OrderSide.SELL,
+            Quantity(1500000),
+            Price('0.80000'))
+
+        event = OrderFilled(
+            order1.symbol,
+            order1.id,
+            ExecutionId('SOME_EXEC_ID_1'),
+            ExecutionTicket('SOME_EXEC_TICKET_1'),
+            order1.side,
+            order1.quantity,
+            Price('0.80011'),
+            UNIX_EPOCH,
+            GUID(uuid.uuid4()),
+            UNIX_EPOCH)
+
+        order1.apply(event)
+
+        orders = {order1.id: order1,
+                  order2.id: order2}
+        # Act
+        report = report_provider.get_orders_report(orders)
+
+        # Assert
+        self.assertEqual(2, len(report))
+        self.assertEqual('order_id', report.index.name)
+        self.assertEqual(order1.id.value, report.index[0])
+        self.assertEqual('AUDUSD', report.iloc[0]['symbol'])
+        self.assertEqual('BUY', report.iloc[0]['side'])
+        self.assertEqual('LIMIT', report.iloc[0]['type'])
+        self.assertEqual(1500000, report.iloc[0]['quantity'])
+        self.assertEqual(Decimal('0.80011'), report.iloc[0]['avg_price'])
+        self.assertEqual(Decimal('0.00001'), report.iloc[0]['slippage'])
+
     def test_can_produce_order_fills_report(self):
         # Arrange
         report_provider = ReportProvider()
@@ -72,7 +117,6 @@ class ReportProviderTests(unittest.TestCase):
         report = report_provider.get_order_fills_report(orders)
 
         # Assert
-        print(report)
         self.assertEqual(1, len(report))
         self.assertEqual('order_id', report.index.name)
         self.assertEqual(order1.id.value, report.index[0])
@@ -138,7 +182,7 @@ class ReportProviderTests(unittest.TestCase):
                      position2.id: position2}
 
         # Act
-        report = report_provider.get_trades_report(positions)
+        report = report_provider.get_positions_report(positions)
 
         # Assert
         self.assertEqual(1, len(report))

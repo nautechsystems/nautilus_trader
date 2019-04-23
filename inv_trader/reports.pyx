@@ -28,9 +28,20 @@ cdef class ReportProvider:
         Initializes a new instance of the ReportProvider class.
         """
 
+    cpdef object get_orders_report(self, dict orders):
+        """
+        Return an orders report dataframe.
+        
+        :param orders: The dictionary of order identifiers and order objects.
+        :return: pd.DataFrame.
+        """
+        cdef list orders_all = [self._order_to_dict(o) for o in orders.values()]
+
+        return pd.DataFrame(data=orders_all).set_index('order_id')
+
     cpdef object get_order_fills_report(self, dict orders):
         """
-        Return an order fill report dataframe.
+        Return an order fills report dataframe.
         
         :param orders: The dictionary of order identifiers and order objects.
         :return: pd.DataFrame.
@@ -39,9 +50,9 @@ cdef class ReportProvider:
 
         return pd.DataFrame(data=filled_orders).set_index('order_id')
 
-    cpdef object get_trades_report(self, dict positions):
+    cpdef object get_positions_report(self, dict positions):
         """
-        Return a trades report dataframe.
+        Return a positions report dataframe.
         
         :param positions: The dictionary of position identifiers and objects.
         :return: pd.DataFrame.
