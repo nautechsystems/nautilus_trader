@@ -71,7 +71,7 @@ if __name__ == "__main__":
 
     engine.run(start, stop)
     print(engine.get_order_fills_report())
-    print(engine.get_trades_report())
+    print(engine.get_positions_report())
 
     input("Press Enter to continue...")
 

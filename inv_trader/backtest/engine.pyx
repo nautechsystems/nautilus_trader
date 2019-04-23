@@ -298,17 +298,23 @@ cdef class BacktestEngine:
         """
         return self.portfolio.analyzer.get_performance_stats()
 
+    cpdef object get_orders_report(self):
+        """
+        Return an orders report dataframe.
+        """
+        return self.trader.get_orders_report()
+
     cpdef object get_order_fills_report(self):
         """
         Return an order fill report dataframe.
         """
         return self.trader.get_order_fills_report()
 
-    cpdef object get_trades_report(self):
+    cpdef object get_positions_report(self):
         """
-        Return a trades report dataframe.
+        Return a positions report dataframe.
         """
-        return self.trader.get_trades_report()
+        return self.trader.get_positions_report()
 
     cpdef list get_log_store(self):
         """
