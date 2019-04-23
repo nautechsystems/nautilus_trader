@@ -16,6 +16,7 @@ import pandas as pd
 import logging
 import psutil
 import platform
+import multiprocessing
 import empyrical
 import pymc3
 
@@ -360,8 +361,9 @@ cdef class BacktestEngine:
         self.log.info("#---------------------------------------------------------------#")
         self.log.info(f"Nautilus Trader v{__version__} for Invariance Pte. Limited.")
         self.log.info(f"OS: {platform.platform()}")
-        self.log.info(f"Processors: {platform.processor()}")
-        self.log.info(f"RAM-Total: {round(psutil.virtual_memory()[0] / 1000000)}MB")
+        self.log.info(f"CPU architecture: {platform.processor()}" )
+        self.log.info(f"CPU(s): {psutil.cpu_count()} @ {int(psutil.cpu_freq()[2])}MHz")
+        self.log.info(f"RAM-total: {round(psutil.virtual_memory()[0] / 1000000)}MB")
         self.log.info("#---------------------------------------------------------------#")
         self.log.info(f"python v{python_version()}")
         self.log.info(f"cython v{cython.__version__}")

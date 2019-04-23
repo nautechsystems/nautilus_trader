@@ -160,7 +160,7 @@ cdef class TradeStrategy:
         """
         :return: The str() string representation of the strategy.
         """
-        return f"{self.__class__.__name__}({self.id.value})"
+        return f"TradeStrategy({self.id.value})"
 
     def __repr__(self) -> str:
         """
