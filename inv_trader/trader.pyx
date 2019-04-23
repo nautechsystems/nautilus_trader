@@ -123,21 +123,29 @@ cdef class Trader:
         """
         self.portfolio.analyzer.create_full_tear_sheet()
 
+    cpdef object get_orders_report(self):
+        """
+        Return an orders report dataframe.
+
+        :return: pd.DataFrame.
+        """
+        return self._report_provider.get_orders_report(self._exec_client.get_orders_all())
+
     cpdef object get_order_fills_report(self):
         """
-        Return an order fill report dataframe.
+        Return an order fills report dataframe.
         
         :return: pd.DataFrame.
         """
         return self._report_provider.get_order_fills_report(self._exec_client.get_orders_all())
 
-    cpdef object get_trades_report(self):
+    cpdef object get_positions_report(self):
         """
-        Return a trades report dataframe.
+        Return a positions report dataframe.
 
         :return: pd.DataFrame.
         """
-        return self._report_provider.get_trades_report(self.portfolio.get_positions_all())
+        return self._report_provider.get_positions_report(self.portfolio.get_positions_all())
 
     cpdef void change_strategies(self, list strategies: List[TradeStrategy]):
         """
