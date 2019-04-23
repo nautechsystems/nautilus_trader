@@ -53,6 +53,8 @@ cdef class Price:
     cdef readonly object value
     cdef readonly int precision
     cpdef float as_float(self)
+    cpdef Price add(self, Price price)
+    cpdef Price subtract(self, Price price)
 
 
 cdef class Money:

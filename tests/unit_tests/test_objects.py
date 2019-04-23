@@ -168,13 +168,13 @@ class ObjectTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(AssertionError, Price, -1.0)
+        self.assertRaises(ValueError, Price, -1.0, 2)
 
     def test_price_initialized_with_negative_precision_raises_exception(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(AssertionError, Price, 1.00000, -1)
+        self.assertRaises(ValueError, Price, 1.00000, -1)
 
     def test_price_from_string_with_no_decimal(self):
         # Arrange
@@ -304,6 +304,46 @@ class ObjectTests(unittest.TestCase):
         # Assert
         self.assertEqual(1.0, result)
 
+    def test_price_add_with_different_precisions_raises_exception(self):
+        # Arrange
+        price1 = Price(1.00000, 5)
+        price2 = Price(1.01, 2)
+
+        # Act
+        # Assert
+        self.assertRaises(ValueError, price1.add, price2)
+
+    def test_price_add_returns_expected_price(self):
+        # Arrange
+        price1 = Price(1.00000, 5)
+        price2 = Price(1.00010, 5)
+
+        # Act
+        result = price1.add(price2)
+
+        # Assert
+        self.assertEqual(Price('2.00010'), result)
+
+    def test_price_subtract_resulting_in_negative_value_raises_exception(self):
+        # Arrange
+        price1 = Price(2.00000, 5)
+        price2 = Price(1.00010, 5)
+
+        # Act
+        # Assert
+        self.assertRaises(ValueError, price2.subtract, price1)
+
+    def test_price_subtract_returns_expected_price(self):
+        # Arrange
+        price1 = Price(2.00000, 5)
+        price2 = Price(1.00010, 5)
+
+        # Act
+        result = price1.subtract(price2)
+
+        # Assert
+        self.assertEqual(Price('0.99990'), result)
+
     def test_money_initialized_with_malformed_string_raises_exception(self):
         # Arrange
         # Act
@@ -404,9 +444,9 @@ class ObjectTests(unittest.TestCase):
 
     def test_money_equality_operators(self):
         # Arrange
-        money1 = Price('0.50')
-        money2 = Price('1.00')
-        money3 = Price('1.50')
+        money1 = Money('0.50')
+        money2 = Money('1.00')
+        money3 = Money('1.50')
 
         # Act
         # Assert

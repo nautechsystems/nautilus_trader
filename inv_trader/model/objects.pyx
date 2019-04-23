@@ -271,10 +271,10 @@ cdef class Price:
         Note: Can be str, float, int or Decimal only.
         :raises TypeError: If the value is not a str, float, int or Decimal.
         :raises InvalidOperation: If the value str is malformed.
-        :raises AssertionError: If the value is not positive (> 0).
-        :raises AssertionError: If the precision is not positive (> 0).
+        :raises ValueError: If the value is not positive (> 0).
+        :raises ValueError: If the precision is not positive (> 0).
         """
-        assert(precision > 0)
+        Precondition.positive(precision, 'precision')
 
         if isinstance(value, str):
             self.value = Decimal(value)
@@ -295,7 +295,8 @@ cdef class Price:
         else:
             raise TypeError(f'Cannot initialize a Price with a {type(value)}.')
 
-        assert(self.value > 0)
+        if self.value <= 0:
+            raise ValueError('the value of the price was not positive')
 
     def __eq__(self, Price other) -> bool:
         """
@@ -366,6 +367,30 @@ cdef class Price:
         :return: float.
         """
         return float(self.value)
+
+    cpdef Price add(self, Price price):
+        """
+        Return a new price by adding the given price to this price.
+
+        :param price: The other price to add.
+        :return: Price.
+        :raises ValueError: If the precision of the prices are not equal.
+        """
+        Precondition.true(self.precision == price.precision, 'self.precision == price.precision')
+
+        return Price(self.value + price.value)
+
+    cpdef Price subtract(self, Price price):
+        """
+        Return a new price by subtracting the given price from this price.
+
+        :param price: The other price to subtract.
+        :return: Price.
+        :raises ValueError: If the precision of the prices are not equal.
+        """
+        Precondition.true(self.precision == price.precision, 'self.precision == price.precision')
+
+        return Price(self.value - price.value)
 
 
 cdef class Money:
