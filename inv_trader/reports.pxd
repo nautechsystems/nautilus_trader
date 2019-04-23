@@ -17,8 +17,9 @@ cdef class ReportProvider:
     """
     Provides order fill and trade reports.
     """
+    cpdef object get_orders_report(self, dict orders)
     cpdef object get_order_fills_report(self, dict orders)
-    cpdef object get_trades_report(self, dict positions)
+    cpdef object get_positions_report(self, dict positions)
 
     cdef dict _order_to_dict(self, Order order)
     cdef dict _position_to_dict(self, Position position)
