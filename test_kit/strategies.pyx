@@ -34,9 +34,9 @@ class PyStrategy(TradeStrategy):
 
     def __init__(self, bar_type: BarType):
         """
-        Initializes a new instance of the TestStrategy1 class.
+        Initializes a new instance of the PyStrategy class.
         """
-        super().__init__()
+        super().__init__(id_tag_strategy='001')
         self.bar_type = bar_type
         self.object_storer = ObjectStorer()
 
@@ -67,6 +67,13 @@ cdef class EmptyStrategy(TradeStrategy):
     """
     A strategy which is empty and does nothing.
     """
+
+    def __init__(self):
+        """
+        Initializes a new instance of the EmptyStrategy class.
+        """
+        super().__init__(id_tag_strategy='001')
+
     cpdef on_start(self):
         pass
 
@@ -103,7 +110,8 @@ cdef class TestStrategy1(TradeStrategy):
         """
         Initializes a new instance of the TestStrategy1 class.
         """
-        super().__init__(clock=clock)
+        super().__init__(id_tag_strategy='001',
+                         clock=clock)
         self.object_storer = ObjectStorer()
         self.bar_type = bar_type
 
@@ -204,7 +212,7 @@ cdef class EMACross(TradeStrategy):
         :param sl_atr_multiple: The ATR multiple for stop-loss prices.
         """
         # Order id tag must be unique at trader level
-        super().__init__(order_id_tag=instrument.symbol.code)
+        super().__init__(id_tag_strategy=instrument.symbol.code)
 
         # Custom strategy variables
         self.warmed_up = False

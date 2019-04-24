@@ -84,7 +84,7 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(StrategyId('TradeStrategy-001'), strategy.id)
+        self.assertEqual(StrategyId('TradeStrategy-000'), strategy.id)
 
     def test_can_get_current_time(self):
         # Arrange
@@ -625,7 +625,7 @@ class TradeStrategyTests(unittest.TestCase):
         result = strategy.position_id_generator.generate()
 
         # Assert
-        self.assertEqual(PositionId('P-19700101-000000-000-001-1'), result)
+        self.assertEqual(PositionId('P-19700101-000000-000-000-1'), result)
 
     def test_get_opposite_side_returns_expected_sides(self):
         # Arrange
@@ -661,7 +661,7 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(clock.unix_epoch(), strategy.time_now())
-        self.assertEqual(PositionId('P-19700101-000000-000-001-1'), strategy.position_id_generator.generate())
+        self.assertEqual(PositionId('P-19700101-000000-000-000-1'), strategy.position_id_generator.generate())
 
     def test_strategy_can_submit_order(self):
         # Arrange
