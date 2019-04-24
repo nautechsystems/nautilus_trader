@@ -276,9 +276,9 @@ cdef class Order:
         else:  # self.side is OrderSide.SELL:
             self.slippage = self.price - self.average_price
 
-        # Avoid negative zero
+        # Avoid negative zero (-0.00000)
         if self.slippage == 0:
-            self.slippage = abs(self.slippage)
+            self.slippage = Decimal(0)
 
     cdef void _set_fill_status(self):
         if self.filled_quantity < self.quantity:
