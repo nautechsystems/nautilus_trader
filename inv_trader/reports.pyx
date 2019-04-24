@@ -35,6 +35,9 @@ cdef class ReportProvider:
         :param orders: The dictionary of order identifiers and order objects.
         :return: pd.DataFrame.
         """
+        if len(orders) == 0:
+            return pd.DataFrame()
+
         cdef list orders_all = [self._order_to_dict(o) for o in orders.values()]
 
         return pd.DataFrame(data=orders_all).set_index('order_id')
@@ -46,6 +49,9 @@ cdef class ReportProvider:
         :param orders: The dictionary of order identifiers and order objects.
         :return: pd.DataFrame.
         """
+        if len(orders) == 0:
+            return pd.DataFrame()
+
         cdef list filled_orders = [self._order_to_dict(o) for o in orders.values() if o.status == OrderStatus.FILLED]
 
         return pd.DataFrame(data=filled_orders).set_index('order_id')
@@ -57,6 +63,9 @@ cdef class ReportProvider:
         :param positions: The dictionary of position identifiers and objects.
         :return: pd.DataFrame.
         """
+        if len(positions) == 0:
+            return pd.DataFrame()
+
         cdef list trades = [self._position_to_dict(p) for p in positions.values() if p.is_exited]
 
         return pd.DataFrame(data=trades).set_index('position_id')
