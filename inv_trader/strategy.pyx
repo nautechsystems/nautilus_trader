@@ -41,7 +41,7 @@ cdef class TradeStrategy:
     """
 
     def __init__(self,
-                 str order_id_tag='001',
+                 str id_tag_strategy='000',
                  flatten_on_sl_reject=True,
                  flatten_on_stop=True,
                  cancel_all_orders_on_stop=True,
@@ -52,7 +52,7 @@ cdef class TradeStrategy:
         """
         Initializes a new instance of the TradeStrategy class.
 
-        :param order_id_tag: The order identifier tag for the strategy (unique for the Trader).
+        :param id_tag_strategy: The identifier tag for the strategy (should be unique at trader level).
         :param flatten_on_sl_reject: The flag indicating whether the position with an
         associated stop order should be flattened if the order is rejected.
         :param flatten_on_stop: The flag indicating whether the strategy should
@@ -62,11 +62,11 @@ cdef class TradeStrategy:
         :param bar_capacity: The capacity for the internal bar deque(s).
         :param clock: The clock for the strategy.
         :param guid_factory: The GUID factory for the strategy.
-        :param logger: The logger for the strategy (can be None, and will print).
-        :raises ValueError: If the label is not a valid string.
-        :raises ValueError: If the order_id_tag is not a valid string.
+        :param logger: The logger for the strategy (can be None).
+        :raises ValueError: If the id_tag_strategy is not a valid string.
         :raises ValueError: If the bar_capacity is not positive (> 0).
         """
+        Precondition.valid_string(id_tag_strategy, 'id_tag_strategy')
         Precondition.positive(bar_capacity, 'bar_capacity')
 
         # Components
@@ -76,9 +76,9 @@ cdef class TradeStrategy:
 
         # Identification
         self.trader_id = TraderId('Trader-000')
-        self.id = StrategyId(self.__class__.__name__ + '-' + order_id_tag)
-        self.order_id_tag_trader = ValidString('000')
-        self.order_id_tag_strategy = ValidString(order_id_tag)
+        self.id = StrategyId(self.__class__.__name__ + '-' + id_tag_strategy)
+        self.id_tag_trader = ValidString('000')
+        self.id_tag_strategy = ValidString(id_tag_strategy)
 
         # Logger
         if logger is None:
@@ -93,12 +93,12 @@ cdef class TradeStrategy:
 
         # Order / Position components
         self.order_factory = OrderFactory(
-            id_tag_trader=self.order_id_tag_trader.value,
-            id_tag_strategy=self.order_id_tag_strategy.value,
+            id_tag_trader=self.id_tag_trader.value,
+            id_tag_strategy=self.id_tag_strategy.value,
             clock=self._clock)
         self.position_id_generator = PositionIdGenerator(
-            id_tag_trader=self.order_id_tag_trader.value,
-            id_tag_strategy=self.order_id_tag_strategy.value,
+            id_tag_trader=self.id_tag_trader.value,
+            id_tag_strategy=self.id_tag_strategy.value,
             clock=self._clock)
 
         # Registered orders
@@ -238,7 +238,7 @@ cdef class TradeStrategy:
         :param order_id_tag: The trader order identifier tag to register.
         """
         self.trader_id = trader_id
-        self.order_id_tag_trader = order_id_tag
+        self.id_tag_trader = order_id_tag
 
     cpdef void register_data_client(self, DataClient client):
         """
@@ -691,7 +691,7 @@ cdef class TradeStrategy:
         :param side: The original order side.
         :return: OrderSide.
         """
-        return OrderSide.BUY if side is OrderSide.SELL else OrderSide.SELL
+        return OrderSide.BUY if side == OrderSide.SELL else OrderSide.SELL
 
     cpdef OrderSide get_flatten_side(self, MarketPosition market_position):
         """
@@ -1371,12 +1371,12 @@ cdef class TradeStrategy:
         """
         self._clock = clock
         self.order_factory = OrderFactory(
-            id_tag_trader=self.order_id_tag_trader.value,
-            id_tag_strategy=self.order_id_tag_strategy.value,
+            id_tag_trader=self.id_tag_trader.value,
+            id_tag_strategy=self.id_tag_strategy.value,
             clock=clock)
         self.position_id_generator = PositionIdGenerator(
-            id_tag_trader=self.order_id_tag_trader.value,
-            id_tag_strategy=self.order_id_tag_strategy.value,
+            id_tag_trader=self.id_tag_trader.value,
+            id_tag_strategy=self.id_tag_strategy.value,
             clock=clock)
 
     cpdef void change_guid_factory(self, GuidFactory guid_factory):

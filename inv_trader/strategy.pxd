@@ -41,8 +41,8 @@ cdef class TradeStrategy:
 
     cdef readonly TraderId trader_id
     cdef readonly StrategyId id
-    cdef readonly ValidString order_id_tag_trader
-    cdef readonly ValidString order_id_tag_strategy
+    cdef readonly ValidString id_tag_trader
+    cdef readonly ValidString id_tag_strategy
 
     cdef readonly bint flatten_on_sl_reject
     cdef readonly bint flatten_on_stop

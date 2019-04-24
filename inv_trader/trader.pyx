@@ -156,6 +156,12 @@ cdef class Trader:
         """
         Precondition.list_type(strategies, TradeStrategy, 'strategies')
 
+        if self.is_running:
+            self._log.error('Cannot change the strategies of a running trader.')
+
+        for strategy in self.strategies:
+            strategy.dispose()
+
         self.strategies = strategies
         self._initialize_strategies()
 

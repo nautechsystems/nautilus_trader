@@ -69,9 +69,9 @@ cdef class BacktestEngine:
         :raises ValueError: If the instruments list contains a type other than Instrument.
         :raises ValueError: If the strategies list contains a type other than TradeStrategy.
         """
+        # Data checked in BacktestDataClient
         Precondition.list_type(instruments, Instrument, 'instruments')
         Precondition.list_type(strategies, TradeStrategy, 'strategies')
-        # Data checked in BacktestDataClient
 
         self.config = config
         self.clock = LiveClock()
