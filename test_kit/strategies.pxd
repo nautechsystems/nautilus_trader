@@ -18,9 +18,9 @@ cdef class EmptyStrategyCython(TradeStrategy):
     """
     A Cython strategy which is empty and does nothing.
     """
-    cpdef void on_start(self)
-    cpdef void on_tick(self, Tick tick)
-    cpdef void on_bar(self, BarType bar_type, Bar bar)
-    cpdef void on_event(self, Event event)
-    cpdef void on_stop(self)
-    cpdef void on_reset(self)
+    cpdef on_start(self)
+    cpdef on_tick(self, Tick tick)
+    cpdef on_bar(self, BarType bar_type, Bar bar)
+    cpdef on_event(self, Event event)
+    cpdef on_stop(self)
+    cpdef on_reset(self)

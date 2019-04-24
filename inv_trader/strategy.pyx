@@ -171,14 +171,14 @@ cdef class TradeStrategy:
 
 # -- ABSTRACT METHODS ---------------------------------------------------------------------------- #
 
-    cpdef void on_start(self):
+    cpdef on_start(self):
         """
         Called when the strategy is started.
         """
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
 
-    cpdef void on_tick(self, Tick tick):
+    cpdef on_tick(self, Tick tick):
         """
         Called when a tick is received by the strategy.
 
@@ -187,7 +187,7 @@ cdef class TradeStrategy:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
 
-    cpdef void on_bar(self, BarType bar_type, Bar bar):
+    cpdef on_bar(self, BarType bar_type, Bar bar):
         """
         Called when a bar is received by the strategy.
 
@@ -197,7 +197,7 @@ cdef class TradeStrategy:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
 
-    cpdef void on_event(self, Event event):
+    cpdef on_event(self, Event event):
         """
         Called when an event is received by the strategy.
 
@@ -206,21 +206,21 @@ cdef class TradeStrategy:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
 
-    cpdef void on_stop(self):
+    cpdef on_stop(self):
         """
         Called when the strategy is stopped.
         """
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
 
-    cpdef void on_reset(self):
+    cpdef on_reset(self):
         """
         Called when the strategy is reset.
         """
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
 
-    cpdef void on_dispose(self):
+    cpdef on_dispose(self):
         """
         Called when the strategy is disposed.
         """
@@ -330,7 +330,10 @@ cdef class TradeStrategy:
         self._ticks[tick.symbol] = tick
 
         if self.is_running:
-            self.on_tick(tick)
+            try:
+                self.on_tick(tick)
+            except Exception as ex:
+                self.log.exception(ex)
 
     cpdef void handle_bar(self, BarType bar_type, Bar bar):
         """"
@@ -351,7 +354,10 @@ cdef class TradeStrategy:
                 updater.update_bar(bar)
 
         if self.is_running:
-            self.on_bar(bar_type, bar)
+            try:
+                self.on_bar(bar_type, bar)
+            except Exception as ex:
+                self.log.exception(ex)
 
     cpdef void handle_event(self, Event event):
         """
@@ -402,7 +408,10 @@ cdef class TradeStrategy:
             self.log.info(f"{event}")
 
         if self.is_running:
-            self.on_event(event)
+            try:
+                self.on_event(event)
+            except Exception as ex:
+                self.log.exception(ex)
 
     cdef void _remove_atomic_child_orders(self, OrderId order_id):
         """
@@ -954,7 +963,12 @@ cdef class TradeStrategy:
         """
         self.log.info(f"Starting...")
         self.is_running = True
-        self.on_start()
+
+        try:
+            self.on_start()
+        except Exception as ex:
+            self.log.exception(ex)
+
         self.log.info(f"Running...")
 
     cpdef void stop(self):
@@ -998,7 +1012,11 @@ cdef class TradeStrategy:
         for order_id, command in self._modify_order_buffer.items():
             self.log.warning(f"Residual buffered {command} command for {order_id}.")
 
-        self.on_stop()
+        try:
+            self.on_stop()
+        except Exception as ex:
+            self.log.exception(ex)
+
         self.log.info(f"Stopped.")
 
     cpdef void reset(self):
@@ -1021,7 +1039,11 @@ cdef class TradeStrategy:
         for indicator_list in self._indicators.values():
             [indicator.reset() for indicator in indicator_list]
 
-        self.on_reset()
+        try:
+            self.on_reset()
+        except Exception as ex:
+            self.log.exception(ex)
+
         self.log.info(f"Reset.")
 
     cpdef void dispose(self):
@@ -1029,7 +1051,12 @@ cdef class TradeStrategy:
         Dispose of the strategy to release system resources, then call on_dispose().
         """
         self.log.info(f"Disposing...")
-        self.on_dispose()
+
+        try:
+            self.on_dispose()
+        except Exception as ex:
+            self.log.error(str(ex))
+
         self.log.info(f"Disposed.")
 
     cpdef void collateral_inquiry(self):

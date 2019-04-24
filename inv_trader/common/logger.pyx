@@ -11,6 +11,8 @@
 
 import logging
 import os
+import sys
+import traceback
 import threading
 
 from cpython.datetime cimport datetime
@@ -455,6 +457,23 @@ cdef class LoggerAdapter:
         """
         if not self.bypassed:
             self._logger.log(logging.CRITICAL, self._format_message(message))
+
+    cpdef void exception(self, ex):
+        """
+        Log the given exception including stack trace information.
+        
+        :param ex: The exception to log.
+        """
+        cdef str ex_string = f'{type(ex).__name__}({ex})\n'
+        exc_type, exc_value, exc_traceback = sys.exc_info()
+        stack_trace = traceback.format_exception(exc_type, exc_value, exc_traceback)
+
+        cdef str stack_trace_lines = ''
+        cdef str line
+        for line in stack_trace[:len(stack_trace) - 1]:
+            stack_trace_lines += line
+
+        self.error(ex_string + stack_trace_lines)
 
     cdef ValidString _format_message(self, str message):
         return ValidString(f"{self.component_name}: {message}")

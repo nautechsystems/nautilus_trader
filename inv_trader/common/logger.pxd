@@ -88,4 +88,5 @@ cdef class LoggerAdapter:
     cpdef void warning(self, str message)
     cpdef void error(self, str message)
     cpdef void critical(self, str message)
+    cpdef void exception(self, ex)
     cdef ValidString _format_message(self, str message)
