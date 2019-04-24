@@ -271,7 +271,7 @@ cdef class Order:
             # Slippage only applicable to priced order types
             return
 
-        if self.side is OrderSide.BUY:
+        if self.side == OrderSide.BUY:
             self.slippage = self.average_price - self.price
         else:  # self.side is OrderSide.SELL:
             self.slippage = self.price - self.average_price

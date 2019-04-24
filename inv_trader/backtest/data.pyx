@@ -17,7 +17,7 @@ from typing import Set, List, Dict, Callable
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.enums.quote_type cimport QuoteType
-from inv_trader.enums.resolution cimport Resolution
+from inv_trader.enums.resolution cimport Resolution, resolution_string
 from inv_trader.common.clock cimport TestClock
 from inv_trader.common.logger cimport Logger
 from inv_trader.common.data cimport DataClient
@@ -103,11 +103,51 @@ cdef class BacktestDataClient(DataClient):
         for key in self._instruments.keys():
             assert(key in data_symbols, f'The needed instrument {key} was not provided.')
 
-        # Determine if tick data should be used for execution processing
-        if len(self.data_ticks[next(iter(data_ticks))]) > 0:
-            self.use_ticks = True
+        # Check that all resolution DataFrames are of the same shape and index
+        cdef dict shapes = {}  # type: Dict[Resolution, tuple]
+        cdef dict indexs = {}  # type: Dict[Resolution, datetime]
+        for symbol, data in data_bars_bid.items():
+            for resolution, dataframe in data.items():
+                if resolution not in shapes:
+                    shapes[resolution] = dataframe.shape
+                if resolution not in indexs:
+                    indexs[resolution] = dataframe.index
+                assert(dataframe.shape == shapes[resolution], f'{dataframe} shape is not equal.')
+                assert(dataframe.index == indexs[resolution], f'{dataframe} index is not equal.')
+        for symbol, data in data_bars_ask.items():
+            for resolution, dataframe in data.items():
+                assert(dataframe.shape == shapes[resolution], f'{dataframe} shape is not equal.')
+                assert(dataframe.index == indexs[resolution], f'{dataframe} index is not equal.')
+
+        # Set execution resolution
+        use_ticks = True
+        for symbol in instruments_dict:
+            if symbol not in data_ticks or len(data_ticks[symbol]) == 0:
+                use_ticks = False
+        if use_ticks:
+            self.execution_resolution = Resolution.TICK
+
+        use_second_bars = True
+        if not use_ticks:
+            for symbol in instruments_dict:
+                if Resolution.SECOND not in data_bars_bid[symbol] or len(data_bars_bid[symbol][Resolution.SECOND]) == 0:
+                    use_second_bars = False
+                if Resolution.SECOND not in data_bars_ask[symbol] or len(data_bars_ask[symbol][Resolution.SECOND]) == 0:
+                    use_second_bars = False
+        if use_second_bars:
+            self.execution_resolution = Resolution.SECOND
+
+        use_minute_bars = True
+        if not use_second_bars:
+            for symbol in instruments_dict:
+                if Resolution.MINUTE not in data_bars_bid[symbol] or len(data_bars_bid[symbol][Resolution.MINUTE]) == 0:
+                    use_second_bars = False
+                if Resolution.MINUTE not in data_bars_ask[symbol] or len(data_bars_ask[symbol][Resolution.MINUTE]) == 0:
+                    use_second_bars = False
+        if use_minute_bars:
+            self.execution_resolution = Resolution.MINUTE
         else:
-            self.use_ticks = False
+            raise RuntimeError('Insufficient data for ANY execution resolution')
 
         # Create the data providers for the client based on the given instruments
         for symbol, instrument in self._instruments.items():
@@ -124,9 +164,15 @@ cdef class BacktestDataClient(DataClient):
             data_provider.register_ticks()
             self._log.info(f"Built {len(self.data_providers[symbol].ticks)} {symbol} ticks in {round((datetime.utcnow() - start).total_seconds(), 2)}s.")
 
-        if not self.use_ticks:
-            # Build 1-MINUTE bars for execution processing
+        # Build bars for execution processing
+        if self.execution_resolution == Resolution.SECOND:
             for data_provider in self.data_providers.values():
+                data_provider.set_execution_bar_res(Resolution.SECOND)
+                self._build_bars(data_provider.bar_type_sec_bid)
+                self._build_bars(data_provider.bar_type_sec_ask)
+        elif self.execution_resolution == Resolution.MINUTE:
+            for data_provider in self.data_providers.values():
+                data_provider.set_execution_bar_res(Resolution.MINUTE)
                 self._build_bars(data_provider.bar_type_min_bid)
                 self._build_bars(data_provider.bar_type_min_ask)
 
@@ -200,7 +246,7 @@ cdef class BacktestDataClient(DataClient):
                 bars[bar_type] = bar
         return bars
 
-    cpdef dict get_next_minute_bars(self, datetime time):
+    cpdef dict get_next_execution_bars(self, datetime time):
         """
         Return a dictionary of the next bid and ask minute bars if they exist 
         at the given time.
@@ -213,8 +259,8 @@ cdef class BacktestDataClient(DataClient):
         cdef Symbol symbol
         cdef DataProvider data_provider
         for symbol, data_provider in self.data_providers.items():
-            if data_provider.is_next_minute_bars_at_time(time):
-                minute_bars[symbol] = (data_provider.get_next_minute_bid_bar(time), data_provider.get_next_minute_ask_bar(time))
+            if data_provider.is_next_exec_bars_at_time(time):
+                minute_bars[symbol] = (data_provider.get_next_exec_bid_bar(time), data_provider.get_next_exec_ask_bar(time))
         return minute_bars
 
     cpdef void process_tick(self, Tick tick):
@@ -416,8 +462,12 @@ cdef class DataProvider:
         self._dataframe_ticks = data_ticks
         self._dataframes_bars_bid = data_bars_bid  # type: Dict[Resolution, DataFrame]
         self._dataframes_bars_ask = data_bars_ask  # type: Dict[Resolution, DataFrame]
+        self.bar_type_sec_bid = BarType(self.instrument.symbol, BarSpecification(1, Resolution.SECOND, QuoteType.BID))
+        self.bar_type_sec_ask = BarType(self.instrument.symbol, BarSpecification(1, Resolution.SECOND, QuoteType.ASK))
         self.bar_type_min_bid = BarType(self.instrument.symbol, BarSpecification(1, Resolution.MINUTE, QuoteType.BID))
         self.bar_type_min_ask = BarType(self.instrument.symbol, BarSpecification(1, Resolution.MINUTE, QuoteType.ASK))
+        self.bar_type_execution_bid = None
+        self.bar_type_execution_ask = None
         self.ticks = []                            # type: List[Tick]
         self.bars = {}                             # type: Dict[BarType, List[Bar]]
         self.iterations = {}                       # type: Dict[BarType, int]
@@ -485,6 +535,21 @@ cdef class DataProvider:
         if bar_type in self.iterations:
             del self.iterations[bar_type]
 
+    cpdef void set_execution_bar_res(self, Resolution resolution):
+        """
+        Set the execution bar type based on the given resolution.
+        
+        :param resolution: The resolution.
+        """
+        if resolution == Resolution.SECOND:
+            self.bar_type_execution_bid = self.bar_type_sec_bid
+            self.bar_type_execution_ask = self.bar_type_sec_ask
+        elif resolution == Resolution.MINUTE:
+            self.bar_type_execution_bid = self.bar_type_min_bid
+            self.bar_type_execution_ask = self.bar_type_min_ask
+        else:
+            raise ValueError(f'cannot set execution bar resolution to {resolution_string(resolution)}')
+
     cpdef void set_initial_iterations(
             self,
             datetime from_time,
@@ -528,20 +593,20 @@ cdef class DataProvider:
 
         return ticks_list
 
-    cpdef bint is_next_minute_bars_at_time(self, datetime time):
-        return self.bars[self.bar_type_min_bid][self.iterations[self.bar_type_min_bid]].timestamp == time
+    cpdef bint is_next_exec_bars_at_time(self, datetime time):
+        return self.bars[self.bar_type_execution_bid][self.iterations[self.bar_type_execution_bid]].timestamp == time
 
-    cpdef Bar get_next_minute_bid_bar(self, datetime time):
+    cpdef Bar get_next_exec_bid_bar(self, datetime time):
         """
-        Return the 1-MINUTE[BID] bar if one exists at the given to_time.
+        Return the execution bid bar if one exists at the given to_time.
         
         :return: Bar.
         """
         return self.bars[self.bar_type_min_bid][self.iterations[self.bar_type_min_bid]]
 
-    cpdef Bar get_next_minute_ask_bar(self, datetime time):
+    cpdef Bar get_next_exec_ask_bar(self, datetime time):
         """
-        Return the 1-MINUTE[ASK] bar if one exists at the given to_time.
+        Return the execution ask bar if one exists at the given to_time.
         
         :return: Bar.
         """

@@ -138,7 +138,7 @@ class BacktestDataClientTests(unittest.TestCase):
             ticks_list = self.client.iterate_ticks(self.test_clock.time_now())
             for tick in ticks_list:
                 self.client.process_tick(tick)
-            self.client.get_next_minute_bars(self.test_clock.time_now())  # Testing this does not cause iteration errors
+            self.client.get_next_execution_bars(self.test_clock.time_now())  # Testing this does not cause iteration errors
             bars = self.client.iterate_bars(self.test_clock.time_now())
             self.client.process_bars(bars)
 

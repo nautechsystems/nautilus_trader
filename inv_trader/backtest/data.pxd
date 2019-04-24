@@ -12,6 +12,7 @@
 from cpython.datetime cimport datetime, timedelta
 
 from inv_trader.common.data cimport DataClient
+from inv_trader.enums.resolution cimport Resolution
 from inv_trader.model.objects cimport Tick, BarType, Bar, Instrument
 
 
@@ -24,13 +25,13 @@ cdef class BacktestDataClient(DataClient):
     cdef readonly dict data_bars_ask
     cdef readonly list data_minute_index
     cdef readonly dict data_providers
-    cdef readonly bint use_ticks
+    cdef readonly Resolution execution_resolution
 
     cdef void _build_bars(self, BarType bar_type)
     cpdef void set_initial_iteration(self, datetime to_time, timedelta time_step)
     cpdef list iterate_ticks(self, datetime to_time)
     cpdef dict iterate_bars(self, datetime to_time)
-    cpdef dict get_next_minute_bars(self, datetime time)
+    cpdef dict get_next_execution_bars(self, datetime time)
     cpdef void process_tick(self, Tick tick)
     cpdef void process_bars(self, dict bars)
     cpdef void reset(self)
@@ -44,8 +45,12 @@ cdef class DataProvider:
     cdef readonly object _dataframe_ticks
     cdef readonly dict _dataframes_bars_bid
     cdef readonly dict _dataframes_bars_ask
+    cdef readonly BarType bar_type_sec_bid
+    cdef readonly BarType bar_type_sec_ask
     cdef readonly BarType bar_type_min_bid
     cdef readonly BarType bar_type_min_ask
+    cdef readonly BarType bar_type_execution_bid
+    cdef readonly BarType bar_type_execution_ask
     cdef readonly list ticks
     cdef readonly dict bars
     cdef readonly dict iterations
@@ -56,10 +61,11 @@ cdef class DataProvider:
     cpdef void deregister_ticks(self)
     cpdef void register_bars(self, BarType bar_type)
     cpdef void deregister_bars(self, BarType bar_type)
+    cpdef void set_execution_bar_res(self, Resolution resolution)
     cpdef void set_initial_iterations(self, datetime from_time, datetime to_time, timedelta time_step)
-    cpdef bint is_next_minute_bars_at_time(self, datetime time)
-    cpdef Bar get_next_minute_bid_bar(self, datetime time)
-    cpdef Bar get_next_minute_ask_bar(self, datetime time)
+    cpdef bint is_next_exec_bars_at_time(self, datetime time)
+    cpdef Bar get_next_exec_bid_bar(self, datetime time)
+    cpdef Bar get_next_exec_ask_bar(self, datetime time)
 
     cpdef list iterate_ticks(self, datetime to_time)
     cpdef dict iterate_bars(self, datetime to_time)
