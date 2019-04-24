@@ -23,12 +23,13 @@ cdef class BacktestDataClient(DataClient):
     cdef readonly dict data_ticks
     cdef readonly dict data_bars_bid
     cdef readonly dict data_bars_ask
-    cdef readonly list data_minute_index
     cdef readonly dict data_providers
+    cdef readonly dict execution_data_indexs
     cdef readonly Resolution execution_resolution
+    cdef readonly timedelta time_step
 
     cdef void _build_bars(self, BarType bar_type)
-    cpdef void set_initial_iteration(self, datetime to_time, timedelta time_step)
+    cpdef void set_initial_iteration(self, datetime to_time)
     cpdef list iterate_ticks(self, datetime to_time)
     cpdef dict iterate_bars(self, datetime to_time)
     cpdef dict get_next_execution_bars(self, datetime time)

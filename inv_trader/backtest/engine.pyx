@@ -179,12 +179,16 @@ cdef class BacktestEngine:
         :param print_log_store: The flag for if the log store should be printed at the end of the backtest.
 
         :raises: ValueError: If the start datetime is not < the stop datetime.
-        :raises: ValueError: If the start datetime is not >= the first index timestamp of data.
-        :raises: ValueError: If the start datetime is not <= the last index timestamp of data.
+        :raises: ValueError: If the start datetime is not >= the first index timestamp of execution data.
+        :raises: ValueError: If the start datetime is not <= the last index timestamp of execution data.
         """
         Precondition.true(start < stop, 'start < stop')
-        Precondition.true(start >= self.data_client.data_minute_index[0], 'start >= first_timestamp')
-        Precondition.true(stop <= self.data_client.data_minute_index[len(self.data_client.data_minute_index) - 1], 'stop <= last_timestamp')
+
+        for symbol, index_tuple in self.data_client.execution_data_indexs.items():
+            if start < index_tuple[0]:
+                raise ValueError(f'Backtest start time is before first execution data index for {symbol} at {index_tuple[0]}')
+            if stop > index_tuple[1]:
+                raise ValueError(f'Backtest stop time is after last execution data index for {symbol} at {index_tuple[1]}')
 
         if fill_model is not None:
             self.exec_client.change_fill_model(fill_model)
@@ -198,14 +202,8 @@ cdef class BacktestEngine:
             self.logger.change_log_file_name(backtest_log_name)
             self.test_logger.change_log_file_name(backtest_log_name)
 
-        # Setup time
-        cdef timedelta time_step
-        if self.data_client.execution_resolution == Resolution.TICK:
-            time_step = timedelta(seconds=1)
-        elif self.data_client.execution_resolution == Resolution.SECOND:
-            time_step = timedelta(seconds=1)
-        elif self.data_client.execution_resolution == Resolution.MINUTE:
-            time_step = timedelta(minutes=1)
+        # Setup time_step
+        cdef timedelta time_step = self.data_client.time_step
 
         self._backtest_header(run_started, start, stop, time_step)
         self.log.info(f"Setting up backtest...")
@@ -216,7 +214,7 @@ cdef class BacktestEngine:
 
         self.log.info(f"Running backtest...")
         self.log.debug("Setting initial iterations...")
-        self.data_client.set_initial_iteration(start, time_step)  # Also sets clock to start time
+        self.data_client.set_initial_iteration(start)  # Also sets clock to start time
 
         assert(self.data_client.time_now() == start)
         assert(self.exec_client.time_now() == start)

@@ -69,27 +69,18 @@ cdef class BacktestDataClient(DataClient):
         self.data_ticks = data_ticks        # type: Dict[Symbol, DataFrame]
         self.data_bars_bid = data_bars_bid  # type: Dict[Symbol, Dict[Resolution, DataFrame]]
         self.data_bars_ask = data_bars_ask  # type: Dict[Symbol, Dict[Resolution, DataFrame]]
+        self.data_providers = {}            # type: Dict[Symbol, DataProvider]
+        self.execution_data_indexs = {}     # type: Dict[Symbol, (datetime, datetime)]  # First, Last indexes
 
         self._log.info("Preparing data...")
-        # Set minute data index
-        first_dataframe = data_bars_bid[next(iter(data_bars_bid))][Resolution.MINUTE]
-        self.data_minute_index = list(pd.to_datetime(first_dataframe.index, utc=True))  # type: List[datetime]
 
-        assert(isinstance(self.data_minute_index[0], datetime))
-        cdef int last_index = len(self.data_minute_index) - 1
-        cdef str index0_pad = (len(str(last_index)) - 1) * " "
-        self._log.info(f"Data datetime minute index[0]{index0_pad} = {self.data_minute_index[0]}")
-        self._log.info(f"Data datetime minute index[{last_index}] = {self.data_minute_index[last_index]}")
-
-        self.data_providers = {}  # type: Dict[Symbol, DataProvider]
-
-        # Convert instruments list to dictionary indexed by symbol
+        # Create instruments dictionary
         cdef dict instruments_dict = {}  # type: Dict[Symbol, Instrument]
         for instrument in instruments:
             instruments_dict[instrument.symbol] = instrument
         self._instruments = instruments_dict
 
-        # Create set of all data symbols
+        # Create data symbols set
         cdef set bid_data_symbols = set()  # type: Set[Symbol]
         for symbol in data_bars_bid:
             bid_data_symbols.add(symbol)
@@ -119,13 +110,17 @@ cdef class BacktestDataClient(DataClient):
                 assert(dataframe.shape == shapes[resolution], f'{dataframe} shape is not equal.')
                 assert(dataframe.index == indexs[resolution], f'{dataframe} index is not equal.')
 
-        # Set execution resolution
+        # Set execution resolution and data indexs
         use_ticks = True
         for symbol in instruments_dict:
             if symbol not in data_ticks or len(data_ticks[symbol]) == 0:
                 use_ticks = False
         if use_ticks:
             self.execution_resolution = Resolution.TICK
+            self.time_step = timedelta(seconds=1)
+            for symbol, dataframe in data_ticks.items():
+                self.execution_data_indexs[symbol] = (pd.to_datetime(dataframe.index[0], utc=True),
+                                                      pd.to_datetime(dataframe.index[len(dataframe) - 1], utc=True))
 
         use_second_bars = True
         if not use_ticks:
@@ -134,8 +129,12 @@ cdef class BacktestDataClient(DataClient):
                     use_second_bars = False
                 if Resolution.SECOND not in data_bars_ask[symbol] or len(data_bars_ask[symbol][Resolution.SECOND]) == 0:
                     use_second_bars = False
-        if use_second_bars:
-            self.execution_resolution = Resolution.SECOND
+            if use_second_bars:
+                self.execution_resolution = Resolution.SECOND
+                self.time_step = timedelta(seconds=1)
+                for symbol, res_data in data_bars_bid.items():
+                    self.execution_data_indexs[symbol] = (pd.to_datetime(res_data[Resolution.SECOND].index[0], utc=True),
+                                                          pd.to_datetime(res_data[Resolution.SECOND].index[len(res_data[Resolution.SECOND]) - 1], utc=True))
 
         use_minute_bars = True
         if not use_second_bars:
@@ -144,10 +143,16 @@ cdef class BacktestDataClient(DataClient):
                     use_second_bars = False
                 if Resolution.MINUTE not in data_bars_ask[symbol] or len(data_bars_ask[symbol][Resolution.MINUTE]) == 0:
                     use_second_bars = False
-        if use_minute_bars:
-            self.execution_resolution = Resolution.MINUTE
-        else:
-            raise RuntimeError('Insufficient data for ANY execution resolution')
+            if use_minute_bars:
+                self.execution_resolution = Resolution.MINUTE
+                self.time_step = timedelta(minutes=1)
+                for symbol, res_data in data_bars_bid.items():
+                    self.execution_data_indexs[symbol] = (pd.to_datetime(res_data[Resolution.MINUTE].index[0], utc=True),
+                                                          pd.to_datetime(res_data[Resolution.MINUTE].index[len(res_data[Resolution.MINUTE]) - 1], utc=True))
+            else:
+                raise RuntimeError('Insufficient data for ANY execution resolution')
+
+        self._log.info(f"Execution resolution = {resolution_string(self.execution_resolution)}")
 
         # Create the data providers for the client based on the given instruments
         for symbol, instrument in self._instruments.items():
@@ -190,30 +195,18 @@ cdef class BacktestDataClient(DataClient):
         self.data_providers[bar_type.symbol].register_bars(bar_type)
         self._log.info(f"Built {len(self.data_providers[bar_type.symbol].bars[bar_type])} {bar_type} bars in {round((datetime.utcnow() - start).total_seconds(), 2)}s.")
 
-    cpdef void set_initial_iteration(
-            self,
-            datetime to_time,
-            timedelta time_step):
+    cpdef void set_initial_iteration(self, datetime to_time):
         """
         Set the initial internal iteration by winding the data client data 
-        providers bar iterations and tick indexs forwards to the given to_time 
-        at the given time_step.
+        providers bar iterations and tick indexs forwards to the given to_time.
         
-        :param to_time: The time to wind the data client to.
-        :param time_step: The time step to iterate at.
+        :param to_time: The datetime to wind the data providers to.
         """
-        cdef datetime current = self.data_minute_index[0]
-        cdef int next_index = 0
-
-        while current < to_time:
-            if self.data_minute_index[next_index] == current:
-                next_index += 1
-            current += time_step
-
         for symbol, data_provider in self.data_providers.items():
-            data_provider.set_initial_iterations(self.data_minute_index[0], to_time, time_step)
-
-        self._clock.set_time(current)
+            data_provider.set_initial_iterations(from_time=self.execution_data_indexs[symbol][0],
+                                                 to_time=to_time,
+                                                 time_step=self.time_step)
+        self._clock.set_time(to_time)
 
     cpdef list iterate_ticks(self, datetime to_time):
         """
