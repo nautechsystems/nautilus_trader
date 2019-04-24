@@ -228,7 +228,7 @@ cdef class Position:
         :param current_price: The current price of the position instrument.
         :return: Decimal.
         """
-        if not self.is_entered or self.is_exited or self.entry_direction is OrderSide.UNKNOWN:
+        if not self.is_entered or self.is_exited or self.entry_direction == OrderSide.UNKNOWN:
             return Decimal(0)
         return self._calculate_points(self.average_entry_price, current_price)
 
@@ -239,7 +239,7 @@ cdef class Position:
         :param current_price: The current price of the position instrument.
         :return: float.
         """
-        if not self.is_entered or self.is_exited or self.market_position is MarketPosition.FLAT:
+        if not self.is_entered or self.is_exited or self.market_position == MarketPosition.FLAT:
             return 0.0
         return self._calculate_return(self.average_entry_price, current_price)
 
@@ -249,9 +249,9 @@ cdef class Position:
         
         :return: Decimal.
         """
-        if self.entry_direction is OrderSide.BUY:
+        if self.entry_direction == OrderSide.BUY:
             return exit_price.value - entry_price.value
-        elif self.entry_direction is OrderSide.SELL:
+        elif self.entry_direction == OrderSide.SELL:
             return entry_price.value - exit_price.value
         else:
             raise ValueError(f'Cannot calculate the points of a {self.entry_direction} direction.')
@@ -262,9 +262,9 @@ cdef class Position:
         
         :return: float.
         """
-        if self.market_position is MarketPosition.LONG:
+        if self.market_position == MarketPosition.LONG:
             return (exit_price.as_float() - entry_price.as_float()) / exit_price.as_float()
-        elif self.market_position is MarketPosition.SHORT:
+        elif self.market_position == MarketPosition.SHORT:
             return (entry_price.as_float() - exit_price.as_float()) / exit_price.as_float()
         else:
             raise ValueError(f'Cannot calculate the return of a {self.market_position} direction.')

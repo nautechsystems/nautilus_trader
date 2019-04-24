@@ -44,7 +44,9 @@ cdef class BacktestEngine:
     cdef readonly int iteration
 
     cpdef void change_strategies(self, list strategies)
-    cpdef void run(self, datetime start, datetime stop, timedelta time_step=*, FillModel fill_model=*, bint print_log_store=*)
+    cpdef void run(self, datetime start, datetime stop, FillModel fill_model=*, bint print_log_store=*)
+    cdef void _run_with_tick_execution(self, datetime time, datetime stop, timedelta time_step)
+    cdef void _run_with_bar_execution(self, datetime time, datetime stop, timedelta time_step)
     cpdef void create_returns_tear_sheet(self)
     cpdef void create_full_tear_sheet(self)
     cpdef dict get_performance_stats(self)

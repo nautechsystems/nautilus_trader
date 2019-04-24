@@ -36,7 +36,7 @@ cdef class ReportProvider:
         :return: pd.DataFrame.
         """
         if len(orders) == 0:
-            return pd.DataFrame().set_index('no order data')
+            return pd.DataFrame()
 
         cdef list orders_all = [self._order_to_dict(o) for o in orders.values()]
 
@@ -50,7 +50,7 @@ cdef class ReportProvider:
         :return: pd.DataFrame.
         """
         if len(orders) == 0:
-            return pd.DataFrame().set_index('no order data')
+            return pd.DataFrame()
 
         cdef list filled_orders = [self._order_to_dict(o) for o in orders.values() if o.status == OrderStatus.FILLED]
 
@@ -64,7 +64,7 @@ cdef class ReportProvider:
         :return: pd.DataFrame.
         """
         if len(positions) == 0:
-            return pd.DataFrame().set_index('no position data')
+            return pd.DataFrame()
 
         cdef list trades = [self._position_to_dict(p) for p in positions.values() if p.is_exited]
 
