@@ -164,4 +164,4 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 21/04/19 15806081 function calls (15577303 primitive calls) in 14.045 seconds (new analyzers reduce number of trades)
         # 22/04/19 15759862 function calls (15531098 primitive calls) in 13.918 seconds (redo id generation)
         # 24/04/19 15786882 function calls (15558362 primitive calls) in 13.655 seconds (improve backtest loops)
-        # 25/04/19 15741199 function calls (15512699 primitive calls) in 13.736 seconds (performance check)
+        # 25/04/19 15788185 function calls (15559675 primitive calls) in 14.044 seconds (performance check)

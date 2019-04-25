@@ -56,7 +56,6 @@ cdef class DataProvider:
     cdef readonly dict bars
     cdef readonly dict iterations
     cdef readonly int tick_index
-    cdef readonly bint has_ticks
 
     cpdef void register_ticks(self)
     cpdef void deregister_ticks(self)
