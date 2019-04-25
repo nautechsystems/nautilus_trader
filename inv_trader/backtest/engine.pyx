@@ -170,16 +170,16 @@ cdef class BacktestEngine:
 
         :raises: ValueError: If the start datetime is not < the stop datetime.
         :raises: ValueError: If the start datetime is not >= the execution_data_index_min datetime.
-        :raises: ValueError: If the start datetime is not <= the execution_data_index_max datetime.
-        :raises: ValueError: If the strategies is not None and contains a type other than TradeStrategy.
+        :raises: ValueError: If the stop datetime is not <= the execution_data_index_max datetime.
+        :raises: ValueError: If the strategies list is not None and contains a type other than TradeStrategy.
         """
+        # Preconditions
         if start is None:
             start = self.data_client.execution_data_index_min
         else:
             if start < self.data_client.execution_data_index_min:
                 raise ValueError('The start datetime is less than the first execution data timestamp '
                                  '(please set later start).')
-
         if stop is None:
             stop = self.data_client.execution_data_index_max
         else:
