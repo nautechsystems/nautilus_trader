@@ -21,6 +21,7 @@ import pymc3
 
 from platform import python_version
 from cpython.datetime cimport datetime, timedelta
+from datetime import timezone
 from pandas import DataFrame
 from typing import List, Dict
 
@@ -152,7 +153,7 @@ cdef class BacktestEngine:
         self.time_to_initialize = self.clock.get_delta(self.created_time)
         self.log.info(f'Initialized in {self.time_to_initialize}.')
 
-    cpdef void run(
+    cpdef run(
             self,
             datetime start=None,
             datetime stop=None,
@@ -168,29 +169,38 @@ cdef class BacktestEngine:
         :param strategies: The strategies change for the backtest run (optional can be None - will use previous).
         :param print_log_store: The flag indicating whether the log store should be printed at the end of the run.
 
+        :raises: ValueError: If the start datetime is not None and tzinfo is not UTC.
         :raises: ValueError: If the start datetime is not < the stop datetime.
         :raises: ValueError: If the start datetime is not >= the execution_data_index_min datetime.
+        :raises: ValueError: If the stop datetime is not None and tzinfo is not UTC.
         :raises: ValueError: If the stop datetime is not <= the execution_data_index_max datetime.
+        :raises: ValueError: If the fill_model is a type other than FillModel or None.
+        :raises: ValueError: If the strategies is a type other than list or None.
+        :raises: ValueError: If the strategies list is not None and is empty.
         :raises: ValueError: If the strategies list is not None and contains a type other than TradeStrategy.
         """
-        # Preconditions
+        # -- PRECONDITIONS ----------------------------------------------------"
         if start is None:
+            Precondition.true(start.tzinfo == timezone.utc, 'start.tzinfo == timezone.utc')
             start = self.data_client.execution_data_index_min
         else:
             if start < self.data_client.execution_data_index_min:
-                raise ValueError('The start datetime is less than the first execution data timestamp '
-                                 '(please set later start).')
+                raise ValueError('Invalid start datetime (is less than the first execution data timestamp '
+                                 '- please set later start).')
         if stop is None:
+            Precondition.true(stop.tzinfo == timezone.utc, 'stop.tzinfo == timezone.utc')
             stop = self.data_client.execution_data_index_max
         else:
             if stop > self.data_client.execution_data_index_max:
-                raise ValueError('The stop datetime is greater than the last execution data timestamp '
-                                 '(please set earlier stop).')
-
+                raise ValueError('Invalid stop datetime (is greater than the last execution data timestamp '
+                                 '- please set earlier stop).')
         Precondition.true(start < stop, 'start < stop')
-
+        Precondition.type_or_none(fill_model, FillModel, 'fill_model')
+        Precondition.type_or_none(strategies, list, 'strategies')
         if strategies is not None:
+            Precondition.not_empty(strategies, 'strategies')
             Precondition.list_type(strategies, TradeStrategy, 'strategies')
+        # ---------------------------------------------------------------------#
 
         self.log.info(f"Setting up backtest...")
         cdef datetime run_started = self.clock.time_now()
@@ -221,8 +231,7 @@ cdef class BacktestEngine:
             self.trader.change_strategies(strategies)
         self._change_clocks_and_loggers(self.trader.strategies)
 
-        # -- MAIN BACKTEST LOOP -----------------------------------------------#
-
+        # -- RUN BACKTEST -----------------------------------------------------#
         self._backtest_header(run_started, start, stop, time_step)
         self.log.info(f"Running backtest...")
         self.trader.start()
@@ -231,7 +240,6 @@ cdef class BacktestEngine:
             self._run_with_tick_execution(start, stop, time_step)
         else:
             self._run_with_bar_execution(start, stop, time_step)
-
         # ---------------------------------------------------------------------#
 
         self.log.info("Stopping...")

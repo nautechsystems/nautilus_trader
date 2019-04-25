@@ -10,8 +10,10 @@
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
 import pandas as pd
+import pytz
 
 from cpython.datetime cimport datetime, timedelta
+from datetime import timezone
 from pandas import DataFrame
 from typing import Set, List, Dict, Callable
 
@@ -125,6 +127,10 @@ cdef class BacktestDataClient(DataClient):
             self.data_providers[symbol].register_ticks()
             self._log.info(f"Built {len(self.data_providers[symbol].ticks)} {symbol} ticks in {round((datetime.utcnow() - start).total_seconds(), 2)}s.")
 
+            # Check tick data integrity (UTC timezone)
+            ticks = self.data_providers[symbol].ticks
+            assert(ticks[0].timestamp.tz == pytz.UTC)
+
         # Setup execution resolution and data
         use_ticks = True
         for symbol in instruments_dict:
@@ -134,8 +140,12 @@ cdef class BacktestDataClient(DataClient):
             self.execution_resolution = Resolution.TICK
             self._log.info(f"Execution resolution = {resolution_string(self.execution_resolution)}")
             self.time_step = timedelta(seconds=1)
-            for symbol, ticks_dataframe in data_ticks.items():
-                self._set_execution_data_index(symbol, ticks_dataframe)
+            for symbol in data_symbols:
+                # Set execution timestamp indexs
+                ticks = self.data_providers[symbol].ticks
+                first_timestamp = ticks[0].timestamp
+                last_timestamp = ticks[len(ticks) - 1].timestamp
+                self._set_execution_data_index(symbol, first_timestamp, last_timestamp)
 
         if not use_ticks:
             use_second_bars = True
@@ -148,12 +158,22 @@ cdef class BacktestDataClient(DataClient):
                 self.execution_resolution = Resolution.SECOND
                 self._log.info(f"Execution resolution = {resolution_string(self.execution_resolution)}")
                 self.time_step = timedelta(seconds=1)
+                # Build bars required for execution
                 for data_provider in self.data_providers.values():
                     data_provider.set_execution_bar_res(Resolution.SECOND)
                     self._build_bars(data_provider.bar_type_sec_bid)
                     self._build_bars(data_provider.bar_type_sec_ask)
+                # Check bars data integrity
                 for symbol, res_data in data_bars_bid.items():
-                    self._set_execution_data_index(symbol, res_data[Resolution.SECOND])
+                    exec_bid_bars = data_provider.bars[data_provider.bar_type_execution_bid]
+                    exec_ask_bars = data_provider.bars[data_provider.bar_type_execution_ask]
+                    assert(len(exec_bid_bars) == len(exec_ask_bars))
+                    assert(exec_bid_bars[0].timestamp.tz == exec_ask_bars[0].timestamp.tz)
+                    assert(exec_bid_bars[0].timestamp.tz == pytz.UTC)  # Check data is UTC timezone
+                    # Set execution timestamp indexs
+                    first_timestamp = exec_bid_bars[0].timestamp
+                    last_timestamp = exec_bid_bars[len(exec_bid_bars) - 1].timestamp
+                    self._set_execution_data_index(symbol, first_timestamp, last_timestamp)
 
         if not use_ticks and not use_second_bars:
             use_minute_bars = True
@@ -166,33 +186,40 @@ cdef class BacktestDataClient(DataClient):
                 self.execution_resolution = Resolution.MINUTE
                 self._log.info(f"Execution resolution = {resolution_string(self.execution_resolution)}")
                 self.time_step = timedelta(minutes=1)
+                # Build bars required for execution
                 for data_provider in self.data_providers.values():
                     data_provider.set_execution_bar_res(Resolution.MINUTE)
                     self._build_bars(data_provider.bar_type_min_bid)
                     self._build_bars(data_provider.bar_type_min_ask)
+                # Check bars data integrity
                 for symbol, res_data in data_bars_bid.items():
-                    self._set_execution_data_index(symbol, res_data[Resolution.MINUTE])
+                    exec_bid_bars = data_provider.bars[data_provider.bar_type_execution_bid]
+                    exec_ask_bars = data_provider.bars[data_provider.bar_type_execution_ask]
+                    assert(len(exec_bid_bars) == len(exec_ask_bars))
+                    assert(exec_bid_bars[0].timestamp.tz == exec_ask_bars[0].timestamp.tz)
+                    assert(exec_bid_bars[0].timestamp.tz == pytz.UTC)  # Check data is UTC timezone
+                    # Set execution timestamp indexs
+                    first_timestamp = exec_bid_bars[0].timestamp
+                    last_timestamp = exec_bid_bars[len(exec_bid_bars) - 1].timestamp
+                    self._set_execution_data_index(symbol, first_timestamp, last_timestamp)
             else:
                 raise RuntimeError('Insufficient data for ANY execution resolution')
 
-    cdef void _set_execution_data_index(self, Symbol symbol, dataframe):
+    cdef void _set_execution_data_index(self, Symbol symbol, datetime first, datetime last):
         """
         Set the execution data index for the given symbol using the given data.
         
         :param symbol: The symbol for the index.
-        :param dataframe: The execution market data.
+        :param first: The first datetime index timestamp.
+        :param last: The last datetime index timestamp.
         """
-        cdef int last_index = len(dataframe) - 1
-        cdef datetime first_timestamp = pd.to_datetime(dataframe.index[0], utc=True)
-        cdef datetime last_timestamp = pd.to_datetime(dataframe.index[last_index], utc=True)
-
         # Set minimum execution data timestamp
-        if self.execution_data_index_min is None or self.execution_data_index_min < first_timestamp:
-            self.execution_data_index_min = first_timestamp
+        if self.execution_data_index_min is None or self.execution_data_index_min < first:
+            self.execution_data_index_min = first
 
         # Set maximum execution data timestamp
-        if self.execution_data_index_max is None or self.execution_data_index_max > last_timestamp:
-            self.execution_data_index_max = last_timestamp
+        if self.execution_data_index_max is None or self.execution_data_index_max > last:
+            self.execution_data_index_max = last
 
     cdef void _build_bars(self, BarType bar_type):
         """
