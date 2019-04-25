@@ -29,22 +29,20 @@ cdef class BacktestEngine:
     cdef readonly Clock clock
     cdef readonly Clock test_clock
     cdef readonly BacktestConfig config
+    cdef readonly BacktestDataClient data_client
+    cdef readonly BacktestExecClient exec_client
     cdef readonly LoggerAdapter log
     cdef readonly Logger logger
     cdef readonly Logger test_logger
-    cdef readonly datetime created_time
-    cdef readonly timedelta time_to_initialize
     cdef readonly Account account
     cdef readonly Portfolio portfolio
-    cdef readonly list instruments
-    cdef readonly BacktestDataClient data_client
-    cdef readonly BacktestExecClient exec_client
     cdef readonly Trader trader
-    cdef readonly list data_minute_index
+    cdef readonly datetime created_time
+    cdef readonly timedelta time_to_initialize
+    cdef readonly list instruments
     cdef readonly int iteration
 
-    cpdef void change_strategies(self, list strategies)
-    cpdef void run(self, datetime start, datetime stop, FillModel fill_model=*, bint print_log_store=*)
+    cpdef void run(self, datetime start=*, datetime stop=*, FillModel fill_model=*, list strategies=*, bint print_log_store=*)
     cdef void _run_with_tick_execution(self, datetime time, datetime stop, timedelta time_step)
     cdef void _run_with_bar_execution(self, datetime time, datetime stop, timedelta time_step)
     cpdef void create_returns_tear_sheet(self)
@@ -61,4 +59,4 @@ cdef class BacktestEngine:
     cdef void _engine_header(self)
     cdef void _backtest_header(self, datetime run_started, datetime start, datetime stop, timedelta time_step)
     cdef void _backtest_footer(self, datetime run_started, datetime start, datetime stop, timedelta time_step)
-    cdef void _change_strategy_clocks_and_loggers(self, list strategies)
+    cdef void _change_clocks_and_loggers(self, list strategies)

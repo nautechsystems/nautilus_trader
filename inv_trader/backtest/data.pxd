@@ -13,7 +13,7 @@ from cpython.datetime cimport datetime, timedelta
 
 from inv_trader.common.data cimport DataClient
 from inv_trader.enums.resolution cimport Resolution
-from inv_trader.model.objects cimport Tick, BarType, Bar, Instrument
+from inv_trader.model.objects cimport Symbol, Tick, BarType, Bar, Instrument
 
 
 cdef class BacktestDataClient(DataClient):
@@ -24,10 +24,12 @@ cdef class BacktestDataClient(DataClient):
     cdef readonly dict data_bars_bid
     cdef readonly dict data_bars_ask
     cdef readonly dict data_providers
-    cdef readonly dict execution_data_indexs
+    cdef readonly datetime execution_data_index_min
+    cdef readonly datetime execution_data_index_max
     cdef readonly Resolution execution_resolution
     cdef readonly timedelta time_step
 
+    cdef void _set_execution_data_index(self, Symbol symbol, dataframe)
     cdef void _build_bars(self, BarType bar_type)
     cpdef void set_initial_iteration(self, datetime to_time)
     cpdef list iterate_ticks(self, datetime to_time)
