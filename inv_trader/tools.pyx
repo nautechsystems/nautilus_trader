@@ -38,7 +38,7 @@ cdef class TickBuilder:
     """
     def __init__(self,
                  Symbol symbol,
-                 int decimal_precision=5,
+                 int decimal_precision,
                  tick_data: DataFrame=None,
                  bid_data: DataFrame=None,
                  ask_data: DataFrame=None):
