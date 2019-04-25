@@ -110,7 +110,21 @@ cdef class BacktestDataClient(DataClient):
                 assert(dataframe.shape == shapes[resolution], f'{dataframe} shape is not equal.')
                 assert(dataframe.index == indexs[resolution], f'{dataframe} index is not equal.')
 
-        # Set execution resolution and data indexs
+        # Create the data providers for the client based on the given instruments
+        for symbol, instrument in self._instruments.items():
+            self._log.info(f'Creating DataProvider for {symbol}...')
+            self.data_providers[symbol] = DataProvider(instrument=instrument,
+                                                       data_ticks=None if symbol not in self.data_ticks else self.data_ticks[symbol].tz_localize('UTC'),
+                                                       data_bars_bid=self.data_bars_bid[symbol],
+                                                       data_bars_ask=self.data_bars_ask[symbol])
+
+            # Build ticks
+            start = datetime.utcnow()
+            self._log.info(f"Building {symbol} ticks...")
+            self.data_providers[symbol].register_ticks()
+            self._log.info(f"Built {len(self.data_providers[symbol].ticks)} {symbol} ticks in {round((datetime.utcnow() - start).total_seconds(), 2)}s.")
+
+        # Setup execution resolution and data
         use_ticks = True
         for symbol in instruments_dict:
             if symbol not in data_ticks or len(data_ticks[symbol]) == 0:
@@ -122,8 +136,8 @@ cdef class BacktestDataClient(DataClient):
                 self.execution_data_indexs[symbol] = (pd.to_datetime(dataframe.index[0], utc=True),
                                                       pd.to_datetime(dataframe.index[len(dataframe) - 1], utc=True))
 
-        use_second_bars = True
         if not use_ticks:
+            use_second_bars = True
             for symbol in instruments_dict:
                 if Resolution.SECOND not in data_bars_bid[symbol] or len(data_bars_bid[symbol][Resolution.SECOND]) == 0:
                     use_second_bars = False
@@ -132,12 +146,16 @@ cdef class BacktestDataClient(DataClient):
             if use_second_bars:
                 self.execution_resolution = Resolution.SECOND
                 self.time_step = timedelta(seconds=1)
+                for data_provider in self.data_providers.values():
+                    data_provider.set_execution_bar_res(Resolution.SECOND)
+                    self._build_bars(data_provider.bar_type_sec_bid)
+                    self._build_bars(data_provider.bar_type_sec_ask)
                 for symbol, res_data in data_bars_bid.items():
                     self.execution_data_indexs[symbol] = (pd.to_datetime(res_data[Resolution.SECOND].index[0], utc=True),
                                                           pd.to_datetime(res_data[Resolution.SECOND].index[len(res_data[Resolution.SECOND]) - 1], utc=True))
 
-        use_minute_bars = True
         if not use_second_bars:
+            use_minute_bars = True
             for symbol in instruments_dict:
                 if Resolution.MINUTE not in data_bars_bid[symbol] or len(data_bars_bid[symbol][Resolution.MINUTE]) == 0:
                     use_second_bars = False
@@ -146,6 +164,10 @@ cdef class BacktestDataClient(DataClient):
             if use_minute_bars:
                 self.execution_resolution = Resolution.MINUTE
                 self.time_step = timedelta(minutes=1)
+                for data_provider in self.data_providers.values():
+                    data_provider.set_execution_bar_res(Resolution.MINUTE)
+                    self._build_bars(data_provider.bar_type_min_bid)
+                    self._build_bars(data_provider.bar_type_min_ask)
                 for symbol, res_data in data_bars_bid.items():
                     self.execution_data_indexs[symbol] = (pd.to_datetime(res_data[Resolution.MINUTE].index[0], utc=True),
                                                           pd.to_datetime(res_data[Resolution.MINUTE].index[len(res_data[Resolution.MINUTE]) - 1], utc=True))
@@ -154,31 +176,6 @@ cdef class BacktestDataClient(DataClient):
 
         self._log.info(f"Execution resolution = {resolution_string(self.execution_resolution)}")
 
-        # Create the data providers for the client based on the given instruments
-        for symbol, instrument in self._instruments.items():
-            self._log.info(f'Creating DataProvider for {symbol}...')
-            self.data_providers[symbol] = DataProvider(instrument=instrument,
-                                                       data_ticks=None if symbol not in self.data_ticks else self.data_ticks[symbol].tz_localize('UTC'),
-                                                       data_bars_bid=self.data_bars_bid[symbol],
-                                                       data_bars_ask=self.data_bars_ask[symbol])
-
-            # Build ticks if sufficient data
-            start = datetime.utcnow()
-            self._log.info(f"Building {symbol} ticks...")
-            self.data_providers[symbol].register_ticks()
-            self._log.info(f"Built {len(self.data_providers[symbol].ticks)} {symbol} ticks in {round((datetime.utcnow() - start).total_seconds(), 2)}s.")
-
-        # Build bars for execution processing
-        if self.execution_resolution == Resolution.SECOND:
-            for data_provider in self.data_providers.values():
-                data_provider.set_execution_bar_res(Resolution.SECOND)
-                self._build_bars(data_provider.bar_type_sec_bid)
-                self._build_bars(data_provider.bar_type_sec_ask)
-        elif self.execution_resolution == Resolution.MINUTE:
-            for data_provider in self.data_providers.values():
-                data_provider.set_execution_bar_res(Resolution.MINUTE)
-                self._build_bars(data_provider.bar_type_min_bid)
-                self._build_bars(data_provider.bar_type_min_ask)
 
     cdef void _build_bars(self, BarType bar_type):
         """
