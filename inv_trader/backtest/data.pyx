@@ -133,8 +133,9 @@ cdef class BacktestDataClient(DataClient):
             self.execution_resolution = Resolution.TICK
             self.time_step = timedelta(seconds=1)
             for symbol, dataframe in data_ticks.items():
+                last_index = len(dataframe) - 1
                 self.execution_data_indexs[symbol] = (pd.to_datetime(dataframe.index[0], utc=True),
-                                                      pd.to_datetime(dataframe.index[len(dataframe) - 1], utc=True))
+                                                      pd.to_datetime(dataframe.index[last_index], utc=True))
 
         if not use_ticks:
             use_second_bars = True
@@ -151,8 +152,9 @@ cdef class BacktestDataClient(DataClient):
                     self._build_bars(data_provider.bar_type_sec_bid)
                     self._build_bars(data_provider.bar_type_sec_ask)
                 for symbol, res_data in data_bars_bid.items():
+                    last_index = len(res_data[Resolution.SECOND]) - 1
                     self.execution_data_indexs[symbol] = (pd.to_datetime(res_data[Resolution.SECOND].index[0], utc=True),
-                                                          pd.to_datetime(res_data[Resolution.SECOND].index[len(res_data[Resolution.SECOND]) - 1], utc=True))
+                                                          pd.to_datetime(res_data[Resolution.SECOND].index[last_index], utc=True))
 
         if not use_second_bars:
             use_minute_bars = True
@@ -169,8 +171,9 @@ cdef class BacktestDataClient(DataClient):
                     self._build_bars(data_provider.bar_type_min_bid)
                     self._build_bars(data_provider.bar_type_min_ask)
                 for symbol, res_data in data_bars_bid.items():
+                    last_index = len(res_data[Resolution.MINUTE]) - 1
                     self.execution_data_indexs[symbol] = (pd.to_datetime(res_data[Resolution.MINUTE].index[0], utc=True),
-                                                          pd.to_datetime(res_data[Resolution.MINUTE].index[len(res_data[Resolution.MINUTE]) - 1], utc=True))
+                                                          pd.to_datetime(res_data[Resolution.MINUTE].index[last_index], utc=True))
             else:
                 raise RuntimeError('Insufficient data for ANY execution resolution')
 
