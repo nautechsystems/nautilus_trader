@@ -62,10 +62,7 @@ cdef class Clock:
         Return the timedelta from the given time.
         
         :return: timedelta.
-        :raises: ValueError: If the start timezone is not equal to the clocks timezone.
         """
-        Precondition.true(time.tzinfo == self.timezone, 'time.tzinfo == self.timezone')
-
         return self.time_now() - time
 
     cpdef set_time_alert(

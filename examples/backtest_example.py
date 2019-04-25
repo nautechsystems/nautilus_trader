@@ -69,7 +69,7 @@ if __name__ == "__main__":
     start = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
     stop = datetime(2013, 3, 2, 0, 0, 0, 0, tzinfo=timezone.utc)
 
-    engine.run()
+    engine.run(start, stop)
     print(engine.get_order_fills_report())
     print(engine.get_positions_report())
 

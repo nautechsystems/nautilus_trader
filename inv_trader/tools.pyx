@@ -11,6 +11,7 @@
 
 import inspect
 import pandas as pd
+import pytz
 
 from cpython.datetime cimport datetime
 from typing import Callable, List
@@ -29,6 +30,21 @@ cdef str LOW = 'low'
 cdef str CLOSE = 'close'
 cdef str VOLUME = 'volume'
 cdef str TIMESTAMP = 'timestamp'
+
+
+cdef inline object _localize_index_to_utc(dataframe):
+        """
+        Return the dataframe with the index timestamps localized to UTC timezone
+        if the dataframe is not None (else returns None).
+        
+        :param dataframe: The dataframe to localize.
+        :return: pd.DataFrame.
+        """
+        if dataframe is not None:
+            if not hasattr(dataframe.index, 'tz') or dataframe.index.tz != pytz.UTC:
+                return dataframe.tz_localize(tz='UTC')
+        else:
+            return None
 
 
 cdef class TickBuilder:
@@ -61,9 +77,9 @@ cdef class TickBuilder:
 
         self._symbol = symbol
         self._decimal_precision = decimal_precision
-        self._tick_data = tick_data
-        self._bid_data = bid_data
-        self._ask_data = ask_data
+        self._tick_data = _localize_index_to_utc(tick_data)
+        self._bid_data = _localize_index_to_utc(bid_data)
+        self._ask_data = _localize_index_to_utc(ask_data)
 
     cpdef list build_ticks_all(self):
         """
@@ -72,10 +88,9 @@ cdef class TickBuilder:
         :return: List[Tick].
         """
         if self._tick_data is not None and len(self._tick_data) > 0:
-
             return list(map(self._build_tick_from_values,
                             self._tick_data.values,
-                            pd.to_datetime(self._tick_data.index, utc=True)))
+                            pd.to_datetime(self._tick_data.index)))
         else:
             assert(self._bid_data is not None, 'Insufficient data to build ticks.')
             assert(self._ask_data is not None, 'Insufficient data to build ticks.')
@@ -83,7 +98,7 @@ cdef class TickBuilder:
             return list(map(self._build_tick,
                             self._bid_data['close'],
                             self._ask_data['close'],
-                            pd.to_datetime(self._bid_data.index, utc=True)))
+                            pd.to_datetime(self._bid_data.index)))
 
     cpdef Tick _build_tick(
             self,
@@ -144,7 +159,7 @@ cdef class BarBuilder:
 
         self._decimal_precision = decimal_precision
         self._volume_multiple = volume_multiple
-        self._data = data
+        self._data = _localize_index_to_utc(data)
 
     cpdef list build_databars_all(self):
         """
@@ -154,7 +169,7 @@ cdef class BarBuilder:
         """
         return list(map(self._build_databar,
                         self._data.values,
-                        pd.to_datetime(self._data.index, utc=True)))
+                        pd.to_datetime(self._data.index)))
 
     cpdef list build_databars_from(self, int index=0):
         """
@@ -166,7 +181,7 @@ cdef class BarBuilder:
 
         return list(map(self._build_databar,
                         self._data.iloc[index:].values,
-                        pd.to_datetime(self._data.iloc[index:].index, utc=True)))
+                        pd.to_datetime(self._data.iloc[index:].index)))
 
     cpdef list build_databars_range(self, int start=0, int end=-1):
         """
@@ -178,7 +193,7 @@ cdef class BarBuilder:
 
         return list(map(self._build_databar,
                         self._data.iloc[start:end].values,
-                        pd.to_datetime(self._data.iloc[start:end].index, utc=True)))
+                        pd.to_datetime(self._data.iloc[start:end].index)))
 
     cpdef list build_bars_all(self):
         """
@@ -188,7 +203,7 @@ cdef class BarBuilder:
         """
         return list(map(self._build_bar,
                         self._data.values,
-                        pd.to_datetime(self._data.index, utc=True)))
+                        pd.to_datetime(self._data.index)))
 
     cpdef list build_bars_from(self, int index=0):
         """
@@ -200,7 +215,7 @@ cdef class BarBuilder:
 
         return list(map(self._build_bar,
                         self._data.iloc[index:].values,
-                        pd.to_datetime(self._data.iloc[index:].index, utc=True)))
+                        pd.to_datetime(self._data.iloc[index:].index)))
 
     cpdef list build_bars_range(self, int start=0, int end=-1):
         """
@@ -212,7 +227,7 @@ cdef class BarBuilder:
 
         return list(map(self._build_bar,
                         self._data.iloc[start:end].values,
-                        pd.to_datetime(self._data.iloc[start:end].index, utc=True)))
+                        pd.to_datetime(self._data.iloc[start:end].index)))
 
     cpdef DataBar _build_databar(self, double[:] values, datetime timestamp):
         """
