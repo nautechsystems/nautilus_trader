@@ -41,7 +41,7 @@ class PortfolioTestsTests(unittest.TestCase):
 
     def test_can_register_strategy(self):
         # Arrange
-        strategy = TradeStrategy()
+        strategy = TradeStrategy(id_tag_strategy='001')
 
         # Act
         self.portfolio.register_strategy(strategy)
@@ -84,7 +84,7 @@ class PortfolioTestsTests(unittest.TestCase):
         self.assertTrue(self.portfolio.is_flat())
 
     def test_can_reset_portfolio(self):
-        strategy = TradeStrategy()
+        strategy = TradeStrategy(id_tag_strategy='001')
         order_id = OrderId('AUDUSD.FXCM-1-123456')
         position_id = PositionId('AUDUSD.FXCM-1-123456')
 
@@ -114,7 +114,7 @@ class PortfolioTestsTests(unittest.TestCase):
 
     def test_opens_new_position_on_order_fill(self):
         # Arrange
-        strategy = TradeStrategy()
+        strategy = TradeStrategy(id_tag_strategy='001')
         order_id = OrderId('AUDUSD.FXCM-1-123456')
         position_id = PositionId('AUDUSD.FXCM-1-123456')
 
@@ -157,7 +157,7 @@ class PortfolioTestsTests(unittest.TestCase):
 
     def test_adds_to_existing_position_on_order_fill(self):
         # Arrange
-        strategy = TradeStrategy()
+        strategy = TradeStrategy(id_tag_strategy='001')
         order_id = OrderId('AUDUSD.FXCM-1-123456')
         position_id = PositionId('AUDUSD.FXCM-1-123456')
 
@@ -199,7 +199,7 @@ class PortfolioTestsTests(unittest.TestCase):
 
     def test_closes_position_on_order_fill(self):
         # Arrange
-        strategy = TradeStrategy()
+        strategy = TradeStrategy(id_tag_strategy='001')
         order_id1 = OrderId('AUDUSD.FXCM-1-123456-1')
         order_id2 = OrderId('AUDUSD.FXCM-1-123456-2')
         position_id = PositionId('AUDUSD.FXCM-1-123456')
@@ -259,8 +259,8 @@ class PortfolioTestsTests(unittest.TestCase):
 
     def test_multiple_strategy_positions_opened(self):
         # Arrange
-        strategy1 = TradeStrategy('001')
-        strategy2 = TradeStrategy('002')
+        strategy1 = TradeStrategy(id_tag_strategy='001')
+        strategy2 = TradeStrategy(id_tag_strategy='002')
         order_id1 = OrderId('AUDUSD.FXCM-1-1')
         order_id2 = OrderId('AUDUSD.FXCM-1-2')
         position_id1 = PositionId('AUDUSD.FXCM-1-1')
@@ -336,8 +336,8 @@ class PortfolioTestsTests(unittest.TestCase):
 
     def test_multiple_strategy_positions_one_active_one_closed(self):
         # Arrange
-        strategy1 = TradeStrategy('001')
-        strategy2 = TradeStrategy('002')
+        strategy1 = TradeStrategy(id_tag_strategy='001')
+        strategy2 = TradeStrategy(id_tag_strategy='002')
         order_id1 = OrderId('AUDUSD.FXCM-1-1')
         order_id2 = OrderId('AUDUSD.FXCM-1-2')
         order_id3 = OrderId('AUDUSD.FXCM-1-3')

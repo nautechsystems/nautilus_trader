@@ -11,7 +11,6 @@
 
 import pandas as pd
 
-from cpython cimport tuple
 from cpython.datetime cimport datetime, timedelta
 from pandas import DataFrame
 from typing import Set, List, Dict, Callable
@@ -252,7 +251,7 @@ cdef class BacktestDataClient(DataClient):
         cdef DataProvider data_provider
         for symbol, data_provider in self.data_providers.items():
             if data_provider.is_next_exec_bars_at_time(time):
-                minute_bars[symbol] = tuple(data_provider.get_next_exec_bid_bar(), data_provider.get_next_exec_ask_bar())
+                minute_bars[symbol] = (data_provider.get_next_exec_bid_bar(), data_provider.get_next_exec_ask_bar())
         return minute_bars
 
     cpdef void process_tick(self, Tick tick):

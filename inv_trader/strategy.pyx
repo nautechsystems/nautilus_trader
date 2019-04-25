@@ -41,7 +41,7 @@ cdef class TradeStrategy:
     """
 
     def __init__(self,
-                 str id_tag_strategy='000',
+                 str id_tag_strategy,
                  flatten_on_sl_reject=True,
                  flatten_on_stop=True,
                  cancel_all_orders_on_stop=True,
