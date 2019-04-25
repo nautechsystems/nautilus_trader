@@ -63,10 +63,10 @@ cdef class DataProvider:
     cpdef void register_bars(self, BarType bar_type)
     cpdef void deregister_bars(self, BarType bar_type)
     cpdef void set_execution_bar_res(self, Resolution resolution)
-    cpdef void set_initial_iterations(self, datetime from_time, datetime to_time, timedelta time_step)
+    cpdef void set_initial_iterations(self, datetime to_time)
     cpdef bint is_next_exec_bars_at_time(self, datetime time)
-    cpdef Bar get_next_exec_bid_bar(self, datetime time)
-    cpdef Bar get_next_exec_ask_bar(self, datetime time)
+    cpdef Bar get_next_exec_bid_bar(self)
+    cpdef Bar get_next_exec_ask_bar(self)
 
     cpdef list iterate_ticks(self, datetime to_time)
     cpdef dict iterate_bars(self, datetime to_time)
