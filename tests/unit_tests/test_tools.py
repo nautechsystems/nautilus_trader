@@ -49,7 +49,7 @@ class TickBuilderTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(1000, len(ticks))
-        self.assertEqual(Timestamp('2013-01-01 22:02:35.907000'), ticks[1].timestamp)
+        self.assertEqual(Timestamp('2013-01-01 22:02:35.907000', tz='UTC'), ticks[1].timestamp)
 
     def test_build_ticks_all_with_bar_data(self):
         # Arrange

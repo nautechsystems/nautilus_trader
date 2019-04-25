@@ -162,11 +162,11 @@ cdef class BacktestEngine:
         """
         Run the backtest.
 
-        :param start: The start datetime for the backtest (optional can be None - will run from start of the data).
+        :param start: The start datetime for the backtest (optional can be None - will run from the start of the data).
         :param stop: The stop datetime for the backtest (optional can be None - will run to the end of the data).
         :param fill_model: The fill model change for the backtest run (optional can be None - will use previous).
         :param strategies: The strategies change for the backtest run (optional can be None - will use previous).
-        :param print_log_store: The flag for whether the log store should be printed at the end of the run.
+        :param print_log_store: The flag indicating whether the log store should be printed at the end of the run.
 
         :raises: ValueError: If the start datetime is not < the stop datetime.
         :raises: ValueError: If the start datetime is not >= the execution_data_index_min datetime.

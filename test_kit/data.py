@@ -30,17 +30,20 @@ class TestDataProvider:
     @staticmethod
     def gbpusd_1min_bid() -> DataFrame:
         return pd.read_csv(os.path.join(ROOT_DIR, 'GBPUSD_1 Min_Bid.csv'),
-                           index_col='Time (UTC)')
+                           index_col='Time (UTC)',
+                           parse_dates=True)
 
     @staticmethod
     def usdjpy_1min_bid() -> DataFrame:
         return pd.read_csv(os.path.join(ROOT_DIR, 'USDJPY_1 Min_Bid.csv'),
-                           index_col='Time (UTC)')
+                           index_col='Time (UTC)',
+                           parse_dates=True)
 
     @staticmethod
     def usdjpy_1min_ask() -> DataFrame:
         return pd.read_csv(os.path.join(ROOT_DIR, 'USDJPY_1 Min_Ask.csv'),
-                           index_col='Time (UTC)')
+                           index_col='Time (UTC)',
+                           parse_dates=True)
 
     @staticmethod
     def test_returns() -> Series:

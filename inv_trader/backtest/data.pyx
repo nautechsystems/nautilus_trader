@@ -115,7 +115,7 @@ cdef class BacktestDataClient(DataClient):
         for symbol, instrument in self._instruments.items():
             self._log.info(f'Creating DataProvider for {symbol}...')
             self.data_providers[symbol] = DataProvider(instrument=instrument,
-                                                       data_ticks=None if symbol not in self.data_ticks else self.data_ticks[symbol].tz_localize('UTC'),
+                                                       data_ticks=None if symbol not in self.data_ticks else self.data_ticks[symbol],
                                                        data_bars_bid=self.data_bars_bid[symbol],
                                                        data_bars_ask=self.data_bars_ask[symbol])
 
@@ -155,7 +155,7 @@ cdef class BacktestDataClient(DataClient):
                 for symbol, res_data in data_bars_bid.items():
                     self._set_execution_data_index(symbol, res_data[Resolution.SECOND])
 
-        if not use_second_bars:
+        if not use_ticks and not use_second_bars:
             use_minute_bars = True
             for symbol in instruments_dict:
                 if Resolution.MINUTE not in data_bars_bid[symbol] or len(data_bars_bid[symbol][Resolution.MINUTE]) == 0:
