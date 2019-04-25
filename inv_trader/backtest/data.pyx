@@ -11,6 +11,7 @@
 
 import pandas as pd
 
+from cpython cimport tuple
 from cpython.datetime cimport datetime, timedelta
 from pandas import DataFrame
 from typing import Set, List, Dict, Callable
@@ -213,7 +214,7 @@ cdef class BacktestDataClient(DataClient):
         :param to_time: The datetime to iterate to.
         :return: List[Tick].
         """
-        cdef list ticks = []
+        cdef list ticks = []  # type: List[Tick]
         cdef DataProvider data_provider
         for data_provider in self.data_providers.values():
             if data_provider.has_ticks:
@@ -228,7 +229,7 @@ cdef class BacktestDataClient(DataClient):
         :param to_time: The datetime to iterate to.
         :return: Dict[BarType, Bar].
         """
-        cdef dict bars = {}
+        cdef dict bars = {}  # type: Dict[BarType, List[Bar]]
         cdef DataProvider data_provider
         cdef BarType bar_type
         cdef Bar bar
@@ -240,18 +241,18 @@ cdef class BacktestDataClient(DataClient):
     cpdef dict get_next_execution_bars(self, datetime time):
         """
         Return a dictionary of the next bid and ask minute bars if they exist 
-        at the given time.
+        at the given time for each symbol.
 
         Note: Values are a tuple of the bid bar [0], then the ask bar [1].
         :param time: The index time for the minute bars.
         :return: Dict[Symbol, (Bar, Bar)].
         """
-        cdef dict minute_bars = {}
+        cdef dict minute_bars = {}  # type: Dict[Symbol, tuple]
         cdef Symbol symbol
         cdef DataProvider data_provider
         for symbol, data_provider in self.data_providers.items():
             if data_provider.is_next_exec_bars_at_time(time):
-                minute_bars[symbol] = (data_provider.get_next_exec_bid_bar(), data_provider.get_next_exec_ask_bar())
+                minute_bars[symbol] = tuple(data_provider.get_next_exec_bid_bar(), data_provider.get_next_exec_ask_bar())
         return minute_bars
 
     cpdef void process_tick(self, Tick tick):
