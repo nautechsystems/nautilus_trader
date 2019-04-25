@@ -201,10 +201,10 @@ class ObjectTests(unittest.TestCase):
         # Arrange
         # Act
         result0 = Price(1, 1)
-        result1 = Price(1.0)
+        result1 = Price(1.0, 1)
         result2 = Price(1.00000, 5)
         result3 = Price(1.001, 2)
-        result4 = Price(1.2)  # Rounding half up
+        result4 = Price(1.2, 1)  # Rounding half up
         result5 = Price(1.000001, 5)
         result6 = Price(Decimal('1.000'))
         result7 = Price(87.1, 3)
