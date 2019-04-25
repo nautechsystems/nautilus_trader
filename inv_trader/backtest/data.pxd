@@ -29,7 +29,7 @@ cdef class BacktestDataClient(DataClient):
     cdef readonly Resolution execution_resolution
     cdef readonly timedelta time_step
 
-    cdef void _set_execution_data_index(self, Symbol symbol, dataframe)
+    cdef void _set_execution_data_index(self, Symbol symbol, datetime first, datetime last)
     cdef void _build_bars(self, BarType bar_type)
     cpdef void set_initial_iteration(self, datetime to_time)
     cpdef list iterate_ticks(self, datetime to_time)

@@ -10,8 +10,8 @@
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
 from uuid import uuid4
-from datetime import timezone
 from cpython.datetime cimport datetime, timedelta
+from datetime import timezone
 from threading import Timer
 from typing import Dict, Callable
 
