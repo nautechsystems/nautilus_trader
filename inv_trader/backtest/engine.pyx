@@ -173,10 +173,10 @@ cdef class BacktestEngine:
         """
         Run the backtest.
 
-        :param start: The start time for the backtest (must be >= first_timestamp and < stop).
-        :param stop: The stop time for the backtest (must be <= last_timestamp and > start).
-        :param fill_model: The optional fill model change for the backtest run (can be None).
-        :param print_log_store: The flag for if the log store should be printed at the end of the backtest.
+        :param start: The start datetime for the backtest (must be >= first_timestamp and < stop).
+        :param stop: The stop datetime for the backtest (must be <= last_timestamp and > start).
+        :param fill_model: The fill model for the backtest run (optional can be None and will use previous).
+        :param print_log_store: The flag for whether the log store should be printed at the end of the run.
 
         :raises: ValueError: If the start datetime is not < the stop datetime.
         :raises: ValueError: If the start datetime is not >= the first index timestamp of execution data.
@@ -186,9 +186,9 @@ cdef class BacktestEngine:
 
         for symbol, index_tuple in self.data_client.execution_data_indexs.items():
             if start < index_tuple[0]:
-                raise ValueError(f'Backtest start time is before first execution data index for {symbol} at {index_tuple[0]}')
+                raise ValueError(f'Backtest start datetime is before first execution data index for {symbol} at {index_tuple[0]}')
             if stop > index_tuple[1]:
-                raise ValueError(f'Backtest stop time is after last execution data index for {symbol} at {index_tuple[1]}')
+                raise ValueError(f'Backtest stop datetime is after last execution data index for {symbol} at {index_tuple[1]}')
 
         if fill_model is not None:
             self.exec_client.change_fill_model(fill_model)
