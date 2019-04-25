@@ -263,7 +263,7 @@ cdef class Price:
     Represents a financial market price.
     """
 
-    def __init__(self, object value, int precision=1):
+    def __init__(self, object value, int precision=0):
         """
         Initializes a new instance of the Price class.
 
@@ -272,19 +272,19 @@ cdef class Price:
         :raises TypeError: If the value is not a str, float, int or Decimal.
         :raises InvalidOperation: If the value str is malformed.
         :raises ValueError: If the value is not positive (> 0).
-        :raises ValueError: If the precision is not positive (> 0).
+        :raises ValueError: If the value is int or float and the precision is not positive (> 0).
         """
-        Precondition.positive(precision, 'precision')
-
         if isinstance(value, str):
             self.value = Decimal(value)
             self.precision = _get_precision(value)
 
         elif isinstance(value, float):
+            Precondition.positive(precision, 'precision')
             self.value = Decimal(_get_decimal_str(value, precision))
             self.precision = precision
 
         elif isinstance(value, int):
+            Precondition.positive(precision, 'precision')
             self.value = Decimal(_get_decimal_str(float(value), precision))
             self.precision = precision
 

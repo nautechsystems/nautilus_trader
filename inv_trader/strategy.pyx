@@ -1273,6 +1273,8 @@ cdef class TradeStrategy:
             self.log.warning("Did not flatten all positions (no active positions to flatten).")
             return
 
+        cdef PositionId position_id
+        cdef Position position
         cdef Order order
         for position_id, position in positions.items():
             if position.is_flat:
@@ -1304,7 +1306,10 @@ cdef class TradeStrategy:
         :raises ValueError: If the label is not unique for this strategy.
         :raises ValueError: If the alert_time is not > than the current time (UTC).
         """
-        self._clock.set_time_alert(label, alert_time, self.handle_event)
+        self._clock.set_time_alert(
+            label=label,
+            alert_time=alert_time,
+            handler=self.handle_event)
         self.log.info(f"Set time alert for {label} at {alert_time}.")
 
     cpdef void cancel_time_alert(self, Label label):
@@ -1314,7 +1319,7 @@ cdef class TradeStrategy:
         :param label: The label for the alert to cancel.
         :raises ValueError: If the label is not found in the internal timers.
         """
-        self._clock.cancel_time_alert(label)
+        self._clock.cancel_time_alert(label=label)
         self.log.info(f"Cancelled time alert for {label}.")
 
     cpdef void set_timer(
@@ -1346,7 +1351,13 @@ cdef class TradeStrategy:
         :raises ValueError: If the stop_time is not None and start_time plus interval is greater
         than the stop_time.
         """
-        self._clock.set_timer(label, interval, start_time, stop_time, repeat, self.handle_event)
+        self._clock.set_timer(
+            label=label,
+            interval=interval,
+            start_time=start_time,
+            stop_time=stop_time,
+            repeat=repeat,
+            handler=self.handle_event)
         self.log.info((f"Set timer for {label} with interval {interval}, "
                        f"starting at {start_time}, stopping at {stop_time}, repeat={repeat}."))
 
