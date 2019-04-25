@@ -162,11 +162,10 @@ cdef class BacktestDataClient(DataClient):
                                                        data_bars_bid=self.data_bars_bid[symbol],
                                                        data_bars_ask=self.data_bars_ask[symbol])
 
-        # Prepare data for backtest engine and execution
-        for symbol, data_provider in self.data_providers.items():
+            # Build ticks if sufficient data
             start = datetime.utcnow()
             self._log.info(f"Building {symbol} ticks...")
-            data_provider.register_ticks()
+            self.data_providers[symbol].register_ticks()
             self._log.info(f"Built {len(self.data_providers[symbol].ticks)} {symbol} ticks in {round((datetime.utcnow() - start).total_seconds(), 2)}s.")
 
         # Build bars for execution processing
@@ -216,8 +215,7 @@ cdef class BacktestDataClient(DataClient):
         cdef list ticks = []  # type: List[Tick]
         cdef DataProvider data_provider
         for data_provider in self.data_providers.values():
-            if data_provider.has_ticks:
-                ticks += data_provider.iterate_ticks(to_time)
+            ticks += data_provider.iterate_ticks(to_time)
         ticks.sort()
         return ticks
 
@@ -463,28 +461,33 @@ cdef class DataProvider:
         self.bars = {}                             # type: Dict[BarType, List[Bar]]
         self.iterations = {}                       # type: Dict[BarType, int]
         self.tick_index = 0
-        self.has_ticks = False
-        self.register_ticks()
 
     cpdef void register_ticks(self):
         """
         Register ticks for the data provider.
         """
+        if Resolution.SECOND in self._dataframes_bars_bid:
+            bid_data = self._dataframes_bars_bid[Resolution.SECOND]
+            ask_data = self._dataframes_bars_ask[Resolution.SECOND]
+        elif Resolution.MINUTE in self._dataframes_bars_bid:
+            bid_data = self._dataframes_bars_bid[Resolution.MINUTE]
+            ask_data = self._dataframes_bars_ask[Resolution.MINUTE]
+        else:
+            bid_data = pd.DataFrame()
+            ask_data = pd.DataFrame()
+
         cdef TickBuilder builder = TickBuilder(symbol=self.instrument.symbol,
                                                decimal_precision=self.instrument.tick_precision,
                                                tick_data=self._dataframe_ticks,
-                                               bid_data=self._dataframes_bars_bid[Resolution.MINUTE],
-                                               ask_data=self._dataframes_bars_ask[Resolution.MINUTE])
-
+                                               bid_data=bid_data,
+                                               ask_data=ask_data)
         self.ticks = builder.build_ticks_all()
-        self.has_ticks = len(self.ticks) > 0
 
     cpdef void deregister_ticks(self):
         """
         Deregister ticks with the data provider.
         """
         self.ticks = []
-        self.has_ticks = False
 
     cpdef void register_bars(self, BarType bar_type):
         """
@@ -545,19 +548,18 @@ cdef class DataProvider:
         """
         Set the initial bar iterations based on the given datetimes and time_step.
         """
-        if self.has_ticks:
-            while self.ticks[self.tick_index].timestamp < to_time:
-                if self.tick_index + 1 < len(self.ticks):
-                    self.tick_index += 1
-                else:
-                    break # No more ticks to iterate
+        while self.ticks[self.tick_index].timestamp < to_time:
+            if self.tick_index + 1 < len(self.ticks):
+                self.tick_index += 1
+            else:
+                break # No more ticks to iterate
 
         for bar_type in self.iterations:
             while self.bars[bar_type][self.iterations[bar_type]].timestamp < to_time:
                 if  self.iterations[bar_type] + 1 < len(self.bars[bar_type]):
                     self.iterations[bar_type] += 1
                 else:
-                    continue # No more bars to iterate
+                    break # No more bars to iterate
 
     cpdef list iterate_ticks(self, datetime to_time):
         """

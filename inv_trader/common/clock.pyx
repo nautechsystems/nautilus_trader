@@ -460,9 +460,9 @@ cdef class TestClock(Clock):
         Note: The timer thread will begin immediately.
 
         :param label: The label for the timer (must be unique).
-        :param interval: The time delta interval for the timer.
-        :param start_time: The start time for the timer (can be None, then starts immediately).
-        :param stop_time: The stop time for the timer (can be None).
+        :param interval: The interval timedelta  for the timer.
+        :param start_time: The start datetime for the timer (can be None, then starts immediately).
+        :param stop_time: The stop datetime for the timer (can be None).
         :param repeat: The option for the timer to repeat until the strategy is stopped.
         :param handler: The handler method for the alert.
         :raises ValueError: If the label is not unique.
