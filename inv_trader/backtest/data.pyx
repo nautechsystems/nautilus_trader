@@ -70,7 +70,8 @@ cdef class BacktestDataClient(DataClient):
         self.data_bars_bid = data_bars_bid  # type: Dict[Symbol, Dict[Resolution, DataFrame]]
         self.data_bars_ask = data_bars_ask  # type: Dict[Symbol, Dict[Resolution, DataFrame]]
         self.data_providers = {}            # type: Dict[Symbol, DataProvider]
-        self.execution_data_indexs = {}     # type: Dict[Symbol, (datetime, datetime)]  # First, Last indexes
+        self.execution_data_index_min = None
+        self.execution_data_index_max = None
 
         self._log.info("Preparing data...")
 
@@ -131,11 +132,10 @@ cdef class BacktestDataClient(DataClient):
                 use_ticks = False
         if use_ticks:
             self.execution_resolution = Resolution.TICK
+            self._log.info(f"Execution resolution = {resolution_string(self.execution_resolution)}")
             self.time_step = timedelta(seconds=1)
-            for symbol, dataframe in data_ticks.items():
-                last_index = len(dataframe) - 1
-                self.execution_data_indexs[symbol] = (pd.to_datetime(dataframe.index[0], utc=True),
-                                                      pd.to_datetime(dataframe.index[last_index], utc=True))
+            for symbol, ticks_dataframe in data_ticks.items():
+                self._set_execution_data_index(symbol, ticks_dataframe)
 
         if not use_ticks:
             use_second_bars = True
@@ -146,15 +146,14 @@ cdef class BacktestDataClient(DataClient):
                     use_second_bars = False
             if use_second_bars:
                 self.execution_resolution = Resolution.SECOND
+                self._log.info(f"Execution resolution = {resolution_string(self.execution_resolution)}")
                 self.time_step = timedelta(seconds=1)
                 for data_provider in self.data_providers.values():
                     data_provider.set_execution_bar_res(Resolution.SECOND)
                     self._build_bars(data_provider.bar_type_sec_bid)
                     self._build_bars(data_provider.bar_type_sec_ask)
                 for symbol, res_data in data_bars_bid.items():
-                    last_index = len(res_data[Resolution.SECOND]) - 1
-                    self.execution_data_indexs[symbol] = (pd.to_datetime(res_data[Resolution.SECOND].index[0], utc=True),
-                                                          pd.to_datetime(res_data[Resolution.SECOND].index[last_index], utc=True))
+                    self._set_execution_data_index(symbol, res_data[Resolution.SECOND])
 
         if not use_second_bars:
             use_minute_bars = True
@@ -165,20 +164,35 @@ cdef class BacktestDataClient(DataClient):
                     use_second_bars = False
             if use_minute_bars:
                 self.execution_resolution = Resolution.MINUTE
+                self._log.info(f"Execution resolution = {resolution_string(self.execution_resolution)}")
                 self.time_step = timedelta(minutes=1)
                 for data_provider in self.data_providers.values():
                     data_provider.set_execution_bar_res(Resolution.MINUTE)
                     self._build_bars(data_provider.bar_type_min_bid)
                     self._build_bars(data_provider.bar_type_min_ask)
                 for symbol, res_data in data_bars_bid.items():
-                    last_index = len(res_data[Resolution.MINUTE]) - 1
-                    self.execution_data_indexs[symbol] = (pd.to_datetime(res_data[Resolution.MINUTE].index[0], utc=True),
-                                                          pd.to_datetime(res_data[Resolution.MINUTE].index[last_index], utc=True))
+                    self._set_execution_data_index(symbol, res_data[Resolution.MINUTE])
             else:
                 raise RuntimeError('Insufficient data for ANY execution resolution')
 
-        self._log.info(f"Execution resolution = {resolution_string(self.execution_resolution)}")
+    cdef void _set_execution_data_index(self, Symbol symbol, dataframe):
+        """
+        Set the execution data index for the given symbol using the given data.
+        
+        :param symbol: The symbol for the index.
+        :param dataframe: The execution market data.
+        """
+        cdef int last_index = len(dataframe) - 1
+        cdef datetime first_timestamp = pd.to_datetime(dataframe.index[0], utc=True)
+        cdef datetime last_timestamp = pd.to_datetime(dataframe.index[last_index], utc=True)
 
+        # Set minimum execution data timestamp
+        if self.execution_data_index_min is None or self.execution_data_index_min < first_timestamp:
+            self.execution_data_index_min = first_timestamp
+
+        # Set maximum execution data timestamp
+        if self.execution_data_index_max is None or self.execution_data_index_max > last_timestamp:
+            self.execution_data_index_max = last_timestamp
 
     cdef void _build_bars(self, BarType bar_type):
         """
@@ -324,7 +338,7 @@ cdef class BacktestDataClient(DataClient):
         service, then pass them to the callable bar handler.
 
         :param bar_type: The historical bar type to download.
-        :param quantity: The number of historical bars to download (can be None, will download all).
+        :param quantity: The number of historical bars to download (optional can be None - will download all).
         :param handler: The bar handler to pass the bars to.
         :raises ValueError: If the quantity is not None and not positive (> 0).
         :raises ValueError: If the handler is not of type Callable.

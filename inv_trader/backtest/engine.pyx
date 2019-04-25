@@ -152,48 +152,49 @@ cdef class BacktestEngine:
         self.time_to_initialize = self.clock.get_delta(self.created_time)
         self.log.info(f'Initialized in {self.time_to_initialize}.')
 
-    cpdef void change_strategies(self, list strategies: List[TradeStrategy]):
-        """
-        Change the engine traders strategies with the given list of trade strategies.
-        
-        :param strategies: The list of strategies to load into the engine.
-        :raises ValueError: If the strategies list contains a type other than TradeStrategy.
-        """
-        Precondition.list_type(strategies, TradeStrategy, 'strategies')
-
-        self._change_strategy_clocks_and_loggers(strategies)
-        self.trader.change_strategies(strategies)
-
     cpdef void run(
             self,
-            datetime start,
-            datetime stop,
+            datetime start=None,
+            datetime stop=None,
             FillModel fill_model=None,
+            list strategies=None,
             bint print_log_store=True):
         """
         Run the backtest.
 
-        :param start: The start datetime for the backtest (must be >= first_timestamp and < stop).
-        :param stop: The stop datetime for the backtest (must be <= last_timestamp and > start).
-        :param fill_model: The fill model for the backtest run (optional can be None and will use previous).
+        :param start: The start datetime for the backtest (optional can be None - will run from start of the data).
+        :param stop: The stop datetime for the backtest (optional can be None - will run to the end of the data).
+        :param fill_model: The fill model change for the backtest run (optional can be None - will use previous).
+        :param strategies: The strategies change for the backtest run (optional can be None - will use previous).
         :param print_log_store: The flag for whether the log store should be printed at the end of the run.
 
         :raises: ValueError: If the start datetime is not < the stop datetime.
-        :raises: ValueError: If the start datetime is not >= the first index timestamp of execution data.
-        :raises: ValueError: If the start datetime is not <= the last index timestamp of execution data.
+        :raises: ValueError: If the start datetime is not >= the execution_data_index_min datetime.
+        :raises: ValueError: If the start datetime is not <= the execution_data_index_max datetime.
+        :raises: ValueError: If the strategies is not None and contains a type other than TradeStrategy.
         """
+        if start is None:
+            start = self.data_client.execution_data_index_min
+        else:
+            if start < self.data_client.execution_data_index_min:
+                raise ValueError('The start datetime is less than the first execution data timestamp '
+                                 '(please set later start).')
+
+        if stop is None:
+            stop = self.data_client.execution_data_index_max
+        else:
+            if stop > self.data_client.execution_data_index_max:
+                raise ValueError('The stop datetime is greater than the last execution data timestamp '
+                                 '(please set earlier stop).')
+
         Precondition.true(start < stop, 'start < stop')
 
-        for symbol, index_tuple in self.data_client.execution_data_indexs.items():
-            if start < index_tuple[0]:
-                raise ValueError(f'Backtest start datetime is before first execution data index for {symbol} at {index_tuple[0]}')
-            if stop > index_tuple[1]:
-                raise ValueError(f'Backtest stop datetime is after last execution data index for {symbol} at {index_tuple[1]}')
+        if strategies is not None:
+            Precondition.list_type(strategies, TradeStrategy, 'strategies')
 
-        if fill_model is not None:
-            self.exec_client.change_fill_model(fill_model)
-
+        self.log.info(f"Setting up backtest...")
         cdef datetime run_started = self.clock.time_now()
+        cdef timedelta time_step = self.data_client.time_step
 
         # Setup logging
         self.test_logger.clear_log_store()
@@ -202,24 +203,29 @@ cdef class BacktestEngine:
             self.logger.change_log_file_name(backtest_log_name)
             self.test_logger.change_log_file_name(backtest_log_name)
 
-        # Setup time_step
-        cdef timedelta time_step = self.data_client.time_step
-
-        self._backtest_header(run_started, start, stop, time_step)
-        self.log.info(f"Setting up backtest...")
+        # Setup clocks
         self.test_clock.set_time(start)
-
-        self._change_strategy_clocks_and_loggers(self.trader.strategies)
-        self.trader.start()
-
-        self.log.info(f"Running backtest...")
-        self.log.debug("Setting initial iterations...")
-        self.data_client.set_initial_iteration(start)  # Also sets clock to start time
-
         assert(self.data_client.time_now() == start)
         assert(self.exec_client.time_now() == start)
 
+        # Setup data
+        self.log.debug("Setting initial iterations...")
+        self.data_client.set_initial_iteration(start)  # Also sets clock to start time
+
+        # Setup fill model
+        if fill_model is not None:
+            self.exec_client.change_fill_model(fill_model)
+
+        # Setup strategies
+        if strategies is not None:
+            self.trader.change_strategies(strategies)
+        self._change_clocks_and_loggers(self.trader.strategies)
+
         # -- MAIN BACKTEST LOOP -----------------------------------------------#
+
+        self._backtest_header(run_started, start, stop, time_step)
+        self.log.info(f"Running backtest...")
+        self.trader.start()
 
         if self.data_client.execution_resolution == Resolution.TICK:
             self._run_with_tick_execution(start, stop, time_step)
@@ -489,7 +495,7 @@ cdef class BacktestEngine:
         for statistic in self.portfolio.analyzer.get_performance_stats_formatted():
             self.log.info(statistic)
 
-    cdef void _change_strategy_clocks_and_loggers(self, list strategies):
+    cdef void _change_clocks_and_loggers(self, list strategies):
         """
         Replace the clocks and loggers for every strategy in the given list.
         

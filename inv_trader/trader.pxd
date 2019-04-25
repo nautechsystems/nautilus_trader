@@ -28,7 +28,7 @@ cdef class Trader:
     cdef ReportProvider _report_provider
 
     cdef readonly TraderId id
-    cdef readonly ValidString order_id_tag
+    cdef readonly ValidString id_tag_trader
     cdef readonly bint is_running
     cdef readonly list started_datetimes
     cdef readonly list stopped_datetimes

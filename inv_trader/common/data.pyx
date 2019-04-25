@@ -152,7 +152,7 @@ cdef class DataClient:
         service, then pass them to the callable bar handler.
 
         :param bar_type: The historical bar type to download.
-        :param quantity: The number of historical bars to download (can be None, will download all).
+        :param quantity: The number of historical bars to download (optional can be None - will download all).
         :param handler: The bar handler to pass the bars to.
         :raises ValueError: If the quantity is not None and not positive (> 0).
         """

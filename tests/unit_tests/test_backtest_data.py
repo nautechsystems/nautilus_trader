@@ -48,7 +48,7 @@ class BacktestDataClientTests(unittest.TestCase):
         # Assert
         self.assertEqual(all(self.bid_data_1min), all(client.data_bars_bid[USDJPY_FXCM][Resolution.MINUTE]))
         self.assertEqual(all(self.ask_data_1min), all(client.data_bars_bid[USDJPY_FXCM][Resolution.MINUTE]))
-        self.assertEqual(pd.to_datetime(self.bid_data_1min.index[0], utc=True), client.execution_data_indexs[USDJPY_FXCM][0])
+        self.assertEqual(pd.to_datetime(self.bid_data_1min.index[0], utc=True), client.execution_data_index_min)
 
     def test_can_set_initial_iteration(self):
         # Arrange
@@ -148,7 +148,7 @@ class BacktestDataClientTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(1000, len(receiver.get_store()))
-        self.assertTrue(client.execution_data_indexs[USDJPY_FXCM][0] == client.data_providers[USDJPY_FXCM].bars[TestStubs.bartype_usdjpy_1min_bid()][0].timestamp)
+        self.assertTrue(client.execution_data_index_min == client.data_providers[USDJPY_FXCM].bars[TestStubs.bartype_usdjpy_1min_bid()][0].timestamp)
         self.assertEqual(Timestamp('2013-01-01 16:39:00+0000', tz='UTC'), receiver.get_store()[999][1].timestamp)
 
     def test_can_iterate_ticks_and_bars(self):

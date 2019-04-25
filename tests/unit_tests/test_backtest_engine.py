@@ -91,12 +91,11 @@ class BacktestEngineTests(unittest.TestCase):
                                atr_period=20,
                                sl_atr_multiple=2.0)]
 
-        self.engine.change_strategies(strategies)
         start = datetime(2013, 1, 2, 0, 0, 0, 0, tzinfo=timezone.utc)
         stop = datetime(2013, 1, 3, 0, 0, 0, 0, tzinfo=timezone.utc)
 
         # Act
-        self.engine.run(start, stop)
+        self.engine.run(start, stop, strategies=strategies)
 
         # Assert
         self.assertEqual(2881, self.engine.data_client.data_providers[USDJPY_FXCM].iterations[TestStubs.bartype_usdjpy_1min_bid()])
@@ -116,12 +115,10 @@ class BacktestEngineTests(unittest.TestCase):
                                atr_period=20,
                                sl_atr_multiple=2.0)]
 
-        self.engine.change_strategies(strategies)
-
         start = datetime(2013, 1, 2, 0, 0, 0, 0, tzinfo=timezone.utc)
         stop = datetime(2013, 1, 3, 0, 0, 0, 0, tzinfo=timezone.utc)
 
-        self.engine.run(start, stop)
+        self.engine.run(start, stop, strategies=strategies)
 
         # Act
         result1 = self.engine.portfolio.analyzer.get_returns()
@@ -148,13 +145,11 @@ class BacktestEngineTests(unittest.TestCase):
                                atr_period=20,
                                sl_atr_multiple=2.0)]
 
-        self.engine.change_strategies(strategies)
-
         start = datetime(2013, 1, 2, 0, 0, 0, 0, tzinfo=timezone.utc)
         stop = datetime(2013, 1, 3, 0, 0, 0, 0, tzinfo=timezone.utc)
 
         # Act
-        self.engine.run(start, stop)
+        self.engine.run(start, stop, strategies=strategies)
 
         # Assert
         self.assertEqual(2881, self.engine.data_client.data_providers[USDJPY_FXCM].iterations[TestStubs.bartype_usdjpy_1min_bid()])

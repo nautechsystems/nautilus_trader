@@ -29,7 +29,7 @@ cdef class Trader:
     """
 
     def __init__(self,
-                 str order_id_tag,
+                 str id_tag_trader,
                  list strategies,
                  DataClient data_client,
                  ExecutionClient exec_client,
@@ -40,9 +40,9 @@ cdef class Trader:
         """
         Initializes a new instance of the Trader class.
 
-        :param order_id_tag: The unique order identifier tag for the trader (unique at fund level).
-        :param strategies: The initial list of strategies to manage (cannot be empty).
-        :param logger: The logger for the trader (can be None).
+        :param id_tag_trader: The identifier tag for the trader (unique at fund level).
+        :param strategies: The initial list of strategies to manage.
+        :param logger: The logger for the trader.
         :raise ValueError: If the label is an invalid string.
         :raise ValueError: If the strategies list is empty.
         :raise ValueError: If the strategies list contains a type other than TradeStrategy.
@@ -50,7 +50,7 @@ cdef class Trader:
         :raise ValueError: If the exec client is None.
         :raise ValueError: If the clock is None.
         """
-        Precondition.valid_string(order_id_tag, 'order_id_tag')
+        Precondition.valid_string(id_tag_trader, 'id_tag_trader')
         Precondition.not_empty(strategies, 'strategies')
         Precondition.list_type(strategies, TradeStrategy, 'strategies')
         Precondition.not_none(data_client, 'data_client')
@@ -58,8 +58,8 @@ cdef class Trader:
         Precondition.not_none(clock, 'clock')
 
         self._clock = clock
-        self.id = TraderId(self.__class__.__name__ + '-' + order_id_tag)
-        self.order_id_tag = ValidString(order_id_tag)
+        self.id = TraderId(self.__class__.__name__ + '-' + id_tag_trader)
+        self.id_tag_trader = ValidString(id_tag_trader)
         if logger is None:
             self._log = LoggerAdapter(f"{self.id.value}")
         else:
@@ -212,7 +212,7 @@ cdef class Trader:
     cdef void _initialize_strategies(self):
         for strategy in self.strategies:
             # TODO: Check for matching ids
-            strategy.register_trader_id(self.id, self.order_id_tag)
+            strategy.register_trader_id(self.id, self.id_tag_trader)
             self._data_client.register_strategy(strategy)
             self._exec_client.register_strategy(strategy)
             self._log.info(f"Initialized {strategy}.")
