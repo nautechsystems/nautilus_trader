@@ -1302,7 +1302,7 @@ cdef class TradeStrategy:
         Note: The timer thread will begin immediately.
 
         :param label: The label for the alert (must be unique).
-        :param alert_time: The time for the alert.
+        :param alert_time: The datetime for the alert.
         :raises ValueError: If the label is not unique for this strategy.
         :raises ValueError: If the alert_time is not > than the current time (UTC).
         """
