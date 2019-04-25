@@ -202,10 +202,8 @@ cdef class BacktestDataClient(DataClient):
         
         :param to_time: The datetime to wind the data providers to.
         """
-        for symbol, data_provider in self.data_providers.items():
-            data_provider.set_initial_iterations(from_time=self.execution_data_indexs[symbol][0],
-                                                 to_time=to_time,
-                                                 time_step=self.time_step)
+        for data_provider in self.data_providers.values():
+            data_provider.set_initial_iterations(to_time)
         self._clock.set_time(to_time)
 
     cpdef list iterate_ticks(self, datetime to_time):
@@ -253,7 +251,7 @@ cdef class BacktestDataClient(DataClient):
         cdef DataProvider data_provider
         for symbol, data_provider in self.data_providers.items():
             if data_provider.is_next_exec_bars_at_time(time):
-                minute_bars[symbol] = (data_provider.get_next_exec_bid_bar(time), data_provider.get_next_exec_ask_bar(time))
+                minute_bars[symbol] = (data_provider.get_next_exec_bid_bar(), data_provider.get_next_exec_ask_bar())
         return minute_bars
 
     cpdef void process_tick(self, Tick tick):
@@ -543,28 +541,23 @@ cdef class DataProvider:
         else:
             raise ValueError(f'cannot set execution bar resolution to {resolution_string(resolution)}')
 
-    cpdef void set_initial_iterations(
-            self,
-            datetime from_time,
-            datetime to_time,
-            timedelta time_step):
+    cpdef void set_initial_iterations(self, datetime to_time):
         """
         Set the initial bar iterations based on the given datetimes and time_step.
         """
-        cdef datetime current = from_time
+        if self.has_ticks:
+            while self.ticks[self.tick_index].timestamp < to_time:
+                if self.tick_index + 1 < len(self.ticks):
+                    self.tick_index += 1
+                else:
+                    break # No more ticks to iterate
 
-        while current < to_time:
-            if self.has_ticks:
-                 while self.ticks[self.tick_index].timestamp <= current:
-                     if self.tick_index + 1 < len(self.ticks):
-                         self.tick_index += 1
-                     else:
-                         break # No more ticks to iterate
-
-            for bar_type, iterations in self.iterations.items():
-                if self.bars[bar_type][iterations].timestamp == current:
+        for bar_type in self.iterations:
+            while self.bars[bar_type][self.iterations[bar_type]].timestamp < to_time:
+                if  self.iterations[bar_type] + 1 < len(self.bars[bar_type]):
                     self.iterations[bar_type] += 1
-            current += time_step
+                else:
+                    continue # No more bars to iterate
 
     cpdef list iterate_ticks(self, datetime to_time):
         """
@@ -587,23 +580,29 @@ cdef class DataProvider:
         return ticks_list
 
     cpdef bint is_next_exec_bars_at_time(self, datetime time):
+        """
+        Return a value indicating whether the timestamp of the next execution bars equals the given time.
+
+        :param time: The reference time for next execution bars.
+        :return: True if timestamp == time, else False.
+        """
         return self.bars[self.bar_type_execution_bid][self.iterations[self.bar_type_execution_bid]].timestamp == time
 
-    cpdef Bar get_next_exec_bid_bar(self, datetime time):
+    cpdef Bar get_next_exec_bid_bar(self):
         """
-        Return the execution bid bar if one exists at the given to_time.
+        Return the next execution bid bar.
         
         :return: Bar.
         """
-        return self.bars[self.bar_type_min_bid][self.iterations[self.bar_type_min_bid]]
+        return self.bars[self.bar_type_execution_bid][self.iterations[self.bar_type_execution_bid]]
 
-    cpdef Bar get_next_exec_ask_bar(self, datetime time):
+    cpdef Bar get_next_exec_ask_bar(self):
         """
-        Return the execution ask bar if one exists at the given to_time.
+        Return the next execution ask bar.
         
         :return: Bar.
         """
-        return self.bars[self.bar_type_min_ask][self.iterations[self.bar_type_min_ask]]
+        return self.bars[self.bar_type_execution_ask][self.iterations[self.bar_type_execution_ask]]
 
     cpdef dict iterate_bars(self, datetime to_time):
         """

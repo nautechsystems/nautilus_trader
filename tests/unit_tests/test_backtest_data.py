@@ -73,7 +73,7 @@ class BacktestDataClientTests(unittest.TestCase):
         self.assertTrue(client.data_providers[USDJPY_FXCM].has_ticks)
         self.assertEqual(999, client.data_providers[USDJPY_FXCM].tick_index)
         self.assertEqual(1440, client.data_providers[USDJPY_FXCM].iterations[TestStubs.bartype_usdjpy_1min_bid()])
-        self.assertEqual(start, client.data_providers[USDJPY_FXCM].bars[TestStubs.bartype_usdjpy_1min_bid()][1440].timestamp)
+        self.assertEqual(Timestamp('2013-01-02 00:01:00+0000', tz='UTC'), client.data_providers[USDJPY_FXCM].bars[TestStubs.bartype_usdjpy_1min_bid()][1441].timestamp)
 
     def test_can_iterate_all_ticks(self):
         # Arrange
@@ -186,5 +186,5 @@ class BacktestDataClientTests(unittest.TestCase):
         print(receiver.get_store())
         # Assert
         self.assertTrue(client.data_providers[USDJPY_FXCM].has_ticks)
-        self.assertEqual(715, len(receiver.get_store()))
+        self.assertEqual(90, len(receiver.get_store()))
         self.assertEqual(Timestamp('2013-01-01 22:29:00+0000', tz='UTC'), receiver.get_store().pop()[1].timestamp)
