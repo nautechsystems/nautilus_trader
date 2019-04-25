@@ -444,8 +444,6 @@ cdef class DataProvider:
         Precondition.type_or_none(data_ticks, DataFrame, 'data_ticks')
         Precondition.not_none(data_bars_bid, 'data_bars_bid')
         Precondition.not_none(data_bars_ask, 'data_bars_ask')
-        Precondition.is_in(Resolution.MINUTE, data_bars_bid, 'Resolution.MINUTE', 'data_bars_bid')
-        Precondition.is_in(Resolution.MINUTE, data_bars_ask, 'Resolution.MINUTE', 'data_bars_ask')
 
         self.instrument = instrument
         self._dataframe_ticks = data_ticks
