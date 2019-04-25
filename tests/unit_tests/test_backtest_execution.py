@@ -65,7 +65,7 @@ class BacktestExecClientTests(unittest.TestCase):
 
     def test_can_send_collateral_inquiry(self):
         # Arrange
-        strategy = TradeStrategy()
+        strategy = TradeStrategy(id_tag_strategy='001')
         self.exec_client.register_strategy(strategy)
 
         # Act
