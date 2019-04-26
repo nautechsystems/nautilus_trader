@@ -181,16 +181,16 @@ cdef class BacktestEngine:
         """
         # -- PRECONDITIONS ----------------------------------------------------"
         if start is None:
-            Precondition.true(start.tzinfo == timezone.utc, 'start.tzinfo == timezone.utc')
             start = self.data_client.execution_data_index_min
         else:
+            Precondition.true(start.tzinfo == timezone.utc, 'start.tzinfo == timezone.utc')
             if start < self.data_client.execution_data_index_min:
                 raise ValueError('Invalid start datetime (is less than the first execution data timestamp '
                                  '- please set later start).')
         if stop is None:
-            Precondition.true(stop.tzinfo == timezone.utc, 'stop.tzinfo == timezone.utc')
             stop = self.data_client.execution_data_index_max
         else:
+            Precondition.true(stop.tzinfo == timezone.utc, 'stop.tzinfo == timezone.utc')
             if stop > self.data_client.execution_data_index_max:
                 raise ValueError('Invalid stop datetime (is greater than the last execution data timestamp '
                                  '- please set earlier stop).')
