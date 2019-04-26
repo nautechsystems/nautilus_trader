@@ -202,7 +202,6 @@ cdef class BacktestEngine:
             Precondition.list_type(strategies, TradeStrategy, 'strategies')
         # ---------------------------------------------------------------------#
 
-        self.log.info(f"Setting up backtest...")
         cdef datetime run_started = self.clock.time_now()
         cdef timedelta time_step = self.data_client.time_step
 
@@ -219,6 +218,8 @@ cdef class BacktestEngine:
         assert(self.exec_client.time_now() == start)
 
         # Setup data
+        self._backtest_header(run_started, start, stop, time_step)
+        self.log.info(f"Setting up backtest...")
         self.log.debug("Setting initial iterations...")
         self.data_client.set_initial_iteration(start)  # Also sets clock to start time
 
@@ -232,7 +233,6 @@ cdef class BacktestEngine:
         self._change_clocks_and_loggers(self.trader.strategies)
 
         # -- RUN BACKTEST -----------------------------------------------------#
-        self._backtest_header(run_started, start, stop, time_step)
         self.log.info(f"Running backtest...")
         self.trader.start()
 
