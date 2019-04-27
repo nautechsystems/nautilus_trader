@@ -176,7 +176,7 @@ cdef class TradeStrategy:
         Called when the strategy is started.
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
+        raise NotImplementedError("Method on_start() must be implemented in the strategy (or just add pass).")
 
     cpdef on_tick(self, Tick tick):
         """
@@ -185,7 +185,7 @@ cdef class TradeStrategy:
         :param tick: The tick received.
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
+        raise NotImplementedError("Method on_tick() must be implemented in the strategy (or just add pass).")
 
     cpdef on_bar(self, BarType bar_type, Bar bar):
         """
@@ -195,7 +195,7 @@ cdef class TradeStrategy:
         :param bar: The bar received.
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
+        raise NotImplementedError("Method on_bar() must be implemented in the strategy (or just add pass).")
 
     cpdef on_event(self, Event event):
         """
@@ -204,28 +204,28 @@ cdef class TradeStrategy:
         :param event: The event received.
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
+        raise NotImplementedError("Method on_event() must be implemented in the strategy (or just add pass).")
 
     cpdef on_stop(self):
         """
         Called when the strategy is stopped.
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
+        raise NotImplementedError("Method on_stop() must be implemented in the strategy (or just add pass).")
 
     cpdef on_reset(self):
         """
         Called when the strategy is reset.
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
+        raise NotImplementedError("Method reset() must be implemented in the strategy (or just add pass).")
 
     cpdef on_dispose(self):
         """
         Called when the strategy is disposed.
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the strategy (or just add pass).")
+        raise NotImplementedError("Method on_dispose() must be implemented in the strategy (or just add pass).")
 
 
 # -- REGISTRATION METHODS ------------------------------------------------------------------------ #
