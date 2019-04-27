@@ -10,7 +10,7 @@
 import pandas as pd
 import logging
 
-from datetime import datetime, timezone
+from datetime import datetime
 
 from inv_trader.model.enums import Resolution, Currency
 from inv_trader.backtest.models import FillModel
@@ -41,8 +41,8 @@ if __name__ == "__main__":
         sl_atr_multiple=2.0)]
 
     config = BacktestConfig(
+        frozen_account=True,
         starting_capital=1000000,
-        freeze_account=False,
         account_currency=Currency.USD,
         bypass_logging=False,
         level_console=logging.INFO,

@@ -22,14 +22,6 @@ class ClockTests(unittest.TestCase):
         # Fixture Setup
         self.clock = Clock()
 
-    def test_timezone(self):
-        # Arrange
-        # Act
-        result = self.clock.timezone
-
-        # Assert
-        self.assertEqual(timezone.utc, result)
-
     def test_unix_epoch(self):
         # Arrange
         # Act

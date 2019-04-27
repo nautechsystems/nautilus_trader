@@ -125,8 +125,8 @@ cdef class BacktestEngine:
 
         self.exec_client = BacktestExecClient(
             instruments=instruments,
+            frozen_account=config.frozen_account,
             starting_capital=config.starting_capital,
-            freeze_account=config.freeze_account,
             fill_model=fill_model,
             commission_calculator=CommissionCalculator(default_rate_bp=config.commission_rate_bp),
             account=self.account,
@@ -467,7 +467,10 @@ cdef class BacktestEngine:
         self.log.info(f"Backtest stop datetime:  {format_zulu_datetime(stop)}")
         self.log.info(f"Time-step: {time_step}")
         self.log.info(f"Execution resolution: {resolution_string(self.data_client.execution_resolution)}")
-        self.log.info(f"Account balance (starting): {self.config.starting_capital} {currency_string(self.account.currency)}")
+        if self.exec_client.frozen_account:
+            self.log.warning(f"ACCOUNT FROZEN")
+        else:
+            self.log.info(f"Account balance (starting): {self.config.starting_capital} {currency_string(self.account.currency)}")
         self.log.info("#---------------------------------------------------------------#")
 
     cdef void _backtest_footer(
@@ -492,8 +495,11 @@ cdef class BacktestEngine:
         self.log.info(f"Total events: {self.exec_client.event_count}")
         self.log.info(f"Total orders: {len(self.exec_client.get_orders_all())}")
         self.log.info(f"Total positions: {len(self.portfolio.get_positions_all())}")
-        self.log.info(f"Account balance (starting): {self.config.starting_capital} {currency_string(self.account.currency)}")
-        self.log.info(f"Account balance (ending):     {self.account.cash_balance} {currency_string(self.account.currency)}")
+        if self.exec_client.frozen_account:
+            self.log.warning(f"ACCOUNT FROZEN")
+        else:
+            self.log.info(f"Account balance (starting): {self.config.starting_capital} {currency_string(self.account.currency)}")
+            self.log.info(f"Account balance (ending):     {self.account.cash_balance} {currency_string(self.account.currency)}")
         self.log.info(f"Commissions (total):           {self.exec_client.total_commissions} {currency_string(self.account.currency)}")
         self.log.info("")
 

@@ -52,7 +52,7 @@ class BacktestExecClientTests(unittest.TestCase):
             logger=TestLogger())
         self.exec_client = BacktestExecClient(
             instruments=self.instruments,
-            freeze_account=False,
+            frozen_account=False,
             starting_capital=Money(1000000),
             fill_model=FillModel(),
             commission_calculator=CommissionCalculator(),
@@ -227,7 +227,7 @@ class BacktestExecClientTests(unittest.TestCase):
 
         self.exec_client = BacktestExecClient(
             instruments=self.instruments,
-            freeze_account=False,
+            frozen_account=False,
             starting_capital=Money(1000000),
             fill_model=fill_model,
             commission_calculator=CommissionCalculator(),

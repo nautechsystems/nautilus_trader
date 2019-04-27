@@ -21,10 +21,10 @@ cdef class BacktestConfig:
     Provides a configuration for a BacktestEngine.
     """
     def __init__(self,
+                 bint frozen_account=False,
                  int starting_capital=1000000,
                  Currency account_currency=Currency.USD,
                  float commission_rate_bp=0.20,
-                 bint freeze_account=False,
                  bint bypass_logging=False,
                  int level_console=logging.INFO,
                  int level_file=logging.DEBUG,
@@ -36,10 +36,11 @@ cdef class BacktestConfig:
         """
         Initializes a new instance of the BacktestConfig class.
 
+        :param frozen_account: The flag indicating whether the account should be
+        frozen for testing (no pnl applied).
         :param starting_capital: The starting account capital (> 0).
         :param account_currency: The currency for the account.
         :param commission_rate_bp: The commission rate in basis points per notional transaction size.
-        :param freeze_account: The flag indicating whether the account should be frozen (no pnl applied).
         :param bypass_logging: The flag indicating whether logging should be bypassed.
         :param level_console: The minimum log level for logging messages to the console.
         :param level_file: The minimum log level for logging messages to the log file.
@@ -54,10 +55,10 @@ cdef class BacktestConfig:
         Precondition.positive(starting_capital, 'starting_capital')
         Precondition.not_negative(commission_rate_bp, 'commission_rate_bp')
 
+        self.frozen_account = frozen_account
         self.starting_capital = Money(starting_capital)
         self.account_currency = account_currency
         self.commission_rate_bp = commission_rate_bp
-        self.freeze_account = freeze_account
         self.bypass_logging = bypass_logging
         self.level_console = level_console
         self.level_file = level_file
