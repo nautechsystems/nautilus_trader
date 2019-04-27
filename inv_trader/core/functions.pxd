@@ -12,6 +12,10 @@
 from cpython.datetime cimport datetime
 
 
+cpdef object with_utc_index(dataframe)
+
+cpdef object as_utc_timestamp(datetime timestamp)
+
 cdef inline str format_zulu_datetime(datetime dt, str timespec=None):
     """
     Return the formatted string from the given datetime.

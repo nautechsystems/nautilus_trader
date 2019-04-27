@@ -11,13 +11,13 @@
 
 import inspect
 import pandas as pd
-import pytz
 
 from cpython.datetime cimport datetime
 from typing import Callable, List
 from pandas.core.frame import DataFrame
 
 from inv_trader.core.precondition cimport Precondition
+from inv_trader.core.functions cimport with_utc_index
 from inv_trader.model.objects cimport Symbol, Price, Bar, DataBar, Tick
 from inv_indicators.base.indicator import Indicator
 
@@ -30,23 +30,6 @@ cdef str LOW = 'low'
 cdef str CLOSE = 'close'
 cdef str VOLUME = 'volume'
 cdef str TIMESTAMP = 'timestamp'
-
-
-cdef inline object _localize_index_to_utc(dataframe):
-        """
-        Return the dataframe with the index timestamps localized to UTC timezone
-        if the dataframe is not None (else returns None).
-        
-        :param dataframe: The dataframe to localize.
-        :return: pd.DataFrame.
-        """
-        if dataframe is not None:
-            if hasattr(dataframe.index, 'tz') and dataframe.index.tz == pytz.UTC:
-                return dataframe  # Already localized to UTC
-            if not hasattr(dataframe.index, 'tz') or dataframe.index.tz != pytz.UTC:
-                return dataframe.tz_localize(tz='UTC')
-        else:
-            return dataframe  # The input argument was None
 
 
 cdef class TickBuilder:
@@ -79,9 +62,9 @@ cdef class TickBuilder:
 
         self._symbol = symbol
         self._decimal_precision = decimal_precision
-        self._tick_data = _localize_index_to_utc(tick_data)
-        self._bid_data = _localize_index_to_utc(bid_data)
-        self._ask_data = _localize_index_to_utc(ask_data)
+        self._tick_data = with_utc_index(tick_data)
+        self._bid_data = with_utc_index(bid_data)
+        self._ask_data = with_utc_index(ask_data)
 
     cpdef list build_ticks_all(self):
         """
@@ -161,7 +144,7 @@ cdef class BarBuilder:
 
         self._decimal_precision = decimal_precision
         self._volume_multiple = volume_multiple
-        self._data = _localize_index_to_utc(data)
+        self._data = with_utc_index(data)
 
     cpdef list build_databars_all(self):
         """
