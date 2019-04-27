@@ -40,6 +40,7 @@ cdef class BacktestEngine:
     cdef readonly datetime created_time
     cdef readonly timedelta time_to_initialize
     cdef readonly list instruments
+    cdef readonly bint freeze_account
     cdef readonly int iteration
 
     cpdef run(self, datetime start=*, datetime stop=*, FillModel fill_model=*, list strategies=*, bint print_log_store=*)

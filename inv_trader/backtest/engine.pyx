@@ -126,6 +126,7 @@ cdef class BacktestEngine:
         self.exec_client = BacktestExecClient(
             instruments=instruments,
             starting_capital=config.starting_capital,
+            freeze_account=config.freeze_account,
             fill_model=fill_model,
             commission_calculator=CommissionCalculator(default_rate_bp=config.commission_rate_bp),
             account=self.account,
@@ -161,7 +162,7 @@ cdef class BacktestEngine:
             list strategies=None,
             bint print_log_store=True):
         """
-        Run the backtest.
+        Run the backtest with the given parameters.
 
         :param start: The start datetime for the backtest (optional can be None - will run from the start of the data).
         :param stop: The stop datetime for the backtest (optional can be None - will run to the end of the data).
@@ -176,19 +177,18 @@ cdef class BacktestEngine:
         :raises: ValueError: If the stop datetime is not <= the execution_data_index_max datetime.
         :raises: ValueError: If the fill_model is a type other than FillModel or None.
         :raises: ValueError: If the strategies is a type other than list or None.
-        :raises: ValueError: If the strategies list is not None and is empty.
-        :raises: ValueError: If the strategies list is not None and contains a type other than TradeStrategy.
+        :raises: ValueError: If the strategies list is not None and is empty, or contains a type other than TradeStrategy.
         """
         # -- PRECONDITIONS ----------------------------------------------------"
         if start is None:
-            start = self.data_client.execution_data_index_min
+            start = self.data_client.execution_data_index_min  # Trusted to be UTC
         else:
             Precondition.true(start.tzinfo == timezone.utc, 'start.tzinfo == timezone.utc')
             if start < self.data_client.execution_data_index_min:
                 raise ValueError('Invalid start datetime (is less than the first execution data timestamp '
                                  '- please set later start).')
         if stop is None:
-            stop = self.data_client.execution_data_index_max
+            stop = self.data_client.execution_data_index_max  # Trusted to be UTC
         else:
             Precondition.true(stop.tzinfo == timezone.utc, 'stop.tzinfo == timezone.utc')
             if stop > self.data_client.execution_data_index_max:

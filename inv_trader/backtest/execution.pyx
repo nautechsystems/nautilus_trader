@@ -54,6 +54,7 @@ cdef class BacktestExecClient(ExecutionClient):
 
     def __init__(self,
                  list instruments: List[Instrument],
+                 bint freeze_account,
                  Money starting_capital,
                  FillModel fill_model,
                  CommissionCalculator commission_calculator,
@@ -66,6 +67,7 @@ cdef class BacktestExecClient(ExecutionClient):
         Initializes a new instance of the BacktestExecClient class.
 
         :param instruments: The instruments needed for the backtest.
+        :param freeze_account: The flag indicating whether the account should be frozen (no pnl applied).
         :param starting_capital: The starting capital for the backtest account (> 0).
         :param commission_calculator: The commission calculator.
         :param clock: The clock for the component.
@@ -89,7 +91,9 @@ cdef class BacktestExecClient(ExecutionClient):
         self.instruments = instruments_dict  # type: Dict[Symbol, Instrument]
 
         self.day_number = 0
+        self.freeze_account = freeze_account
         self.starting_capital = starting_capital
+        self.freeze_account = freeze_account
         self.account_capital = starting_capital
         self.account_cash_start_day = self.account_capital
         self.account_cash_activity_day = Money(0)
@@ -764,8 +768,10 @@ cdef class BacktestExecClient(ExecutionClient):
 
         self.total_commissions += commission
         pnl -= commission
-        self.account_capital += pnl
-        self.account_cash_activity_day += pnl
+
+        if not self.freeze_account:
+            self.account_capital += pnl
+            self.account_cash_activity_day += pnl
 
         cdef AccountEvent account_event = AccountEvent(
             self._account.id,
