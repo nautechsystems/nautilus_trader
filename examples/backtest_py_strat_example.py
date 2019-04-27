@@ -38,6 +38,7 @@ if __name__ == "__main__":
 
     config = BacktestConfig(
         starting_capital=1000000,
+        freeze_account=False,
         account_currency=Currency.USD,
         level_console=logging.INFO,
         level_store=logging.WARNING,

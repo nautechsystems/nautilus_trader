@@ -68,7 +68,8 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 08/03/19    5194 function calls    (5194 primitive calls) in 0.167 seconds (removed performance hooks)
         # 13/03/19    8691 function calls    (8613 primitive calls) in 0.162 seconds (added analyzer)
         # 13/03/19  614197 function calls  (614015 primitive calls) in 0.694 seconds (numerous changes)
-        # 16/03/19 2193923 function calls (2193741 primitive calls) in 2.690 seconds (changed
+        # 16/03/19 2193923 function calls (2193741 primitive calls) in 2.690 seconds (changed)
+        # 27/03/19 2255252 function calls (2255070 primitive calls) in 2.738 seconds (performance check)
 
     def test_run_with_ema_cross_strategy(self):
         # Arrange
@@ -90,14 +91,14 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
             atr_period=20,
             sl_atr_multiple=2.0)]
 
-        config = BacktestConfig(
-            bypass_logging=True,
-            console_prints=False)
-
         fill_model = FillModel(
             prob_fill_at_limit=0.2,
             prob_fill_at_stop=0.95,
             prob_slippage=0.5)
+
+        config = BacktestConfig(
+            bypass_logging=True,
+            console_prints=False)
 
         engine = BacktestEngine(
             instruments=instruments,
