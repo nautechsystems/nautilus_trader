@@ -17,17 +17,17 @@ import logging
 import psutil
 import platform
 import empyrical
+import pytz
 import pymc3
 
 from platform import python_version
 from cpython.datetime cimport datetime, timedelta
-from datetime import timezone
 from pandas import DataFrame
 from typing import List, Dict
 
 from inv_trader.version import __version__
 from inv_trader.core.precondition cimport Precondition
-from inv_trader.core.functions cimport format_zulu_datetime
+from inv_trader.core.functions cimport as_utc_timestamp, format_zulu_datetime
 from inv_trader.backtest.config cimport BacktestConfig
 from inv_trader.backtest.data cimport BacktestDataClient
 from inv_trader.backtest.execution cimport BacktestExecClient
@@ -179,21 +179,22 @@ cdef class BacktestEngine:
         :raises: ValueError: If the strategies is a type other than list or None.
         :raises: ValueError: If the strategies list is not None and is empty, or contains a type other than TradeStrategy.
         """
-        # -- PRECONDITIONS ----------------------------------------------------"
+        #  Setup start datetime
         if start is None:
-            start = self.data_client.execution_data_index_min  # Trusted to be UTC
+            start = self.data_client.execution_data_index_min
         else:
-            Precondition.true(start.tzinfo == timezone.utc, 'start.tzinfo == timezone.utc')
-            if start < self.data_client.execution_data_index_min:
-                raise ValueError('Invalid start datetime (is less than the first execution data timestamp '
-                                 '- please set later start).')
+            start = as_utc_timestamp(start)
+
+        # Setup stop datetime
         if stop is None:
-            stop = self.data_client.execution_data_index_max  # Trusted to be UTC
+            stop = self.data_client.execution_data_index_max
         else:
-            Precondition.true(stop.tzinfo == timezone.utc, 'stop.tzinfo == timezone.utc')
-            if stop > self.data_client.execution_data_index_max:
-                raise ValueError('Invalid stop datetime (is greater than the last execution data timestamp '
-                                 '- please set earlier stop).')
+            stop = as_utc_timestamp(stop)
+
+        Precondition.true(start.tz == pytz.UTC, 'start.tz == UTC')
+        Precondition.true(stop.tz == pytz.UTC, 'stop.tz == UTC')
+        Precondition.true(start >= self.data_client.execution_data_index_min, 'start >= execution_data_index_min')
+        Precondition.true(start <= self.data_client.execution_data_index_max, 'stop <= execution_data_index_max')
         Precondition.true(start < stop, 'start < stop')
         Precondition.type_or_none(fill_model, FillModel, 'fill_model')
         Precondition.type_or_none(strategies, list, 'strategies')
