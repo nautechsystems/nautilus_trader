@@ -48,4 +48,4 @@ class OrderPerformanceTests(unittest.TestCase):
         print('\n' + f'test_order_id_generator({number} iterations)')
         print(f'{round(total_elapsed / tests)}ms')
 
-        # ~22ms for 10000 ids
+        # ~17ms for 10000 ids

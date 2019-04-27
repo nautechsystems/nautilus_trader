@@ -16,10 +16,10 @@ cdef class BacktestConfig:
     """
     Provides a configuration for a BacktestEngine.
     """
+    cdef readonly bint frozen_account
     cdef readonly Money starting_capital
     cdef readonly Currency account_currency
     cdef readonly float commission_rate_bp
-    cdef readonly bint freeze_account
     cdef readonly bint bypass_logging
     cdef readonly int level_console
     cdef readonly int level_file

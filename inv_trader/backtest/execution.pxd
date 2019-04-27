@@ -28,7 +28,7 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef readonly dict instruments
     cdef readonly dict data_ticks
     cdef readonly int day_number
-    cdef readonly bint freeze_account
+    cdef readonly bint frozen_account
     cdef readonly Money starting_capital
     cdef readonly Money account_capital
     cdef readonly Money account_cash_start_day

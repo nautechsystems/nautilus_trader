@@ -37,8 +37,8 @@ if __name__ == "__main__":
         bar_type=TestStubs.bartype_usdjpy_1min_bid())]
 
     config = BacktestConfig(
+        frozen_account=False,
         starting_capital=1000000,
-        freeze_account=False,
         account_currency=Currency.USD,
         level_console=logging.INFO,
         level_store=logging.WARNING,
@@ -60,7 +60,7 @@ if __name__ == "__main__":
         config=config)
 
     start = datetime(2013, 1, 5, 0, 0, 0, 0)
-    stop = datetime(2013, 1, 10, 0, 0, 0, 0)
+    stop = datetime(2013, 1, 6, 0, 0, 0, 0)
 
     engine.run(start, stop)
 
