@@ -11,9 +11,12 @@
 
 import pandas as pd
 
+from typing import Dict
+
 from inv_trader.enums.order_status cimport OrderStatus
 from inv_trader.enums.order_side cimport order_side_string
 from inv_trader.enums.order_type cimport order_type_string
+from inv_trader.model.identifiers cimport OrderId, PositionId
 from inv_trader.model.order cimport Order
 from inv_trader.model.position cimport Position
 
@@ -28,7 +31,7 @@ cdef class ReportProvider:
         Initializes a new instance of the ReportProvider class.
         """
 
-    cpdef object get_orders_report(self, dict orders):
+    cpdef object get_orders_report(self, dict orders: Dict[OrderId, Order]):
         """
         Return an orders report dataframe.
         
@@ -42,7 +45,7 @@ cdef class ReportProvider:
 
         return pd.DataFrame(data=orders_all).set_index('order_id')
 
-    cpdef object get_order_fills_report(self, dict orders):
+    cpdef object get_order_fills_report(self, dict orders: Dict[OrderId, Order]):
         """
         Return an order fills report dataframe.
         
@@ -56,7 +59,7 @@ cdef class ReportProvider:
 
         return pd.DataFrame(data=filled_orders).set_index('order_id')
 
-    cpdef object get_positions_report(self, dict positions):
+    cpdef object get_positions_report(self, dict positions: Dict[PositionId, Position]):
         """
         Return a positions report dataframe.
         

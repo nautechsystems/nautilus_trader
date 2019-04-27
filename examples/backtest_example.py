@@ -42,6 +42,7 @@ if __name__ == "__main__":
 
     config = BacktestConfig(
         starting_capital=1000000,
+        freeze_account=False,
         account_currency=Currency.USD,
         bypass_logging=False,
         level_console=logging.INFO,
@@ -67,7 +68,7 @@ if __name__ == "__main__":
     input("Press Enter to continue...")
 
     start = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
-    stop = datetime(2013, 2, 4, 0, 0, 0, 0, tzinfo=timezone.utc)
+    stop = datetime(2013, 2, 10, 0, 0, 0, 0, tzinfo=timezone.utc)
 
     engine.run(start, stop)
     print(engine.get_order_fills_report())

@@ -64,7 +64,7 @@ cdef class BacktestEngine:
         :param strategies: The strategies to backtest.
         :param data_bars_bid: The historical bid market data needed for the backtest.
         :param data_bars_ask: The historical ask market data needed for the backtest.
-        :param strategies: The strategies for the backtest.
+        :param strategies: The initial strategies for the backtest.
         :param fill_model: The initial fill model for the backtest engine.
         :param config: The configuration for the backtest.
         :raises ValueError: If the instruments list contains a type other than Instrument.
