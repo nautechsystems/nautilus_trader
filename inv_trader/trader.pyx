@@ -18,6 +18,7 @@ from inv_trader.common.clock cimport LiveClock
 from inv_trader.common.logger cimport Logger, LoggerAdapter, LiveLogger
 from inv_trader.common.data cimport DataClient
 from inv_trader.common.execution cimport ExecutionClient
+from inv_trader.model.identifiers cimport StrategyId
 from inv_trader.portfolio.portfolio cimport Portfolio
 from inv_trader.strategy cimport TradeStrategy
 from inv_trader.reports cimport ReportProvider
@@ -147,7 +148,7 @@ cdef class Trader:
         """
         return self._report_provider.get_positions_report(self.portfolio.get_positions_all())
 
-    cpdef void change_strategies(self, list strategies: List[TradeStrategy]):
+    cpdef change_strategies(self, list strategies: List[TradeStrategy]):
         """
         Change strategies with the given list of trade strategies.
         
@@ -156,10 +157,20 @@ cdef class Trader:
         """
         Precondition.list_type(strategies, TradeStrategy, 'strategies')
 
+        # Check strategy identifier is unique
+        strategy_ids = []   # type: List[StrategyId]
+        for strategy in self.strategies:
+            if strategy.id not in strategy_ids:
+                strategy_ids.append(strategy.id)
+            else:
+                raise RuntimeError(f'strategy identifier {strategy.id} is not unique')
+
         if self.is_running:
             self._log.error('Cannot change the strategies of a running trader.')
+            return
 
         for strategy in self.strategies:
+            # TODO: Deregister strategy in execution client.
             strategy.dispose()
 
         self.strategies = strategies
@@ -211,7 +222,6 @@ cdef class Trader:
 
     cdef void _initialize_strategies(self):
         for strategy in self.strategies:
-            # TODO: Check for matching ids
             strategy.register_trader_id(self.id, self.id_tag_trader)
             self._data_client.register_strategy(strategy)
             self._exec_client.register_strategy(strategy)

@@ -46,7 +46,7 @@ cdef class Trader:
     cpdef object get_orders_report(self)
     cpdef object get_order_fills_report(self)
     cpdef object get_positions_report(self)
-    cpdef void change_strategies(self, list strategies)
+    cpdef change_strategies(self, list strategies)
     cpdef void reset(self)
     cpdef void dispose(self)
 
