@@ -14,11 +14,12 @@ from inv_trader.model.objects cimport Money
 
 cdef class BacktestConfig:
     """
-    Represents a configuration for a BacktestEngine.
+    Provides a configuration for a BacktestEngine.
     """
     cdef readonly Money starting_capital
     cdef readonly Currency account_currency
     cdef readonly float commission_rate_bp
+    cdef readonly bint freeze_account
     cdef readonly bint bypass_logging
     cdef readonly int level_console
     cdef readonly int level_file
