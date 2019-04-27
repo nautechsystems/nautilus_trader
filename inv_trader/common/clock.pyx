@@ -33,12 +33,11 @@ cdef class Clock:
         """
         Initializes a new instance of the Clock class.
         """
-        self.timezone = timezone.utc
         self._unix_epoch = UNIX_EPOCH
 
     cpdef datetime time_now(self):
         """
-        Return the current time of the clock.
+        Return the current UTC datetime of the clock.
         
         :return: datetime.
         """
@@ -111,7 +110,7 @@ cdef class Clock:
 
 cdef class LiveClock(Clock):
     """
-    Provides a clock for live trading.
+    Provides a clock for live trading. All times are timezone aware UTC.
     """
 
     def __init__(self):
@@ -123,11 +122,11 @@ cdef class LiveClock(Clock):
 
     cpdef datetime time_now(self):
         """
-        Return the current time of the clock.
+        Return the current UTC datetime of the clock.
         
         :return: datetime.
         """
-        return datetime.now(self.timezone)
+        return datetime.now(timezone.utc)
 
     cpdef set_time_alert(
             self,
@@ -266,7 +265,6 @@ cdef class LiveClock(Clock):
         self._timers[label][1](TimeEvent(label, GUID(uuid4()), alert_time))
         del self._timers[label]
 
-    # Cannot convert below method to Python callable if cdef
     cpdef void _repeating_timer(
             self,
             Label label,
@@ -311,8 +309,8 @@ cdef class TestTimer:
 
         :param label: The label for the timer.
         :param interval: The timedelta interval for the timer.
-        :param start: The start datetime for the timer.
-        :param stop: The stop datetime for the timer.
+        :param start: The start UTC datetime for the timer.
+        :param stop: The stop UTC datetime for the timer.
         :param repeating: The flag indicating whether the timer is repeating.
         :param handler: The handler to call when time events are raised.
         """
@@ -356,13 +354,15 @@ cdef class TestClock(Clock):
 
     cpdef datetime time_now(self):
         """
-        :return: The current time of the clock.
+        Return the current UTC datetime of the clock.
+
+        :return: datetime.
         """
         return self._time
 
     cpdef void set_time(self, datetime time):
         """
-        Set the clocks time to the given time.
+        Set the clocks UTC datetime to the given time.
         
         :param time: The time to set to.
         """

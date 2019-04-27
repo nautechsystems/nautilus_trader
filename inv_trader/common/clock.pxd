@@ -16,9 +16,8 @@ from inv_trader.model.identifiers cimport Label
 
 cdef class Clock:
     """
-    The abstract base class for all clocks.
+    The abstract base class for all clocks. All times are timezone aware UTC.
     """
-    cdef readonly object timezone
     cdef datetime _unix_epoch
     cdef dict _timers
 
@@ -46,7 +45,7 @@ cdef class Clock:
 
 cdef class LiveClock(Clock):
     """
-    Provides a clock for live trading.
+    Provides a clock for live trading. All times are timezone aware UTC.
     """
     cpdef void _raise_time_event(
             self,

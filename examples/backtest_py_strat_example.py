@@ -59,8 +59,8 @@ if __name__ == "__main__":
         strategies=strategies,
         config=config)
 
-    start = datetime(2013, 1, 5, 0, 0, 0, 0, tzinfo=timezone.utc)
-    stop = datetime(2013, 1, 10, 0, 0, 0, 0, tzinfo=timezone.utc)
+    start = datetime(2013, 1, 5, 0, 0, 0, 0)
+    stop = datetime(2013, 1, 10, 0, 0, 0, 0)
 
     engine.run(start, stop)
 

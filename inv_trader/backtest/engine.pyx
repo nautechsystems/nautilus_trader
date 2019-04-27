@@ -164,17 +164,17 @@ cdef class BacktestEngine:
         """
         Run the backtest with the given parameters.
 
-        :param start: The start datetime for the backtest (optional can be None - will run from the start of the data).
-        :param stop: The stop datetime for the backtest (optional can be None - will run to the end of the data).
+        :param start: The start UTC datetime for the backtest (optional can be None - will run from the start of the data).
+        :param stop: The stop UTC datetime for the backtest (optional can be None - will run to the end of the data).
         :param fill_model: The fill model change for the backtest run (optional can be None - will use previous).
         :param strategies: The strategies change for the backtest run (optional can be None - will use previous).
         :param print_log_store: The flag indicating whether the log store should be printed at the end of the run.
 
-        :raises: ValueError: If the start datetime is not None and tzinfo is not UTC.
-        :raises: ValueError: If the start datetime is not < the stop datetime.
-        :raises: ValueError: If the start datetime is not >= the execution_data_index_min datetime.
-        :raises: ValueError: If the stop datetime is not None and tzinfo is not UTC.
-        :raises: ValueError: If the stop datetime is not <= the execution_data_index_max datetime.
+        :raises: ValueError: If the start is not None and timezone is not UTC.
+        :raises: ValueError: If the start is not < the stop datetime.
+        :raises: ValueError: If the start is not >= the execution_data_index_min datetime.
+        :raises: ValueError: If the stop is not None and timezone is not UTC.
+        :raises: ValueError: If the stop is not <= the execution_data_index_max datetime.
         :raises: ValueError: If the fill_model is a type other than FillModel or None.
         :raises: ValueError: If the strategies is a type other than list or None.
         :raises: ValueError: If the strategies list is not None and is empty, or contains a type other than TradeStrategy.
@@ -258,8 +258,8 @@ cdef class BacktestEngine:
         """
         Run the backtest with tick level execution resolution.
         
-        :param start: The start datetime for the backtest run.
-        :param stop: The stop datetime for the backtest run.
+        :param start: The start UTC datetime for the backtest run.
+        :param stop: The stop UTC datetime for the backtest run.
         :param time_step: The time-step timedelta for each loop iteration.
         """
         cdef Tick tick
@@ -289,8 +289,8 @@ cdef class BacktestEngine:
         """
         Run the backtest with tick level execution resolution.
         
-        :param start: The start datetime for the backtest run.
-        :param stop: The stop datetime for the backtest run.
+        :param start: The start UTC datetime for the backtest run.
+        :param stop: The stop UTC datetime for the backtest run.
         :param time_step: The time-step timedelta for each loop iteration.
         """
         cdef Symbol symbol
@@ -316,13 +316,13 @@ cdef class BacktestEngine:
 
     cpdef void create_returns_tear_sheet(self):
         """
-        Create a pyfolio returns tear sheet based on analyzer data from the last run.
+        Create a returns tear sheet based on analyzer data from the last run.
         """
         self.trader.create_returns_tear_sheet()
 
     cpdef void create_full_tear_sheet(self):
         """
-        Create a pyfolio full tear sheet based on analyzer data from the last run.
+        Create a full tear sheet based on analyzer data from the last run.
         """
         self.trader.create_full_tear_sheet()
 
