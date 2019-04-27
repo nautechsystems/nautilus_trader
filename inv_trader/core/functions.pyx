@@ -12,8 +12,6 @@
 import pandas as pd
 import pytz
 
-from datetime import timezone
-
 
 cpdef object with_utc_index(dataframe):
         """
@@ -24,10 +22,10 @@ cpdef object with_utc_index(dataframe):
         :return: pd.DataFrame or None.
         """
         if dataframe is not None:
-            if dataframe.index.tz is None:  # tz-naive
+            if not hasattr(dataframe.index, 'tz') or dataframe.index.tz is None:  # tz-naive
                 return dataframe.tz_localize('UTC')
             elif dataframe.index.tz != pytz.UTC:
-                return dataframe.tz_localize('UTC')
+                return dataframe.tz_convert('UTC')
             else:
                 return dataframe  # Already UTC
 
