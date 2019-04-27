@@ -41,10 +41,12 @@ cdef inline object _localize_index_to_utc(dataframe):
         :return: pd.DataFrame.
         """
         if dataframe is not None:
+            if hasattr(dataframe.index, 'tz') and dataframe.index.tz == pytz.UTC:
+                return dataframe  # Already localized to UTC
             if not hasattr(dataframe.index, 'tz') or dataframe.index.tz != pytz.UTC:
                 return dataframe.tz_localize(tz='UTC')
         else:
-            return None
+            return dataframe  # The input argument was None
 
 
 cdef class TickBuilder:
