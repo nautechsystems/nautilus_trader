@@ -34,10 +34,10 @@ cdef class TradeStrategy:
     """
     The base class for all trade strategies.
     """
-    cdef Clock _clock
     cdef GuidFactory _guid_factory
-    cdef readonly bint is_running
+    cdef readonly Clock clock
     cdef readonly LoggerAdapter log
+    cdef readonly bint is_running
 
     cdef readonly TraderId trader_id
     cdef readonly StrategyId id
@@ -168,10 +168,6 @@ cdef class TradeStrategy:
     cpdef void cancel_all_orders(self, str cancel_reason=*)
     cpdef void flatten_position(self, PositionId position_id)
     cpdef void flatten_all_positions(self)
-    cpdef void set_time_alert(self, Label label, datetime alert_time)
-    cpdef void set_timer(self, Label label, timedelta interval, datetime start_time=*, datetime stop_time=*)
-    cpdef void cancel_time_alert(self, Label label)
-    cpdef void cancel_timer(self, Label label)
 
 # -- BACKTEST METHODS ---------------------------------------------------------------------------- #
     cpdef void change_clock(self, Clock clock)
