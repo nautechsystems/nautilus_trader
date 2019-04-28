@@ -278,7 +278,9 @@ cdef class BacktestEngine:
                 for strategy in self.trader.strategies:
                     time_events = {**time_events, **strategy.iterate(tick.timestamp)}
                 for event, handler in dict(sorted(time_events.items())).items():
+                    self.test_clock.set_time(event.timestamp)
                     handler(event)
+                self.test_clock.set_time(tick.timestamp)
                 self.data_client.process_tick(tick)
             self.test_clock.set_time(time)
             self.data_client.process_bars(self.data_client.iterate_bars(time))

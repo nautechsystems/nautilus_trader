@@ -193,10 +193,9 @@ class BacktestEngineTests(unittest.TestCase):
         self.assertEqual(Timestamp('2013-12-31 23:59:00+00:00'), engine.data_client.execution_data_index_max)
         self.assertEqual(Tick, type(tick_tock.store[0]))
         self.assertEqual(Bar, type(tick_tock.store[1]))
-        self.assertEqual(Tick, type(tick_tock.store[2]))
+        self.assertEqual(TimeEvent, type(tick_tock.store[2]))
         self.assertEqual(TimeEvent, type(tick_tock.store[3]))
-        self.assertEqual(TimeEvent, type(tick_tock.store[4]))
-        self.assertEqual(Tick, type(tick_tock.store[5]))
+        self.assertEqual(Timestamp('2013-01-01 22:02:20+00:00'), tick_tock.store[3].timestamp)
 
     def test_timer_alert_sequencing_with_tick_execution(self):
         # Arrange
@@ -228,5 +227,10 @@ class BacktestEngineTests(unittest.TestCase):
         # Assert
         self.assertEqual(Timestamp('2013-01-01 22:00:00.295000+00:00'), engine.data_client.execution_data_index_min)
         self.assertEqual(Timestamp('2013-01-01 22:35:13.494000+00:00'), engine.data_client.execution_data_index_max)
-
-        print(tick_tock.store)
+        self.assertEqual(Bar, type(tick_tock.store[0]))
+        self.assertEqual(TimeEvent, type(tick_tock.store[1]))
+        self.assertEqual(TimeEvent, type(tick_tock.store[2]))
+        self.assertEqual(TimeEvent, type(tick_tock.store[3]))
+        self.assertEqual(TimeEvent, type(tick_tock.store[4]))
+        self.assertEqual(Tick, type(tick_tock.store[5]))
+        self.assertEqual(Timestamp('2013-01-01 22:02:35.907000+00:00'), tick_tock.store[5].timestamp)
