@@ -16,54 +16,33 @@ from inv_trader.model.identifiers cimport Label
 
 cdef class Clock:
     """
-    The abstract base class for all clocks. All times are timezone aware UTC.
+    The abstract base class for all clocks. All times are tz-aware UTC.
     """
-    cdef datetime _unix_epoch
+    cdef readonly is_handler_registered
+
+    cdef object _event_handler
+    cdef dict _time_alerts
     cdef dict _timers
 
+    cpdef void register_handler(self, handler)
     cpdef datetime time_now(self)
-    cpdef datetime unix_epoch(self)
     cpdef timedelta get_delta(self, datetime time)
-    cpdef set_time_alert(
-            self,
-            Label label,
-            datetime alert_time,
-            handler)
-    cpdef set_timer(
-            self,
-            Label label,
-            timedelta interval,
-            datetime start_time,
-            datetime stop_time,
-            handler)
+    cpdef set_time_alert(self, Label label, datetime alert_time)
+    cpdef set_timer(self, Label label, timedelta interval, datetime start_time=*, datetime stop_time=*)
+    cpdef list get_time_alert_labels(self)
+    cpdef list get_timer_labels(self)
     cpdef cancel_time_alert(self, Label label)
     cpdef cancel_timer(self, Label label)
-    cpdef list get_labels(self)
-    cpdef stop_all_timers(self)
+    cpdef cancel_all_time_alerts(self)
+    cpdef cancel_all_timers(self)
 
 
 cdef class LiveClock(Clock):
     """
-    Provides a clock for live trading. All times are timezone aware UTC.
+    Provides a clock for live trading. All times are tz-aware UTC.
     """
-    cpdef void _raise_time_event(
-            self,
-            Label label,
-            datetime alert_time)
-    cpdef void _repeating_timer(
-            self,
-            Label label,
-            datetime alert_time,
-            timedelta interval,
-            datetime stop_time)
-
-
-cdef class TimeAlert:
-    """
-    Represents a time alert.
-    """
-    cdef readonly datetime alert_time
-    cdef readonly object handler
+    cpdef void _raise_time_event(self, Label label, datetime alert_time)
+    cpdef void _repeating_timer(self, Label label, datetime alert_time, timedelta interval, datetime stop_time)
 
 
 cdef class TestTimer:
@@ -75,7 +54,6 @@ cdef class TestTimer:
     cdef readonly datetime start
     cdef readonly datetime stop
     cdef readonly datetime next_alert
-    cdef readonly object handler
     cdef readonly bint expired
 
     cpdef list advance(self, datetime time)
@@ -85,9 +63,7 @@ cdef class TestClock(Clock):
     """
     Provides a clock for backtesting and unit testing.
     """
-    cdef readonly timedelta time_step
     cdef datetime _time
-    cdef dict _time_alerts
 
     cpdef void set_time(self, datetime time)
     cpdef dict iterate_time(self, datetime time)

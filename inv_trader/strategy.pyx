@@ -70,8 +70,9 @@ cdef class TradeStrategy:
         Precondition.positive(bar_capacity, 'bar_capacity')
 
         # Components
-        self._clock = clock
         self._guid_factory = guid_factory
+        self.clock = clock
+        self.clock.register_handler(self.handle_event)
         self.is_running = False
 
         # Identification
@@ -95,11 +96,11 @@ cdef class TradeStrategy:
         self.order_factory = OrderFactory(
             id_tag_trader=self.id_tag_trader.value,
             id_tag_strategy=self.id_tag_strategy.value,
-            clock=self._clock)
+            clock=self.clock)
         self.position_id_generator = PositionIdGenerator(
             id_tag_trader=self.id_tag_trader.value,
             id_tag_strategy=self.id_tag_strategy.value,
-            clock=self._clock)
+            clock=self.clock)
 
         # Registered orders
         self._entry_orders = {}          # type: Dict[OrderId, Order]
@@ -456,7 +457,7 @@ cdef class TradeStrategy:
         
         :return: datetime.
         """
-        return self._clock.time_now()
+        return self.clock.time_now()
 
     cpdef list symbols(self):
         """
@@ -525,7 +526,7 @@ cdef class TradeStrategy:
         :param from_datetime: The datetime from which the historical bars should be downloaded.
         :raises ValueError: If the from_datetime is not less than datetime.utcnow().
         """
-        Precondition.true(from_datetime < self._clock.time_now(),
+        Precondition.true(from_datetime < self.clock.time_now(),
                           'from_datetime < self.clock.time_now()')
 
         if not self.is_data_client_registered:
@@ -977,11 +978,9 @@ cdef class TradeStrategy:
         """
         self.log.info(f"Stopping...")
 
-        # Clean up timers
-        cdef list labels = self._clock.get_labels()
-        for label in labels:
-            self.log.info(f"Cancelled Timer('{label.value}').")
-        self._clock.stop_all_timers()
+        # Clean up clock
+        self.clock.cancel_all_time_alerts()
+        self.clock.cancel_all_timers()
 
         # Clean up positions
         if self.flatten_on_stop:
@@ -1065,7 +1064,7 @@ cdef class TradeStrategy:
         """
         cdef CollateralInquiry command = CollateralInquiry(
             self._guid_factory.generate(),
-            self._clock.time_now())
+            self.clock.time_now())
 
         self._exec_client.execute_command(command)
 
@@ -1089,7 +1088,7 @@ cdef class TradeStrategy:
             self.id,
             position_id,
             self._guid_factory.generate(),
-            self._clock.time_now())
+            self.clock.time_now())
 
         self._exec_client.execute_command(command)
 
@@ -1149,7 +1148,7 @@ cdef class TradeStrategy:
             self.id,
             position_id,
             self._guid_factory.generate(),
-            self._clock.time_now())
+            self.clock.time_now())
 
         self._exec_client.execute_command(command)
 
@@ -1169,7 +1168,7 @@ cdef class TradeStrategy:
             order,
             new_price,
             self._guid_factory.generate(),
-            self._clock.time_now())
+            self.clock.time_now())
 
         if order.id in self._modify_order_buffer:
             self._modify_order_buffer[order.id] = command
@@ -1200,7 +1199,7 @@ cdef class TradeStrategy:
             order,
             ValidString(cancel_reason),
             self._guid_factory.generate(),
-            self._clock.time_now())
+            self.clock.time_now())
 
         self._exec_client.execute_command(command)
 
@@ -1225,7 +1224,7 @@ cdef class TradeStrategy:
                     order,
                     ValidString(cancel_reason),
                     self._guid_factory.generate(),
-                    self._clock.time_now())
+                    self.clock.time_now())
 
                 self._exec_client.execute_command(command)
 
@@ -1290,89 +1289,6 @@ cdef class TradeStrategy:
             self.log.info(f"Flattening {position}.")
             self.submit_order(order, position_id)
 
-    cpdef void set_time_alert(
-            self,
-            Label label,
-            datetime alert_time):
-        """
-        Set a time alert for the given time. When the time is reached and the
-        strategy is running, on_event() is passed the TimeEvent containing the
-        alerts unique label.
-
-        Note: The timer thread will begin immediately.
-
-        :param label: The label for the alert (must be unique).
-        :param alert_time: The datetime for the alert.
-        :raises ValueError: If the label is not unique for this strategy.
-        :raises ValueError: If the alert_time is not > than the current time (UTC).
-        """
-        self._clock.set_time_alert(
-            label=label,
-            alert_time=alert_time,
-            handler=self.handle_event)
-        self.log.info(f"Set TimeAlert('{label.value}') for {alert_time}.")
-
-    cpdef void set_timer(
-            self,
-            Label label,
-            timedelta interval,
-            datetime start_time=None,
-            datetime stop_time=None):
-        """
-        Set a timer with the given interval (timedelta). The timer will run from
-        the start time (optionally until the stop time). When the interval is
-        reached and the strategy is running, the on_event() is passed the
-        TimeEvent containing the timers unique label.
-
-        Note: The timer thread will begin immediately.
-
-        :param label: The label for the timer (must be unique).
-        :param interval: The interval timedelta  for the timer.
-        :param start_time: The start datetime for the timer (optional can be None - then starts immediately).
-        :param stop_time: The stop datetime for the timer (optional can be None - then repeats indefinitely).
-        :raises ValueError: If the label is not unique.
-        :raises ValueError: If the start_time is not None and not >= the current time (UTC).
-        :raises ValueError: If the stop_time is not None and not > than the start_time.
-        :raises ValueError: If the stop_time is not None and start_time plus interval is greater
-        than the stop_time.
-        """
-        self._clock.set_timer(
-            label=label,
-            interval=interval,
-            start_time=start_time,
-            stop_time=stop_time,
-            handler=self.handle_event)
-
-        cdef str start_time_msg = ''
-        if start_time is not None:
-            start_time_msg = f', starting at {start_time}'
-
-        cdef str stop_time_msg = ''
-        if stop_time is not None:
-            stop_time_msg = f', stopping at {stop_time}'
-
-        self.log.info(f"Set Timer('{label.value}') with interval {interval}{start_time_msg}{stop_time_msg}.")
-
-    cpdef void cancel_time_alert(self, Label label):
-        """
-        Cancel the time alert corresponding to the given label.
-
-        :param label: The label for the alert to cancel.
-        :raises ValueError: If the label is not found in the internal timers.
-        """
-        self._clock.cancel_time_alert(label=label)
-        self.log.info(f"Cancelled TimeAlert('{label.value}').")
-
-    cpdef void cancel_timer(self, Label label):
-        """
-        Cancel the timer corresponding to the given unique label.
-
-        :param label: The label for the timer to cancel.
-        :raises ValueError: If the label is not found in the internal timers.
-        """
-        self._clock.cancel_timer(label)
-        self.log.info(f"Cancelled Timer('{label.value}').")
-
 
 # -- BACKTEST METHODS ---------------------------------------------------------------------------- #
 
@@ -1382,7 +1298,8 @@ cdef class TradeStrategy:
         
         :param clock: The clock to change to.
         """
-        self._clock = clock
+        self.clock = clock
+        self.clock.register_handler(self.handle_event)
         self.order_factory = OrderFactory(
             id_tag_trader=self.id_tag_trader.value,
             id_tag_strategy=self.id_tag_strategy.value,
@@ -1414,7 +1331,7 @@ cdef class TradeStrategy:
         
         :param time: The time to set the clock to.
         """
-        self._clock.set_time(time)
+        self.clock.set_time(time)
 
     cpdef dict iterate(self, datetime time):
         """
@@ -1424,4 +1341,4 @@ cdef class TradeStrategy:
         :param time: The time to iterate the clock to.
         :return: Dict[TimeEvent, Callable].
         """
-        return self._clock.iterate_time(time)
+        return self.clock.iterate_time(time)

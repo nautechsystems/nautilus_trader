@@ -38,13 +38,6 @@ class ClockTests(unittest.TestCase):
         # Fixture Setup
         self.clock = Clock()
 
-    def test_unix_epoch(self):
-        # Arrange
-        # Act
-        result = self.clock.unix_epoch()
-        # Assert
-        self.assertEqual(datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc), result)
-
 
 class LiveClockTests(unittest.TestCase):
 
@@ -53,7 +46,8 @@ class LiveClockTests(unittest.TestCase):
         self.clock = LiveClock()
 
     def tearDown(self):
-        self.clock.stop_all_timers()
+        self.clock.cancel_all_time_alerts()
+        self.clock.cancel_all_timers()
 
     def test_time_now(self):
         # Arrange
@@ -83,7 +77,8 @@ class TestClockTests(unittest.TestCase):
         self.clock = TestClock()
 
     def tearDown(self):
-        self.clock.stop_all_timers()
+        self.clock.cancel_all_time_alerts()
+        self.clock.cancel_all_timers()
 
     def test_time_now(self):
         # Arrange
@@ -130,59 +125,64 @@ class TestClockTests(unittest.TestCase):
     def test_can_set_time_alert(self):
         # Arrange
         receiver = []
-        alert_time = self.clock.unix_epoch() + timedelta(minutes=1)
+        self.clock.register_handler(receiver.append)
+        alert_time = UNIX_EPOCH + timedelta(minutes=1)
 
         # Act
-        self.clock.set_time_alert(Label("test_alert1"), alert_time, receiver.append)
+        self.clock.set_time_alert(Label("test_alert1"), alert_time)
 
         # Assert
-        self.assertEqual(1, len(self.clock.get_labels()))
+        self.assertEqual(1, len(self.clock.get_time_alert_labels()))
 
     def test_cancel_time_alert(self):
         # Arrange
         receiver = []
-        alert_time = self.clock.unix_epoch() + timedelta(minutes=1)
-        self.clock.set_time_alert(Label("test_alert1"), alert_time, receiver.append)
+        self.clock.register_handler(receiver.append)
+        alert_time = UNIX_EPOCH + timedelta(minutes=1)
+        self.clock.set_time_alert(Label("test_alert1"), alert_time)
 
         # Act
         self.clock.cancel_time_alert(Label("test_alert1"))
 
         # Assert
-        self.assertEqual(0, len(self.clock.get_labels()))
+        self.assertEqual(0, len(self.clock.get_time_alert_labels()))
 
     def test_raises_time_alert(self):
         # Arrange
         receiver = []
-        alert_time = self.clock.unix_epoch() + timedelta(minutes=1)
-        self.clock.set_time_alert(Label("test_alert1"), alert_time, receiver.append)
+        self.clock.register_handler(receiver.append)
+        alert_time = UNIX_EPOCH + timedelta(minutes=1)
+        self.clock.set_time_alert(Label("test_alert1"), alert_time)
 
         # Act
-        result = self.clock.iterate_time(self.clock.unix_epoch() + timedelta(minutes=1))
+        result = self.clock.iterate_time(UNIX_EPOCH + timedelta(minutes=1))
 
         # Assert
         self.assertEqual(1, len(result))
-        self.assertEqual(0, len(self.clock.get_labels()))
+        self.assertEqual(0, len(self.clock.get_time_alert_labels()))
 
     def test_raises_time_alerts(self):
         # Arrange
         receiver = []
-        alert_time1 = self.clock.unix_epoch() + timedelta(minutes=1)
-        alert_time2 = self.clock.unix_epoch() + timedelta(minutes=1, seconds=30)
-        self.clock.set_time_alert(Label("test_alert1"), alert_time1, receiver.append)
-        self.clock.set_time_alert(Label("test_alert2"), alert_time2, receiver.append)
+        self.clock.register_handler(receiver.append)
+        alert_time1 = UNIX_EPOCH + timedelta(minutes=1)
+        alert_time2 = UNIX_EPOCH + timedelta(minutes=1, seconds=30)
+        self.clock.set_time_alert(Label("test_alert1"), alert_time1)
+        self.clock.set_time_alert(Label("test_alert2"), alert_time2)
 
         # Act
-        result = self.clock.iterate_time(self.clock.unix_epoch() + timedelta(minutes=2))
+        result = self.clock.iterate_time(UNIX_EPOCH + timedelta(minutes=2))
 
         # Assert
         self.assertEqual(2, len(result))
-        self.assertEqual(0, len(self.clock.get_labels()))
+        self.assertEqual(0, len(self.clock.get_time_alert_labels()))
 
     def test_can_set_timer(self):
         # Arrange
         receiver = []
-        start_time = self.clock.unix_epoch()
-        stop_time = self.clock.unix_epoch() + timedelta(minutes=5)
+        self.clock.register_handler(receiver.append)
+        start_time = UNIX_EPOCH
+        stop_time = UNIX_EPOCH + timedelta(minutes=5)
         interval = timedelta(minutes=1)
 
         # Act
@@ -190,50 +190,49 @@ class TestClockTests(unittest.TestCase):
             Label("test_timer1"),
             interval,
             start_time,
-            stop_time,
-            receiver.append)
+            stop_time)
 
         # Assert
-        self.assertEqual(1, len(self.clock.get_labels()))
+        self.assertEqual(1, len(self.clock.get_timer_labels()))
 
     def test_timer(self):
         # Arrange
         receiver = []
-        start_time = self.clock.unix_epoch()
-        stop_time = self.clock.unix_epoch() + timedelta(minutes=2)
+        self.clock.register_handler(receiver.append)
+        start_time = UNIX_EPOCH
+        stop_time = UNIX_EPOCH + timedelta(minutes=2)
         interval = timedelta(minutes=1)
 
         test_timer = TestTimer(
             Label("test_timer1"),
             interval,
             start_time,
-            stop_time,
-            receiver.append)
+            stop_time)
 
         # Act
         result = test_timer.advance(stop_time)
 
         # Assert
         self.assertEqual(2, len(result))
-        self.assertEqual(0, len(self.clock.get_labels()))
+        self.assertEqual(0, len(self.clock.get_timer_labels()))
 
     def test_timer_raises_multiple_time_alerts(self):
         # Arrange
         receiver = []
-        start_time = self.clock.unix_epoch()
-        stop_time = self.clock.unix_epoch() + timedelta(minutes=5)
+        self.clock.register_handler(receiver.append)
+        start_time = UNIX_EPOCH
+        stop_time = UNIX_EPOCH + timedelta(minutes=5)
         interval = timedelta(minutes=1)
 
         self.clock.set_timer(
             Label("test_timer1"),
             interval,
             start_time,
-            stop_time,
-            receiver.append)
+            stop_time)
 
         # Act
         result = self.clock.iterate_time(stop_time)
 
         # Assert
         self.assertEqual(5, len(result))
-        self.assertEqual(0, len(self.clock.get_labels()))
+        self.assertEqual(0, len(self.clock.get_time_alert_labels()))
