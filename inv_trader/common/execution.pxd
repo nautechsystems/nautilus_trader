@@ -49,6 +49,7 @@ cdef class ExecutionClient:
     cpdef void execute_command(self, Command command)
     cpdef void handle_event(self, Event event)
     cpdef void register_strategy(self, TradeStrategy strategy)
+    cpdef void deregister_strategy(self, TradeStrategy strategy)
     cpdef Order get_order(self, OrderId order_id)
     cpdef dict get_orders_all(self)
     cpdef dict get_orders_active_all(self)

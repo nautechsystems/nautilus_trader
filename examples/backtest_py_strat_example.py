@@ -10,7 +10,7 @@
 import pandas as pd
 import logging
 
-from datetime import datetime, timezone
+from datetime import datetime
 
 from inv_trader.model.enums import Resolution, Currency
 from inv_trader.backtest.config import BacktestConfig
@@ -59,8 +59,8 @@ if __name__ == "__main__":
         strategies=strategies,
         config=config)
 
-    start = datetime(2013, 1, 5, 0, 0, 0, 0)
-    stop = datetime(2013, 1, 6, 0, 0, 0, 0)
+    start = datetime(2013, 1, 1, 0, 0, 0, 0)
+    stop = datetime(2013, 1, 2, 0, 0, 0, 0)
 
     engine.run(start, stop)
 

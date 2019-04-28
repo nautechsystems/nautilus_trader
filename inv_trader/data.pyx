@@ -171,7 +171,7 @@ cdef class LiveDataClient(DataClient):
         Register the given trade strategy with the data client.
 
         :param strategy: The strategy to register.
-        :raise ValueError: If the strategy does not inherit from TradeStrategy.
+        :raises ValueError: If the strategy does not inherit from TradeStrategy.
         """
         strategy.register_data_client(self)
 

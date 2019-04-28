@@ -301,6 +301,22 @@ cdef class Portfolio:
         self._positions_closed[strategy.id] = {}  # type: Dict[PositionId, Position]
         self._log.debug(f"Registered {strategy}.")
 
+    cpdef void deregister_strategy(self, TradeStrategy strategy):
+        """
+        Deregister the given strategy with the portfolio.
+        
+        :param strategy: The strategy to deregister.
+        :raises ValueError: If the strategy is not registered with the portfolio.
+        """
+        Precondition.true(strategy.id in self._registered_strategies, 'strategy_id in self._registered_strategies')
+        Precondition.is_in(strategy.id, self._positions_active, 'strategy_id', 'active_positions')
+        Precondition.is_in(strategy.id, self._positions_closed, 'strategy_id', 'closed_positions')
+
+        self._registered_strategies.remove(strategy.id)
+        del self._positions_active[strategy.id]
+        del self._positions_closed[strategy.id]
+        self._log.debug(f"Deregistered {strategy}.")
+
     cpdef void register_order(self, OrderId order_id, PositionId position_id):
         """
         Register the given order identifier with the given position identifier.

@@ -25,31 +25,29 @@ cdef class Trader:
     """
     cdef Clock _clock
     cdef LoggerAdapter _log
+    cdef DataClient _data_client
+    cdef ExecutionClient _exec_client
     cdef ReportProvider _report_provider
 
     cdef readonly TraderId id
     cdef readonly ValidString id_tag_trader
+    cdef readonly Account account
+    cdef readonly Portfolio portfolio
     cdef readonly bint is_running
     cdef readonly list started_datetimes
     cdef readonly list stopped_datetimes
-
-    cdef DataClient _data_client
-    cdef ExecutionClient _exec_client
-    cdef readonly Account account
-    cdef readonly Portfolio portfolio
     cdef readonly list strategies
 
-    cpdef void start(self)
-    cpdef void stop(self)
+    cdef _initialize_strategies(self)
+    cpdef start(self)
+    cpdef stop(self)
+    cpdef reset(self)
+    cpdef dispose(self)
+    cpdef change_strategies(self, list strategies)
+
+    cpdef dict strategy_status(self)
     cpdef void create_returns_tear_sheet(self)
     cpdef void create_full_tear_sheet(self)
     cpdef object get_orders_report(self)
     cpdef object get_order_fills_report(self)
     cpdef object get_positions_report(self)
-    cpdef change_strategies(self, list strategies)
-    cpdef void reset(self)
-    cpdef void dispose(self)
-
-    cpdef dict strategy_status(self)
-
-    cdef void _initialize_strategies(self)

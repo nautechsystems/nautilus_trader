@@ -354,10 +354,7 @@ cdef class TestLogger(Logger):
         :param log_file_path: The name of the log file (cannot be None if log_to_file is True).
         :raises ValueError: If the name is not a valid string.
         :raises ValueError: If the log_file_path is not a valid string.
-        :raises ValueError: If the clock is not of type TestClock.
         """
-        Precondition.type(clock, TestClock, 'clock')
-
         super().__init__(name,
                          bypass_logging,
                          level_console,

@@ -16,7 +16,8 @@ from inv_trader.common.clock import TestClock
 from inv_trader.common.guid import TestGuidFactory
 from inv_trader.common.logger import TestLogger
 from inv_trader.model.enums import Resolution
-from inv_trader.model.objects import Quantity, Symbol, Price, Money
+from inv_trader.model.objects import ValidString, Money
+from inv_trader.model.identifiers import TraderId, StrategyId
 from inv_trader.backtest.execution import BacktestExecClient
 from inv_trader.backtest.models import FillModel
 from inv_trader.backtest.data import BacktestDataClient
@@ -78,11 +79,79 @@ class TraderTests(unittest.TestCase):
             clock=test_clock,
             logger=TestLogger())
 
-    def test_trader_detects_none_unique_identifiers(self):
+    def test_can_initialize_trader(self):
         # Arrange
-        strategies = [EmptyStrategy('001'),
-                      EmptyStrategy('002')]
+        # Act
+        trader_id = self.trader.id
+        id_tag_trader = self.trader.id_tag_trader
+
+        # Assert
+        self.assertEqual(TraderId('Trader-BT'), trader_id)
+        self.assertEqual(ValidString('BT'), id_tag_trader)
+        self.assertFalse(self.trader.is_running)
+        self.assertEqual(0, len(self.trader.started_datetimes))
+        self.assertEqual(0, len(self.trader.stopped_datetimes))
+        self.assertEqual(2, len(self.trader.strategy_status()))
+
+    def test_can_get_strategy_status(self):
+        # Arrange
+        # Act
+        status = self.trader.strategy_status()
+
+        # Assert
+        self.assertTrue(StrategyId('EmptyStrategy-001') in status)
+        self.assertTrue(StrategyId('EmptyStrategy-002') in status)
+        self.assertFalse(status[StrategyId('EmptyStrategy-001')])
+        self.assertFalse(status[StrategyId('EmptyStrategy-002')])
+        self.assertEqual(2, len(status))
+
+    def test_can_change_strategies(self):
+        # Arrange
+        strategies = [EmptyStrategy('003'),
+                      EmptyStrategy('004')]
 
         # Act
-        #self.assertRaises(ValueError, self.trader.change_strategies, strategies)
+        self.trader.change_strategies(strategies)
 
+        # Assert
+        self.assertTrue(strategies[0].id in self.trader.strategy_status())
+        self.assertTrue(strategies[1].id in self.trader.strategy_status())
+        self.assertEqual(2, len(self.trader.strategy_status()))
+
+    def test_trader_detects_none_unique_identifiers(self):
+        # Arrange
+        strategies = [EmptyStrategy('000'),
+                      EmptyStrategy('000')]
+
+        # Act
+        self.assertRaises(RuntimeError, self.trader.change_strategies, strategies)
+
+    def test_can_start_a_trader(self):
+        # Arrange
+        # Act
+        self.trader.start()
+
+        # Assert
+        self.assertTrue(self.trader.is_running)
+        self.assertEqual(1, len(self.trader.started_datetimes))
+        self.assertEqual(0, len(self.trader.stopped_datetimes))
+        self.assertTrue(StrategyId('EmptyStrategy-001') in self.trader.strategy_status())
+        self.assertTrue(StrategyId('EmptyStrategy-002') in self.trader.strategy_status())
+        self.assertTrue(self.trader.strategy_status()[StrategyId('EmptyStrategy-001')])
+        self.assertTrue(self.trader.strategy_status()[StrategyId('EmptyStrategy-002')])
+
+    def test_can_stop_a_running_trader(self):
+        # Arrange
+        self.trader.start()
+
+        # Act
+        self.trader.stop()
+
+        # Assert
+        self.assertFalse(self.trader.is_running)
+        self.assertEqual(1, len(self.trader.started_datetimes))
+        self.assertEqual(1, len(self.trader.stopped_datetimes))
+        self.assertTrue(StrategyId('EmptyStrategy-001') in self.trader.strategy_status())
+        self.assertTrue(StrategyId('EmptyStrategy-002') in self.trader.strategy_status())
+        self.assertFalse(self.trader.strategy_status()[StrategyId('EmptyStrategy-001')])
+        self.assertFalse(self.trader.strategy_status()[StrategyId('EmptyStrategy-002')])
