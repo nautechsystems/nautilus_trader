@@ -196,8 +196,7 @@ class BacktestEngineTests(unittest.TestCase):
         self.assertEqual(Tick, type(tick_tock.store[2]))
         self.assertEqual(TimeEvent, type(tick_tock.store[3]))
         self.assertEqual(TimeEvent, type(tick_tock.store[4]))
-        self.assertEqual('Test-Alert-1', tick_tock.store[3].label.value)
-        self.assertEqual('Test-Timer', tick_tock.store[4].label.value)
+        self.assertEqual(Tick, type(tick_tock.store[5]))
 
     def test_timer_alert_sequencing_with_tick_execution(self):
         # Arrange

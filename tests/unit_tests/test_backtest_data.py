@@ -66,7 +66,7 @@ class BacktestDataClientTests(unittest.TestCase):
         # Act
         client.subscribe_ticks(USDJPY_FXCM, dummy.append)
         client.subscribe_bars(TestStubs.bartype_usdjpy_1min_bid(), dummy.append)
-        client.set_initial_iteration(start)
+        client.set_initial_iteration_indexes(start)
 
         # Assert
         self.assertEqual(start, client.time_now())
@@ -168,7 +168,7 @@ class BacktestDataClientTests(unittest.TestCase):
 
         start_datetime = datetime(2013, 1, 1, 22, 0, 0, 0, tzinfo=timezone.utc)
 
-        client.set_initial_iteration(start_datetime)
+        client.set_initial_iteration_indexes(start_datetime)
 
         # Act
         for x in range(30):

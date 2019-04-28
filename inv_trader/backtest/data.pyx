@@ -13,7 +13,6 @@ import pandas as pd
 import pytz
 
 from cpython.datetime cimport datetime, timedelta
-from datetime import timezone
 from pandas import DataFrame
 from typing import Set, List, Dict, Callable
 
@@ -116,10 +115,11 @@ cdef class BacktestDataClient(DataClient):
         # Create the data providers for the client based on the given instruments
         for symbol, instrument in self._instruments.items():
             self._log.info(f'Creating DataProvider for {symbol}...')
-            self.data_providers[symbol] = DataProvider(instrument=instrument,
-                                                       data_ticks=None if symbol not in self.data_ticks else self.data_ticks[symbol],
-                                                       data_bars_bid=self.data_bars_bid[symbol],
-                                                       data_bars_ask=self.data_bars_ask[symbol])
+            self.data_providers[symbol] = DataProvider(
+                instrument=instrument,
+                data_ticks=None if symbol not in self.data_ticks else self.data_ticks[symbol],
+                data_bars_bid=self.data_bars_bid[symbol],
+                data_bars_ask=self.data_bars_ask[symbol])
 
             # Build ticks
             start = datetime.utcnow()
@@ -235,15 +235,15 @@ cdef class BacktestDataClient(DataClient):
         self.data_providers[bar_type.symbol].register_bars(bar_type)
         self._log.info(f"Built {len(self.data_providers[bar_type.symbol].bars[bar_type])} {bar_type} bars in {round((datetime.utcnow() - start).total_seconds(), 2)}s.")
 
-    cpdef void set_initial_iteration(self, datetime to_time):
+    cpdef void set_initial_iteration_indexes(self, datetime to_time):
         """
-        Set the initial internal iteration by winding the data client data 
-        providers bar iterations and tick indexs forwards to the given to_time.
+        Set the initial tick and bar iteration indexes for each data provider
+        to the given to_time.
         
-        :param to_time: The datetime to wind the data providers to.
+        :param to_time: The datetime to set the iteration indexes to.
         """
         for data_provider in self.data_providers.values():
-            data_provider.set_initial_iterations(to_time)
+            data_provider.set_initial_iteration_indexes(to_time)
         self._clock.set_time(to_time)
 
     cpdef list iterate_ticks(self, datetime to_time):
@@ -408,6 +408,7 @@ cdef class BacktestDataClient(DataClient):
         Precondition.is_in(symbol, self.data_providers, 'symbol', 'data_providers')
         Precondition.type_or_none(handler, Callable, 'handler')
 
+        self.data_providers[symbol].set_tick_iteration_index(self.time_now())
         self._subscribe_ticks(symbol, handler)
 
     cpdef void unsubscribe_ticks(self, Symbol symbol, handler: Callable):
@@ -440,7 +441,7 @@ cdef class BacktestDataClient(DataClient):
         cdef start = datetime.utcnow()
         if bar_type not in self.data_providers[bar_type.symbol].bars:
             self._build_bars(bar_type)
-
+        self.data_providers[bar_type.symbol].set_bar_iteration_index(bar_type, self.time_now())
         self._subscribe_bars(bar_type, handler)
 
     cpdef void unsubscribe_bars(self, BarType bar_type, handler: Callable):
@@ -583,9 +584,22 @@ cdef class DataProvider:
         else:
             raise ValueError(f'cannot set execution bar resolution to {resolution_string(resolution)}')
 
-    cpdef void set_initial_iterations(self, datetime to_time):
+    cpdef void set_initial_iteration_indexes(self, datetime to_time):
         """
-        Set the initial bar iterations based on the given datetimes and time_step.
+        Set the initial bar iterations based on the given to_time.
+        
+        :param to_time: The time to iterate to.
+        """
+        self.set_tick_iteration_index(to_time)
+
+        for bar_type in self.iterations:
+            self.set_bar_iteration_index(bar_type, to_time)
+
+    cpdef void set_tick_iteration_index(self, datetime to_time):
+        """
+        Set the iteration tick index to the given to_time.
+
+        :param to_time: The time to iterate to.
         """
         while self.ticks[self.tick_index].timestamp < to_time:
             if self.tick_index + 1 < len(self.ticks):
@@ -593,32 +607,18 @@ cdef class DataProvider:
             else:
                 break # No more ticks to iterate
 
-        for bar_type in self.iterations:
-            while self.bars[bar_type][self.iterations[bar_type]].timestamp < to_time:
+    cpdef void set_bar_iteration_index(self, BarType bar_type, datetime to_time):
+        """
+        Set the iteration index for the given bar type to the given to_time.
+        
+        :param bar_type: The bar type to iterate.
+        :param to_time: The time to iterate to.
+        """
+        while self.bars[bar_type][self.iterations[bar_type]].timestamp < to_time:
                 if  self.iterations[bar_type] + 1 < len(self.bars[bar_type]):
                     self.iterations[bar_type] += 1
                 else:
                     break # No more bars to iterate
-
-    cpdef list iterate_ticks(self, datetime to_time):
-        """
-        Return a list of ticks which have been generated based on the given to datetime.
-        
-        :param to_time: The time to build the tick list to.
-        :return: List[Tick].
-        """
-        cdef list ticks_list = []  # type: List[Tick]
-
-        if self.tick_index < len(self.ticks):
-            while self.ticks[self.tick_index].timestamp <= to_time:
-                ticks_list.append(self.ticks[self.tick_index])
-                if self.tick_index + 1 < len(self.ticks):
-                    self.tick_index += 1
-                else:
-                    self.tick_index += 1
-                    break # No more ticks to append
-
-        return ticks_list
 
     cpdef bint is_next_exec_bars_at_time(self, datetime time):
         """
@@ -645,6 +645,25 @@ cdef class DataProvider:
         """
         return self.bars[self.bar_type_execution_ask][self.iterations[self.bar_type_execution_ask]]
 
+    cpdef list iterate_ticks(self, datetime to_time):
+        """
+        Return a list of ticks which have been generated based on the given to datetime.
+        
+        :param to_time: The time to build the tick list to.
+        :return: List[Tick].
+        """
+        cdef list ticks_list = []  # type: List[Tick]
+        if self.tick_index < len(self.ticks):
+            while self.ticks[self.tick_index].timestamp <= to_time:
+                ticks_list.append(self.ticks[self.tick_index])
+                if self.tick_index + 1 < len(self.ticks):
+                    self.tick_index += 1
+                else:
+                    self.tick_index += 1
+                    break # No more ticks to append
+
+        return ticks_list
+
     cpdef dict iterate_bars(self, datetime to_time):
         """
         Return a list of bars which have closed based on the given to datetime.
@@ -653,7 +672,6 @@ cdef class DataProvider:
         :return: List[Bar].
         """
         cdef dict bars_dict = {}  # type: Dict[BarType, Bar]
-
         for bar_type, iterations in self.iterations.items():
             if self.bars[bar_type][iterations].timestamp <= to_time:
                 bars_dict[bar_type] = self.bars[bar_type][iterations]

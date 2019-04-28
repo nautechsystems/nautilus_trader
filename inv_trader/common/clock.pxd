@@ -58,6 +58,14 @@ cdef class LiveClock(Clock):
             datetime stop_time)
 
 
+cdef class TimeAlert:
+    """
+    Represents a time alert.
+    """
+    cdef readonly datetime alert_time
+    cdef readonly object handler
+
+
 cdef class TestTimer:
     """
     Provides a fake timer for backtesting and unit testing.
@@ -70,7 +78,7 @@ cdef class TestTimer:
     cdef readonly object handler
     cdef readonly bint expired
 
-    cpdef void advance(self, datetime time)
+    cpdef list advance(self, datetime time)
 
 
 cdef class TestClock(Clock):
@@ -82,4 +90,4 @@ cdef class TestClock(Clock):
     cdef dict _time_alerts
 
     cpdef void set_time(self, datetime time)
-    cpdef void iterate_time(self, datetime time)
+    cpdef dict iterate_time(self, datetime time)

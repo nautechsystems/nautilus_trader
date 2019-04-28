@@ -711,11 +711,46 @@ cdef class TimeEvent(Event):
         super().__init__(event_id, event_timestamp)
         self.label = label
 
+    def __lt__(self, TimeEvent other) -> bool:
+        return self.timestamp < other.timestamp
+
+    def __le__(self, TimeEvent other) -> bool:
+        return self.timestamp <= other.timestamp
+
+    def __eq__(self, TimeEvent other) -> bool:
+        return self.timestamp == other.timestamp
+
+    def __ne__(self, TimeEvent other) -> bool:
+        return self.timestamp != other.timestamp
+
+    def __gt__(self, TimeEvent other) -> bool:
+        return self.timestamp > other.timestamp
+
+    def __ge__(self, TimeEvent other) -> bool:
+        return self.timestamp >= other.timestamp
+
+    def __cmp__(self, TimeEvent other) -> int:
+        """
+        Override the default comparison.
+        """
+        if self.timestamp < other.timestamp:
+            return -1
+        elif self.timestamp == other.timestamp:
+            return 0
+        else:
+            return 1
+
+    def __hash__(self) -> int:
+        """"
+        Override the default hash implementation.
+        """
+        return hash(self.id)
+
     def __str__(self) -> str:
         """
         :return: The str() string representation of the event.
         """
-        return f"{self.__class__.__name__}(label={self.label}, timestamp={self.timestamp})"
+        return f"{self.__class__.__name__}('{self.label.value}', timestamp={self.timestamp})"
 
     def __repr__(self) -> str:
         """

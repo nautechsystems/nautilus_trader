@@ -178,4 +178,4 @@ cdef class TradeStrategy:
     cpdef void change_guid_factory(self, GuidFactory guid_factory)
     cpdef void change_logger(self, Logger logger)
     cpdef void set_time(self, datetime time)
-    cpdef void iterate(self, datetime time)
+    cpdef dict iterate(self, datetime time)
