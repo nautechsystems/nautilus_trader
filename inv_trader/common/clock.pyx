@@ -71,7 +71,7 @@ cdef class Clock:
 
     cpdef list get_time_alert_labels(self):
         """
-        Return the timer labels held by the clock
+        Return the time alert labels held by the clock.
         
         :return: List[Label].
         """
@@ -79,7 +79,7 @@ cdef class Clock:
 
     cpdef list get_timer_labels(self):
         """
-        Return the timer labels held by the clock
+        Return the timer labels held by the clock.
         
         :return: List[Label].
         """
@@ -259,7 +259,7 @@ cdef class LiveClock(Clock):
             datetime stop_time):
         """
         Create a new TimeEvent and pass it to the clocks event handler.
-        Then start a timer for the next time event.
+        Then start a timer for the next time event if applicable.
         """
         self._event_handler(TimeEvent(label, GUID(uuid4()), alert_time))
 
@@ -334,7 +334,7 @@ cdef class TestClock(Clock):
         super().__init__()
         self._time = initial_time
         self._time_alerts = {}  # type: Dict[Label, datetime]
-        self._timers = {}       # type: Dict[Label, Timer]
+        self._timers = {}       # type: Dict[Label, TestTimer]
 
     cpdef void set_time(self, datetime time):
         """
