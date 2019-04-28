@@ -44,12 +44,12 @@ cdef class Trader:
         :param id_tag_trader: The identifier tag for the trader (unique at fund level).
         :param strategies: The initial list of strategies to manage.
         :param logger: The logger for the trader.
-        :raise ValueError: If the label is an invalid string.
-        :raise ValueError: If the strategies list is empty.
-        :raise ValueError: If the strategies list contains a type other than TradeStrategy.
-        :raise ValueError: If the data client is None.
-        :raise ValueError: If the exec client is None.
-        :raise ValueError: If the clock is None.
+        :raises ValueError: If the label is an invalid string.
+        :raises ValueError: If the strategies list is empty.
+        :raises ValueError: If the strategies list contains a type other than TradeStrategy.
+        :raises ValueError: If the data client is None.
+        :raises ValueError: If the exec client is None.
+        :raises ValueError: If the clock is None.
         """
         Precondition.valid_string(id_tag_trader, 'id_tag_trader')
         Precondition.not_empty(strategies, 'strategies')
@@ -65,24 +65,35 @@ cdef class Trader:
             self._log = LoggerAdapter(f"{self.id.value}")
         else:
             self._log = LoggerAdapter(f"{self.id.value}", logger)
+        self._data_client = data_client
+        self._exec_client = exec_client
         self._report_provider = ReportProvider()
 
+        self.account = account
+        self.portfolio = portfolio
+        self.portfolio.register_execution_client(self._exec_client)
         self.is_running = False
         self.started_datetimes = []  # type: List[datetime]
         self.stopped_datetimes = []  # type: List[datetime]
 
-        self._data_client = data_client
-        self._exec_client = exec_client
-        self.account = account
-        self.portfolio = portfolio
-        self.portfolio.register_execution_client(self._exec_client)
         self.strategies = strategies
         self._initialize_strategies()
 
-    cpdef void start(self):
+    cdef _initialize_strategies(self):
+        for strategy in self.strategies:
+            strategy.register_trader_id(self.id, self.id_tag_trader)
+            self._data_client.register_strategy(strategy)
+            self._exec_client.register_strategy(strategy)
+            self._log.info(f"Initialized {strategy}.")
+
+    cpdef start(self):
         """
         Start the trader.
         """
+        if self.is_running:
+            self._log.error(f"Cannot start an already running Trader...")
+            return
+
         self.started_datetimes.append(self._clock.time_now())
 
         self._log.info("Starting...")
@@ -97,10 +108,14 @@ cdef class Trader:
         self.is_running = True
         self._log.info("Running...")
 
-    cpdef void stop(self):
+    cpdef stop(self):
         """
         Stop the trader.
         """
+        if not self.is_running:
+            self._log.error(f"Cannot stop an already stopped Trader...")
+            return
+
         self.stopped_datetimes.append(self._clock.time_now())
 
         self._log.info("Stopping...")
@@ -111,6 +126,80 @@ cdef class Trader:
         self._log.info("Stopped.")
         self._exec_client.check_residuals()
         self.portfolio.check_residuals()
+
+    cpdef reset(self):
+        """
+        Reset the trader (the trader must be stopped first).
+        """
+        if self.is_running:
+            self._log.error(f"Cannot reset a running Trader...")
+            return
+
+        self._log.info("Resetting...")
+        for strategy in self.strategies:
+            strategy.reset()
+
+        self.portfolio.reset()
+        self._log.info("Reset.")
+
+    cpdef dispose(self):
+        """
+        Dispose of the trader.
+        """
+        self._log.info("Disposing...")
+        for strategy in self.strategies:
+            strategy.dispose()
+
+        self._data_client.disconnect()
+        self._exec_client.disconnect()
+        self._log.info("Disposed.")
+
+    cpdef change_strategies(self, list strategies: List[TradeStrategy]):
+        """
+        Change strategies with the given list of trade strategies.
+        
+        :param strategies: The list of strategies to load into the trader.
+        :raises ValueError: If the strategies list is empty.
+        :raises ValueError: If the strategies list contains a type other than TradeStrategy.
+        """
+        Precondition.not_empty(strategies, 'strategies')
+        Precondition.list_type(strategies, TradeStrategy, 'strategies')
+
+        if self.is_running:
+            self._log.error('Cannot change the strategies of a running trader.')
+            return
+
+        # Check strategy identifiers are unique
+        strategy_ids = []   # type: List[StrategyId]
+        for strategy in strategies:
+            if strategy.id not in strategy_ids:
+                strategy_ids.append(strategy.id)
+            else:
+                raise RuntimeError(f'The strategy identifier {strategy.id} is not unique.')
+
+        for strategy in self.strategies:
+            self._exec_client.deregister_strategy(strategy)
+            strategy.dispose()
+
+        self.strategies = strategies
+        self._initialize_strategies()
+
+    cpdef dict strategy_status(self):
+        """
+        Return a dictionary containing the traders strategy status.
+        The key is the strategy identifier.
+        The value is a bool which is True if the strategy is running else False.
+        
+        :return: Dict[StrategyId, bool].
+        """
+        cdef status = {}
+        for strategy in self.strategies:
+            if strategy.is_running:
+                status[strategy.id] = True
+            else:
+                status[strategy.id] = False
+
+        return status
 
     cpdef void create_returns_tear_sheet(self):
         """
@@ -147,82 +236,3 @@ cdef class Trader:
         :return: pd.DataFrame.
         """
         return self._report_provider.get_positions_report(self.portfolio.get_positions_all())
-
-    cpdef change_strategies(self, list strategies: List[TradeStrategy]):
-        """
-        Change strategies with the given list of trade strategies.
-        
-        :param strategies: The list of strategies to load into the trader.
-        :raises ValueError: If the strategies list contains a type other than TradeStrategy.
-        """
-        Precondition.list_type(strategies, TradeStrategy, 'strategies')
-
-        # Check strategy identifier is unique
-        strategy_ids = []   # type: List[StrategyId]
-        for strategy in self.strategies:
-            if strategy.id not in strategy_ids:
-                strategy_ids.append(strategy.id)
-            else:
-                raise RuntimeError(f'strategy identifier {strategy.id} is not unique')
-
-        if self.is_running:
-            self._log.error('Cannot change the strategies of a running trader.')
-            return
-
-        for strategy in self.strategies:
-            # TODO: Deregister strategy in execution client.
-            strategy.dispose()
-
-        self.strategies = strategies
-        self._initialize_strategies()
-
-    cpdef void reset(self):
-        """
-        Reset the trader.
-        """
-        if self.is_running:
-            self._log.warning(f"Cannot reset a running Trader...")
-            return
-
-        self._log.info("Resetting...")
-        for strategy in self.strategies:
-            strategy.reset()
-
-        self.portfolio.reset()
-        self._log.info("Reset.")
-
-    cpdef void dispose(self):
-        """
-        Dispose of the trader.
-        """
-        self._log.info("Disposing...")
-        for strategy in self.strategies:
-            strategy.dispose()
-
-        self._data_client.disconnect()
-        self._exec_client.disconnect()
-        self._log.info("Disposed.")
-
-    cpdef dict strategy_status(self):
-        """
-        Return a dictionary containing the traders strategy status.
-        The key is the strategy identifier.
-        The value is a bool which is True if the strategy is running else False.
-        
-        :return: Dict[StrategyId, bool].
-        """
-        cdef status_list = {}
-        for strategy in self.strategies:
-            if strategy.is_running:
-                status_list[strategy.id] = True
-            else:
-                status_list[strategy.id] = False
-
-        return status_list
-
-    cdef void _initialize_strategies(self):
-        for strategy in self.strategies:
-            strategy.register_trader_id(self.id, self.id_tag_trader)
-            self._data_client.register_strategy(strategy)
-            self._exec_client.register_strategy(strategy)
-            self._log.info(f"Initialized {strategy}.")

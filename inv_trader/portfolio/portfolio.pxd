@@ -64,6 +64,7 @@ cdef class Portfolio:
 
     cpdef void register_execution_client(self, ExecutionClient client)
     cpdef void register_strategy(self, TradeStrategy strategy)
+    cpdef void deregister_strategy(self, TradeStrategy strategy)
     cpdef void register_order(self, OrderId order_id, PositionId position_id)
     cpdef void handle_order_fill(self, OrderEvent event, StrategyId strategy_id)
     cpdef void handle_transaction(self, AccountEvent event)

@@ -133,6 +133,7 @@ cdef class ExecutionClient:
         """
         Register the given strategy with the execution client.
 
+        :param strategy: The strategy to register.
         :raises ValueError: If the strategy is already registered with the execution client.
         """
         Precondition.not_in(strategy.id, self._registered_strategies, 'strategy', 'registered_strategies')
@@ -147,6 +148,25 @@ cdef class ExecutionClient:
         strategy.register_execution_client(self)
 
         self._log.debug(f"Registered {strategy}.")
+
+    cpdef void deregister_strategy(self, TradeStrategy strategy):
+        """
+        Deregister the given strategy with the execution client.
+
+        :param strategy: The strategy to deregister.
+        :raises ValueError: If the strategy is not registered with the execution client.
+        """
+        Precondition.is_in(strategy.id, self._registered_strategies, 'strategy', 'registered_strategies')
+        Precondition.is_in(strategy.id, self._orders_active, 'strategy', 'orders_active')
+        Precondition.is_in(strategy.id, self._orders_completed, 'strategy', 'orders_completed')
+
+        del self._registered_strategies[strategy.id]
+        del self._orders_active[strategy.id]
+        del self._orders_completed[strategy.id]
+
+        self._portfolio.deregister_strategy(strategy)
+
+        self._log.debug(f"Deregistered {strategy}.")
 
     cpdef Order get_order(self, OrderId order_id):
         """

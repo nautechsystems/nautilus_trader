@@ -92,7 +92,7 @@ cdef class BacktestEngine:
             log_thread=config.log_thread,
             log_to_file=config.log_to_file,
             log_file_path=config.log_file_path,
-            clock=self.test_clock)
+            clock=LiveClock())
         self.log = LoggerAdapter(component_name='BacktestEngine', logger=self.logger)
         self.test_logger = TestLogger(
             name='backtest',
