@@ -1310,7 +1310,7 @@ cdef class TradeStrategy:
             label=label,
             alert_time=alert_time,
             handler=self.handle_event)
-        self.log.info(f"Set time alert for {label} at {alert_time}.")
+        self.log.info(f"Set TimeAlert('{label.value}') for {alert_time}.")
 
     cpdef void set_timer(
             self,
@@ -1351,7 +1351,7 @@ cdef class TradeStrategy:
         if stop_time is not None:
             stop_time_msg = f', stopping at {stop_time}'
 
-        self.log.info(f"Set timer for {label} with interval {interval}{start_time_msg}{stop_time_msg}.")
+        self.log.info(f"Set Timer('{label.value}') with interval {interval}{start_time_msg}{stop_time_msg}.")
 
     cpdef void cancel_time_alert(self, Label label):
         """
@@ -1361,7 +1361,7 @@ cdef class TradeStrategy:
         :raises ValueError: If the label is not found in the internal timers.
         """
         self._clock.cancel_time_alert(label=label)
-        self.log.info(f"Cancelled time alert for {label}.")
+        self.log.info(f"Cancelled TimeAlert('{label.value}').")
 
     cpdef void cancel_timer(self, Label label):
         """
@@ -1371,7 +1371,7 @@ cdef class TradeStrategy:
         :raises ValueError: If the label is not found in the internal timers.
         """
         self._clock.cancel_timer(label)
-        self.log.info(f"Cancelled timer for {label}.")
+        self.log.info(f"Cancelled Timer('{label.value}').")
 
 
 # -- BACKTEST METHODS ---------------------------------------------------------------------------- #
