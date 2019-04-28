@@ -175,7 +175,6 @@ class TestClockTests(unittest.TestCase):
             interval,
             start_time,
             stop_time,
-            True,
             receiver.append)
 
         # Assert
@@ -193,7 +192,6 @@ class TestClockTests(unittest.TestCase):
             interval,
             start_time,
             stop_time,
-            True,
             receiver.append)
 
         # Act
@@ -215,7 +213,6 @@ class TestClockTests(unittest.TestCase):
             interval,
             start_time,
             stop_time,
-            True,
             receiver.append)
 
         # Act
