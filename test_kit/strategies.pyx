@@ -96,6 +96,39 @@ cdef class EmptyStrategy(TradeStrategy):
         pass
 
 
+cdef class TickTock(TradeStrategy):
+    """
+    A strategy to test correct sequencing of tick data and timers.
+    """
+
+    def __init__(self, str id_tag_strategy):
+        """
+        Initializes a new instance of the TickTock class.
+        """
+        super().__init__(id_tag_strategy=id_tag_strategy)
+
+    cpdef on_start(self):
+        pass
+
+    cpdef on_tick(self, Tick tick):
+        pass
+
+    cpdef on_bar(self, BarType bar_type, Bar bar):
+        pass
+
+    cpdef on_event(self, Event event):
+        pass
+
+    cpdef on_stop(self):
+        pass
+
+    cpdef on_reset(self):
+        pass
+
+    cpdef on_dispose(self):
+        pass
+
+
 cdef class TestStrategy1(TradeStrategy):
     """"
     A simple strategy for unit testing.
@@ -200,7 +233,8 @@ cdef class EMACross(TradeStrategy):
                  int fast_ema=10,
                  int slow_ema=20,
                  int atr_period=20,
-                 float sl_atr_multiple=2.0):
+                 float sl_atr_multiple=2.0,
+                 str extra_id_tag=''):
         """
         Initializes a new instance of the EMACross class.
 
@@ -210,9 +244,10 @@ cdef class EMACross(TradeStrategy):
         :param slow_ema: The slow EMA period.
         :param atr_period: The ATR period.
         :param sl_atr_multiple: The ATR multiple for stop-loss prices.
+        :param extra_id_tag: The extra tag to appends to the strategies identifier tag.
         """
         # Order id tag must be unique at trader level
-        super().__init__(id_tag_strategy=instrument.symbol.code)
+        super().__init__(id_tag_strategy=instrument.symbol.code + extra_id_tag)
 
         # Custom strategy variables
         self.warmed_up = False
