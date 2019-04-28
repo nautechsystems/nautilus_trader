@@ -11,9 +11,25 @@ import time
 import unittest
 
 from datetime import datetime, timezone, timedelta
+from uuid import uuid4
 
 from inv_trader.common.clock import Clock, LiveClock, TestClock, TestTimer
-from inv_trader.model.identifiers import Label
+from inv_trader.model.identifiers import Label, GUID
+from inv_trader.model.events import TimeEvent
+from test_kit.stubs import UNIX_EPOCH
+
+
+class TimeEventTests(unittest.TestCase):
+
+    def test_can_hash_time_event(self):
+        # Arrange
+        event = TimeEvent(Label('123'), GUID(uuid4()), UNIX_EPOCH)
+
+        # Act
+        result = hash(event)
+
+        # Assert
+        self.assertEqual(int, type(result))  # No assertions raised
 
 
 class ClockTests(unittest.TestCase):
@@ -141,10 +157,10 @@ class TestClockTests(unittest.TestCase):
         self.clock.set_time_alert(Label("test_alert1"), alert_time, receiver.append)
 
         # Act
-        self.clock.iterate_time(self.clock.unix_epoch() + timedelta(minutes=1))
+        result = self.clock.iterate_time(self.clock.unix_epoch() + timedelta(minutes=1))
 
         # Assert
-        self.assertEqual(1, len(receiver))
+        self.assertEqual(1, len(result))
         self.assertEqual(0, len(self.clock.get_labels()))
 
     def test_raises_time_alerts(self):
@@ -156,10 +172,10 @@ class TestClockTests(unittest.TestCase):
         self.clock.set_time_alert(Label("test_alert2"), alert_time2, receiver.append)
 
         # Act
-        self.clock.iterate_time(self.clock.unix_epoch() + timedelta(minutes=2))
+        result = self.clock.iterate_time(self.clock.unix_epoch() + timedelta(minutes=2))
 
         # Assert
-        self.assertEqual(2, len(receiver))
+        self.assertEqual(2, len(result))
         self.assertEqual(0, len(self.clock.get_labels()))
 
     def test_can_set_timer(self):
@@ -195,10 +211,10 @@ class TestClockTests(unittest.TestCase):
             receiver.append)
 
         # Act
-        test_timer.advance(stop_time)
+        result = test_timer.advance(stop_time)
 
         # Assert
-        self.assertEqual(2, len(receiver))
+        self.assertEqual(2, len(result))
         self.assertEqual(0, len(self.clock.get_labels()))
 
     def test_timer_raises_multiple_time_alerts(self):
@@ -216,8 +232,8 @@ class TestClockTests(unittest.TestCase):
             receiver.append)
 
         # Act
-        self.clock.iterate_time(stop_time)
+        result = self.clock.iterate_time(stop_time)
 
         # Assert
-        self.assertEqual(5, len(receiver))
+        self.assertEqual(5, len(result))
         self.assertEqual(0, len(self.clock.get_labels()))

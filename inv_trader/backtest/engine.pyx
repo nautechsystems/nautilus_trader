@@ -23,7 +23,7 @@ import pymc3
 from platform import python_version
 from cpython.datetime cimport datetime, timedelta
 from pandas import DataFrame
-from typing import List, Dict
+from typing import List, Dict, Callable
 
 from inv_trader.version import __version__
 from inv_trader.core.precondition cimport Precondition
@@ -40,6 +40,7 @@ from inv_trader.common.logger cimport TestLogger
 from inv_trader.enums.currency cimport currency_string
 from inv_trader.enums.resolution cimport Resolution, resolution_string
 from inv_trader.model.objects cimport Symbol, Instrument, Tick
+from inv_trader.model.events cimport TimeEvent
 from inv_trader.portfolio.portfolio cimport Portfolio
 from inv_trader.strategy cimport TradeStrategy
 
@@ -222,7 +223,7 @@ cdef class BacktestEngine:
         self._backtest_header(run_started, start, stop, time_step)
         self.log.info(f"Setting up backtest...")
         self.log.debug("Setting initial iterations...")
-        self.data_client.set_initial_iteration(start)  # Also sets clock to start time
+        self.data_client.set_initial_iteration_indexes(start)  # Also sets clock to start time
 
         # Setup fill model
         if fill_model is not None:
@@ -264,6 +265,7 @@ cdef class BacktestEngine:
         """
         cdef Tick tick
         cdef TradeStrategy strategy
+        cdef dict time_events
 
         cdef datetime time = start
 
@@ -272,8 +274,11 @@ cdef class BacktestEngine:
             for tick in self.data_client.iterate_ticks(time):
                 self.test_clock.set_time(tick.timestamp)
                 self.exec_client.process_tick(tick)
+                time_events = {}  # type: Dict[TimeEvent, Callable]
                 for strategy in self.trader.strategies:
-                    strategy.iterate(tick.timestamp)
+                    time_events = {**time_events, **strategy.iterate(tick.timestamp)}
+                for event, handler in dict(sorted(time_events.items())).items():
+                    handler(event)
                 self.data_client.process_tick(tick)
             self.test_clock.set_time(time)
             self.data_client.process_bars(self.data_client.iterate_bars(time))
@@ -297,17 +302,22 @@ cdef class BacktestEngine:
         cdef Tick tick
         cdef TradeStrategy strategy
         cdef tuple execution_bars
+        cdef dict time_events
 
         cdef datetime time = start
 
         # -- MAIN BACKTEST LOOP -----------------------------------------------#
         while time <= stop:
+            time_events = {}  # type: Dict[TimeEvent, Callable]
+            for strategy in self.trader.strategies:
+                time_events = {**time_events, **strategy.iterate(time)}
+            for event, handler in dict(sorted(time_events.items())).items():
+                self.test_clock.set_time(event.timestamp)
+                handler(event)
             for symbol, execution_bars in self.data_client.get_next_execution_bars(time).items():
                 self.exec_client.process_bars(symbol, execution_bars[0], execution_bars[1])
             for tick in self.data_client.iterate_ticks(time):
                 self.data_client.process_tick(tick)
-            for strategy in self.trader.strategies:
-                strategy.iterate(time)
             self.test_clock.set_time(time)
             self.data_client.process_bars(self.data_client.iterate_bars(time))
             time += time_step

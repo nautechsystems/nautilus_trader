@@ -13,7 +13,7 @@ from uuid import uuid4
 from cpython.datetime cimport datetime, timedelta
 from datetime import timezone
 from threading import Timer
-from typing import Dict, Callable
+from typing import List, Dict, Callable
 
 from inv_trader.common.clock cimport TestTimer
 from inv_trader.core.precondition cimport Precondition
@@ -285,6 +285,23 @@ cdef class LiveClock(Clock):
         self._timers[label] = (timer, self._timers[label][1])
 
 
+cdef class TimeAlert:
+    """
+    Represents a time alert.
+    """
+    def __init__(self,
+                 datetime alert_time,
+                 handler: Callable):
+        """
+        Initializes a new instance of the TestTimer class.
+
+        :param alert_time: The alert time.
+        :param handler: The handler for the alert.
+        """
+        self.alert_time = alert_time
+        self.handler = handler
+
+
 cdef class TestTimer:
     """
     Provides a fake timer for backtesting and unit testing.
@@ -313,17 +330,21 @@ cdef class TestTimer:
         self.handler = handler
         self.expired = False
 
-    cpdef void advance(self, datetime time):
+    cpdef list advance(self, datetime time):
         """
         Advance the timer forward to the given time.
         
         :param time: The time to advance the timer to.
         """
+        cdef list time_events = []  # type: List[TimeEvent]
+
         while time >= self.next_alert and self.expired is False:
-            self.handler(TimeEvent(self.label, GUID(uuid4()), self.next_alert))
+            time_events.append(TimeEvent(self.label, GUID(uuid4()), self.next_alert))
             self.next_alert += self.interval
             if self.stop is not None and self.next_alert > self.stop:
                 self.expired = True
+
+        return time_events
 
 
 cdef class TestClock(Clock):
@@ -339,7 +360,7 @@ cdef class TestClock(Clock):
         """
         super().__init__()
         self._time = initial_time
-        self._time_alerts = {}  # type: Dict[Label, tuple]
+        self._time_alerts = {}  # type: Dict[Label, TimeAlert]
         self._timers = {}       # type: Dict[Label, Timer]
 
     cpdef datetime time_now(self):
@@ -358,41 +379,39 @@ cdef class TestClock(Clock):
         """
         self._time = time
 
-    cpdef void iterate_time(self, datetime time):
+    cpdef dict iterate_time(self, datetime to_time):
         """
         Iterates the clocks time to the given time at time_step intervals.
         
-        :param time: The datetime to iterate the strategies clock to.
+        :param to_time: The datetime to iterate the test clock to.
+        :return: List[TimeEvent
         """
         # Preconditions commented out for performance reasons (assumes backtest implementation is correct)
         # Precondition.true(time.tzinfo == self.timezone, 'time.tzinfo == self.timezone')
         # Precondition.true(time > self.time_now(), 'time > self.time_now()')
 
-        cdef list expired_alerts = []
-        cdef list expired_timers = []
+        cdef dict time_events = {}  # type: Dict[TimeEvent, Callable]
         cdef Label label
 
         # Iterate time alerts
-        for label, alert in self._time_alerts.items():
-            if time >= alert[0]:
-                alert[1](TimeEvent(label, GUID(uuid4()), alert[0]))
-                expired_alerts.append(label)
-
-        # Remove expired time alerts
-        for label in expired_alerts:
-            del self._time_alerts[label]
+        cdef TimeAlert time_alert
+        for label, time_alert in self._time_alerts.copy().items():
+            if to_time >= time_alert.alert_time:
+                time_events[TimeEvent(label, GUID(uuid4()), time_alert.alert_time)] = time_alert.handler
+                del self._time_alerts[label]  # Remove triggered time alert
 
         # Iterate timers
-        for label, timer in self._timers.items():
-            timer.advance(time)
+        cdef TestTimer timer
+        for label, timer in self._timers.copy().items():
+            for timer_event in timer.advance(to_time):
+                time_events[timer_event] = timer.handler
             if timer.expired:
-                expired_timers.append(label)
+                del self._timers[label]  # Remove expired timer
 
-        # Remove expired timers
-        for label in expired_timers:
-            del self._timers[label]
+        # Set the clock time to the given to_time
+        self._time = to_time
 
-        self._time = time
+        return dict(sorted(time_events.items()))
 
     cpdef set_time_alert(
             self,
@@ -415,7 +434,7 @@ cdef class TestClock(Clock):
         Precondition.true(alert_time > self.time_now(), 'alert_time > time_now()')
         Precondition.not_in(label, self._time_alerts, 'label', 'time_alerts')
 
-        self._time_alerts[label] = (alert_time, handler)
+        self._time_alerts[label] = TimeAlert(alert_time, handler)
 
     cpdef set_timer(
             self,
@@ -448,6 +467,8 @@ cdef class TestClock(Clock):
         if start_time is not None:
             Precondition.true(start_time >= self.time_now(),
                               'start_time >= self.clock.time_now()')
+        else:
+            start_time = self.time_now()
         if stop_time is not None:
             Precondition.true(stop_time > start_time, 'stop_time > start_time')
             Precondition.true(start_time + interval <= stop_time,
@@ -456,7 +477,7 @@ cdef class TestClock(Clock):
         cdef TestTimer timer = TestTimer(
             label,
             interval,
-            start_time if start_time is not None else self.time_now(),
+            start_time,
             stop_time,
             handler)
 

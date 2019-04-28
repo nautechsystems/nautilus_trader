@@ -131,9 +131,7 @@ cdef class TickTock(TradeStrategy):
         self.store.append(bar)
         if not self.timer_running:
             self.set_timer(label=Label(f'Test-Timer'),
-                           interval=timedelta(seconds=10),
-                           start_time=None,
-                           stop_time=None)
+                           interval=timedelta(seconds=10))
             self.timer_running = True
 
         self.time_alert_counter += 1
