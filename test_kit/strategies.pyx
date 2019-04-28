@@ -136,9 +136,9 @@ cdef class TickTock(TradeStrategy):
                            stop_time=None)
             self.timer_running = True
 
-        # self.time_alert_counter += 1
-        # self.set_time_alert(label=Label(f'Test-Alert-{self.time_alert_counter}'),
-        #                     alert_time=bar.timestamp + timedelta(seconds=30))
+        self.time_alert_counter += 1
+        self.set_time_alert(label=Label(f'Test-Alert-{self.time_alert_counter}'),
+                            alert_time=bar.timestamp + timedelta(seconds=30))
 
     cpdef on_event(self, Event event):
         self.store.append(event)
