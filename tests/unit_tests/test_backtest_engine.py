@@ -10,7 +10,7 @@
 import pandas as pd
 import unittest
 
-from datetime import datetime, timezone
+from datetime import datetime
 
 from inv_trader.model.enums import Resolution
 from inv_trader.backtest.config import BacktestConfig
@@ -56,8 +56,8 @@ class BacktestEngineTests(unittest.TestCase):
 
     def test_can_run_empty_strategy(self):
         # Arrange
-        start = datetime(2013, 1, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
-        stop = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
+        start = datetime(2013, 1, 1, 0, 0, 0, 0)
+        stop = datetime(2013, 2, 1, 0, 0, 0, 0)
 
         # Act
         self.engine.run(start, stop)
@@ -67,8 +67,8 @@ class BacktestEngineTests(unittest.TestCase):
 
     def test_can_reset_engine_(self):
         # Arrange
-        start = datetime(2013, 1, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
-        stop = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=timezone.utc)
+        start = datetime(2013, 1, 1, 0, 0, 0, 0)
+        stop = datetime(2013, 2, 1, 0, 0, 0, 0)
 
         self.engine.run(start, stop)
 
@@ -91,8 +91,8 @@ class BacktestEngineTests(unittest.TestCase):
                                atr_period=20,
                                sl_atr_multiple=2.0)]
 
-        start = datetime(2013, 1, 2, 0, 0, 0, 0, tzinfo=timezone.utc)
-        stop = datetime(2013, 1, 3, 0, 0, 0, 0, tzinfo=timezone.utc)
+        start = datetime(2013, 1, 2, 0, 0, 0, 0)
+        stop = datetime(2013, 1, 3, 0, 0, 0, 0)
 
         # Act
         self.engine.run(start, stop, strategies=strategies)
@@ -115,8 +115,8 @@ class BacktestEngineTests(unittest.TestCase):
                                atr_period=20,
                                sl_atr_multiple=2.0)]
 
-        start = datetime(2013, 1, 2, 0, 0, 0, 0, tzinfo=timezone.utc)
-        stop = datetime(2013, 1, 3, 0, 0, 0, 0, tzinfo=timezone.utc)
+        start = datetime(2013, 1, 2, 0, 0, 0, 0)
+        stop = datetime(2013, 1, 3, 0, 0, 0, 0)
 
         self.engine.run(start, stop, strategies=strategies)
 
@@ -136,17 +136,25 @@ class BacktestEngineTests(unittest.TestCase):
         instrument = TestStubs.instrument_usdjpy()
         bar_type = TestStubs.bartype_usdjpy_1min_bid()
 
-        # TODO: Had to remove other strategy due order id conflicts
         strategies = [EMACross(instrument=instrument,
                                bar_type=bar_type,
                                risk_bp=10,
                                fast_ema=10,
                                slow_ema=20,
                                atr_period=20,
-                               sl_atr_multiple=2.0)]
+                               sl_atr_multiple=2.0,
+                               extra_id_tag='001'),
+                      EMACross(instrument=instrument,
+                               bar_type=bar_type,
+                               risk_bp=10,
+                               fast_ema=10,
+                               slow_ema=20,
+                               atr_period=20,
+                               sl_atr_multiple=2.0,
+                               extra_id_tag='002')]
 
-        start = datetime(2013, 1, 2, 0, 0, 0, 0, tzinfo=timezone.utc)
-        stop = datetime(2013, 1, 3, 0, 0, 0, 0, tzinfo=timezone.utc)
+        start = datetime(2013, 1, 2, 0, 0, 0, 0)
+        stop = datetime(2013, 1, 3, 0, 0, 0, 0)
 
         # Act
         self.engine.run(start, stop, strategies=strategies)
@@ -154,3 +162,4 @@ class BacktestEngineTests(unittest.TestCase):
         # Assert
         self.assertEqual(2881, self.engine.data_client.data_providers[USDJPY_FXCM].iterations[TestStubs.bartype_usdjpy_1min_bid()])
         self.assertEqual(1441, strategies[0].fast_ema.count)
+        self.assertEqual(1441, strategies[1].fast_ema.count)
