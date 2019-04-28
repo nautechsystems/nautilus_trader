@@ -655,7 +655,7 @@ cdef class DataProvider:
         cdef dict bars_dict = {}  # type: Dict[BarType, Bar]
 
         for bar_type, iterations in self.iterations.items():
-            if self.bars[bar_type][iterations].timestamp == to_time:
+            if self.bars[bar_type][iterations].timestamp <= to_time:
                 bars_dict[bar_type] = self.bars[bar_type][iterations]
                 self.iterations[bar_type] += 1
 

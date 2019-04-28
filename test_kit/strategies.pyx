@@ -100,24 +100,48 @@ cdef class TickTock(TradeStrategy):
     """
     A strategy to test correct sequencing of tick data and timers.
     """
+    cdef readonly Instrument instrument
+    cdef readonly BarType bar_type
+    cdef readonly list store
+    cdef readonly bint timer_running
+    cdef readonly int time_alert_counter
 
-    def __init__(self, str id_tag_strategy):
+    def __init__(self, Instrument instrument,  BarType bar_type,):
         """
         Initializes a new instance of the TickTock class.
         """
-        super().__init__(id_tag_strategy=id_tag_strategy)
+        super().__init__(id_tag_strategy='000')
+
+        self.instrument = instrument
+        self.bar_type = bar_type
+        self.store = []
+        self.timer_running = False
+        self.time_alert_counter = 0
 
     cpdef on_start(self):
-        pass
+        self.subscribe_bars(self.bar_type)
+        self.subscribe_ticks(self.instrument.symbol)
 
     cpdef on_tick(self, Tick tick):
-        pass
+        self.log.info(f'Received Tick({tick})')
+        self.store.append(tick)
 
     cpdef on_bar(self, BarType bar_type, Bar bar):
-        pass
+        self.log.info(f'Received {bar_type} Bar({bar})')
+        self.store.append(bar)
+        if not self.timer_running:
+            self.set_timer(label=Label(f'Test-Timer'),
+                           interval=timedelta(seconds=10),
+                           start_time=None,
+                           stop_time=None)
+            self.timer_running = True
+
+        # self.time_alert_counter += 1
+        # self.set_time_alert(label=Label(f'Test-Alert-{self.time_alert_counter}'),
+        #                     alert_time=bar.timestamp + timedelta(seconds=30))
 
     cpdef on_event(self, Event event):
-        pass
+        self.store.append(event)
 
     cpdef on_stop(self):
         pass

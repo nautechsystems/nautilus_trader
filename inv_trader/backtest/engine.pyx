@@ -520,5 +520,6 @@ cdef class BacktestEngine:
         for strategy in strategies:
             # Separate test clocks to iterate independently
             strategy.change_clock(TestClock())
+            strategy.set_time(self.test_clock.time_now())
             # Replace the strategies logger with the engines test logger
             strategy.change_logger(self.test_logger)
