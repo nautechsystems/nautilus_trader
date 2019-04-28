@@ -29,15 +29,14 @@ cdef class Clock:
             Label label,
             datetime alert_time,
             handler)
-    cpdef cancel_time_alert(self, Label label)
     cpdef set_timer(
             self,
             Label label,
             timedelta interval,
             datetime start_time,
             datetime stop_time,
-            bint repeat,
             handler)
+    cpdef cancel_time_alert(self, Label label)
     cpdef cancel_timer(self, Label label)
     cpdef list get_labels(self)
     cpdef stop_all_timers(self)
@@ -69,7 +68,6 @@ cdef class TestTimer:
     cdef readonly datetime stop
     cdef readonly datetime next_alert
     cdef readonly object handler
-    cdef readonly bint repeating
     cdef readonly bint expired
 
     cpdef void advance(self, datetime time)

@@ -11,12 +11,15 @@ import pandas as pd
 import unittest
 
 from datetime import datetime
+from pandas import Timestamp
 
 from inv_trader.model.enums import Resolution
+from inv_trader.model.objects import Tick, Bar
+from inv_trader.model.events import TimeEvent
 from inv_trader.backtest.config import BacktestConfig
 from inv_trader.backtest.models import FillModel
 from inv_trader.backtest.engine import BacktestEngine
-from test_kit.strategies import EmptyStrategy, EMACross
+from test_kit.strategies import EmptyStrategy, EMACross, TickTock
 from test_kit.data import TestDataProvider
 from test_kit.stubs import TestStubs
 
@@ -27,25 +30,19 @@ USDJPY_FXCM = TestStubs.instrument_usdjpy().symbol
 class BacktestEngineTests(unittest.TestCase):
 
     def setUp(self):
-        bid_data_1min = TestDataProvider.usdjpy_1min_bid()
-        ask_data_1min = TestDataProvider.usdjpy_1min_ask()
-
         instruments = [TestStubs.instrument_usdjpy()]
         tick_data = {USDJPY_FXCM: pd.DataFrame()}
-        bid_data = {USDJPY_FXCM: {Resolution.MINUTE: bid_data_1min}}
-        ask_data = {USDJPY_FXCM: {Resolution.MINUTE: ask_data_1min}}
-
-        strategies = [EmptyStrategy('000')]
-        config = BacktestConfig()
+        bid_data = {USDJPY_FXCM: {Resolution.MINUTE: TestDataProvider.usdjpy_1min_bid()}}
+        ask_data = {USDJPY_FXCM: {Resolution.MINUTE: TestDataProvider.usdjpy_1min_ask()}}
 
         self.engine = BacktestEngine(
             instruments=instruments,
             data_ticks=tick_data,
             data_bars_bid=bid_data,
             data_bars_ask=ask_data,
-            strategies=strategies,
+            strategies=[EmptyStrategy('000')],
             fill_model=FillModel(),
-            config=config)
+            config=BacktestConfig())
 
     def tearDown(self):
         self.engine.dispose()
@@ -163,3 +160,74 @@ class BacktestEngineTests(unittest.TestCase):
         self.assertEqual(2881, self.engine.data_client.data_providers[USDJPY_FXCM].iterations[TestStubs.bartype_usdjpy_1min_bid()])
         self.assertEqual(1441, strategies[0].fast_ema.count)
         self.assertEqual(1441, strategies[1].fast_ema.count)
+
+    def test_timer_and_alert_sequencing_with_bar_execution(self):
+        # Arrange
+        instruments = [TestStubs.instrument_usdjpy()]
+        tick_data = {USDJPY_FXCM: pd.DataFrame()}
+        bid_data = {USDJPY_FXCM: {Resolution.MINUTE: TestDataProvider.usdjpy_1min_bid()}}
+        ask_data = {USDJPY_FXCM: {Resolution.MINUTE: TestDataProvider.usdjpy_1min_ask()}}
+
+        instrument = TestStubs.instrument_usdjpy()
+        bar_type = TestStubs.bartype_usdjpy_1min_bid()
+
+        tick_tock = TickTock(instrument=instrument, bar_type=bar_type)
+
+        engine = BacktestEngine(
+            instruments=instruments,
+            data_ticks=tick_data,
+            data_bars_bid=bid_data,
+            data_bars_ask=ask_data,
+            strategies=[tick_tock],
+            fill_model=FillModel(),
+            config=BacktestConfig())
+
+        start = datetime(2013, 1, 1, 22, 2, 0, 0)
+        stop = datetime(2013, 1, 1, 22, 5, 0, 0)
+
+        # Act
+        engine.run(start, stop)
+
+        # Assert
+        self.assertEqual(Timestamp('2013-01-01 00:00:00+00:00'), engine.data_client.execution_data_index_min)
+        self.assertEqual(Timestamp('2013-12-31 23:59:00+00:00'), engine.data_client.execution_data_index_max)
+        self.assertEqual(Tick, type(tick_tock.store[0]))
+        self.assertEqual(Bar, type(tick_tock.store[1]))
+        self.assertEqual(Tick, type(tick_tock.store[2]))
+        self.assertEqual(TimeEvent, type(tick_tock.store[3]))
+        self.assertEqual(TimeEvent, type(tick_tock.store[4]))
+        self.assertEqual('Test-Alert-1', tick_tock.store[3].label.value)
+        self.assertEqual('Test-Timer', tick_tock.store[4].label.value)
+
+    def test_timer_alert_sequencing_with_tick_execution(self):
+        # Arrange
+        instruments = [TestStubs.instrument_usdjpy()]
+        tick_data = {USDJPY_FXCM: TestDataProvider.usdjpy_test_ticks()}
+        bid_data = {USDJPY_FXCM: {Resolution.MINUTE: TestDataProvider.usdjpy_1min_bid()}}
+        ask_data = {USDJPY_FXCM: {Resolution.MINUTE: TestDataProvider.usdjpy_1min_ask()}}
+
+        instrument = TestStubs.instrument_usdjpy()
+        bar_type = TestStubs.bartype_usdjpy_1min_bid()
+
+        tick_tock = TickTock(instrument=instrument, bar_type=bar_type)
+
+        engine = BacktestEngine(
+            instruments=instruments,
+            data_ticks=tick_data,
+            data_bars_bid=bid_data,
+            data_bars_ask=ask_data,
+            strategies=[tick_tock],
+            fill_model=FillModel(),
+            config=BacktestConfig())
+
+        start = datetime(2013, 1, 1, 22, 2, 0, 0)
+        stop = datetime(2013, 1, 1, 22, 5, 0, 0)
+
+        # Act
+        engine.run(start, stop)
+
+        # Assert
+        self.assertEqual(Timestamp('2013-01-01 22:00:00.295000+00:00'), engine.data_client.execution_data_index_min)
+        self.assertEqual(Timestamp('2013-01-01 22:35:13.494000+00:00'), engine.data_client.execution_data_index_max)
+
+        print(tick_tock.store)

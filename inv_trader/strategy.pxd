@@ -169,8 +169,8 @@ cdef class TradeStrategy:
     cpdef void flatten_position(self, PositionId position_id)
     cpdef void flatten_all_positions(self)
     cpdef void set_time_alert(self, Label label, datetime alert_time)
+    cpdef void set_timer(self, Label label, timedelta interval, datetime start_time=*, datetime stop_time=*)
     cpdef void cancel_time_alert(self, Label label)
-    cpdef void set_timer(self, Label label, timedelta interval, datetime start_time, datetime stop_time, bint repeat)
     cpdef void cancel_timer(self, Label label)
 
 # -- BACKTEST METHODS ---------------------------------------------------------------------------- #

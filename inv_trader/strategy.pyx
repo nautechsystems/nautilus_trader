@@ -1312,41 +1312,26 @@ cdef class TradeStrategy:
             handler=self.handle_event)
         self.log.info(f"Set time alert for {label} at {alert_time}.")
 
-    cpdef void cancel_time_alert(self, Label label):
-        """
-        Cancel the time alert corresponding to the given label.
-
-        :param label: The label for the alert to cancel.
-        :raises ValueError: If the label is not found in the internal timers.
-        """
-        self._clock.cancel_time_alert(label=label)
-        self.log.info(f"Cancelled time alert for {label}.")
-
     cpdef void set_timer(
             self,
             Label label,
             timedelta interval,
-            datetime start_time,
-            datetime stop_time,
-            bint repeat):
+            datetime start_time=None,
+            datetime stop_time=None):
         """
-        Set a timer with the given interval (time delta). The timer will run from
+        Set a timer with the given interval (timedelta). The timer will run from
         the start time (optionally until the stop time). When the interval is
         reached and the strategy is running, the on_event() is passed the
         TimeEvent containing the timers unique label.
-
-        Optionally the timer can be run repeatedly whilst the strategy is running.
 
         Note: The timer thread will begin immediately.
 
         :param label: The label for the timer (must be unique).
         :param interval: The interval timedelta  for the timer.
         :param start_time: The start datetime for the timer (optional can be None - then starts immediately).
-        :param stop_time: The stop datetime for the timer (optional can be None).
-        :param repeat: The option for the timer to repeat until the strategy is stopped
+        :param stop_time: The stop datetime for the timer (optional can be None - then repeats indefinitely).
         :raises ValueError: If the label is not unique.
         :raises ValueError: If the start_time is not None and not >= the current time (UTC).
-        :raises ValueError: If the stop_time is not None and repeat is False.
         :raises ValueError: If the stop_time is not None and not > than the start_time.
         :raises ValueError: If the stop_time is not None and start_time plus interval is greater
         than the stop_time.
@@ -1356,10 +1341,27 @@ cdef class TradeStrategy:
             interval=interval,
             start_time=start_time,
             stop_time=stop_time,
-            repeat=repeat,
             handler=self.handle_event)
-        self.log.info((f"Set timer for {label} with interval {interval}, "
-                       f"starting at {start_time}, stopping at {stop_time}, repeat={repeat}."))
+
+        cdef str start_time_msg = ''
+        if start_time is not None:
+            start_time_msg = f', starting at {start_time}'
+
+        cdef str stop_time_msg = ''
+        if stop_time is not None:
+            stop_time_msg = f', stopping at {stop_time}'
+
+        self.log.info(f"Set timer for {label} with interval {interval}{start_time_msg}{stop_time_msg}.")
+
+    cpdef void cancel_time_alert(self, Label label):
+        """
+        Cancel the time alert corresponding to the given label.
+
+        :param label: The label for the alert to cancel.
+        :raises ValueError: If the label is not found in the internal timers.
+        """
+        self._clock.cancel_time_alert(label=label)
+        self.log.info(f"Cancelled time alert for {label}.")
 
     cpdef void cancel_timer(self, Label label):
         """
