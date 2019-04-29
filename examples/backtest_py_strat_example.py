@@ -60,7 +60,7 @@ if __name__ == "__main__":
         config=config)
 
     start = datetime(2013, 1, 1, 0, 0, 0, 0)
-    stop = datetime(2013, 1, 2, 0, 0, 0, 0)
+    stop = datetime(2013, 1, 10, 0, 0, 0, 0)
 
     engine.run(start, stop)
 
