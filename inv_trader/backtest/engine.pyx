@@ -29,7 +29,7 @@ from inv_trader.version import __version__
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.core.functions cimport as_utc_timestamp, format_zulu_datetime
 from inv_trader.backtest.config cimport BacktestConfig
-from inv_trader.backtest.data cimport BacktestDataClient
+from inv_trader.backtest.data cimport BidAskBarPair, BacktestDataClient
 from inv_trader.backtest.execution cimport BacktestExecClient
 from inv_trader.backtest.models cimport FillModel
 from inv_trader.common.account cimport Account
@@ -303,7 +303,7 @@ cdef class BacktestEngine:
         cdef Symbol symbol
         cdef Tick tick
         cdef TradeStrategy strategy
-        cdef tuple execution_bars
+        cdef BidAskBarPair execution_bars
         cdef dict time_events
 
         cdef datetime time = start
