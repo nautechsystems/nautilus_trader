@@ -437,11 +437,11 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Act
         strategy.start()
-        time.sleep(0.8)
+        time.sleep(0.9)
         strategy.stop()
 
         # Assert
-        self.assertEqual(3, strategy.object_storer.count)
+        self.assertEqual(2, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[1], TimeEvent))
 
     def test_can_cancel_time_alert(self):
