@@ -196,4 +196,4 @@ class ReportProviderTests(unittest.TestCase):
         self.assertEqual(UNIX_EPOCH, report.iloc[0]['entry_time'])
         self.assertEqual(UNIX_EPOCH + timedelta(minutes=5), report.iloc[0]['exit_time'])
         self.assertEqual(Decimal('0.00010'), report.iloc[0]['points'])
-        self.assertEqual(0.00012500511365942657, report.iloc[0]['return'])
+        self.assertEqual(0.00012502074241638184, report.iloc[0]['return'])

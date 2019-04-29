@@ -108,7 +108,7 @@ class PositionTests(unittest.TestCase):
         self.assertFalse(position.is_exited)
         self.assertEqual(Decimal(0), position.points_realized)
         self.assertEqual(0.0, position.return_realized)
-        self.assertEqual(0.0004897053586319089, position.return_unrealized(Price('1.00050')))
+        self.assertEqual(0.0004899452906101942, position.return_unrealized(Price('1.00050')))
 
     def test_position_filled_with_sell_order_returns_expected_attributes(self):
         # Arrange
@@ -153,7 +153,7 @@ class PositionTests(unittest.TestCase):
         self.assertFalse(position.is_exited)
         self.assertEqual(Decimal(0), position.points_realized)
         self.assertEqual(0.0, position.return_realized)
-        self.assertEqual(-0.0004897053586319089, position.return_unrealized(Price('1.00050')))
+        self.assertEqual(-0.0004899452906101942, position.return_unrealized(Price('1.00050')))
 
     def test_position_partial_fills_with_buy_order_returns_expected_attributes(self):
         # Arrange
@@ -201,7 +201,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Decimal(0), position.points_realized)
         self.assertEqual(0.0, position.return_realized)
         self.assertEqual(Decimal('0.00049'), position.points_unrealized(Price('1.00050')))
-        self.assertEqual(0.0004897053586319089, position.return_unrealized(Price('1.00050')))
+        self.assertEqual(0.0004899452906101942, position.return_unrealized(Price('1.00050')))
 
     def test_position_partial_fills_with_sell_order_returns_expected_attributes(self):
         # Arrange
@@ -249,7 +249,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Decimal(0), position.points_realized)
         self.assertEqual(0.0, position.return_realized)
         self.assertEqual(Decimal('-0.00049'), position.points_unrealized(Price('1.00050')))
-        self.assertEqual(-0.0004897053586319089, position.return_unrealized(Price('1.00050')))
+        self.assertEqual(-0.0004899452906101942, position.return_unrealized(Price('1.00050')))
 
     def test_position_filled_with_buy_order_then_sell_order_returns_expected_attributes(self):
         # Arrange
@@ -371,5 +371,5 @@ class PositionTests(unittest.TestCase):
         self.assertTrue(position.is_exited)
         self.assertEqual(Decimal('-0.00001'), position.points_realized)
         self.assertEqual(Decimal(0), position.points_unrealized(Price('1.00050')))  # No more quantity in market
-        self.assertEqual(-1.001348027784843e-05, position.return_realized)
+        self.assertEqual(-1.0013580322265625e-05, position.return_realized)
         self.assertEqual(0.0, position.return_unrealized(Price('1.00050')))  # No more quantity in market

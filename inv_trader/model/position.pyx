@@ -263,8 +263,8 @@ cdef class Position:
         :return: float.
         """
         if self.market_position == MarketPosition.LONG:
-            return (exit_price.as_float() - entry_price.as_float()) / exit_price.as_float()
+            return (exit_price.as_float() - entry_price.as_float()) / entry_price.as_float()
         elif self.market_position == MarketPosition.SHORT:
-            return (entry_price.as_float() - exit_price.as_float()) / exit_price.as_float()
+            return (entry_price.as_float() - exit_price.as_float()) / entry_price.as_float()
         else:
             raise ValueError(f'Cannot calculate the return of a {self.market_position} direction.')
