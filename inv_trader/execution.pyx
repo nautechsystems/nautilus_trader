@@ -119,6 +119,7 @@ cdef class LiveExecClient(ExecutionClient):
         """
         self._commands_worker.stop()
         self._events_worker.stop()
+        #self.zmq_context.term()
 
     cpdef void check_residuals(self):
         """

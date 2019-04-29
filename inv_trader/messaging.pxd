@@ -25,6 +25,7 @@ cdef class MQWorker:
     cdef int _cycles
 
     cdef readonly str name
+    cdef readonly bint is_running
 
     cpdef void start(self)
     cpdef void send(self, bytes message)
