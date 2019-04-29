@@ -14,14 +14,35 @@ import pytz
 
 from datetime import timezone, timedelta
 
-from inv_trader.core.functions import as_utc_timestamp, with_utc_index, pad_string
+from inv_trader.core.functions import pad_string, basis_points_as_percentage
+from inv_trader.core.functions import format_zulu_datetime, as_utc_timestamp, with_utc_index
 from test_kit.data import TestDataProvider
+from test_kit.stubs import UNIX_EPOCH
 
 
 class TestFunctionsTests(unittest.TestCase):
 
-    # TODO: test format zulu
-    # TODO: test bp as percentage
+    def test_format_zulu_datetime(self):
+        # Arrange
+        dt1 = UNIX_EPOCH
+        dt2 = UNIX_EPOCH + timedelta(microseconds=1)
+        dt3 = UNIX_EPOCH + timedelta(milliseconds=1)
+        dt4 = UNIX_EPOCH + timedelta(seconds=1)
+        dt5 = UNIX_EPOCH + timedelta(hours=1, minutes=1, seconds=2, milliseconds=3)
+
+        # Act
+        result1 = format_zulu_datetime(dt1)
+        result2 = format_zulu_datetime(dt2)
+        result3 = format_zulu_datetime(dt3)
+        result4 = format_zulu_datetime(dt4)
+        result5 = format_zulu_datetime(dt5)
+
+        # Assert
+        self.assertEqual('1970-01-01T00:00:00.000Z', result1)
+        self.assertEqual('1970-01-01T00:00:00.000Z', result2)
+        self.assertEqual('1970-01-01T00:00:00.001Z', result3)
+        self.assertEqual('1970-01-01T00:00:01.000Z', result4)
+        self.assertEqual('1970-01-01T01:01:02.003Z', result5)
 
     def test_pad_string(self):
         # Arrange
@@ -32,6 +53,16 @@ class TestFunctionsTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(" 1234", result)
+
+    def test_basis_points_as_percentage(self):
+        # Arrange
+        # Act
+        result1 = basis_points_as_percentage(0)
+        result2 = basis_points_as_percentage(0.020)
+
+        # Assert
+        self.assertEqual(0.0, result1)
+        self.assertAlmostEqual(0.000002, result2)
 
     def test_datetime_and_pd_timestamp_equality(self):
         # Arrange
