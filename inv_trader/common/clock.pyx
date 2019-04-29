@@ -108,14 +108,14 @@ cdef class Clock:
         """
         Cancel all time alerts inside the clock.
         """
-        for label in self._time_alerts.keys():
+        for label in self._time_alerts.copy().keys():  # Copy to avoid resize during iteration
             self.cancel_time_alert(label)
 
     cpdef cancel_all_timers(self):
         """
         Cancel all timers inside the clock.
         """
-        for label in self._timers.keys():
+        for label in self._timers.copy().keys():  # Copy to avoid resize during iteration
             self.cancel_timer(label)
 
 
@@ -265,7 +265,9 @@ cdef class LiveClock(Clock):
         Create a new TimeEvent and pass it to the clocks event handler.
         """
         self._event_handler(TimeEvent(label, GUID(uuid4()), alert_time))
-        del self._timers[label]
+
+        if label in self._timers:
+            del self._timers[label]
 
     cpdef void _repeating_timer(
             self,
@@ -321,9 +323,11 @@ cdef class TestTimer:
 
     cpdef list advance(self, datetime time):
         """
-        Advance the timer forward to the given time.
-        
-        :param time: The time to advance the timer to.
+        Return a list of time events in chronological order by advancing the 
+        test timer forward to the given time.
+
+        :param time: The time to advance the test timer to.
+        :return: List[TimeEvent].
         """
         cdef list time_events = []  # type: List[TimeEvent]
 
