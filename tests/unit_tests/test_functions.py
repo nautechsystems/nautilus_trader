@@ -22,6 +22,16 @@ from test_kit.stubs import UNIX_EPOCH
 
 class TestFunctionsTests(unittest.TestCase):
 
+    def test_pad_string(self):
+        # Arrange
+        test_string = "1234"
+
+        # Act
+        result = pad_string(test_string, 5)
+
+        # Assert
+        self.assertEqual(" 1234", result)
+
     def test_format_zulu_datetime(self):
         # Arrange
         dt1 = UNIX_EPOCH
@@ -43,16 +53,6 @@ class TestFunctionsTests(unittest.TestCase):
         self.assertEqual('1970-01-01T00:00:00.001Z', result3)
         self.assertEqual('1970-01-01T00:00:01.000Z', result4)
         self.assertEqual('1970-01-01T01:01:02.003Z', result5)
-
-    def test_pad_string(self):
-        # Arrange
-        test_string = "1234"
-
-        # Act
-        result = pad_string(test_string, 5)
-
-        # Assert
-        self.assertEqual(" 1234", result)
 
     def test_basis_points_as_percentage(self):
         # Arrange

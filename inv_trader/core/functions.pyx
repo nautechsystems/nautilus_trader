@@ -42,6 +42,16 @@ cpdef str format_zulu_datetime(datetime dt):
         return formatted_dt + 'Z'
 
 
+cpdef float basis_points_as_percentage(float basis_points):
+    """
+    Return the given basis points expressed as a percentage where 100% = 1.0.
+    
+    :param basis_points: The basis points to convert to percentage.
+    :return: float.
+    """
+    return basis_points * 0.0001
+
+
 cpdef object with_utc_index(dataframe):
         """
         Return the given pandas dataframe with the index timestamps localized 
@@ -77,13 +87,3 @@ cpdef object as_utc_timestamp(datetime timestamp):
         return timestamp.tz_convert('UTC')
     else:
         return timestamp  # Already UTC
-
-
-cpdef float basis_points_as_percentage(float basis_points):
-    """
-    Return the given basis points expressed as a percentage where 100% = 1.0.
-    
-    :param basis_points: The basis points to convert to percentage.
-    :return: float.
-    """
-    return basis_points * 0.0001
