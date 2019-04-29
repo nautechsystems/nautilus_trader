@@ -16,6 +16,7 @@ from threading import Timer
 from typing import List, Dict, Callable
 
 from inv_trader.common.clock cimport TestTimer
+from inv_trader.common.logger cimport LoggerAdapter
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.model.identifiers cimport Label, GUID
 from inv_trader.model.events cimport TimeEvent
@@ -33,8 +34,18 @@ cdef class Clock:
         """
         Initializes a new instance of the Clock class.
         """
+        self._log = None
         self._event_handler = None
+        self.is_logger_registered = False
         self.is_handler_registered = False
+
+    cpdef void register_logger(self, LoggerAdapter logger):
+        """
+        Register the given handler with the clock to receive all generated
+        time events.
+        """
+        self._log = logger
+        self.is_logger_registered = True
 
     cpdef void register_handler(self, handler: Callable):
         """
@@ -97,15 +108,15 @@ cdef class Clock:
         """
         Cancel all time alerts inside the clock.
         """
-        # Raise exception if not overridden in implementation.
-        raise NotImplementedError("Method must be implemented in the subclass.")
+        for label in self._time_alerts.keys():
+            self.cancel_time_alert(label)
 
     cpdef cancel_all_timers(self):
         """
         Cancel all timers inside the clock.
         """
-        # Raise exception if not overridden in implementation.
-        raise NotImplementedError("Method must be implemented in the subclass.")
+        for label in self._timers.keys():
+            self.cancel_timer(label)
 
 
 cdef class LiveClock(Clock):
@@ -152,6 +163,9 @@ cdef class LiveClock(Clock):
 
         timer.start()
         self._time_alerts[label] = timer
+
+        if self.is_logger_registered:
+            self._log.info(f"Set TimeAlert('{label.value}') for {alert_time}")
 
     cpdef set_timer(
             self,
@@ -206,6 +220,16 @@ cdef class LiveClock(Clock):
         timer.start()
         self._timers[label] = timer
 
+        cdef str start_time_msg = ''
+        cdef str stop_time_msg = ''
+
+        if self.is_logger_registered:
+            if start_time is not None:
+                start_time_msg = f', starting at {start_time}'
+            if stop_time is not None:
+                stop_time_msg = f', stopping at {stop_time}'
+            self._log.info(f"Set Timer('{label.value}') with interval {interval}{start_time_msg}{stop_time_msg}.")
+
     cpdef cancel_time_alert(self, Label label):
         """
         Cancel the time alert corresponding to the given label.
@@ -217,6 +241,9 @@ cdef class LiveClock(Clock):
 
         self._time_alerts[label].cancel()
         del self._timers[label]
+
+        if self.is_logger_registered:
+            self._log.info(f"Cancelled TimeAlert('{label.value}').")
 
     cpdef cancel_timer(self, Label label):
         """
@@ -230,19 +257,8 @@ cdef class LiveClock(Clock):
         self._timers[label].cancel()
         del self._timers[label]
 
-    cpdef cancel_all_time_alerts(self):
-        """
-        Cancel all time alerts inside the clock.
-        """
-        for label, time_alert in self._time_alerts.items():
-            time_alert.cancel()
-
-    cpdef cancel_all_timers(self):
-        """
-        Cancel all timers inside the clock.
-        """
-        for label, timer in self._timers.items():
-            timer.cancel()
+        if self.is_logger_registered:
+            self._log.info(f"Cancelled Timer('{label.value}').")
 
     cpdef void _raise_time_event(self, Label label, datetime alert_time):
         """
@@ -404,6 +420,9 @@ cdef class TestClock(Clock):
 
         self._time_alerts[label] = alert_time
 
+        if self.is_logger_registered:
+            self._log.info(f"Set TimeAlert('{label.value}') for {alert_time}")
+
     cpdef set_timer(
             self,
             Label label,
@@ -448,6 +467,16 @@ cdef class TestClock(Clock):
 
         self._timers[label] = timer
 
+        cdef str start_time_msg = ''
+        cdef str stop_time_msg = ''
+
+        if self.is_logger_registered:
+            if start_time is not None:
+                start_time_msg = f', starting at {start_time}'
+            if stop_time is not None:
+                stop_time_msg = f', stopping at {stop_time}'
+            self._log.info(f"Set Timer('{label.value}') with interval {interval}{start_time_msg}{stop_time_msg}.")
+
     cpdef cancel_time_alert(self, Label label):
         """
         Cancel the time alert corresponding to the given label.
@@ -458,6 +487,9 @@ cdef class TestClock(Clock):
         Precondition.is_in(label, self._time_alerts, 'label', 'time_alerts')
 
         del self._time_alerts[label]
+
+        if self.is_logger_registered:
+            self._log.info(f"Cancelled TimeAlert('{label.value}').")
 
     cpdef cancel_timer(self, Label label):
         """
@@ -470,14 +502,5 @@ cdef class TestClock(Clock):
 
         del self._timers[label]
 
-    cpdef cancel_all_time_alerts(self):
-        """
-        Cancel all time alerts inside the clock.
-        """
-        self._time_alerts = {}  # type: Dict[Label, datetime]
-
-    cpdef cancel_all_timers(self):
-        """
-        Cancel all timers inside the clock.
-        """
-        self._timers = {}       # type: Dict[Label, Timer]
+        if self.is_logger_registered:
+            self._log.info(f"Cancelled Timer('{label.value}').")

@@ -37,7 +37,6 @@ cdef class TradeStrategy:
     cdef GuidFactory _guid_factory
     cdef readonly Clock clock
     cdef readonly LoggerAdapter log
-    cdef readonly bint is_running
 
     cdef readonly TraderId trader_id
     cdef readonly StrategyId id
@@ -71,6 +70,7 @@ cdef class TradeStrategy:
     cdef readonly bint is_data_client_registered
     cdef readonly bint is_exec_client_registered
     cdef readonly bint is_portfolio_registered
+    cdef readonly bint is_running
 
     cdef bint equals(self, TradeStrategy other)
 
