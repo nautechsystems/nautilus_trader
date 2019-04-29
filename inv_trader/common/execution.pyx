@@ -435,7 +435,7 @@ cdef class ExecutionClient:
 
     cdef void _reset(self):
         """
-        Reset the execution client by returning all stateful internal values to their initial values.
+        Reset the execution client by returning all stateful internal values to their initial value.
         """
         self._log.debug(f"Resetting...")
         self._order_book = {}                         # type: Dict[OrderId, Order]

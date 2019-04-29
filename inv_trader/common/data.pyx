@@ -125,7 +125,7 @@ cdef class DataClient:
         Return the instrument corresponding to the given symbol.
 
         :param symbol: The symbol of the instrument to return.
-        :return: The instrument (if found)
+        :return: Instrument (if found)
         :raises ValueError: If the instrument is not found.
         """
         Precondition.is_in(symbol, self._instruments, 'symbol', 'instruments')
@@ -324,7 +324,7 @@ cdef class DataClient:
 
     cdef void _reset(self):
         """
-        Reset the DataClient by clearing all stateful internal values. 
+        Reset the DataClient by clearing all stateful internal value. 
         """
         self._instruments = {}       # type: Dict[Symbol, Instrument]
         self._tick_handlers = {}     # type: Dict[Symbol, List[TickHandler]]

@@ -219,15 +219,36 @@ cdef class Logger:
                 self._console_print_handler(f"IOError: {ex}.", logging.CRITICAL)
 
     cdef str _format_message(self, datetime timestamp, str log_level, str message):
+        """
+        Return the formatted log message from the given arguments.
+
+        :param timestamp: The log message timestamp.
+        :param log_level: The log message level.
+        :param message: The log message text. 
+        :return: str.
+        """
         cdef str time = format_zulu_datetime(timestamp)
         cdef str thread = '' if self._log_thread is False else f'[{threading.current_thread().ident}]'
         return f"{BOLD}{time}{ENDC} {thread}[{log_level}] {message}"
 
     cdef void _log_store_handler(self, int log_level, str message):
+        """
+        Store the given log message if the given log level is >= the log_level_store.
+        
+        :param log_level: The log message level.
+        :param message: The log message text.
+        """
         if log_level >= self._log_level_store:
             self._log_store.append(message)
 
     cdef void _console_print_handler(self, int log_level, str message):
+        """
+        Print the given log message to the console if the given log level if
+        >= the log_level_console level.
+
+        :param log_level: The log message level.
+        :param message: The log message text.
+        """
         if self._console_prints and log_level >= self._log_level_console:
             print(message)
 
@@ -243,9 +264,9 @@ cdef class LogMessage:
         """
         Initializes a new instance of the LogMessage class.
 
-        :param log_level: The log_level of the message.
-        :param timestamp: The timestamp of the message.
-        :param text: The message text.
+        :param log_level: The log message level.
+        :param timestamp: The log message timestamp.
+        :param text: The log message text.
         """
         self.log_level = log_level
         self.timestamp = timestamp
@@ -299,7 +320,7 @@ cdef class LiveLogger(Logger):
         """
         Log the given message with the given log level and timestamp.
         
-        :param log_level: The log level for the log message.
+        :param log_level: The log message level.
         :param message: The message to log.
         """
         self._queue.put(LogMessage(log_level, self.clock.time_now(), message))

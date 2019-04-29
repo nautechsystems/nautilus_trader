@@ -247,7 +247,8 @@ cdef class IdentifierGenerator:
 
     cpdef void reset(self):
         """
-        Reset the identifier generator by clearing all stateful internal values.
+        Reset the identifier generator by returning all stateful internal values
+        to their initial value.
         """
         self.counter = 0
 

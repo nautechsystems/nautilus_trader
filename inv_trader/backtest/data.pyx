@@ -242,7 +242,6 @@ cdef class BacktestDataClient(DataClient):
         Build bars of the given bar type inside the data provider.
         
         :param bar_type: THe bar type to build.
-        :return: 
         """
         Precondition.is_in(bar_type.symbol, self.data_providers, 'symbol', 'data_providers')
 
@@ -334,7 +333,7 @@ cdef class BacktestDataClient(DataClient):
     cpdef void reset(self):
         """
         Reset the data client by returning all stateful internal values to their
-        initial values, whilst preserving any constructed bar and tick data.
+        initial value, whilst preserving any constructed bar and tick data.
         """
         self._log.info(f"Resetting...")
 
@@ -687,7 +686,7 @@ cdef class DataProvider:
         Return a list of bars which have closed based on the given to datetime.
 
         :param to_time: The time to build the bar list to.
-        :return: List[Bar].
+        :return: Dict[BarType, Bar].
         """
         cdef dict bars_dict = {}  # type: Dict[BarType, Bar]
         for bar_type, iterations in self.iterations.items():
@@ -700,7 +699,7 @@ cdef class DataProvider:
     cpdef void reset(self):
         """
         Reset the data provider by returning all stateful internal values to their
-        initial values, whilst preserving any constructed bar and tick data.
+        initial value, whilst preserving any constructed bar and tick data.
         """
         for bar_type in self.iterations.keys():
             self.iterations[bar_type] = 0

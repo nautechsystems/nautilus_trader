@@ -129,7 +129,10 @@ cdef class Trader:
 
     cpdef reset(self):
         """
-        Reset the trader (the trader must be stopped first).
+        Reset the trader by returning all stateful internal values of the portfolio, 
+        and every strategy to their initial value.
+        
+        Note: The trader cannot be running otherwise an error is logged.
         """
         if self.is_running:
             self._log.error(f"Cannot reset a running Trader...")

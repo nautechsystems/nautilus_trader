@@ -21,7 +21,9 @@ cdef class GuidFactory:
 
     cpdef GUID generate(self):
         """
-        :return: A GUID.
+        Return a generated GUID.
+
+        :return: GUID.
         """
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the subclass.")
@@ -41,15 +43,16 @@ cdef class TestGuidFactory(GuidFactory):
 
     cpdef GUID generate(self):
         """
-        :return: The single test GUID instance.
+        Return the single test GUID instance.
+        
+        :return: GUID.
         """
         return self._guid
 
 
 cdef class LiveGuidFactory(GuidFactory):
     """
-    Provides a GUID factory for live trading. Generates actual GUIDs based on
-    Pythons UUID4.
+    Provides a GUID factory for live trading. Generates UUID4's.
     """
 
     def __init__(self):
@@ -60,6 +63,8 @@ cdef class LiveGuidFactory(GuidFactory):
 
     cpdef GUID generate(self):
         """
-        :return: A new GUID.
+        Return a generated GUID.
+
+        :return: GUID.
         """
         return GUID(uuid4())

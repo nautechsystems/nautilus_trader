@@ -42,9 +42,9 @@ cdef class TradeStrategy:
 
     def __init__(self,
                  str id_tag_strategy,
-                 flatten_on_sl_reject=True,
-                 flatten_on_stop=True,
-                 cancel_all_orders_on_stop=True,
+                 bint flatten_on_sl_reject=True,
+                 bint flatten_on_stop=True,
+                 bint cancel_all_orders_on_stop=True,
                  int bar_capacity=1000,
                  Clock clock=LiveClock(),
                  GuidFactory guid_factory=LiveGuidFactory(),
@@ -1020,9 +1020,10 @@ cdef class TradeStrategy:
 
     cpdef void reset(self):
         """
-        Reset the trade strategy by clearing all stateful internal values and
-        returning it to a fresh state (strategy must not be running).
-        Then call on_reset().
+        Reset the strategy by returning all stateful internal values to their
+        initial value, the on_reset() implementation is then called. 
+        
+        Note: The strategy cannot be running otherwise an error is logged.
         """
         if self.is_running:
             self.log.error(f"Cannot reset (cannot reset a running strategy).")

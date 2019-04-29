@@ -72,8 +72,8 @@ cdef class SpreadAnalyzer:
 
     cpdef void reset(self):
         """
-        Reset the spread analyzer by clearing all internally held values and 
-        returning it to a fresh state.
+        Reset the spread analyzer by returning all stateful internal values to 
+        their initial value.
         """
         self._spreads = []                                                   # type: List[Decimal]
         self._average_spreads = deque(maxlen=self._average_spread_capacity)  # type: Deque[Decimal]
