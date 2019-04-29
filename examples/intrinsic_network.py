@@ -21,7 +21,6 @@ class INStrategyExample(TradeStrategy):
     """
 
     def __init__(self,
-                 order_id_tag: str,
                  instrument: Instrument,
                  bar_type: BarType,
                  position_size=1000000,
@@ -30,15 +29,13 @@ class INStrategyExample(TradeStrategy):
         """
         Initializes a new instance of the INStrategyExample class.
 
-        :param order_id_tag: The order identifier tag for the strategy (must be unique at trader level).
         :param instrument: The instrument for the strategy.
         :param bar_type: The bar type for the strategy.
         :param position_size: The position size.
         :param threshold_entry: The threshold for the IntrinsicNetwork entry direction.
         :param threshold_entry: The threshold for the IntrinsicNetwork close direction.
         """
-        # Send the below arguments into the base class
-        super().__init__(order_id_tag=order_id_tag)
+        super().__init__(order_id_tag=instrument.symbol.code)
 
         # Custom strategy variables
         self.instrument = instrument
