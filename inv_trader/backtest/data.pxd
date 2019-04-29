@@ -16,6 +16,15 @@ from inv_trader.enums.resolution cimport Resolution
 from inv_trader.model.objects cimport Symbol, Tick, BarType, Bar, Instrument
 
 
+cdef class BidAskBarPair:
+    """
+    Represents a bid ask bar pair for the same market and timestamp.
+    """
+    cdef readonly Bar bid
+    cdef readonly Bar ask
+
+
+
 cdef class BacktestDataClient(DataClient):
     """
     Provides a data client for backtesting.
