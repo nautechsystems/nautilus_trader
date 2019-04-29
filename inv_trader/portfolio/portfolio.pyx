@@ -414,7 +414,7 @@ cdef class Portfolio:
 
     cpdef void reset(self):
         """
-        Reset the portfolio by returning all stateful internal values to their initial values.
+        Reset the portfolio by returning all stateful internal values to their initial value.
         """
         self._log.info(f"Resetting...")
         self._position_book = {}                      # type: Dict[PositionId, Position]

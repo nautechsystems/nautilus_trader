@@ -377,7 +377,7 @@ cdef class TestClock(Clock):
         Iterates the clocks time to the given time at time_step intervals.
         
         :param to_time: The datetime to iterate the test clock to.
-        :return: List[TimeEvent
+        :return: List[TimeEvent].
         """
         # Preconditions commented out for performance reasons (assumes backtest implementation is correct)
         # Precondition.true(time.tzinfo == self.timezone, 'time.tzinfo == self.timezone')

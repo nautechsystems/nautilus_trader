@@ -50,7 +50,7 @@ cdef class FillModel:
         """
         Return the models outcome for the probability of a LIMIT order filling.
         
-        :return: bool.
+        :return: True if the event occurred, else False.
         """
         return self._did_event_occur(self.prob_fill_at_limit)
 
@@ -58,7 +58,7 @@ cdef class FillModel:
         """
         Return the models outcome for the probability of a STOP order filling.
         
-        :return: bool.
+        :return: True if the event occurred, else False.
         """
         return self._did_event_occur(self.prob_fill_at_stop)
 
@@ -66,7 +66,7 @@ cdef class FillModel:
         """
         Return the models outcome for the probability of an order fill slipping.
         
-        :return: bool.
+        :return: True if the event occurred, else False.
         """
         return self._did_event_occur(self.prob_slippage)
 
@@ -76,7 +76,7 @@ cdef class FillModel:
         probability.
         
         :param probability: The probability of the event occurring [0, 1].
-        :return: bool.
+        :return: True if the event occurred, else False.
         """
         if probability == 0.0:
             return False

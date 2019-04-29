@@ -117,7 +117,7 @@ cdef class Account:
 
     cpdef void reset(self):
         """
-        Reset the account by returning all stateful internal values to their initial values.
+        Reset the account by returning all stateful internal values to their initial value.
         """
         self._events = []
 

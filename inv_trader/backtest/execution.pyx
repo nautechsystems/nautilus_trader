@@ -286,8 +286,8 @@ cdef class BacktestExecClient(ExecutionClient):
 
     cpdef void reset(self):
         """
-        Reset the execution client by returning all stateful internal values to their
-        initial values, whilst preserving any constructed tick data.
+        Reset the execution client by returning all stateful internal values to 
+        their initial value, whilst preserving any constructed tick data.
         """
         self._log.info(f"Resetting...")
         self._reset()
