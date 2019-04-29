@@ -219,7 +219,7 @@ cdef class Logger:
                 self._console_print_handler(f"IOError: {ex}.", logging.CRITICAL)
 
     cdef str _format_message(self, datetime timestamp, str log_level, str message):
-        cdef str time = format_zulu_datetime(timestamp, timespec='microseconds')
+        cdef str time = format_zulu_datetime(timestamp)
         cdef str thread = '' if self._log_thread is False else f'[{threading.current_thread().ident}]'
         return f"{BOLD}{time}{ENDC} {thread}[{log_level}] {message}"
 
