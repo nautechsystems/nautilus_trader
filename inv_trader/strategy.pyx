@@ -9,7 +9,7 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
-from cpython.datetime cimport datetime, timedelta
+from cpython.datetime cimport datetime
 from collections import deque
 from typing import Callable, Dict, List, Deque
 
@@ -69,23 +69,21 @@ cdef class TradeStrategy:
         Precondition.valid_string(id_tag_strategy, 'id_tag_strategy')
         Precondition.positive(bar_capacity, 'bar_capacity')
 
-        # Components
-        self._guid_factory = guid_factory
-        self.clock = clock
-        self.clock.register_handler(self.handle_event)
-        self.is_running = False
-
         # Identification
         self.trader_id = TraderId('Trader-000')
         self.id = StrategyId(self.__class__.__name__ + '-' + id_tag_strategy)
         self.id_tag_trader = ValidString('000')
         self.id_tag_strategy = ValidString(id_tag_strategy)
 
-        # Logger
+        # Components
         if logger is None:
             self.log = LoggerAdapter(f"{self.id.value}")
         else:
             self.log = LoggerAdapter(f"{self.id.value}", logger)
+        self._guid_factory = guid_factory
+        self.clock = clock
+        self.clock.register_logger(self.log)
+        self.clock.register_handler(self.handle_event)
 
         # Order management flags
         self.flatten_on_sl_reject = flatten_on_sl_reject
@@ -129,6 +127,8 @@ cdef class TradeStrategy:
         self.is_data_client_registered = False
         self.is_exec_client_registered = False
         self.is_portfolio_registered = False
+
+        self.is_running = False
 
     cdef bint equals(self, TradeStrategy other):
         """
@@ -1299,11 +1299,14 @@ cdef class TradeStrategy:
         :param clock: The clock to change to.
         """
         self.clock = clock
+        self.clock.register_logger(self.log)
         self.clock.register_handler(self.handle_event)
+
         self.order_factory = OrderFactory(
             id_tag_trader=self.id_tag_trader.value,
             id_tag_strategy=self.id_tag_strategy.value,
             clock=clock)
+
         self.position_id_generator = PositionIdGenerator(
             id_tag_trader=self.id_tag_trader.value,
             id_tag_strategy=self.id_tag_strategy.value,

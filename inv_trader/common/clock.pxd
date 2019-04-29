@@ -11,6 +11,7 @@
 
 from cpython.datetime cimport datetime, timedelta
 
+from inv_trader.common.logger cimport LoggerAdapter
 from inv_trader.model.identifiers cimport Label
 
 
@@ -18,12 +19,15 @@ cdef class Clock:
     """
     The abstract base class for all clocks. All times are tz-aware UTC.
     """
-    cdef readonly is_handler_registered
-
+    cdef LoggerAdapter _log
     cdef object _event_handler
     cdef dict _time_alerts
     cdef dict _timers
 
+    cdef readonly is_logger_registered
+    cdef readonly is_handler_registered
+
+    cpdef void register_logger(self, LoggerAdapter logger)
     cpdef void register_handler(self, handler)
     cpdef datetime time_now(self)
     cpdef timedelta get_delta(self, datetime time)
