@@ -7,7 +7,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-# cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
+# cython: language_level=3, boundscheck=False, nonecheck=False
 
 from cpython.datetime cimport datetime
 
@@ -24,11 +24,16 @@ cdef inline str format_zulu_datetime(datetime dt, str timespec=None):
     :param timespec: The timespec for formatting.
     :return: str.
     """
-    if timespec:
+    cdef formatted_dt = ''
+    if timespec is not None:
         try:
-            return dt.isoformat(timespec=timespec).partition('+')[0] + 'Z'
+            formatted_dt = dt.isoformat(timespec=timespec).partition('+')[0][:-3]
         except TypeError as ex:
-            return dt.isoformat().partition('+')[0] + '.000Z'
+            formatted_dt = dt.isoformat().partition('+')[0][:-3]
+        if not formatted_dt.__contains__('.'):
+            return formatted_dt + ':00.000Z'
+        else:
+            return formatted_dt + 'Z'
     else:
         return dt.isoformat().partition('+')[0] + 'Z'
 
