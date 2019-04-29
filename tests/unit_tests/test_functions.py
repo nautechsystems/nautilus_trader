@@ -20,6 +20,9 @@ from test_kit.data import TestDataProvider
 
 class TestFunctionsTests(unittest.TestCase):
 
+    # TODO: test format zulu
+    # TODO: test bp as percentage
+
     def test_datetime_and_pd_timestamp_equality(self):
         # Arrange
         timestamp1 = datetime.datetime(1970, 1, 1, 0, 0, 0, 0)
