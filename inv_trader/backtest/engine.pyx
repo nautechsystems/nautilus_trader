@@ -317,7 +317,7 @@ cdef class BacktestEngine:
                 self.test_clock.set_time(event.timestamp)
                 handler(event)
             for symbol, execution_bars in self.data_client.get_next_execution_bars(time).items():
-                self.exec_client.process_bars(symbol, execution_bars[0], execution_bars[1])
+                self.exec_client.process_bars(symbol, execution_bars.bid, execution_bars.ask)
             for tick in self.data_client.iterate_ticks(time):
                 self.data_client.process_tick(tick)
             self.test_clock.set_time(time)

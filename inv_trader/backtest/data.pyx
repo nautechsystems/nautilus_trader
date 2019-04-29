@@ -26,6 +26,22 @@ from inv_trader.model.objects cimport Symbol, Instrument, Tick, BarType, Bar, Ba
 from inv_trader.tools cimport TickBuilder, BarBuilder
 
 
+cdef class BidAskBarPair:
+    """
+    Represents a bid ask bar pair for the same market and timestamp.
+    """
+
+    def __init__(self, Bar bid_bar, Bar ask_bar):
+        """
+         Initializes a new instance of the BidAskBarPair class.
+
+        :param bid_bar: The bid bar for the pair.
+        :param ask_bar: The ask bar for the pair.
+        """
+        self.bid = bid_bar
+        self.ask = ask_bar
+
+
 cdef class BacktestDataClient(DataClient):
     """
     Provides a data client for backtesting.
@@ -283,14 +299,16 @@ cdef class BacktestDataClient(DataClient):
 
         Note: Values are a tuple of the bid bar [0], then the ask bar [1].
         :param time: The index time for the minute bars.
-        :return: Dict[Symbol, (Bar, Bar)].
+        :return: Dict[Symbol, BidAskBarPair].
         """
-        cdef dict minute_bars = {}  # type: Dict[Symbol, tuple]
+        cdef dict minute_bars = {}  # type: Dict[Symbol, BidAskBarPair]
         cdef Symbol symbol
         cdef DataProvider data_provider
         for symbol, data_provider in self.data_providers.items():
             if data_provider.is_next_exec_bars_at_time(time):
-                minute_bars[symbol] = (data_provider.get_next_exec_bid_bar(), data_provider.get_next_exec_ask_bar())
+                minute_bars[symbol] = BidAskBarPair(
+                    bid_bar=data_provider.get_next_exec_bid_bar(),
+                    ask_bar=data_provider.get_next_exec_ask_bar())
         return minute_bars
 
     cpdef void process_tick(self, Tick tick):
