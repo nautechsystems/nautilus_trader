@@ -12,6 +12,7 @@
 from cpython.datetime cimport datetime
 
 
+cpdef str pad_string(str string, int length)
 cpdef str format_zulu_datetime(datetime dt)
 cpdef object with_utc_index(dataframe)
 cpdef object as_utc_timestamp(datetime timestamp)

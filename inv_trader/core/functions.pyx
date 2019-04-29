@@ -13,6 +13,17 @@ import pandas as pd
 import pytz
 
 
+cpdef str pad_string(str string, int length):
+    """
+    Return the given string padded to the given length.
+
+    :param string: The string to pad.
+    :param length: The length to pad to.
+    :return: str.
+    """
+    return ((length - len(string)) * ' ') + string
+
+
 cpdef str format_zulu_datetime(datetime dt):
     """
     Return the formatted string from the given datetime.
