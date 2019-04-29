@@ -14,7 +14,7 @@ import pytz
 
 from datetime import timezone, timedelta
 
-from inv_trader.core.functions import as_utc_timestamp, with_utc_index
+from inv_trader.core.functions import as_utc_timestamp, with_utc_index, pad_string
 from test_kit.data import TestDataProvider
 
 
@@ -22,6 +22,16 @@ class TestFunctionsTests(unittest.TestCase):
 
     # TODO: test format zulu
     # TODO: test bp as percentage
+
+    def test_pad_string(self):
+        # Arrange
+        test_string = "1234"
+
+        # Act
+        result = pad_string(test_string, 5)
+
+        # Assert
+        self.assertEqual(" 1234", result)
 
     def test_datetime_and_pd_timestamp_equality(self):
         # Arrange

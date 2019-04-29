@@ -27,7 +27,7 @@ from typing import List, Dict, Callable
 
 from inv_trader.version import __version__
 from inv_trader.core.precondition cimport Precondition
-from inv_trader.core.functions cimport as_utc_timestamp, format_zulu_datetime
+from inv_trader.core.functions cimport as_utc_timestamp, format_zulu_datetime, pad_string
 from inv_trader.backtest.config cimport BacktestConfig
 from inv_trader.backtest.data cimport BidAskBarPair, BacktestDataClient
 from inv_trader.backtest.execution cimport BacktestExecClient
@@ -494,6 +494,9 @@ cdef class BacktestEngine:
         """
         Create a backtest run log footer.
         """
+        cdef str account_currency = currency_string(self.account.currency)
+        cdef int account_starting_length = len(str(self.config.starting_capital))
+
         self.log.info("#---------------------------------------------------------------#")
         self.log.info("#-------------------- BACKTEST DIAGNOSTICS ---------------------#")
         self.log.info("#---------------------------------------------------------------#")
@@ -509,10 +512,9 @@ cdef class BacktestEngine:
         self.log.info(f"Total positions: {len(self.portfolio.get_positions_all())}")
         if self.exec_client.frozen_account:
             self.log.warning(f"ACCOUNT FROZEN")
-        else:
-            self.log.info(f"Account balance (starting): {self.config.starting_capital} {currency_string(self.account.currency)}")
-            self.log.info(f"Account balance (ending):     {self.account.cash_balance} {currency_string(self.account.currency)}")
-        self.log.info(f"Commissions (total):           {self.exec_client.total_commissions} {currency_string(self.account.currency)}")
+        self.log.info(f"Account balance (starting): {self.config.starting_capital} {account_currency}")
+        self.log.info(f"Account balance (ending):   {pad_string(str(self.account.cash_balance), account_starting_length)} {account_currency}")
+        self.log.info(f"Commissions (total):        {pad_string(str(self.exec_client.total_commissions), account_starting_length)} {account_currency}")
         self.log.info("")
 
         self.log.info("#---------------------------------------------------------------#")
