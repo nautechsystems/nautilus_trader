@@ -47,7 +47,7 @@ cdef class MQWorker:
         :param logger: The logger for the component.
         :raises ValueError: If the name is not a valid string.
         :raises ValueError: If the host is not a valid string.
-        :raises ValueError: If the port is not in range [0, 65535]
+        :raises ValueError: If the port is not in range [0, 65535].
         """
         Precondition.valid_string(name, 'name')
         Precondition.valid_string(host, 'host')
@@ -64,6 +64,7 @@ cdef class MQWorker:
         else:
             self._log = LoggerAdapter(name, logger)
         self._socket = self._context.socket(socket_type)
+        self._socket.setsockopt(zmq.LINGER, 0)
         self._cycles = 0
 
     cpdef void start(self):
@@ -133,7 +134,7 @@ cdef class RequestWorker(MQWorker):
         :param logger: The logger for the component.
         :raises ValueError: If the name is not a valid string.
         :raises ValueError: If the host is not a valid string.
-        :raises ValueError: If the port is not in range [0, 65535]
+        :raises ValueError: If the port is not in range [0, 65535].
         """
         Precondition.valid_string(name, 'name')
         Precondition.valid_string(host, 'host')
@@ -188,7 +189,7 @@ cdef class SubscriberWorker(MQWorker):
         :param logger: The logger for the component.
         :raises ValueError: If the name is not a valid string.
         :raises ValueError: If the host is not a valid string.
-        :raises ValueError: If the port is not in range [0, 65535]
+        :raises ValueError: If the port is not in range [0, 65535].
         :raises ValueError: If the topic is not a valid string.
         """
         Precondition.valid_string(name, 'name')
@@ -231,6 +232,7 @@ cdef class SubscriberWorker(MQWorker):
 
             # Split on first occurrence of empty byte delimiter
             topic, data = message.split(DELIMITER, 1)
+
             self._handler(data)
             self._cycles += 1
             self._log.debug(f"Received message[{self._cycles}] from {topic.decode(UTF8)}: {data}")

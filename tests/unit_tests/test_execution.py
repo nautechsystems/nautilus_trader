@@ -33,6 +33,7 @@ class ExecutionClientTests(unittest.TestCase):
         self.bar_type = TestStubs.bartype_gbpusd_1min_bid()
         self.strategy = TestStrategy1(self.bar_type)
         self.exec_client = MockExecClient()
+        self.exec_client.register_strategy(self.strategy)
         self.exec_client.connect()
 
     def tearDown(self):
@@ -41,16 +42,12 @@ class ExecutionClientTests(unittest.TestCase):
 
     def test_can_register_strategy(self):
         # Arrange
-        self.exec_client.register_strategy(self.strategy)
-
         # Act
         # Assert
         self.assertTrue(self.strategy.is_exec_client_registered)
 
     def test_can_send_submit_order_command_to_mock_exec_client(self):
         # Arrange
-        self.exec_client.register_strategy(self.strategy)
-
         order = self.strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
@@ -70,8 +67,6 @@ class ExecutionClientTests(unittest.TestCase):
 
     def test_can_send_cancel_order_command_to_mock_exec_clint(self):
         # Arrange
-        self.exec_client.register_strategy(self.strategy)
-
         order = self.strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
@@ -88,9 +83,6 @@ class ExecutionClientTests(unittest.TestCase):
 
     def test_can_send_modify_order_command_to_mock_exec_client(self):
         # Arrange
-        self.exec_client.register_strategy(self.strategy)
-        self.exec_client.connect()
-
         order = self.strategy.order_factory.limit(
             AUDUSD_FXCM,
             OrderSide.BUY,
@@ -115,9 +107,7 @@ class LiveExecClientTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
         self.bar_type = TestStubs.bartype_audusd_1min_bid()
-        self.strategy = TestStrategy1(bar_type=self.bar_type)
         self.exec_client = LiveExecClient()
-        self.exec_client.register_strategy(self.strategy)
 
         context = self.exec_client.zmq_context
 
@@ -139,39 +129,45 @@ class LiveExecClientTests(unittest.TestCase):
 
     def test_can_send_submit_order_command(self):
         # Arrange
-        order = self.strategy.order_factory.market(
+        strategy = TestStrategy1(self.bar_type, id_tag_strategy='001')
+        self.exec_client.register_strategy(strategy)
+        order = strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000))
 
         # Act
-        self.strategy.submit_order(order, self.strategy.position_id_generator.generate())
+        strategy.submit_order(order, strategy.position_id_generator.generate())
 
         time.sleep(0.1)
         # Assert
-        self.assertEqual(order, self.strategy.order(order.id))
+        self.assertEqual(order, strategy.order(order.id))
         self.assertEqual(1, len(self.response_list))
 
     def test_can_send_submit_atomic_order_no_take_profit_command(self):
         # Arrange
-        atomic_order = self.strategy.order_factory.atomic_market(
+        strategy = TestStrategy1(self.bar_type, id_tag_strategy='002')
+        self.exec_client.register_strategy(strategy)
+        atomic_order = strategy.order_factory.atomic_market(
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
             Price('0.99900'))
 
         # Act
-        self.strategy.submit_atomic_order(atomic_order, self.strategy.position_id_generator.generate())
+        strategy.submit_atomic_order(atomic_order, strategy.position_id_generator.generate())
 
         time.sleep(0.1)
         # Assert
-        self.assertEqual(atomic_order.entry, self.strategy.order(atomic_order.entry.id))
-        self.assertEqual(atomic_order.stop_loss, self.strategy.order(atomic_order.stop_loss.id))
+        self.assertEqual(atomic_order.entry, strategy.order(atomic_order.entry.id))
+        self.assertEqual(atomic_order.stop_loss, strategy.order(atomic_order.stop_loss.id))
         self.assertEqual(1, len(self.response_list))
 
     def test_can_send_submit_atomic_order_with_take_profit_command(self):
         # Arrange
-        atomic_order = self.strategy.order_factory.atomic_limit(
+        strategy = TestStrategy1(self.bar_type, id_tag_strategy='003')
+        self.exec_client.register_strategy(strategy)
+        atomic_order = strategy.order_factory.atomic_limit(
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
@@ -180,54 +176,61 @@ class LiveExecClientTests(unittest.TestCase):
             Price('0.99900'))
 
         # Act
-        self.strategy.submit_atomic_order(atomic_order, self.strategy.position_id_generator.generate())
+        strategy.submit_atomic_order(atomic_order, strategy.position_id_generator.generate())
 
         time.sleep(0.1)
         # Assert
-        self.assertEqual(atomic_order.entry, self.strategy.order(atomic_order.entry.id))
-        self.assertEqual(atomic_order.stop_loss, self.strategy.order(atomic_order.stop_loss.id))
-        self.assertEqual(atomic_order.take_profit, self.strategy.order(atomic_order.take_profit.id))
+        self.assertEqual(atomic_order.entry, strategy.order(atomic_order.entry.id))
+        self.assertEqual(atomic_order.stop_loss, strategy.order(atomic_order.stop_loss.id))
+        self.assertEqual(atomic_order.take_profit, strategy.order(atomic_order.take_profit.id))
         self.assertEqual(1, len(self.response_list))
 
     def test_can_send_cancel_order_command(self):
         # Arrange
-        order = self.strategy.order_factory.market(
+        strategy = TestStrategy1(self.bar_type, id_tag_strategy='004')
+        self.exec_client.register_strategy(strategy)
+        order = strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000))
 
         # Act
-        self.strategy.submit_order(order, self.strategy.position_id_generator.generate())
+        strategy.submit_order(order, strategy.position_id_generator.generate())
         time.sleep(1)
-        self.strategy.cancel_order(order, 'ORDER_EXPIRED')
+        strategy.cancel_order(order, 'ORDER_EXPIRED')
 
         # Assert
         time.sleep(1)
-        self.assertEqual(order, self.strategy.order(order.id))
+        self.assertEqual(order, strategy.order(order.id))
         self.assertEqual(2, len(self.response_list))
 
     def test_can_send_modify_order_command(self):
         # Arrange
-        order = self.strategy.order_factory.limit(
+        strategy = TestStrategy1(self.bar_type, id_tag_strategy='005')
+        self.exec_client.register_strategy(strategy)
+        order = strategy.order_factory.limit(
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
             Price('1.00000'))
 
         # Act
-        self.strategy.submit_order(order, self.strategy.position_id_generator.generate())
+        strategy.submit_order(order, strategy.position_id_generator.generate())
         time.sleep(1)
-        self.strategy.modify_order(order, Price('1.00001'))
+        strategy.modify_order(order, Price('1.00001'))
 
         # Assert
         time.sleep(1)
-        self.assertEqual(order, self.strategy.order(order.id))
+        self.assertEqual(order, strategy.order(order.id))
         self.assertEqual(2, len(self.response_list))
 
     def test_can_send_collateral_inquiry(self):
         # Arrange
+        strategy = TestStrategy1(self.bar_type, id_tag_strategy='006')
+        self.exec_client.register_strategy(strategy)
+
         # Act
-        self.strategy.collateral_inquiry()
+        strategy.collateral_inquiry()
 
         # Assert
         time.sleep(1)

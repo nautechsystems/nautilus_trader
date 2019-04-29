@@ -161,11 +161,14 @@ cdef class TestStrategy1(TradeStrategy):
     cdef readonly object ema2
     cdef readonly PositionId position_id
 
-    def __init__(self, BarType bar_type, Clock clock=TestClock()):
+    def __init__(self,
+                 BarType bar_type,
+                 str id_tag_strategy='001',
+                 Clock clock=TestClock()):
         """
         Initializes a new instance of the TestStrategy1 class.
         """
-        super().__init__(id_tag_strategy='001',
+        super().__init__(id_tag_strategy=id_tag_strategy,
                          clock=clock)
         self.object_storer = ObjectStorer()
         self.bar_type = bar_type
