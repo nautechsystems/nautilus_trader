@@ -35,7 +35,7 @@ cpdef str format_zulu_datetime(datetime dt):
     try:
         formatted_dt = dt.isoformat(timespec='microseconds').partition('+')[0][:-3]
     except TypeError as ex:
-        formatted_dt = dt.isoformat().partition('+')[0][:-3]
+        formatted_dt = dt.isoformat().partition('+')[0]
     if not formatted_dt.__contains__('.'):
         return formatted_dt + ':00.000Z'
     else:

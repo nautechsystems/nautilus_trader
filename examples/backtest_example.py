@@ -41,7 +41,7 @@ if __name__ == "__main__":
         sl_atr_multiple=2.0)]
 
     config = BacktestConfig(
-        frozen_account=True,
+        frozen_account=False,
         starting_capital=1000000,
         account_currency=Currency.USD,
         bypass_logging=False,
