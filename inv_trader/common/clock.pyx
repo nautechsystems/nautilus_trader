@@ -374,7 +374,7 @@ cdef class TestClock(Clock):
 
     cpdef dict iterate_time(self, datetime to_time):
         """
-        Iterates the clocks time to the given time at time_step intervals.
+        Iterates the clocks time to the given datetime.
         
         :param to_time: The datetime to iterate the test clock to.
         :return: List[TimeEvent].
