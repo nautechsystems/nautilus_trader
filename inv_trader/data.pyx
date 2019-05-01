@@ -7,7 +7,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-# cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
+# cython: language_level=3, boundscheck=False, nonecheck=False
 
 import re
 import iso8601
@@ -20,7 +20,6 @@ from typing import Callable
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.common.clock cimport Clock, LiveClock
 from inv_trader.common.logger cimport Logger
-from inv_trader.common.handlers cimport TickHandler
 from inv_trader.common.data cimport DataClient
 from inv_trader.common.serialization cimport InstrumentSerializer
 from inv_trader.model.enums import Resolution, QuoteType, Venue
