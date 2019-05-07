@@ -240,7 +240,7 @@ cdef class LiveClock(Clock):
         Precondition.is_in(label, self._time_alerts, 'label', 'timers')
 
         self._time_alerts[label].cancel()
-        del self._timers[label]
+        del self._time_alerts[label]
 
         if self.is_logger_registered:
             self._log.info(f"Cancelled TimeAlert('{label.value}').")
