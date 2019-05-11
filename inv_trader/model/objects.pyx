@@ -755,10 +755,6 @@ cdef class Bar:
         :param volume: The bars volume.
         :param timestamp: The bars timestamp (UTC).
         :param checked: A value indicating whether the bar was checked valid.
-        :raises ValueError: If checked is true and the open_price is not positive (> 0).
-        :raises ValueError: If checked is true and the high_price is not positive (> 0).
-        :raises ValueError: If checked is true and the low_price is not positive (> 0).
-        :raises ValueError: If checked is true and the close_price is not positive (> 0).
         :raises ValueError: If checked is true and the volume is negative.
         :raises ValueError: If checked is true and the high_price is not >= low_price.
         :raises ValueError: If checked is true and the high_price is not >= close_price.
