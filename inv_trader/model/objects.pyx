@@ -87,6 +87,9 @@ cdef class ValidString:
         return f"<{self.__class__.__name__}({self.value}) object at {id(self)}>"
 
 
+cdef Quantity ZERO_QUANTITY = Quantity(0)
+
+
 cdef class Quantity:
     """
     Represents a non-negative integer quantity.
@@ -102,6 +105,15 @@ cdef class Quantity:
         Precondition.not_negative(value, 'value')
 
         self.value = value
+
+    @staticmethod
+    def zero() -> Quantity:
+        """
+        Return a quantity of zero.
+        
+        :return: Quantity.
+        """
+        return ZERO_QUANTITY
 
     cdef bint equals(self, Quantity other):
         """
@@ -393,6 +405,9 @@ cdef class Price:
         return Price(self.value - price.value)
 
 
+cdef Money ZERO_MONEY = Money(Decimal('0.00'))
+
+
 cdef class Money:
     """
     Represents money.
@@ -410,10 +425,14 @@ cdef class Money:
         else:
             self.value = Decimal(f'{value:.2f}')
 
-
     @staticmethod
-    def zero():
-        return Money(Decimal('0.00'))
+    def zero() -> Money:
+        """
+        Return money with a zero amount.
+        
+        :return: Money.
+        """
+        return ZERO_MONEY
 
     def __eq__(self, Money other) -> bool:
         """

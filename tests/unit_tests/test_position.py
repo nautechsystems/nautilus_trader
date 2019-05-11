@@ -14,7 +14,7 @@ from decimal import Decimal
 
 from inv_trader.common.clock import TestClock
 from inv_trader.model.enums import Venue, OrderSide, MarketPosition
-from inv_trader.model.objects import ValidString, Quantity, Symbol, Price, Money
+from inv_trader.model.objects import Quantity, Symbol, Price
 from inv_trader.model.identifiers import GUID, OrderId, PositionId, ExecutionId, ExecutionTicket
 from inv_trader.model.order import OrderFactory
 from inv_trader.model.position import Position
@@ -45,7 +45,7 @@ class PositionTests(unittest.TestCase):
             UNIX_EPOCH)
 
         # Assert
-        self.assertEqual(Quantity(0), position.quantity)
+        self.assertEqual(Quantity.zero(), position.quantity)
         self.assertEqual(MarketPosition.FLAT, position.market_position)
         self.assertEqual(0, position.event_count())
         self.assertEqual(None, position.last_execution_id)
@@ -292,7 +292,7 @@ class PositionTests(unittest.TestCase):
         position.apply(order_filled2)
 
         # Assert
-        self.assertEqual(Quantity(0), position.quantity)
+        self.assertEqual(Quantity.zero(), position.quantity)
         self.assertEqual(MarketPosition.FLAT, position.market_position)
         self.assertEqual(UNIX_EPOCH, position.entry_time)
         self.assertEqual(OrderSide.BUY, position.entry_direction)
@@ -353,7 +353,7 @@ class PositionTests(unittest.TestCase):
         position.apply(order_filled2)
 
         # Assert
-        self.assertEqual(Quantity(0), position.quantity)
+        self.assertEqual(Quantity.zero(), position.quantity)
         self.assertEqual(MarketPosition.FLAT, position.market_position)
         self.assertEqual(UNIX_EPOCH, position.entry_time)
         self.assertEqual(OrderSide.SELL, position.entry_direction)

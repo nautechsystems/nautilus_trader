@@ -138,7 +138,7 @@ class AccountTests(unittest.TestCase):
             Money(20000),
             Money(100000),
             Money.zero(),
-            Money(0),
+            Money.zero(),
             Money(20000),
             Decimal('0'),
             ValidString('NONE'),
@@ -157,7 +157,7 @@ class AccountTests(unittest.TestCase):
         self.assertEqual(Money.zero(), account.free_equity)
         self.assertEqual(Money(100000), account.cash_start_day)
         self.assertEqual(Money.zero(), account.cash_activity_day)
-        self.assertEqual(Money(0), account.margin_used_liquidation)
+        self.assertEqual(Money.zero(), account.margin_used_liquidation)
         self.assertEqual(Money(20000), account.margin_used_maintenance)
         self.assertEqual(Decimal('0'), account.margin_ratio)
         self.assertEqual('NONE', account.margin_call_status.value)

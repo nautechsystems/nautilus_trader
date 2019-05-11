@@ -46,7 +46,7 @@ class OrderTests(unittest.TestCase):
             OrderId('AUDUSD-FXCM-123456-1'),
             OrderSide.BUY,
             OrderType.MARKET,
-            Quantity(0),
+            Quantity.zero(),
             UNIX_EPOCH)
 
     def test_market_order_with_order_side_none_raises_exception(self):

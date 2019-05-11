@@ -50,8 +50,8 @@ cdef class PerformanceAnalyzer:
         self._positions = pd.DataFrame(columns=['cash'])
         self._transactions = pd.DataFrame(columns=['amount'])
         self._equity_curve = pd.DataFrame(columns=['capital', 'pnl'])
-        self._account_starting_capital = Money(0)
-        self._account_capital = Money(0)
+        self._account_starting_capital = Money.zero()
+        self._account_capital = Money.zero()
         self._account_currency = Currency.USD
 
     cpdef void set_starting_capital(self, Money starting_capital, Currency account_currency):
