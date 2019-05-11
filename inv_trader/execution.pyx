@@ -24,7 +24,7 @@ from inv_trader.common.serialization cimport CommandSerializer, EventSerializer
 from inv_trader.commands cimport Command, CollateralInquiry
 from inv_trader.commands cimport SubmitOrder, SubmitAtomicOrder, CancelOrder, ModifyOrder
 from inv_trader.model.events cimport Event
-from inv_trader.messaging import RequestWorker, SubscriberWorker
+from inv_trader.network import RequestWorker, SubscriberWorker
 from inv_trader.serialization cimport MsgPackCommandSerializer
 from inv_trader.serialization cimport MsgPackEventSerializer
 from inv_trader.portfolio.portfolio cimport Portfolio
