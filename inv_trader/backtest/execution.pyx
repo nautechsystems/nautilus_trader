@@ -95,10 +95,10 @@ cdef class BacktestExecClient(ExecutionClient):
         self.starting_capital = starting_capital
         self.account_capital = starting_capital
         self.account_cash_start_day = self.account_capital
-        self.account_cash_activity_day = Money(0)
+        self.account_cash_activity_day = Money.zero()
         self.exchange_calculator = ExchangeRateCalculator()
         self.commission_calculator = commission_calculator
-        self.total_commissions = Money(0)
+        self.total_commissions = Money.zero()
         self.fill_model = fill_model
 
         self.current_bids = {}         # type: Dict[Symbol, Price]
@@ -177,7 +177,7 @@ cdef class BacktestExecClient(ExecutionClient):
             # Set account statistics for new day
             self.day_number = time_now.day
             self.account_cash_start_day = self._account.cash_balance
-            self.account_cash_activity_day = Money(0)
+            self.account_cash_activity_day = Money.zero()
 
             # Generate command
             command = CollateralInquiry(
@@ -274,9 +274,9 @@ cdef class BacktestExecClient(ExecutionClient):
             self._account.currency,
             self.starting_capital,
             self.starting_capital,
-            Money(0),
-            Money(0),
-            Money(0),
+            Money.zero(),
+            Money.zero(),
+            Money.zero(),
             Decimal(0),
             ValidString(),
             self._guid_factory.generate(),
@@ -294,8 +294,8 @@ cdef class BacktestExecClient(ExecutionClient):
         self.day_number = 0
         self.account_capital = self.starting_capital
         self.account_cash_start_day = self.account_capital
-        self.account_cash_activity_day = Money(0)
-        self.total_commissions = Money(0)
+        self.account_cash_activity_day = Money.zero()
+        self.total_commissions = Money.zero()
         self.working_orders = {}       # type: Dict[OrderId, Order]
         self.atomic_child_orders = {}  # type: Dict[OrderId, List[Order]]
         self.oco_orders = {}           # type: Dict[OrderId, OrderId]
@@ -780,8 +780,8 @@ cdef class BacktestExecClient(ExecutionClient):
             self.account_capital,
             self.account_cash_start_day,
             self.account_cash_activity_day,
-            margin_used_liquidation=Money(0),
-            margin_used_maintenance=Money(0),
+            margin_used_liquidation=Money.zero(),
+            margin_used_maintenance=Money.zero(),
             margin_ratio=Decimal(0),
             margin_call_status=ValidString(),
             event_id=self._guid_factory.generate(),

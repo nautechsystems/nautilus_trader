@@ -9,7 +9,7 @@
 
 import unittest
 
-from inv_trader.model.objects import *
+from inv_trader.model.objects import Quantity, Price, Money
 from inv_trader.portfolio.sizing import FixedRiskSizer
 from test_kit.stubs import TestStubs
 
@@ -65,7 +65,7 @@ class FixedRiskSizerTests(unittest.TestCase):
             unit_batch_size=1000)
 
         # Assert
-        self.assertEqual(Quantity(0), result)
+        self.assertEqual(Quantity.zero(), result)
 
     def test_can_impose_hard_limit(self):
         # Arrange

@@ -80,7 +80,7 @@ class ObjectTests(unittest.TestCase):
     def test_quantity_initialized_with_valid_inputs(self):
         # Arrange
         # Act
-        result0 = Quantity(0)
+        result0 = Quantity.zero()
         result1 = Quantity(1)
 
         # Assert
@@ -120,7 +120,7 @@ class ObjectTests(unittest.TestCase):
 
     def test_quantity_operators(self):
         # Arrange
-        quantity1 = Quantity(0)
+        quantity1 = Quantity.zero()
         quantity2 = Quantity(1)
         quantity3 = Quantity(2)
 
