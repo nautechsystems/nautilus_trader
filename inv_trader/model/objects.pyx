@@ -903,17 +903,13 @@ cdef class Instrument:
                  SecurityType security_type,
                  int tick_precision,
                  object tick_size,
-                 object tick_value,
-                 object target_direct_spread,
                  Quantity round_lot_size,
-                 Quantity contract_size,
                  int min_stop_distance_entry,
                  int min_limit_distance_entry,
                  int min_stop_distance,
                  int min_limit_distance,
                  Quantity min_trade_size,
                  Quantity max_trade_size,
-                 object margin_requirement,
                  object rollover_interest_buy,
                  object rollover_interest_sell,
                  datetime timestamp):
@@ -926,17 +922,13 @@ cdef class Instrument:
         :param security_type: The instruments security type.
         :param tick_precision: The instruments tick decimal digits precision.
         :param tick_size: The instruments tick size.
-        :param tick_value: The instruments tick value.
-        :param target_direct_spread: The instruments target direct spread (set by broker).
         :param round_lot_size: The instruments rounded lot size.
-        :param contract_size: The instruments contract size if applicable.
         :param min_stop_distance_entry: The instruments minimum distance for stop entry orders.
         :param min_limit_distance_entry: The instruments minimum distance for limit entry orders.
         :param min_stop_distance: The instruments minimum tick distance for stop orders.
         :param min_limit_distance: The instruments minimum tick distance for limit orders.
         :param min_trade_size: The instruments minimum trade size.
         :param max_trade_size: The instruments maximum trade size.
-        :param margin_requirement: The instruments margin requirement per unit.
         :param rollover_interest_buy: The instruments rollover interest for long positions.
         :param rollover_interest_sell: The instruments rollover interest for short positions.
         :param timestamp: The timestamp the instrument was created/updated at.
@@ -944,9 +936,6 @@ cdef class Instrument:
         Precondition.valid_string(broker_symbol, 'broker_symbol')
         Precondition.not_negative(tick_precision, 'tick_precision')
         Precondition.positive(tick_size, 'tick_size')
-        Precondition.positive(tick_value, 'tick_value')
-        Precondition.not_negative(target_direct_spread, 'target_direct_spread')
-        Precondition.positive(contract_size.value, 'contract_size')
         Precondition.not_negative(min_stop_distance_entry, 'min_stop_distance_entry')
         Precondition.not_negative(min_limit_distance_entry, 'min_limit_distance_entry')
         Precondition.not_negative(min_stop_distance, 'min_stop_distance')
@@ -954,7 +943,6 @@ cdef class Instrument:
         Precondition.not_negative(min_limit_distance, 'min_limit_distance')
         Precondition.positive(min_trade_size.value, 'min_trade_size')
         Precondition.positive(max_trade_size.value, 'max_trade_size')
-        Precondition.not_negative(margin_requirement, 'margin_requirement')
 
         self.symbol = symbol
         self.broker_symbol = broker_symbol
@@ -962,17 +950,13 @@ cdef class Instrument:
         self.security_type = security_type
         self.tick_precision = tick_precision
         self.tick_size = tick_size
-        self.tick_value = tick_value
-        self.target_direct_spread = target_direct_spread
         self.round_lot_size = round_lot_size
-        self.contract_size = contract_size
         self.min_stop_distance_entry = min_stop_distance_entry
         self.min_limit_distance_entry = min_limit_distance_entry
         self.min_stop_distance = min_stop_distance
         self.min_limit_distance = min_limit_distance
         self.min_trade_size = min_trade_size
         self.max_trade_size = max_trade_size
-        self.margin_requirement = margin_requirement
         self.rollover_interest_buy = rollover_interest_buy
         self.rollover_interest_sell = rollover_interest_sell
         self.timestamp = timestamp
