@@ -18,7 +18,7 @@ from decimal import Decimal
 from cpython.datetime cimport datetime
 
 # Do not reorder imports (enums need to be in below order)
-from inv_trader.model.enums import Venue, Currency, SecurityType
+from inv_trader.model.enums import Venue, SecurityType
 from inv_trader.enums.venue cimport Venue
 from inv_trader.enums.security_type cimport SecurityType
 from inv_trader.enums.currency cimport Currency
@@ -285,9 +285,6 @@ cdef class InstrumentSerializer:
                                       .replace("\'Timestamp\':", "\'Timestamp\':\'")[:-1] + "\'}"))
 
         tick_size = inst_dict['TickSize']
-        tick_value = inst_dict['TickValue']
-        target_direct_spread = inst_dict['TargetDirectSpread']
-        margin_requirement = inst_dict['MarginRequirement']
         rollover_interest_buy = inst_dict['RolloverInterestBuy']
         rollover_interest_sell = inst_dict['RolloverInterestSell']
 
@@ -296,19 +293,15 @@ cdef class InstrumentSerializer:
             inst_dict['BrokerSymbol']['Value'],
             Currency[inst_dict['QuoteCurrency'].upper()],
             SecurityType[inst_dict['SecurityType'].upper()],
-            inst_dict['TickDecimals'],  # TODO: Change to TickPrecision on C# side
+            inst_dict['TickPrecision'],
             Decimal(f'{tick_size}'),
-            Decimal(f'{tick_value}'),
-            Decimal(f'{target_direct_spread}'),
             inst_dict['RoundLotSize'],
-            inst_dict['ContractSize'],
             inst_dict['MinStopDistanceEntry'],
             inst_dict['MinLimitDistanceEntry'],
             inst_dict['MinStopDistance'],
             inst_dict['MinLimitDistance'],
             inst_dict['MinTradeSize'],
             inst_dict['MaxTradeSize'],
-            Decimal(f'{margin_requirement}'),
             Decimal(f'{rollover_interest_buy}'),
             Decimal(f'{rollover_interest_sell}'),
             iso8601.parse_date(inst_dict['Timestamp']))

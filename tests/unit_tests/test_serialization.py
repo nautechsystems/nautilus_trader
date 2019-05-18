@@ -1005,26 +1005,22 @@ class InstrumentSerializerTests(unittest.TestCase):
         serializer = InstrumentSerializer()
 
         instrument = Instrument(
-            Symbol('AUDUSD', Venue.FXCM),
-            'AUD/USD',
-            Currency.USD,
-            SecurityType.FOREX,
-            5,
-            Decimal('0.00001'),
-            Decimal('1'),
-            Decimal('0'),
-            Quantity(1),
-            Quantity(1),
-            0,
-            0,
-            0,
-            0,
-            Quantity(1),
-            Quantity(50000000),
-            Decimal('9'),
-            Decimal('1.1'),
-            Decimal('-1.1'),
-            datetime.now(timezone.utc))
+            symbol=Symbol('AUDUSD', Venue.FXCM),
+            broker_symbol='AUD/USD',
+            quote_currency=Currency.USD,
+            security_type=SecurityType.FOREX,
+            tick_precision=5,
+            tick_size=Decimal('0.00001'),
+            round_lot_size=Quantity(1000),
+            min_stop_distance_entry=0,
+            min_limit_distance_entry=0,
+            min_stop_distance=0,
+            min_limit_distance=0,
+            min_trade_size=Quantity(1),
+            max_trade_size=Quantity(50000000),
+            rollover_interest_buy=Decimal('1.1'),
+            rollover_interest_sell=Decimal('-1.1'),
+            timestamp=datetime.now(timezone.utc))
 
         # serialized = serializer.serialize(instrument)
         # print(serialized)
