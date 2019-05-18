@@ -430,8 +430,8 @@ cdef class Portfolio:
 
         self._account_capital = Money.zero()
         self._account_initialized = False
-        self.position_opened_events = []  # type: List[PositionOpened]
-        self.position_closed_events = []  # type: List[PositionClosed]
+        self.position_opened_events = []              # type: List[PositionOpened]
+        self.position_closed_events = []              # type: List[PositionClosed]
 
         self.analyzer = PerformanceAnalyzer()
         self._log.info("Reset.")
