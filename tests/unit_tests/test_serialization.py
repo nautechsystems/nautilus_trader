@@ -10,6 +10,7 @@
 import unittest
 import uuid
 
+from base64 import b64encode, b64decode
 from datetime import datetime, timezone
 
 from inv_trader.common.clock import TestClock
@@ -125,7 +126,8 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
         deserialized = serializer.deserialize(serialized)
 
         # Assert
-        print(serialized.hex())
+        print('market')
+        print(b64encode(serialized))
         self.assertEqual(order, deserialized)
 
     def test_can_serialize_and_deserialize_limit_orders(self):
@@ -146,7 +148,7 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
         deserialized = serializer.deserialize(serialized)
 
         # Assert
-        print(serialized.hex())
+        print(b64encode(serialized))
         self.assertEqual(order, deserialized)
 
     def test_can_serialize_and_deserialize_limit_orders_with_expire_time(self):
@@ -170,7 +172,7 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
         deserialized = serializer.deserialize(serialized)
 
         # Assert
-        print(serialized.hex())
+        print(b64encode(serialized))
         self.assertEqual(order, deserialized)
 
     def test_can_serialize_and_deserialize_stop_limit_orders(self):
@@ -192,7 +194,7 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
         deserialized = serializer.deserialize(serialized)
 
         # Assert
-        print(serialized.hex())
+        print(b64encode(serialized))
         self.assertEqual(order, deserialized)
 
     def test_can_serialize_and_deserialize_stop_limit_orders_with_expire_time(self):
@@ -252,7 +254,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         # Assert
         self.assertEqual(command, deserialized)
         self.assertEqual(order, deserialized.order)
-        print(serialized.hex())
+        print(b64encode(serialized))
         print(command)
 
     def test_can_serialize_and_deserialize_submit_atomic_order_no_take_profit_commands(self):
@@ -280,7 +282,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         # Assert
         self.assertEqual(command, deserialized)
         self.assertEqual(atomic_order, deserialized.atomic_order)
-        print(serialized.hex())
+        print(b64encode(serialized))
         print(command)
 
     def test_can_serialize_and_deserialize_submit_atomic_order_with_take_profit_commands(self):
@@ -310,7 +312,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         # Assert
         self.assertEqual(command, deserialized)
         self.assertEqual(atomic_order, deserialized.atomic_order)
-        print(serialized.hex())
+        print(b64encode(serialized))
         print(command)
 
     def test_can_serialize_and_deserialize_cancel_order_commands(self):
@@ -341,7 +343,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         # Assert
         self.assertEqual(command, deserialized)
         self.assertEqual(order, deserialized.order)
-        print(serialized.hex())
+        print(b64encode(serialized))
 
     def test_can_serialize_and_deserialize_modify_order_commands(self):
         # Arrange
@@ -371,7 +373,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         # Assert
         self.assertEqual(command, deserialized)
         self.assertEqual(order, deserialized.order)
-        print(serialized.hex())
+        print(b64encode(serialized))
 
     def test_can_serialized_and_deserialize_collateral_inquiry_requests(self):
         # Arrange
@@ -385,7 +387,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(deserialized, request)
-        print(serialized.hex())
+        print(b64encode(serialized))
 
 
 class MsgPackEventSerializerTests(unittest.TestCase):

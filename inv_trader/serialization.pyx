@@ -193,10 +193,10 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
 
         if isinstance(command, SubmitAtomicOrder):
             package[COMMAND_TYPE] = SUBMIT_ATOMIC_ORDER
-            package[ENTRY] = self.order_serializer.serialize(command.atomic_order.entry).hex()
-            package[STOP_LOSS] = self.order_serializer.serialize(command.atomic_order.stop_loss).hex()
+            package[ENTRY] = self.order_serializer.serialize(command.atomic_order.entry).ba
+            package[STOP_LOSS] = self.order_serializer.serialize(command.atomic_order.stop_loss)
             if command.atomic_order.has_take_profit:
-                package[TAKE_PROFIT] = self.order_serializer.serialize(command.atomic_order.take_profit).hex()
+                package[TAKE_PROFIT] = self.order_serializer.serialize(command.atomic_order.take_profit)
             else:
                 package[TAKE_PROFIT] = NONE
             package[TRADER_ID] = command.trader_id.value
@@ -234,11 +234,11 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
             if unpacked[TAKE_PROFIT] == NONE:
                 take_profit = None
             else:
-                take_profit = self.order_serializer.deserialize(bytes.fromhex(unpacked[TAKE_PROFIT]))
+                take_profit = self.order_serializer.deserialize(unpacked[TAKE_PROFIT])
 
             return SubmitAtomicOrder(
-                AtomicOrder(self.order_serializer.deserialize(bytes.fromhex(unpacked[ENTRY])),
-                            self.order_serializer.deserialize(bytes.fromhex(unpacked[STOP_LOSS])),
+                AtomicOrder(self.order_serializer.deserialize(unpacked[ENTRY]),
+                            self.order_serializer.deserialize(unpacked[STOP_LOSS]),
                             take_profit),
                 TraderId(unpacked[TRADER_ID]),
                 StrategyId(unpacked[STRATEGY_ID]),
@@ -266,7 +266,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         }
 
         package[COMMAND_TYPE] = ORDER_COMMAND
-        package[ORDER] = self.order_serializer.serialize(order_command.order).hex()
+        package[ORDER] = self.order_serializer.serialize(order_command.order)
 
         if isinstance(order_command, SubmitOrder):
             package[ORDER_COMMAND] = SUBMIT_ORDER
@@ -300,7 +300,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         :raises ValueError: If the order command cannot be deserialized.
         """
         cdef str order_command = unpacked[ORDER_COMMAND]
-        cdef Order order = self.order_serializer.deserialize(bytes.fromhex(unpacked[ORDER]))
+        cdef Order order = self.order_serializer.deserialize((unpacked[ORDER]))
 
         if order_command == SUBMIT_ORDER:
             return SubmitOrder(
