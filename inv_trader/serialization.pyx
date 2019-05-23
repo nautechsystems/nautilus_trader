@@ -12,6 +12,7 @@
 import msgpack
 
 from decimal import Decimal
+from uuid import UUID
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.commands cimport *
@@ -236,7 +237,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
                 unpacked[k.decode(UTF8)] = v
 
         cdef str command_type = unpacked[COMMAND_TYPE]
-        cdef GUID command_id = GUID(unpacked[COMMAND_ID])
+        cdef GUID command_id = GUID(UUID(unpacked[COMMAND_ID]))
         cdef datetime command_timestamp = convert_string_to_datetime(unpacked[COMMAND_TIMESTAMP])
 
         if command_type == ORDER_COMMAND:
@@ -371,7 +372,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
         cdef dict unpacked = msgpack.unpackb(event_bytes, raw=False)
 
         cdef str event_type = unpacked[EVENT_TYPE]
-        cdef GUID event_id = GUID(str(unpacked[EVENT_ID]))
+        cdef GUID event_id = GUID(UUID(unpacked[EVENT_ID]))
         cdef datetime event_timestamp = convert_string_to_datetime(unpacked[EVENT_TIMESTAMP])
 
         if event_type == ORDER_EVENT:
