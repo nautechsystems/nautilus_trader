@@ -9,8 +9,8 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
-from uuid import UUID
 from cpython.datetime cimport datetime
+from uuid import UUID
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.common.clock cimport Clock, LiveClock
@@ -85,7 +85,11 @@ cdef class GUID(Identifier):
 
         :param value: The value of the GUID.
         """
-        super().__init__(str(value))
+        if not isinstance(value, str):
+            Precondition.true(isinstance(value, UUID), "isinstance(value, UUID)")
+            value = str(value)
+
+        super().__init__(value)
 
 
 cdef class Label(Identifier):

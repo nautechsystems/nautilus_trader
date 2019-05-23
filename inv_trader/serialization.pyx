@@ -12,7 +12,6 @@
 import msgpack
 
 from decimal import Decimal
-from uuid import UUID
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.commands cimport *
@@ -96,6 +95,7 @@ cdef str ORDER_TYPE = 'OrderType'
 cdef str ENTRY = 'Entry'
 cdef str STOP_LOSS = 'StopLoss'
 cdef str TAKE_PROFIT = 'TakeProfit'
+cdef str HAS_TAKE_PROFIT = 'HasTakeProfit'
 cdef str FILLED_QUANTITY = 'FilledQuantity'
 cdef str LEAVES_QUANTITY = 'LeavesQuantity'
 cdef str QUANTITY = 'Quantity'
@@ -193,12 +193,14 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
 
         if isinstance(command, SubmitAtomicOrder):
             package[COMMAND_TYPE] = SUBMIT_ATOMIC_ORDER
-            package[ENTRY] = self.order_serializer.serialize(command.atomic_order.entry).ba
+            package[ENTRY] = self.order_serializer.serialize(command.atomic_order.entry)
             package[STOP_LOSS] = self.order_serializer.serialize(command.atomic_order.stop_loss)
             if command.atomic_order.has_take_profit:
                 package[TAKE_PROFIT] = self.order_serializer.serialize(command.atomic_order.take_profit)
+                package[HAS_TAKE_PROFIT] = True
             else:
                 package[TAKE_PROFIT] = NONE
+                package[HAS_TAKE_PROFIT] = False
             package[TRADER_ID] = command.trader_id.value
             package[STRATEGY_ID] = command.strategy_id.value
             package[POSITION_ID] = command.position_id.value
@@ -220,9 +222,21 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         """
         Precondition.not_empty(command_bytes, 'command_bytes')
 
-        cdef dict unpacked = msgpack.unpackb(command_bytes, raw=False)
+        cdef dict unpacked_raw = msgpack.unpackb(command_bytes)
+        cdef dict unpacked = {}
+
+        # Manually unpack and decode
+        for k, v in unpacked_raw.items():
+            if k not in (b'Order', b'Entry', b'StopLoss', b'TakeProfit'):
+                if isinstance(v, bytes):
+                    unpacked[k.decode(UTF8)] = v.decode(UTF8)
+                else:
+                    unpacked[k.decode(UTF8)] = v
+            else:
+                unpacked[k.decode(UTF8)] = v
+
         cdef str command_type = unpacked[COMMAND_TYPE]
-        cdef GUID command_id = GUID(UUID(unpacked[COMMAND_ID]))
+        cdef GUID command_id = GUID(unpacked[COMMAND_ID])
         cdef datetime command_timestamp = convert_string_to_datetime(unpacked[COMMAND_TIMESTAMP])
 
         if command_type == ORDER_COMMAND:
@@ -231,7 +245,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
                 command_timestamp,
                 unpacked)
         elif command_type == SUBMIT_ATOMIC_ORDER:
-            if unpacked[TAKE_PROFIT] == NONE:
+            if unpacked[HAS_TAKE_PROFIT] is False:
                 take_profit = None
             else:
                 take_profit = self.order_serializer.deserialize(unpacked[TAKE_PROFIT])
@@ -262,11 +276,10 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         """
         cdef dict package = {
             COMMAND_ID: order_command.id.value,
-            COMMAND_TIMESTAMP: convert_datetime_to_string(order_command.timestamp)
+            COMMAND_TIMESTAMP: convert_datetime_to_string(order_command.timestamp),
+            COMMAND_TYPE: ORDER_COMMAND,
+            ORDER: self.order_serializer.serialize(order_command.order)
         }
-
-        package[COMMAND_TYPE] = ORDER_COMMAND
-        package[ORDER] = self.order_serializer.serialize(order_command.order)
 
         if isinstance(order_command, SubmitOrder):
             package[ORDER_COMMAND] = SUBMIT_ORDER
@@ -358,7 +371,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
         cdef dict unpacked = msgpack.unpackb(event_bytes, raw=False)
 
         cdef str event_type = unpacked[EVENT_TYPE]
-        cdef GUID event_id = GUID(UUID(unpacked[EVENT_ID]))
+        cdef GUID event_id = GUID(str(unpacked[EVENT_ID]))
         cdef datetime event_timestamp = convert_string_to_datetime(unpacked[EVENT_TIMESTAMP])
 
         if event_type == ORDER_EVENT:
