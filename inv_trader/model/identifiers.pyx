@@ -83,13 +83,12 @@ cdef class GUID(Identifier):
         """
         Initializes a new instance of the GUID class.
 
-        :param value: The value of the GUID.
+        :param value: The value of the GUID (input must be of type UUID).
+        :raises ValueError: If the value is not of type UUID.
         """
-        if not isinstance(value, str):
-            Precondition.true(isinstance(value, UUID), "isinstance(value, UUID)")
-            value = str(value)
+        Precondition.type_or_none(value, UUID, 'value')
 
-        super().__init__(value)
+        super().__init__(str(value))
 
 
 cdef class Label(Identifier):
