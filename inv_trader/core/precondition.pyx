@@ -43,8 +43,7 @@ cdef class Precondition:
         :raises ValueError: If the object is not of the expected type.
         """
         if not isinstance(argument, is_type):
-            raise ValueError(f"{PRE_FAILED} (the {param_name} argument was not of type {is_type}). "
-                             f"type = {type(argument)}")
+            raise ValueError(f"{PRE_FAILED} (the {param_name} argument was not of type {is_type}, type was {type(argument)}).")
 
     @staticmethod
     cdef type_or_none(object argument, object is_type, str param_name):
@@ -60,8 +59,7 @@ cdef class Precondition:
             return
 
         if not isinstance(argument, is_type):
-            raise ValueError(f"{PRE_FAILED} (the {param_name} argument was not of type {is_type}). "
-                             f"type = {type(argument)}")
+            raise ValueError(f"{PRE_FAILED} (the {param_name} argument was not of type {is_type} or None, type was {type(argument)}).")
 
     @staticmethod
     cdef is_in(object key, dict dictionary, str param_name, str dict_name):
@@ -107,8 +105,7 @@ cdef class Precondition:
         """
         for element in argument:
             if not isinstance(element, element_type):
-                raise ValueError(f"{PRE_FAILED} (the {param_name} list contained an element with a type other than {element_type}). "
-                                f"type = {type(element)}")
+                raise ValueError(f"{PRE_FAILED} (the {param_name} list contained an element with a type other than {element_type}, type was {type(element)}).")
 
     @staticmethod
     cdef dict_types(dict argument, type key_type, type value_type, str param_name):
@@ -182,8 +179,7 @@ cdef class Precondition:
         :raises ValueError: If the arguments are not equal.
         """
         if not argument1.equals(argument2):
-            raise ValueError(f"{PRE_FAILED} (the arguments were not equal). "
-                             f"values = {argument1} and {argument2}")
+            raise ValueError(f"{PRE_FAILED} (the arguments were not equal, values = {argument1} and {argument2}).")
 
     @staticmethod
     cdef equal_lengths(
@@ -201,10 +197,9 @@ cdef class Precondition:
         :raises ValueError: If the collections lengths are not equal.
         """
         if len(collection1) != len(collection2):
-            raise ValueError((
+            raise ValueError(
                 f"{PRE_FAILED} "
-                f"(the lengths of {collection1_name} and {collection2_name} were not equal)."
-                f"values = {len(collection1)} and {len(collection2)}"))
+                f"(the lengths of {collection1_name} and {collection2_name} were not equal, lengths = {len(collection1)} and {len(collection2)}).")
 
     @staticmethod
     cdef positive(double value, str param_name):
@@ -216,7 +211,7 @@ cdef class Precondition:
         :raises ValueError: If the value is not positive (> 0).
         """
         if value <= 0:
-            raise ValueError(f"{PRE_FAILED} (the {param_name} was not positive). value = {value}")
+            raise ValueError(f"{PRE_FAILED} (the {param_name} was not positive, value was {value}).")
 
     @staticmethod
     cdef not_negative(double value, str param_name):
@@ -228,7 +223,7 @@ cdef class Precondition:
         :raises ValueError: If the value is negative (< 0).
         """
         if value < 0:
-            raise ValueError(f"{PRE_FAILED} (the {param_name} was negative). value = {value}")
+            raise ValueError(f"{PRE_FAILED} (the {param_name} was negative, value was {value}).")
 
     @staticmethod
     cdef in_range(
@@ -247,7 +242,7 @@ cdef class Precondition:
         """
         if value < start or value > end:
             raise ValueError(
-                f"{PRE_FAILED} (the {param_name} was out of range [{start}-{end}]). value = {value}")
+                f"{PRE_FAILED} (the {param_name} was out of range [{start}-{end}], value was {value}).")
 
     @staticmethod
     cdef not_empty(object argument, str param_name):
