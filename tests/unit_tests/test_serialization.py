@@ -10,7 +10,7 @@
 import unittest
 import uuid
 
-from base64 import b64encode, b64decode
+from base64 import b64encode
 from datetime import datetime, timezone
 
 from inv_trader.common.clock import TestClock
@@ -148,8 +148,9 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
         deserialized = serializer.deserialize(serialized)
 
         # Assert
-        print(b64encode(serialized))
         self.assertEqual(order, deserialized)
+        print(b64encode(serialized))
+        print(order)
 
     def test_can_serialize_and_deserialize_limit_orders_with_expire_time(self):
         # Arrange
@@ -172,8 +173,9 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
         deserialized = serializer.deserialize(serialized)
 
         # Assert
-        print(b64encode(serialized))
         self.assertEqual(order, deserialized)
+        print(b64encode(serialized))
+        print(order)
 
     def test_can_serialize_and_deserialize_stop_limit_orders(self):
         # Arrange
@@ -194,8 +196,9 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
         deserialized = serializer.deserialize(serialized)
 
         # Assert
-        print(b64encode(serialized))
         self.assertEqual(order, deserialized)
+        print(b64encode(serialized))
+        print(order)
 
     def test_can_serialize_and_deserialize_stop_limit_orders_with_expire_time(self):
         # Arrange
@@ -219,6 +222,8 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(order, deserialized)
+        print(b64encode(serialized))
+        print(order)
 
 
 class MsgPackCommandSerializerTests(unittest.TestCase):
@@ -243,7 +248,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         command = SubmitOrder(order,
                               TraderId('Trader-001'),
                               StrategyId('SCALPER01'),
-                              PositionId('some-position'),
+                              PositionId('123456'),
                               GUID(uuid.uuid4()),
                               UNIX_EPOCH)
 
@@ -271,7 +276,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             atomic_order,
             TraderId('Trader-001'),
             StrategyId('SCALPER01'),
-            PositionId('some-position'),
+            PositionId('123456'),
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
@@ -301,7 +306,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             atomic_order,
             TraderId('Trader-001'),
             StrategyId('SCALPER01'),
-            PositionId('some-position'),
+            PositionId('123456'),
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
@@ -344,6 +349,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         self.assertEqual(command, deserialized)
         self.assertEqual(order, deserialized.order)
         print(b64encode(serialized))
+        print(command)
 
     def test_can_serialize_and_deserialize_modify_order_commands(self):
         # Arrange
@@ -374,20 +380,22 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         self.assertEqual(command, deserialized)
         self.assertEqual(order, deserialized.order)
         print(b64encode(serialized))
+        print(command)
 
-    def test_can_serialized_and_deserialize_collateral_inquiry_requests(self):
+    def test_can_serialized_and_deserialize_collateral_inquiry_command(self):
         # Arrange
         serializer = MsgPackCommandSerializer()
 
-        request = CollateralInquiry(GUID(uuid.uuid4()), UNIX_EPOCH)
+        command = CollateralInquiry(GUID(uuid.uuid4()), UNIX_EPOCH)
 
         # Act
-        serialized = serializer.serialize(request)
+        serialized = serializer.serialize(command)
         deserialized = serializer.deserialize(serialized)
 
         # Assert
-        self.assertEqual(deserialized, request)
+        self.assertEqual(deserialized, command)
         print(b64encode(serialized))
+        print(command)
 
 
 class MsgPackEventSerializerTests(unittest.TestCase):

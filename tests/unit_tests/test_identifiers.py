@@ -19,8 +19,8 @@ class IdentifierTests(unittest.TestCase):
     def test_GUIDS_passed_different_UUID_are_not_equal(self):
         # Arrange
         # Act
-        guid1 = GUID(uuid.uuid4())
-        guid2 = GUID(uuid.uuid4())
+        guid1 = GUID(uuid.uuid4()),
+        guid2 = GUID(uuid.uuid4()),
 
         # Assert
         self.assertNotEqual(guid1, guid2)
