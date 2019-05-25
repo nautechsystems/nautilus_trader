@@ -26,8 +26,6 @@ from inv_trader.commands cimport SubmitOrder, SubmitAtomicOrder, ModifyOrder, Ca
 from inv_trader.strategy cimport TradeStrategy
 from inv_trader.portfolio.portfolio cimport Portfolio
 
-cdef str UTF8 = 'utf-8'
-
 
 cdef class ExecutionClient:
     """

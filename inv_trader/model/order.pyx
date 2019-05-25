@@ -108,8 +108,8 @@ cdef class Order:
         self.slippage = Decimal(0.0)
         self.status = OrderStatus.INITIALIZED
         self.last_event = None              # Can be None
-        self.is_buy = True if self.side == OrderSide.BUY else False
-        self.is_sell = True if self.side == OrderSide.SELL else False
+        self.is_buy = self.side == OrderSide.BUY
+        self.is_sell = self.side == OrderSide.SELL
         self.is_active = False
         self.is_complete = False
 
@@ -221,12 +221,12 @@ cdef class Order:
         if isinstance(event, OrderSubmitted):
             self.status = OrderStatus.SUBMITTED
 
-        elif isinstance(event, OrderAccepted):
-            self.status = OrderStatus.ACCEPTED
-
         elif isinstance(event, OrderRejected):
             self.status = OrderStatus.REJECTED
             self.is_complete = True
+
+        elif isinstance(event, OrderAccepted):
+            self.status = OrderStatus.ACCEPTED
 
         elif isinstance(event, OrderWorking):
             self.status = OrderStatus.WORKING
@@ -234,13 +234,13 @@ cdef class Order:
             self.broker_id = event.broker_order_id
             self.is_active = True
 
+        elif isinstance(event, OrderCancelReject):
+            pass
+
         elif isinstance(event, OrderCancelled):
             self.status = OrderStatus.CANCELLED
             self.is_active = False
             self.is_complete = True
-
-        elif isinstance(event, OrderCancelReject):
-            pass
 
         elif isinstance(event, OrderExpired):
             self.status = OrderStatus.EXPIRED
