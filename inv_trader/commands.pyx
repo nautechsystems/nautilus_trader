@@ -132,9 +132,9 @@ cdef class SubmitOrder(OrderCommand):
         Initializes a new instance of the SubmitOrder class.
 
         :param order: The commands order to submit.
-        :param trader_id: The name of the trader associated with the order.
-        :param strategy_id: The strategy identifier to associate with the order.
-        :param position_id: The command position identifier.
+        :param trader_id: The trader identifier associated with the order.
+        :param strategy_id: The strategy identifier associated with the order.
+        :param position_id: The position identifier associated with the order.
         :param command_id: The commands identifier.
         :param command_timestamp: The commands timestamp.
         """

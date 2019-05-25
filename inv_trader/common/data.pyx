@@ -19,7 +19,6 @@ from inv_trader.common.handlers cimport TickHandler, BarHandler
 from inv_trader.model.objects cimport Symbol, Tick, BarType, Bar, Instrument
 from inv_trader.strategy cimport TradeStrategy
 
-cdef str UTF8 = 'utf-8'
 
 cdef class DataClient:
     """
