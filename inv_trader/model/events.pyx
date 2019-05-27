@@ -171,9 +171,54 @@ cdef class OrderEvent(Event):
         return f"<{str(self)} object at {id(self)}>"
 
 
+cdef class OrderInitialized(OrderEvent):
+    """
+    Represents an event where an order has been initialized.
+    """
+
+    def __init__(self,
+                 Symbol symbol,
+                 OrderId order_id,
+                 Label label,
+                 OrderSide order_side,
+                 OrderType order_type,
+                 Quantity quantity,
+                 Price price,
+                 TimeInForce time_in_force,
+                 datetime expire_time,
+                 GUID event_id,
+                 datetime event_timestamp):
+        """
+        Initializes a new instance of the OrderInitialized class.
+
+        :param symbol: The events order symbol.
+        :param order_id: The events order identifier.
+        :param label: The events order label.
+        :param order_side: The events order side.
+        :param order_type: The events order type.
+        :param quantity: The events order quantity.
+        :param price: The events order price.
+        :param time_in_force: The events order time in force.
+        :param expire_time: The events order expire time.
+        :param event_id: The events identifier.
+        :param event_timestamp: The events timestamp.
+        """
+        super().__init__(symbol,
+                         order_id,
+                         event_id,
+                         event_timestamp)
+        self.label = label
+        self.order_side = order_side
+        self.order_type = order_type
+        self.quantity = quantity
+        self.price = price
+        self.time_in_force = time_in_force
+        self.expire_time = expire_time
+
+
 cdef class OrderSubmitted(OrderEvent):
     """
-    Represents an event where an order has been submitted to the execution system.
+    Represents an event where an order has been submitted to the broker.
     """
 
     def __init__(self,
@@ -354,7 +399,7 @@ cdef class OrderCancelled(OrderEvent):
 
 cdef class OrderCancelReject(OrderEvent):
     """
-    Represents an event where an order cancel request has been rejected by the broker.
+    Represents an event where an order cancel command has been rejected by the broker.
     """
 
     def __init__(self,

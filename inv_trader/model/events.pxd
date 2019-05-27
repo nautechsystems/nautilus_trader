@@ -55,6 +55,19 @@ cdef class OrderEvent(Event):
     cdef readonly OrderId order_id
 
 
+cdef class OrderInitialized(OrderEvent):
+    """
+    Represents an event where an order has been initialized.
+    """
+    cdef readonly Label label
+    cdef readonly OrderSide order_side
+    cdef readonly OrderType order_type
+    cdef readonly Quantity quantity
+    cdef readonly Price price
+    cdef readonly TimeInForce time_in_force
+    cdef readonly datetime expire_time
+
+
 cdef class OrderSubmitted(OrderEvent):
     """
     Represents an event where an order has been submitted to the execution system.
