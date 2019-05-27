@@ -11,7 +11,7 @@
 
 from cpython.datetime cimport datetime
 
-from inv_trader.model.identifiers cimport GUID, PositionId, TraderId, StrategyId
+from inv_trader.model.identifiers cimport GUID, OrderId, TraderId, StrategyId, PositionId
 from inv_trader.model.objects cimport ValidString, Price
 from inv_trader.model.order cimport Order, AtomicOrder
 
@@ -30,41 +30,41 @@ cdef class CollateralInquiry(Command):
     """
 
 
-cdef class OrderCommand(Command):
-    """
-    The abstract base class for all order commands.
-    """
-    cdef readonly Order order
-
-
-cdef class SubmitOrder(OrderCommand):
+cdef class SubmitOrder(Command):
     """
     Represents a command to submit an order.
     """
     cdef readonly TraderId trader_id
     cdef readonly StrategyId strategy_id
     cdef readonly PositionId position_id
+    cdef readonly Order order
 
 
 cdef class SubmitAtomicOrder(Command):
     """
     Represents a command to submit an atomic order.
     """
-    cdef readonly AtomicOrder atomic_order
     cdef readonly TraderId trader_id
     cdef readonly StrategyId strategy_id
     cdef readonly PositionId position_id
+    cdef readonly AtomicOrder atomic_order
 
 
-cdef class ModifyOrder(OrderCommand):
+cdef class ModifyOrder(Command):
     """
     Represents a command to modify an order with the modified price.
     """
+    cdef readonly TraderId trader_id
+    cdef readonly StrategyId strategy_id
+    cdef readonly OrderId order_id
     cdef readonly Price modified_price
 
 
-cdef class CancelOrder(OrderCommand):
+cdef class CancelOrder(Command):
     """
     Represents a command to cancel an order.
     """
+    cdef readonly TraderId trader_id
+    cdef readonly StrategyId strategy_id
+    cdef readonly OrderId order_id
     cdef readonly ValidString cancel_reason
