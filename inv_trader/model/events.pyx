@@ -183,8 +183,8 @@ cdef class OrderInitialized(OrderEvent):
                  OrderSide order_side,
                  OrderType order_type,
                  Quantity quantity,
-                 TimeInForce time_in_force,
                  Price price,
+                 TimeInForce time_in_force,
                  datetime expire_time,
                  GUID event_id,
                  datetime event_timestamp):
