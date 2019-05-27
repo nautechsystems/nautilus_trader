@@ -123,8 +123,8 @@ cdef class Order:
             order_side=order_side,
             order_type=order_type,
             quantity=quantity,
-            timestamp=timestamp,
             price=price,
+            time_in_force=time_in_force,
             expire_time=expire_time,
             event_id=GUID(uuid4()) if init_event_id is None else init_event_id,
             event_timestamp=timestamp)
