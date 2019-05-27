@@ -11,6 +11,7 @@
 
 from cpython.datetime cimport datetime
 from decimal import Decimal
+from uuid import uuid4
 from typing import List
 
 from inv_trader.core.precondition cimport Precondition
@@ -21,11 +22,11 @@ from inv_trader.enums.order_status cimport OrderStatus, order_status_string
 from inv_trader.enums.time_in_force cimport TimeInForce, time_in_force_string
 from inv_trader.model.objects cimport Quantity, Symbol, Price
 from inv_trader.model.events cimport OrderEvent
-from inv_trader.model.events cimport OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
-from inv_trader.model.events cimport OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
-from inv_trader.model.events cimport OrderPartiallyFilled, OrderFilled
+from inv_trader.model.events cimport OrderInitialized, OrderSubmitted, OrderAccepted, OrderRejected
+from inv_trader.model.events cimport OrderWorking, OrderExpired, OrderModified, OrderCancelled
+from inv_trader.model.events cimport OrderCancelReject, OrderPartiallyFilled, OrderFilled
 from inv_trader.model.identifiers cimport Label, OrderId, ExecutionId, ExecutionTicket
-from inv_trader.model.identifiers cimport OrderIdGenerator
+from inv_trader.model.identifiers cimport OrderIdGenerator, GUID
 
 
 # Order types which require a price to be valid
@@ -51,7 +52,8 @@ cdef class Order:
                  Price price=None,
                  Label label=None,
                  TimeInForce time_in_force=TimeInForce.DAY,
-                 datetime expire_time=None):
+                 datetime expire_time=None,
+                 GUID init_event_id=None):
         """
         Initializes a new instance of the Order class.
 
@@ -65,6 +67,7 @@ cdef class Order:
         :param label: The order label / secondary identifier (optional can be None).
         :param time_in_force: The orders time in force (default DAY).
         :param expire_time: The order expire time (optional can be None).
+        :param init_event_id: The order initialization event identifier.
         :raises ValueError: If the order quantity is not positive (> 0).
         :raises ValueError: If the order side is UNKNOWN.
         :raises ValueError: If the order type should not have a price and the price is not None.
@@ -84,10 +87,10 @@ cdef class Order:
         if time_in_force is TimeInForce.GTD:
             Precondition.not_none(expire_time, 'expire_time')
 
-        self._order_ids_broker = []   # type: List[OrderId]
-        self._execution_ids = []      # type: List[ExecutionId]
-        self._execution_tickets = []  # type: List[ExecutionTicket]
-        self._events = []             # type: List[OrderEvent]
+        self._order_ids_broker = []         # type: List[OrderId]
+        self._execution_ids = []            # type: List[ExecutionId]
+        self._execution_tickets = []        # type: List[ExecutionTicket]
+        self._events = []                   # type: List[OrderEvent]
 
         self.symbol = symbol
         self.id = order_id
@@ -107,11 +110,28 @@ cdef class Order:
         self.average_price = None           # Can be None
         self.slippage = Decimal(0.0)
         self.status = OrderStatus.INITIALIZED
-        self.last_event = None              # Can be None
+        self.init_event_id = init_event_id
         self.is_buy = self.side == OrderSide.BUY
         self.is_sell = self.side == OrderSide.SELL
         self.is_active = False
         self.is_complete = False
+
+        cdef OrderInitialized initialized = OrderInitialized(
+            symbol=symbol,
+            order_id=order_id,
+            label=label,
+            order_side=order_side,
+            order_type=order_type,
+            quantity=quantity,
+            timestamp=timestamp,
+            price=price,
+            expire_time=expire_time,
+            event_id=GUID(uuid4()) if init_event_id is None else init_event_id,
+            event_timestamp=timestamp)
+
+        # Update events
+        self._events.append(initialized)
+        self.last_event = initialized
 
     cdef bint equals(self, Order other):
         """

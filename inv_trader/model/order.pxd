@@ -14,7 +14,7 @@ from cpython.datetime cimport datetime
 from inv_trader.common.clock cimport Clock
 from inv_trader.model.objects cimport Quantity, Symbol, Price
 from inv_trader.model.events cimport OrderEvent
-from inv_trader.model.identifiers cimport Label, OrderId, ExecutionId, ExecutionTicket
+from inv_trader.model.identifiers cimport GUID, Label, OrderId, ExecutionId, ExecutionTicket
 from inv_trader.model.identifiers cimport OrderIdGenerator
 from inv_trader.enums.order_side cimport OrderSide
 from inv_trader.enums.order_type cimport OrderType
@@ -50,6 +50,7 @@ cdef class Order:
     cdef readonly Price average_price
     cdef readonly object slippage
     cdef readonly OrderStatus status
+    cdef readonly GUID init_event_id
     cdef readonly OrderEvent last_event
     cdef readonly bint is_buy
     cdef readonly bint is_sell
