@@ -17,9 +17,9 @@ from inv_trader.model.enums import Venue, OrderSide, OrderType, OrderStatus, Tim
 from inv_trader.model.objects import ValidString, Quantity, Symbol, Price
 from inv_trader.model.identifiers import GUID, Label, OrderId, ExecutionId, ExecutionTicket
 from inv_trader.model.order import Order, OrderFactory
-from inv_trader.model.events import OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
-from inv_trader.model.events import OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
-from inv_trader.model.events import OrderPartiallyFilled, OrderFilled
+from inv_trader.model.events import OrderInitialized, OrderSubmitted, OrderAccepted, OrderRejected
+from inv_trader.model.events import OrderWorking, OrderExpired, OrderModified, OrderCancelled
+from inv_trader.model.events import OrderCancelReject, OrderPartiallyFilled, OrderFilled
 from test_kit.stubs import TestStubs
 
 UNIX_EPOCH = TestStubs.unix_epoch()
@@ -182,7 +182,8 @@ class OrderTests(unittest.TestCase):
         # Assert
         self.assertEqual(OrderType.MARKET, order.type)
         self.assertEqual(OrderStatus.INITIALIZED, order.status)
-        self.assertEqual(0, order.event_count())
+        self.assertEqual(1, order.event_count())
+        self.assertTrue(isinstance(order.last_event, OrderInitialized))
         self.assertFalse(order.is_active)
         self.assertFalse(order.is_complete)
         self.assertTrue(order.is_buy)
@@ -200,7 +201,8 @@ class OrderTests(unittest.TestCase):
         # Assert
         self.assertEqual(OrderType.MARKET, order.type)
         self.assertEqual(OrderStatus.INITIALIZED, order.status)
-        self.assertEqual(0, order.event_count())
+        self.assertEqual(1, order.event_count())
+        self.assertTrue(isinstance(order.last_event, OrderInitialized))
         self.assertFalse(order.is_active)
         self.assertFalse(order.is_complete)
         self.assertFalse(order.is_buy)
@@ -421,7 +423,7 @@ class OrderTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(OrderStatus.SUBMITTED, order.status)
-        self.assertEqual(1, order.event_count())
+        self.assertEqual(2, order.event_count())
         self.assertEqual(event, order.last_event)
         self.assertFalse(order.is_complete)
 
@@ -607,7 +609,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(Price('1.00001'), order.price)
         self.assertTrue(order.is_active)
         self.assertFalse(order.is_complete)
-        self.assertEqual(2, order.event_count())
+        self.assertEqual(3, order.event_count())
 
     def test_can_apply_order_filled_event_to_market_order(self):
         # Arrange
