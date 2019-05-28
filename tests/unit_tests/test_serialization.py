@@ -24,9 +24,9 @@ from inv_trader.model.events import *
 from inv_trader.serialization import MsgPackOrderSerializer
 from inv_trader.serialization import MsgPackCommandSerializer
 from inv_trader.serialization import MsgPackEventSerializer
+from inv_trader.serialization import MsgPackInstrumentSerializer
 from inv_trader.common.serialization import convert_price_to_string, convert_datetime_to_string
 from inv_trader.common.serialization import convert_string_to_price, convert_string_to_datetime
-from inv_trader.common.serialization import InstrumentSerializer
 from test_kit.stubs import TestStubs
 
 UNIX_EPOCH = TestStubs.unix_epoch()
@@ -126,9 +126,9 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
         deserialized = serializer.deserialize(serialized)
 
         # Assert
+        self.assertEqual(order, deserialized)
         print('market')
         print(b64encode(serialized))
-        self.assertEqual(order, deserialized)
 
     def test_can_serialize_and_deserialize_limit_orders(self):
         # Arrange
@@ -157,8 +157,8 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
         serializer = MsgPackOrderSerializer()
 
         order = Order(
-            AUDUSD_FXCM,
             OrderId('O123456'),
+            AUDUSD_FXCM,
             OrderSide.BUY,
             OrderType.LIMIT,
             Quantity(100000),
@@ -182,8 +182,8 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
         serializer = MsgPackOrderSerializer()
 
         order = Order(
-            AUDUSD_FXCM,
             OrderId('O123456'),
+            AUDUSD_FXCM,
             OrderSide.BUY,
             OrderType.STOP_LIMIT,
             Quantity(100000),
@@ -205,8 +205,8 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
         serializer = MsgPackOrderSerializer()
 
         order = Order(
-            AUDUSD_FXCM,
             OrderId('O123456'),
+            AUDUSD_FXCM,
             OrderSide.BUY,
             OrderType.STOP_LIMIT,
             Quantity(100000),
@@ -245,12 +245,13 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000))
 
-        command = SubmitOrder(order,
-                              TraderId('Trader-001'),
-                              StrategyId('SCALPER01'),
-                              PositionId('123456'),
-                              GUID(uuid.uuid4()),
-                              UNIX_EPOCH)
+        command = SubmitOrder(
+            TraderId('Trader-001'),
+            StrategyId('SCALPER01'),
+            PositionId('123456'),
+            order,
+            GUID(uuid.uuid4()),
+            UNIX_EPOCH)
 
         # Act
         serialized = serializer.serialize(command)
@@ -273,10 +274,10 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             Price('0.99900'))
 
         command = SubmitAtomicOrder(
-            atomic_order,
             TraderId('Trader-001'),
             StrategyId('SCALPER01'),
             PositionId('123456'),
+            atomic_order,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
@@ -303,10 +304,10 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             Price('1.00010'))
 
         command = SubmitAtomicOrder(
-            atomic_order,
             TraderId('Trader-001'),
             StrategyId('SCALPER01'),
             PositionId('123456'),
+            atomic_order,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
@@ -324,22 +325,13 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         # Arrange
         serializer = MsgPackCommandSerializer()
 
-        order = Order(
-            AUDUSD_FXCM,
-            OrderId('O123456'),
-            OrderSide.BUY,
-            OrderType.LIMIT,
-            Quantity(100000),
-            UNIX_EPOCH,
-            Price('1.00000'),
-            Label('S1_SL'),
-            time_in_force=TimeInForce.GTD,
-            expire_time=UNIX_EPOCH)
-
-        command = CancelOrder(order,
-                              ValidString('EXPIRED'),
-                              GUID(uuid.uuid4()),
-                              UNIX_EPOCH)
+        command = CancelOrder(
+            TraderId('Trader-001'),
+            StrategyId('SCALPER01'),
+            OrderId('O-123456'),
+            ValidString('EXPIRED'),
+            GUID(uuid.uuid4()),
+            UNIX_EPOCH)
 
         # Act
         serialized = serializer.serialize(command)
@@ -347,7 +339,6 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(command, deserialized)
-        self.assertEqual(order, deserialized.order)
         print(b64encode(serialized))
         print(command)
 
@@ -355,22 +346,13 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         # Arrange
         serializer = MsgPackCommandSerializer()
 
-        order = Order(
-            AUDUSD_FXCM,
-            OrderId('O123456'),
-            OrderSide.BUY,
-            OrderType.LIMIT,
-            Quantity(100000),
-            UNIX_EPOCH,
-            Price('1.00000'),
-            Label('S1_SL'),
-            time_in_force=TimeInForce.GTD,
-            expire_time=UNIX_EPOCH)
-
-        command = ModifyOrder(order,
-                              Price('1.00001'),
-                              GUID(uuid.uuid4()),
-                              UNIX_EPOCH)
+        command = ModifyOrder(
+            TraderId('Trader-001'),
+            StrategyId('SCALPER01'),
+            OrderId('O-123456'),
+            Price('1.00001'),
+            GUID(uuid.uuid4()),
+            UNIX_EPOCH)
 
         # Act
         serialized = serializer.serialize(command)
@@ -378,7 +360,6 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(command, deserialized)
-        self.assertEqual(order, deserialized.order)
         print(b64encode(serialized))
         print(command)
 
@@ -404,11 +385,12 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Arrange
         serializer = MsgPackEventSerializer()
 
-        event = OrderSubmitted(AUDUSD_FXCM,
-                               OrderId('O123456'),
-                               UNIX_EPOCH,
-                               GUID(uuid.uuid4()),
-                               UNIX_EPOCH)
+        event = OrderSubmitted(
+            OrderId('O-123456'),
+            AUDUSD_FXCM,
+            UNIX_EPOCH,
+            GUID(uuid.uuid4()),
+            UNIX_EPOCH)
 
         # Act
         serialized = serializer.serialize(event)
@@ -421,11 +403,12 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Arrange
         serializer = MsgPackEventSerializer()
 
-        event = OrderAccepted(AUDUSD_FXCM,
-                              OrderId('O123456'),
-                              UNIX_EPOCH,
-                              GUID(uuid.uuid4()),
-                              UNIX_EPOCH)
+        event = OrderAccepted(
+            OrderId('O-123456'),
+            AUDUSD_FXCM,
+            UNIX_EPOCH,
+            GUID(uuid.uuid4()),
+            UNIX_EPOCH)
 
         # Act
         serialized = serializer.serialize(event)
@@ -438,12 +421,13 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Arrange
         serializer = MsgPackEventSerializer()
 
-        event = OrderRejected(AUDUSD_FXCM,
-                              OrderId('O123456'),
-                              UNIX_EPOCH,
-                              ValidString('ORDER_ID_INVALID'),
-                              GUID(uuid.uuid4()),
-                              UNIX_EPOCH)
+        event = OrderRejected(
+            OrderId('O-123456'),
+            AUDUSD_FXCM,
+            UNIX_EPOCH,
+            ValidString('ORDER_ID_INVALID'),
+            GUID(uuid.uuid4()),
+            UNIX_EPOCH)
 
         # Act
         serialized = serializer.serialize(event)
@@ -457,9 +441,9 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         serializer = MsgPackEventSerializer()
 
         event = OrderWorking(
+            OrderId('O-123456'),
+            OrderId('BO-123456'),
             AUDUSD_FXCM,
-            OrderId('O123456'),
-            OrderId('B123456'),
             Label('S1_PT'),
             OrderSide.SELL,
             OrderType.STOP_LIMIT,
@@ -483,9 +467,9 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         serializer = MsgPackEventSerializer()
 
         event = OrderWorking(
+            OrderId('O-123456'),
+            OrderId('BO-123456'),
             AUDUSD_FXCM,
-            OrderId('O123456'),
-            OrderId('B123456'),
             Label('S1_PT'),
             OrderSide.SELL,
             OrderType.STOP_LIMIT,
@@ -509,8 +493,8 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         serializer = MsgPackEventSerializer()
 
         event = OrderCancelled(
+            OrderId('O-123456'),
             AUDUSD_FXCM,
-            OrderId('O123456'),
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -527,8 +511,8 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         serializer = MsgPackEventSerializer()
 
         event = OrderCancelReject(
+            OrderId('O-123456'),
             AUDUSD_FXCM,
-            OrderId('O123456'),
             UNIX_EPOCH,
             ValidString('RESPONSE'),
             ValidString('ORDER_DOES_NOT_EXIST'),
@@ -547,9 +531,9 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         serializer = MsgPackEventSerializer()
 
         event = OrderModified(
+            OrderId('O-123456'),
+            OrderId('BO-123456'),
             AUDUSD_FXCM,
-            OrderId('O123456'),
-            OrderId('B123456'),
             Price('0.80010'),
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
@@ -567,8 +551,8 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         serializer = MsgPackEventSerializer()
 
         event = OrderExpired(
+            OrderId('O-123456'),
             AUDUSD_FXCM,
-            OrderId('O123456'),
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -585,8 +569,8 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         serializer = MsgPackEventSerializer()
 
         event = OrderPartiallyFilled(
+            OrderId('O-123456'),
             AUDUSD_FXCM,
-            OrderId('O123456'),
             ExecutionId('E123456'),
             ExecutionTicket('T123456'),
             OrderSide.SELL,
@@ -609,8 +593,8 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         serializer = MsgPackEventSerializer()
 
         event = OrderFilled(
+            OrderId('O-123456'),
             AUDUSD_FXCM,
-            OrderId('O123456'),
             ExecutionId('E123456'),
             ExecutionTicket('T123456'),
             OrderSide.SELL,
@@ -1015,6 +999,7 @@ class InstrumentSerializerTests(unittest.TestCase):
         serializer = InstrumentSerializer()
 
         instrument = Instrument(
+            instrument_id=InstrumentId('AUDUSD.FXCM'),
             symbol=Symbol('AUDUSD', Venue.FXCM),
             broker_symbol='AUD/USD',
             quote_currency=Currency.USD,
@@ -1032,5 +1017,11 @@ class InstrumentSerializerTests(unittest.TestCase):
             rollover_interest_sell=Decimal('-1.1'),
             timestamp=datetime.now(timezone.utc))
 
-        # serialized = serializer.serialize(instrument)
-        # print(serialized)
+        # Act
+        serialized = serializer.serialize(instrument)
+        deserialized = serializer.deserialize(serialized)
+
+        # Assert
+        self.assertEqual(instrument, deserialized)
+        print('instrument')
+        print(b64encode(serialized))

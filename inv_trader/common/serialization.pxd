@@ -12,10 +12,10 @@
 from cpython.datetime cimport datetime
 
 from inv_trader.model.objects cimport Symbol, Price, Instrument
-from inv_trader.model.identifiers cimport GUID, Label
+from inv_trader.model.identifiers cimport Label
 from inv_trader.model.order cimport Order
-from inv_trader.model.events cimport Event, OrderEvent
-from inv_trader.commands cimport Command, OrderCommand
+from inv_trader.model.events cimport Event
+from inv_trader.commands cimport Command
 
 
 cpdef Symbol parse_symbol(str symbol_string)
@@ -42,12 +42,7 @@ cdef class CommandSerializer:
     """
     cpdef bytes serialize(self, Command command)
     cpdef Command deserialize(self, bytes command_bytes)
-    cdef bytes _serialize_order_command(self, OrderCommand order_command)
-    cdef OrderCommand _deserialize_order_command(
-            self,
-            GUID command_id,
-            datetime command_timestamp,
-            dict unpacked)
+
 
 cdef class EventSerializer:
     """
@@ -55,17 +50,11 @@ cdef class EventSerializer:
     """
     cpdef bytes serialize(self, Event event)
     cpdef Event deserialize(self, bytes event_bytes)
-    cdef bytes _serialize_order_event(self, OrderEvent order_event)
-    cdef OrderEvent _deserialize_order_event(
-            self,
-            GUID event_id,
-            datetime event_timestamp,
-            dict unpacked)
 
 
 cdef class InstrumentSerializer:
     """
-    Provides an instrument deserializer.
+    The abstract base class for all instrument serializers.
     """
-
+    cpdef bytes serialize(self, Instrument instrument)
     cpdef Instrument deserialize(self, bytes instrument_bytes)

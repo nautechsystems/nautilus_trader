@@ -47,6 +47,9 @@ cdef class ExecutionId(Identifier):
 cdef class ExecutionTicket(Identifier):
     pass
 
+cdef class InstrumentId(Identifier):
+    pass
+
 
 cdef class IdentifierGenerator:
     """

@@ -217,6 +217,20 @@ cdef class ExecutionTicket(Identifier):
         super().__init__(value)
 
 
+cdef class InstrumentId(Identifier):
+    """
+    Represents a valid instrument identifier (should be unique).
+    """
+
+    def __init__(self, str value):
+        """
+        Initializes a new instance of the InstrumentId class.
+
+        :param value: The value of the instrument identifier.
+        """
+        super().__init__(value)
+
+
 cdef class IdentifierGenerator:
     """
     Provides a generator for unique identifier strings.

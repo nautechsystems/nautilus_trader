@@ -12,12 +12,13 @@
 from inv_trader.commands cimport Command
 from inv_trader.model.order cimport Order
 from inv_trader.model.events cimport Event
-from inv_trader.common.serialization cimport OrderSerializer, EventSerializer, CommandSerializer
+from inv_trader.model.objects cimport Instrument
+from inv_trader.common.serialization cimport OrderSerializer, EventSerializer, CommandSerializer, InstrumentSerializer
 
 
 cdef class MsgPackOrderSerializer(OrderSerializer):
     """
-    Provides a command serializer for the Message Pack specification
+    Provides a command serializer for the MessagePack specification
     """
     cpdef bytes serialize(self, Order order)
     cpdef Order deserialize(self, bytes order_bytes)
@@ -25,7 +26,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
 
 cdef class MsgPackCommandSerializer(CommandSerializer):
     """
-    Provides a command serializer for the Message Pack specification.
+    Provides a command serializer for the MessagePack specification.
     """
     cpdef OrderSerializer order_serializer
 
@@ -35,7 +36,15 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
 
 cdef class MsgPackEventSerializer(EventSerializer):
     """
-    Provides an event serializer for the Message Pack specification
+    Provides an event serializer for the MessagePack specification
     """
     cpdef bytes serialize(self, Event event)
     cpdef Event deserialize(self, bytes event_bytes)
+
+
+cdef class MsgPackInstrumentSerializer(InstrumentSerializer):
+    """
+    Provides an instrument serializer for the MessagePack specification.
+    """
+    cpdef bytes serialize(self, Instrument instrument)
+    cpdef Instrument deserialize(self, bytes instrument_bytes)
