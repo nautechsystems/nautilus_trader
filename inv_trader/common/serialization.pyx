@@ -31,11 +31,14 @@ from inv_trader.commands cimport Command
 
 cdef str UTF8 = 'utf-8'
 cdef str NONE = 'NONE'
-cdef str COMMAND_TYPE = 'CommandType'
+cdef str TYPE = 'Type'
+cdef str COMMAND = 'Command'
 cdef str COMMAND_ID = 'CommandId'
 cdef str COMMAND_TIMESTAMP = 'CommandTimestamp'
+cdef str EVENT = 'Event'
+cdef str EVENT_ID = 'EventId'
+cdef str EVENT_TIMESTAMP = 'EventTimestamp'
 cdef str COLLATERAL_INQUIRY = 'CollateralInquiry'
-cdef str ORDER_COMMAND = 'OrderCommand'
 cdef str SUBMIT_ORDER = 'SubmitOrder'
 cdef str SUBMIT_ATOMIC_ORDER = 'SubmitAtomicOrder'
 cdef str CANCEL_ORDER = 'CancelOrder'
@@ -43,28 +46,13 @@ cdef str MODIFY_ORDER = 'ModifyOrder'
 cdef str CANCEL_REASON = 'CancelReason'
 cdef str ORDER = 'Order'
 cdef str TIMESTAMP = 'Timestamp'
-cdef str EVENT_TYPE = 'EventType'
-cdef str ORDER_EVENT = 'OrderEvent'
-cdef str ACCOUNT_EVENT = 'AccountEvent'
 cdef str SYMBOL = 'Symbol'
 cdef str ORDER_ID = 'OrderId'
 cdef str ORDER_ID_BROKER = 'OrderIdBroker'
-cdef str EVENT_ID = 'EventId'
 cdef str TRADER_ID = 'TraderId'
 cdef str STRATEGY_ID = 'StrategyId'
 cdef str POSITION_ID = 'PositionId'
-cdef str EVENT_TIMESTAMP = 'EventTimestamp'
 cdef str LABEL = 'Label'
-cdef str ORDER_SUBMITTED = 'OrderSubmitted'
-cdef str ORDER_ACCEPTED = 'OrderAccepted'
-cdef str ORDER_REJECTED = 'OrderRejected'
-cdef str ORDER_WORKING = 'OrderWorking'
-cdef str ORDER_CANCELLED = 'OrderCancelled'
-cdef str ORDER_CANCEL_REJECT = 'OrderCancelReject'
-cdef str ORDER_MODIFIED = 'OrderModified'
-cdef str ORDER_EXPIRED = 'OrderExpired'
-cdef str ORDER_PARTIALLY_FILLED = 'OrderPartiallyFilled'
-cdef str ORDER_FILLED = 'OrderFilled'
 cdef str SUBMITTED_TIME = 'SubmittedTime'
 cdef str ACCEPTED_TIME = 'AcceptedTime'
 cdef str REJECTED_TIME = 'RejectedTime'
@@ -84,7 +72,6 @@ cdef str ORDER_TYPE = 'OrderType'
 cdef str ENTRY = 'Entry'
 cdef str STOP_LOSS = 'StopLoss'
 cdef str TAKE_PROFIT = 'TakeProfit'
-cdef str HAS_TAKE_PROFIT = 'HasTakeProfit'
 cdef str FILLED_QUANTITY = 'FilledQuantity'
 cdef str LEAVES_QUANTITY = 'LeavesQuantity'
 cdef str QUANTITY = 'Quantity'
@@ -222,18 +209,6 @@ cdef class CommandSerializer:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cdef bytes _serialize_order_command(self, OrderCommand order_command):
-        # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented.")
-
-    cdef OrderCommand _deserialize_order_command(
-            self,
-            GUID command_id,
-            datetime command_timestamp,
-            dict unpacked):
-        # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
-
 
 cdef class EventSerializer:
     """
@@ -260,56 +235,28 @@ cdef class EventSerializer:
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cdef bytes _serialize_order_event(self, OrderEvent order_event):
-        # Raise exception if not overridden in implementation.
-        raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cdef OrderEvent _deserialize_order_event(
-            self,
-            GUID event_id,
-            datetime event_timestamp,
-            dict unpacked):
-        # Raise exception if not overridden in implementation.
-        raise NotImplementedError("Method must be implemented in the subclass.")
-
-
-@cython.wraparound(True)
 cdef class InstrumentSerializer:
     """
-    Provides an instrument deserializer.
+    The abstract base class for all instrument serializers.
     """
+
+    cpdef bytes serialize(self, Instrument instrument):
+        """
+        Serialize the given event to bytes.
+
+        :param instrument: The instrument to serialize.
+        :return: bytes.
+        """
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
 
     cpdef Instrument deserialize(self, bytes instrument_bytes):
         """
         Deserialize the given instrument bytes to an instrument.
 
-        :param instrument_bytes: The string to deserialize.
+        :param instrument_bytes: The bytes to deserialize.
         :return: Instrument.
-        :raises ValueError: If the instrument_bytes is empty.
-        :raises ValueError: If the instrument cannot be deserialized.
         """
-        cdef dict inst_dict = ast.literal_eval((json.loads(instrument_bytes)
-                                      .replace("\"", "\'")
-                                      .replace("\'Timestamp\':", "\'Timestamp\':\'")[:-1] + "\'}"))
-
-        tick_size = inst_dict['TickSize']
-        rollover_interest_buy = inst_dict['RolloverInterestBuy']
-        rollover_interest_sell = inst_dict['RolloverInterestSell']
-
-        return Instrument(
-            Symbol(inst_dict['Symbol']['Code'], Venue[inst_dict['Symbol']['Venue'].upper()]),
-            inst_dict['BrokerSymbol']['Value'],
-            Currency[inst_dict['QuoteCurrency'].upper()],
-            SecurityType[inst_dict['SecurityType'].upper()],
-            inst_dict['TickPrecision'],
-            Decimal(f'{tick_size}'),
-            inst_dict['RoundLotSize'],
-            inst_dict['MinStopDistanceEntry'],
-            inst_dict['MinLimitDistanceEntry'],
-            inst_dict['MinStopDistance'],
-            inst_dict['MinLimitDistance'],
-            inst_dict['MinTradeSize'],
-            inst_dict['MaxTradeSize'],
-            Decimal(f'{rollover_interest_buy}'),
-            Decimal(f'{rollover_interest_sell}'),
-            iso8601.parse_date(inst_dict['Timestamp']))
+        # Raise exception if not overridden in implementation.
+        raise NotImplementedError("Method must be implemented in the subclass.")

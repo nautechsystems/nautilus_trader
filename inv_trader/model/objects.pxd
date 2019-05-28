@@ -16,6 +16,7 @@ from inv_trader.enums.security_type cimport SecurityType
 from inv_trader.enums.venue cimport Venue
 from inv_trader.enums.resolution cimport Resolution
 from inv_trader.enums.quote_type cimport QuoteType
+from inv_trader.model.identifiers cimport InstrumentId
 
 
 cdef class ValidString:
@@ -127,6 +128,7 @@ cdef class Instrument:
     """
     Represents a tradeable financial market instrument.
     """
+    cdef readonly InstrumentId id
     cdef readonly Symbol symbol
     cdef readonly str broker_symbol
     cdef readonly Currency quote_currency

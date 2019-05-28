@@ -897,6 +897,7 @@ cdef class Instrument:
     """
 
     def __init__(self,
+                 InstrumentId instrument_id,
                  Symbol symbol,
                  str broker_symbol,
                  Currency quote_currency,
@@ -916,6 +917,7 @@ cdef class Instrument:
         """
         Initializes a new instance of the Instrument class.
 
+        :param symbol: The instruments identifier.
         :param symbol: The instruments symbol.
         :param broker_symbol: The instruments broker symbol.
         :param quote_currency: The instruments quote currency.
@@ -944,6 +946,7 @@ cdef class Instrument:
         Precondition.positive(min_trade_size.value, 'min_trade_size')
         Precondition.positive(max_trade_size.value, 'max_trade_size')
 
+        self.id = instrument_id
         self.symbol = symbol
         self.broker_symbol = broker_symbol
         self.quote_currency = quote_currency
@@ -965,7 +968,7 @@ cdef class Instrument:
         """
         Override the default equality comparison.
         """
-        return self.symbol == other.symbol
+        return self.id == other.id
 
     def __ne__(self, Instrument other) -> bool:
         """

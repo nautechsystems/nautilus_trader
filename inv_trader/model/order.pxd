@@ -74,12 +74,12 @@ cdef class AtomicOrder:
     Represents an order for a financial market instrument consisting of a 'parent'
     entry order and 'child' OCO orders being a stop-loss and optional profit target.
     """
+    cdef readonly OrderId id
     cdef readonly Order entry
     cdef readonly Order stop_loss
     cdef readonly Order take_profit
-    cdef readonly OrderId id
-    cdef readonly datetime timestamp
     cdef readonly bint has_take_profit
+    cdef readonly datetime timestamp
 
     cdef bint equals(self, AtomicOrder other)
 

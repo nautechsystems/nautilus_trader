@@ -43,8 +43,8 @@ cdef class Order:
     """
 
     def __init__(self,
-                 Symbol symbol,
                  OrderId order_id,
+                 Symbol symbol,
                  OrderSide order_side,
                  OrderType order_type,
                  Quantity quantity,
@@ -53,21 +53,21 @@ cdef class Order:
                  Label label=None,
                  TimeInForce time_in_force=TimeInForce.DAY,
                  datetime expire_time=None,
-                 GUID init_event_id=None):
+                 GUID init_id=None):
         """
         Initializes a new instance of the Order class.
 
-        :param symbol: The orders symbol.
-        :param order_id: The orders identifier.
-        :param order_side: The orders side.
-        :param order_type: The orders type.
-        :param quantity: The orders quantity (> 0).
-        :param timestamp: The orders initialization timestamp.
-        :param price: The orders price (must be None for non priced orders).
+        :param order_id: The order identifier.
+        :param symbol: The order symbol.
+        :param order_side: The order side.
+        :param order_type: The order type.
+        :param quantity: The order quantity (> 0).
+        :param timestamp: The order initialization timestamp.
+        :param price: The order price (must be None for non-priced orders).
         :param label: The order label / secondary identifier (optional can be None).
-        :param time_in_force: The orders time in force (default DAY).
+        :param time_in_force: The order time in force (default DAY).
         :param expire_time: The order expire time (optional can be None).
-        :param init_event_id: The order initialization event identifier.
+        :param init_id: The order initialization event identifier.
         :raises ValueError: If the order quantity is not positive (> 0).
         :raises ValueError: If the order side is UNKNOWN.
         :raises ValueError: If the order type should not have a price and the price is not None.
@@ -92,8 +92,8 @@ cdef class Order:
         self._execution_tickets = []        # type: List[ExecutionTicket]
         self._events = []                   # type: List[OrderEvent]
 
-        self.symbol = symbol
         self.id = order_id
+        self.symbol = symbol
         self.broker_id = None               # Can be None
         self.execution_id = None            # Can be None
         self.execution_ticket = None        # Can be None
@@ -110,7 +110,7 @@ cdef class Order:
         self.average_price = None           # Can be None
         self.slippage = Decimal(0.0)
         self.status = OrderStatus.INITIALIZED
-        self.init_event_id = init_event_id
+        self.init_event_id = init_id
         self.is_buy = self.side == OrderSide.BUY
         self.is_sell = self.side == OrderSide.SELL
         self.is_active = False
@@ -126,7 +126,7 @@ cdef class Order:
             price=price,
             time_in_force=time_in_force,
             expire_time=expire_time,
-            event_id=GUID(uuid4()) if init_event_id is None else init_event_id,
+            event_id=GUID(uuid4()) if init_id is None else init_id,
             event_timestamp=timestamp)
 
         # Update events
@@ -326,11 +326,11 @@ cdef class AtomicOrder:
         :param stop_loss: The stop-loss (S/L) 'child' order.
         :param take_profit: The take-profit (T/P) 'child' order (optional can be None).
         """
+        self.id = OrderId('A' + entry.id.value)
         self.entry = entry
         self.stop_loss = stop_loss
         self.take_profit = take_profit
         self.has_take_profit = take_profit is not None
-        self.id = OrderId('A' + entry.id.value)
         self.timestamp = entry.timestamp
 
     cdef bint equals(self, AtomicOrder other):
@@ -364,7 +364,8 @@ cdef class AtomicOrder:
         """
         :return: The str() string representation of the order.
         """
-        return f"AtomicOrder(Entry{self.entry}, has_take_profit={self.has_take_profit})"
+        cdef str tp_price = 'NONE' if self.take_profit is None else str(self.take_profit.price)
+        return f"AtomicOrder(Entry{self.entry}, TP={tp_price}, SL={self.stop_loss.price})"
 
     def __repr__(self) -> str:
         """
@@ -419,8 +420,8 @@ cdef class OrderFactory:
         :return: Order.
         """
         return Order(
-            symbol,
             self._id_generator.generate(),
+            symbol,
             order_side,
             OrderType.MARKET,
             quantity,
@@ -455,8 +456,8 @@ cdef class OrderFactory:
         :raises ValueError: If the time_in_force is GTD and the expire_time is None.
         """
         return Order(
-            symbol,
             self._id_generator.generate(),
+            symbol,
             order_side,
             OrderType.LIMIT,
             quantity,
@@ -491,8 +492,8 @@ cdef class OrderFactory:
         :raises ValueError: If the time_in_force is GTD and the expire_time is None.
         """
         return Order(
-            symbol,
             self._id_generator.generate(),
+            symbol,
             order_side,
             OrderType.STOP_MARKET,
             quantity,
@@ -527,8 +528,8 @@ cdef class OrderFactory:
         :raises ValueError: If the time_in_force is GTD and the expire_time is None.
         """
         return Order(
-            symbol,
             self._id_generator.generate(),
+            symbol,
             order_side,
             OrderType.STOP_LIMIT,
             quantity,
@@ -563,8 +564,8 @@ cdef class OrderFactory:
         :raises ValueError: If the time_in_force is GTD and the expire_time is None.
         """
         return Order(
-            symbol,
             self._id_generator.generate(),
+            symbol,
             order_side,
             OrderType.MIT,
             quantity,
@@ -591,8 +592,8 @@ cdef class OrderFactory:
         :raises ValueError: If the order quantity is not positive (> 0).
         """
         return Order(
-            symbol,
             self._id_generator.generate(),
+            symbol,
             order_side,
             OrderType.MARKET,
             quantity,
@@ -619,8 +620,8 @@ cdef class OrderFactory:
         :raises ValueError: If the order quantity is not positive (> 0).
         """
         return Order(
-            symbol,
             self._id_generator.generate(),
+            symbol,
             order_side,
             OrderType.MARKET,
             quantity,

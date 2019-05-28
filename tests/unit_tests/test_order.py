@@ -42,8 +42,8 @@ class OrderTests(unittest.TestCase):
         self.assertRaises(
             ValueError,
             Order,
-            AUDUSD_FXCM,
             OrderId('AUDUSD-FXCM-123456-1'),
+            AUDUSD_FXCM,
             OrderSide.BUY,
             OrderType.MARKET,
             Quantity.zero(),
@@ -55,8 +55,8 @@ class OrderTests(unittest.TestCase):
         self.assertRaises(
             ValueError,
             Order,
-            AUDUSD_FXCM,
             OrderId('AUDUSD-FXCM-123456-1'),
+            AUDUSD_FXCM,
             OrderSide.UNKNOWN,
             OrderType.MARKET,
             Quantity(100000),
@@ -68,8 +68,8 @@ class OrderTests(unittest.TestCase):
         self.assertRaises(
             ValueError,
             Order,
-            AUDUSD_FXCM,
             OrderId('AUDUSD-FXCM-123456-1'),
+            AUDUSD_FXCM,
             OrderSide.BUY,
             OrderType.LIMIT,
             Quantity(100000),
@@ -84,8 +84,8 @@ class OrderTests(unittest.TestCase):
         self.assertRaises(
             ValueError,
             Order,
-            AUDUSD_FXCM,
             OrderId('AUDUSD-FXCM-123456-1'),
+            AUDUSD_FXCM,
             OrderSide.BUY,
             OrderType.MARKET,
             Quantity(100000),
@@ -98,8 +98,8 @@ class OrderTests(unittest.TestCase):
         self.assertRaises(
             ValueError,
             Order,
+            OrderId('AUDUSD-FXCM-123456-1'),
             AUDUSD_FXCM,
-            OrderId('AUDUSD-123456-1'),
             OrderSide.BUY,
             OrderType.STOP_MARKET,
             Quantity(100000),
@@ -111,8 +111,8 @@ class OrderTests(unittest.TestCase):
         self.assertRaises(
             ValueError,
             Order,
+            OrderId('AUDUSD-FXCM-123456-1'),
             AUDUSD_FXCM,
-            OrderId('AUDUSD-123456-1'),
             OrderSide.BUY,
             OrderType.STOP_MARKET,
             Quantity(100000),
