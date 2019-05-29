@@ -443,8 +443,8 @@ cdef class TradeStrategy:
         :param order_id: The order identifier associated with the buffered command.
         """
         cdef ModifyOrder buffered_command = self._modify_order_buffer[order_id]
-        if buffered_command.modified_price != buffered_command.order.price:
-            self.log.info(f"Modifying {buffered_command.order} with new price {buffered_command.modified_price}")
+        if buffered_command.modified_price != self.order(order_id).price:
+            self.log.info(f"Modifying {buffered_command.order_id} with new price {buffered_command.modified_price}")
             self._exec_client.execute_command(buffered_command)
         del self._modify_order_buffer[order_id]
 
