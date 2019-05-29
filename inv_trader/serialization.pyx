@@ -359,17 +359,14 @@ cdef class MsgPackEventSerializer(EventSerializer):
             return msgpack.packb(package)
         if isinstance(event, OrderSubmitted):
             package[ORDER_ID] =  event.order_id.value
-            package[SYMBOL] =  event.symbol.value
             package[SUBMITTED_TIME] = convert_datetime_to_string(event.submitted_time)
             return msgpack.packb(package)
         if isinstance(event, OrderAccepted):
             package[ORDER_ID] =  event.order_id.value
-            package[SYMBOL] =  event.symbol.value
             package[ACCEPTED_TIME] = convert_datetime_to_string(event.accepted_time)
             return msgpack.packb(package)
         if isinstance(event, OrderRejected):
             package[ORDER_ID] =  event.order_id.value
-            package[SYMBOL] =  event.symbol.value
             package[REJECTED_TIME] = convert_datetime_to_string(event.rejected_time)
             package[REJECTED_REASON] =  str(event.rejected_reason)
             return msgpack.packb(package)
@@ -388,33 +385,29 @@ cdef class MsgPackEventSerializer(EventSerializer):
             return msgpack.packb(package)
         if isinstance(event, OrderCancelReject):
             package[ORDER_ID] = event.order_id.value
-            package[SYMBOL] = event.symbol.value
             package[REJECTED_TIME] = convert_datetime_to_string(event.cancel_reject_time)
             package[REJECTED_RESPONSE] = event.cancel_reject_response.value
             package[REJECTED_REASON] = event.cancel_reject_reason.value
             return msgpack.packb(package)
         if isinstance(event, OrderCancelled):
             package[ORDER_ID] = event.order_id.value
-            package[SYMBOL] = event.symbol.value
             package[CANCELLED_TIME] = convert_datetime_to_string(event.cancelled_time)
             return msgpack.packb(package)
         if isinstance(event, OrderModified):
             package[ORDER_ID] = event.order_id.value
             package[ORDER_ID_BROKER] = event.order_id_broker.value
-            package[SYMBOL] = event.symbol.value
             package[MODIFIED_TIME] = convert_datetime_to_string(event.modified_time)
             package[MODIFIED_PRICE] = str(event.modified_price)
             return msgpack.packb(package)
         if isinstance(event, OrderExpired):
             package[ORDER_ID] = event.order_id.value
-            package[SYMBOL] = event.symbol.value
             package[EXPIRED_TIME] = convert_datetime_to_string(event.expired_time)
             return msgpack.packb(package)
         if isinstance(event, OrderPartiallyFilled):
             package[ORDER_ID] = event.order_id.value
-            package[SYMBOL] = event.symbol.value
             package[EXECUTION_ID] = event.execution_id.value
             package[EXECUTION_TICKET] = event.execution_ticket.value
+            package[SYMBOL] = event.symbol.value
             package[ORDER_SIDE] = order_side_string(event.order_side)
             package[FILLED_QUANTITY] = event.filled_quantity.value
             package[LEAVES_QUANTITY] = event.leaves_quantity.value
@@ -423,9 +416,9 @@ cdef class MsgPackEventSerializer(EventSerializer):
             return msgpack.packb(package)
         if isinstance(event, OrderFilled):
             package[ORDER_ID] = event.order_id.value
-            package[SYMBOL] = event.symbol.value
             package[EXECUTION_ID] = event.execution_id.value
             package[EXECUTION_TICKET] = event.execution_ticket.value
+            package[SYMBOL] = event.symbol.value
             package[ORDER_SIDE] = order_side_string(event.order_side)
             package[FILLED_QUANTITY] = event.filled_quantity.value
             package[AVERAGE_PRICE] = str(event.average_price)
@@ -471,36 +464,30 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 event_id,
                 event_timestamp)
 
-        cdef Symbol order_symbol = parse_symbol(unpacked[SYMBOL])
-        cdef OrderId order_id = OrderId(unpacked[ORDER_ID])
-
         if event_type == OrderSubmitted.__name__:
             return OrderSubmitted(
-                order_id,
-                order_symbol,
+                OrderId(unpacked[ORDER_ID]),
                 convert_string_to_datetime(unpacked[SUBMITTED_TIME]),
                 event_id,
                 event_timestamp)
         if event_type == OrderAccepted.__name__:
             return OrderAccepted(
-                order_id,
-                order_symbol,
+                OrderId(unpacked[ORDER_ID]),
                 convert_string_to_datetime(unpacked[ACCEPTED_TIME]),
                 event_id,
                 event_timestamp)
         if event_type == OrderRejected.__name__:
             return OrderRejected(
-                order_id,
-                order_symbol,
+                OrderId(unpacked[ORDER_ID]),
                 convert_string_to_datetime(unpacked[REJECTED_TIME]),
                 ValidString(unpacked[REJECTED_REASON]),
                 event_id,
                 event_timestamp)
         if event_type == OrderWorking.__name__:
             return OrderWorking(
-                order_id,
+                OrderId(unpacked[ORDER_ID]),
                 OrderId(unpacked[ORDER_ID_BROKER]),
-                order_symbol,
+                parse_symbol(unpacked[SYMBOL]),
                 Label(unpacked[LABEL]),
                 OrderSide[unpacked[ORDER_SIDE]],
                 OrderType[unpacked[ORDER_TYPE]],
@@ -513,15 +500,13 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 convert_string_to_datetime(unpacked[EXPIRE_TIME]))
         if event_type == OrderCancelled.__name__:
             return OrderCancelled(
-                order_id,
-                order_symbol,
+                OrderId(unpacked[ORDER_ID]),
                 convert_string_to_datetime(unpacked[CANCELLED_TIME]),
                 event_id,
                 event_timestamp)
         if event_type == OrderCancelReject.__name__:
             return OrderCancelReject(
-                order_id,
-                order_symbol,
+                OrderId(unpacked[ORDER_ID]),
                 convert_string_to_datetime(unpacked[REJECTED_TIME]),
                 ValidString(unpacked[REJECTED_RESPONSE]),
                 ValidString(unpacked[REJECTED_REASON]),
@@ -529,26 +514,24 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 event_timestamp)
         if event_type == OrderModified.__name__:
             return OrderModified(
-                order_id,
+                OrderId(unpacked[ORDER_ID]),
                 OrderId(unpacked[ORDER_ID_BROKER]),
-                order_symbol,
                 Price(unpacked[MODIFIED_PRICE]),
                 convert_string_to_datetime(unpacked[MODIFIED_TIME]),
                 event_id,
                 event_timestamp)
         if event_type == OrderExpired.__name__:
             return OrderExpired(
-                order_id,
-                order_symbol,
+                OrderId(unpacked[ORDER_ID]),
                 convert_string_to_datetime(unpacked[EXPIRED_TIME]),
                 event_id,
                 event_timestamp)
         if event_type == OrderPartiallyFilled.__name__:
             return OrderPartiallyFilled(
-                order_id,
-                order_symbol,
+                OrderId(unpacked[ORDER_ID]),
                 ExecutionId(unpacked[EXECUTION_ID]),
                 ExecutionTicket(unpacked[EXECUTION_TICKET]),
+                parse_symbol(unpacked[SYMBOL]),
                 OrderSide[unpacked[ORDER_SIDE]],
                 Quantity(unpacked[FILLED_QUANTITY]),
                 Quantity(unpacked[LEAVES_QUANTITY]),
@@ -558,10 +541,10 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 event_timestamp)
         if event_type == OrderFilled.__name__:
             return OrderFilled(
-                order_id,
-                order_symbol,
+                OrderId(unpacked[ORDER_ID]),
                 ExecutionId(unpacked[EXECUTION_ID]),
                 ExecutionTicket(unpacked[EXECUTION_TICKET]),
+                parse_symbol(unpacked[SYMBOL]),
                 OrderSide[unpacked[ORDER_SIDE]],
                 Quantity(unpacked[FILLED_QUANTITY]),
                 Price(unpacked[AVERAGE_PRICE]),
