@@ -363,7 +363,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         print(b64encode(serialized))
         print(command)
 
-    def test_can_serialized_and_deserialize_collateral_inquiry_command(self):
+    def test_can_serialize_and_deserialize_collateral_inquiry_command(self):
         # Arrange
         serializer = MsgPackCommandSerializer()
 
@@ -381,13 +381,12 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
 
 class MsgPackEventSerializerTests(unittest.TestCase):
 
-    def test_can_serialized_and_deserialize_order_submitted_events(self):
+    def test_can_serialize_and_deserialize_order_submitted_events(self):
         # Arrange
         serializer = MsgPackEventSerializer()
 
         event = OrderSubmitted(
             OrderId('O-123456'),
-            AUDUSD_FXCM,
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -399,13 +398,12 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Assert
         self.assertEqual(deserialized, event)
 
-    def test_can_serialized_and_deserialize_order_accepted_events(self):
+    def test_can_serialize_and_deserialize_order_accepted_events(self):
         # Arrange
         serializer = MsgPackEventSerializer()
 
         event = OrderAccepted(
             OrderId('O-123456'),
-            AUDUSD_FXCM,
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -417,13 +415,12 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Assert
         self.assertEqual(deserialized, event)
 
-    def test_can_serialized_and_deserialize_order_rejected_events(self):
+    def test_can_serialize_and_deserialize_order_rejected_events(self):
         # Arrange
         serializer = MsgPackEventSerializer()
 
         event = OrderRejected(
             OrderId('O-123456'),
-            AUDUSD_FXCM,
             UNIX_EPOCH,
             ValidString('ORDER_ID_INVALID'),
             GUID(uuid.uuid4()),
@@ -436,7 +433,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Assert
         self.assertEqual(deserialized, event)
 
-    def test_can_serialized_and_deserialize_order_working_events(self):
+    def test_can_serialize_and_deserialize_order_working_events(self):
         # Arrange
         serializer = MsgPackEventSerializer()
 
@@ -462,7 +459,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Assert
         self.assertEqual(deserialized, event)
 
-    def test_can_serialized_and_deserialize_order_working_events_with_expire_time(self):
+    def test_can_serialize_and_deserialize_order_working_events_with_expire_time(self):
         # Arrange
         serializer = MsgPackEventSerializer()
 
@@ -488,13 +485,12 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Assert
         self.assertEqual(deserialized, event)
 
-    def test_can_serialized_and_deserialize_order_cancelled_events(self):
+    def test_can_serialize_and_deserialize_order_cancelled_events(self):
         # Arrange
         serializer = MsgPackEventSerializer()
 
         event = OrderCancelled(
             OrderId('O-123456'),
-            AUDUSD_FXCM,
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -506,13 +502,12 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Assert
         self.assertEqual(deserialized, event)
 
-    def test_can_serialized_and_deserialize_order_cancel_reject_events(self):
+    def test_can_serialize_and_deserialize_order_cancel_reject_events(self):
         # Arrange
         serializer = MsgPackEventSerializer()
 
         event = OrderCancelReject(
             OrderId('O-123456'),
-            AUDUSD_FXCM,
             UNIX_EPOCH,
             ValidString('RESPONSE'),
             ValidString('ORDER_DOES_NOT_EXIST'),
@@ -526,14 +521,13 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Assert
         self.assertEqual(deserialized, event)
 
-    def test_can_serialized_and_deserialize_order_modified_events(self):
+    def test_can_serialize_and_deserialize_order_modified_events(self):
         # Arrange
         serializer = MsgPackEventSerializer()
 
         event = OrderModified(
             OrderId('O-123456'),
             OrderId('BO-123456'),
-            AUDUSD_FXCM,
             Price('0.80010'),
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
@@ -546,13 +540,12 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Assert
         self.assertEqual(deserialized, event)
 
-    def test_can_serialized_and_deserialize_order_expired_events(self):
+    def test_can_serialize_and_deserialize_order_expired_events(self):
         # Arrange
         serializer = MsgPackEventSerializer()
 
         event = OrderExpired(
             OrderId('O-123456'),
-            AUDUSD_FXCM,
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -564,15 +557,15 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Assert
         self.assertEqual(deserialized, event)
 
-    def test_can_serialized_and_deserialize_order_partially_filled_events(self):
+    def test_can_serialize_and_deserialize_order_partially_filled_events(self):
         # Arrange
         serializer = MsgPackEventSerializer()
 
         event = OrderPartiallyFilled(
             OrderId('O-123456'),
-            AUDUSD_FXCM,
             ExecutionId('E123456'),
             ExecutionTicket('T123456'),
+            AUDUSD_FXCM,
             OrderSide.SELL,
             Quantity(50000),
             Quantity(50000),
@@ -588,15 +581,15 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Assert
         self.assertEqual(deserialized, event)
 
-    def test_can_serialized_and_deserialize_order_filled_events(self):
+    def test_can_serialize_and_deserialize_order_filled_events(self):
         # Arrange
         serializer = MsgPackEventSerializer()
 
         event = OrderFilled(
             OrderId('O-123456'),
-            AUDUSD_FXCM,
             ExecutionId('E123456'),
             ExecutionTicket('T123456'),
+            AUDUSD_FXCM,
             OrderSide.SELL,
             Quantity(100000),
             Price('1.00000'),
@@ -632,7 +625,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         serializer = MsgPackEventSerializer()
 
         # Base64 bytes string from C# MsgPack.Cli
-        base64 = 'h6RUeXBlpUV2ZW50pUV2ZW50rk9yZGVyU3VibWl0dGVkp0V2ZW50SWTZJDRlOTE1ZGU0LTA5YWMtNDA4Yi1hOGVkLTM2NDg4NTBiYjRlN65FdmVudFRpbWVzdGFtcLgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFqnT3JkZXJJZKhPLTEyMzQ1NqZTeW1ib2yrQVVEVVNELkZYQ02tU3VibWl0dGVkVGltZbgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFo='
+        base64 = 'hqRUeXBlpUV2ZW50pUV2ZW50rk9yZGVyU3VibWl0dGVkp0V2ZW50SWTZJDE2YTM3OTIxLTYzMWUtNDM0My04Yzc1LTc3YjQ2YTIyNDg2N65FdmVudFRpbWVzdGFtcLgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFqnT3JkZXJJZKhPLTEyMzQ1Nq1TdWJtaXR0ZWRUaW1luDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWg=='
         body = b64decode(base64)
 
         # Act
@@ -640,7 +633,6 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(isinstance(result, OrderSubmitted))
-        self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual(OrderId('O-123456'), result.order_id)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.submitted_time)
         self.assertTrue(isinstance(result.id, GUID))
@@ -651,7 +643,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         serializer = MsgPackEventSerializer()
 
         # Base64 bytes string from C# MsgPack.Cli
-        base64 = 'h6RUeXBlpUV2ZW50pUV2ZW50rU9yZGVyQWNjZXB0ZWSnRXZlbnRJZNkkMGIyMjNiMmItYTk0NC00NzE0LTlkMzctYjBmOTMyMjE3OGZkrkV2ZW50VGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWqdPcmRlcklkqE8tMTIzNDU2plN5bWJvbKtBVURVU0QuRlhDTaxBY2NlcHRlZFRpbWW4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBa'
+        base64 = 'hqRUeXBlpUV2ZW50pUV2ZW50rU9yZGVyQWNjZXB0ZWSnRXZlbnRJZNkkNDk0OGQ2ZjMtZmRiOC00NzMxLWFkMzItYzhkMzYxOGY1MmYxrkV2ZW50VGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWqdPcmRlcklkqE8tMTIzNDU2rEFjY2VwdGVkVGltZbgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFo='
         body = b64decode(base64)
 
         # Act
@@ -659,7 +651,6 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(isinstance(result, OrderAccepted))
-        self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual(OrderId('O-123456'), result.order_id)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.accepted_time)
         self.assertTrue(isinstance(result.id, GUID))
@@ -670,7 +661,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         serializer = MsgPackEventSerializer()
 
         # Base64 bytes string from C# MsgPack.Cli
-        base64 = 'iKRUeXBlpUV2ZW50pUV2ZW50rU9yZGVyUmVqZWN0ZWSnRXZlbnRJZNkkZWY5ZDZmMmItNDM3My00ZGM5LWI4NzAtNDAyMDliNjM3MjdjrkV2ZW50VGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWqdPcmRlcklkqE8tMTIzNDU2plN5bWJvbKtBVURVU0QuRlhDTaxSZWplY3RlZFRpbWW4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBarlJlamVjdGVkUmVhc29urUlOVkFMSURfT1JERVI='
+        base64 = 'h6RUeXBlpUV2ZW50pUV2ZW50rU9yZGVyUmVqZWN0ZWSnRXZlbnRJZNkkYzQzM2ZlOTMtZGIxMS00MTY5LWJlN2EtOWM1ZDdhM2Q3YjgzrkV2ZW50VGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWqdPcmRlcklkqE8tMTIzNDU2rFJlamVjdGVkVGltZbgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFquUmVqZWN0ZWRSZWFzb26tSU5WQUxJRF9PUkRFUg=='
         body = b64decode(base64)
 
         # Act
@@ -678,7 +669,6 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(isinstance(result, OrderRejected))
-        self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual(OrderId('O-123456'), result.order_id)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.rejected_time)
         self.assertEqual('INVALID_ORDER', result.rejected_reason.value)
@@ -698,9 +688,9 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(isinstance(result, OrderWorking))
-        self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual(OrderId('O-123456'), result.order_id)
         self.assertEqual(OrderId('BO-123456'), result.order_id_broker)
+        self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual(Label('O123456_E'), result.label)
         self.assertEqual(OrderType.STOP_MARKET, result.order_type)
         self.assertEqual(Quantity(1), result.quantity)
@@ -724,9 +714,9 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(isinstance(result, OrderWorking))
-        self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual(OrderId('O-123456'), result.order_id)
         self.assertEqual(OrderId('BO-123456'), result.order_id_broker)
+        self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual(Label('O123456_E'), result.label)
         self.assertEqual(OrderType.STOP_MARKET, result.order_type)
         self.assertEqual(Quantity(1), result.quantity)
@@ -742,7 +732,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         serializer = MsgPackEventSerializer()
 
         # Base64 bytes string from C# MsgPack.Cli
-        base64 = 'h6RUeXBlpUV2ZW50pUV2ZW50rk9yZGVyQ2FuY2VsbGVkp0V2ZW50SWTZJGZiN2VlYTBmLWRiZjMtNDJlOS1hN2JhLTkzYmI1OTQ1ZjYwY65FdmVudFRpbWVzdGFtcLgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFqnT3JkZXJJZKhPLTEyMzQ1NqZTeW1ib2yrQVVEVVNELkZYQ02tQ2FuY2VsbGVkVGltZbgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFo='
+        base64 = 'hqRUeXBlpUV2ZW50pUV2ZW50rk9yZGVyQ2FuY2VsbGVkp0V2ZW50SWTZJGY5YjZkMjI0LWJkM2MtNDFhYS05ZTg4LTQxMDg0MGNlZTY3Ma5FdmVudFRpbWVzdGFtcLgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFqnT3JkZXJJZKhPLTEyMzQ1Nq1DYW5jZWxsZWRUaW1luDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWg=='
         body = b64decode(base64)
 
         # Act
@@ -750,7 +740,6 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(isinstance(result, OrderCancelled))
-        self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual(OrderId('O-123456'), result.order_id)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.cancelled_time)
         self.assertTrue(isinstance(result.id, GUID))
@@ -761,7 +750,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         serializer = MsgPackEventSerializer()
 
         # Base64 bytes string from C# MsgPack.Cli
-        base64 = 'iaRUeXBlpUV2ZW50pUV2ZW50sU9yZGVyQ2FuY2VsUmVqZWN0p0V2ZW50SWTZJDhmOGFmN2JmLTNjMjctNGNiYi04MDcyLTgxN2IyNmMwNjE3Za5FdmVudFRpbWVzdGFtcLgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFqnT3JkZXJJZKhPLTEyMzQ1NqZTeW1ib2yrQVVEVVNELkZYQ02sUmVqZWN0ZWRUaW1luDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWrBSZWplY3RlZFJlc3BvbnNlsFJFSkVDVF9SRVNQT05TRT+uUmVqZWN0ZWRSZWFzb26vT1JERVJfTk9UX0ZPVU5E'
+        base64 = 'iKRUeXBlpUV2ZW50pUV2ZW50sU9yZGVyQ2FuY2VsUmVqZWN0p0V2ZW50SWTZJDY2MzBmMTAwLTMwYzktNGM0OC1iNjNhLTY0ODIxMmFiODAwOK5FdmVudFRpbWVzdGFtcLgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFqnT3JkZXJJZKhPLTEyMzQ1NqxSZWplY3RlZFRpbWW4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBasFJlamVjdGVkUmVzcG9uc2WwUkVKRUNUX1JFU1BPTlNFP65SZWplY3RlZFJlYXNvbq9PUkRFUl9OT1RfRk9VTkQ='
         body = b64decode(base64)
 
         # Act
@@ -769,7 +758,6 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(isinstance(result, OrderCancelReject))
-        self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual(OrderId('O-123456'), result.order_id)
         self.assertEqual('REJECT_RESPONSE?', result.cancel_reject_response.value)
         self.assertEqual('ORDER_NOT_FOUND', result.cancel_reject_reason.value)
@@ -782,7 +770,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         serializer = MsgPackEventSerializer()
 
         # Base64 bytes string from C# MsgPack.Cli
-        base64 = 'iaRUeXBlpUV2ZW50pUV2ZW50rU9yZGVyTW9kaWZpZWSnRXZlbnRJZNkkODZlYmQ4YjgtOTYxYi00OWY1LTk5ZDAtMjZlYzZmYjQxNWE2rkV2ZW50VGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWqdPcmRlcklkqE8tMTIzNDU2rU9yZGVySWRCcm9rZXKpQk8tMTIzNDU2plN5bWJvbKtBVURVU0QuRlhDTa1Nb2RpZmllZFByaWNloTKsTW9kaWZpZWRUaW1luDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWg=='
+        base64 = 'iKRUeXBlpUV2ZW50pUV2ZW50rU9yZGVyTW9kaWZpZWSnRXZlbnRJZNkkNjA3ZmI4YzMtMTU0ZS00MDA4LTljZDAtMzA5MThjYjBjNDgwrkV2ZW50VGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWqdPcmRlcklkqE8tMTIzNDU2rU9yZGVySWRCcm9rZXKpQk8tMTIzNDU2rU1vZGlmaWVkUHJpY2WhMqxNb2RpZmllZFRpbWW4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBa'
         body = b64decode(base64)
 
         # Act
@@ -790,7 +778,6 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(isinstance(result, OrderModified))
-        self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual(OrderId('O-123456'), result.order_id)
         self.assertEqual(OrderId('BO-123456'), result.order_id_broker)
         self.assertEqual(Price('2'), result.modified_price)
@@ -803,7 +790,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         serializer = MsgPackEventSerializer()
 
         # Base64 bytes string from C# MsgPack.Cli
-        base64 = 'h6RUeXBlpUV2ZW50pUV2ZW50rE9yZGVyRXhwaXJlZKdFdmVudElk2SQ1NGJjYmVhOC04MjdlLTQ4MDktOTdlZS1mYWI5ZjhhYzIzMDauRXZlbnRUaW1lc3RhbXC4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBap09yZGVySWSoTy0xMjM0NTamU3ltYm9sq0FVRFVTRC5GWENNq0V4cGlyZWRUaW1luDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWg=='
+        base64 = 'hqRUeXBlpUV2ZW50pUV2ZW50rE9yZGVyRXhwaXJlZKdFdmVudElk2SQwYjMwZGJjNC1mYjYxLTQ3MTMtYjJiOS0xYmY5ZWJmY2M2YTOuRXZlbnRUaW1lc3RhbXC4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBap09yZGVySWSoTy0xMjM0NTarRXhwaXJlZFRpbWW4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBa'
         body = b64decode(base64)
 
         # Act
@@ -811,7 +798,6 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(isinstance(result, OrderExpired))
-        self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual(OrderId('O-123456'), result.order_id)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.expired_time)
         self.assertTrue(isinstance(result.id, GUID))
@@ -830,10 +816,10 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(isinstance(result, OrderPartiallyFilled))
-        self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual(OrderId('O-123456'), result.order_id)
         self.assertEqual(ExecutionId('E123456'), result.execution_id)
         self.assertEqual(ExecutionTicket('P123456'), result.execution_ticket)
+        self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual(OrderSide.BUY, result.order_side)
         self.assertEqual(Quantity(50000), result.filled_quantity)
         self.assertEqual(Quantity(50000), result.leaves_quantity)
@@ -855,10 +841,10 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(isinstance(result, OrderFilled))
-        self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual(OrderId('O-123456'), result.order_id)
         self.assertEqual(ExecutionId('E123456'), result.execution_id)
         self.assertEqual(ExecutionTicket('P123456'), result.execution_ticket)
+        self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual(OrderSide.BUY, result.order_side)
         self.assertEqual(Quantity(100000), result.filled_quantity)
         self.assertEqual(Price('2'), result.average_price)

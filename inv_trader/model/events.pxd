@@ -52,13 +52,13 @@ cdef class OrderEvent(Event):
     The base class for all order events.
     """
     cdef readonly OrderId order_id
-    cdef readonly Symbol symbol
 
 
 cdef class OrderInitialized(OrderEvent):
     """
     Represents an event where an order has been initialized.
     """
+    cdef readonly Symbol symbol
     cdef readonly Label label
     cdef readonly OrderSide order_side
     cdef readonly OrderType order_type
@@ -95,6 +95,7 @@ cdef class OrderWorking(OrderEvent):
     Represents an event where an order is working with the broker.
     """
     cdef readonly OrderId order_id_broker
+    cdef readonly Symbol symbol
     cdef readonly Label label
     cdef readonly OrderSide order_side
     cdef readonly OrderType order_type
@@ -143,6 +144,7 @@ cdef class OrderFilled(OrderEvent):
     """
     cdef readonly ExecutionId execution_id
     cdef readonly ExecutionTicket execution_ticket
+    cdef readonly Symbol symbol
     cdef readonly OrderSide order_side
     cdef readonly Quantity filled_quantity
     cdef readonly Price average_price
@@ -155,6 +157,7 @@ cdef class OrderPartiallyFilled(OrderEvent):
     """
     cdef readonly ExecutionId execution_id
     cdef readonly ExecutionTicket execution_ticket
+    cdef readonly Symbol symbol
     cdef readonly OrderSide order_side
     cdef readonly Quantity filled_quantity
     cdef readonly Quantity leaves_quantity
