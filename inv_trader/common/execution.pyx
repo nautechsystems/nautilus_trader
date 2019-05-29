@@ -18,8 +18,9 @@ from inv_trader.common.guid cimport GuidFactory
 from inv_trader.common.logger cimport Logger, LoggerAdapter
 from inv_trader.common.account cimport Account
 from inv_trader.model.order cimport Order
-from inv_trader.model.events cimport Event, OrderEvent, PositionEvent, AccountEvent, OrderModified
-from inv_trader.model.events cimport OrderRejected, OrderCancelled, OrderCancelReject, OrderFilled, OrderPartiallyFilled
+from inv_trader.model.events cimport Event, OrderEvent, PositionEvent, AccountEvent
+from inv_trader.model.events cimport OrderModified, OrderRejected, OrderCancelled, OrderCancelReject
+from inv_trader.model.events cimport OrderFilled, OrderPartiallyFilled
 from inv_trader.model.identifiers cimport StrategyId, OrderId, PositionId
 from inv_trader.commands cimport Command, CollateralInquiry
 from inv_trader.commands cimport SubmitOrder, SubmitAtomicOrder, ModifyOrder, CancelOrder
@@ -60,6 +61,7 @@ cdef class ExecutionClient:
         self._order_strategy_index = {}   # type: Dict[OrderId, StrategyId]
         self._orders_active = {}          # type: Dict[StrategyId, Dict[OrderId, Order]]
         self._orders_completed = {}       # type: Dict[StrategyId, Dict[OrderId, Order]]
+        self.command_count = 0
         self.event_count = 0
 
         self._log.info(f"Initialized.")
@@ -74,7 +76,7 @@ cdef class ExecutionClient:
 
     cpdef Account get_account(self):
         """
-        Return The account associated with the execution client.
+        Return the account associated with the execution client.
         
         :return: Account. 
         """
@@ -179,7 +181,7 @@ cdef class ExecutionClient:
 
     cpdef dict get_orders_all(self):
         """
-        Return a dictionary of all orders in the execution clients order book.
+        Return all orders in the execution clients order book.
         
         :return: Dict[OrderId, Order].
         """
@@ -187,7 +189,7 @@ cdef class ExecutionClient:
 
     cpdef dict get_orders_active_all(self):
         """
-        Return a dictionary of all active orders in the execution clients order book.
+        Return all active orders in the execution clients order book.
         
         :return: Dict[OrderId, Order].
         """
@@ -195,7 +197,7 @@ cdef class ExecutionClient:
 
     cpdef dict get_orders_completed_all(self):
         """
-        Return a dictionary of all completed orders in the execution clients order book.
+        Return all completed orders in the execution clients order book.
         
         :return: Dict[OrderId, Order].
         """
@@ -203,7 +205,7 @@ cdef class ExecutionClient:
 
     cpdef dict get_orders(self, StrategyId strategy_id):
         """
-        Return a dictionary of all orders associated with the strategy identifier.
+        Return all orders associated with the strategy identifier.
         
         :param strategy_id: The strategy identifier associated with the orders.
         :return: Dict[OrderId, Order].
@@ -216,7 +218,7 @@ cdef class ExecutionClient:
 
     cpdef dict get_orders_active(self, StrategyId strategy_id):
         """
-        Return a dictionary of all active orders associated with the strategy identifier.
+        Return all active orders associated with the strategy identifier.
         
         :param strategy_id: The strategy identifier associated with the orders.
         :return: Dict[OrderId, Order].
@@ -228,7 +230,7 @@ cdef class ExecutionClient:
 
     cpdef dict get_orders_completed(self, StrategyId strategy_id):
         """
-        Return a list of all completed orders associated with the strategy identifier.
+        Return all completed orders associated with the strategy identifier.
         
         :param strategy_id: The strategy identifier associated with the orders.
         :return: Dict[OrderId, Order].
@@ -273,11 +275,11 @@ cdef class ExecutionClient:
 
     cdef void _execute_command(self, Command command):
         """
-        Execute the given command received from a strategy.
+        Execute the given command.
         
         :param command: The command to execute.
         """
-        self._log.debug(f"Received {command}")
+        self.command_count += 1
 
         if isinstance(command, CollateralInquiry):
             self._collateral_inquiry(command)
@@ -297,7 +299,7 @@ cdef class ExecutionClient:
 
     cdef void _handle_event(self, Event event):
         """
-        Handle the given event received from the execution service.
+        Handle the given event.
  
         :param: event: The event to handle.
         """
@@ -308,13 +310,16 @@ cdef class ExecutionClient:
 
         # Order events
         if isinstance(event, OrderEvent):
-            if event.order_id in self._order_book:
-                order = self._order_book[event.order_id]
-            else:
+            if event.order_id not in self._order_book:
                 self._log.error(f"Order for {event.order_id} not found.")
                 return # Cannot apply event to an order
 
+            order = self._order_book[event.order_id]
             order.apply(event)
+
+            if event.order_id not in self._order_strategy_index:
+                self._log.error(f"StrategyId for {event.order_id} not found.")
+                return # Cannot proceed with event processing
 
             strategy_id = self._order_strategy_index[event.order_id]
 

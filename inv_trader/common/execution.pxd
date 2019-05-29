@@ -39,7 +39,9 @@ cdef class ExecutionClient:
     cdef dict _orders_active
     cdef dict _orders_completed
 
+    cdef readonly int command_count
     cdef readonly int event_count
+
     cpdef datetime time_now(self)
     cpdef Account get_account(self)
     cpdef Portfolio get_portfolio(self)
