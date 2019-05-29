@@ -15,7 +15,7 @@ from inv_trader.model.identifiers import PositionId
 from inv_trader.model.objects import Quantity, Symbol, Price
 from inv_trader.execution import LiveExecClient
 from test_kit.stubs import TestStubs
-from test_kit.mocks import MockExecClient, MockServer
+from test_kit.mocks import MockServer
 from test_kit.strategies import TestStrategy1
 
 UNIX_EPOCH = TestStubs.unix_epoch()
@@ -24,82 +24,6 @@ GBPUSD_FXCM = Symbol('GBPUSD', Venue.FXCM)
 
 UTF8 = 'utf8'
 LOCAL_HOST = "127.0.0.1"
-
-
-class ExecutionClientTests(unittest.TestCase):
-
-    def setUp(self):
-        # Fixture Setup
-        self.bar_type = TestStubs.bartype_gbpusd_1min_bid()
-        self.strategy = TestStrategy1(self.bar_type)
-        self.exec_client = MockExecClient()
-        self.exec_client.register_strategy(self.strategy)
-        self.exec_client.connect()
-
-    def tearDown(self):
-        # Tear Down
-        self.exec_client.disconnect()
-
-    def test_can_register_strategy(self):
-        # Arrange
-        # Act
-        # Assert
-        self.assertTrue(self.strategy.is_exec_client_registered)
-
-    def test_can_send_submit_order_command_to_mock_exec_client(self):
-        # Arrange
-        order = self.strategy.order_factory.market(
-            AUDUSD_FXCM,
-            OrderSide.BUY,
-            Quantity(100000))
-
-        # Act
-        self.strategy.submit_order(order, PositionId(order.id.value))
-        self.exec_client.process()
-
-        # Assert
-        self.assertEqual(order, self.exec_client.get_order(order.id))
-        self.assertEqual(order, self.strategy.order(order.id))
-        self.assertEqual(OrderStatus.WORKING, self.strategy.order(order.id).status)
-        self.assertTrue(self.exec_client.is_order_exists(order.id))
-        self.assertTrue(self.exec_client.is_order_active(order.id))
-        self.assertFalse(self.exec_client.is_order_complete(order.id))
-
-    def test_can_send_cancel_order_command_to_mock_exec_clint(self):
-        # Arrange
-        order = self.strategy.order_factory.market(
-            AUDUSD_FXCM,
-            OrderSide.BUY,
-            Quantity(100000))
-
-        # Act
-        self.strategy.submit_order(order, PositionId(order.id.value))
-        self.strategy.cancel_order(order, 'ORDER_EXPIRED')
-        self.exec_client.process()
-
-        # Assert
-        self.assertEqual(order, self.strategy.order(order.id))
-        self.assertEqual(OrderStatus.CANCELLED, order.status)
-
-    def test_can_send_modify_order_command_to_mock_exec_client(self):
-        # Arrange
-        order = self.strategy.order_factory.limit(
-            AUDUSD_FXCM,
-            OrderSide.BUY,
-            Quantity(100000),
-            Price('1.00000'))
-
-        order_id = order.id
-
-        # Act
-        self.strategy.submit_order(order, PositionId(order_id.value))
-        self.strategy.modify_order(order, Price('1.00001'))
-        self.exec_client.process()
-
-        # Assert
-        self.assertEqual(order, self.strategy.order(order_id))
-        self.assertEqual(OrderStatus.WORKING, self.strategy.order(order_id).status)
-        self.assertEqual(Price('1.00001'), order.price)
 
 
 class LiveExecClientTests(unittest.TestCase):

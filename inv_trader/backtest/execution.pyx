@@ -396,7 +396,6 @@ cdef class BacktestExecClient(ExecutionClient):
         # Generate event
         cdef OrderCancelled cancelled = OrderCancelled(
             order.id,
-            order.symbol,
             self._clock.time_now(),
             self._guid_factory.generate(),
             self._clock.time_now())
