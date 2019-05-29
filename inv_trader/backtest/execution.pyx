@@ -348,7 +348,6 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         # Generate event
         cdef OrderSubmitted submitted = OrderSubmitted(
-            command.order.symbol,
             command.order.id,
             self._clock.time_now(),
             self._guid_factory.generate(),
@@ -373,10 +372,10 @@ cdef class BacktestExecClient(ExecutionClient):
 
         # Generate command
         cdef SubmitOrder submit_order = SubmitOrder(
-            command.atomic_order.entry,
             command.trader_id,
             command.strategy_id,
             command.position_id,
+            command.atomic_order.entry,
             self._guid_factory.generate(),
             self._clock.time_now())
 
@@ -446,7 +445,6 @@ cdef class BacktestExecClient(ExecutionClient):
 
         # Generate event
         cdef OrderModified modified = OrderModified(
-            order.symbol,
             order.id,
             order.id_broker,
             command.modified_price,
@@ -467,7 +465,6 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         # Generate event
         cdef OrderAccepted accepted = OrderAccepted(
-            order.symbol,
             order.id,
             self._clock.time_now(),
             self._guid_factory.generate(),
@@ -484,7 +481,6 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         # Generate event
         cdef OrderRejected rejected = OrderRejected(
-            order.symbol,
             order.id,
             self._clock.time_now(),
             ValidString(reason),
@@ -511,7 +507,6 @@ cdef class BacktestExecClient(ExecutionClient):
         # Generate event
         cdef OrderCancelReject cancel_reject = OrderCancelReject(
             order_id,
-            Symbol('UNKNOWN', Venue),
             self._clock.time_now(),
             ValidString(response),
             ValidString(reason),
@@ -529,7 +524,6 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         # Generate event
         cdef OrderExpired expired = OrderExpired(
-            order.symbol,
             order.id,
             order.expire_time,
             self._guid_factory.generate(),
@@ -646,10 +640,10 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         # Generate event
         cdef OrderFilled filled = OrderFilled(
-            order.symbol,
             order.id,
             ExecutionId('E-' + str(order.id.value)),
             ExecutionTicket('ET-' + str(order.id.value)),
+            order.symbol,
             order.side,
             order.quantity,
             fill_price,
@@ -712,7 +706,6 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         # Generate event
         cdef OrderRejected event = OrderRejected(
-            order.symbol,
             order.id,
             self._clock.time_now(),
             ValidString(f"OCO order rejected from {oco_order_id}"),
@@ -730,7 +723,6 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         # Generate event
         cdef OrderCancelled event = OrderCancelled(
-            order.symbol,
             order.id,
             self._clock.time_now(),
             self._guid_factory.generate(),
@@ -745,7 +737,8 @@ cdef class BacktestExecClient(ExecutionClient):
         
         :param event: The order fill event.
         """
-        cdef Instrument instrument = self.instruments[event.symbol]
+        cdef Symbol symbol = self._order_book[event.order_id].symbol
+        cdef Instrument instrument = self.instruments[symbol]
         cdef float exchange_rate = self.exchange_calculator.get_rate(
             quote_currency=instrument.quote_currency,
             base_currency=self._account.currency,
@@ -762,7 +755,7 @@ cdef class BacktestExecClient(ExecutionClient):
             exchange_rate=exchange_rate)
 
         cdef Money commission = self.commission_calculator.calculate(
-            symbol=event.symbol,
+            symbol=symbol,
             filled_quantity=event.filled_quantity,
             filled_price=event.average_price,
             exchange_rate=exchange_rate)
