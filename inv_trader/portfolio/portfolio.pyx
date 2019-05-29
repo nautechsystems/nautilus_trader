@@ -315,7 +315,7 @@ cdef class Portfolio:
         self._registered_strategies.remove(strategy.id)
         del self._positions_active[strategy.id]
         del self._positions_closed[strategy.id]
-        self._log.debug(f"Deregistered {strategy}.")
+        self._log.debug(f"De-registered {strategy}.")
 
     cpdef void register_order(self, OrderId order_id, PositionId position_id):
         """

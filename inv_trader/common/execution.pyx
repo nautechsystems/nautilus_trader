@@ -164,7 +164,7 @@ cdef class ExecutionClient:
 
         self._portfolio.deregister_strategy(strategy)
 
-        self._log.debug(f"Deregistered {strategy}.")
+        self._log.debug(f"De-registered {strategy}.")
 
     cpdef Order get_order(self, OrderId order_id):
         """
@@ -311,7 +311,7 @@ cdef class ExecutionClient:
             if event.order_id in self._order_book:
                 order = self._order_book[event.order_id]
             else:
-                self._log.error(f"order for {event.order_id} not found")
+                self._log.error(f"Order for {event.order_id} not found.")
                 return # Cannot apply event to an order
 
             order.apply(event)

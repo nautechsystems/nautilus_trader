@@ -270,9 +270,9 @@ cdef class MockExecClient(ExecutionClient):
 
         cdef OrderFilled filled = OrderFilled(
             order.id,
-            order.symbol,
             ExecutionId('E' + str(order.id)),
             ExecutionTicket('ET' + str(order.id)),
+            order.symbol,
             order.side,
             order.quantity,
             Price('1.00000') if order.price is None else order.price,
@@ -287,14 +287,12 @@ cdef class MockExecClient(ExecutionClient):
     cdef void _work_order(self, Order order):
         cdef OrderSubmitted submitted = OrderSubmitted(
             order.id,
-            order.symbol,
             datetime.utcnow(),
             GUID(uuid.uuid4()),
             datetime.utcnow())
 
         cdef OrderAccepted accepted = OrderAccepted(
             order.id,
-            order.symbol,
             datetime.utcnow(),
             GUID(uuid.uuid4()),
             datetime.utcnow())
@@ -322,7 +320,7 @@ cdef class MockExecClient(ExecutionClient):
         """
         Send a submit order command to the mock execution service.
         """
-        self._order_book[command.order.id] = command.order
+        self.last_order = command.order.id
         self._work_order(command.order)
 
     cdef void _submit_atomic_order(self, SubmitAtomicOrder command):
@@ -341,7 +339,6 @@ cdef class MockExecClient(ExecutionClient):
         cdef OrderModified modified = OrderModified(
             order.id,
             OrderId('B' + order.id.value),
-            order.symbol,
             command.modified_price,
             datetime.utcnow(),
             GUID(uuid.uuid4()),
@@ -355,7 +352,6 @@ cdef class MockExecClient(ExecutionClient):
         """
         cdef OrderCancelled cancelled = OrderCancelled(
             command.order_id,
-            self._order_book[command.order_id].symbol,
             datetime.utcnow(),
             GUID(uuid.uuid4()),
             datetime.utcnow())
