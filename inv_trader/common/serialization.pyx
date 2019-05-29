@@ -86,6 +86,22 @@ cdef str MARGIN_USED_MAINTENANCE = 'MarginUsedMaintenance'
 cdef str MARGIN_RATIO = 'MarginRatio'
 cdef str MARGIN_CALL_STATUS = 'MarginCallStatus'
 
+cdef str INSTRUMENT_ID = 'InstrumentId'
+cdef str BROKER_SYMBOL = 'BrokerSymbol'
+cdef str QUOTE_CURRENCY = 'QuoteCurrency'
+cdef str SECURITY_TYPE = 'SecurityType'
+cdef str TICK_PRECISION = 'TickPrecision'
+cdef str TICK_SIZE = 'TickSize'
+cdef str ROUND_LOT_SIZE = 'RoundLotSize'
+cdef str MIN_STOP_DISTANCE_ENTRY = 'MinStopDistanceEntry'
+cdef str MIN_STOP_DISTANCE = 'MinStopDistance'
+cdef str MIN_LIMIT_DISTANCE_ENTRY = 'MinLimitDistanceEntry'
+cdef str MIN_LIMIT_DISTANCE = 'MinLimitDistance'
+cdef str MIN_TRADE_SIZE = 'MinTradeSize'
+cdef str MAX_TRADE_SIZE = 'MaxTradeSize'
+cdef str ROLL_OVER_INTEREST_BUY = 'RollOverInterestBuy'
+cdef str ROLL_OVER_INTEREST_SELL = 'RollOverInterestSell'
+
 
 cpdef Symbol parse_symbol(str symbol_string):
     """
@@ -97,7 +113,6 @@ cpdef Symbol parse_symbol(str symbol_string):
     cdef tuple split_symbol = symbol_string.partition('.')
     return Symbol(split_symbol[0], Venue[split_symbol[2].upper()])
 
-
 cpdef str convert_price_to_string(Price price):
     """
     Return the converted string from the given price, can return a 'NONE' string..
@@ -106,7 +121,6 @@ cpdef str convert_price_to_string(Price price):
     :return: str.
     """
     return NONE if price is None else str(price)
-
 
 cpdef Price convert_string_to_price(str price_string):
     """

@@ -110,7 +110,7 @@ cdef class Order:
         self.average_price = None           # Can be None
         self.slippage = Decimal(0.0)
         self.status = OrderStatus.INITIALIZED
-        self.init_event_id = init_id
+        self.init_id = GUID(uuid4()) if init_id is None else init_id
         self.is_buy = self.side == OrderSide.BUY
         self.is_sell = self.side == OrderSide.SELL
         self.is_active = False
@@ -126,7 +126,7 @@ cdef class Order:
             price=price,
             time_in_force=time_in_force,
             expire_time=expire_time,
-            event_id=GUID(uuid4()) if init_id is None else init_id,
+            event_id=self.init_id,
             event_timestamp=timestamp)
 
         # Update events
