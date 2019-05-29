@@ -722,7 +722,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertTrue(isinstance(result, OrderWorking))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual(OrderId('StubOrderId'), result.order_id)
-        self.assertEqual(OrderId('B123456'), result.broker_order_id)
+        self.assertEqual(OrderId('B123456'), result.order_id_broker)
         self.assertEqual(Label('O123456_E'), result.label)
         self.assertEqual(OrderType.STOP_MARKET, result.order_type)
         self.assertEqual(Quantity(1), result.quantity)
@@ -762,7 +762,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertTrue(isinstance(result, OrderWorking))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual(OrderId('StubOrderId'), result.order_id)
-        self.assertEqual(OrderId('B123456'), result.broker_order_id)
+        self.assertEqual(OrderId('B123456'), result.order_id_broker)
         self.assertEqual(Label('O123456_E'), result.label)
         self.assertEqual(OrderType.STOP_MARKET, result.order_type)
         self.assertEqual(Quantity(1), result.quantity)
@@ -857,7 +857,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertTrue(isinstance(result, OrderModified))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual(OrderId('StubOrderId'), result.order_id)
-        self.assertEqual(OrderId('B123456'), result.broker_order_id)
+        self.assertEqual(OrderId('B123456'), result.order_id_broker)
         self.assertEqual(Price('2'), result.modified_price)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.modified_time)
         self.assertTrue(isinstance(result.id, GUID))
@@ -996,7 +996,7 @@ class InstrumentSerializerTests(unittest.TestCase):
 
     def test_can_serialize_and_deserialize_instrument(self):
         # Arrange
-        serializer = InstrumentSerializer()
+        serializer = MsgPackInstrumentSerializer()
 
         instrument = Instrument(
             instrument_id=InstrumentId('AUDUSD.FXCM'),
@@ -1008,14 +1008,14 @@ class InstrumentSerializerTests(unittest.TestCase):
             tick_size=Decimal('0.00001'),
             round_lot_size=Quantity(1000),
             min_stop_distance_entry=0,
-            min_limit_distance_entry=0,
             min_stop_distance=0,
-            min_limit_distance=0,
+            min_limit_distance_entry=1,
+            min_limit_distance=1,
             min_trade_size=Quantity(1),
             max_trade_size=Quantity(50000000),
             rollover_interest_buy=Decimal('1.1'),
             rollover_interest_sell=Decimal('-1.1'),
-            timestamp=datetime.now(timezone.utc))
+            timestamp=UNIX_EPOCH)
 
         # Act
         serialized = serializer.serialize(instrument)
@@ -1023,5 +1023,22 @@ class InstrumentSerializerTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(instrument, deserialized)
+        self.assertEqual(instrument.id, deserialized.id)
+        self.assertEqual(instrument.symbol, deserialized.symbol)
+        self.assertEqual(instrument.broker_symbol, deserialized.broker_symbol)
+        self.assertEqual(instrument.quote_currency, deserialized.quote_currency)
+        self.assertEqual(instrument.security_type, deserialized.security_type)
+        self.assertEqual(instrument.tick_precision, deserialized.tick_precision)
+        self.assertEqual(instrument.tick_size, deserialized.tick_size)
+        self.assertEqual(instrument.round_lot_size, deserialized.round_lot_size)
+        self.assertEqual(instrument.min_stop_distance_entry, deserialized.min_stop_distance_entry)
+        self.assertEqual(instrument.min_stop_distance, deserialized.min_stop_distance)
+        self.assertEqual(instrument.min_limit_distance_entry, deserialized.min_limit_distance_entry)
+        self.assertEqual(instrument.min_limit_distance, deserialized.min_limit_distance)
+        self.assertEqual(instrument.min_trade_size, deserialized.min_trade_size)
+        self.assertEqual(instrument.max_trade_size, deserialized.max_trade_size)
+        self.assertEqual(instrument.rollover_interest_buy, deserialized.rollover_interest_buy)
+        self.assertEqual(instrument.rollover_interest_sell, deserialized.rollover_interest_sell)
+        self.assertEqual(instrument.timestamp, deserialized.timestamp)
         print('instrument')
         print(b64encode(serialized))

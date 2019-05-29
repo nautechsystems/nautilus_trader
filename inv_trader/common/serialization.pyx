@@ -9,12 +9,8 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
-import ast
-import cython
 import iso8601
-import json
 
-from decimal import Decimal
 from cpython.datetime cimport datetime
 
 # Do not reorder imports (enums need to be in below order)

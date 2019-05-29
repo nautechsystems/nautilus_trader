@@ -17,7 +17,6 @@ from inv_trader.model.order cimport Order
 from inv_trader.model.events cimport Event
 from inv_trader.commands cimport Command
 
-
 cpdef Symbol parse_symbol(str symbol_string)
 cpdef str convert_price_to_string(Price price)
 cpdef Price convert_string_to_price(str price_string)

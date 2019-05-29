@@ -31,12 +31,12 @@ cdef class Order:
     cdef list _execution_tickets
     cdef list _events
 
-    cdef readonly Symbol symbol
     cdef readonly OrderId id
     cdef readonly OrderId id_current
-    cdef readonly OrderId broker_id
+    cdef readonly OrderId id_broker
     cdef readonly ExecutionId execution_id
     cdef readonly ExecutionTicket execution_ticket
+    cdef readonly Symbol symbol
     cdef readonly OrderSide side
     cdef readonly OrderType type
     cdef readonly Quantity quantity

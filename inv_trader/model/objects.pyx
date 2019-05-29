@@ -208,6 +208,7 @@ cdef class Symbol:
 
         self.code = code.upper()
         self.venue = venue
+        self.value = f'{code}.{venue_string(venue)}'
 
     cdef str venue_string(self):
         """
@@ -224,7 +225,7 @@ cdef class Symbol:
         :param other: The other object to compare
         :return: True if the objects are equal, otherwise False.
         """
-        return self.code == other.code and self.venue == other.venue
+        return self.value == other.value
 
     def __eq__(self, Symbol other) -> bool:
         """
@@ -248,7 +249,7 @@ cdef class Symbol:
         """
         :return: The str() string representation of the symbol.
         """
-        return f"{self.code}.{venue_string(self.venue)}"
+        return self.value
 
     def __repr__(self) -> str:
         """
@@ -906,8 +907,8 @@ cdef class Instrument:
                  object tick_size,
                  Quantity round_lot_size,
                  int min_stop_distance_entry,
-                 int min_limit_distance_entry,
                  int min_stop_distance,
+                 int min_limit_distance_entry,
                  int min_limit_distance,
                  Quantity min_trade_size,
                  Quantity max_trade_size,
@@ -926,8 +927,8 @@ cdef class Instrument:
         :param tick_size: The instruments tick size.
         :param round_lot_size: The instruments rounded lot size.
         :param min_stop_distance_entry: The instruments minimum distance for stop entry orders.
-        :param min_limit_distance_entry: The instruments minimum distance for limit entry orders.
         :param min_stop_distance: The instruments minimum tick distance for stop orders.
+        :param min_limit_distance_entry: The instruments minimum distance for limit entry orders.
         :param min_limit_distance: The instruments minimum tick distance for limit orders.
         :param min_trade_size: The instruments minimum trade size.
         :param max_trade_size: The instruments maximum trade size.
@@ -955,8 +956,8 @@ cdef class Instrument:
         self.tick_size = tick_size
         self.round_lot_size = round_lot_size
         self.min_stop_distance_entry = min_stop_distance_entry
-        self.min_limit_distance_entry = min_limit_distance_entry
         self.min_stop_distance = min_stop_distance
+        self.min_limit_distance_entry = min_limit_distance_entry
         self.min_limit_distance = min_limit_distance
         self.min_trade_size = min_trade_size
         self.max_trade_size = max_trade_size
