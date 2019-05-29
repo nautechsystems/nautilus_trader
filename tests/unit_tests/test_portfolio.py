@@ -91,10 +91,10 @@ class PortfolioTestsTests(unittest.TestCase):
         self.portfolio.register_strategy(strategy)
         self.portfolio.register_order(order_id, position_id)
         event = OrderFilled(
-            AUDUSD_FXCM,
             order_id,
             ExecutionId('E123456'),
             ExecutionTicket('T123456'),
+            AUDUSD_FXCM,
             OrderSide.SELL,
             Quantity(100000),
             Price('1.00000'),
@@ -121,10 +121,10 @@ class PortfolioTestsTests(unittest.TestCase):
         self.portfolio.register_strategy(strategy)
         self.portfolio.register_order(order_id, position_id)
         event = OrderFilled(
-            AUDUSD_FXCM,
             order_id,
             ExecutionId('E123456'),
             ExecutionTicket('T123456'),
+            AUDUSD_FXCM,
             OrderSide.SELL,
             Quantity(100000),
             Price('1.00000'),
@@ -165,10 +165,10 @@ class PortfolioTestsTests(unittest.TestCase):
         self.portfolio.register_order(order_id, position_id)
 
         event = OrderFilled(
-            AUDUSD_FXCM,
             order_id,
             ExecutionId('E123456'),
             ExecutionTicket('T123456'),
+            AUDUSD_FXCM,
             OrderSide.SELL,
             Quantity(100000),
             Price('1.00000'),
@@ -209,10 +209,10 @@ class PortfolioTestsTests(unittest.TestCase):
         self.portfolio.register_order(order_id2, position_id)
 
         buy = OrderFilled(
-            AUDUSD_FXCM,
             order_id1,
             ExecutionId('E123456'),
             ExecutionTicket('T123456'),
+            AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
             Price('1.00000'),
@@ -221,10 +221,10 @@ class PortfolioTestsTests(unittest.TestCase):
             UNIX_EPOCH)
 
         sell = OrderFilled(
-            AUDUSD_FXCM,
             order_id2,
             ExecutionId('E1234567'),
             ExecutionTicket('T1234567'),
+            AUDUSD_FXCM,
             OrderSide.SELL,
             Quantity(100000),
             Price('1.00000'),
@@ -272,10 +272,10 @@ class PortfolioTestsTests(unittest.TestCase):
         self.portfolio.register_order(order_id2, position_id2)
 
         buy1 = OrderFilled(
-            AUDUSD_FXCM,
             order_id1,
             ExecutionId('E1'),
             ExecutionTicket('T1'),
+            AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
             Price('1.00000'),
@@ -284,10 +284,10 @@ class PortfolioTestsTests(unittest.TestCase):
             UNIX_EPOCH)
 
         buy2 = OrderFilled(
-            AUDUSD_FXCM,
             order_id2,
             ExecutionId('E2'),
             ExecutionTicket('T2'),
+            AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
             Price('1.00000'),
@@ -351,10 +351,10 @@ class PortfolioTestsTests(unittest.TestCase):
         self.portfolio.register_order(order_id3, position_id1)
 
         buy1 = OrderFilled(
-            AUDUSD_FXCM,
             order_id1,
             ExecutionId('E1'),
             ExecutionTicket('T1'),
+            AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
             Price('1.00000'),
@@ -363,10 +363,10 @@ class PortfolioTestsTests(unittest.TestCase):
             UNIX_EPOCH)
 
         buy2 = OrderFilled(
-            AUDUSD_FXCM,
             order_id2,
             ExecutionId('E2'),
             ExecutionTicket('T2'),
+            AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
             Price('1.00000'),
@@ -375,10 +375,10 @@ class PortfolioTestsTests(unittest.TestCase):
             UNIX_EPOCH)
 
         sell1 = OrderFilled(
-            AUDUSD_FXCM,
             order_id3,
             ExecutionId('E3'),
             ExecutionTicket('T3'),
+            AUDUSD_FXCM,
             OrderSide.SELL,
             Quantity(100000),
             Price('1.00000'),

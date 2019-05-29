@@ -74,10 +74,10 @@ class PositionTests(unittest.TestCase):
             UNIX_EPOCH)
 
         order_filled = OrderFilled(
-            order.symbol,
             order.id,
             ExecutionId('E123456'),
             ExecutionTicket('T123456'),
+            order.symbol,
             order.side,
             order.quantity,
             Price('1.00001'),
@@ -123,10 +123,10 @@ class PositionTests(unittest.TestCase):
             UNIX_EPOCH)
 
         order_filled = OrderFilled(
-            order.symbol,
             order.id,
             ExecutionId('E123456'),
             ExecutionTicket('T123456'),
+            order.symbol,
             order.side,
             order.quantity,
             Price('1.00001'),
@@ -168,10 +168,10 @@ class PositionTests(unittest.TestCase):
             UNIX_EPOCH)
 
         order_partially_filled = OrderPartiallyFilled(
-            order.symbol,
             order.id,
             ExecutionId('E123456'),
             ExecutionTicket('T123456'),
+            order.symbol,
             order.side,
             Quantity(50000),
             Quantity(50000),
@@ -216,10 +216,10 @@ class PositionTests(unittest.TestCase):
             UNIX_EPOCH)
 
         order_partially_filled = OrderPartiallyFilled(
-            order.symbol,
             order.id,
             ExecutionId('E123456'),
             ExecutionTicket('T123456'),
+            order.symbol,
             order.side,
             Quantity(50000),
             Quantity(50000),
@@ -264,10 +264,10 @@ class PositionTests(unittest.TestCase):
             UNIX_EPOCH)
 
         order_filled1 = OrderFilled(
-            order.symbol,
             order.id,
             ExecutionId('E123456'),
             ExecutionTicket('T123456'),
+            order.symbol,
             OrderSide.BUY,
             order.quantity,
             Price('1.00001'),
@@ -276,10 +276,10 @@ class PositionTests(unittest.TestCase):
             UNIX_EPOCH)
 
         order_filled2 = OrderFilled(
-            order.symbol,
             order.id,
             ExecutionId('E123456'),
             ExecutionTicket('T123456'),
+            order.symbol,
             OrderSide.SELL,
             order.quantity,
             Price('1.00001'),
@@ -325,10 +325,10 @@ class PositionTests(unittest.TestCase):
             UNIX_EPOCH)
 
         order_filled1 = OrderFilled(
-            order.symbol,
             order.id,
             ExecutionId('E123456'),
             ExecutionTicket('T123456'),
+            order.symbol,
             OrderSide.SELL,
             order.quantity,
             Price('1.00000'),
@@ -337,10 +337,10 @@ class PositionTests(unittest.TestCase):
             UNIX_EPOCH)
 
         order_filled2 = OrderFilled(
-            order.symbol,
             order.id,
             ExecutionId('E123456'),
             ExecutionTicket('T123456'),
+            order.symbol,
             OrderSide.BUY,
             order.quantity,
             Price('1.00001'),

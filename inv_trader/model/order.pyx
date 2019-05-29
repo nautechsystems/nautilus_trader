@@ -357,7 +357,7 @@ cdef class AtomicOrder:
         :return: The str() string representation of the order.
         """
         cdef str tp_price = 'NONE' if self.take_profit is None else str(self.take_profit.price)
-        return f"AtomicOrder(Entry{self.entry}, TP={tp_price}, SL={self.stop_loss.price})"
+        return f"AtomicOrder(Entry{self.entry}, SL={self.stop_loss.price}, TP={tp_price})"
 
     def __repr__(self) -> str:
         """
