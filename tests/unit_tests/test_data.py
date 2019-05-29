@@ -142,8 +142,7 @@ class LiveDataClientTests(unittest.TestCase):
 
     def test_disconnecting_when_subscribed_to_multiple_channels_then_unsubscribes(self):
         # Arrange
-        list = []
-        dummy_handler = list.append
+        dummy_handler = [].append
         self.data_client.connect()
         self.data_client.subscribe_ticks(Symbol('AUDUSD', Venue.FXCM), handler=dummy_handler)
         self.data_client.subscribe_ticks(Symbol('GBPUSD', Venue.FXCM), handler=dummy_handler)
