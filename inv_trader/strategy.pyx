@@ -1084,10 +1084,10 @@ cdef class TradeStrategy:
         self.log.info(f"Submitting {order} with {position_id}")
 
         cdef SubmitOrder command = SubmitOrder(
-            order,
             self.trader_id,
             self.id,
             position_id,
+            order,
             self._guid_factory.generate(),
             self.clock.time_now())
 
@@ -1144,10 +1144,10 @@ cdef class TradeStrategy:
         self._atomic_order_ids[atomic_order.entry.id] = child_order_ids
 
         cdef SubmitAtomicOrder command = SubmitAtomicOrder(
-            atomic_order,
             self.trader_id,
             self.id,
             position_id,
+            atomic_order,
             self._guid_factory.generate(),
             self.clock.time_now())
 
@@ -1166,7 +1166,9 @@ cdef class TradeStrategy:
             return
 
         cdef ModifyOrder command = ModifyOrder(
-            order,
+            self.trader_id,
+            self.id,
+            order.id,
             new_price,
             self._guid_factory.generate(),
             self.clock.time_now())
@@ -1197,7 +1199,9 @@ cdef class TradeStrategy:
         self.log.info(f"Cancelling {order}")
 
         cdef CancelOrder command = CancelOrder(
-            order,
+            self.trader_id,
+            self.id,
+            order.id,
             ValidString(cancel_reason),
             self._guid_factory.generate(),
             self.clock.time_now())
@@ -1222,7 +1226,9 @@ cdef class TradeStrategy:
         for order_id, order in all_orders.items():
             if order.is_active:
                 command = CancelOrder(
-                    order,
+                    self.trader_id,
+                    self.id,
+                    order_id,
                     ValidString(cancel_reason),
                     self._guid_factory.generate(),
                     self.clock.time_now())

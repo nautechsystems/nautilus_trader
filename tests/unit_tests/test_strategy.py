@@ -300,7 +300,7 @@ class TradeStrategyTests(unittest.TestCase):
 
         strategy.submit_order(order, position_id)
         exec_client.process()
-        exec_client.fill_last_order()
+        exec_client.fill_order(order.id)
         exec_client.process()
 
         # Act
@@ -792,13 +792,13 @@ class TradeStrategyTests(unittest.TestCase):
 
         strategy.submit_order(order, position_id)
         exec_client.process()
-        exec_client.fill_last_order()
+        exec_client.fill_order(order.id)
 
         # Act
         exec_client.process()
         strategy.flatten_position(position_id)
         exec_client.process()
-        exec_client.fill_last_order()
+        exec_client.fill_all_orders()
         exec_client.process()
 
         # Assert
@@ -832,18 +832,16 @@ class TradeStrategyTests(unittest.TestCase):
         strategy.submit_order(order2, position_id2)
 
         exec_client.process()
-        exec_client.fill_last_order()
-        exec_client.fill_last_order()
+        exec_client.fill_order(order1.id)
+        exec_client.fill_order(order2.id)
+        exec_client.process()
 
         # Act
-        exec_client.process()
         strategy.flatten_all_positions()
+        exec_client.fill_all_orders()
         exec_client.process()
-        exec_client.fill_last_order()
-        exec_client.fill_last_order()
 
         # Assert
-        exec_client.process()
         self.assertEqual(order1, strategy.orders_all()[order1.id])
         self.assertEqual(order2, strategy.orders_all()[order2.id])
         self.assertEqual(OrderStatus.FILLED, strategy.orders_all()[order1.id].status)
@@ -890,7 +888,7 @@ class TradeStrategyTests(unittest.TestCase):
 
         strategy.submit_order(order, strategy.position_id_generator.generate())
         exec_client.process()
-        exec_client.fill_last_order()
+        exec_client.fill_order(order.id)
 
         # Act
         # Assert
@@ -924,10 +922,10 @@ class TradeStrategyTests(unittest.TestCase):
 
         strategy.submit_order(order1, position1)
         exec_client.process()
-        exec_client.fill_last_order()
+        exec_client.fill_order(order1.id)
         strategy.submit_order(order2, position1)
         exec_client.process()
-        exec_client.fill_last_order()
+        exec_client.fill_order(order2.id)
 
         # Act
         # Assert
