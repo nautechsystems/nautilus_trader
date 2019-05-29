@@ -208,7 +208,7 @@ cdef class Symbol:
 
         self.code = code.upper()
         self.venue = venue
-        self.value = f'{code}.{venue_string(venue)}'
+        self.value = f'{self.code}.{venue_string(self.venue)}'
 
     cdef str venue_string(self):
         """
