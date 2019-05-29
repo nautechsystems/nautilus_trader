@@ -46,7 +46,7 @@ cdef class Order:
                  OrderId order_id,
                  Symbol symbol,
                  OrderSide order_side,
-                 OrderType order_type,
+                 OrderType order_type,  # 'type' hides keyword
                  Quantity quantity,
                  datetime timestamp,
                  Price price=None,
@@ -93,10 +93,10 @@ cdef class Order:
         self._events = []                   # type: List[OrderEvent]
 
         self.id = order_id
-        self.symbol = symbol
-        self.broker_id = None               # Can be None
+        self.id_broker = None               # Can be None
         self.execution_id = None            # Can be None
         self.execution_ticket = None        # Can be None
+        self.symbol = symbol
         self.side = order_side
         self.type = order_type
         self.quantity = quantity
@@ -240,38 +240,30 @@ cdef class Order:
         # Handle event
         if isinstance(event, OrderSubmitted):
             self.status = OrderStatus.SUBMITTED
-
         elif isinstance(event, OrderRejected):
             self.status = OrderStatus.REJECTED
             self.is_complete = True
-
         elif isinstance(event, OrderAccepted):
             self.status = OrderStatus.ACCEPTED
-
         elif isinstance(event, OrderWorking):
             self.status = OrderStatus.WORKING
-            self._order_ids_broker.append(event.broker_order_id)
-            self.broker_id = event.broker_order_id
+            self._order_ids_broker.append(event.order_id_broker)
+            self.id_broker = event.order_id_broker
             self.is_active = True
-
         elif isinstance(event, OrderCancelReject):
             pass
-
         elif isinstance(event, OrderCancelled):
             self.status = OrderStatus.CANCELLED
             self.is_active = False
             self.is_complete = True
-
         elif isinstance(event, OrderExpired):
             self.status = OrderStatus.EXPIRED
             self.is_active = False
             self.is_complete = True
-
         elif isinstance(event, OrderModified):
-            self._order_ids_broker.append(event.broker_order_id)
-            self.broker_id = event.broker_order_id
+            self._order_ids_broker.append(event.order_id_broker)
+            self.id_broker = event.order_id_broker
             self.price = event.modified_price
-
         elif isinstance(event, (OrderFilled, OrderPartiallyFilled)):
             self._execution_ids.append(event.execution_id)
             self._execution_tickets.append(event.execution_ticket)

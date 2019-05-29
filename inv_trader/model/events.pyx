@@ -208,8 +208,8 @@ cdef class OrderInitialized(OrderEvent):
                          event_id,
                          event_timestamp)
         self.label = label
-        self.side = order_side
-        self.type = order_type
+        self.order_side = order_side
+        self.order_type = order_type
         self.quantity = quantity
         self.price = price
         self.time_in_force = time_in_force
@@ -315,7 +315,7 @@ cdef class OrderWorking(OrderEvent):
 
     def __init__(self,
                  OrderId order_id,
-                 OrderId broker_order_id,
+                 OrderId order_id_broker,
                  Symbol symbol,
                  Label label,
                  OrderSide order_side,
@@ -331,7 +331,7 @@ cdef class OrderWorking(OrderEvent):
         Initializes a new instance of the OrderWorking class.
 
         :param order_id: The events order identifier.
-        :param broker_order_id: The events broker order identifier.
+        :param order_id_broker: The events broker order identifier.
         :param symbol: The events order symbol.
         :param label: The events order label.
         :param order_side: The events order side.
@@ -350,10 +350,10 @@ cdef class OrderWorking(OrderEvent):
                          symbol,
                          event_id,
                          event_timestamp)
-        self.order_id_broker = broker_order_id
+        self.order_id_broker = order_id_broker
         self.label = label
-        self.side = order_side
-        self.type = order_type
+        self.order_side = order_side
+        self.order_type = order_type
         self.quantity = quantity
         self.price = price
         self.time_in_force = time_in_force
@@ -446,7 +446,7 @@ cdef class OrderModified(OrderEvent):
 
     def __init__(self,
                  OrderId order_id,
-                 OrderId broker_order_id,
+                 OrderId order_id_broker,
                  Symbol symbol,
                  Price modified_price,
                  datetime modified_time,
@@ -457,7 +457,7 @@ cdef class OrderModified(OrderEvent):
 
         :param order_id: The events order identifier.
         :param symbol: The events order symbol.
-        :param broker_order_id: The events order broker identifier.
+        :param order_id_broker: The events order broker identifier.
         :param modified_price: The events modified price.
         :param modified_time: The events modified time.
         :param event_id: The events identifier.
@@ -467,7 +467,7 @@ cdef class OrderModified(OrderEvent):
                          symbol,
                          event_id,
                          event_timestamp)
-        self.order_id_broker = broker_order_id
+        self.order_id_broker = order_id_broker
         self.modified_price = modified_price
         self.modified_time = modified_time
 
@@ -537,7 +537,7 @@ cdef class OrderPartiallyFilled(OrderEvent):
                          event_timestamp)
         self.execution_id = execution_id
         self.execution_ticket = execution_ticket
-        self.side = order_side
+        self.order_side = order_side
         self.filled_quantity = filled_quantity
         self.leaves_quantity = leaves_quantity
         self.average_price = average_price
@@ -590,7 +590,7 @@ cdef class OrderFilled(OrderEvent):
                          event_timestamp)
         self.execution_id = execution_id
         self.execution_ticket = execution_ticket
-        self.side = order_side
+        self.order_side = order_side
         self.filled_quantity = filled_quantity
         self.average_price = average_price
         self.execution_time = execution_time

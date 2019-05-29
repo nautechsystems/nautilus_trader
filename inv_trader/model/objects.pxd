@@ -41,6 +41,7 @@ cdef class Symbol:
     """
     Represents the symbol for a financial market tradeable instrument.
     """
+    cdef readonly str value
     cdef readonly str code
     cdef readonly Venue venue
     cdef str venue_string(self)
@@ -137,8 +138,8 @@ cdef class Instrument:
     cdef readonly object tick_size
     cdef readonly Quantity round_lot_size
     cdef readonly int min_stop_distance_entry
-    cdef readonly int min_limit_distance_entry
     cdef readonly int min_stop_distance
+    cdef readonly int min_limit_distance_entry
     cdef readonly int min_limit_distance
     cdef readonly Quantity min_trade_size
     cdef readonly Quantity max_trade_size

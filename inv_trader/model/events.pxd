@@ -60,8 +60,8 @@ cdef class OrderInitialized(OrderEvent):
     Represents an event where an order has been initialized.
     """
     cdef readonly Label label
-    cdef readonly OrderSide side
-    cdef readonly OrderType type
+    cdef readonly OrderSide order_side
+    cdef readonly OrderType order_type
     cdef readonly Quantity quantity
     cdef readonly Price price
     cdef readonly TimeInForce time_in_force
@@ -96,8 +96,8 @@ cdef class OrderWorking(OrderEvent):
     """
     cdef readonly OrderId order_id_broker
     cdef readonly Label label
-    cdef readonly OrderSide side
-    cdef readonly OrderType type
+    cdef readonly OrderSide order_side
+    cdef readonly OrderType order_type
     cdef readonly Quantity quantity
     cdef readonly Price price
     cdef readonly TimeInForce time_in_force
@@ -143,7 +143,7 @@ cdef class OrderFilled(OrderEvent):
     """
     cdef readonly ExecutionId execution_id
     cdef readonly ExecutionTicket execution_ticket
-    cdef readonly OrderSide side
+    cdef readonly OrderSide order_side
     cdef readonly Quantity filled_quantity
     cdef readonly Price average_price
     cdef readonly datetime execution_time
@@ -155,7 +155,7 @@ cdef class OrderPartiallyFilled(OrderEvent):
     """
     cdef readonly ExecutionId execution_id
     cdef readonly ExecutionTicket execution_ticket
-    cdef readonly OrderSide side
+    cdef readonly OrderSide order_side
     cdef readonly Quantity filled_quantity
     cdef readonly Quantity leaves_quantity
     cdef readonly Price average_price
