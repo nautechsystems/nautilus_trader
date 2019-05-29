@@ -614,9 +614,9 @@ cdef class BacktestExecClient(ExecutionClient):
 
         # Generate event
         cdef OrderWorking working = OrderWorking(
-            order.symbol,
             order.id,
-            OrderId('B-' + str(order.id.value)),  # Dummy broker id
+            OrderId('B' + str(order.id.value)),  # Dummy broker id
+            order.symbol,
             order.label,
             order.side,
             order.type,

@@ -53,10 +53,10 @@ class ReportProviderTests(unittest.TestCase):
             Price('0.80000'))
 
         event = OrderFilled(
-            order1.symbol,
             order1.id,
             ExecutionId('SOME_EXEC_ID_1'),
             ExecutionTicket('SOME_EXEC_TICKET_1'),
+            order1.symbol,
             order1.side,
             order1.quantity,
             Price('0.80011'),
@@ -98,10 +98,10 @@ class ReportProviderTests(unittest.TestCase):
             Price('0.80000'))
 
         event = OrderFilled(
-            order1.symbol,
             order1.id,
             ExecutionId('SOME_EXEC_ID_1'),
             ExecutionTicket('SOME_EXEC_TICKET_1'),
+            order1.symbol,
             order1.side,
             order1.quantity,
             Price('0.80011'),
@@ -152,10 +152,10 @@ class ReportProviderTests(unittest.TestCase):
             UNIX_EPOCH)
 
         order_filled1 = OrderFilled(
-            order1.symbol,
             order1.id,
             ExecutionId('E123456'),
             ExecutionTicket('T123456'),
+            order1.symbol,
             order1.side,
             order1.quantity,
             Price('0.80000'),
@@ -164,10 +164,10 @@ class ReportProviderTests(unittest.TestCase):
             UNIX_EPOCH)
 
         order_filled2 = OrderFilled(
-            order2.symbol,
             order2.id,
             ExecutionId('E123457'),
             ExecutionTicket('T123457'),
+            order2.symbol,
             order2.side,
             order2.quantity,
             Price('0.80010'),

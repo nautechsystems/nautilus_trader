@@ -401,8 +401,8 @@ class OrderTests(unittest.TestCase):
             Label('U1'))
 
         # Assert
-        self.assertEqual('AtomicOrder(EntryOrder(O-19700101-000000-001-001-1, label=U1_E, status=INITIALIZED) BUY 100,000 AUDUSD.FXCM MARKET DAY, has_take_profit=True)', str(atomic_order))
-        self.assertTrue(repr(atomic_order).startswith('<AtomicOrder(EntryOrder(O-19700101-000000-001-001-1, label=U1_E, status=INITIALIZED) BUY 100,000 AUDUSD.FXCM MARKET DAY, has_take_profit=True) object at'))
+        self.assertEqual('AtomicOrder(EntryOrder(O-19700101-000000-001-001-1, label=U1_E, status=INITIALIZED) BUY 100,000 AUDUSD.FXCM MARKET DAY, SL=0.99990, TP=1.00010)', str(atomic_order))
+        self.assertTrue(repr(atomic_order).startswith('<AtomicOrder(EntryOrder(O-19700101-000000-001-001-1, label=U1_E, status=INITIALIZED) BUY 100,000 AUDUSD.FXCM MARKET DAY, SL=0.99990, TP=1.00010) object at'))
 
     def test_can_apply_order_submitted_event_to_order(self):
         # Arrange
@@ -412,7 +412,6 @@ class OrderTests(unittest.TestCase):
             Quantity(100000))
 
         event = OrderSubmitted(
-            order.symbol,
             order.id,
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
@@ -435,7 +434,6 @@ class OrderTests(unittest.TestCase):
             Quantity(100000))
 
         event = OrderAccepted(
-            order.symbol,
             order.id,
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
@@ -456,7 +454,6 @@ class OrderTests(unittest.TestCase):
             Quantity(100000))
 
         event = OrderRejected(
-            order.symbol,
             order.id,
             UNIX_EPOCH,
             ValidString('ORDER ID INVALID'),
@@ -478,9 +475,9 @@ class OrderTests(unittest.TestCase):
             Quantity(100000))
 
         event = OrderWorking(
-            order.symbol,
             order.id,
             OrderId('SOME_BROKER_ID'),
+            order.symbol,
             order.label,
             order.side,
             order.type,
@@ -498,7 +495,7 @@ class OrderTests(unittest.TestCase):
         # Assert
         # print(order)
         self.assertEqual(OrderStatus.WORKING, order.status)
-        self.assertEqual(OrderId('SOME_BROKER_ID'), order.broker_id)
+        self.assertEqual(OrderId('SOME_BROKER_ID'), order.id_broker)
         self.assertFalse(order.is_complete)
         self.assertTrue(order.is_active)
         self.assertEqual(None, order.filled_timestamp)
@@ -511,7 +508,6 @@ class OrderTests(unittest.TestCase):
             Quantity(100000))
 
         event = OrderExpired(
-            order.symbol,
             order.id,
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
@@ -532,7 +528,6 @@ class OrderTests(unittest.TestCase):
             Quantity(100000))
 
         event = OrderCancelled(
-            order.symbol,
             order.id,
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
@@ -553,7 +548,6 @@ class OrderTests(unittest.TestCase):
             Quantity(100000))
 
         event = OrderCancelReject(
-            order.symbol,
             order.id,
             UNIX_EPOCH,
             ValidString('REJECT_RESPONSE'),
@@ -575,9 +569,9 @@ class OrderTests(unittest.TestCase):
             Quantity(100000))
 
         order_working = OrderWorking(
-            order.symbol,
             order.id,
             OrderId('SOME_BROKER_ID_1'),
+            order.symbol,
             order.label,
             order.side,
             order.type,
@@ -590,7 +584,6 @@ class OrderTests(unittest.TestCase):
             order.expire_time)
 
         order_modified = OrderModified(
-            order.symbol,
             order.id,
             OrderId('SOME_BROKER_ID_2'),
             Price('1.00001'),
@@ -605,7 +598,7 @@ class OrderTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(OrderStatus.WORKING, order.status)
-        self.assertEqual(OrderId('SOME_BROKER_ID_2'), order.broker_id)
+        self.assertEqual(OrderId('SOME_BROKER_ID_2'), order.id_broker)
         self.assertEqual(Price('1.00001'), order.price)
         self.assertTrue(order.is_active)
         self.assertFalse(order.is_complete)
@@ -619,10 +612,10 @@ class OrderTests(unittest.TestCase):
             Quantity(100000))
 
         event = OrderFilled(
-            order.symbol,
             order.id,
             ExecutionId('SOME_EXEC_ID_1'),
             ExecutionTicket('SOME_EXEC_TICKET_1'),
+            order.symbol,
             order.side,
             order.quantity,
             Price('1.00001'),
@@ -649,10 +642,10 @@ class OrderTests(unittest.TestCase):
             Price('1.00000'))
 
         event = OrderFilled(
-            order.symbol,
             order.id,
             ExecutionId('SOME_EXEC_ID_1'),
             ExecutionTicket('SOME_EXEC_TICKET_1'),
+            order.symbol,
             order.side,
             order.quantity,
             Price('1.00001'),
@@ -681,10 +674,10 @@ class OrderTests(unittest.TestCase):
             Price('1.00000'))
 
         event = OrderPartiallyFilled(
-            order.symbol,
             order.id,
             ExecutionId('SOME_EXEC_ID_1'),
             ExecutionTicket('SOME_EXEC_TICKET_1'),
+            order.symbol,
             order.side,
             Quantity(50000),
             Quantity(50000),
@@ -714,10 +707,10 @@ class OrderTests(unittest.TestCase):
             Price('1.00000'))
 
         event = OrderFilled(
-            order.symbol,
             order.id,
             ExecutionId('SOME_EXEC_ID_1'),
             ExecutionTicket('SOME_EXEC_TICKET_1'),
+            order.symbol,
             order.side,
             Quantity(150000),
             Price('0.99999'),
