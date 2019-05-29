@@ -12,6 +12,7 @@ from datetime import datetime, timedelta, timezone
 
 from inv_trader.model.enums import Venue, Resolution, QuoteType, Currency, SecurityType
 from inv_trader.model.objects import Quantity, Symbol, Price, BarSpecification, BarType, Bar, Instrument
+from inv_trader.model.identifiers import InstrumentId
 
 # Unix epoch is the UTC time at 00:00:00 on 1/1/1970
 UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc)
@@ -43,41 +44,45 @@ class TestStubs:
 
     @staticmethod
     def instrument_gbpusd():
-        return Instrument(Symbol('GBPUSD', Venue.FXCM),
-                          'GBP/USD',
-                          Currency.USD,
-                          SecurityType.FOREX,
-                          tick_precision=5,
-                          tick_size=Decimal('0.00001'),
-                          round_lot_size=Quantity(1000),
-                          min_stop_distance_entry=0,
-                          min_limit_distance_entry=0,
-                          min_stop_distance=0,
-                          min_limit_distance=0,
-                          min_trade_size=Quantity(1),
-                          max_trade_size=Quantity(50000000),
-                          rollover_interest_buy=Decimal(),
-                          rollover_interest_sell=Decimal(),
-                          timestamp=UNIX_EPOCH)
+        return Instrument(
+            InstrumentId('GBPUSD.FXCM'),
+            Symbol('GBPUSD', Venue.FXCM),
+            'GBP/USD',
+            Currency.USD,
+            SecurityType.FOREX,
+            tick_precision=5,
+            tick_size=Decimal('0.00001'),
+            round_lot_size=Quantity(1000),
+            min_stop_distance_entry=0,
+            min_limit_distance_entry=0,
+            min_stop_distance=0,
+            min_limit_distance=0,
+            min_trade_size=Quantity(1),
+            max_trade_size=Quantity(50000000),
+            rollover_interest_buy=Decimal(),
+            rollover_interest_sell=Decimal(),
+            timestamp=UNIX_EPOCH)
 
     @staticmethod
     def instrument_usdjpy():
-        return Instrument(Symbol('USDJPY', Venue.FXCM),
-                          'USD/JPY',
-                          Currency.JPY,
-                          SecurityType.FOREX,
-                          tick_precision=3,
-                          tick_size=Decimal('0.001'),
-                          round_lot_size=Quantity(1000),
-                          min_stop_distance_entry=Decimal(),
-                          min_limit_distance_entry=Decimal(),
-                          min_stop_distance=Decimal(),
-                          min_limit_distance=Decimal(),
-                          min_trade_size=Quantity(1),
-                          max_trade_size=Quantity(50000000),
-                          rollover_interest_buy=Decimal(),
-                          rollover_interest_sell=Decimal(),
-                          timestamp=UNIX_EPOCH)
+        return Instrument(
+            InstrumentId('USDJPY.FXCM'),
+            Symbol('USDJPY', Venue.FXCM),
+            'USD/JPY',
+            Currency.JPY,
+            SecurityType.FOREX,
+            tick_precision=3,
+            tick_size=Decimal('0.001'),
+            round_lot_size=Quantity(1000),
+            min_stop_distance_entry=Decimal(),
+            min_limit_distance_entry=Decimal(),
+            min_stop_distance=Decimal(),
+            min_limit_distance=Decimal(),
+            min_trade_size=Quantity(1),
+            max_trade_size=Quantity(50000000),
+            rollover_interest_buy=Decimal(),
+            rollover_interest_sell=Decimal(),
+            timestamp=UNIX_EPOCH)
 
     @staticmethod
     def bartype_audusd_1min_bid():

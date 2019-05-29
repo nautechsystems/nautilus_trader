@@ -41,9 +41,9 @@ cdef class Portfolio:
         :param logger: The logger for the component.
         """
         if logger is None:
-            self._log = LoggerAdapter(self.__name__)
+            self._log = LoggerAdapter(self.__class__.__name__)
         else:
-            self._log = LoggerAdapter(self.__name__, logger)
+            self._log = LoggerAdapter(self.__class__.__name__, logger)
 
         self._clock = clock
         self._guid_factory = guid_factory

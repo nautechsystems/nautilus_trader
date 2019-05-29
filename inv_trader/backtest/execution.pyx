@@ -21,6 +21,7 @@ from inv_trader.enums.order_type cimport OrderType
 from inv_trader.enums.order_side cimport OrderSide
 from inv_trader.enums.order_status cimport OrderStatus
 from inv_trader.enums.market_position cimport MarketPosition, market_position_string
+from inv_trader.enums.venue cimport Venue
 from inv_trader.model.currency cimport ExchangeRateCalculator
 from inv_trader.model.objects cimport ValidString, Symbol, Price, Tick, Bar, Money, Instrument, Quantity
 from inv_trader.model.order cimport Order
@@ -387,24 +388,25 @@ cdef class BacktestExecClient(ExecutionClient):
         
         :param command: The command to execute.
         """
-        if command.order.id not in self.working_orders:
-            self._cancel_reject_order(command.order, 'cancel order', 'order not found')
+        if command.order_id not in self.working_orders:
+            self._cancel_reject_order(command.order_id, 'cancel order', 'order not found')
             return  # Rejected the cancel order command
 
-        # Remove from working orders
-        if command.order.id in self.working_orders:
-            del self.working_orders[command.order.id]
+        cdef Order order = self.working_orders[command.order_id]
 
         # Generate event
         cdef OrderCancelled cancelled = OrderCancelled(
-            command.order.symbol,
-            command.order.id,
+            order.id,
+            order.symbol,
             self._clock.time_now(),
             self._guid_factory.generate(),
             self._clock.time_now())
 
+        # Remove from working orders (checked it was in dictionary above)
+        del self.working_orders[command.order_id]
+
         self._handle_event(cancelled)
-        self._check_oco_order(command.order.id)
+        self._check_oco_order(command.order_id)
 
     cdef void _modify_order(self, ModifyOrder command):
         """
@@ -412,11 +414,11 @@ cdef class BacktestExecClient(ExecutionClient):
         
         :param command: The command to execute.
         """
-        if command.order.id not in self.working_orders:
-            self._cancel_reject_order(command.order, 'modify order', 'order not found')
+        if command.order_id not in self.working_orders:
+            self._cancel_reject_order(command.order_id, 'modify order', 'order not found')
             return  # Rejected the modify order command
 
-        cdef Order order = command.order
+        cdef Order order = self.working_orders[command.order_id]
         cdef Instrument instrument = self.instruments[order.symbol]
         cdef Price current_ask
         cdef Price current_bid
@@ -446,7 +448,7 @@ cdef class BacktestExecClient(ExecutionClient):
         cdef OrderModified modified = OrderModified(
             order.symbol,
             order.id,
-            order.broker_id,
+            order.id_broker,
             command.modified_price,
             self._clock.time_now(),
             self._guid_factory.generate(),
@@ -495,21 +497,21 @@ cdef class BacktestExecClient(ExecutionClient):
 
     cdef void _cancel_reject_order(
             self,
-            Order order,
+            OrderId order_id,
             str response,
             str reason):
         """
         Reject the cancellation/modification command for the given order with
         the given response and reason..
         
-        :param order: The order the modification reject relates to.
+        :param order_id: The order identifier the modification reject relates to.
         :param response: The cancel reject response.
         :param reason: The cancel reject reason.
         """
         # Generate event
         cdef OrderCancelReject cancel_reject = OrderCancelReject(
-            order.symbol,
-            order.id,
+            order_id,
+            Symbol('UNKNOWN', Venue),
             self._clock.time_now(),
             ValidString(response),
             ValidString(reason),
