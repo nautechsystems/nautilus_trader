@@ -50,7 +50,7 @@ cdef class Order:
     cdef readonly Price average_price
     cdef readonly object slippage
     cdef readonly OrderStatus status
-    cdef readonly GUID init_event_id
+    cdef readonly GUID init_id
     cdef readonly OrderEvent last_event
     cdef readonly bint is_buy
     cdef readonly bint is_sell

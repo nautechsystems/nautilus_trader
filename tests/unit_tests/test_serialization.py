@@ -10,7 +10,7 @@
 import unittest
 import uuid
 
-from base64 import b64encode
+from base64 import b64encode, b64decode
 from datetime import datetime, timezone
 
 from inv_trader.common.clock import TestClock
@@ -611,21 +611,29 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Assert
         self.assertEqual(deserialized, event)
 
+    def test_can_deserialize_account_events_from_csharp(self):
+        # Arrange
+        serializer = MsgPackEventSerializer()
+
+        # Base64 bytes string from C# MsgPack.Cli
+        base64 = 'j6RUeXBlpUV2ZW50pUV2ZW50rEFjY291bnRFdmVudKdFdmVudElk2SRmMTdkYWZjMC0yZWRjLTQzZTQtOWFmZS1hOTk2M2YxZmFkYjmuRXZlbnRUaW1lc3RhbXC4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBaqUFjY291bnRJZKtGWENNLTEyMzQ1NqZCcm9rZXKkRlhDTa1BY2NvdW50TnVtYmVypjEyMzQ1NqhDdXJyZW5jeaNVU0SrQ2FzaEJhbGFuY2WmMTAwMDAwrENhc2hTdGFydERheaYxMDAwMDCvQ2FzaEFjdGl2aXR5RGF5oTC1TWFyZ2luVXNlZExpcXVpZGF0aW9uoTC1TWFyZ2luVXNlZE1haW50ZW5hbmNloTCrTWFyZ2luUmF0aW+hMLBNYXJnaW5DYWxsU3RhdHVzoA=='
+        body = b64decode(base64)
+
+        # Act
+        result = serializer.deserialize(body)
+
+        # Assert
+        self.assertTrue(isinstance(result, AccountEvent))
+        self.assertTrue(isinstance(result.id, GUID))
+        self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.timestamp)
+
     def test_can_deserialize_order_submitted_events_from_csharp(self):
         # Arrange
         serializer = MsgPackEventSerializer()
 
-        # Hex bytes string from C# MsgPack.Cli
-        hex_string = ('87aa6576656e745f74797065ab6f726465725f6576656e74a673796d'
-                      '626f6cab4155445553442e4658434da86f726465725f6964ab537475'
-                      '624f726465724964a86576656e745f6964d92438663132306439632d'
-                      '396437362d343533362d613864302d376461656465623166343235af'
-                      '6576656e745f74696d657374616d70b8313937302d30312d30315430'
-                      '303a30303a30302e3030305aab6f726465725f6576656e74af6f7264'
-                      '65725f7375626d6974746564ae7375626d69747465645f74696d65b8'
-                      '313937302d30312d30315430303a30303a30302e3030305a')
-
-        body = bytes.fromhex(hex_string)
+        # Base64 bytes string from C# MsgPack.Cli
+        base64 = 'h6RUeXBlpUV2ZW50pUV2ZW50rk9yZGVyU3VibWl0dGVkp0V2ZW50SWTZJDRlOTE1ZGU0LTA5YWMtNDA4Yi1hOGVkLTM2NDg4NTBiYjRlN65FdmVudFRpbWVzdGFtcLgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFqnT3JkZXJJZKhPLTEyMzQ1NqZTeW1ib2yrQVVEVVNELkZYQ02tU3VibWl0dGVkVGltZbgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFo='
+        body = b64decode(base64)
 
         # Act
         result = serializer.deserialize(body)
@@ -633,7 +641,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Assert
         self.assertTrue(isinstance(result, OrderSubmitted))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
-        self.assertEqual(OrderId('StubOrderId'), result.order_id)
+        self.assertEqual(OrderId('O-123456'), result.order_id)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.submitted_time)
         self.assertTrue(isinstance(result.id, GUID))
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.timestamp)
@@ -642,17 +650,9 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Arrange
         serializer = MsgPackEventSerializer()
 
-        # Hex bytes string from C# MsgPack.Cli
-        hex_string = ('87aa6576656e745f74797065ab6f726465725f6576656e74a673796d'
-                      '626f6cab4155445553442e4658434da86f726465725f6964ab537475'
-                      '624f726465724964a86576656e745f6964d92437653064363137342d'
-                      '643233622d343334382d386436362d626231393766633637393765af'
-                      '6576656e745f74696d657374616d70b8313937302d30312d30315430'
-                      '303a30303a30302e3030305aab6f726465725f6576656e74ae6f7264'
-                      '65725f6163636570746564ad61636365707465645f74696d65b83139'
-                      '37302d30312d30315430303a30303a30302e3030305a')
-
-        body = bytes.fromhex(hex_string)
+        # Base64 bytes string from C# MsgPack.Cli
+        base64 = 'h6RUeXBlpUV2ZW50pUV2ZW50rU9yZGVyQWNjZXB0ZWSnRXZlbnRJZNkkMGIyMjNiMmItYTk0NC00NzE0LTlkMzctYjBmOTMyMjE3OGZkrkV2ZW50VGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWqdPcmRlcklkqE8tMTIzNDU2plN5bWJvbKtBVURVU0QuRlhDTaxBY2NlcHRlZFRpbWW4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBa'
+        body = b64decode(base64)
 
         # Act
         result = serializer.deserialize(body)
@@ -660,7 +660,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Assert
         self.assertTrue(isinstance(result, OrderAccepted))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
-        self.assertEqual(OrderId('StubOrderId'), result.order_id)
+        self.assertEqual(OrderId('O-123456'), result.order_id)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.accepted_time)
         self.assertTrue(isinstance(result.id, GUID))
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.timestamp)
@@ -669,18 +669,9 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Arrange
         serializer = MsgPackEventSerializer()
 
-        # Hex bytes string from C# MsgPack.Cli
-        hex_string = ('88aa6576656e745f74797065ab6f726465725f6576656e74a673796d'
-                      '626f6cab4155445553442e4658434da86f726465725f6964ab537475'
-                      '624f726465724964a86576656e745f6964d92463343466373131342d'
-                      '326432342d343635372d616635392d633634646538316461393639af'
-                      '6576656e745f74696d657374616d70b8313937302d30312d30315430'
-                      '303a30303a30302e3030305aab6f726465725f6576656e74ae6f7264'
-                      '65725f72656a6563746564ad72656a65637465645f74696d65b83139'
-                      '37302d30312d30315430303a30303a30302e3030305aaf72656a6563'
-                      '7465645f726561736f6ead494e56414c49445f4f52444552')
-
-        body = bytes.fromhex(hex_string)
+        # Base64 bytes string from C# MsgPack.Cli
+        base64 = 'iKRUeXBlpUV2ZW50pUV2ZW50rU9yZGVyUmVqZWN0ZWSnRXZlbnRJZNkkZWY5ZDZmMmItNDM3My00ZGM5LWI4NzAtNDAyMDliNjM3MjdjrkV2ZW50VGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWqdPcmRlcklkqE8tMTIzNDU2plN5bWJvbKtBVURVU0QuRlhDTaxSZWplY3RlZFRpbWW4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBarlJlamVjdGVkUmVhc29urUlOVkFMSURfT1JERVI='
+        body = b64decode(base64)
 
         # Act
         result = serializer.deserialize(body)
@@ -688,7 +679,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Assert
         self.assertTrue(isinstance(result, OrderRejected))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
-        self.assertEqual(OrderId('StubOrderId'), result.order_id)
+        self.assertEqual(OrderId('O-123456'), result.order_id)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.rejected_time)
         self.assertEqual('INVALID_ORDER', result.rejected_reason.value)
         self.assertTrue(isinstance(result.id, GUID))
@@ -698,22 +689,9 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Arrange
         serializer = MsgPackEventSerializer()
 
-        # Hex bytes string from C# MsgPack.Cli
-        hex_string = ('8faa6576656e745f74797065ab6f726465725f6576656e74a673796d'
-                      '626f6cab4155445553442e4658434da86f726465725f6964ab537475'
-                      '624f726465724964a86576656e745f6964d92463653661363030652d'
-                      '636166342d346366622d616539302d353061386433303166653037af'
-                      '6576656e745f74696d657374616d70b8313937302d30312d30315430'
-                      '303a30303a30302e3030305aab6f726465725f6576656e74ad6f7264'
-                      '65725f776f726b696e67af6f726465725f69645f62726f6b6572a742'
-                      '313233343536a56c6162656ca94f3132333435365f45aa6f72646572'
-                      '5f73696465a3425559aa6f726465725f74797065ab53544f505f4d41'
-                      '524b4554a87175616e7469747901a57072696365a3312e30ad74696d'
-                      '655f696e5f666f726365a3444159ab6578706972655f74696d65a44e'
-                      '4f4e45ac776f726b696e675f74696d65b8313937302d30312d303154'
-                      '30303a30303a30302e3030305a')
-
-        body = bytes.fromhex(hex_string)
+        # Base64 bytes string from C# MsgPack.Cli
+        base64 = 'j6RUeXBlpUV2ZW50pUV2ZW50rE9yZGVyV29ya2luZ6dFdmVudElk2SQ4ZTE0ZWEyYS03N2Q4LTQ5MzAtYWE1NC0yNjdmOTk2N2FhMGSuRXZlbnRUaW1lc3RhbXC4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBap09yZGVySWSoTy0xMjM0NTatT3JkZXJJZEJyb2tlcqlCTy0xMjM0NTamU3ltYm9sq0FVRFVTRC5GWENNpUxhYmVsqU8xMjM0NTZfRalPcmRlclNpZGWjQlVZqU9yZGVyVHlwZatTVE9QX01BUktFVKhRdWFudGl0eQGlUHJpY2WjMS4wq1RpbWVJbkZvcmNlo0RBWapFeHBpcmVUaW1lpE5PTkWrV29ya2luZ1RpbWW4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBa'
+        body = b64decode(base64)
 
         # Act
         result = serializer.deserialize(body)
@@ -721,8 +699,8 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Assert
         self.assertTrue(isinstance(result, OrderWorking))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
-        self.assertEqual(OrderId('StubOrderId'), result.order_id)
-        self.assertEqual(OrderId('B123456'), result.order_id_broker)
+        self.assertEqual(OrderId('O-123456'), result.order_id)
+        self.assertEqual(OrderId('BO-123456'), result.order_id_broker)
         self.assertEqual(Label('O123456_E'), result.label)
         self.assertEqual(OrderType.STOP_MARKET, result.order_type)
         self.assertEqual(Quantity(1), result.quantity)
@@ -737,23 +715,9 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Arrange
         serializer = MsgPackEventSerializer()
 
-        # Hex bytes string from C# MsgPack.Cli
-        hex_string = ('8faa6576656e745f74797065ab6f726465725f6576656e74a673796d'
-                      '626f6cab4155445553442e4658434da86f726465725f6964ab537475'
-                      '624f726465724964a86576656e745f6964d92463333436356364622d'
-                      '626461382d346536662d623332392d326631613232393933396130af'
-                      '6576656e745f74696d657374616d70b8313937302d30312d30315430'
-                      '303a30303a30302e3030305aab6f726465725f6576656e74ad6f7264'
-                      '65725f776f726b696e67af6f726465725f69645f62726f6b6572a742'
-                      '313233343536a56c6162656ca94f3132333435365f45aa6f72646572'
-                      '5f73696465a3425559aa6f726465725f74797065ab53544f505f4d41'
-                      '524b4554a87175616e7469747901a57072696365a3312e30ad74696d'
-                      '655f696e5f666f726365a3475444ab6578706972655f74696d65b831'
-                      '3937302d30312d30315430303a30313a30302e3030305aac776f726b'
-                      '696e675f74696d65b8313937302d30312d30315430303a30303a3030'
-                      '2e3030305a')
-
-        body = bytes.fromhex(hex_string)
+        # Base64 bytes string from C# MsgPack.Cli
+        base64 = 'j6RUeXBlpUV2ZW50pUV2ZW50rE9yZGVyV29ya2luZ6dFdmVudElk2SQzZWIyZDE0Ni1mMWRlLTRmOTQtYjVlMi1jYjNiZDY1MWZjNzmuRXZlbnRUaW1lc3RhbXC4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBap09yZGVySWSoTy0xMjM0NTatT3JkZXJJZEJyb2tlcqlCTy0xMjM0NTamU3ltYm9sq0FVRFVTRC5GWENNpUxhYmVsqU8xMjM0NTZfRalPcmRlclNpZGWjQlVZqU9yZGVyVHlwZatTVE9QX01BUktFVKhRdWFudGl0eQGlUHJpY2WjMS4wq1RpbWVJbkZvcmNlo0dURKpFeHBpcmVUaW1luDE5NzAtMDEtMDFUMDA6MDE6MDAuMDAwWqtXb3JraW5nVGltZbgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFo='
+        body = b64decode(base64)
 
         # Act
         result = serializer.deserialize(body)
@@ -761,8 +725,8 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Assert
         self.assertTrue(isinstance(result, OrderWorking))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
-        self.assertEqual(OrderId('StubOrderId'), result.order_id)
-        self.assertEqual(OrderId('B123456'), result.order_id_broker)
+        self.assertEqual(OrderId('O-123456'), result.order_id)
+        self.assertEqual(OrderId('BO-123456'), result.order_id_broker)
         self.assertEqual(Label('O123456_E'), result.label)
         self.assertEqual(OrderType.STOP_MARKET, result.order_type)
         self.assertEqual(Quantity(1), result.quantity)
@@ -777,17 +741,9 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Arrange
         serializer = MsgPackEventSerializer()
 
-        # Hex bytes string from C# MsgPack.Cli
-        hex_string = ('87aa6576656e745f74797065ab6f726465725f6576656e74a673796d'
-                      '626f6cab4155445553442e4658434da86f726465725f6964ab537475'
-                      '624f726465724964a86576656e745f6964d92437333766616632382d'
-                      '386330352d346230642d396361332d373637396632313738393433af'
-                      '6576656e745f74696d657374616d70b8313937302d30312d30315430'
-                      '303a30303a30302e3030305aab6f726465725f6576656e74af6f7264'
-                      '65725f63616e63656c6c6564ae63616e63656c6c65645f74696d65b8'
-                      '313937302d30312d30315430303a30303a30302e3030305a')
-
-        body = bytes.fromhex(hex_string)
+        # Base64 bytes string from C# MsgPack.Cli
+        base64 = 'h6RUeXBlpUV2ZW50pUV2ZW50rk9yZGVyQ2FuY2VsbGVkp0V2ZW50SWTZJGZiN2VlYTBmLWRiZjMtNDJlOS1hN2JhLTkzYmI1OTQ1ZjYwY65FdmVudFRpbWVzdGFtcLgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFqnT3JkZXJJZKhPLTEyMzQ1NqZTeW1ib2yrQVVEVVNELkZYQ02tQ2FuY2VsbGVkVGltZbgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFo='
+        body = b64decode(base64)
 
         # Act
         result = serializer.deserialize(body)
@@ -795,7 +751,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Assert
         self.assertTrue(isinstance(result, OrderCancelled))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
-        self.assertEqual(OrderId('StubOrderId'), result.order_id)
+        self.assertEqual(OrderId('O-123456'), result.order_id)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.cancelled_time)
         self.assertTrue(isinstance(result.id, GUID))
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.timestamp)
@@ -804,20 +760,9 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Arrange
         serializer = MsgPackEventSerializer()
 
-        # Hex bytes string from C# MsgPack.Cli
-        hex_string = ('89aa6576656e745f74797065ab6f726465725f6576656e74a673796d'
-                      '626f6cab4155445553442e4658434da86f726465725f6964ab537475'
-                      '624f726465724964a86576656e745f6964d92437366432353535372d'
-                      '363534312d346138652d383534302d646663373534613935626164af'
-                      '6576656e745f74696d657374616d70b8313937302d30312d30315430'
-                      '303a30303a30302e3030305aab6f726465725f6576656e74b36f7264'
-                      '65725f63616e63656c5f72656a656374ad72656a65637465645f7469'
-                      '6d65b8313937302d30312d30315430303a30303a30302e3030305ab1'
-                      '72656a65637465645f726573706f6e7365b052454a4543545f524553'
-                      '504f4e53453faf72656a65637465645f726561736f6eaf4f52444552'
-                      '5f4e4f545f464f554e44')
-
-        body = bytes.fromhex(hex_string)
+        # Base64 bytes string from C# MsgPack.Cli
+        base64 = 'iaRUeXBlpUV2ZW50pUV2ZW50sU9yZGVyQ2FuY2VsUmVqZWN0p0V2ZW50SWTZJDhmOGFmN2JmLTNjMjctNGNiYi04MDcyLTgxN2IyNmMwNjE3Za5FdmVudFRpbWVzdGFtcLgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFqnT3JkZXJJZKhPLTEyMzQ1NqZTeW1ib2yrQVVEVVNELkZYQ02sUmVqZWN0ZWRUaW1luDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWrBSZWplY3RlZFJlc3BvbnNlsFJFSkVDVF9SRVNQT05TRT+uUmVqZWN0ZWRSZWFzb26vT1JERVJfTk9UX0ZPVU5E'
+        body = b64decode(base64)
 
         # Act
         result = serializer.deserialize(body)
@@ -825,7 +770,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Assert
         self.assertTrue(isinstance(result, OrderCancelReject))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
-        self.assertEqual(OrderId('StubOrderId'), result.order_id)
+        self.assertEqual(OrderId('O-123456'), result.order_id)
         self.assertEqual('REJECT_RESPONSE?', result.cancel_reject_response.value)
         self.assertEqual('ORDER_NOT_FOUND', result.cancel_reject_reason.value)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.cancel_reject_time)
@@ -836,19 +781,9 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Arrange
         serializer = MsgPackEventSerializer()
 
-        # Hex bytes string from C# MsgPack.Cli
-        hex_string = ('89aa6576656e745f74797065ab6f726465725f6576656e74a673796d'
-                      '626f6cab4155445553442e4658434da86f726465725f6964ab537475'
-                      '624f726465724964a86576656e745f6964d92430313461333662302d'
-                      '316531612d343434642d393830332d626539656361663836393865af'
-                      '6576656e745f74696d657374616d70b8313937302d30312d30315430'
-                      '303a30303a30302e3030305aab6f726465725f6576656e74ae6f7264'
-                      '65725f6d6f646966696564af6f726465725f69645f62726f6b6572a7'
-                      '42313233343536ae6d6f6469666965645f7072696365a132ad6d6f64'
-                      '69666965645f74696d65b8313937302d30312d30315430303a30303a'
-                      '30302e3030305a')
-
-        body = bytes.fromhex(hex_string)
+        # Base64 bytes string from C# MsgPack.Cli
+        base64 = 'iaRUeXBlpUV2ZW50pUV2ZW50rU9yZGVyTW9kaWZpZWSnRXZlbnRJZNkkODZlYmQ4YjgtOTYxYi00OWY1LTk5ZDAtMjZlYzZmYjQxNWE2rkV2ZW50VGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWqdPcmRlcklkqE8tMTIzNDU2rU9yZGVySWRCcm9rZXKpQk8tMTIzNDU2plN5bWJvbKtBVURVU0QuRlhDTa1Nb2RpZmllZFByaWNloTKsTW9kaWZpZWRUaW1luDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWg=='
+        body = b64decode(base64)
 
         # Act
         result = serializer.deserialize(body)
@@ -856,8 +791,8 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Assert
         self.assertTrue(isinstance(result, OrderModified))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
-        self.assertEqual(OrderId('StubOrderId'), result.order_id)
-        self.assertEqual(OrderId('B123456'), result.order_id_broker)
+        self.assertEqual(OrderId('O-123456'), result.order_id)
+        self.assertEqual(OrderId('BO-123456'), result.order_id_broker)
         self.assertEqual(Price('2'), result.modified_price)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.modified_time)
         self.assertTrue(isinstance(result.id, GUID))
@@ -867,17 +802,9 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Arrange
         serializer = MsgPackEventSerializer()
 
-        # Hex bytes string from C# MsgPack.Cli
-        hex_string = ('87aa6576656e745f74797065ab6f726465725f6576656e74a673796d'
-                      '626f6cab4155445553442e4658434da86f726465725f6964ab537475'
-                      '624f726465724964a86576656e745f6964d92431313037646466372d'
-                      '646633302d343566312d386365632d393538336334396332396261af'
-                      '6576656e745f74696d657374616d70b8313937302d30312d30315430'
-                      '303a30303a30302e3030305aab6f726465725f6576656e74ad6f7264'
-                      '65725f65787069726564ac657870697265645f74696d65b831393730'
-                      '2d30312d30315430303a30303a30302e3030305a')
-
-        body = bytes.fromhex(hex_string)
+        # Base64 bytes string from C# MsgPack.Cli
+        base64 = 'h6RUeXBlpUV2ZW50pUV2ZW50rE9yZGVyRXhwaXJlZKdFdmVudElk2SQ1NGJjYmVhOC04MjdlLTQ4MDktOTdlZS1mYWI5ZjhhYzIzMDauRXZlbnRUaW1lc3RhbXC4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBap09yZGVySWSoTy0xMjM0NTamU3ltYm9sq0FVRFVTRC5GWENNq0V4cGlyZWRUaW1luDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWg=='
+        body = b64decode(base64)
 
         # Act
         result = serializer.deserialize(body)
@@ -885,7 +812,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Assert
         self.assertTrue(isinstance(result, OrderExpired))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
-        self.assertEqual(OrderId('StubOrderId'), result.order_id)
+        self.assertEqual(OrderId('O-123456'), result.order_id)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.expired_time)
         self.assertTrue(isinstance(result.id, GUID))
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.timestamp)
@@ -894,22 +821,9 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Arrange
         serializer = MsgPackEventSerializer()
 
-        # Hex bytes string from C# MsgPack.Cli
-        hex_string = ('8daa6576656e745f74797065ab6f726465725f6576656e74a673796d'
-                      '626f6cab4155445553442e4658434da86f726465725f6964ab537475'
-                      '624f726465724964a86576656e745f6964d92439336433303533342d'
-                      '623235392d346435302d613839372d373237356433303064316331af'
-                      '6576656e745f74696d657374616d70b8313937302d30312d30315430'
-                      '303a30303a30302e3030305aab6f726465725f6576656e74b66f7264'
-                      '65725f7061727469616c6c795f66696c6c6564ac657865637574696f'
-                      '6e5f6964a745313233343536b0657865637574696f6e5f7469636b65'
-                      '74a750313233343536aa6f726465725f73696465a3425559af66696c'
-                      '6c65645f7175616e74697479d20000c350af6c65617665735f717561'
-                      '6e74697479d20000c350ad617665726167655f7072696365a3322e30'
-                      'ae657865637574696f6e5f74696d65b8313937302d30312d30315430'
-                      '303a30303a30302e3030305a')
-
-        body = bytes.fromhex(hex_string)
+        # Base64 bytes string from C# MsgPack.Cli
+        base64 = 'jaRUeXBlpUV2ZW50pUV2ZW50tE9yZGVyUGFydGlhbGx5RmlsbGVkp0V2ZW50SWTZJDYwMTAyYThmLWE2YTUtNDdlZi1hNzgyLTg1YWUyMWVhOTc1M65FdmVudFRpbWVzdGFtcLgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFqnT3JkZXJJZKhPLTEyMzQ1NqZTeW1ib2yrQVVEVVNELkZYQ02rRXhlY3V0aW9uSWSnRTEyMzQ1Nq9FeGVjdXRpb25UaWNrZXSnUDEyMzQ1NqlPcmRlclNpZGWjQlVZrkZpbGxlZFF1YW50aXR50gAAw1CuTGVhdmVzUXVhbnRpdHnSAADDUKxBdmVyYWdlUHJpY2WjMi4wrUV4ZWN1dGlvblRpbWW4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBa'
+        body = b64decode(base64)
 
         # Act
         result = serializer.deserialize(body)
@@ -917,7 +831,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Assert
         self.assertTrue(isinstance(result, OrderPartiallyFilled))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
-        self.assertEqual(OrderId('StubOrderId'), result.order_id)
+        self.assertEqual(OrderId('O-123456'), result.order_id)
         self.assertEqual(ExecutionId('E123456'), result.execution_id)
         self.assertEqual(ExecutionTicket('P123456'), result.execution_ticket)
         self.assertEqual(OrderSide.BUY, result.order_side)
@@ -932,21 +846,9 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Arrange
         serializer = MsgPackEventSerializer()
 
-        # Hex bytes string from C# MsgPack.Cli
-        hex_string = ('8caa6576656e745f74797065ab6f726465725f6576656e74a673796d'
-                      '626f6cab4155445553442e4658434da86f726465725f6964ab537475'
-                      '624f726465724964a86576656e745f6964d92464393731363331302d'
-                      '636231382d346338352d393134382d356263303462353733343935af'
-                      '6576656e745f74696d657374616d70b8313937302d30312d30315430'
-                      '303a30303a30302e3030305aab6f726465725f6576656e74ac6f7264'
-                      '65725f66696c6c6564ac657865637574696f6e5f6964a74531323334'
-                      '3536b0657865637574696f6e5f7469636b6574a750313233343536aa'
-                      '6f726465725f73696465a3425559af66696c6c65645f7175616e7469'
-                      '7479d2000186a0ad617665726167655f7072696365a3322e30ae6578'
-                      '65637574696f6e5f74696d65b8313937302d30312d30315430303a30'
-                      '303a30302e3030305a')
-
-        body = bytes.fromhex(hex_string)
+        # Base64 bytes string from C# MsgPack.Cli
+        base64 = 'jKRUeXBlpUV2ZW50pUV2ZW50q09yZGVyRmlsbGVkp0V2ZW50SWTZJDIyMDhiZDJmLTA3MDItNGY5NC04MTUzLTg2ZmI3M2E3OGQzMK5FdmVudFRpbWVzdGFtcLgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFqnT3JkZXJJZKhPLTEyMzQ1NqZTeW1ib2yrQVVEVVNELkZYQ02rRXhlY3V0aW9uSWSnRTEyMzQ1Nq9FeGVjdXRpb25UaWNrZXSnUDEyMzQ1NqlPcmRlclNpZGWjQlVZrkZpbGxlZFF1YW50aXR50gABhqCsQXZlcmFnZVByaWNlozIuMK1FeGVjdXRpb25UaW1luDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWg=='
+        body = b64decode(base64)
 
         # Act
         result = serializer.deserialize(body)
@@ -954,41 +856,13 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Assert
         self.assertTrue(isinstance(result, OrderFilled))
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
-        self.assertEqual(OrderId('StubOrderId'), result.order_id)
+        self.assertEqual(OrderId('O-123456'), result.order_id)
         self.assertEqual(ExecutionId('E123456'), result.execution_id)
         self.assertEqual(ExecutionTicket('P123456'), result.execution_ticket)
         self.assertEqual(OrderSide.BUY, result.order_side)
         self.assertEqual(Quantity(100000), result.filled_quantity)
         self.assertEqual(Price('2'), result.average_price)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.execution_time)
-        self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.timestamp)
-
-    def test_can_deserialize_account_events_from_csharp(self):
-        # Arrange
-        serializer = MsgPackEventSerializer()
-
-        # Hex bytes string from C# MsgPack.Cli
-        hex_string = ('8ea94576656e7454797065ac4163636f756e744576656e74a9416363'
-                      '6f756e744964ab4658434d2d313233343536a642726f6b6572a44658'
-                      '434dad4163636f756e744e756d626572a6313233343536a843757272'
-                      '656e6379a3555344ab4361736842616c616e6365a6313030303030ac'
-                      '436173685374617274446179a6313030303030af4361736841637469'
-                      '76697479446179a130b54d617267696e557365644c69717569646174'
-                      '696f6ea130b54d617267696e557365644d61696e74656e616e6365a1'
-                      '30ab4d617267696e526174696fa130b04d617267696e43616c6c5374'
-                      '61747573a0a74576656e744964d92431636635306561372d64326638'
-                      '2d346162352d393035302d396135346435376338303839ae4576656e'
-                      '7454696d657374616d70b8313937302d30312d30315430303a30303a'
-                      '30302e3030305a')
-
-        body = bytes.fromhex(hex_string)
-
-        # Act
-        result = serializer.deserialize(body)
-
-        # Assert
-        self.assertTrue(isinstance(result, AccountEvent))
-        self.assertTrue(isinstance(result.id, GUID))
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.timestamp)
 
 

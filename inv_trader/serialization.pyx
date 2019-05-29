@@ -47,6 +47,7 @@ from inv_trader.common.serialization cimport OrderSerializer, EventSerializer, C
 cdef str UTF8 = 'utf-8'
 cdef str NONE = 'NONE'
 cdef str TYPE = 'Type'
+cdef str ID = 'Id'
 cdef str COMMAND = 'Command'
 cdef str COMMAND_ID = 'CommandId'
 cdef str COMMAND_TIMESTAMP = 'CommandTimestamp'
@@ -62,11 +63,12 @@ cdef str CANCEL_REASON = 'CancelReason'
 cdef str ORDER = 'Order'
 cdef str TIMESTAMP = 'Timestamp'
 cdef str SYMBOL = 'Symbol'
-cdef str ORDER_ID = 'OrderId'
 cdef str ORDER_ID_BROKER = 'OrderIdBroker'
 cdef str TRADER_ID = 'TraderId'
 cdef str STRATEGY_ID = 'StrategyId'
 cdef str POSITION_ID = 'PositionId'
+cdef str ORDER_ID = 'OrderId'
+cdef str INIT_ID = 'InitId'
 cdef str LABEL = 'Label'
 cdef str SUBMITTED_TIME = 'SubmittedTime'
 cdef str ACCEPTED_TIME = 'AcceptedTime'
@@ -105,7 +107,6 @@ cdef str MARGIN_USED_MAINTENANCE = 'MarginUsedMaintenance'
 cdef str MARGIN_RATIO = 'MarginRatio'
 cdef str MARGIN_CALL_STATUS = 'MarginCallStatus'
 
-cdef str INSTRUMENT_ID = 'InstrumentId'
 cdef str BROKER_SYMBOL = 'BrokerSymbol'
 cdef str QUOTE_CURRENCY = 'QuoteCurrency'
 cdef str SECURITY_TYPE = 'SecurityType'
@@ -138,17 +139,17 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
             return msgpack.packb({})  # Null order
 
         return msgpack.packb({
-            ORDER_ID: order.id.value,
+            ID: order.id.value,
             SYMBOL: order.symbol.value,
             ORDER_SIDE: order_side_string(order.side),
             ORDER_TYPE: order_type_string(order.type),
             QUANTITY: order.quantity.value,
-            TIMESTAMP: convert_datetime_to_string(order.timestamp),
             PRICE: convert_price_to_string(order.price),
             LABEL: convert_label_to_string(order.label),
             TIME_IN_FORCE: time_in_force_string(order.time_in_force),
-            EXPIRE_TIME: convert_datetime_to_string(order.expire_time)
-            })
+            EXPIRE_TIME: convert_datetime_to_string(order.expire_time),
+            TIMESTAMP: convert_datetime_to_string(order.timestamp),
+            INIT_ID: order.init_id.value})
 
     cpdef Order deserialize(self, bytes order_bytes):
         """
@@ -165,7 +166,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
         if len(unpacked) == 0:
             return None  # Null order
 
-        return Order(order_id=OrderId(unpacked[ORDER_ID]),
+        return Order(order_id=OrderId(unpacked[ID]),
                      symbol=parse_symbol(unpacked[SYMBOL]),
                      order_side=OrderSide[unpacked[ORDER_SIDE]],
                      order_type=OrderType[unpacked[ORDER_TYPE]],
@@ -584,7 +585,7 @@ cdef class MsgPackInstrumentSerializer(InstrumentSerializer):
         :return: bytes.
         """
         return msgpack.packb({
-            INSTRUMENT_ID: instrument.id.value,
+            ID: instrument.id.value,
             SYMBOL: instrument.symbol.value,
             BROKER_SYMBOL: instrument.broker_symbol,
             QUOTE_CURRENCY: currency_string(instrument.quote_currency),
@@ -613,7 +614,7 @@ cdef class MsgPackInstrumentSerializer(InstrumentSerializer):
         cdef dict unpacked = msgpack.unpackb(instrument_bytes, raw=False)
 
         return Instrument(
-            instrument_id=InstrumentId(unpacked[INSTRUMENT_ID]),
+            instrument_id=InstrumentId(unpacked[ID]),
             symbol=parse_symbol(unpacked[SYMBOL]),
             broker_symbol=unpacked[BROKER_SYMBOL],
             quote_currency=Currency[(unpacked[QUOTE_CURRENCY])],
