@@ -37,7 +37,7 @@ cpdef str format_zulu_datetime(datetime dt):
     except TypeError as ex:
         formatted_dt = dt.isoformat().partition('+')[0]
     if not formatted_dt.__contains__('.'):
-        return formatted_dt + ':00.000Z'
+        return formatted_dt + '.000Z'
     else:
         return formatted_dt + 'Z'
 
