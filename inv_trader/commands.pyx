@@ -164,7 +164,7 @@ cdef class SubmitAtomicOrder(Command):
 
 cdef class ModifyOrder(Command):
     """
-    Represents a command to modify the given order with the given modified price.
+    Represents a command to modify an order with the given modified price.
     """
 
     def __init__(self,
@@ -193,7 +193,7 @@ cdef class ModifyOrder(Command):
 
 cdef class CancelOrder(Command):
     """
-    Represents a command to cancel the given order.
+    Represents a command to cancel an order.
     """
 
     def __init__(self,
