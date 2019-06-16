@@ -31,7 +31,6 @@ REQUIREMENTS = ['cython',
                 'pyzmq',
                 'msgpack',
                 'psutil',
-                'redis',
                 'inv_indicators',
                 'empyrical',
                 'pymc3']
