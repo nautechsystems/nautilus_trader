@@ -9,7 +9,6 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
-import re
 import msgpack
 
 from decimal import Decimal
@@ -27,9 +26,9 @@ from inv_trader.enums.currency cimport Currency, currency_string
 from inv_trader.enums.security_type cimport SecurityType, security_type_string
 from inv_trader.model.identifiers cimport TraderId, StrategyId, OrderId, ExecutionId, AccountId, InstrumentId
 from inv_trader.model.identifiers cimport GUID, Label, ExecutionTicket, AccountNumber
-from inv_trader.model.objects cimport ValidString, Quantity, Symbol, Price, Money, Instrument
+from inv_trader.model.objects cimport ValidString, Quantity, Price, Money, Instrument
 from inv_trader.model.order cimport Order, AtomicOrder
-from inv_trader.model.events cimport Event, AccountEvent
+from inv_trader.model.events cimport Event, AccountEvent, OrderEvent
 from inv_trader.model.events cimport OrderInitialized, OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
 from inv_trader.model.events cimport OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
 from inv_trader.model.events cimport OrderPartiallyFilled, OrderFilled
@@ -45,20 +44,10 @@ from inv_trader.common.serialization cimport OrderSerializer, EventSerializer, C
 
 
 cdef str UTF8 = 'utf-8'
+
 cdef str NONE = 'NONE'
 cdef str TYPE = 'Type'
 cdef str ID = 'Id'
-cdef str COMMAND = 'Command'
-cdef str COMMAND_ID = 'CommandId'
-cdef str COMMAND_TIMESTAMP = 'CommandTimestamp'
-cdef str EVENT = 'Event'
-cdef str EVENT_ID = 'EventId'
-cdef str EVENT_TIMESTAMP = 'EventTimestamp'
-cdef str COLLATERAL_INQUIRY = 'CollateralInquiry'
-cdef str SUBMIT_ORDER = 'SubmitOrder'
-cdef str SUBMIT_ATOMIC_ORDER = 'SubmitAtomicOrder'
-cdef str CANCEL_ORDER = 'CancelOrder'
-cdef str MODIFY_ORDER = 'ModifyOrder'
 cdef str CANCEL_REASON = 'CancelReason'
 cdef str ORDER = 'Order'
 cdef str TIMESTAMP = 'Timestamp'
@@ -73,7 +62,7 @@ cdef str LABEL = 'Label'
 cdef str SUBMITTED_TIME = 'SubmittedTime'
 cdef str ACCEPTED_TIME = 'AcceptedTime'
 cdef str REJECTED_TIME = 'RejectedTime'
-cdef str REJECTED_RESPONSE = 'RejectedResponse'
+cdef str REJECTED_RESPONSE_TO = 'RejectedResponseTo'
 cdef str REJECTED_REASON = 'RejectedReason'
 cdef str WORKING_TIME = 'WorkingTime'
 cdef str CANCELLED_TIME = 'CancelledTime'
@@ -198,23 +187,20 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         :raises: ValueError: If the command cannot be serialized.
         """
         cdef dict package = {
-            TYPE: COMMAND,
-            COMMAND_ID: command.id.value,
-            COMMAND_TIMESTAMP: convert_datetime_to_string(command.timestamp)
+            TYPE: command.__class__.__name__,
+            ID: command.id.value,
+            TIMESTAMP: convert_datetime_to_string(command.timestamp)
         }
 
         if isinstance(command, CollateralInquiry):
-            package[COMMAND] = COLLATERAL_INQUIRY
             return msgpack.packb(package)
         if isinstance(command, SubmitOrder):
-            package[COMMAND] = SUBMIT_ORDER
             package[TRADER_ID] = command.trader_id.value
             package[STRATEGY_ID] = command.strategy_id.value
             package[POSITION_ID] = command.position_id.value
             package[ORDER] = self.order_serializer.serialize(command.order)
             return msgpack.packb(package)
         if isinstance(command, SubmitAtomicOrder):
-            package[COMMAND] = SUBMIT_ATOMIC_ORDER
             package[TRADER_ID] = command.trader_id.value
             package[STRATEGY_ID] = command.strategy_id.value
             package[POSITION_ID] = command.position_id.value
@@ -223,14 +209,12 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
             package[TAKE_PROFIT] = self.order_serializer.serialize(command.atomic_order.take_profit)
             return msgpack.packb(package)
         if isinstance(command, ModifyOrder):
-            package[COMMAND] = MODIFY_ORDER
             package[TRADER_ID] = command.trader_id.value
             package[STRATEGY_ID] = command.strategy_id.value
             package[ORDER_ID] = command.order_id.value
             package[MODIFIED_PRICE] = str(command.modified_price)
             return msgpack.packb(package)
         if isinstance(command, CancelOrder):
-            package[COMMAND] = CANCEL_ORDER
             package[TRADER_ID] = command.trader_id.value
             package[STRATEGY_ID] = command.strategy_id.value
             package[ORDER_ID] = command.order_id.value
@@ -253,10 +237,6 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         cdef dict unpacked_raw = msgpack.unpackb(command_bytes)
         cdef dict unpacked = {}
 
-        cdef str message_type = unpacked_raw[b'Type'].decode(UTF8)
-        if message_type != COMMAND:
-            raise ValueError("Cannot deserialize command (the message is not a type of command).")
-
         # Manually unpack and decode
         for k, v in unpacked_raw.items():
             if k not in (b'Order', b'Entry', b'StopLoss', b'TakeProfit'):
@@ -267,15 +247,15 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
             else:
                 unpacked[k.decode(UTF8)] = v
 
-        cdef str command = unpacked[COMMAND]
-        cdef GUID command_id = GUID(UUID(unpacked[COMMAND_ID]))
-        cdef datetime command_timestamp = convert_string_to_datetime(unpacked[COMMAND_TIMESTAMP])
+        cdef str command_type = unpacked[TYPE]
+        cdef GUID command_id = GUID(UUID(unpacked[ID]))
+        cdef datetime command_timestamp = convert_string_to_datetime(unpacked[TIMESTAMP])
 
-        if command == COLLATERAL_INQUIRY:
+        if command_type == CollateralInquiry.__name__:
             return CollateralInquiry(
                 command_id,
                 command_timestamp)
-        if command == SUBMIT_ORDER:
+        if command_type == SubmitOrder.__name__:
             return SubmitOrder(
                 TraderId(unpacked[TRADER_ID]),
                 StrategyId(unpacked[STRATEGY_ID]),
@@ -283,7 +263,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
                 self.order_serializer.deserialize(unpacked[ORDER]),
                 command_id,
                 command_timestamp)
-        if command == SUBMIT_ATOMIC_ORDER:
+        if command_type == SubmitAtomicOrder.__name__:
             return SubmitAtomicOrder(
                 TraderId(unpacked[TRADER_ID]),
                 StrategyId(unpacked[STRATEGY_ID]),
@@ -293,7 +273,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
                             self.order_serializer.deserialize(unpacked[TAKE_PROFIT])),
                 command_id,
                 command_timestamp)
-        if command == MODIFY_ORDER:
+        if command_type == ModifyOrder.__name__:
             return ModifyOrder(
                 TraderId(unpacked[TRADER_ID]),
                 StrategyId(unpacked[STRATEGY_ID]),
@@ -301,7 +281,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
                 Price(unpacked[MODIFIED_PRICE]),
                 command_id,
                 command_timestamp)
-        if command == CANCEL_ORDER:
+        if command_type == CancelOrder.__name__:
             return CancelOrder(
                 TraderId(unpacked[TRADER_ID]),
                 StrategyId(unpacked[STRATEGY_ID]),
@@ -327,14 +307,13 @@ cdef class MsgPackEventSerializer(EventSerializer):
         :raises: ValueError: If the event cannot be serialized.
         """
         cdef dict package = {
-            TYPE: EVENT,
-            EVENT: event.__class__.__name__,
-            EVENT_ID: event.id.value,
-            EVENT_TIMESTAMP: convert_datetime_to_string(event.timestamp)
+            TYPE: event.__class__.__name__,
+            ID: event.id.value,
+            TIMESTAMP: convert_datetime_to_string(event.timestamp)
         }
 
         if isinstance(event, AccountEvent):
-            package[ACCOUNT_ID] = event.order_id.value
+            package[ACCOUNT_ID] = event.account_id.value
             package[BROKER] = broker_string(event.broker)
             package[ACCOUNT_NUMBER] = event.account_number.value
             package[CURRENCY] = currency_string(event.currency)
@@ -346,8 +325,12 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[MARGIN_RATIO] = str(event.margin_ratio)
             package[MARGIN_CALL_STATUS] = event.margin_call_status.value
             return msgpack.packb(package)
-        if isinstance(event, OrderInitialized):
+
+        # Add order id to order event
+        if isinstance(event, OrderEvent):
             package[ORDER_ID] = event.order_id.value
+
+        if isinstance(event, OrderInitialized):
             package[SYMBOL] = event.symbol.value
             package[LABEL] = event.label.value
             package[ORDER_SIDE] = order_side_string(event.order_side)
@@ -358,20 +341,16 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[EXPIRE_TIME] = convert_datetime_to_string(event.expire_time)
             return msgpack.packb(package)
         if isinstance(event, OrderSubmitted):
-            package[ORDER_ID] =  event.order_id.value
             package[SUBMITTED_TIME] = convert_datetime_to_string(event.submitted_time)
             return msgpack.packb(package)
         if isinstance(event, OrderAccepted):
-            package[ORDER_ID] =  event.order_id.value
             package[ACCEPTED_TIME] = convert_datetime_to_string(event.accepted_time)
             return msgpack.packb(package)
         if isinstance(event, OrderRejected):
-            package[ORDER_ID] =  event.order_id.value
             package[REJECTED_TIME] = convert_datetime_to_string(event.rejected_time)
             package[REJECTED_REASON] =  str(event.rejected_reason)
             return msgpack.packb(package)
         if isinstance(event, OrderWorking):
-            package[ORDER_ID] = event.order_id.value
             package[ORDER_ID_BROKER] = event.order_id_broker.value
             package[SYMBOL] = event.symbol.value
             package[LABEL] = event.label.value
@@ -384,27 +363,22 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[WORKING_TIME] = convert_datetime_to_string(event.working_time)
             return msgpack.packb(package)
         if isinstance(event, OrderCancelReject):
-            package[ORDER_ID] = event.order_id.value
-            package[REJECTED_TIME] = convert_datetime_to_string(event.cancel_reject_time)
-            package[REJECTED_RESPONSE] = event.cancel_reject_response.value
-            package[REJECTED_REASON] = event.cancel_reject_reason.value
+            package[REJECTED_TIME] = convert_datetime_to_string(event.rejected_time)
+            package[REJECTED_RESPONSE_TO] = event.rejected_response_to.value
+            package[REJECTED_REASON] = event.rejected_reason.value
             return msgpack.packb(package)
         if isinstance(event, OrderCancelled):
-            package[ORDER_ID] = event.order_id.value
             package[CANCELLED_TIME] = convert_datetime_to_string(event.cancelled_time)
             return msgpack.packb(package)
         if isinstance(event, OrderModified):
-            package[ORDER_ID] = event.order_id.value
             package[ORDER_ID_BROKER] = event.order_id_broker.value
             package[MODIFIED_TIME] = convert_datetime_to_string(event.modified_time)
             package[MODIFIED_PRICE] = str(event.modified_price)
             return msgpack.packb(package)
         if isinstance(event, OrderExpired):
-            package[ORDER_ID] = event.order_id.value
             package[EXPIRED_TIME] = convert_datetime_to_string(event.expired_time)
             return msgpack.packb(package)
         if isinstance(event, OrderPartiallyFilled):
-            package[ORDER_ID] = event.order_id.value
             package[EXECUTION_ID] = event.execution_id.value
             package[EXECUTION_TICKET] = event.execution_ticket.value
             package[SYMBOL] = event.symbol.value
@@ -415,7 +389,6 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[EXECUTION_TIME] = convert_datetime_to_string(event.execution_time)
             return msgpack.packb(package)
         if isinstance(event, OrderFilled):
-            package[ORDER_ID] = event.order_id.value
             package[EXECUTION_ID] = event.execution_id.value
             package[EXECUTION_TICKET] = event.execution_ticket.value
             package[SYMBOL] = event.symbol.value
@@ -440,13 +413,9 @@ cdef class MsgPackEventSerializer(EventSerializer):
 
         cdef dict unpacked = msgpack.unpackb(event_bytes, raw=False)
 
-        cdef str message_type = unpacked[TYPE]
-        if message_type != EVENT:
-            raise ValueError("Cannot deserialize event (the message is not a type of event).")
-
-        cdef str event_type = unpacked[EVENT]
-        cdef GUID event_id = GUID(UUID(unpacked[EVENT_ID]))
-        cdef datetime event_timestamp = convert_string_to_datetime(unpacked[EVENT_TIMESTAMP])
+        cdef str event_type = unpacked[TYPE]
+        cdef GUID event_id = GUID(UUID(unpacked[ID]))
+        cdef datetime event_timestamp = convert_string_to_datetime(unpacked[TIMESTAMP])
 
         if event_type == AccountEvent.__name__:
             return AccountEvent(
@@ -508,7 +477,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             return OrderCancelReject(
                 OrderId(unpacked[ORDER_ID]),
                 convert_string_to_datetime(unpacked[REJECTED_TIME]),
-                ValidString(unpacked[REJECTED_RESPONSE]),
+                ValidString(unpacked[REJECTED_RESPONSE_TO]),
                 ValidString(unpacked[REJECTED_REASON]),
                 event_id,
                 event_timestamp)

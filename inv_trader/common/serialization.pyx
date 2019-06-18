@@ -14,10 +14,8 @@ import iso8601
 from cpython.datetime cimport datetime
 
 # Do not reorder imports (enums need to be in below order)
-from inv_trader.model.enums import Venue, SecurityType
+from inv_trader.model.enums import Venue
 from inv_trader.enums.venue cimport Venue
-from inv_trader.enums.security_type cimport SecurityType
-from inv_trader.enums.currency cimport Currency
 from inv_trader.model.identifiers cimport GUID, Label
 from inv_trader.model.objects cimport Symbol, Price, Instrument
 from inv_trader.model.order cimport Order
@@ -26,19 +24,9 @@ from inv_trader.commands cimport Command
 
 
 cdef str UTF8 = 'utf-8'
+
 cdef str NONE = 'NONE'
 cdef str TYPE = 'Type'
-cdef str COMMAND = 'Command'
-cdef str COMMAND_ID = 'CommandId'
-cdef str COMMAND_TIMESTAMP = 'CommandTimestamp'
-cdef str EVENT = 'Event'
-cdef str EVENT_ID = 'EventId'
-cdef str EVENT_TIMESTAMP = 'EventTimestamp'
-cdef str COLLATERAL_INQUIRY = 'CollateralInquiry'
-cdef str SUBMIT_ORDER = 'SubmitOrder'
-cdef str SUBMIT_ATOMIC_ORDER = 'SubmitAtomicOrder'
-cdef str CANCEL_ORDER = 'CancelOrder'
-cdef str MODIFY_ORDER = 'ModifyOrder'
 cdef str CANCEL_REASON = 'CancelReason'
 cdef str ORDER = 'Order'
 cdef str TIMESTAMP = 'Timestamp'
