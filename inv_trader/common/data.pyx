@@ -171,7 +171,7 @@ cdef class DataClient:
         :param from_datetime: The datetime from which the historical bars should be downloaded.
         :param handler: The handler to pass the bars to.
         """
-        # Raise exception if not overridden in implementation.
+        # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
     cpdef void subscribe_ticks(self, Symbol symbol, handler: Callable):

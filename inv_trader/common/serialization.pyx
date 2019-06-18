@@ -230,7 +230,59 @@ cdef class EventSerializer:
         :param event_bytes: The bytes to deserialize.
         :return: Event.
         """
-        # Raise exception if not overridden in implementation.
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
+
+cdef class RequestSerializer:
+    """
+    The abstract base class for all request serializers.
+    """
+
+    cpdef bytes serialize(self, object request):
+        """
+        Serialize the given request to bytes.
+
+        :param request: The event to serialize.
+        :return: bytes.
+        """
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
+    cpdef Event deserialize(self, bytes request_bytes):
+        """
+        Deserialize the given bytes to a request.
+
+        :param request_bytes: The bytes to deserialize.
+        :return: Request.
+        """
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
+
+cdef class ResponseSerializer:
+    """
+    The abstract base class for all response serializers.
+    """
+
+    cpdef bytes serialize(self, object response):
+        """
+        Serialize the given response to bytes.
+
+        :param response: The event to serialize.
+        :return: bytes.
+        """
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
+    cpdef Event deserialize(self, bytes response_bytes):
+        """
+        Deserialize the given bytes to a response.
+
+        :param response_bytes: The bytes to deserialize.
+        :return: Response.
+        """
+        # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
 

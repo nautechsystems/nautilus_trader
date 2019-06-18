@@ -25,7 +25,7 @@ cdef class GuidFactory:
 
         :return: GUID.
         """
-        # Raise exception if not overridden in implementation.
+        # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
 
