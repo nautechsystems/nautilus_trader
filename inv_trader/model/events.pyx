@@ -365,27 +365,27 @@ cdef class OrderCancelReject(OrderEvent):
 
     def __init__(self,
                  OrderId order_id,
-                 datetime cancel_reject_time,
-                 ValidString cancel_response,
-                 ValidString cancel_reject_reason,
+                 datetime rejected_time,
+                 ValidString rejected_response_to,
+                 ValidString rejected_reason,
                  GUID event_id,
                  datetime event_timestamp):
         """
         Initializes a new instance of the OrderCancelReject class.
 
         :param order_id: The events order identifier.
-        :param cancel_reject_time: The events order cancel reject time.
-        :param cancel_response: The events order cancel reject response.
-        :param cancel_reject_reason: The events order cancel reject reason.
+        :param rejected_time: The events order cancel reject time.
+        :param rejected_response_to: The events order cancel reject response.
+        :param rejected_reason: The events order cancel reject reason.
         :param event_id: The events identifier.
         :param event_timestamp: The events timestamp.
         """
         super().__init__(order_id,
                          event_id,
                          event_timestamp)
-        self.cancel_reject_time = cancel_reject_time
-        self.cancel_reject_response = cancel_response
-        self.cancel_reject_reason = cancel_reject_reason
+        self.rejected_time = rejected_time
+        self.rejected_response_to = rejected_response_to
+        self.rejected_reason = rejected_reason
 
     def __str__(self) -> str:
         """
@@ -393,8 +393,8 @@ cdef class OrderCancelReject(OrderEvent):
         """
         return (f"{self.__class__.__name__}"
                 f"({self.order_id.value}, "
-                f"from={self.cancel_reject_response}, "
-                f"reason={self.cancel_reject_reason})")
+                f"response_to={self.rejected_response_to}, "
+                f"reason={self.rejected_reason})")
 
 
 cdef class OrderCancelled(OrderEvent):

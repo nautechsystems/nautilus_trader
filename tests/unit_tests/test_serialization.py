@@ -236,6 +236,21 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             clock=TestClock())
         print('\n')
 
+    def test_can_serialize_and_deserialize_collateral_inquiry_command(self):
+        # Arrange
+        serializer = MsgPackCommandSerializer()
+
+        command = CollateralInquiry(GUID(uuid.uuid4()), UNIX_EPOCH)
+
+        # Act
+        serialized = serializer.serialize(command)
+        deserialized = serializer.deserialize(serialized)
+
+        # Assert
+        self.assertEqual(deserialized, command)
+        print(b64encode(serialized))
+        print(command)
+
     def test_can_serialize_and_deserialize_submit_order_commands(self):
         # Arrange
         serializer = MsgPackCommandSerializer()
@@ -360,21 +375,6 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(command, deserialized)
-        print(b64encode(serialized))
-        print(command)
-
-    def test_can_serialize_and_deserialize_collateral_inquiry_command(self):
-        # Arrange
-        serializer = MsgPackCommandSerializer()
-
-        command = CollateralInquiry(GUID(uuid.uuid4()), UNIX_EPOCH)
-
-        # Act
-        serialized = serializer.serialize(command)
-        deserialized = serializer.deserialize(serialized)
-
-        # Assert
-        self.assertEqual(deserialized, command)
         print(b64encode(serialized))
         print(command)
 
@@ -609,7 +609,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         serializer = MsgPackEventSerializer()
 
         # Base64 bytes string from C# MsgPack.Cli
-        base64 = 'j6RUeXBlpUV2ZW50pUV2ZW50rEFjY291bnRFdmVudKdFdmVudElk2SRmMTdkYWZjMC0yZWRjLTQzZTQtOWFmZS1hOTk2M2YxZmFkYjmuRXZlbnRUaW1lc3RhbXC4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBaqUFjY291bnRJZKtGWENNLTEyMzQ1NqZCcm9rZXKkRlhDTa1BY2NvdW50TnVtYmVypjEyMzQ1NqhDdXJyZW5jeaNVU0SrQ2FzaEJhbGFuY2WmMTAwMDAwrENhc2hTdGFydERheaYxMDAwMDCvQ2FzaEFjdGl2aXR5RGF5oTC1TWFyZ2luVXNlZExpcXVpZGF0aW9uoTC1TWFyZ2luVXNlZE1haW50ZW5hbmNloTCrTWFyZ2luUmF0aW+hMLBNYXJnaW5DYWxsU3RhdHVzoA=='
+        base64 = 'jqRUeXBlrEFjY291bnRFdmVudKJJZNkkOTk1NTdjMTMtMDZjYS00OTkyLTkyMzUtZWIxOThkMjYwNjk5qVRpbWVzdGFtcLgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFqpQWNjb3VudElkq0ZYQ00tMTIzNDU2pkJyb2tlcqRGWENNrUFjY291bnROdW1iZXKmMTIzNDU2qEN1cnJlbmN5o1VTRKtDYXNoQmFsYW5jZaYxMDAwMDCsQ2FzaFN0YXJ0RGF5pjEwMDAwMK9DYXNoQWN0aXZpdHlEYXmhMLVNYXJnaW5Vc2VkTGlxdWlkYXRpb26hMLVNYXJnaW5Vc2VkTWFpbnRlbmFuY2WhMKtNYXJnaW5SYXRpb6EwsE1hcmdpbkNhbGxTdGF0dXOg'
         body = b64decode(base64)
 
         # Act
@@ -625,7 +625,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         serializer = MsgPackEventSerializer()
 
         # Base64 bytes string from C# MsgPack.Cli
-        base64 = 'hqRUeXBlpUV2ZW50pUV2ZW50rk9yZGVyU3VibWl0dGVkp0V2ZW50SWTZJDE2YTM3OTIxLTYzMWUtNDM0My04Yzc1LTc3YjQ2YTIyNDg2N65FdmVudFRpbWVzdGFtcLgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFqnT3JkZXJJZKhPLTEyMzQ1Nq1TdWJtaXR0ZWRUaW1luDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWg=='
+        base64 = 'haRUeXBlrk9yZGVyU3VibWl0dGVkoklk2SRiYjlkNTU4My1lMDk0LTQyMTYtOGFlOC1jMTM0OWU4ZWQyMzmpVGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWqdPcmRlcklkqE8tMTIzNDU2rVN1Ym1pdHRlZFRpbWW4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBa'
         body = b64decode(base64)
 
         # Act
@@ -643,7 +643,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         serializer = MsgPackEventSerializer()
 
         # Base64 bytes string from C# MsgPack.Cli
-        base64 = 'hqRUeXBlpUV2ZW50pUV2ZW50rU9yZGVyQWNjZXB0ZWSnRXZlbnRJZNkkNDk0OGQ2ZjMtZmRiOC00NzMxLWFkMzItYzhkMzYxOGY1MmYxrkV2ZW50VGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWqdPcmRlcklkqE8tMTIzNDU2rEFjY2VwdGVkVGltZbgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFo='
+        base64 = 'haRUeXBlrU9yZGVyQWNjZXB0ZWSiSWTZJGQ5YTBkMTc4LTY4Y2EtNGFhNS1iY2YyLTE1ODIzZjM1OWFhZqlUaW1lc3RhbXC4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBap09yZGVySWSoTy0xMjM0NTasQWNjZXB0ZWRUaW1luDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWg=='
         body = b64decode(base64)
 
         # Act
@@ -661,7 +661,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         serializer = MsgPackEventSerializer()
 
         # Base64 bytes string from C# MsgPack.Cli
-        base64 = 'h6RUeXBlpUV2ZW50pUV2ZW50rU9yZGVyUmVqZWN0ZWSnRXZlbnRJZNkkYzQzM2ZlOTMtZGIxMS00MTY5LWJlN2EtOWM1ZDdhM2Q3YjgzrkV2ZW50VGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWqdPcmRlcklkqE8tMTIzNDU2rFJlamVjdGVkVGltZbgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFquUmVqZWN0ZWRSZWFzb26tSU5WQUxJRF9PUkRFUg=='
+        base64 = 'hqRUeXBlrU9yZGVyUmVqZWN0ZWSiSWTZJDJiOWM5MWRhLWExOWYtNDkxMi1hNjllLWNhMWM3ZTRmOWU0ZKlUaW1lc3RhbXC4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBap09yZGVySWSoTy0xMjM0NTasUmVqZWN0ZWRUaW1luDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWq5SZWplY3RlZFJlYXNvbq1JTlZBTElEX09SREVS'
         body = b64decode(base64)
 
         # Act
@@ -680,7 +680,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         serializer = MsgPackEventSerializer()
 
         # Base64 bytes string from C# MsgPack.Cli
-        base64 = 'j6RUeXBlpUV2ZW50pUV2ZW50rE9yZGVyV29ya2luZ6dFdmVudElk2SQ4ZTE0ZWEyYS03N2Q4LTQ5MzAtYWE1NC0yNjdmOTk2N2FhMGSuRXZlbnRUaW1lc3RhbXC4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBap09yZGVySWSoTy0xMjM0NTatT3JkZXJJZEJyb2tlcqlCTy0xMjM0NTamU3ltYm9sq0FVRFVTRC5GWENNpUxhYmVsqU8xMjM0NTZfRalPcmRlclNpZGWjQlVZqU9yZGVyVHlwZatTVE9QX01BUktFVKhRdWFudGl0eQGlUHJpY2WjMS4wq1RpbWVJbkZvcmNlo0RBWapFeHBpcmVUaW1lpE5PTkWrV29ya2luZ1RpbWW4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBa'
+        base64 = 'jqRUeXBlrE9yZGVyV29ya2luZ6JJZNkkNThhOTMwNzMtNTNiZi00MTI5LTk3N2YtODdkNThhZTI1NTNmqVRpbWVzdGFtcLgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFqnT3JkZXJJZKhPLTEyMzQ1Nq1PcmRlcklkQnJva2VyqUJPLTEyMzQ1NqZTeW1ib2yrQVVEVVNELkZYQ02lTGFiZWypTzEyMzQ1Nl9FqU9yZGVyU2lkZaNCVVmpT3JkZXJUeXBlq1NUT1BfTUFSS0VUqFF1YW50aXR5AaVQcmljZaMxLjCrVGltZUluRm9yY2WjREFZqkV4cGlyZVRpbWWkTk9ORatXb3JraW5nVGltZbgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFo='
         body = b64decode(base64)
 
         # Act
@@ -706,7 +706,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         serializer = MsgPackEventSerializer()
 
         # Base64 bytes string from C# MsgPack.Cli
-        base64 = 'j6RUeXBlpUV2ZW50pUV2ZW50rE9yZGVyV29ya2luZ6dFdmVudElk2SQzZWIyZDE0Ni1mMWRlLTRmOTQtYjVlMi1jYjNiZDY1MWZjNzmuRXZlbnRUaW1lc3RhbXC4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBap09yZGVySWSoTy0xMjM0NTatT3JkZXJJZEJyb2tlcqlCTy0xMjM0NTamU3ltYm9sq0FVRFVTRC5GWENNpUxhYmVsqU8xMjM0NTZfRalPcmRlclNpZGWjQlVZqU9yZGVyVHlwZatTVE9QX01BUktFVKhRdWFudGl0eQGlUHJpY2WjMS4wq1RpbWVJbkZvcmNlo0dURKpFeHBpcmVUaW1luDE5NzAtMDEtMDFUMDA6MDE6MDAuMDAwWqtXb3JraW5nVGltZbgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFo='
+        base64 = 'jqRUeXBlrE9yZGVyV29ya2luZ6JJZNkkMDNkNjdhY2MtY2ZkMC00MThlLWJjMjItZWYxNDZhYWVhZjdmqVRpbWVzdGFtcLgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFqnT3JkZXJJZKhPLTEyMzQ1Nq1PcmRlcklkQnJva2VyqUJPLTEyMzQ1NqZTeW1ib2yrQVVEVVNELkZYQ02lTGFiZWypTzEyMzQ1Nl9FqU9yZGVyU2lkZaNCVVmpT3JkZXJUeXBlq1NUT1BfTUFSS0VUqFF1YW50aXR5AaVQcmljZaMxLjCrVGltZUluRm9yY2WjR1REqkV4cGlyZVRpbWW4MTk3MC0wMS0wMVQwMDowMTowMC4wMDBaq1dvcmtpbmdUaW1luDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWg=='
         body = b64decode(base64)
 
         # Act
@@ -718,6 +718,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertEqual(OrderId('BO-123456'), result.order_id_broker)
         self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
         self.assertEqual(Label('O123456_E'), result.label)
+        self.assertEqual(OrderSide.BUY, result.order_side)
         self.assertEqual(OrderType.STOP_MARKET, result.order_type)
         self.assertEqual(Quantity(1), result.quantity)
         self.assertEqual(Price('1'), result.price)
@@ -732,7 +733,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         serializer = MsgPackEventSerializer()
 
         # Base64 bytes string from C# MsgPack.Cli
-        base64 = 'hqRUeXBlpUV2ZW50pUV2ZW50rk9yZGVyQ2FuY2VsbGVkp0V2ZW50SWTZJGY5YjZkMjI0LWJkM2MtNDFhYS05ZTg4LTQxMDg0MGNlZTY3Ma5FdmVudFRpbWVzdGFtcLgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFqnT3JkZXJJZKhPLTEyMzQ1Nq1DYW5jZWxsZWRUaW1luDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWg=='
+        base64 = 'haRUeXBlrk9yZGVyQ2FuY2VsbGVkoklk2SRhMjI2YmYxZC1jN2M5LTQyNGYtOWEwMi03MjllMDI3Y2M3ZWapVGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWqdPcmRlcklkqE8tMTIzNDU2rUNhbmNlbGxlZFRpbWW4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBa'
         body = b64decode(base64)
 
         # Act
@@ -750,7 +751,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         serializer = MsgPackEventSerializer()
 
         # Base64 bytes string from C# MsgPack.Cli
-        base64 = 'iKRUeXBlpUV2ZW50pUV2ZW50sU9yZGVyQ2FuY2VsUmVqZWN0p0V2ZW50SWTZJDY2MzBmMTAwLTMwYzktNGM0OC1iNjNhLTY0ODIxMmFiODAwOK5FdmVudFRpbWVzdGFtcLgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFqnT3JkZXJJZKhPLTEyMzQ1NqxSZWplY3RlZFRpbWW4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBasFJlamVjdGVkUmVzcG9uc2WwUkVKRUNUX1JFU1BPTlNFP65SZWplY3RlZFJlYXNvbq9PUkRFUl9OT1RfRk9VTkQ='
+        base64 = 'h6RUeXBlsU9yZGVyQ2FuY2VsUmVqZWN0oklk2SQyNWZkM2IzZC1iOGFkLTQ4MzctOGI5Yi04MDMwOGY4ZjFkMTGpVGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWqdPcmRlcklkqE8tMTIzNDU2rFJlamVjdGVkVGltZbgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFqyUmVqZWN0ZWRSZXNwb25zZVRvsFJFSkVDVF9SRVNQT05TRT+uUmVqZWN0ZWRSZWFzb26vT1JERVJfTk9UX0ZPVU5E'
         body = b64decode(base64)
 
         # Act
@@ -759,9 +760,9 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Assert
         self.assertTrue(isinstance(result, OrderCancelReject))
         self.assertEqual(OrderId('O-123456'), result.order_id)
-        self.assertEqual('REJECT_RESPONSE?', result.cancel_reject_response.value)
-        self.assertEqual('ORDER_NOT_FOUND', result.cancel_reject_reason.value)
-        self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.cancel_reject_time)
+        self.assertEqual('REJECT_RESPONSE?', result.rejected_response_to.value)
+        self.assertEqual('ORDER_NOT_FOUND', result.rejected_reason.value)
+        self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.rejected_time)
         self.assertTrue(isinstance(result.id, GUID))
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.timestamp)
 
@@ -770,7 +771,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         serializer = MsgPackEventSerializer()
 
         # Base64 bytes string from C# MsgPack.Cli
-        base64 = 'iKRUeXBlpUV2ZW50pUV2ZW50rU9yZGVyTW9kaWZpZWSnRXZlbnRJZNkkNjA3ZmI4YzMtMTU0ZS00MDA4LTljZDAtMzA5MThjYjBjNDgwrkV2ZW50VGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWqdPcmRlcklkqE8tMTIzNDU2rU9yZGVySWRCcm9rZXKpQk8tMTIzNDU2rU1vZGlmaWVkUHJpY2WhMqxNb2RpZmllZFRpbWW4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBa'
+        base64 = 'h6RUeXBlrU9yZGVyTW9kaWZpZWSiSWTZJDQ4Njc3MzYyLTYyZmItNDVkMS1iOGI5LWYwM2JmYTZjYzEwMalUaW1lc3RhbXC4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBap09yZGVySWSoTy0xMjM0NTatT3JkZXJJZEJyb2tlcqlCTy0xMjM0NTatTW9kaWZpZWRQcmljZaEyrE1vZGlmaWVkVGltZbgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFo='
         body = b64decode(base64)
 
         # Act
@@ -790,7 +791,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         serializer = MsgPackEventSerializer()
 
         # Base64 bytes string from C# MsgPack.Cli
-        base64 = 'hqRUeXBlpUV2ZW50pUV2ZW50rE9yZGVyRXhwaXJlZKdFdmVudElk2SQwYjMwZGJjNC1mYjYxLTQ3MTMtYjJiOS0xYmY5ZWJmY2M2YTOuRXZlbnRUaW1lc3RhbXC4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBap09yZGVySWSoTy0xMjM0NTarRXhwaXJlZFRpbWW4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBa'
+        base64 = 'haRUeXBlrE9yZGVyRXhwaXJlZKJJZNkkY2Q1YjE0NjMtOWUyZS00N2E2LWE4NzQtYmI5Mjc5YzdhNGQyqVRpbWVzdGFtcLgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFqnT3JkZXJJZKhPLTEyMzQ1NqtFeHBpcmVkVGltZbgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFo='
         body = b64decode(base64)
 
         # Act
@@ -808,7 +809,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         serializer = MsgPackEventSerializer()
 
         # Base64 bytes string from C# MsgPack.Cli
-        base64 = 'jaRUeXBlpUV2ZW50pUV2ZW50tE9yZGVyUGFydGlhbGx5RmlsbGVkp0V2ZW50SWTZJDYwMTAyYThmLWE2YTUtNDdlZi1hNzgyLTg1YWUyMWVhOTc1M65FdmVudFRpbWVzdGFtcLgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFqnT3JkZXJJZKhPLTEyMzQ1NqZTeW1ib2yrQVVEVVNELkZYQ02rRXhlY3V0aW9uSWSnRTEyMzQ1Nq9FeGVjdXRpb25UaWNrZXSnUDEyMzQ1NqlPcmRlclNpZGWjQlVZrkZpbGxlZFF1YW50aXR50gAAw1CuTGVhdmVzUXVhbnRpdHnSAADDUKxBdmVyYWdlUHJpY2WjMi4wrUV4ZWN1dGlvblRpbWW4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBa'
+        base64 = 'jKRUeXBltE9yZGVyUGFydGlhbGx5RmlsbGVkoklk2SQ3NzgzYTI2MC1mZjI1LTQ1ODItYTVlZC02YjYxMTYwZGFmYjCpVGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWqdPcmRlcklkqE8tMTIzNDU2q0V4ZWN1dGlvbklkp0UxMjM0NTavRXhlY3V0aW9uVGlja2V0p1AxMjM0NTamU3ltYm9sq0FVRFVTRC5GWENNqU9yZGVyU2lkZaNCVVmuRmlsbGVkUXVhbnRpdHnSAADDUK5MZWF2ZXNRdWFudGl0edIAAMNQrEF2ZXJhZ2VQcmljZaMyLjCtRXhlY3V0aW9uVGltZbgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFo='
         body = b64decode(base64)
 
         # Act
@@ -833,7 +834,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         serializer = MsgPackEventSerializer()
 
         # Base64 bytes string from C# MsgPack.Cli
-        base64 = 'jKRUeXBlpUV2ZW50pUV2ZW50q09yZGVyRmlsbGVkp0V2ZW50SWTZJDIyMDhiZDJmLTA3MDItNGY5NC04MTUzLTg2ZmI3M2E3OGQzMK5FdmVudFRpbWVzdGFtcLgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFqnT3JkZXJJZKhPLTEyMzQ1NqZTeW1ib2yrQVVEVVNELkZYQ02rRXhlY3V0aW9uSWSnRTEyMzQ1Nq9FeGVjdXRpb25UaWNrZXSnUDEyMzQ1NqlPcmRlclNpZGWjQlVZrkZpbGxlZFF1YW50aXR50gABhqCsQXZlcmFnZVByaWNlozIuMK1FeGVjdXRpb25UaW1luDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWg=='
+        base64 = 'i6RUeXBlq09yZGVyRmlsbGVkoklk2SQ2ZjQxYjYxOS1kYWIzLTQ0M2UtODg2MS1mODVjMmNiODdjMjWpVGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWqdPcmRlcklkqE8tMTIzNDU2q0V4ZWN1dGlvbklkp0UxMjM0NTavRXhlY3V0aW9uVGlja2V0p1AxMjM0NTamU3ltYm9sq0FVRFVTRC5GWENNqU9yZGVyU2lkZaNCVVmuRmlsbGVkUXVhbnRpdHnSAAGGoKxBdmVyYWdlUHJpY2WjMi4wrUV4ZWN1dGlvblRpbWW4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBa'
         body = b64decode(base64)
 
         # Act

@@ -70,7 +70,7 @@ cdef class OrderInitialized(OrderEvent):
 
 cdef class OrderSubmitted(OrderEvent):
     """
-    Represents an event where an order has been submitted to the execution system.
+    Represents an event where an order has been submitted by the execution system.
     """
     cdef readonly datetime submitted_time
 
@@ -110,9 +110,9 @@ cdef class OrderCancelReject(OrderEvent):
     """
     Represents an event where an order cancel request has been rejected by the broker.
     """
-    cdef readonly datetime cancel_reject_time
-    cdef readonly ValidString cancel_reject_response
-    cdef readonly ValidString cancel_reject_reason
+    cdef readonly datetime rejected_time
+    cdef readonly ValidString rejected_response_to
+    cdef readonly ValidString rejected_reason
 
 
 cdef class OrderCancelled(OrderEvent):
