@@ -61,7 +61,7 @@ cdef class Clock:
         
         :return: datetime.
         """
-        # Raise exception if not overridden in implementation.
+        # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
     cpdef timedelta get_delta(self, datetime time):
