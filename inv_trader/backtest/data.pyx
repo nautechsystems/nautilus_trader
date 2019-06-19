@@ -535,6 +535,8 @@ cdef class DataProvider:
         self.bar_type_sec_ask = BarType(self.instrument.symbol, BarSpecification(1, Resolution.SECOND, QuoteType.ASK))
         self.bar_type_min_bid = BarType(self.instrument.symbol, BarSpecification(1, Resolution.MINUTE, QuoteType.BID))
         self.bar_type_min_ask = BarType(self.instrument.symbol, BarSpecification(1, Resolution.MINUTE, QuoteType.ASK))
+        self.bar_type_hour_bid = BarType(self.instrument.symbol, BarSpecification(1, Resolution.HOUR, QuoteType.BID))
+        self.bar_type_hour_ask = BarType(self.instrument.symbol, BarSpecification(1, Resolution.HOUR, QuoteType.ASK))
         self.bar_type_execution_bid = None
         self.bar_type_execution_ask = None
         self.ticks = []                            # type: List[Tick]
@@ -624,6 +626,9 @@ cdef class DataProvider:
         elif resolution == Resolution.MINUTE:
             self.bar_type_execution_bid = self.bar_type_min_bid
             self.bar_type_execution_ask = self.bar_type_min_ask
+        elif resolution == Resolution.HOUR:
+            self.bar_type_execution_bid = self.bar_type_hour_bid
+            self.bar_type_execution_ask = self.bar_type_hour_ask
         else:
             raise ValueError(f'cannot set execution bar resolution to {resolution_string(resolution)}')
 
