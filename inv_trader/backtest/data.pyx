@@ -87,30 +87,33 @@ cdef class BacktestDataClient(DataClient):
         self.data_bars_bid = data_bars_bid  # type: Dict[Symbol, Dict[Resolution, DataFrame]]
         self.data_bars_ask = data_bars_ask  # type: Dict[Symbol, Dict[Resolution, DataFrame]]
         self.data_providers = {}            # type: Dict[Symbol, DataProvider]
+        self.data_symbols = set()
         self.execution_data_index_min = None
         self.execution_data_index_max = None
 
         self._log.info("Preparing data...")
 
         # Create instruments dictionary
-        cdef dict instruments_dict = {}  # type: Dict[Symbol, Instrument]
+        self._instruments = {}  # type: Dict[Symbol, Instrument]
         for instrument in instruments:
-            instruments_dict[instrument.symbol] = instrument
-        self._instruments = instruments_dict
+            self._instruments[instrument.symbol] = instrument
 
         # Create data symbols set
-        cdef set bid_data_symbols = set()  # type: Set[Symbol]
-        for symbol in data_bars_bid:
+        cdef set tick_data_symbols = set()  # type: Set[Symbol]
+        for symbol in self.data_ticks:
+            tick_data_symbols.add(symbol)
+        cdef set bid_data_symbols = set()   # type: Set[Symbol]
+        for symbol in self.data_bars_bid:
             bid_data_symbols.add(symbol)
-        cdef set ask_data_symbols = set()  # type: Set[Symbol]
-        for symbol in data_bars_ask:
+        cdef set ask_data_symbols = set()   # type: Set[Symbol]
+        for symbol in self.data_bars_ask:
             ask_data_symbols.add(symbol)
         assert(bid_data_symbols == ask_data_symbols)
-        cdef set data_symbols = bid_data_symbols.union(ask_data_symbols)
+        self.data_symbols = tick_data_symbols.union(bid_data_symbols.union(ask_data_symbols))
 
         # Check there is the needed instrument for each data symbol
         for key in self._instruments.keys():
-            assert(key in data_symbols, f'The needed instrument {key} was not provided.')
+            assert(key in self.data_symbols, f'The needed instrument {key} was not provided.')
 
         # Check that all resolution DataFrames are of the same shape and index
         cdef dict shapes = {}  # type: Dict[Resolution, tuple]
@@ -143,83 +146,103 @@ cdef class BacktestDataClient(DataClient):
             self.data_providers[symbol].register_ticks()
             self._log.info(f"Built {len(self.data_providers[symbol].ticks)} {symbol} ticks in {round((datetime.utcnow() - start).total_seconds(), 2)}s.")
 
-            # Check tick data integrity (UTC timezone)
+            # Check tick data timestamp integrity (UTC timezone)
             ticks = self.data_providers[symbol].ticks
             assert(ticks[0].timestamp.tz == pytz.UTC)
 
         # Setup execution resolution and data
-        use_ticks = True
-        for symbol in instruments_dict:
-            if symbol not in data_ticks or len(data_ticks[symbol]) == 0:
-                use_ticks = False
-        if use_ticks:
-            self.execution_resolution = Resolution.TICK
-            self._log.info(f"Execution resolution = {resolution_string(self.execution_resolution)}")
-            self.time_step = timedelta(seconds=1)
-            for symbol in data_symbols:
+        execution_resolution = Resolution.UNKNOWN
+        time_step = timedelta(0)
+
+        if self._check_ticks_exist():
+            execution_resolution = Resolution.TICK
+            time_step = timedelta(seconds=1)
+
+        if execution_resolution == Resolution.UNKNOWN and self._check_bar_resolution_exists(Resolution.SECOND):
+            execution_resolution = Resolution.SECOND
+            time_step = timedelta(seconds=1)
+
+        if execution_resolution == Resolution.UNKNOWN and self._check_bar_resolution_exists(Resolution.MINUTE):
+            execution_resolution = Resolution.MINUTE
+            time_step = timedelta(minutes=1)
+
+        if execution_resolution == Resolution.UNKNOWN and self._check_bar_resolution_exists(Resolution.HOUR):
+            execution_resolution = Resolution.HOUR
+            time_step = timedelta(minutes=1)
+
+        if execution_resolution == Resolution.UNKNOWN:
+            raise RuntimeError('Insufficient data for ANY execution resolution')
+
+        self._setup_execution_data(execution_resolution, time_step)
+
+    cdef bint _check_ticks_exist(self):
+        """
+        Check if the tick data contains ticks for all data symbols.
+        
+        :return: True if all ticks exist, else False.
+        """
+        Precondition.not_empty(self.data_symbols, 'data_symbols')
+
+        for symbol in self.data_symbols:
+            if symbol not in self.data_ticks or len(self.data_ticks[symbol]) == 0:
+                return False
+        return True
+
+    cdef bint _check_bar_resolution_exists(self, Resolution resolution):
+        """
+        Check if the bar data contains the given resolution and is not empty.
+        
+        :param resolution: The resolution to check.
+        :return: True if the resolution exists and is not empty, else False.
+        """
+        Precondition.not_empty(self.data_symbols, 'data_symbols')
+
+        for symbol in self.data_symbols:
+            if resolution not in self.data_bars_bid[symbol] or len(self.data_bars_bid[symbol][resolution]) == 0:
+                return False
+            if resolution not in self.data_bars_ask[symbol] or len(self.data_bars_ask[symbol][resolution]) == 0:
+               return False
+        return True
+
+    cdef void _setup_execution_data(self, Resolution resolution, timedelta time_step):
+        """
+        Setup the execution data based on the given resolution.
+        
+        :param resolution: The execution resolution.
+        :param resolution: The execution time step.
+        """
+        Precondition.not_empty(self.data_symbols, 'data_symbols')
+        Precondition.true(resolution != Resolution.UNKNOWN, 'resolution != Resolution.UNKNOWN')
+        Precondition.true(time_step, 'time_step was not positive')
+
+        self.execution_resolution = resolution
+        self.time_step = time_step
+        self._log.info(f"Execution resolution = {resolution_string(self.execution_resolution)}")
+        self._log.info(f"Execution time_step = {time_step}")
+
+        if resolution == Resolution.TICK:
+            for symbol in self.data_symbols:
                 # Set execution timestamp indexs
                 ticks = self.data_providers[symbol].ticks
                 first_timestamp = ticks[0].timestamp
                 last_timestamp = ticks[len(ticks) - 1].timestamp
                 self._set_execution_data_index(symbol, first_timestamp, last_timestamp)
-
-        if not use_ticks:
-            use_second_bars = True
-            for symbol in instruments_dict:
-                if Resolution.SECOND not in data_bars_bid[symbol] or len(data_bars_bid[symbol][Resolution.SECOND]) == 0:
-                    use_second_bars = False
-                if Resolution.SECOND not in data_bars_ask[symbol] or len(data_bars_ask[symbol][Resolution.SECOND]) == 0:
-                    use_second_bars = False
-            if use_second_bars:
-                self.execution_resolution = Resolution.SECOND
-                self._log.info(f"Execution resolution = {resolution_string(self.execution_resolution)}")
-                self.time_step = timedelta(seconds=1)
-                # Build bars required for execution
-                for data_provider in self.data_providers.values():
-                    data_provider.set_execution_bar_res(Resolution.SECOND)
-                    self._build_bars(data_provider.bar_type_sec_bid)
-                    self._build_bars(data_provider.bar_type_sec_ask)
-                # Check bars data integrity
-                for symbol, res_data in data_bars_bid.items():
-                    exec_bid_bars = data_provider.bars[data_provider.bar_type_execution_bid]
-                    exec_ask_bars = data_provider.bars[data_provider.bar_type_execution_ask]
-                    assert(len(exec_bid_bars) == len(exec_ask_bars))
-                    assert(exec_bid_bars[0].timestamp.tz == exec_ask_bars[0].timestamp.tz)
-                    assert(exec_bid_bars[0].timestamp.tz == pytz.UTC)  # Check data is UTC timezone
-                    # Set execution timestamp indexs
-                    first_timestamp = exec_bid_bars[0].timestamp
-                    last_timestamp = exec_bid_bars[len(exec_bid_bars) - 1].timestamp
-                    self._set_execution_data_index(symbol, first_timestamp, last_timestamp)
-
-        if not use_ticks and not use_second_bars:
-            use_minute_bars = True
-            for symbol in instruments_dict:
-                if Resolution.MINUTE not in data_bars_bid[symbol] or len(data_bars_bid[symbol][Resolution.MINUTE]) == 0:
-                    use_second_bars = False
-                if Resolution.MINUTE not in data_bars_ask[symbol] or len(data_bars_ask[symbol][Resolution.MINUTE]) == 0:
-                    use_second_bars = False
-            if use_minute_bars:
-                self.execution_resolution = Resolution.MINUTE
-                self._log.info(f"Execution resolution = {resolution_string(self.execution_resolution)}")
-                self.time_step = timedelta(minutes=1)
-                # Build bars required for execution
-                for data_provider in self.data_providers.values():
-                    data_provider.set_execution_bar_res(Resolution.MINUTE)
-                    self._build_bars(data_provider.bar_type_min_bid)
-                    self._build_bars(data_provider.bar_type_min_ask)
-                # Check bars data integrity
-                for symbol, res_data in data_bars_bid.items():
-                    exec_bid_bars = data_provider.bars[data_provider.bar_type_execution_bid]
-                    exec_ask_bars = data_provider.bars[data_provider.bar_type_execution_ask]
-                    assert(len(exec_bid_bars) == len(exec_ask_bars))
-                    assert(exec_bid_bars[0].timestamp.tz == exec_ask_bars[0].timestamp.tz)
-                    assert(exec_bid_bars[0].timestamp.tz == pytz.UTC)  # Check data is UTC timezone
-                    # Set execution timestamp indexs
-                    first_timestamp = exec_bid_bars[0].timestamp
-                    last_timestamp = exec_bid_bars[len(exec_bid_bars) - 1].timestamp
-                    self._set_execution_data_index(symbol, first_timestamp, last_timestamp)
-            else:
-                raise RuntimeError('Insufficient data for ANY execution resolution')
+        else:
+            # Build bars required for execution
+            for data_provider in self.data_providers.values():
+                data_provider.set_execution_bar_res(resolution)
+                self._build_bars(data_provider.bar_type_min_bid)
+                self._build_bars(data_provider.bar_type_min_ask)
+                 # Check bars data integrity
+                exec_bid_bars = data_provider.bars[data_provider.bar_type_execution_bid]
+                exec_ask_bars = data_provider.bars[data_provider.bar_type_execution_ask]
+                assert(len(exec_bid_bars) == len(exec_ask_bars))
+                assert(exec_bid_bars[0].timestamp.tz == exec_ask_bars[0].timestamp.tz)
+                assert(exec_bid_bars[0].timestamp.tz == pytz.UTC)  # Check data is UTC timezone
+                # Set execution timestamp indexs
+                first_timestamp = exec_bid_bars[0].timestamp
+                last_timestamp = exec_bid_bars[len(exec_bid_bars) - 1].timestamp
+                self._set_execution_data_index(data_provider.instrument.symbol, first_timestamp, last_timestamp)
 
     cdef void _set_execution_data_index(self, Symbol symbol, datetime first, datetime last):
         """

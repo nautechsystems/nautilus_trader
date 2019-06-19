@@ -33,11 +33,15 @@ cdef class BacktestDataClient(DataClient):
     cdef readonly dict data_bars_bid
     cdef readonly dict data_bars_ask
     cdef readonly dict data_providers
+    cdef readonly set data_symbols
     cdef readonly datetime execution_data_index_min
     cdef readonly datetime execution_data_index_max
     cdef readonly Resolution execution_resolution
     cdef readonly timedelta time_step
 
+    cdef bint _check_ticks_exist(self)
+    cdef bint _check_bar_resolution_exists(self, Resolution resolution)
+    cdef void _setup_execution_data(self, Resolution resolution, timedelta time_step)
     cdef void _set_execution_data_index(self, Symbol symbol, datetime first, datetime last)
     cdef void _build_bars(self, BarType bar_type)
     cpdef void set_initial_iteration_indexes(self, datetime to_time)
