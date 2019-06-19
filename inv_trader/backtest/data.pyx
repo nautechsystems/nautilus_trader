@@ -552,6 +552,9 @@ cdef class DataProvider:
         elif Resolution.MINUTE in self._dataframes_bars_bid:
             bid_data = self._dataframes_bars_bid[Resolution.MINUTE]
             ask_data = self._dataframes_bars_ask[Resolution.MINUTE]
+        elif Resolution.HOUR in self._dataframes_bars_bid:
+            bid_data = self._dataframes_bars_bid[Resolution.HOUR]
+            ask_data = self._dataframes_bars_ask[Resolution.HOUR]
         else:
             bid_data = pd.DataFrame()
             ask_data = pd.DataFrame()
