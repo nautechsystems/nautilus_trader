@@ -65,6 +65,8 @@ cdef class DataProvider:
     cdef readonly BarType bar_type_sec_ask
     cdef readonly BarType bar_type_min_bid
     cdef readonly BarType bar_type_min_ask
+    cdef readonly BarType bar_type_hour_bid
+    cdef readonly BarType bar_type_hour_ask
     cdef readonly BarType bar_type_execution_bid
     cdef readonly BarType bar_type_execution_ask
     cdef readonly list ticks
