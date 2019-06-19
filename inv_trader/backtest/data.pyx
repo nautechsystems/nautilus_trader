@@ -231,8 +231,8 @@ cdef class BacktestDataClient(DataClient):
             # Build bars required for execution
             for data_provider in self.data_providers.values():
                 data_provider.set_execution_bar_res(resolution)
-                self._build_bars(data_provider.bar_type_min_bid)
-                self._build_bars(data_provider.bar_type_min_ask)
+                self._build_bars(data_provider.bar_type_execution_bid)
+                self._build_bars(data_provider.bar_type_execution_ask)
                  # Check bars data integrity
                 exec_bid_bars = data_provider.bars[data_provider.bar_type_execution_bid]
                 exec_ask_bars = data_provider.bars[data_provider.bar_type_execution_ask]
