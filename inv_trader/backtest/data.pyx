@@ -196,7 +196,7 @@ cdef class BacktestDataClient(DataClient):
                 self._set_execution_data_index(data_provider.instrument.symbol, first_timestamp, last_timestamp)
 
         self._log.info(f"Execution resolution = {resolution_string(self.execution_resolution)}")
-        self._log.info(f"Maximum time_step = {self.max_time_step}")
+        self._log.info(f"Iteration maximum time-step = {self.max_time_step}")
 
     cdef bint _check_ticks_exist(self):
         # Check if the tick data contains ticks for all data symbols

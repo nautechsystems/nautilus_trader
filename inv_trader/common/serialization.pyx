@@ -182,6 +182,32 @@ cdef class OrderSerializer:
         raise NotImplementedError("Method must be implemented in the subclass. ")
 
 
+cdef class InstrumentSerializer:
+    """
+    The abstract base class for all instrument serializers.
+    """
+
+    cpdef bytes serialize(self, Instrument instrument):
+        """
+        Serialize the given event to bytes.
+
+        :param instrument: The instrument to serialize.
+        :return: bytes.
+        """
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
+    cpdef Instrument deserialize(self, bytes instrument_bytes):
+        """
+        Deserialize the given instrument bytes to an instrument.
+
+        :param instrument_bytes: The bytes to deserialize.
+        :return: Instrument.
+        """
+        # Raise exception if not overridden in implementation.
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
+
 cdef class CommandSerializer:
     """
     The abstract base class for all command serializers.
@@ -283,30 +309,4 @@ cdef class ResponseSerializer:
         :return: Response.
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
-
-
-cdef class InstrumentSerializer:
-    """
-    The abstract base class for all instrument serializers.
-    """
-
-    cpdef bytes serialize(self, Instrument instrument):
-        """
-        Serialize the given event to bytes.
-
-        :param instrument: The instrument to serialize.
-        :return: bytes.
-        """
-        # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
-
-    cpdef Instrument deserialize(self, bytes instrument_bytes):
-        """
-        Deserialize the given instrument bytes to an instrument.
-
-        :param instrument_bytes: The bytes to deserialize.
-        :return: Instrument.
-        """
-        # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the subclass.")
