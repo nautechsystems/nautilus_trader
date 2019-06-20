@@ -7,8 +7,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from inv_trader.enums.venue cimport Venue
-from inv_trader.model.objects cimport Instrument
+from inv_trader.model.objects cimport Symbol, Instrument
 
 
 cdef class InstrumentLoader:
@@ -16,8 +15,4 @@ cdef class InstrumentLoader:
     Provides instrument template methods for backtesting.
     """
 
-    cpdef Instrument default_fx_ccy(
-            self,
-            str symbol_code,
-            Venue venue,
-            int tick_precision)
+    cpdef Instrument default_fx_ccy(self, Symbol symbol, int tick_precision)
