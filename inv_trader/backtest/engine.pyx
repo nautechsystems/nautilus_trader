@@ -159,14 +159,16 @@ cdef class BacktestEngine:
             self,
             datetime start=None,
             datetime stop=None,
+            timedelta time_step=None,
             FillModel fill_model=None,
             list strategies=None,
             bint print_log_store=True):
         """
         Run the backtest with the given parameters.
 
-        :param start: The start UTC datetime for the backtest (optional can be None - will run from the start of the data).
-        :param stop: The stop UTC datetime for the backtest (optional can be None - will run to the end of the data).
+        :param start: The start UTC datetime for the backtest run (optional can be None - will run from the start of the data).
+        :param stop: The stop UTC datetime for the backtest run (optional can be None - will run to the end of the data).
+        :param time_step: The iteration time step for the backtest run.
         :param fill_model: The fill model change for the backtest run (optional can be None - will use previous).
         :param strategies: The strategies change for the backtest run (optional can be None - will use previous).
         :param print_log_store: The flag indicating whether the log store should be printed at the end of the run.
@@ -176,6 +178,7 @@ cdef class BacktestEngine:
         :raises: ValueError: If the start is not >= the execution_data_index_min datetime.
         :raises: ValueError: If the stop is not None and timezone is not UTC.
         :raises: ValueError: If the stop is not <= the execution_data_index_max datetime.
+        :raises: ValueError: If the time_step is not None and is > the max time step for the execution resolution.
         :raises: ValueError: If the fill_model is a type other than FillModel or None.
         :raises: ValueError: If the strategies is a type other than list or None.
         :raises: ValueError: If the strategies list is not None and is empty, or contains a type other than TradeStrategy.
@@ -192,6 +195,12 @@ cdef class BacktestEngine:
         else:
             stop = as_utc_timestamp(stop)
 
+        # Setup time step
+        if time_step is None:
+            time_step = self.data_client.max_time_step
+        else:
+            Precondition.true(time_step <= self.data_client.max_time_step, 'time_step <= data_client.max_time_step')
+
         Precondition.true(start.tz == pytz.UTC, 'start.tz == UTC')
         Precondition.true(stop.tz == pytz.UTC, 'stop.tz == UTC')
         Precondition.true(start >= self.data_client.execution_data_index_min, 'start >= execution_data_index_min')
@@ -205,7 +214,6 @@ cdef class BacktestEngine:
         # ---------------------------------------------------------------------#
 
         cdef datetime run_started = self.clock.time_now()
-        cdef timedelta time_step = self.data_client.time_step
 
         # Setup logging
         self.test_logger.clear_log_store()
