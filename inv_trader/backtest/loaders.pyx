@@ -12,7 +12,6 @@ from datetime import timezone
 from decimal import Decimal
 
 from inv_trader.core.precondition cimport Precondition
-from inv_trader.enums.venue cimport Venue
 from inv_trader.enums.security_type cimport SecurityType
 from inv_trader.model.enums import Currency
 from inv_trader.model.objects cimport Symbol, Instrument, Quantity
@@ -24,24 +23,18 @@ cdef class InstrumentLoader:
     Provides instrument template methods for backtesting.
     """
 
-    cpdef Instrument default_fx_ccy(
-            self,
-            str symbol_code,
-            Venue venue,
-            int tick_precision):
+    cpdef Instrument default_fx_ccy(self, Symbol symbol, int tick_precision):
         """
         Return a default FX currency pair instrument from the given arguments.
         
-        :param symbol_code: The symbol code (must be length 6).
-        :param venue: The symbol venue.
-        :param tick_precision: The tick precision for the currency pair.
-        :raises ValueError: If the symbol_code length is not == 6.
+        :param symbol: The currency pair symbol.
+        :param tick_precision: The currency pair tick precision.
+        :raises ValueError: If the symbol.code length is not == 6.
         :raises ValueError: If the tick_precision is not 3 or 5.
         """
-        Precondition.true(len(symbol_code) == 6, 'len(symbol) == 6')
+        Precondition.true(len(symbol.code) == 6, 'len(symbol) == 6')
         Precondition.true(tick_precision == 3 or tick_precision == 5, 'tick_precision == 3 or 5')
 
-        cdef Symbol symbol = Symbol(symbol_code, venue)
         return Instrument(
             instrument_id=InstrumentId(str(symbol)),
             symbol=symbol,

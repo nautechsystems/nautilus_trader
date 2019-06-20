@@ -23,7 +23,7 @@ class BacktestLoadersTests(unittest.TestCase):
         loader = InstrumentLoader()
 
         # Act
-        instrument = loader.default_fx_ccy('AUDUSD', Venue.DUKASCOPY, tick_precision=5)
+        instrument = loader.default_fx_ccy(Symbol('AUDUSD', Venue.DUKASCOPY), tick_precision=5)
 
         # Assert
         self.assertEqual(Symbol('AUDUSD', Venue.DUKASCOPY), instrument.symbol)
@@ -37,7 +37,7 @@ class BacktestLoadersTests(unittest.TestCase):
         loader = InstrumentLoader()
 
         # Act
-        instrument = loader.default_fx_ccy('USDJPY', Venue.DUKASCOPY, tick_precision=3)
+        instrument = loader.default_fx_ccy(Symbol('USDJPY', Venue.DUKASCOPY), tick_precision=3)
 
         # Assert
         self.assertEqual(Symbol('USDJPY', Venue.DUKASCOPY), instrument.symbol)
