@@ -14,8 +14,15 @@ import pytz
 
 from datetime import timezone, timedelta
 
-from inv_trader.core.functions import pad_string, basis_points_as_percentage
-from inv_trader.core.functions import format_zulu_datetime, as_utc_timestamp, with_utc_index
+from inv_trader.core.functions import (
+    pad_string,
+    basis_points_as_percentage,
+    format_zulu_datetime,
+    as_utc_timestamp,
+    with_utc_index,
+    max_in_dict,
+)
+
 from test_kit.data import TestDataProvider
 from test_kit.stubs import UNIX_EPOCH
 
@@ -177,3 +184,16 @@ class TestFunctionsTests(unittest.TestCase):
         # Assert
         self.assertEqual(result1.index[0], result2.index[0])
         self.assertEqual(result1.index.tz, result2.index.tz)
+
+    def test_max_in_dict_with_various_dictionaries_returns_expected_key(self):
+        # Arrange
+        dict1 = {1: 10, 2: 20, 3: 30}
+        dict2 = {'a': 10.1, 'c': 30.1, 'b': 20.1, }
+
+        # Act
+        result1 = max_in_dict(dict1)
+        result2 = max_in_dict(dict2)
+
+        # Assert
+        self.assertEqual(3, result1)
+        self.assertEqual('c', result2)
