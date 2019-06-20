@@ -83,31 +83,25 @@ cdef class BacktestDataClient(DataClient):
         Precondition.not_none(logger, 'logger')
 
         super().__init__(clock, logger)
-        self.data_ticks = data_ticks        # type: Dict[Symbol, DataFrame]
-        self.data_bars_bid = data_bars_bid  # type: Dict[Symbol, Dict[Resolution, DataFrame]]
-        self.data_bars_ask = data_bars_ask  # type: Dict[Symbol, Dict[Resolution, DataFrame]]
-        self.data_providers = {}            # type: Dict[Symbol, DataProvider]
-        self.data_symbols = set()
-        self.execution_data_index_min = None
-        self.execution_data_index_max = None
+        self.data_ticks = data_ticks                    # type: Dict[Symbol, DataFrame]
+        self.data_bars_bid = data_bars_bid              # type: Dict[Symbol, Dict[Resolution, DataFrame]]
+        self.data_bars_ask = data_bars_ask              # type: Dict[Symbol, Dict[Resolution, DataFrame]]
+        self.data_providers = {}                        # type: Dict[Symbol, DataProvider]
+        self.data_symbols = set()                       # type: Set[Symbol]
+        self.execution_data_index_min = None            # Set below
+        self.execution_data_index_max = None            # Set below
+        self.execution_resolution = Resolution.UNKNOWN  # Set below
+        self.max_time_step = timedelta(0)               # Set below
 
         self._log.info("Preparing data...")
 
         # Create instruments dictionary
-        self._instruments = {}  # type: Dict[Symbol, Instrument]
-        for instrument in instruments:
-            self._instruments[instrument.symbol] = instrument
+        self._instruments = { instrument.symbol: instrument for instrument in instruments }  # type: Dict[Symbol, Instrument]
 
         # Create data symbols set
-        cdef set tick_data_symbols = set()  # type: Set[Symbol]
-        for symbol in self.data_ticks:
-            tick_data_symbols.add(symbol)
-        cdef set bid_data_symbols = set()   # type: Set[Symbol]
-        for symbol in self.data_bars_bid:
-            bid_data_symbols.add(symbol)
-        cdef set ask_data_symbols = set()   # type: Set[Symbol]
-        for symbol in self.data_bars_ask:
-            ask_data_symbols.add(symbol)
+        cdef set tick_data_symbols = { symbol for symbol in self.data_ticks }    # type: Set[Symbol]
+        cdef set bid_data_symbols = { symbol for symbol in self.data_bars_bid }  # type: Set[Symbol]
+        cdef set ask_data_symbols = { symbol for symbol in self.data_bars_ask }  # type: Set[Symbol]
         assert(bid_data_symbols == ask_data_symbols)
         self.data_symbols = tick_data_symbols.union(bid_data_symbols.union(ask_data_symbols))
 
@@ -150,77 +144,34 @@ cdef class BacktestDataClient(DataClient):
             ticks = self.data_providers[symbol].ticks
             assert(ticks[0].timestamp.tz == pytz.UTC)
 
-        # Setup execution resolution and data
-        execution_resolution = Resolution.UNKNOWN
-        time_step = timedelta(0)
+        self._setup_execution_data()
 
+    cdef void _setup_execution_data(self):
+        # Check if necessary data for TICK resolution
         if self._check_ticks_exist():
-            execution_resolution = Resolution.TICK
-            time_step = timedelta(seconds=1)
+            self.execution_resolution = Resolution.TICK
+            self.max_time_step = timedelta(seconds=1)
 
-        if execution_resolution == Resolution.UNKNOWN and self._check_bar_resolution_exists(Resolution.SECOND):
-            execution_resolution = Resolution.SECOND
-            time_step = timedelta(seconds=1)
+        # Check if necessary data for SECOND resolution
+        if self.execution_resolution == Resolution.UNKNOWN and self._check_bar_resolution_exists(Resolution.SECOND):
+            self.execution_resolution = Resolution.SECOND
+            self.max_time_step = timedelta(seconds=1)
 
-        if execution_resolution == Resolution.UNKNOWN and self._check_bar_resolution_exists(Resolution.MINUTE):
-            execution_resolution = Resolution.MINUTE
-            time_step = timedelta(minutes=1)
+        # Check if necessary data for MINUTE resolution
+        if self.execution_resolution == Resolution.UNKNOWN and self._check_bar_resolution_exists(Resolution.MINUTE):
+            self.execution_resolution = Resolution.MINUTE
+            self.max_time_step = timedelta(minutes=1)
 
-        if execution_resolution == Resolution.UNKNOWN and self._check_bar_resolution_exists(Resolution.HOUR):
-            execution_resolution = Resolution.HOUR
-            time_step = timedelta(minutes=1)
+        # Check if necessary data for HOUR resolution
+        if self.execution_resolution == Resolution.UNKNOWN and self._check_bar_resolution_exists(Resolution.HOUR):
+            self.execution_resolution = Resolution.HOUR
+            self.max_time_step = timedelta(hours=1)
 
-        if execution_resolution == Resolution.UNKNOWN:
+        if self.execution_resolution == Resolution.UNKNOWN:
             raise RuntimeError('Insufficient data for ANY execution resolution')
 
-        self._setup_execution_data(execution_resolution, time_step)
-
-    cdef bint _check_ticks_exist(self):
-        """
-        Check if the tick data contains ticks for all data symbols.
-        
-        :return: True if all ticks exist, else False.
-        """
-        Precondition.not_empty(self.data_symbols, 'data_symbols')
-
-        for symbol in self.data_symbols:
-            if symbol not in self.data_ticks or len(self.data_ticks[symbol]) == 0:
-                return False
-        return True
-
-    cdef bint _check_bar_resolution_exists(self, Resolution resolution):
-        """
-        Check if the bar data contains the given resolution and is not empty.
-        
-        :param resolution: The resolution to check.
-        :return: True if the resolution exists and is not empty, else False.
-        """
-        Precondition.not_empty(self.data_symbols, 'data_symbols')
-
-        for symbol in self.data_symbols:
-            if resolution not in self.data_bars_bid[symbol] or len(self.data_bars_bid[symbol][resolution]) == 0:
-                return False
-            if resolution not in self.data_bars_ask[symbol] or len(self.data_bars_ask[symbol][resolution]) == 0:
-               return False
-        return True
-
-    cdef void _setup_execution_data(self, Resolution resolution, timedelta time_step):
-        """
-        Setup the execution data based on the given resolution.
-        
-        :param resolution: The execution resolution.
-        :param resolution: The execution time step.
-        """
-        Precondition.not_empty(self.data_symbols, 'data_symbols')
-        Precondition.true(resolution != Resolution.UNKNOWN, 'resolution != Resolution.UNKNOWN')
-        Precondition.true(time_step, 'time_step was not positive')
-
-        self.execution_resolution = resolution
-        self.time_step = time_step
-        self._log.info(f"Execution resolution = {resolution_string(self.execution_resolution)}")
-        self._log.info(f"Execution time_step = {time_step}")
-
-        if resolution == Resolution.TICK:
+        # Setup the execution data based on the given resolution
+        if self.execution_resolution == Resolution.TICK:
             for symbol in self.data_symbols:
                 # Set execution timestamp indexs
                 ticks = self.data_providers[symbol].ticks
@@ -230,7 +181,7 @@ cdef class BacktestDataClient(DataClient):
         else:
             # Build bars required for execution
             for data_provider in self.data_providers.values():
-                data_provider.set_execution_bar_res(resolution)
+                data_provider.set_execution_bar_res(self.execution_resolution)
                 self._build_bars(data_provider.bar_type_execution_bid)
                 self._build_bars(data_provider.bar_type_execution_ask)
                  # Check bars data integrity
@@ -244,14 +195,26 @@ cdef class BacktestDataClient(DataClient):
                 last_timestamp = exec_bid_bars[len(exec_bid_bars) - 1].timestamp
                 self._set_execution_data_index(data_provider.instrument.symbol, first_timestamp, last_timestamp)
 
+        self._log.info(f"Execution resolution = {resolution_string(self.execution_resolution)}")
+        self._log.info(f"Maximum time_step = {self.max_time_step}")
+
+    cdef bint _check_ticks_exist(self):
+        # Check if the tick data contains ticks for all data symbols
+        for symbol in self.data_symbols:
+            if symbol not in self.data_ticks or len(self.data_ticks[symbol]) == 0:
+                return False
+        return True
+
+    cdef bint _check_bar_resolution_exists(self, Resolution resolution):
+        # Check if the bar data contains the given resolution and is not empty
+        for symbol in self.data_symbols:
+            if resolution not in self.data_bars_bid[symbol] or len(self.data_bars_bid[symbol][resolution]) == 0:
+                return False
+            if resolution not in self.data_bars_ask[symbol] or len(self.data_bars_ask[symbol][resolution]) == 0:
+               return False
+        return True
+
     cdef void _set_execution_data_index(self, Symbol symbol, datetime first, datetime last):
-        """
-        Set the execution data index for the given symbol using the given data.
-        
-        :param symbol: The symbol for the index.
-        :param first: The first datetime index timestamp.
-        :param last: The last datetime index timestamp.
-        """
         # Set minimum execution data timestamp
         if self.execution_data_index_min is None or self.execution_data_index_min < first:
             self.execution_data_index_min = first
@@ -261,13 +224,9 @@ cdef class BacktestDataClient(DataClient):
             self.execution_data_index_max = last
 
     cdef void _build_bars(self, BarType bar_type):
-        """
-        Build bars of the given bar type inside the data provider.
-        
-        :param bar_type: THe bar type to build.
-        """
         Precondition.is_in(bar_type.symbol, self.data_providers, 'symbol', 'data_providers')
 
+        # Build bars of the given bar type inside the data provider
         cdef datetime start = datetime.utcnow()
         self._log.info(f"Building {bar_type} bars...")
         self.data_providers[bar_type.symbol].register_bars(bar_type)
@@ -520,8 +479,6 @@ cdef class DataProvider:
         :raises ValueError: If the data_ticks is a type other than None or DataFrame.
         :raises ValueError: If the data_bars_bid is None.
         :raises ValueError: If the data_bars_ask is None.
-        :raises ValueError: If the data_bars_bid does not contain the MINUTE resolution key.
-        :raises ValueError: If the data_bars_ask does not contain the MINUTE resolution key.
         """
         Precondition.type_or_none(data_ticks, DataFrame, 'data_ticks')
         Precondition.not_none(data_bars_bid, 'data_bars_bid')
