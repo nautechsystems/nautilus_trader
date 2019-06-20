@@ -30,7 +30,13 @@ cdef class InstrumentLoader:
             Venue venue,
             int tick_precision):
         """
-        Return a default FX instrument from the given arguments.
+        Return a default FX currency pair instrument from the given arguments.
+        
+        :param symbol_code: The symbol code (must be length 6).
+        :param venue: The symbol venue.
+        :param tick_precision: The tick precision for the currency pair.
+        :raises ValueError: If the symbol_code length is not == 6.
+        :raises ValueError: If the tick_precision is not 3 or 5.
         """
         Precondition.true(len(symbol_code) == 6, 'len(symbol) == 6')
         Precondition.true(tick_precision == 3 or tick_precision == 5, 'tick_precision == 3 or 5')
