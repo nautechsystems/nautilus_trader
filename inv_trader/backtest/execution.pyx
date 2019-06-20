@@ -21,7 +21,6 @@ from inv_trader.enums.order_type cimport OrderType
 from inv_trader.enums.order_side cimport OrderSide
 from inv_trader.enums.order_status cimport OrderStatus
 from inv_trader.enums.market_position cimport MarketPosition, market_position_string
-from inv_trader.enums.venue cimport Venue
 from inv_trader.model.currency cimport ExchangeRateCalculator
 from inv_trader.model.objects cimport ValidString, Symbol, Price, Tick, Bar, Money, Instrument, Quantity
 from inv_trader.model.order cimport Order
@@ -149,7 +148,7 @@ cdef class BacktestExecClient(ExecutionClient):
             Bar bid_bar,
             Bar ask_bar):
         """
-        Update the execution client with the given data.
+        Process the execution client markets with the given data.
         
         :param symbol: The symbol for the update data.
         :param bid_bar: The bid bar data to update with.
@@ -164,13 +163,11 @@ cdef class BacktestExecClient(ExecutionClient):
             Symbol symbol,
             Price lowest_bid,
             Price highest_ask):
-        """
-        Process the working orders by simulating market dynamics with bar data.
-        
-        :param symbol: The market symbol to process.
-        :param symbol: The lowest bid price for the process.
-        :param symbol: The highest ask price for the process.
-        """
+        # Process the working orders by simulating market dynamics with bar data
+
+        # symbol is the market symbol to process.
+        # lowest_bid is the lowest bid price for the process.
+        # highest_ask is the highest ask price for the process.
         cdef CollateralInquiry command
         cdef datetime time_now = self._clock.time_now()
 
@@ -305,9 +302,6 @@ cdef class BacktestExecClient(ExecutionClient):
         self._log.info("Reset.")
 
     cdef void _set_slippage_index(self):
-        """
-        Set the slippage index based on the given integer.
-        """
         cdef dict slippage_index = {}
 
         for symbol, instrument in self.instruments.items():
@@ -319,9 +313,6 @@ cdef class BacktestExecClient(ExecutionClient):
 # -- COMMAND EXECUTION --------------------------------------------------------------------------- #
 
     cdef void _collateral_inquiry(self, CollateralInquiry command):
-        """
-        Send a collateral inquiry command to the execution service.
-        """
         # Generate event
         cdef AccountEvent event = AccountEvent(
             self._account.id,
@@ -341,11 +332,6 @@ cdef class BacktestExecClient(ExecutionClient):
         self._handle_event(event)
 
     cdef void _submit_order(self, SubmitOrder command):
-        """
-        Send a submit order command to the execution service.
-
-        :param command: The command to execute.
-        """
         # Generate event
         cdef OrderSubmitted submitted = OrderSubmitted(
             command.order.id,
@@ -357,11 +343,6 @@ cdef class BacktestExecClient(ExecutionClient):
         self._process_order(command.order)
 
     cdef void _submit_atomic_order(self, SubmitAtomicOrder command):
-        """
-        Send a submit atomic order command to the mock execution service.
-        
-        :param command: The command to execute.
-        """
         cdef list atomic_orders = [command.atomic_order.stop_loss]
         if command.atomic_order.has_take_profit:
             atomic_orders.append(command.atomic_order.take_profit)
@@ -382,11 +363,6 @@ cdef class BacktestExecClient(ExecutionClient):
         self._submit_order(submit_order)
 
     cdef void _cancel_order(self, CancelOrder command):
-        """
-        Send a cancel order command to the execution service.
-        
-        :param command: The command to execute.
-        """
         if command.order_id not in self.working_orders:
             self._cancel_reject_order(command.order_id, 'cancel order', 'order not found')
             return  # Rejected the cancel order command
@@ -407,11 +383,6 @@ cdef class BacktestExecClient(ExecutionClient):
         self._check_oco_order(command.order_id)
 
     cdef void _modify_order(self, ModifyOrder command):
-        """
-        Send a modify order command to the execution service.
-        
-        :param command: The command to execute.
-        """
         if command.order_id not in self.working_orders:
             self._cancel_reject_order(command.order_id, 'modify order', 'order not found')
             return  # Rejected the modify order command
@@ -457,11 +428,6 @@ cdef class BacktestExecClient(ExecutionClient):
 # -- EVENT HANDLING ------------------------------------------------------------------------------ #
 
     cdef void _accept_order(self, Order order):
-        """
-        Accept the given order and generate an OrderAccepted event.
-        
-        :param order: The order to accept.
-        """
         # Generate event
         cdef OrderAccepted accepted = OrderAccepted(
             order.id,
@@ -472,12 +438,6 @@ cdef class BacktestExecClient(ExecutionClient):
         self._handle_event(accepted)
 
     cdef void _reject_order(self, Order order, str reason):
-        """
-        Reject the given order and handle an OrderRejected event.
-        
-        :param order: The order to reject.
-        :param order: The reject reason.
-        """
         # Generate event
         cdef OrderRejected rejected = OrderRejected(
             order.id,
@@ -495,14 +455,6 @@ cdef class BacktestExecClient(ExecutionClient):
             OrderId order_id,
             str response,
             str reason):
-        """
-        Reject the cancellation/modification command for the given order with
-        the given response and reason..
-        
-        :param order_id: The order identifier the modification reject relates to.
-        :param response: The cancel reject response.
-        :param reason: The cancel reject reason.
-        """
         # Generate event
         cdef OrderCancelReject cancel_reject = OrderCancelReject(
             order_id,
@@ -515,12 +467,6 @@ cdef class BacktestExecClient(ExecutionClient):
         self._handle_event(cancel_reject)
 
     cdef void _expire_order(self, Order order):
-        """
-        Expire the given order by sending an OrderExpired event to the on event
-        handler.
-        
-        :param order: The order to expire.
-        """
         # Generate event
         cdef OrderExpired expired = OrderExpired(
             order.id,
@@ -544,11 +490,8 @@ cdef class BacktestExecClient(ExecutionClient):
         self._clean_up_child_orders(order.id)
 
     cdef void _process_order(self, Order order):
-        """
-        Work the given order.
-        
-        :param order: The order to work.
-        """
+        # Work the given order
+
         Precondition.not_in(order.id, self.working_orders, 'order.id', 'working_orders')
 
         cdef Instrument instrument = self.instruments[order.symbol]
@@ -631,12 +574,6 @@ cdef class BacktestExecClient(ExecutionClient):
         self._log.debug(f"{order.id} WORKING at {order.price}.")
 
     cdef void _fill_order(self, Order order, Price fill_price):
-        """
-        Fill the given order at the given price.
-        
-        :param order: The order to fill.
-        :param fill_price: The price to fill the order at.
-        """
         # Generate event
         cdef OrderFilled filled = OrderFilled(
             order.id,
@@ -665,17 +602,13 @@ cdef class BacktestExecClient(ExecutionClient):
             del self.atomic_child_orders[order.id]
 
     cdef void _clean_up_child_orders(self, OrderId order_id):
-        """
-        Clean up any residual child orders from the completed order associated
-        with the given identifier.
-        """
+        # Clean up any residual child orders from the completed order associated
+        # with the given identifier.
         if order_id in self.atomic_child_orders:
             del self.atomic_child_orders[order_id]
 
     cdef void _check_oco_order(self, OrderId order_id):
-        """
-        Check held OCO orders and remove any paired with the given order identifier.
-        """
+        # Check held OCO orders and remove any paired with the given order identifier
         cdef OrderId oco_order_id
         cdef Order oco_order
 
@@ -697,12 +630,9 @@ cdef class BacktestExecClient(ExecutionClient):
                 del self.working_orders[oco_order_id]
 
     cdef void _reject_oco_order(self, Order order, OrderId oco_order_id):
-        """
-        Reject an OCO order.
-        
-        :param order: The OCO order to reject.
-        :param oco_order_id: The other order identifier for this OCO pair.
-        """
+        # order is the OCO order to reject
+        # oco_order_id is the other order identifier for this OCO pair
+
         # Generate event
         cdef OrderRejected event = OrderRejected(
             order.id,
@@ -714,12 +644,9 @@ cdef class BacktestExecClient(ExecutionClient):
         self._handle_event(event)
 
     cdef void _cancel_oco_order(self, Order order, OrderId oco_order_id):
-        """
-        Cancel an OCO order.
+        # order is the OCO order to cancel
+        # oco_order_id is the other order identifier for this OCO pair
 
-        :param order: The OCO order to cancel.
-        :param oco_order_id: The other order identifier for this OCO pair.
-        """
         # Generate event
         cdef OrderCancelled event = OrderCancelled(
             order.id,
@@ -731,11 +658,7 @@ cdef class BacktestExecClient(ExecutionClient):
         self._handle_event(event)
 
     cdef void _adjust_account(self, OrderEvent event):
-        """
-        Adjust the positions based on the order fill event.
-        
-        :param event: The order fill event.
-        """
+        # Adjust the positions based on the given order fill event
         cdef Symbol symbol = self._order_book[event.order_id].symbol
         cdef Instrument instrument = self.instruments[symbol]
         cdef float exchange_rate = self.exchange_calculator.get_rate(
@@ -784,22 +707,14 @@ cdef class BacktestExecClient(ExecutionClient):
         self._handle_event(account_event)
 
     cdef dict _build_current_bid_rates(self):
-        """
-        Return the current currency bid rates in the markets.
-        
-        :return: Dict[str, float].
-        """
+        # Return the current currency bid rates in the markets
         cdef dict bid_rates = {}  # type: Dict[str, float]
         for symbol, price in self.current_bids.items():
             bid_rates[symbol.code] = price.as_float()
         return bid_rates
 
     cdef dict _build_current_ask_rates(self):
-        """
-        Return the current currency ask rates in the markets.
-        
-        :return: Dict[str, float].
-        """
+        # Return the current currency ask rates in the markets
         cdef dict ask_rates = {}  # type: Dict[str, float]
         for symbol, prices in self.current_asks.items():
             ask_rates[symbol.code] = prices.as_float()
@@ -812,16 +727,6 @@ cdef class BacktestExecClient(ExecutionClient):
             Price exit_price,
             Quantity quantity,
             float exchange_rate):
-        """
-        Return the pnl from the given parameters.
-        
-        :param direction: The direction of the position affecting pnl.
-        :param entry_price: The entry price of the position affecting pnl.
-        :param exit_price: The exit price of the position affecting pnl.
-        :param quantity: The filled quantity for the position affecting pnl.
-        :param exchange_rate: The exchange rate for the transaction.
-        :return: Money.
-        """
         cdef object difference
         if direction is MarketPosition.LONG:
             difference = exit_price - entry_price

@@ -35,6 +35,14 @@ cdef class OrderSerializer:
     cpdef Order deserialize(self, bytes order_bytes)
 
 
+cdef class InstrumentSerializer:
+    """
+    The abstract base class for all instrument serializers.
+    """
+    cpdef bytes serialize(self, Instrument instrument)
+    cpdef Instrument deserialize(self, bytes instrument_bytes)
+
+
 cdef class CommandSerializer:
     """
     The abstract base class for all command serializers.
@@ -49,11 +57,3 @@ cdef class EventSerializer:
     """
     cpdef bytes serialize(self, Event event)
     cpdef Event deserialize(self, bytes event_bytes)
-
-
-cdef class InstrumentSerializer:
-    """
-    The abstract base class for all instrument serializers.
-    """
-    cpdef bytes serialize(self, Instrument instrument)
-    cpdef Instrument deserialize(self, bytes instrument_bytes)
