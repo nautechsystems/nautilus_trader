@@ -11,12 +11,13 @@
 
 from cpython.datetime cimport datetime
 
+from inv_trader.core.message cimport Message
 from inv_trader.model.objects cimport ValidString, Price
 from inv_trader.model.identifiers cimport GUID, PositionId, TraderId, StrategyId
 from inv_trader.model.order cimport Order, AtomicOrder
 
 
-cdef class Command:
+cdef class Command(Message):
     """
     The base class for all commands.
     """
@@ -28,41 +29,7 @@ cdef class Command:
         :param identifier: The commands identifier.
         :param timestamp: The commands timestamp.
         """
-        self.id = identifier
-        self.timestamp = timestamp
-
-    def __eq__(self, Command other) -> bool:
-        """
-        Override the default equality comparison.
-        """
-        if isinstance(other, self.__class__):
-            return self.id == other.id
-        else:
-            return False
-
-    def __ne__(self, Command other):
-        """
-        Override the default not-equals comparison.
-        """
-        return not self.__eq__(other)
-
-    def __hash__(self) -> int:
-        """"
-        Override the default hash implementation.
-        """
-        return hash(self.id)
-
-    def __str__(self) -> str:
-        """
-        :return: The str() string representation of the command.
-        """
-        return f"{self.__class__.__name__}()"
-
-    def __repr__(self) -> str:
-        """
-        :return: The repr() string representation of the command.
-        """
-        return f"<{str(self)} object at {id(self)}>"
+        super().__init__(identifier, timestamp)
 
 
 cdef class CollateralInquiry(Command):

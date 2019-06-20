@@ -12,6 +12,7 @@
 from cpython.datetime cimport datetime
 
 from inv_trader.core.precondition cimport Precondition
+from inv_trader.core.message cimport Message
 from inv_trader.enums.brokerage cimport Broker
 from inv_trader.enums.currency cimport Currency
 from inv_trader.enums.order_side cimport OrderSide, order_side_string
@@ -23,7 +24,7 @@ from inv_trader.model.objects cimport ValidString, Quantity, Symbol, Price
 from inv_trader.model.position cimport Position
 
 
-cdef class Event:
+cdef class Event(Message):
     """
     The base class for all events.
     """
@@ -37,41 +38,7 @@ cdef class Event:
         :param identifier: The events identifier.
         :param timestamp: The events timestamp.
         """
-        self.id = identifier
-        self.timestamp = timestamp
-
-    def __eq__(self, other) -> bool:
-        """
-        Override the default equality comparison.
-        """
-        if isinstance(other, self.__class__):
-            return self.id == other.id
-        else:
-            return False
-
-    def __ne__(self, other) -> bool:
-        """
-        Override the default not-equals comparison.
-        """
-        return not self.__eq__(other)
-
-    def __hash__(self) -> int:
-        """"
-        Override the default hash implementation.
-        """
-        return hash(self.id)
-
-    def __str__(self) -> str:
-        """
-        :return: The str() string representation of the event.
-        """
-        return f"{self.__class__.__name__}()"
-
-    def __repr__(self) -> str:
-        """
-        :return: The repr() string representation of the event.
-        """
-        return f"<{str(self)} object at {id(self)}>"
+        super().__init__(identifier, timestamp)
 
 
 cdef class AccountEvent(Event):
@@ -105,7 +72,7 @@ cdef class AccountEvent(Event):
         :param margin_ratio: The events account margin ratio.
         :param margin_call_status: The events margin call status (can be empty).
         :param event_id: The events identifier.
-        :param event_timestamp: The order events timestamp.
+        :param event_timestamp: The events timestamp.
         """
         Precondition.not_negative(margin_ratio, 'margin_ratio')
 
