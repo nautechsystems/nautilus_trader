@@ -215,12 +215,7 @@ cdef class DataClient:
         raise NotImplementedError("Method must be implemented in the subclass.")
 
     cdef void _subscribe_ticks(self, Symbol symbol, handler: Callable):
-        """
-        Subscribe to tick data for the given symbol and handler.
-
-        :param symbol: The tick symbol to subscribe to.
-        :param handler: The tick handler for the subscription.
-        """
+        # Subscribe to tick data for the given symbol and handler
         Precondition.type(handler, Callable, 'handler')
 
         if symbol not in self._tick_handlers:
@@ -233,12 +228,8 @@ cdef class DataClient:
             self._log.debug(f"Added tick handler {handler}.")
 
     cdef void _unsubscribe_ticks(self, Symbol symbol, handler: Callable):
-        """
-        Unsubscribe from tick data for the given symbol and handler.
+        # Unsubscribe from tick data for the given symbol and handler
 
-        :param symbol: The tick symbol to unsubscribe from.
-        :param handler: The callable handler which was subscribed.
-        """
         Precondition.type(handler, Callable, 'handler')
 
         if symbol not in self._tick_handlers:
@@ -257,12 +248,8 @@ cdef class DataClient:
             self._log.info(f"Unsubscribed from tick data for {symbol}.")
 
     cdef void _subscribe_bars(self, BarType bar_type, handler: Callable):
-        """
-        Subscribe to bar data for the given bar type and handler.
+        # Subscribe to bar data for the given bar type and handler.
 
-        :param bar_type: The bar type to subscribe to.
-        :param handler: The callable handler for subscription.
-        """
         Precondition.type(handler, Callable, 'handler')
 
         if bar_type not in self._bar_handlers:
@@ -275,12 +262,8 @@ cdef class DataClient:
             self._log.debug(f"Added bar handler {handler} for {bar_type} bars.")
 
     cdef void _unsubscribe_bars(self, BarType bar_type, handler: Callable):
-        """
-        Unsubscribe from bar data for the given bar type and handler.
+        # Unsubscribe from bar data for the given bar type and handler.
 
-        :param bar_type: The bar type to unsubscribe from.
-        :param handler: The callable handler which was subscribed.
-        """
         Precondition.type(handler, Callable, 'handler')
 
         if bar_type not in self._bar_handlers:
@@ -299,32 +282,24 @@ cdef class DataClient:
             self._log.info(f"Unsubscribed from bar data for {bar_type}.")
 
     cdef void _handle_tick(self, Tick tick):
-        """
-        Handle the given tick by sending it to all tick handlers for the symbol.
+        # Handle the given tick by sending it to all tick handlers for that symbol
 
-        :param tick: The tick to handle.
-        """
         cdef TickHandler tick_handler
         if tick.symbol in self._tick_handlers:
             for tick_handler in self._tick_handlers[tick.symbol]:
                 tick_handler.handle(tick)
 
     cdef void _handle_bar(self, BarType bar_type, Bar bar):
-        """
-        Handle the given bar by sending it to all bar handlers for that bar type.
+        # Handle the given bar by sending it to all bar handlers for that bar type
 
-        :param bar_type: The bar type to handle.
-        :param bar: The bar to handle.
-        """
         cdef BarHandler bar_handler
         if bar_type in self._bar_handlers:
             for bar_handler in self._bar_handlers[bar_type]:
                 bar_handler.handle(bar_type, bar)
 
     cdef void _reset(self):
-        """
-        Reset the DataClient by clearing all stateful internal value. 
-        """
+        # Reset the DataClient by clearing all stateful internal value
+
         self._instruments = {}       # type: Dict[Symbol, Instrument]
         self._tick_handlers = {}     # type: Dict[Symbol, List[TickHandler]]
         self._bar_handlers = {}      # type: Dict[BarType, List[BarHandler]]

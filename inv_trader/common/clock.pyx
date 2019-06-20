@@ -261,9 +261,7 @@ cdef class LiveClock(Clock):
             self._log.info(f"Cancelled Timer('{label.value}').")
 
     cpdef void _raise_time_event(self, Label label, datetime alert_time):
-        """
-        Create a new TimeEvent and pass it to the clocks event handler.
-        """
+        # Create a new TimeEvent and pass it to the clocks event handler
         self._event_handler(TimeEvent(label, GUID(uuid4()), alert_time))
 
         if label in self._timers:
@@ -275,10 +273,8 @@ cdef class LiveClock(Clock):
             datetime alert_time,
             timedelta interval,
             datetime stop_time):
-        """
-        Create a new TimeEvent and pass it to the clocks event handler.
-        Then start a timer for the next time event if applicable.
-        """
+        # Create a new TimeEvent and pass it to the clocks event handler
+        # Then start a timer for the next time event if applicable
         self._event_handler(TimeEvent(label, GUID(uuid4()), alert_time))
 
         if stop_time is not None and alert_time + interval > stop_time:
@@ -379,9 +375,8 @@ cdef class TestClock(Clock):
         :param to_time: The datetime to iterate the test clock to.
         :return: List[TimeEvent].
         """
-        # Preconditions commented out for performance reasons (assumes backtest implementation is correct)
-        # Precondition.true(time.tzinfo == self.timezone, 'time.tzinfo == self.timezone')
-        # Precondition.true(time > self.time_now(), 'time > self.time_now()')
+        # Assumes time.tzinfo == self.timezone
+        # Assumes to_time > self.time_now()
 
         cdef dict time_events = {}  # type: Dict[TimeEvent, Callable]
         cdef Label label

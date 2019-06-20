@@ -84,9 +84,7 @@ cdef class SpreadAnalyzer:
         self.minimum_spread = Decimal(0)
 
     cdef void _calculate_and_set_metrics(self):
-        """
-        Calculate and set the average spread then reset the list of spreads. 
-        """
+        # Calculate and set the average spread then reset the list of spreads
         self.average_spread = Decimal(round(sum(self._spreads) / max(1, len(self._spreads)), self._decimal_precision))
         self.maximum_spread = Decimal(0) if not self._spreads else max(self._spreads)
         self.minimum_spread = Decimal(0) if not self._spreads else min(self._spreads)

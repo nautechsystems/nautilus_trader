@@ -70,9 +70,6 @@ cdef class CommissionCalculator:
         return max(self.minimum, notional_value * commission_rate_percent)
 
     cdef float _get_commission_rate(self, Symbol symbol):
-        """
-        Return the commission rate for the given symbol.
-        """
         if symbol in self.rates:
             return float(self.rates[symbol])
         else:
