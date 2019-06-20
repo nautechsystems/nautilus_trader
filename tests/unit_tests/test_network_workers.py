@@ -11,7 +11,7 @@ import unittest
 import time
 import zmq
 
-from inv_trader.network import RequestWorker, SubscriberWorker
+from inv_trader.network.workers import RequestWorker, SubscriberWorker
 from test_kit.mocks import MockServer, MockPublisher
 
 UTF8 = 'utf8'

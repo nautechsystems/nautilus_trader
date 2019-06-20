@@ -32,7 +32,7 @@ AUDUSD_FXCM = Symbol('AUDUSD', Venue.FXCM)
 GBPUSD_FXCM = Symbol('GBPUSD', Venue.FXCM)
 
 
-class PortfolioTestsTests(unittest.TestCase):
+class PortfolioTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
@@ -417,7 +417,7 @@ class PortfolioTestsTests(unittest.TestCase):
         self.portfolio.handle_order_fill(sell1, strategy1.id)
 
         # Assert
-        # Tested .is_position_active and .is_position_closed above
+        # Already tested .is_position_active and .is_position_closed above
         self.assertTrue(self.portfolio.is_position_exists(position_id1))
         self.assertTrue(self.portfolio.is_position_exists(position_id2))
         self.assertTrue(self.portfolio.is_strategy_flat(strategy1.id))
