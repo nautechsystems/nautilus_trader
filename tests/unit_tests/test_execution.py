@@ -10,8 +10,7 @@
 import unittest
 import time
 
-from inv_trader.model.enums import Venue, OrderSide, OrderStatus
-from inv_trader.model.identifiers import PositionId
+from inv_trader.model.enums import Venue, OrderSide
 from inv_trader.model.objects import Quantity, Symbol, Price
 from inv_trader.execution import LiveExecClient
 from test_kit.stubs import TestStubs

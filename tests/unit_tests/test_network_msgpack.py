@@ -21,10 +21,10 @@ from inv_trader.model.identifiers import *
 from inv_trader.model.objects import *
 from inv_trader.model.order import *
 from inv_trader.model.events import *
-from inv_trader.serialization import MsgPackOrderSerializer
-from inv_trader.serialization import MsgPackCommandSerializer
-from inv_trader.serialization import MsgPackEventSerializer
-from inv_trader.serialization import MsgPackInstrumentSerializer
+from inv_trader.network.msgpack import MsgPackOrderSerializer
+from inv_trader.network.msgpack import MsgPackCommandSerializer
+from inv_trader.network.msgpack import MsgPackEventSerializer
+from inv_trader.network.msgpack import MsgPackInstrumentSerializer
 from inv_trader.common.serialization import convert_price_to_string, convert_datetime_to_string
 from inv_trader.common.serialization import convert_string_to_price, convert_string_to_datetime
 from test_kit.stubs import TestStubs
@@ -853,7 +853,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.timestamp)
 
 
-class InstrumentSerializerTests(unittest.TestCase):
+class MsgPackInstrumentSerializerTests(unittest.TestCase):
 
     def test_can_serialize_and_deserialize_instrument(self):
         # Arrange

@@ -10,14 +10,10 @@
 import unittest
 
 from datetime import datetime
-from matplotlib import pyplot as plt
 
-from inv_trader.common.clock import TestClock
-from inv_trader.model.enums import Venue, OrderSide
-from inv_trader.model.objects import ValidString, Quantity, Symbol, Price, Money
-from inv_trader.model.order import OrderFactory
-from inv_trader.model.events import OrderFilled
-from inv_trader.model.identifiers import GUID, OrderId, PositionId, ExecutionId, ExecutionTicket
+from inv_trader.model.enums import Venue
+from inv_trader.model.objects import Symbol, Money
+from inv_trader.model.identifiers import PositionId
 from inv_trader.model.position import Position
 from inv_trader.portfolio.performance import PerformanceAnalyzer
 from test_kit.stubs import TestStubs
@@ -27,7 +23,7 @@ AUDUSD_FXCM = Symbol('AUDUSD', Venue.FXCM)
 GBPUSD_FXCM = Symbol('GBPUSD', Venue.FXCM)
 
 
-class PortfolioTestsTests(unittest.TestCase):
+class AnalyzerTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
