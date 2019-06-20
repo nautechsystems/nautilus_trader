@@ -87,3 +87,13 @@ cpdef object as_utc_timestamp(datetime timestamp):
         return timestamp.tz_convert('UTC')
     else:
         return timestamp  # Already UTC
+
+# closures in cpdef functions not yet supported (21/6/19)
+def max_in_dict(dict dictionary):
+    """
+    Return the key for the maximum value held in the given dictionary.
+    
+    :param dictionary: The dictionary to check.
+    :return: The key.
+    """
+    return max(dictionary.items(), key=lambda x: x[1])[0]
