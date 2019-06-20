@@ -264,13 +264,8 @@ cdef class BacktestEngine:
             datetime start,
             datetime stop,
             timedelta time_step):
-        """
-        Run the backtest with tick level execution resolution.
-        
-        :param start: The start UTC datetime for the backtest run.
-        :param stop: The stop UTC datetime for the backtest run.
-        :param time_step: The time-step timedelta for each loop iteration.
-        """
+        # Run the backtest with tick level execution resolution
+
         cdef Tick tick
         cdef TradeStrategy strategy
         cdef dict time_events
@@ -301,13 +296,8 @@ cdef class BacktestEngine:
             datetime start,
             datetime stop,
             timedelta time_step):
-        """
-        Run the backtest with tick level execution resolution.
-        
-        :param start: The start UTC datetime for the backtest run.
-        :param stop: The stop UTC datetime for the backtest run.
-        :param time_step: The time-step timedelta for each loop iteration.
-        """
+        # Run the backtest with bar level execution resolution
+
         cdef Symbol symbol
         cdef Tick tick
         cdef TradeStrategy strategy
@@ -446,9 +436,6 @@ cdef class BacktestEngine:
         self.trader.dispose()
 
     cdef void _engine_header(self):
-        """
-        Create a backtest engine log header.
-        """
         self.log.info("#---------------------------------------------------------------#")
         self.log.info("#----------------------- BACKTEST ENGINE -----------------------#")
         self.log.info("#---------------------------------------------------------------#")
@@ -474,9 +461,6 @@ cdef class BacktestEngine:
             datetime start,
             datetime stop,
             timedelta time_step):
-        """
-        Create a backtest run log header.
-        """
         self.log.info("#---------------------------------------------------------------#")
         self.log.info("#----------------------- BACKTEST RUN --------------------------#")
         self.log.info("#---------------------------------------------------------------#")
@@ -499,9 +483,6 @@ cdef class BacktestEngine:
             datetime start,
             datetime stop,
             timedelta time_step):
-        """
-        Create a backtest run log footer.
-        """
         cdef str account_currency = currency_string(self.account.currency)
         cdef int account_starting_length = len(str(self.config.starting_capital))
 
@@ -533,12 +514,8 @@ cdef class BacktestEngine:
             self.log.info(statistic)
 
     cdef void _change_clocks_and_loggers(self, list strategies):
-        """
-        Replace the clocks and loggers for every strategy in the given list.
-        
-        :param strategies: The list of strategies.
-        """
-        cdef TradeStrategy strategy
+        # Replace the clocks and loggers for every strategy in the given list
+
         for strategy in strategies:
             # Separate test clocks to iterate independently
             strategy.change_clock(TestClock())

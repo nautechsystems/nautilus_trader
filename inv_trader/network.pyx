@@ -97,16 +97,12 @@ cdef class MQWorker:
         self._log.debug(f"Stopped.")
 
     cpdef void _open_connection(self):
-        """
-        Open a new connection to the service.
-        """
+        # Open a connection to the service
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
     cpdef void _close_connection(self):
-        """
-        Close the connection with the service.
-        """
+        # Close the connection with the service
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
@@ -150,16 +146,12 @@ cdef class RequestWorker(MQWorker):
             logger)
 
     cpdef void _open_connection(self):
-        """
-        Open a new connection to the service.
-        """
+        # Open a connection to the service
         self._socket.connect(self._service_address)
         self._log.info(f"Connected to {self._service_address}")
 
     cpdef void _close_connection(self):
-        """
-        Close the connection with the service.
-        """
+        # Close the connection with the service
         self._socket.disconnect(self._service_address)
         self._log.info(f"Disconnected from {self._service_address}")
 
@@ -208,9 +200,7 @@ cdef class SubscriberWorker(MQWorker):
         self._topic = topic
 
     cpdef void _open_connection(self):
-        """
-        Open a new connection to the service.
-        """
+        # Open a connection to the service
         self._socket.connect(self._service_address)
         self._log.info(f"Connected to {self._service_address}")
         self._socket.setsockopt(zmq.SUBSCRIBE, self._topic.encode(UTF8))
@@ -218,9 +208,7 @@ cdef class SubscriberWorker(MQWorker):
         self._consume_messages()
 
     cpdef void _consume_messages(self):
-        """
-        Start the consumption loop to receive published messages.
-        """
+        # Start the consumption loop to receive published messages
         self._log.info("Ready to consume messages...")
 
         cdef bytes message
@@ -235,11 +223,9 @@ cdef class SubscriberWorker(MQWorker):
 
             self._handler(data)
             self._cycles += 1
-            self._log.debug(f"Received message[{self._cycles}] from {topic.decode(UTF8)}: {data}")
+            self._log.debug(f"Received[{self._cycles}] message for topic {topic.decode(UTF8)}: {data}")
 
     cpdef void _close_connection(self):
-        """
-        Close the connection with the service.
-        """
+        # Close the connection with the service
         self._socket.disconnect(self._service_address)
         self._log.info(f"Disconnected from {self._service_address}")

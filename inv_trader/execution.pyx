@@ -144,9 +144,7 @@ cdef class LiveExecClient(ExecutionClient):
         self._message_bus.put(event)
 
     cpdef void _process(self):
-        """
-        Process the message bus of commands and events.
-        """
+        # Process the message bus of commands and events
         while True:
             item = self._message_bus.get()
             if isinstance(item, Event):
@@ -155,64 +153,42 @@ cdef class LiveExecClient(ExecutionClient):
                 self._execute_command(item)
 
     cdef void _collateral_inquiry(self, CollateralInquiry command):
-        """
-        Send a collateral inquiry command to the execution service.
-        """
+        # Send a collateral inquiry command to the execution service
         cdef bytes message = self._command_serializer.serialize(command)
 
         self._commands_worker.send(message)
         self._log.debug(f"Sent {command}")
 
     cdef void _submit_order(self, SubmitOrder command):
-        """
-        Send a submit order command to the execution service.
-
-        :param command: The command to send.
-        """
+        # Send a submit order command to the execution service
         cdef bytes message = self._command_serializer.serialize(command)
 
         self._commands_worker.send(message)
         self._log.debug(f"Sent {command}")
 
     cdef void _submit_atomic_order(self, SubmitAtomicOrder command):
-        """
-        Send a submit atomic order command to the execution service.
-        
-        :param command: The command to send.
-        """
+        # Send a submit atomic order command to the execution service
         cdef bytes message = self._command_serializer.serialize(command)
 
         self._commands_worker.send(message)
         self._log.debug(f"Sent {command}")
 
     cdef void _modify_order(self, ModifyOrder command):
-        """
-        Send a modify order command to the execution service.
-
-        :param command: The command to send.
-        """
+        # Send a modify order command to the execution service
         cdef bytes message = self._command_serializer.serialize(command)
 
         self._commands_worker.send(message)
         self._log.debug(f"Sent {command}")
 
     cdef void _cancel_order(self, CancelOrder command):
-        """
-        Send a cancel order command to the execution service.
-
-        :param command: The command to execute.
-        """
+        # Send a cancel order command to the execution service
         cdef bytes message = self._command_serializer.serialize(command)
 
         self._commands_worker.send(message)
         self._log.debug(f"Sent {command}")
 
     cdef void _deserialize_event(self, bytes body):
-        """"
-        Deserialize the given bytes into an event object and send to _handle_event().
-
-        :param body: The event message body.
-        """
+        # Deserialize the given bytes into an event object and send to _handle_event()
         cdef Event event = self._event_serializer.deserialize(body)
 
         # If no registered strategies then print message to console
@@ -222,10 +198,6 @@ cdef class LiveExecClient(ExecutionClient):
         self._handle_event(event)
 
     cdef void _deserialize_command_acknowledgement(self, bytes body):
-        """"
-        Deserialize the given bytes into a command object.
-
-        :param body: The command acknowledgement message body.
-        """
+        # Deserialize the given bytes into a command object
         cdef Command command = self._command_serializer.deserialize(body)
         self._log.debug(f"Received order command ack for command_id {command.id}.")

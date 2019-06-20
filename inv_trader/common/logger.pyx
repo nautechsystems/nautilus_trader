@@ -134,12 +134,6 @@ cdef class Logger:
         self._log_store = []
 
     cpdef void _debug(self, datetime timestamp, ValidString message):
-        """
-        Log the given debug message with the logger.
-
-        :param timestamp: The timestamp for the log message.
-        :param message: The debug message to log.
-        """
         cdef str log_message = self._format_message(timestamp, 'DBG', message.value)
         self._log_store_handler(logging.DEBUG, log_message)
         self._console_print_handler(logging.DEBUG, log_message)
@@ -151,12 +145,6 @@ cdef class Logger:
                 self._console_print_handler(f"IOError: {ex}.", logging.CRITICAL)
 
     cpdef void _info(self, datetime timestamp, ValidString message):
-        """
-        Log the given information message with the logger.
-
-        :param timestamp: The timestamp for the log message.
-        :param message: The information message to log.
-        """
         cdef str log_message = self._format_message(timestamp, 'INF', message.value)
         self._log_store_handler(logging.INFO, log_message)
         self._console_print_handler(logging.INFO, log_message)
@@ -168,12 +156,6 @@ cdef class Logger:
                 self._console_print_handler(f"IOError: {ex}.", logging.CRITICAL)
 
     cpdef void _warning(self, datetime timestamp, ValidString message):
-        """
-        Log the given warning message with the logger.
-
-        :param timestamp: The timestamp for the log message.
-        :param message: The warning message to log.
-        """
         cdef str log_message = self._format_message(timestamp, WARNING + 'WRN' + ENDC, WARNING + message.value + ENDC)
         self._log_store_handler(logging.WARNING, log_message)
         self._console_print_handler(logging.WARNING, log_message)
@@ -185,12 +167,6 @@ cdef class Logger:
                 self._console_print_handler(f"IOError: {ex}.", logging.CRITICAL)
 
     cpdef void _error(self, datetime timestamp, ValidString message):
-        """
-        Log the given error message with the logger.
-
-        :param timestamp: The timestamp for the log message.
-        :param message: The error message to log.
-        """
         cdef str log_message = self._format_message(timestamp, FAIL + 'ERR' + ENDC, FAIL + message.value + ENDC)
         self._log_store_handler(logging.ERROR, log_message)
         self._console_print_handler(logging.ERROR, log_message)
@@ -202,12 +178,6 @@ cdef class Logger:
                 self._console_print_handler(f"IOError: {ex}.", logging.CRITICAL)
 
     cpdef void _critical(self, datetime timestamp, ValidString message):
-        """
-        Log the given critical message with the logger.
-
-        :param timestamp: The timestamp for the log message.
-        :param message: The critical message to log.
-        """
         cdef str log_message = self._format_message(timestamp, FAIL + 'CRT' + ENDC, FAIL + message.value + ENDC)
         self._log_store_handler(logging.CRITICAL, log_message)
         self._console_print_handler(logging.CRITICAL, log_message)
@@ -219,36 +189,19 @@ cdef class Logger:
                 self._console_print_handler(f"IOError: {ex}.", logging.CRITICAL)
 
     cdef str _format_message(self, datetime timestamp, str log_level, str message):
-        """
-        Return the formatted log message from the given arguments.
-
-        :param timestamp: The log message timestamp.
-        :param log_level: The log message level.
-        :param message: The log message text. 
-        :return: str.
-        """
+        # Return the formatted log message from the given arguments
         cdef str time = format_zulu_datetime(timestamp)
         cdef str thread = '' if self._log_thread is False else f'[{threading.current_thread().ident}]'
         return f"{BOLD}{time}{ENDC} {thread}[{log_level}] {message}"
 
     cdef void _log_store_handler(self, int log_level, str message):
-        """
-        Store the given log message if the given log level is >= the log_level_store.
-        
-        :param log_level: The log message level.
-        :param message: The log message text.
-        """
+        # Store the given log message if the given log level is >= the log_level_store
         if log_level >= self._log_level_store:
             self._log_store.append(message)
 
     cdef void _console_print_handler(self, int log_level, str message):
-        """
-        Print the given log message to the console if the given log level if
-        >= the log_level_console level.
-
-        :param log_level: The log message level.
-        :param message: The log message text.
-        """
+        # Print the given log message to the console if the given log level if
+        # >= the log_level_console level.
         if self._console_prints and log_level >= self._log_level_console:
             print(message)
 
@@ -326,9 +279,7 @@ cdef class LiveLogger(Logger):
         self._queue.put(LogMessage(log_level, self.clock.time_now(), message))
 
     cpdef void _process_messages(self):
-        """
-        Process the queue one item at a time.
-        """
+        # Process the queue one item at a time
         cdef LogMessage log_message
 
         while True:
@@ -494,4 +445,5 @@ cdef class LoggerAdapter:
         self.error(ex_string + stack_trace_lines)
 
     cdef ValidString _format_message(self, str message):
+        # Add the components name to the front of the log message
         return ValidString(f"{self.component_name}: {message}")

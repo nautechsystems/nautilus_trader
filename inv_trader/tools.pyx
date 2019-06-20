@@ -68,8 +68,8 @@ cdef class TickBuilder:
 
     cpdef list build_ticks_all(self):
         """
-        Return a dictionary of built ticks from the held data.
-        
+        Return the built ticks from the held data.
+
         :return: List[Tick].
         """
         if self._tick_data is not None and len(self._tick_data) > 0:
@@ -90,28 +90,15 @@ cdef class TickBuilder:
             float bid,
             float ask,
             datetime timestamp):
-        """
-        Build a tick from the given values.
-        
-        :param bid: The bid price for the tick.
-        :param ask: The ask price for the tick.
-        :param timestamp: The timestamp for the tick.
-        :return: Tick.
-        """
+        # Build a tick from the given values
         return Tick(self._symbol,
                     Price(bid, self._decimal_precision),
                     Price(ask, self._decimal_precision),
                     timestamp)
 
     cpdef Tick _build_tick_from_values(self, double[:] values, datetime timestamp):
-        """
-        Build a tick from the given values. The function expects the values to 
-        be an ndarray with 2 elements [bid, ask] of type double.
-
-        :param values: The price values for the tick.
-        :param timestamp: The timestamp for the tick.
-        :return: Tick.
-        """
+        # Build a tick from the given values. The function expects the values to
+        # be an ndarray with 2 elements [bid, ask] of type double.
         return Tick(self._symbol,
                     Price(values[0], self._decimal_precision),
                     Price(values[1], self._decimal_precision),
@@ -215,14 +202,8 @@ cdef class BarBuilder:
                         pd.to_datetime(self._data.iloc[start:end].index)))
 
     cpdef DataBar _build_databar(self, double[:] values, datetime timestamp):
-        """
-        Build a DataBar from the given index and values. The function expects the
-        values to be an ndarray with 5 elements [open, high, low, close, volume].
-
-        :param values: The values for the bar.
-        :param timestamp: The timestamp for the bar.
-        :return: DataBar.
-        """
+        # Build a DataBar from the given index and values. The function expects the
+        # values to be an ndarray with 5 elements [open, high, low, close, volume].
         return DataBar(values[0],
                        values[1],
                        values[2],
@@ -231,14 +212,8 @@ cdef class BarBuilder:
                        timestamp)
 
     cpdef Bar _build_bar(self, double[:] values, datetime timestamp):
-        """
-        Build a bar from the given index and values. The function expects the
-        values to be an ndarray with 5 elements [open, high, low, close, volume].
-
-        :param values: The values for the bar.
-        :param timestamp: The timestamp for the bar.
-        :return: Bar.
-        """
+        # Build a bar from the given index and values. The function expects the
+        # values to be an ndarray with 5 elements [open, high, low, close, volume].
         return Bar(Price(values[0], self._decimal_precision),
                    Price(values[1], self._decimal_precision),
                    Price(values[2], self._decimal_precision),
@@ -348,10 +323,7 @@ cdef class IndicatorUpdater:
         return features
 
     cdef list _get_values(self):
-        """
-        Create a list of the current indicator outputs. The list will contain
-        a tuple of the name of the output and the float value.
-        
-        :return: List[(str, float)].
-        """
+        # Create a list of the current indicator outputs. The list will contain
+        # a tuple of the name of the output and the float value.
+        # :return: List[(str, float)].
         return [(output, self._indicator.__getattribute__(output)) for output in self._outputs]

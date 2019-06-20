@@ -274,11 +274,6 @@ cdef class ExecutionClient:
         return self._order_book[order_id].is_complete
 
     cdef void _execute_command(self, Command command):
-        """
-        Execute the given command.
-        
-        :param command: The command to execute.
-        """
         self.command_count += 1
 
         if isinstance(command, CollateralInquiry):
@@ -298,11 +293,6 @@ cdef class ExecutionClient:
             self._cancel_order(command)
 
     cdef void _handle_event(self, Event event):
-        """
-        Handle the given event.
- 
-        :param: event: The event to handle.
-        """
         self.event_count += 1
 
         cdef Order order
@@ -364,17 +354,10 @@ cdef class ExecutionClient:
             self._portfolio.handle_transaction(event)
 
     cdef void _register_order(self, Order order, StrategyId strategy_id, PositionId position_id):
-        """
-        Register the given order with the execution client.
-
-        :param order: The order to register.
-        :param strategy_id: The strategy identifier to associate with the order.
-        :param position_id: The order identifier to associate with the order.
-        :raises ValueError: If the order identifier is already registered with the execution client.
-        """
         Precondition.not_in(order.id, self._order_book, 'order.id', 'order_book')
         Precondition.not_in(order.id, self._order_strategy_index, 'order.id', 'order_index')
 
+        # Register the given order with the execution client
         self._order_book[order.id] = order
         self._order_strategy_index[order.id] = strategy_id
         self._portfolio.register_order(order.id, position_id)
@@ -384,62 +367,38 @@ cdef class ExecutionClient:
 # -- ABSTRACT METHODS ---------------------------------------------------------------------------- #
 
     cdef void _collateral_inquiry(self, CollateralInquiry command):
-        """
-        Send a collateral inquiry command to the execution service.
-        
-        :param command: The command to send.
-        """
+        # Send a collateral inquiry command to the execution service
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
     cdef void _submit_order(self, SubmitOrder command):
-        """
-        Send a submit order command to the execution service.
-        
-        :param command: The command to send.
-        """
+        # Send a submit order command to the execution service
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
     cdef void _submit_atomic_order(self, SubmitAtomicOrder command):
-        """
-        Send a submit atomic order command to the execution service.
-        
-        :param command: The command to send.
-        """
+        # Send a submit atomic order command to the execution service
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
     cdef void _modify_order(self, ModifyOrder command):
-        """
-        Send a modify order command to the execution service.
-        
-        :param command: The command to send.
-        """
+        # Send a modify order command to the execution service
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
     cdef void _cancel_order(self, CancelOrder command):
-        """
-        Send a cancel order command to the execution service.
-        
-        :param command: The command to send.
-        """
+        # Send a cancel order command to the execution service
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
     cdef void _check_residuals(self):
-        """
-        Check for any residual active orders and log warnings if any are found.
-        """
+        # Check for any residual active orders and log warnings if any are found
         for orders in self._orders_active.values():
             for order in orders.values():
                 self._log.warning(f"Residual active {order}")
 
     cdef void _reset(self):
-        """
-        Reset the execution client by returning all stateful internal values to their initial value.
-        """
+        # Reset the execution client by returning all stateful internal values to their initial value
         self._log.debug(f"Resetting...")
         self._order_book = {}                         # type: Dict[OrderId, Order]
         self._order_strategy_index = {}               # type: Dict[OrderId, StrategyId]

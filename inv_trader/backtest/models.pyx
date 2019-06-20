@@ -71,13 +71,10 @@ cdef class FillModel:
         return self._did_event_occur(self.prob_slippage)
 
     cdef bint _did_event_occur(self, float probability):
-        """
-        Return a result indicating whether an event occurred based on the given 
-        probability.
+        # Return a result indicating whether an event occurred based on the
+        # given probability.
         
-        :param probability: The probability of the event occurring [0, 1].
-        :return: True if the event occurred, else False.
-        """
+        # :param probability: The probability of the event occurring [0, 1].
         if probability == 0.0:
             return False
         elif probability == 1.0:
