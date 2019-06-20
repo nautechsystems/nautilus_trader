@@ -14,6 +14,7 @@ from decimal import Decimal
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.enums.security_type cimport SecurityType
 from inv_trader.model.enums import Currency
+from inv_trader.enums.currency cimport Currency
 from inv_trader.model.objects cimport Symbol, Instrument, Quantity
 from inv_trader.model.identifiers cimport InstrumentId
 
@@ -35,11 +36,18 @@ cdef class InstrumentLoader:
         Precondition.true(len(symbol.code) == 6, 'len(symbol) == 6')
         Precondition.true(tick_precision == 3 or tick_precision == 5, 'tick_precision == 3 or 5')
 
+        cdef Currency quote_currency = Currency[symbol.code[3:]]
+        # Check tick precision of quote currency
+        if quote_currency == Currency.USD:
+            Precondition.true(tick_precision == 5, 'USD tick_precision == 5')
+        elif quote_currency == Currency.JPY:
+            Precondition.true(tick_precision == 3, 'JPY tick_precision == 3')
+
         return Instrument(
             instrument_id=InstrumentId(str(symbol)),
             symbol=symbol,
             broker_symbol=symbol.code[:3] + '/' + symbol.code[3:],
-            quote_currency=Currency[symbol.code[3:]],
+            quote_currency=quote_currency,
             security_type=SecurityType.FOREX,
             tick_precision=tick_precision,
             tick_size=Decimal('0.' + ('0' * (tick_precision - 1)) + '1'),
