@@ -26,8 +26,8 @@ cdef class Command(Message):
         """
         Initializes a new instance of the Command abstract class.
 
-        :param identifier: The commands identifier.
-        :param timestamp: The commands timestamp.
+        :param identifier: The command identifier.
+        :param timestamp: The command timestamp.
         """
         super().__init__(identifier, timestamp)
 
@@ -41,8 +41,8 @@ cdef class CollateralInquiry(Command):
         """
         Initializes a new instance of the CollateralInquiry class.
 
-        :param command_id: The commands identifier.
-        :param command_timestamp: The order commands timestamp.
+        :param command_id: The command identifier.
+        :param command_timestamp: The command timestamp.
         """
         super().__init__(command_id, command_timestamp)
 
@@ -65,9 +65,9 @@ cdef class SubmitOrder(Command):
         :param trader_id: The trader identifier associated with the order.
         :param strategy_id: The strategy identifier associated with the order.
         :param position_id: The position identifier associated with the order.
-        :param order: The commands order to submit.
-        :param command_id: The commands identifier.
-        :param command_timestamp: The commands timestamp.
+        :param order: The order to submit.
+        :param command_id: The command identifier.
+        :param command_timestamp: The command timestamp.
         """
         super().__init__(command_id, command_timestamp)
         self.trader_id = trader_id
@@ -103,12 +103,12 @@ cdef class SubmitAtomicOrder(Command):
         """
         Initializes a new instance of the SubmitAtomicOrder class.
 
-        :param atomic_order: The commands atomic order to submit.
+        :param atomic_order: The atomic order to submit.
         :param trader_id: The trader identifier associated with the order.
         :param strategy_id: The strategy identifier to associate with the order.
-        :param position_id: The command position identifier.
-        :param command_id: The commands identifier.
-        :param command_timestamp: The commands timestamp.
+        :param position_id: The position identifier.
+        :param command_id: The command identifier.
+        :param command_timestamp: The command timestamp.
         """
         super().__init__(command_id, command_timestamp)
         self.trader_id = trader_id
@@ -146,10 +146,10 @@ cdef class ModifyOrder(Command):
 
         :param trader_id: The trader identifier associated with the order.
         :param strategy_id: The strategy identifier associated with the order.
-        :param order_id: The commands order identifier.
-        :param modified_price: The commands modified price for the order.
-        :param command_id: The commands identifier.
-        :param command_timestamp: The commands timestamp.
+        :param order_id: The order identifier.
+        :param modified_price: The modified price for the order.
+        :param command_id: The command identifier.
+        :param command_timestamp: The command timestamp.
         """
         super().__init__(command_id, command_timestamp)
         self.trader_id = trader_id
@@ -175,10 +175,10 @@ cdef class CancelOrder(Command):
 
         :param trader_id: The trader identifier associated with the order.
         :param strategy_id: The strategy identifier associated with the order.
-        :param order_id: The commands order identifier.
+        :param order_id: The order identifier.
         :param cancel_reason: The reason for cancellation.
-        :param command_id: The commands identifier.
-        :param command_timestamp: The commands timestamp.
+        :param command_id: The command identifier.
+        :param command_timestamp: The command timestamp.
         """
         super().__init__(command_id, command_timestamp)
         self.trader_id = trader_id
