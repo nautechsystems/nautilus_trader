@@ -11,17 +11,10 @@
 
 from cpython.datetime cimport datetime
 
-from inv_trader.core.message cimport Message
-from inv_trader.model.identifiers cimport GUID, OrderId, TraderId, StrategyId, PositionId
+from inv_trader.core.message cimport Command
+from inv_trader.model.identifiers cimport OrderId, TraderId, StrategyId, PositionId
 from inv_trader.model.objects cimport ValidString, Price
 from inv_trader.model.order cimport Order, AtomicOrder
-
-
-cdef class Command(Message):
-    """
-    The base class for all commands.
-    """
-    pass
 
 
 cdef class CollateralInquiry(Command):

@@ -14,13 +14,12 @@ import iso8601
 from cpython.datetime cimport datetime
 
 # Do not reorder imports (enums need to be in below order)
+from inv_trader.core.message cimport Command, Event, Request, Response
 from inv_trader.model.enums import Venue
 from inv_trader.enums.venue cimport Venue
-from inv_trader.model.identifiers cimport GUID, Label
+from inv_trader.model.identifiers cimport Label
 from inv_trader.model.objects cimport Symbol, Price, Instrument
 from inv_trader.model.order cimport Order
-from inv_trader.model.events cimport Event
-from inv_trader.commands cimport Command
 
 
 cdef str UTF8 = 'utf-8'
@@ -265,7 +264,7 @@ cdef class RequestSerializer:
     The abstract base class for all request serializers.
     """
 
-    cpdef bytes serialize(self, object request):
+    cpdef bytes serialize(self, Request request):
         """
         Serialize the given request to bytes.
 
@@ -275,7 +274,7 @@ cdef class RequestSerializer:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef Event deserialize(self, bytes request_bytes):
+    cpdef Request deserialize(self, bytes request_bytes):
         """
         Deserialize the given bytes to a request.
 
@@ -291,7 +290,7 @@ cdef class ResponseSerializer:
     The abstract base class for all response serializers.
     """
 
-    cpdef bytes serialize(self, object response):
+    cpdef bytes serialize(self, Response response):
         """
         Serialize the given response to bytes.
 
@@ -301,7 +300,7 @@ cdef class ResponseSerializer:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef Event deserialize(self, bytes response_bytes):
+    cpdef Response deserialize(self, bytes response_bytes):
         """
         Deserialize the given bytes to a response.
 

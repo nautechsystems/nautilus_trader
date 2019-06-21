@@ -22,3 +22,31 @@ cdef class Message:
     cdef readonly datetime timestamp
 
     cdef bint equals(self, Message other)
+
+
+cdef class Command(Message):
+    """
+    The base class for all commands.
+    """
+    pass
+
+
+cdef class Event(Message):
+    """
+    The base class for all events.
+    """
+    pass
+
+
+cdef class Request(Message):
+    """
+    The base class for all requests.
+    """
+    pass
+
+
+cdef class Response(Message):
+    """
+    The base class for all responses.
+    """
+    cdef readonly GUID correlation_id

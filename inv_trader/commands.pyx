@@ -11,25 +11,9 @@
 
 from cpython.datetime cimport datetime
 
-from inv_trader.core.message cimport Message
 from inv_trader.model.objects cimport ValidString, Price
 from inv_trader.model.identifiers cimport GUID, PositionId, TraderId, StrategyId
 from inv_trader.model.order cimport Order, AtomicOrder
-
-
-cdef class Command(Message):
-    """
-    The base class for all commands.
-    """
-
-    def __init__(self, GUID identifier, datetime timestamp):
-        """
-        Initializes a new instance of the Command abstract class.
-
-        :param identifier: The command identifier.
-        :param timestamp: The command timestamp.
-        """
-        super().__init__(identifier, timestamp)
 
 
 cdef class CollateralInquiry(Command):

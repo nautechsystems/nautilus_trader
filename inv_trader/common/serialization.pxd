@@ -11,11 +11,11 @@
 
 from cpython.datetime cimport datetime
 
+from inv_trader.core.message cimport Command, Event, Request, Response
 from inv_trader.model.objects cimport Symbol, Price, Instrument
 from inv_trader.model.identifiers cimport Label
 from inv_trader.model.order cimport Order
-from inv_trader.model.events cimport Event
-from inv_trader.commands cimport Command
+
 
 cpdef Symbol parse_symbol(str symbol_string)
 cpdef str convert_price_to_string(Price price)
@@ -57,3 +57,19 @@ cdef class EventSerializer:
     """
     cpdef bytes serialize(self, Event event)
     cpdef Event deserialize(self, bytes event_bytes)
+
+
+cdef class RequestSerializer:
+    """
+    The abstract base class for all request serializers.
+    """
+    cpdef bytes serialize(self, Request request)
+    cpdef Request deserialize(self, bytes request_bytes)
+
+
+cdef class ResponseSerializer:
+    """
+    The abstract base class for all response serializers.
+    """
+    cpdef bytes serialize(self, Response request)
+    cpdef Response deserialize(self, bytes response_bytes)

@@ -82,3 +82,69 @@ cdef class Message:
         :return: str.
         """
         return f"<{str(self)} object at {id(self)}>"
+
+
+cdef class Command(Message):
+    """
+    The base class for all commands.
+    """
+
+    def __init__(self, GUID identifier, datetime timestamp):
+        """
+        Initializes a new instance of the Command abstract class.
+
+        :param identifier: The command identifier.
+        :param timestamp: The command timestamp.
+        """
+        super().__init__(identifier, timestamp)
+
+
+cdef class Event(Message):
+    """
+    The base class for all events.
+    """
+
+    def __init__(self,
+                 GUID identifier,
+                 datetime timestamp):
+        """
+        Initializes a new instance of the Event abstract class.
+
+        :param identifier: The event identifier.
+        :param timestamp: The event timestamp.
+        """
+        super().__init__(identifier, timestamp)
+
+
+cdef class Request(Message):
+    """
+    The base class for all requests.
+    """
+
+    def __init__(self, GUID identifier, datetime timestamp):
+        """
+        Initializes a new instance of the Request abstract class.
+
+        :param identifier: The request identifier.
+        :param timestamp: The request timestamp.
+        """
+        super().__init__(identifier, timestamp)
+
+
+cdef class Response(Message):
+    """
+    The base class for all responses.
+    """
+
+    def __init__(self,
+                 GUID correlation_id,
+                 GUID identifier,
+                 datetime timestamp):
+        """
+        Initializes a new instance of the Response abstract class.
+
+        :param identifier: The correlation identifier.
+        :param identifier: The response identifier.
+        :param timestamp: The response timestamp.
+        """
+        super().__init__(correlation_id, identifier, timestamp)
