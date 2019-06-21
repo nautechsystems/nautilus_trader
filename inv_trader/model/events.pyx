@@ -35,8 +35,8 @@ cdef class Event(Message):
         """
         Initializes a new instance of the Event abstract class.
 
-        :param identifier: The events identifier.
-        :param timestamp: The events timestamp.
+        :param identifier: The event identifier.
+        :param timestamp: The event timestamp.
         """
         super().__init__(identifier, timestamp)
 
@@ -63,16 +63,19 @@ cdef class AccountEvent(Event):
         """
         Initializes a new instance of the AccountEvent class.
 
+        :param account_id: The account identifier.
+        :param broker: The account broker.
+        :param account_number: The account number.
         :param currency: The currency for the account.
-        :param cash_balance: The events account cash balance.
-        :param cash_start_day: The events account cash start of day.
-        :param cash_activity_day: The events account activity for the trading day.
-        :param margin_used_liquidation: The events margin used before liquidation.
-        :param margin_used_maintenance: The events margin used for maintenance.
-        :param margin_ratio: The events account margin ratio.
-        :param margin_call_status: The events margin call status (can be empty).
-        :param event_id: The events identifier.
-        :param event_timestamp: The events timestamp.
+        :param cash_balance: The account cash balance.
+        :param cash_start_day: The account cash start of day.
+        :param cash_activity_day: The account activity for the trading day.
+        :param margin_used_liquidation: The account margin used before liquidation.
+        :param margin_used_maintenance: The account margin used for maintenance.
+        :param margin_ratio: The account margin ratio.
+        :param margin_call_status: The account margin call status (can be empty).
+        :param event_id: The event identifier.
+        :param event_timestamp: The event timestamp.
         """
         Precondition.not_negative(margin_ratio, 'margin_ratio')
 
@@ -115,9 +118,9 @@ cdef class OrderEvent(Event):
         """
         Initializes a new instance of the OrderEvent base class.
 
-        :param order_id: The events order identifier.
-        :param event_id: The events identifier.
-        :param event_timestamp: The events timestamp.
+        :param order_id: The event order identifier.
+        :param event_id: The event identifier.
+        :param event_timestamp: The event timestamp.
         """
         super().__init__(event_id, event_timestamp)
         self.order_id = order_id
@@ -155,17 +158,17 @@ cdef class OrderInitialized(OrderEvent):
         """
         Initializes a new instance of the OrderInitialized class.
 
-        :param order_id: The events order identifier.
-        :param symbol: The events order symbol.
-        :param label: The events order label.
-        :param order_side: The events order side.
-        :param order_type: The events order type.
-        :param quantity: The events order quantity.
-        :param price: The events order price.
-        :param time_in_force: The events order time in force.
-        :param expire_time: The events order expire time.
-        :param event_id: The events identifier.
-        :param event_timestamp: The events timestamp.
+        :param order_id: The event order identifier.
+        :param symbol: The event order symbol.
+        :param label: The event order label.
+        :param order_side: The event order side.
+        :param order_type: The event order type.
+        :param quantity: The event order quantity.
+        :param price: The event order price.
+        :param time_in_force: The event order time in force.
+        :param expire_time: The event order expire time.
+        :param event_id: The event identifier.
+        :param event_timestamp: The event timestamp.
         """
         super().__init__(order_id,
                          event_id,
@@ -193,10 +196,10 @@ cdef class OrderSubmitted(OrderEvent):
         """
         Initializes a new instance of the OrderSubmitted class.
 
-        :param order_id: The events order identifier.
-        :param submitted_time: The events order submitted time.
-        :param event_id: The events identifier.
-        :param event_timestamp: The events timestamp.
+        :param order_id: The event order identifier.
+        :param submitted_time: The event order submitted time.
+        :param event_id: The event identifier.
+        :param event_timestamp: The event timestamp.
         """
         super().__init__(order_id,
                          event_id,
@@ -218,11 +221,11 @@ cdef class OrderRejected(OrderEvent):
         """
         Initializes a new instance of the OrderRejected class.
 
-        :param order_id: The events order identifier.
-        :param rejected_time: The events order rejected time.
-        :param rejected_reason: The events order rejected reason.
-        :param event_id: The events identifier.
-        :param event_timestamp: The events timestamp.
+        :param order_id: The event order identifier.
+        :param rejected_time: The event order rejected time.
+        :param rejected_reason: The event order rejected reason.
+        :param event_id: The event identifier.
+        :param event_timestamp: The event timestamp.
         """
         super().__init__(order_id,
                          event_id,
@@ -252,10 +255,10 @@ cdef class OrderAccepted(OrderEvent):
         """
         Initializes a new instance of the OrderAccepted class.
 
-        :param order_id: The events order identifier.
-        :param accepted_time: The events order accepted time.
-        :param event_id: The events identifier.
-        :param event_timestamp: The events timestamp.
+        :param order_id: The event order identifier.
+        :param accepted_time: The event order accepted time.
+        :param event_id: The event identifier.
+        :param event_timestamp: The event timestamp.
         """
         super().__init__(order_id,
                          event_id,
@@ -285,19 +288,19 @@ cdef class OrderWorking(OrderEvent):
         """
         Initializes a new instance of the OrderWorking class.
 
-        :param order_id: The events order identifier.
-        :param order_id_broker: The events broker order identifier.
-        :param symbol: The events order symbol.
-        :param label: The events order label.
-        :param order_side: The events order side.
-        :param order_type: The events order type.
-        :param quantity: The events order quantity.
-        :param price: The events order price.
-        :param time_in_force: The events order time in force.
-        :param working_time: The events order working time.
-        :param event_id: The events identifier.
-        :param event_timestamp: The events timestamp.
-        :param expire_time: The events order expire time (optional can be None).
+        :param order_id: The event order identifier.
+        :param order_id_broker: The event broker order identifier.
+        :param symbol: The event order symbol.
+        :param label: The event order label.
+        :param order_side: The event order side.
+        :param order_type: The event order type.
+        :param quantity: The event order quantity.
+        :param price: The event order price.
+        :param time_in_force: The event order time in force.
+        :param working_time: The event order working time.
+        :param event_id: The event identifier.
+        :param event_timestamp: The event timestamp.
+        :param expire_time: The event order expire time (optional can be None).
         """
         Precondition.type_or_none(expire_time, datetime, 'expire_time')
 
@@ -340,12 +343,12 @@ cdef class OrderCancelReject(OrderEvent):
         """
         Initializes a new instance of the OrderCancelReject class.
 
-        :param order_id: The events order identifier.
-        :param rejected_time: The events order cancel reject time.
-        :param rejected_response_to: The events order cancel reject response.
-        :param rejected_reason: The events order cancel reject reason.
-        :param event_id: The events identifier.
-        :param event_timestamp: The events timestamp.
+        :param order_id: The event order identifier.
+        :param rejected_time: The event order cancel reject time.
+        :param rejected_response_to: The event order cancel reject response.
+        :param rejected_reason: The event order cancel reject reason.
+        :param event_id: The event identifier.
+        :param event_timestamp: The event timestamp.
         """
         super().__init__(order_id,
                          event_id,
@@ -377,10 +380,10 @@ cdef class OrderCancelled(OrderEvent):
         """
         Initializes a new instance of the OrderCancelled class.
 
-        :param order_id: The events order identifier.
-        :param cancelled_time: The events order cancelled time.
-        :param event_id: The events identifier.
-        :param event_timestamp: The events timestamp.
+        :param order_id: The event order identifier.
+        :param cancelled_time: The event order cancelled time.
+        :param event_id: The event identifier.
+        :param event_timestamp: The event timestamp.
         """
         super().__init__(order_id,
                          event_id,
@@ -403,12 +406,12 @@ cdef class OrderModified(OrderEvent):
         """
         Initializes a new instance of the OrderModified class.
 
-        :param order_id: The events order identifier.
-        :param order_id_broker: The events order broker identifier.
-        :param modified_price: The events modified price.
-        :param modified_time: The events modified time.
-        :param event_id: The events identifier.
-        :param event_timestamp: The events timestamp.
+        :param order_id: The event order identifier.
+        :param order_id_broker: The event order broker identifier.
+        :param modified_price: The event modified price.
+        :param modified_time: The event modified time.
+        :param event_id: The event identifier.
+        :param event_timestamp: The event timestamp.
         """
         super().__init__(order_id,
                          event_id,
@@ -431,10 +434,10 @@ cdef class OrderExpired(OrderEvent):
         """
         Initializes a new instance of the OrderExpired class.
 
-        :param order_id: The events order identifier.
-        :param expired_time: The events order expired time.
-        :param event_id: The events identifier.
-        :param event_timestamp: The events timestamp.
+        :param order_id: The event order identifier.
+        :param expired_time: The event order expired time.
+        :param event_id: The event identifier.
+        :param event_timestamp: The event timestamp.
         """
         super().__init__(order_id,
                          event_id,
@@ -462,17 +465,17 @@ cdef class OrderPartiallyFilled(OrderEvent):
         """
         Initializes a new instance of the OrderPartiallyFilled class.
 
-        :param order_id: The events order identifier.
-        :param execution_id: The events order execution identifier.
-        :param execution_ticket: The events order execution ticket.
-        :param symbol: The events order symbol.
-        :param order_side: The events execution order side.
-        :param filled_quantity: The events execution filled quantity.
-        :param leaves_quantity: The events leaves quantity.
-        :param average_price: The events execution average price.
-        :param execution_time: The events execution time.
-        :param event_id: The events identifier.
-        :param event_timestamp: The events timestamp.
+        :param order_id: The event order identifier.
+        :param execution_id: The event order execution identifier.
+        :param execution_ticket: The event order execution ticket.
+        :param symbol: The event order symbol.
+        :param order_side: The event execution order side.
+        :param filled_quantity: The event execution filled quantity.
+        :param leaves_quantity: The event leaves quantity.
+        :param average_price: The event execution average price.
+        :param execution_time: The event execution time.
+        :param event_id: The event identifier.
+        :param event_timestamp: The event timestamp.
         """
         super().__init__(order_id,
                          event_id,
@@ -516,16 +519,16 @@ cdef class OrderFilled(OrderEvent):
         """
         Initializes a new instance of the OrderFilled class.
 
-        :param order_id: The events order identifier.
-        :param execution_id: The events order execution identifier.
-        :param execution_ticket: The events order execution ticket.
-        :param symbol: The events order symbol.
-        :param order_side: The events execution order side.
-        :param filled_quantity: The events execution filled quantity.
-        :param average_price: The events execution average price.
-        :param execution_time: The events execution time.
-        :param event_id: The events identifier.
-        :param event_timestamp: The events timestamp.
+        :param order_id: The event order identifier.
+        :param execution_id: The event order execution identifier.
+        :param execution_ticket: The event order execution ticket.
+        :param symbol: The event order symbol.
+        :param order_side: The event execution order side.
+        :param filled_quantity: The event execution filled quantity.
+        :param average_price: The event execution average price.
+        :param execution_time: The event execution time.
+        :param event_id: The event identifier.
+        :param event_timestamp: The event timestamp.
         """
         super().__init__(order_id,
                          event_id,
@@ -560,10 +563,10 @@ cdef class PositionEvent(Event):
         """
         Initializes a new instance of the PositionEvent base class.
 
-        :param position: The events position.
+        :param position: The event position.
         :param strategy_id: The strategy identifier associated with the position.
-        :param event_id: The events identifier.
-        :param event_timestamp: The events timestamp.
+        :param event_id: The event identifier.
+        :param event_timestamp: The event timestamp.
         """
         super().__init__(event_id, event_timestamp)
         self.position = position
@@ -589,10 +592,10 @@ cdef class PositionOpened(PositionEvent):
         """
         Initializes a new instance of the PositionOpened class.
 
-        :param position: The events position.
+        :param position: The event position.
         :param strategy_id: The strategy identifier associated with the position.
-        :param event_id: The events identifier.
-        :param event_timestamp: The events timestamp.
+        :param event_id: The event identifier.
+        :param event_timestamp: The event timestamp.
         """
         super().__init__(position,
                          strategy_id,
@@ -623,10 +626,10 @@ cdef class PositionModified(PositionEvent):
         """
         Initializes a new instance of the PositionModified class.
 
-        :param position: The events position.
+        :param position: The event position.
         :param strategy_id: The strategy identifier associated with the position.
-        :param event_id: The events identifier.
-        :param event_timestamp: The events timestamp.
+        :param event_id: The event identifier.
+        :param event_timestamp: The event timestamp.
         """
         super().__init__(position,
                          strategy_id,
@@ -658,10 +661,10 @@ cdef class PositionClosed(PositionEvent):
         """
         Initializes a new instance of the PositionClosed class.
 
-        :param position: The events position.
+        :param position: The event position.
         :param strategy_id: The strategy identifier associated with the position.
-        :param event_id: The events identifier.
-        :param event_timestamp: The events timestamp.
+        :param event_id: The event identifier.
+        :param event_timestamp: The event timestamp.
         """
         super().__init__(position,
                          strategy_id,
@@ -693,8 +696,8 @@ cdef class TimeEvent(Event):
         """
         Initializes a new instance of the TimeEvent class.
 
-        :param event_id: The events identifier.
-        :param event_timestamp: The events timestamp.
+        :param event_id: The event identifier.
+        :param event_timestamp: The event timestamp.
         """
         super().__init__(event_id, event_timestamp)
         self.label = label

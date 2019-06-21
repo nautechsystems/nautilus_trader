@@ -41,7 +41,7 @@ cdef class TickDataRequest(Request):
                  Symbol symbol,
                  datetime from_datetime,
                  datetime to_datetime,
-                 GUID request_identifier,
+                 GUID request_id,
                  datetime request_timestamp):
         """
         Initializes a new instance of the TickDataRequest class.
@@ -49,10 +49,10 @@ cdef class TickDataRequest(Request):
         :param symbol: The request symbol.
         :param from_datetime: The request from datetime.
         :param to_datetime: The request to datetime.
-        :param request_identifier: The request identifier.
+        :param request_id: The request identifier.
         :param request_timestamp: The request timestamp.
         """
-        super().__init__(request_identifier, request_timestamp)
+        super().__init__(request_id, request_timestamp)
         self.symbol = symbol
         self.from_datetime = from_datetime
         self.to_datetime = to_datetime
@@ -68,7 +68,7 @@ cdef class BarDataRequest(Request):
                  BarSpecification bar_spec,
                  datetime from_datetime,
                  datetime to_datetime,
-                 GUID request_identifier,
+                 GUID request_id,
                  datetime request_timestamp):
         """
         Initializes a new instance of the BarDataRequest class.
@@ -77,10 +77,10 @@ cdef class BarDataRequest(Request):
         :param bar_spec: The request bar specification.
         :param from_datetime: The request from datetime.
         :param to_datetime: The request to datetime.
-        :param request_identifier: The request identifier.
+        :param request_id: The request identifier.
         :param request_timestamp: The request timestamp.
         """
-        super().__init__(request_identifier, request_timestamp)
+        super().__init__(request_id, request_timestamp)
         self.symbol = symbol
         self.bar_spec = bar_spec
         self.from_datetime = from_datetime
@@ -94,16 +94,16 @@ cdef class InstrumentRequest(Request):
 
     def __init__(self,
                  Symbol symbol,
-                 GUID request_identifier,
+                 GUID request_id,
                  datetime request_timestamp):
         """
         Initializes a new instance of the InstrumentRequest class.
 
         :param symbol: The request symbol.
-        :param request_identifier: The request identifier.
+        :param request_id: The request identifier.
         :param request_timestamp: The request timestamp.
         """
-        super().__init__(request_identifier, request_timestamp)
+        super().__init__(request_id, request_timestamp)
         self.symbol = symbol
 
 
@@ -114,14 +114,14 @@ cdef class InstrumentsRequest(Request):
 
     def __init__(self,
                  Venue venue,
-                 GUID request_identifier,
+                 GUID request_id,
                  datetime request_timestamp):
         """
         Initializes a new instance of the InstrumentsRequest class.
 
         :param venue: The request venue.
-        :param request_identifier: The request identifier.
+        :param request_id: The request identifier.
         :param request_timestamp: The request timestamp.
         """
-        super().__init__(request_identifier, request_timestamp)
+        super().__init__(request_id, request_timestamp)
         self.venue = venue
