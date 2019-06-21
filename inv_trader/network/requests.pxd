@@ -9,7 +9,11 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
+from cpython.datetime cimport datetime
+
 from inv_trader.core.message cimport Message
+from inv_trader.enums.venue cimport Venue
+from inv_trader.model.objects cimport Symbol, BarSpecification
 
 
 cdef class Request(Message):
@@ -17,3 +21,36 @@ cdef class Request(Message):
     The base class for all requests.
     """
     pass
+
+
+cdef class TickDataRequest(Request):
+    """
+    Represents a request for historical tick data.
+    """
+    cdef readonly Symbol symbol
+    cdef readonly datetime from_datetime
+    cdef readonly datetime to_datetime
+
+
+cdef class BarDataRequest(Request):
+    """
+    Represents a request for historical bar data.
+    """
+    cdef readonly Symbol symbol
+    cdef readonly BarSpecification bar_spec
+    cdef readonly datetime from_datetime
+    cdef readonly datetime to_datetime
+
+
+cdef class InstrumentRequest(Request):
+    """
+    Represents a request for an instrument.
+    """
+    cdef readonly Symbol symbol
+
+
+cdef class InstrumentsRequest(Request):
+    """
+    Represents a request for all instruments for a venue.
+    """
+    cdef readonly Venue venue
