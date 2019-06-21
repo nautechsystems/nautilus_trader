@@ -11,28 +11,9 @@
 
 from cpython.datetime cimport datetime
 
-from inv_trader.core.message cimport Message
+from inv_trader.core.message cimport Response
 from inv_trader.model.objects cimport Symbol, BarSpecification
 from inv_trader.model.identifiers cimport GUID
-
-
-cdef class Response(Message):
-    """
-    The base class for all responses.
-    """
-
-    def __init__(self,
-                 GUID correlation_id,
-                 GUID identifier,
-                 datetime timestamp):
-        """
-        Initializes a new instance of the Response abstract class.
-
-        :param identifier: The correlation identifier.
-        :param identifier: The response identifier.
-        :param timestamp: The response timestamp.
-        """
-        super().__init__(correlation_id, identifier, timestamp)
 
 
 cdef class TickDataResponse(Response):

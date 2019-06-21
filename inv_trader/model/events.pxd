@@ -11,7 +11,7 @@
 
 from cpython.datetime cimport datetime
 
-from inv_trader.core.message cimport Message
+from inv_trader.core.message cimport Event
 from inv_trader.enums.brokerage cimport Broker
 from inv_trader.enums.currency cimport Currency
 from inv_trader.enums.order_side cimport OrderSide
@@ -21,13 +21,6 @@ from inv_trader.model.objects cimport ValidString, Quantity, Symbol, Price, Mone
 from inv_trader.model.identifiers cimport Label, AccountId, AccountNumber
 from inv_trader.model.identifiers cimport StrategyId, OrderId, ExecutionId, ExecutionTicket
 from inv_trader.model.position cimport Position
-
-
-cdef class Event(Message):
-    """
-    The base class for all events.
-    """
-    pass
 
 
 cdef class AccountEvent(Event):

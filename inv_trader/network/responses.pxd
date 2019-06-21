@@ -9,16 +9,9 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
-from inv_trader.core.message cimport Message
+from inv_trader.core.message cimport Response
 from inv_trader.model.objects cimport Symbol, BarSpecification
 from inv_trader.model.identifiers cimport GUID
-
-
-cdef class Response(Message):
-    """
-    The base class for all responses.
-    """
-    cdef readonly GUID correlation_id
 
 
 cdef class TickDataResponse(Response):

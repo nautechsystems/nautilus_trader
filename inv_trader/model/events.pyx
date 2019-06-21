@@ -12,7 +12,7 @@
 from cpython.datetime cimport datetime
 
 from inv_trader.core.precondition cimport Precondition
-from inv_trader.core.message cimport Message
+from inv_trader.core.message cimport Event
 from inv_trader.enums.brokerage cimport Broker
 from inv_trader.enums.currency cimport Currency
 from inv_trader.enums.order_side cimport OrderSide, order_side_string
@@ -22,23 +22,6 @@ from inv_trader.model.identifiers cimport GUID, Label, AccountNumber, AccountId
 from inv_trader.model.identifiers cimport StrategyId, OrderId, ExecutionId, ExecutionTicket
 from inv_trader.model.objects cimport ValidString, Quantity, Symbol, Price
 from inv_trader.model.position cimport Position
-
-
-cdef class Event(Message):
-    """
-    The base class for all events.
-    """
-
-    def __init__(self,
-                 GUID identifier,
-                 datetime timestamp):
-        """
-        Initializes a new instance of the Event abstract class.
-
-        :param identifier: The event identifier.
-        :param timestamp: The event timestamp.
-        """
-        super().__init__(identifier, timestamp)
 
 
 cdef class AccountEvent(Event):

@@ -167,6 +167,67 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
                      expire_time=convert_string_to_datetime(unpacked[EXPIRE_TIME]))
 
 
+cdef class MsgPackInstrumentSerializer(InstrumentSerializer):
+    """
+    Provides an instrument serializer for the MessagePack specification.
+    """
+
+    cpdef bytes serialize(self, Instrument instrument):
+        """
+        Return the MessagePack specification bytes serialized from the given instrument.
+
+        :param instrument: The instrument to serialize.
+        :return: bytes.
+        """
+        return msgpack.packb({
+            ID: instrument.id.value,
+            SYMBOL: instrument.symbol.value,
+            BROKER_SYMBOL: instrument.broker_symbol,
+            QUOTE_CURRENCY: currency_string(instrument.quote_currency),
+            SECURITY_TYPE: security_type_string(instrument.security_type),
+            TICK_PRECISION: instrument.tick_precision,
+            TICK_SIZE: str(instrument.tick_size),
+            ROUND_LOT_SIZE: instrument.round_lot_size.value,
+            MIN_STOP_DISTANCE_ENTRY: instrument.min_stop_distance_entry,
+            MIN_STOP_DISTANCE: instrument.min_stop_distance,
+            MIN_LIMIT_DISTANCE_ENTRY: instrument.min_limit_distance_entry,
+            MIN_LIMIT_DISTANCE: instrument.min_limit_distance,
+            MIN_TRADE_SIZE: instrument.min_trade_size.value,
+            MAX_TRADE_SIZE: instrument.max_trade_size.value,
+            ROLL_OVER_INTEREST_BUY: str(instrument.rollover_interest_buy),
+            ROLL_OVER_INTEREST_SELL: str(instrument.rollover_interest_sell),
+            TIMESTAMP: convert_datetime_to_string(instrument.timestamp),
+        })
+
+    cpdef Instrument deserialize(self, bytes instrument_bytes):
+        """
+        Return the instrument deserialized from the given MessagePack specification bytes.
+
+        :param instrument_bytes: The bytes to deserialize.
+        :return: Instrument.
+        """
+        cdef dict unpacked = msgpack.unpackb(instrument_bytes, raw=False)
+
+        return Instrument(
+            instrument_id=InstrumentId(unpacked[ID]),
+            symbol=parse_symbol(unpacked[SYMBOL]),
+            broker_symbol=unpacked[BROKER_SYMBOL],
+            quote_currency=Currency[(unpacked[QUOTE_CURRENCY])],
+            security_type=SecurityType[(unpacked[SECURITY_TYPE])],
+            tick_precision=unpacked[TICK_PRECISION],
+            tick_size=Decimal(unpacked[TICK_SIZE]),
+            round_lot_size=Quantity(unpacked[ROUND_LOT_SIZE]),
+            min_stop_distance_entry=unpacked[MIN_STOP_DISTANCE_ENTRY],
+            min_stop_distance=unpacked[MIN_STOP_DISTANCE],
+            min_limit_distance_entry=unpacked[MIN_LIMIT_DISTANCE_ENTRY],
+            min_limit_distance=unpacked[MIN_LIMIT_DISTANCE],
+            min_trade_size=Quantity(unpacked[MIN_TRADE_SIZE]),
+            max_trade_size=Quantity(unpacked[MAX_TRADE_SIZE]),
+            rollover_interest_buy=Decimal(unpacked[ROLL_OVER_INTEREST_BUY]),
+            rollover_interest_sell=Decimal(unpacked[ROLL_OVER_INTEREST_SELL]),
+            timestamp=convert_string_to_datetime(unpacked[TIMESTAMP]))
+
+
 cdef class MsgPackCommandSerializer(CommandSerializer):
     """
     Provides a command serializer for the MessagePack specification.
@@ -524,62 +585,4 @@ cdef class MsgPackEventSerializer(EventSerializer):
             raise ValueError("Cannot deserialize event (unrecognized event).")
 
 
-cdef class MsgPackInstrumentSerializer(InstrumentSerializer):
-    """
-    Provides an instrument serializer for the MessagePack specification.
-    """
 
-    cpdef bytes serialize(self, Instrument instrument):
-        """
-        Return the MessagePack specification bytes serialized from the given instrument.
-
-        :param instrument: The instrument to serialize.
-        :return: bytes.
-        """
-        return msgpack.packb({
-            ID: instrument.id.value,
-            SYMBOL: instrument.symbol.value,
-            BROKER_SYMBOL: instrument.broker_symbol,
-            QUOTE_CURRENCY: currency_string(instrument.quote_currency),
-            SECURITY_TYPE: security_type_string(instrument.security_type),
-            TICK_PRECISION: instrument.tick_precision,
-            TICK_SIZE: str(instrument.tick_size),
-            ROUND_LOT_SIZE: instrument.round_lot_size.value,
-            MIN_STOP_DISTANCE_ENTRY: instrument.min_stop_distance_entry,
-            MIN_STOP_DISTANCE: instrument.min_stop_distance,
-            MIN_LIMIT_DISTANCE_ENTRY: instrument.min_limit_distance_entry,
-            MIN_LIMIT_DISTANCE: instrument.min_limit_distance,
-            MIN_TRADE_SIZE: instrument.min_trade_size.value,
-            MAX_TRADE_SIZE: instrument.max_trade_size.value,
-            ROLL_OVER_INTEREST_BUY: str(instrument.rollover_interest_buy),
-            ROLL_OVER_INTEREST_SELL: str(instrument.rollover_interest_sell),
-            TIMESTAMP: convert_datetime_to_string(instrument.timestamp),
-        })
-
-    cpdef Instrument deserialize(self, bytes instrument_bytes):
-        """
-        Return the instrument deserialized from the given MessagePack specification bytes.
-
-        :param instrument_bytes: The bytes to deserialize.
-        :return: Instrument.
-        """
-        cdef dict unpacked = msgpack.unpackb(instrument_bytes, raw=False)
-
-        return Instrument(
-            instrument_id=InstrumentId(unpacked[ID]),
-            symbol=parse_symbol(unpacked[SYMBOL]),
-            broker_symbol=unpacked[BROKER_SYMBOL],
-            quote_currency=Currency[(unpacked[QUOTE_CURRENCY])],
-            security_type=SecurityType[(unpacked[SECURITY_TYPE])],
-            tick_precision=unpacked[TICK_PRECISION],
-            tick_size=Decimal(unpacked[TICK_SIZE]),
-            round_lot_size=Quantity(unpacked[ROUND_LOT_SIZE]),
-            min_stop_distance_entry=unpacked[MIN_STOP_DISTANCE_ENTRY],
-            min_stop_distance=unpacked[MIN_STOP_DISTANCE],
-            min_limit_distance_entry=unpacked[MIN_LIMIT_DISTANCE_ENTRY],
-            min_limit_distance=unpacked[MIN_LIMIT_DISTANCE],
-            min_trade_size=Quantity(unpacked[MIN_TRADE_SIZE]),
-            max_trade_size=Quantity(unpacked[MAX_TRADE_SIZE]),
-            rollover_interest_buy=Decimal(unpacked[ROLL_OVER_INTEREST_BUY]),
-            rollover_interest_sell=Decimal(unpacked[ROLL_OVER_INTEREST_SELL]),
-            timestamp=convert_string_to_datetime(unpacked[TIMESTAMP]))

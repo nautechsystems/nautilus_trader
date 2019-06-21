@@ -11,25 +11,10 @@
 
 from cpython.datetime cimport datetime
 
-from inv_trader.core.message cimport Message
+from inv_trader.core.message cimport Request
 from inv_trader.enums.venue cimport Venue
 from inv_trader.model.objects cimport Symbol, BarSpecification
 from inv_trader.model.identifiers cimport GUID
-
-
-cdef class Request(Message):
-    """
-    The base class for all requests.
-    """
-
-    def __init__(self, GUID identifier, datetime timestamp):
-        """
-        Initializes a new instance of the Request abstract class.
-
-        :param identifier: The request identifier.
-        :param timestamp: The request timestamp.
-        """
-        super().__init__(identifier, timestamp)
 
 
 cdef class TickDataRequest(Request):
