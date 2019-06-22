@@ -12,12 +12,13 @@
 from cpython.datetime cimport datetime
 
 from inv_trader.core.message cimport Command, Event, Request, Response
-from inv_trader.model.objects cimport Symbol, Price, Instrument
+from inv_trader.model.objects cimport Symbol, BarSpecification, Price, Instrument
 from inv_trader.model.identifiers cimport Label
 from inv_trader.model.order cimport Order
 
 
 cpdef Symbol parse_symbol(str symbol_string)
+cpdef BarSpecification parse_bar_spec(str bar_spec_string)
 cpdef str convert_price_to_string(Price price)
 cpdef Price convert_string_to_price(str price_string)
 cpdef str convert_label_to_string(Label label)

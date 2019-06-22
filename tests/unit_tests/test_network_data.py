@@ -13,7 +13,7 @@ import time
 
 from datetime import datetime, timezone
 
-from inv_trader.data import LiveDataClient
+from inv_trader.network.data import LiveDataClient
 from inv_trader.model.objects import Symbol, Price, Tick, BarSpecification, BarType, Bar
 from inv_trader.model.enums import Venue, Resolution, QuoteType
 from test_kit.objects import ObjectStorer

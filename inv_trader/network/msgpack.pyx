@@ -24,10 +24,8 @@ from inv_trader.commands cimport (
     ModifyOrder,
     CancelOrder
 )
-from inv_trader.model.enums import Broker, OrderSide, OrderType, TimeInForce, Currency, SecurityType, Resolution, QuoteType
+from inv_trader.model.enums import Broker, OrderSide, OrderType, TimeInForce, Currency, SecurityType
 from inv_trader.enums.venue cimport venue_string
-from inv_trader.enums.resolution cimport Resolution
-from inv_trader.enums.quote_type cimport QuoteType
 from inv_trader.enums.brokerage cimport Broker, broker_string
 from inv_trader.enums.time_in_force cimport TimeInForce, time_in_force_string
 from inv_trader.enums.order_side cimport OrderSide, order_side_string
@@ -61,14 +59,13 @@ from inv_trader.network.requests cimport (
 )
 from inv_trader.common.serialization cimport (
     parse_symbol,
+    parse_bar_spec,
     convert_price_to_string,
     convert_string_to_price,
     convert_label_to_string,
     convert_string_to_label,
     convert_datetime_to_string,
-    convert_string_to_datetime
-)
-from inv_trader.common.serialization cimport (
+    convert_string_to_datetime,
     OrderSerializer,
     InstrumentSerializer,
     EventSerializer,
@@ -627,19 +624,6 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 event_timestamp)
         else:
             raise ValueError("Cannot deserialize event (unrecognized event).")
-
-
-cdef inline BarSpecification parse_bar_spec(str bar_spec_string):
-    #1-MINUTE-[BID]
-    cdef list split1 = bar_spec_string.split('-')
-    cdef list split2 = split1[1].split('[')
-    cdef str resolution = split2[0]
-    cdef str quote_type = split2[1].strip(']')
-
-    return BarSpecification(
-        int(split1[0]),
-        Resolution[resolution.upper()],
-        QuoteType[quote_type.upper()])
 
 
 cdef class MsgPackRequestSerializer(RequestSerializer):
