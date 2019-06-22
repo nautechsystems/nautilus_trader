@@ -7,17 +7,30 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
+# cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
+
 from datetime import timezone
 from decimal import Decimal
 
-from inv_trader.core.precondition cimport Precondition
-from inv_trader.c_enums.security_type cimport SecurityType
-from inv_trader.enums import Currency
-from inv_trader.c_enums.currency cimport Currency
-from inv_trader.model.objects cimport Symbol, Instrument, Quantity
-from inv_trader.model.identifiers cimport InstrumentId
+from cpython.datetime cimport
 
+datetime
+from inv_trader.core.precondition cimport
+
+Precondition
+from inv_trader.model.identifiers cimport
+
+InstrumentId
+from inv_trader.model.objects cimport
+
+Symbol, Instrument, Quantity
+
+from inv_trader.c_enums.currency cimport
+
+Currency
+from inv_trader.c_enums.security_type cimport
+
+SecurityType
 
 cdef class InstrumentLoader:
     """
