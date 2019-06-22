@@ -14,6 +14,7 @@ from decimal import Decimal
 from cpython.datetime cimport datetime
 
 from inv_trader.core.precondition cimport Precondition
+from inv_trader.enums import Currency
 from inv_trader.c_enums.currency cimport Currency
 from inv_trader.c_enums.security_type cimport SecurityType
 from inv_trader.model.identifiers cimport InstrumentId
