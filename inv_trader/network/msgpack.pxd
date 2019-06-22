@@ -9,11 +9,17 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
-from inv_trader.commands cimport Command
+from inv_trader.core.message cimport Command, Event, Request, Response
 from inv_trader.model.order cimport Order
-from inv_trader.model.events cimport Event
 from inv_trader.model.objects cimport Instrument
-from inv_trader.common.serialization cimport OrderSerializer, EventSerializer, CommandSerializer, InstrumentSerializer
+from inv_trader.common.serialization cimport (
+OrderSerializer,
+InstrumentSerializer,
+EventSerializer,
+CommandSerializer,
+RequestSerializer,
+ResponseSerializer
+)
 
 
 cdef class MsgPackOrderSerializer(OrderSerializer):
@@ -22,6 +28,14 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
     """
     cpdef bytes serialize(self, Order order)
     cpdef Order deserialize(self, bytes order_bytes)
+
+
+cdef class MsgPackInstrumentSerializer(InstrumentSerializer):
+    """
+    Provides an instrument serializer for the MessagePack specification.
+    """
+    cpdef bytes serialize(self, Instrument instrument)
+    cpdef Instrument deserialize(self, bytes instrument_bytes)
 
 
 cdef class MsgPackCommandSerializer(CommandSerializer):
@@ -42,9 +56,17 @@ cdef class MsgPackEventSerializer(EventSerializer):
     cpdef Event deserialize(self, bytes event_bytes)
 
 
-cdef class MsgPackInstrumentSerializer(InstrumentSerializer):
+cdef class MsgPackRequestSerializer(RequestSerializer):
     """
-    Provides an instrument serializer for the MessagePack specification.
+    Provides a request serializer for the MessagePack specification
     """
-    cpdef bytes serialize(self, Instrument instrument)
-    cpdef Instrument deserialize(self, bytes instrument_bytes)
+    cpdef bytes serialize(self, Request request)
+    cpdef Request deserialize(self, bytes request_bytes)
+
+
+cdef class MsgPackResponseSerializer(ResponseSerializer):
+    """
+    Provides a response serializer for the MessagePack specification
+    """
+    cpdef bytes serialize(self, Response request)
+    cpdef Response deserialize(self, bytes response_bytes)

@@ -11,23 +11,17 @@ import unittest
 import uuid
 
 from base64 import b64encode, b64decode
-from datetime import datetime, timezone
 
-from inv_trader.common.clock import TestClock
-from inv_trader.commands import SubmitOrder, SubmitAtomicOrder, CancelOrder, ModifyOrder
-from inv_trader.commands import CollateralInquiry
-from inv_trader.model.enums import *
+from inv_trader.common.clock import *
+from inv_trader.commands import *
 from inv_trader.model.identifiers import *
 from inv_trader.model.objects import *
 from inv_trader.model.order import *
 from inv_trader.model.events import *
-from inv_trader.network.msgpack import MsgPackOrderSerializer
-from inv_trader.network.msgpack import MsgPackCommandSerializer
-from inv_trader.network.msgpack import MsgPackEventSerializer
-from inv_trader.network.msgpack import MsgPackInstrumentSerializer
-from inv_trader.common.serialization import convert_price_to_string, convert_datetime_to_string
-from inv_trader.common.serialization import convert_string_to_price, convert_string_to_datetime
-from test_kit.stubs import TestStubs
+from inv_trader.network.msgpack import *
+from inv_trader.common.serialization import *
+from inv_trader.network.requests import *
+from test_kit.stubs import *
 
 UNIX_EPOCH = TestStubs.unix_epoch()
 AUDUSD_FXCM = Symbol('AUDUSD', Venue.FXCM)
@@ -105,6 +99,7 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
+        self.serializer = MsgPackOrderSerializer()
         self.order_factory = OrderFactory(
             id_tag_trader='001',
             id_tag_strategy='001',
@@ -113,8 +108,6 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
 
     def test_can_serialize_and_deserialize_market_orders(self):
         # Arrange
-        serializer = MsgPackOrderSerializer()
-
         order = self.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
@@ -122,8 +115,8 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
             Label('U1_E'),)
 
         # Act
-        serialized = serializer.serialize(order)
-        deserialized = serializer.deserialize(serialized)
+        serialized = self.serializer.serialize(order)
+        deserialized = self.serializer.deserialize(serialized)
 
         # Assert
         self.assertEqual(order, deserialized)
@@ -132,8 +125,6 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
 
     def test_can_serialize_and_deserialize_limit_orders(self):
         # Arrange
-        serializer = MsgPackOrderSerializer()
-
         order = self.order_factory.limit(
             AUDUSD_FXCM,
             OrderSide.BUY,
@@ -144,8 +135,8 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
             expire_time=None)
 
         # Act
-        serialized = serializer.serialize(order)
-        deserialized = serializer.deserialize(serialized)
+        serialized = self.serializer.serialize(order)
+        deserialized = self.serializer.deserialize(serialized)
 
         # Assert
         self.assertEqual(order, deserialized)
@@ -154,8 +145,6 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
 
     def test_can_serialize_and_deserialize_limit_orders_with_expire_time(self):
         # Arrange
-        serializer = MsgPackOrderSerializer()
-
         order = Order(
             OrderId('O123456'),
             AUDUSD_FXCM,
@@ -169,8 +158,8 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
             expire_time=UNIX_EPOCH)
 
         # Act
-        serialized = serializer.serialize(order)
-        deserialized = serializer.deserialize(serialized)
+        serialized = self.serializer.serialize(order)
+        deserialized = self.serializer.deserialize(serialized)
 
         # Assert
         self.assertEqual(order, deserialized)
@@ -179,8 +168,6 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
 
     def test_can_serialize_and_deserialize_stop_limit_orders(self):
         # Arrange
-        serializer = MsgPackOrderSerializer()
-
         order = Order(
             OrderId('O123456'),
             AUDUSD_FXCM,
@@ -192,8 +179,8 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
             Label('S1_SL'))
 
         # Act
-        serialized = serializer.serialize(order)
-        deserialized = serializer.deserialize(serialized)
+        serialized = self.serializer.serialize(order)
+        deserialized = self.serializer.deserialize(serialized)
 
         # Assert
         self.assertEqual(order, deserialized)
@@ -202,8 +189,6 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
 
     def test_can_serialize_and_deserialize_stop_limit_orders_with_expire_time(self):
         # Arrange
-        serializer = MsgPackOrderSerializer()
-
         order = Order(
             OrderId('O123456'),
             AUDUSD_FXCM,
@@ -217,8 +202,8 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
             expire_time=UNIX_EPOCH)
 
         # Act
-        serialized = serializer.serialize(order)
-        deserialized = serializer.deserialize(serialized)
+        serialized = self.serializer.serialize(order)
+        deserialized = self.serializer.deserialize(serialized)
 
         # Assert
         self.assertEqual(order, deserialized)
@@ -230,6 +215,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
+        self.serializer = MsgPackCommandSerializer()
         self.order_factory = OrderFactory(
             id_tag_trader='001',
             id_tag_strategy='001',
@@ -238,13 +224,11 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
 
     def test_can_serialize_and_deserialize_collateral_inquiry_command(self):
         # Arrange
-        serializer = MsgPackCommandSerializer()
-
         command = CollateralInquiry(GUID(uuid.uuid4()), UNIX_EPOCH)
 
         # Act
-        serialized = serializer.serialize(command)
-        deserialized = serializer.deserialize(serialized)
+        serialized = self.serializer.serialize(command)
+        deserialized = self.serializer.deserialize(serialized)
 
         # Assert
         self.assertEqual(deserialized, command)
@@ -253,8 +237,6 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
 
     def test_can_serialize_and_deserialize_submit_order_commands(self):
         # Arrange
-        serializer = MsgPackCommandSerializer()
-
         order = self.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
@@ -269,8 +251,8 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             UNIX_EPOCH)
 
         # Act
-        serialized = serializer.serialize(command)
-        deserialized = serializer.deserialize(serialized)
+        serialized = self.serializer.serialize(command)
+        deserialized = self.serializer.deserialize(serialized)
 
         # Assert
         self.assertEqual(command, deserialized)
@@ -280,8 +262,6 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
 
     def test_can_serialize_and_deserialize_submit_atomic_order_no_take_profit_commands(self):
         # Arrange
-        serializer = MsgPackCommandSerializer()
-
         atomic_order = self.order_factory.atomic_market(
             AUDUSD_FXCM,
             OrderSide.BUY,
@@ -297,8 +277,8 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             UNIX_EPOCH)
 
         # Act
-        serialized = serializer.serialize(command)
-        deserialized = serializer.deserialize(serialized)
+        serialized = self.serializer.serialize(command)
+        deserialized = self.serializer.deserialize(serialized)
 
         # Assert
         self.assertEqual(command, deserialized)
@@ -308,8 +288,6 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
 
     def test_can_serialize_and_deserialize_submit_atomic_order_with_take_profit_commands(self):
         # Arrange
-        serializer = MsgPackCommandSerializer()
-
         atomic_order = self.order_factory.atomic_limit(
             AUDUSD_FXCM,
             OrderSide.BUY,
@@ -327,8 +305,8 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             UNIX_EPOCH)
 
         # Act
-        serialized = serializer.serialize(command)
-        deserialized = serializer.deserialize(serialized)
+        serialized = self.serializer.serialize(command)
+        deserialized = self.serializer.deserialize(serialized)
 
         # Assert
         self.assertEqual(command, deserialized)
@@ -338,8 +316,6 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
 
     def test_can_serialize_and_deserialize_cancel_order_commands(self):
         # Arrange
-        serializer = MsgPackCommandSerializer()
-
         command = CancelOrder(
             TraderId('Trader-001'),
             StrategyId('SCALPER01'),
@@ -349,8 +325,8 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             UNIX_EPOCH)
 
         # Act
-        serialized = serializer.serialize(command)
-        deserialized = serializer.deserialize(serialized)
+        serialized = self.serializer.serialize(command)
+        deserialized = self.serializer.deserialize(serialized)
 
         # Assert
         self.assertEqual(command, deserialized)
@@ -359,8 +335,6 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
 
     def test_can_serialize_and_deserialize_modify_order_commands(self):
         # Arrange
-        serializer = MsgPackCommandSerializer()
-
         command = ModifyOrder(
             TraderId('Trader-001'),
             StrategyId('SCALPER01'),
@@ -370,8 +344,8 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             UNIX_EPOCH)
 
         # Act
-        serialized = serializer.serialize(command)
-        deserialized = serializer.deserialize(serialized)
+        serialized = self.serializer.serialize(command)
+        deserialized = self.serializer.deserialize(serialized)
 
         # Assert
         self.assertEqual(command, deserialized)
@@ -381,10 +355,12 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
 
 class MsgPackEventSerializerTests(unittest.TestCase):
 
+    def setUp(self):
+        # Fixture Setup
+        self.serializer = MsgPackEventSerializer()
+
     def test_can_serialize_and_deserialize_order_submitted_events(self):
         # Arrange
-        serializer = MsgPackEventSerializer()
-
         event = OrderSubmitted(
             OrderId('O-123456'),
             UNIX_EPOCH,
@@ -392,16 +368,14 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             UNIX_EPOCH)
 
         # Act
-        serialized = serializer.serialize(event)
-        deserialized = serializer.deserialize(serialized)
+        serialized = self.serializer.serialize(event)
+        deserialized = self.serializer.deserialize(serialized)
 
         # Assert
         self.assertEqual(deserialized, event)
 
     def test_can_serialize_and_deserialize_order_accepted_events(self):
         # Arrange
-        serializer = MsgPackEventSerializer()
-
         event = OrderAccepted(
             OrderId('O-123456'),
             UNIX_EPOCH,
@@ -409,16 +383,14 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             UNIX_EPOCH)
 
         # Act
-        serialized = serializer.serialize(event)
-        deserialized = serializer.deserialize(serialized)
+        serialized = self.serializer.serialize(event)
+        deserialized = self.serializer.deserialize(serialized)
 
         # Assert
         self.assertEqual(deserialized, event)
 
     def test_can_serialize_and_deserialize_order_rejected_events(self):
         # Arrange
-        serializer = MsgPackEventSerializer()
-
         event = OrderRejected(
             OrderId('O-123456'),
             UNIX_EPOCH,
@@ -427,16 +399,14 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             UNIX_EPOCH)
 
         # Act
-        serialized = serializer.serialize(event)
-        deserialized = serializer.deserialize(serialized)
+        serialized = self.serializer.serialize(event)
+        deserialized = self.serializer.deserialize(serialized)
 
         # Assert
         self.assertEqual(deserialized, event)
 
     def test_can_serialize_and_deserialize_order_working_events(self):
         # Arrange
-        serializer = MsgPackEventSerializer()
-
         event = OrderWorking(
             OrderId('O-123456'),
             OrderId('BO-123456'),
@@ -453,16 +423,14 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             expire_time=None)
 
         # Act
-        serialized = serializer.serialize(event)
-        deserialized = serializer.deserialize(serialized)
+        serialized = self.serializer.serialize(event)
+        deserialized = self.serializer.deserialize(serialized)
 
         # Assert
         self.assertEqual(deserialized, event)
 
     def test_can_serialize_and_deserialize_order_working_events_with_expire_time(self):
         # Arrange
-        serializer = MsgPackEventSerializer()
-
         event = OrderWorking(
             OrderId('O-123456'),
             OrderId('BO-123456'),
@@ -479,16 +447,14 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             expire_time=UNIX_EPOCH)
 
         # Act
-        serialized = serializer.serialize(event)
-        deserialized = serializer.deserialize(serialized)
+        serialized = self.serializer.serialize(event)
+        deserialized = self.serializer.deserialize(serialized)
 
         # Assert
         self.assertEqual(deserialized, event)
 
     def test_can_serialize_and_deserialize_order_cancelled_events(self):
         # Arrange
-        serializer = MsgPackEventSerializer()
-
         event = OrderCancelled(
             OrderId('O-123456'),
             UNIX_EPOCH,
@@ -496,16 +462,14 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             UNIX_EPOCH)
 
         # Act
-        serialized = serializer.serialize(event)
-        deserialized = serializer.deserialize(serialized)
+        serialized = self.serializer.serialize(event)
+        deserialized = self.serializer.deserialize(serialized)
 
         # Assert
         self.assertEqual(deserialized, event)
 
     def test_can_serialize_and_deserialize_order_cancel_reject_events(self):
         # Arrange
-        serializer = MsgPackEventSerializer()
-
         event = OrderCancelReject(
             OrderId('O-123456'),
             UNIX_EPOCH,
@@ -515,16 +479,14 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             UNIX_EPOCH)
 
         # Act
-        serialized = serializer.serialize(event)
-        deserialized = serializer.deserialize(serialized)
+        serialized = self.serializer.serialize(event)
+        deserialized = self.serializer.deserialize(serialized)
 
         # Assert
         self.assertEqual(deserialized, event)
 
     def test_can_serialize_and_deserialize_order_modified_events(self):
         # Arrange
-        serializer = MsgPackEventSerializer()
-
         event = OrderModified(
             OrderId('O-123456'),
             OrderId('BO-123456'),
@@ -534,16 +496,14 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             UNIX_EPOCH)
 
         # Act
-        serialized = serializer.serialize(event)
-        deserialized = serializer.deserialize(serialized)
+        serialized = self.serializer.serialize(event)
+        deserialized = self.serializer.deserialize(serialized)
 
         # Assert
         self.assertEqual(deserialized, event)
 
     def test_can_serialize_and_deserialize_order_expired_events(self):
         # Arrange
-        serializer = MsgPackEventSerializer()
-
         event = OrderExpired(
             OrderId('O-123456'),
             UNIX_EPOCH,
@@ -551,16 +511,14 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             UNIX_EPOCH)
 
         # Act
-        serialized = serializer.serialize(event)
-        deserialized = serializer.deserialize(serialized)
+        serialized = self.serializer.serialize(event)
+        deserialized = self.serializer.deserialize(serialized)
 
         # Assert
         self.assertEqual(deserialized, event)
 
     def test_can_serialize_and_deserialize_order_partially_filled_events(self):
         # Arrange
-        serializer = MsgPackEventSerializer()
-
         event = OrderPartiallyFilled(
             OrderId('O-123456'),
             ExecutionId('E123456'),
@@ -575,16 +533,14 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             UNIX_EPOCH)
 
         # Act
-        serialized = serializer.serialize(event)
-        deserialized = serializer.deserialize(serialized)
+        serialized = self.serializer.serialize(event)
+        deserialized = self.serializer.deserialize(serialized)
 
         # Assert
         self.assertEqual(deserialized, event)
 
     def test_can_serialize_and_deserialize_order_filled_events(self):
         # Arrange
-        serializer = MsgPackEventSerializer()
-
         event = OrderFilled(
             OrderId('O-123456'),
             ExecutionId('E123456'),
@@ -598,22 +554,20 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             UNIX_EPOCH)
 
         # Act
-        serialized = serializer.serialize(event)
-        deserialized = serializer.deserialize(serialized)
+        serialized = self.serializer.serialize(event)
+        deserialized = self.serializer.deserialize(serialized)
 
         # Assert
         self.assertEqual(deserialized, event)
 
     def test_can_deserialize_account_events_from_csharp(self):
         # Arrange
-        serializer = MsgPackEventSerializer()
-
         # Base64 bytes string from C# MsgPack.Cli
         base64 = 'jqRUeXBlrEFjY291bnRFdmVudKJJZNkkOTk1NTdjMTMtMDZjYS00OTkyLTkyMzUtZWIxOThkMjYwNjk5qVRpbWVzdGFtcLgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFqpQWNjb3VudElkq0ZYQ00tMTIzNDU2pkJyb2tlcqRGWENNrUFjY291bnROdW1iZXKmMTIzNDU2qEN1cnJlbmN5o1VTRKtDYXNoQmFsYW5jZaYxMDAwMDCsQ2FzaFN0YXJ0RGF5pjEwMDAwMK9DYXNoQWN0aXZpdHlEYXmhMLVNYXJnaW5Vc2VkTGlxdWlkYXRpb26hMLVNYXJnaW5Vc2VkTWFpbnRlbmFuY2WhMKtNYXJnaW5SYXRpb6EwsE1hcmdpbkNhbGxTdGF0dXOg'
         body = b64decode(base64)
 
         # Act
-        result = serializer.deserialize(body)
+        result = self.serializer.deserialize(body)
 
         # Assert
         self.assertTrue(isinstance(result, AccountEvent))
@@ -622,14 +576,12 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
     def test_can_deserialize_order_submitted_events_from_csharp(self):
         # Arrange
-        serializer = MsgPackEventSerializer()
-
         # Base64 bytes string from C# MsgPack.Cli
         base64 = 'haRUeXBlrk9yZGVyU3VibWl0dGVkoklk2SRiYjlkNTU4My1lMDk0LTQyMTYtOGFlOC1jMTM0OWU4ZWQyMzmpVGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWqdPcmRlcklkqE8tMTIzNDU2rVN1Ym1pdHRlZFRpbWW4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBa'
         body = b64decode(base64)
 
         # Act
-        result = serializer.deserialize(body)
+        result = self.serializer.deserialize(body)
 
         # Assert
         self.assertTrue(isinstance(result, OrderSubmitted))
@@ -640,14 +592,12 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
     def test_can_deserialize_order_accepted_events_from_csharp(self):
         # Arrange
-        serializer = MsgPackEventSerializer()
-
         # Base64 bytes string from C# MsgPack.Cli
         base64 = 'haRUeXBlrU9yZGVyQWNjZXB0ZWSiSWTZJGQ5YTBkMTc4LTY4Y2EtNGFhNS1iY2YyLTE1ODIzZjM1OWFhZqlUaW1lc3RhbXC4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBap09yZGVySWSoTy0xMjM0NTasQWNjZXB0ZWRUaW1luDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWg=='
         body = b64decode(base64)
 
         # Act
-        result = serializer.deserialize(body)
+        result = self.serializer.deserialize(body)
 
         # Assert
         self.assertTrue(isinstance(result, OrderAccepted))
@@ -658,14 +608,12 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
     def test_can_deserialize_order_rejected_events_from_csharp(self):
         # Arrange
-        serializer = MsgPackEventSerializer()
-
         # Base64 bytes string from C# MsgPack.Cli
         base64 = 'hqRUeXBlrU9yZGVyUmVqZWN0ZWSiSWTZJDJiOWM5MWRhLWExOWYtNDkxMi1hNjllLWNhMWM3ZTRmOWU0ZKlUaW1lc3RhbXC4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBap09yZGVySWSoTy0xMjM0NTasUmVqZWN0ZWRUaW1luDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWq5SZWplY3RlZFJlYXNvbq1JTlZBTElEX09SREVS'
         body = b64decode(base64)
 
         # Act
-        result = serializer.deserialize(body)
+        result = self.serializer.deserialize(body)
 
         # Assert
         self.assertTrue(isinstance(result, OrderRejected))
@@ -677,14 +625,12 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
     def test_can_deserialize_order_working_events_from_csharp(self):
         # Arrange
-        serializer = MsgPackEventSerializer()
-
         # Base64 bytes string from C# MsgPack.Cli
         base64 = 'jqRUeXBlrE9yZGVyV29ya2luZ6JJZNkkNThhOTMwNzMtNTNiZi00MTI5LTk3N2YtODdkNThhZTI1NTNmqVRpbWVzdGFtcLgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFqnT3JkZXJJZKhPLTEyMzQ1Nq1PcmRlcklkQnJva2VyqUJPLTEyMzQ1NqZTeW1ib2yrQVVEVVNELkZYQ02lTGFiZWypTzEyMzQ1Nl9FqU9yZGVyU2lkZaNCVVmpT3JkZXJUeXBlq1NUT1BfTUFSS0VUqFF1YW50aXR5AaVQcmljZaMxLjCrVGltZUluRm9yY2WjREFZqkV4cGlyZVRpbWWkTk9ORatXb3JraW5nVGltZbgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFo='
         body = b64decode(base64)
 
         # Act
-        result = serializer.deserialize(body)
+        result = self.serializer.deserialize(body)
 
         # Assert
         self.assertTrue(isinstance(result, OrderWorking))
@@ -703,14 +649,12 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
     def test_can_deserialize_order_working_events_with_expire_time_from_csharp(self):
         # Arrange
-        serializer = MsgPackEventSerializer()
-
         # Base64 bytes string from C# MsgPack.Cli
         base64 = 'jqRUeXBlrE9yZGVyV29ya2luZ6JJZNkkMDNkNjdhY2MtY2ZkMC00MThlLWJjMjItZWYxNDZhYWVhZjdmqVRpbWVzdGFtcLgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFqnT3JkZXJJZKhPLTEyMzQ1Nq1PcmRlcklkQnJva2VyqUJPLTEyMzQ1NqZTeW1ib2yrQVVEVVNELkZYQ02lTGFiZWypTzEyMzQ1Nl9FqU9yZGVyU2lkZaNCVVmpT3JkZXJUeXBlq1NUT1BfTUFSS0VUqFF1YW50aXR5AaVQcmljZaMxLjCrVGltZUluRm9yY2WjR1REqkV4cGlyZVRpbWW4MTk3MC0wMS0wMVQwMDowMTowMC4wMDBaq1dvcmtpbmdUaW1luDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWg=='
         body = b64decode(base64)
 
         # Act
-        result = serializer.deserialize(body)
+        result = self.serializer.deserialize(body)
 
         # Assert
         self.assertTrue(isinstance(result, OrderWorking))
@@ -730,14 +674,12 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
     def test_can_deserialize_order_cancelled_events_from_csharp(self):
         # Arrange
-        serializer = MsgPackEventSerializer()
-
         # Base64 bytes string from C# MsgPack.Cli
         base64 = 'haRUeXBlrk9yZGVyQ2FuY2VsbGVkoklk2SRhMjI2YmYxZC1jN2M5LTQyNGYtOWEwMi03MjllMDI3Y2M3ZWapVGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWqdPcmRlcklkqE8tMTIzNDU2rUNhbmNlbGxlZFRpbWW4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBa'
         body = b64decode(base64)
 
         # Act
-        result = serializer.deserialize(body)
+        result = self.serializer.deserialize(body)
 
         # Assert
         self.assertTrue(isinstance(result, OrderCancelled))
@@ -748,14 +690,12 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
     def test_can_deserialize_order_cancel_reject_events_from_csharp(self):
         # Arrange
-        serializer = MsgPackEventSerializer()
-
         # Base64 bytes string from C# MsgPack.Cli
         base64 = 'h6RUeXBlsU9yZGVyQ2FuY2VsUmVqZWN0oklk2SQyNWZkM2IzZC1iOGFkLTQ4MzctOGI5Yi04MDMwOGY4ZjFkMTGpVGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWqdPcmRlcklkqE8tMTIzNDU2rFJlamVjdGVkVGltZbgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFqyUmVqZWN0ZWRSZXNwb25zZVRvsFJFSkVDVF9SRVNQT05TRT+uUmVqZWN0ZWRSZWFzb26vT1JERVJfTk9UX0ZPVU5E'
         body = b64decode(base64)
 
         # Act
-        result = serializer.deserialize(body)
+        result = self.serializer.deserialize(body)
 
         # Assert
         self.assertTrue(isinstance(result, OrderCancelReject))
@@ -768,14 +708,12 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
     def test_can_deserialize_order_modified_events_from_csharp(self):
         # Arrange
-        serializer = MsgPackEventSerializer()
-
         # Base64 bytes string from C# MsgPack.Cli
         base64 = 'h6RUeXBlrU9yZGVyTW9kaWZpZWSiSWTZJDQ4Njc3MzYyLTYyZmItNDVkMS1iOGI5LWYwM2JmYTZjYzEwMalUaW1lc3RhbXC4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBap09yZGVySWSoTy0xMjM0NTatT3JkZXJJZEJyb2tlcqlCTy0xMjM0NTatTW9kaWZpZWRQcmljZaEyrE1vZGlmaWVkVGltZbgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFo='
         body = b64decode(base64)
 
         # Act
-        result = serializer.deserialize(body)
+        result = self.serializer.deserialize(body)
 
         # Assert
         self.assertTrue(isinstance(result, OrderModified))
@@ -788,14 +726,12 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
     def test_can_deserialize_order_expired_events_from_csharp(self):
         # Arrange
-        serializer = MsgPackEventSerializer()
-
         # Base64 bytes string from C# MsgPack.Cli
         base64 = 'haRUeXBlrE9yZGVyRXhwaXJlZKJJZNkkY2Q1YjE0NjMtOWUyZS00N2E2LWE4NzQtYmI5Mjc5YzdhNGQyqVRpbWVzdGFtcLgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFqnT3JkZXJJZKhPLTEyMzQ1NqtFeHBpcmVkVGltZbgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFo='
         body = b64decode(base64)
 
         # Act
-        result = serializer.deserialize(body)
+        result = self.serializer.deserialize(body)
 
         # Assert
         self.assertTrue(isinstance(result, OrderExpired))
@@ -806,14 +742,12 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
     def test_can_deserialize_order_partially_filled_events_from_csharp(self):
         # Arrange
-        serializer = MsgPackEventSerializer()
-
         # Base64 bytes string from C# MsgPack.Cli
         base64 = 'jKRUeXBltE9yZGVyUGFydGlhbGx5RmlsbGVkoklk2SQ3NzgzYTI2MC1mZjI1LTQ1ODItYTVlZC02YjYxMTYwZGFmYjCpVGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWqdPcmRlcklkqE8tMTIzNDU2q0V4ZWN1dGlvbklkp0UxMjM0NTavRXhlY3V0aW9uVGlja2V0p1AxMjM0NTamU3ltYm9sq0FVRFVTRC5GWENNqU9yZGVyU2lkZaNCVVmuRmlsbGVkUXVhbnRpdHnSAADDUK5MZWF2ZXNRdWFudGl0edIAAMNQrEF2ZXJhZ2VQcmljZaMyLjCtRXhlY3V0aW9uVGltZbgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFo='
         body = b64decode(base64)
 
         # Act
-        result = serializer.deserialize(body)
+        result = self.serializer.deserialize(body)
 
         # Assert
         self.assertTrue(isinstance(result, OrderPartiallyFilled))
@@ -831,14 +765,12 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
     def test_can_deserialize_order_filled_events_from_csharp(self):
         # Arrange
-        serializer = MsgPackEventSerializer()
-
         # Base64 bytes string from C# MsgPack.Cli
         base64 = 'i6RUeXBlq09yZGVyRmlsbGVkoklk2SQ2ZjQxYjYxOS1kYWIzLTQ0M2UtODg2MS1mODVjMmNiODdjMjWpVGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWqdPcmRlcklkqE8tMTIzNDU2q0V4ZWN1dGlvbklkp0UxMjM0NTavRXhlY3V0aW9uVGlja2V0p1AxMjM0NTamU3ltYm9sq0FVRFVTRC5GWENNqU9yZGVyU2lkZaNCVVmuRmlsbGVkUXVhbnRpdHnSAAGGoKxBdmVyYWdlUHJpY2WjMi4wrUV4ZWN1dGlvblRpbWW4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBa'
         body = b64decode(base64)
 
         # Act
-        result = serializer.deserialize(body)
+        result = self.serializer.deserialize(body)
 
         # Assert
         self.assertTrue(isinstance(result, OrderFilled))
@@ -903,3 +835,44 @@ class MsgPackInstrumentSerializerTests(unittest.TestCase):
         self.assertEqual(instrument.timestamp, deserialized.timestamp)
         print('instrument')
         print(b64encode(serialized))
+
+
+class MsgPackRequestSerializerTests(unittest.TestCase):
+
+    def setUp(self):
+        # Fixture Setup
+        self.serializer = MsgPackRequestSerializer()
+
+    def test_can_serialize_and_deserialize_tick_data_requests(self):
+        # Arrange
+        request = TickDataRequest(
+            Symbol('AUDUSD', Venue.FXCM),
+            UNIX_EPOCH,
+            UNIX_EPOCH,
+            GUID(uuid4()),
+            UNIX_EPOCH)
+
+        # Act
+        serialized = self.serializer.serialize(request)
+        deserialized = self.serializer.deserialize(serialized)
+
+        # Assert
+        self.assertTrue(isinstance(deserialized, TickDataRequest))
+
+    def test_can_serialize_and_deserialize_bar_data_requests(self):
+        # Arrange
+        request = BarDataRequest(
+            Symbol('AUDUSD', Venue.FXCM),
+            BarSpecification(1, Resolution.MINUTE, QuoteType.MID),
+            UNIX_EPOCH,
+            UNIX_EPOCH,
+            GUID(uuid4()),
+            UNIX_EPOCH)
+
+        # Act
+        serialized = self.serializer.serialize(request)
+        deserialized = self.serializer.deserialize(serialized)
+
+        # Assert
+        self.assertTrue(isinstance(deserialized, BarDataRequest))
+

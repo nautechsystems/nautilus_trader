@@ -11,13 +11,23 @@
 
 import msgpack
 
+from cpython.datetime cimport datetime
 from decimal import Decimal
 from uuid import UUID
 
 from inv_trader.core.precondition cimport Precondition
-from inv_trader.commands cimport *
-from inv_trader.commands cimport CollateralInquiry
-from inv_trader.model.enums import Broker, OrderSide, OrderType, TimeInForce, Currency, SecurityType
+from inv_trader.core.message cimport Command, Event, Request, Response
+from inv_trader.commands cimport (
+    CollateralInquiry,
+    SubmitOrder,
+    SubmitAtomicOrder,
+    ModifyOrder,
+    CancelOrder
+)
+from inv_trader.model.enums import Broker, OrderSide, OrderType, TimeInForce, Currency, SecurityType, Resolution, QuoteType
+from inv_trader.enums.venue cimport venue_string
+from inv_trader.enums.resolution cimport Resolution
+from inv_trader.enums.quote_type cimport QuoteType
 from inv_trader.enums.brokerage cimport Broker, broker_string
 from inv_trader.enums.time_in_force cimport TimeInForce, time_in_force_string
 from inv_trader.enums.order_side cimport OrderSide, order_side_string
@@ -25,22 +35,47 @@ from inv_trader.enums.order_type cimport OrderType, order_type_string
 from inv_trader.enums.currency cimport Currency, currency_string
 from inv_trader.enums.security_type cimport SecurityType, security_type_string
 from inv_trader.model.identifiers cimport TraderId, StrategyId, OrderId, ExecutionId, AccountId, InstrumentId
-from inv_trader.model.identifiers cimport GUID, Label, ExecutionTicket, AccountNumber
-from inv_trader.model.objects cimport ValidString, Quantity, Price, Money, Instrument
+from inv_trader.model.identifiers cimport GUID, Label, ExecutionTicket, AccountNumber, PositionId
+from inv_trader.model.objects cimport ValidString, Quantity, Price, Money, Instrument, BarSpecification
 from inv_trader.model.order cimport Order, AtomicOrder
-from inv_trader.model.events cimport Event, AccountEvent, OrderEvent
-from inv_trader.model.events cimport OrderInitialized, OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
-from inv_trader.model.events cimport OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
-from inv_trader.model.events cimport OrderPartiallyFilled, OrderFilled
+from inv_trader.model.events cimport (
+    AccountEvent,
+    OrderEvent,
+    OrderInitialized,
+    OrderSubmitted,
+    OrderAccepted,
+    OrderRejected,
+    OrderWorking,
+    OrderExpired,
+    OrderModified,
+    OrderCancelled,
+    OrderCancelReject,
+    OrderPartiallyFilled,
+    OrderFilled
+)
+from inv_trader.network.requests cimport (
+    TickDataRequest,
+    BarDataRequest,
+    InstrumentRequest,
+    InstrumentsRequest
+)
 from inv_trader.common.serialization cimport (
-parse_symbol,
-convert_price_to_string,
-convert_string_to_price,
-convert_label_to_string,
-convert_string_to_label,
-convert_datetime_to_string,
-convert_string_to_datetime)
-from inv_trader.common.serialization cimport OrderSerializer, EventSerializer, CommandSerializer, InstrumentSerializer
+    parse_symbol,
+    convert_price_to_string,
+    convert_string_to_price,
+    convert_label_to_string,
+    convert_string_to_label,
+    convert_datetime_to_string,
+    convert_string_to_datetime
+)
+from inv_trader.common.serialization cimport (
+    OrderSerializer,
+    InstrumentSerializer,
+    EventSerializer,
+    CommandSerializer,
+    RequestSerializer,
+    ResponseSerializer
+)
 
 
 cdef str UTF8 = 'utf-8'
@@ -51,6 +86,7 @@ cdef str ID = 'Id'
 cdef str CANCEL_REASON = 'CancelReason'
 cdef str ORDER = 'Order'
 cdef str TIMESTAMP = 'Timestamp'
+cdef str VENUE = 'Venue'
 cdef str SYMBOL = 'Symbol'
 cdef str ORDER_ID_BROKER = 'OrderIdBroker'
 cdef str TRADER_ID = 'TraderId'
@@ -110,6 +146,14 @@ cdef str MIN_TRADE_SIZE = 'MinTradeSize'
 cdef str MAX_TRADE_SIZE = 'MaxTradeSize'
 cdef str ROLL_OVER_INTEREST_BUY = 'RollOverInterestBuy'
 cdef str ROLL_OVER_INTEREST_SELL = 'RollOverInterestSell'
+
+cdef str CORRELATION_ID = 'CorrelationId'
+cdef str BARS = 'Bars'
+cdef str TICKS = 'Ticks'
+cdef str INSTRUMENTS = 'Instruments'
+cdef str BAR_SPECIFICATION = 'BarSpecification'
+cdef str FROM_DATETIME = 'FromDateTime'
+cdef str TO_DATETIME = 'ToDateTime'
 
 
 cdef class MsgPackOrderSerializer(OrderSerializer):
@@ -585,4 +629,128 @@ cdef class MsgPackEventSerializer(EventSerializer):
             raise ValueError("Cannot deserialize event (unrecognized event).")
 
 
+cdef inline BarSpecification parse_bar_spec(str bar_spec_string):
+    #1-MINUTE-[BID]
+    cdef list split1 = bar_spec_string.split('-')
+    cdef list split2 = split1[1].split('[')
+    cdef str resolution = split2[0]
+    cdef str quote_type = split2[1].strip(']')
 
+    return BarSpecification(
+        int(split1[0]),
+        Resolution[resolution.upper()],
+        QuoteType[quote_type.upper()])
+
+
+cdef class MsgPackRequestSerializer(RequestSerializer):
+    """
+    Provides a request serializer for the MessagePack specification.
+    """
+
+    cpdef bytes serialize(self, Request request):
+        """
+        Serialize the given request to bytes.
+
+        :param request: The request to serialize.
+        :return: bytes.
+        """
+        cdef dict package = {
+            TYPE: request.__class__.__name__,
+            ID: request.id.value,
+            TIMESTAMP: convert_datetime_to_string(request.timestamp)
+        }
+
+        if isinstance(request, TickDataRequest):
+            package[SYMBOL] = request.symbol.value
+            package[FROM_DATETIME] = convert_datetime_to_string(request.from_datetime)
+            package[TO_DATETIME] = convert_datetime_to_string(request.to_datetime)
+            return msgpack.packb(package)
+        if isinstance(request, BarDataRequest):
+            package[SYMBOL] = request.symbol.value
+            package[BAR_SPECIFICATION] = str(request.bar_spec)
+            package[FROM_DATETIME] = convert_datetime_to_string(request.from_datetime)
+            package[TO_DATETIME] = convert_datetime_to_string(request.to_datetime)
+            return msgpack.packb(package)
+        if isinstance(request, InstrumentRequest):
+            package[SYMBOL] = request.symbol.value
+            return msgpack.packb(package)
+        if isinstance(request, InstrumentsRequest):
+            package[VENUE] = venue_string(request.venue)
+            return msgpack.packb(package)
+        else:
+            raise ValueError("Cannot serialize request (unrecognized request.")
+
+    cpdef Request deserialize(self, bytes request_bytes):
+        """
+        Deserialize the given bytes to a request.
+
+        :param request_bytes: The bytes to deserialize.
+        :return: Request.
+        """
+        Precondition.not_empty(request_bytes, 'request_bytes')
+
+        cdef dict unpacked = msgpack.unpackb(request_bytes, raw=False)
+
+        cdef str request_type = unpacked[TYPE]
+        cdef GUID request_id = GUID(UUID(unpacked[ID]))
+        cdef datetime request_timestamp = convert_string_to_datetime(unpacked[TIMESTAMP])
+
+        if request_type == TickDataRequest.__name__:
+            return TickDataRequest(
+                parse_symbol(unpacked[SYMBOL]),
+                convert_string_to_datetime(unpacked[FROM_DATETIME]),
+                convert_string_to_datetime(unpacked[TO_DATETIME]),
+                request_id,
+                request_timestamp)
+        if request_type == BarDataRequest.__name__:
+            return BarDataRequest(
+                parse_symbol(unpacked[SYMBOL]),
+                parse_bar_spec(unpacked[BAR_SPECIFICATION]),
+                convert_string_to_datetime(unpacked[FROM_DATETIME]),
+                convert_string_to_datetime(unpacked[TO_DATETIME]),
+                request_id,
+                request_timestamp)
+        else:
+            raise ValueError("Cannot deserialize request (unrecognized request).")
+
+
+cdef class MsgPackResponseSerializer(ResponseSerializer):
+    """
+    Provides a response serializer for the MessagePack specification.
+    """
+
+    cpdef bytes serialize(self, Response response):
+        """
+        Serialize the given response to bytes.
+
+        :param response: The response to serialize.
+        :return: bytes.
+        """
+        cdef dict package = {
+            TYPE: response.__class__.__name__,
+            ID: response.id.value,
+            CORRELATION_ID: response.correlation_id.value,
+            TIMESTAMP: convert_datetime_to_string(response.timestamp)
+        }
+
+        # else:
+        #     raise ValueError("Cannot serialize response (unrecognized response.")
+
+    cpdef Response deserialize(self, bytes response_bytes):
+        """
+        Deserialize the given bytes to a request.
+
+        :param response_bytes: The bytes to deserialize.
+        :return: Request.
+        """
+        Precondition.not_empty(response_bytes, 'response_bytes')
+
+        cdef dict unpacked = msgpack.unpackb(response_bytes, raw=False)
+
+        cdef str response_type = unpacked[TYPE]
+        cdef GUID correlation_id = GUID(UUID(unpacked[CORRELATION_ID]))
+        cdef GUID response_id = GUID(UUID(unpacked[ID]))
+        cdef datetime response_timestamp = convert_string_to_datetime(unpacked[TIMESTAMP])
+
+        # else:
+        #     raise ValueError("Cannot deserialize request (unrecognized request).")
