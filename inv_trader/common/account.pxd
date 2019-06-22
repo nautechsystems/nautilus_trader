@@ -18,7 +18,6 @@ from inv_trader.model.objects cimport ValidString
 from inv_trader.model.identifiers cimport AccountId, AccountNumber
 
 
-
 cdef class Account:
     """
     Represents a brokerage account.
