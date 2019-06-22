@@ -9,12 +9,12 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
+from inv_trader.common.account cimport Account
 from inv_trader.common.clock cimport Clock
 from inv_trader.common.logger cimport LoggerAdapter
 from inv_trader.common.data cimport DataClient
 from inv_trader.common.execution cimport ExecutionClient
 from inv_trader.model.identifiers cimport ValidString, TraderId
-from inv_trader.common.account cimport Account
 from inv_trader.portfolio.portfolio cimport Portfolio
 from inv_trader.reports cimport ReportProvider
 

@@ -11,7 +11,7 @@
 
 from cpython.datetime cimport datetime
 
-from inv_trader.enums.currency cimport Currency
+from inv_trader.c_enums.currency cimport Currency
 from inv_trader.model.objects cimport Money
 
 

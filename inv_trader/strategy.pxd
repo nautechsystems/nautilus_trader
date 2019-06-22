@@ -17,12 +17,12 @@ from inv_trader.common.guid cimport GuidFactory
 from inv_trader.common.logger cimport Logger, LoggerAdapter
 from inv_trader.common.execution cimport ExecutionClient
 from inv_trader.common.data cimport DataClient
-from inv_trader.enums.currency cimport Currency
-from inv_trader.enums.order_side cimport OrderSide
-from inv_trader.enums.market_position cimport MarketPosition
+from inv_trader.c_enums.currency cimport Currency
+from inv_trader.c_enums.order_side cimport OrderSide
+from inv_trader.c_enums.market_position cimport MarketPosition
 from inv_trader.model.currency cimport ExchangeRateCalculator
 from inv_trader.model.events cimport Event
-from inv_trader.model.identifiers cimport Label, TraderId, StrategyId, OrderId, PositionId
+from inv_trader.model.identifiers cimport TraderId, StrategyId, OrderId, PositionId
 from inv_trader.model.identifiers cimport PositionIdGenerator
 from inv_trader.model.objects cimport ValidString, Symbol, Price, Tick, BarType, Bar, Instrument
 from inv_trader.model.order cimport Order, AtomicOrder, OrderFactory

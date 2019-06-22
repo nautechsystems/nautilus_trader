@@ -9,8 +9,6 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
-from cpython.datetime cimport datetime
-
 from inv_trader.core.message cimport Command
 from inv_trader.model.identifiers cimport OrderId, TraderId, StrategyId, PositionId
 from inv_trader.model.objects cimport ValidString, Price
