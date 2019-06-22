@@ -14,10 +14,10 @@ from collections import deque
 from typing import Callable, Dict, List, Deque
 
 from inv_trader.core.precondition cimport Precondition
-from inv_trader.enums.currency cimport Currency
-from inv_trader.enums.quote_type cimport QuoteType
-from inv_trader.enums.order_side cimport OrderSide
-from inv_trader.enums.market_position cimport MarketPosition
+from inv_trader.c_enums.currency cimport Currency
+from inv_trader.c_enums.quote_type cimport QuoteType
+from inv_trader.c_enums.order_side cimport OrderSide
+from inv_trader.c_enums.market_position cimport MarketPosition
 from inv_trader.common.clock cimport Clock, LiveClock
 from inv_trader.common.logger cimport Logger, LoggerAdapter
 from inv_trader.common.execution cimport ExecutionClient

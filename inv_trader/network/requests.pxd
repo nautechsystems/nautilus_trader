@@ -12,7 +12,7 @@
 from cpython.datetime cimport datetime
 
 from inv_trader.core.message cimport Request
-from inv_trader.enums.venue cimport Venue
+from inv_trader.c_enums.venue cimport Venue
 from inv_trader.model.objects cimport Symbol, BarSpecification
 
 
