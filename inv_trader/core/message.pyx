@@ -73,7 +73,7 @@ cdef class Message:
 
         :return: str.
         """
-        return f"{self.__class__.__name__}({self.id})"
+        return f"{self.__class__.__name__}({self.id.value})"
 
     def __repr__(self) -> str:
         """
