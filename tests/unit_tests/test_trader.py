@@ -15,7 +15,7 @@ from inv_trader.common.brokerage import CommissionCalculator
 from inv_trader.common.clock import TestClock
 from inv_trader.common.guid import TestGuidFactory
 from inv_trader.common.logger import TestLogger
-from inv_trader.model.enums import Resolution
+from inv_trader.enums import Resolution
 from inv_trader.model.objects import ValidString, Money
 from inv_trader.model.identifiers import TraderId, StrategyId
 from inv_trader.backtest.execution import BacktestExecClient

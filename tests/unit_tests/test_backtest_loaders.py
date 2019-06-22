@@ -11,7 +11,7 @@ import unittest
 
 from decimal import Decimal
 
-from inv_trader.model.enums import Venue
+from inv_trader.enums import Venue
 from inv_trader.model.objects import Symbol
 from inv_trader.backtest.loaders import InstrumentLoader
 

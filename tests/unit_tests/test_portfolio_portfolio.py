@@ -15,7 +15,7 @@ from inv_trader.common.brokerage import CommissionCalculator
 from inv_trader.common.clock import TestClock
 from inv_trader.common.guid import TestGuidFactory
 from inv_trader.common.logger import TestLogger
-from inv_trader.model.enums import Venue, OrderSide
+from inv_trader.enums import Venue, OrderSide
 from inv_trader.model.objects import Quantity, Symbol, Price, Money
 from inv_trader.model.order import OrderFactory
 from inv_trader.model.identifiers import GUID, OrderId, PositionId, ExecutionId, ExecutionTicket

@@ -17,8 +17,8 @@ from pandas import DataFrame
 from typing import Set, List, Dict, Callable
 
 from inv_trader.core.precondition cimport Precondition
-from inv_trader.enums.quote_type cimport QuoteType
-from inv_trader.enums.resolution cimport Resolution, resolution_string
+from inv_trader.c_enums.quote_type cimport QuoteType
+from inv_trader.c_enums.resolution cimport Resolution, resolution_string
 from inv_trader.common.clock cimport TestClock
 from inv_trader.common.logger cimport Logger
 from inv_trader.common.data cimport DataClient

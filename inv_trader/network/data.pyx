@@ -22,7 +22,7 @@ from inv_trader.common.clock cimport Clock, LiveClock
 from inv_trader.common.logger cimport Logger
 from inv_trader.common.data cimport DataClient
 from inv_trader.common.serialization cimport InstrumentSerializer
-from inv_trader.model.enums import Resolution, QuoteType, Venue
+from inv_trader.enums import Resolution, QuoteType, Venue
 from inv_trader.enums.resolution cimport Resolution
 from inv_trader.enums.quote_type cimport QuoteType
 from inv_trader.enums.venue cimport Venue

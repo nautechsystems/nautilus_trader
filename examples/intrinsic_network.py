@@ -7,7 +7,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from inv_trader.model.enums import OrderSide
+from inv_trader.enums import OrderSide
 from inv_trader.model.objects import Tick, BarType, Bar, Instrument, Quantity
 from inv_trader.model.events import Event, PositionOpened
 from inv_trader.strategy import TradeStrategy

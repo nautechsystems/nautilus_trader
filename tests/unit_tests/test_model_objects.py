@@ -11,7 +11,7 @@ import unittest
 
 from decimal import Decimal, InvalidOperation
 
-from inv_trader.model.enums import Venue, Resolution, QuoteType
+from inv_trader.enums import Venue, Resolution, QuoteType
 from inv_trader.model.objects import ValidString, Quantity, Symbol, Price, Money
 from inv_trader.model.objects import BarSpecification, BarType
 

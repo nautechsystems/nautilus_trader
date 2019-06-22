@@ -13,7 +13,7 @@ import uuid
 from decimal import Decimal
 
 from inv_trader.common.clock import TestClock
-from inv_trader.model.enums import Venue, OrderSide, OrderType, OrderStatus, TimeInForce
+from inv_trader.enums import Venue, OrderSide, OrderType, OrderStatus, TimeInForce
 from inv_trader.model.objects import ValidString, Quantity, Symbol, Price
 from inv_trader.model.identifiers import GUID, Label, OrderId, ExecutionId, ExecutionTicket
 from inv_trader.model.order import Order, OrderFactory

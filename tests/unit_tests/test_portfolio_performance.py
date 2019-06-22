@@ -11,7 +11,7 @@ import unittest
 
 from datetime import datetime
 
-from inv_trader.model.enums import Venue
+from inv_trader.enums import Venue
 from inv_trader.model.objects import Symbol, Money
 from inv_trader.model.identifiers import PositionId
 from inv_trader.model.position import Position

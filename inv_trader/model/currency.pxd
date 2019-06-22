@@ -10,8 +10,8 @@
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
 
-from inv_trader.enums.currency cimport Currency
-from inv_trader.enums.quote_type cimport QuoteType
+from inv_trader.c_enums.currency cimport Currency
+from inv_trader.c_enums.quote_type cimport QuoteType
 
 
 cdef class ExchangeRateCalculator:

@@ -15,12 +15,12 @@ from typing import List, Dict
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.backtest.models cimport FillModel
-from inv_trader.enums.brokerage cimport Broker
-from inv_trader.enums.quote_type cimport QuoteType
-from inv_trader.enums.order_type cimport OrderType
-from inv_trader.enums.order_side cimport OrderSide
-from inv_trader.enums.order_status cimport OrderStatus
-from inv_trader.enums.market_position cimport MarketPosition, market_position_string
+from inv_trader.c_enums.brokerage cimport Broker
+from inv_trader.c_enums.quote_type cimport QuoteType
+from inv_trader.c_enums.order_type cimport OrderType
+from inv_trader.c_enums.order_side cimport OrderSide
+from inv_trader.c_enums.order_status cimport OrderStatus
+from inv_trader.c_enums.market_position cimport MarketPosition, market_position_string
 from inv_trader.model.currency cimport ExchangeRateCalculator
 from inv_trader.model.objects cimport ValidString, Symbol, Price, Tick, Bar, Money, Instrument, Quantity
 from inv_trader.model.order cimport Order

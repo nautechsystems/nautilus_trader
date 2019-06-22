@@ -13,9 +13,9 @@ import time
 
 from datetime import datetime, timezone
 
-from inv_trader.network.data import LiveDataClient
+from inv_trader.enums import Venue, Resolution, QuoteType
 from inv_trader.model.objects import Symbol, Price, Tick, BarSpecification, BarType, Bar
-from inv_trader.model.enums import Venue, Resolution, QuoteType
+from inv_trader.network.data import LiveDataClient
 from test_kit.objects import ObjectStorer
 from test_kit.stubs import TestStubs
 

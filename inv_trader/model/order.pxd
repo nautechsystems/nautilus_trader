@@ -11,15 +11,15 @@
 
 from cpython.datetime cimport datetime
 
+from inv_trader.c_enums.order_side cimport OrderSide
+from inv_trader.c_enums.order_type cimport OrderType
+from inv_trader.c_enums.order_status cimport OrderStatus
+from inv_trader.c_enums.time_in_force cimport TimeInForce
 from inv_trader.common.clock cimport Clock
 from inv_trader.model.objects cimport Quantity, Symbol, Price
 from inv_trader.model.events cimport OrderEvent
 from inv_trader.model.identifiers cimport GUID, Label, OrderId, ExecutionId, ExecutionTicket
 from inv_trader.model.identifiers cimport OrderIdGenerator
-from inv_trader.enums.order_side cimport OrderSide
-from inv_trader.enums.order_type cimport OrderType
-from inv_trader.enums.order_status cimport OrderStatus
-from inv_trader.enums.time_in_force cimport TimeInForce
 
 
 cdef class Order:

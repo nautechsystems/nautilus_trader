@@ -13,8 +13,8 @@ from typing import Dict
 from itertools import permutations
 
 from inv_trader.core.precondition cimport Precondition
-from inv_trader.enums.currency cimport Currency, currency_string
-from inv_trader.enums.quote_type cimport QuoteType, quote_type_string
+from inv_trader.c_enums.currency cimport Currency, currency_string
+from inv_trader.c_enums.quote_type cimport QuoteType, quote_type_string
 
 
 cdef class ExchangeRateCalculator:

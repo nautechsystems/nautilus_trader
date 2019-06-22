@@ -14,8 +14,8 @@ import unittest
 
 from datetime import datetime, timezone
 
-from inv_trader.model.enums import Resolution
-from inv_trader.model.enums import Venue
+from inv_trader.enums import Resolution
+from inv_trader.enums import Venue
 from inv_trader.model.objects import Symbol
 from inv_trader.backtest.config import BacktestConfig
 from inv_trader.backtest.engine import BacktestEngine

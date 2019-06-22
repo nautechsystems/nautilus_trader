@@ -15,11 +15,11 @@ from uuid import uuid4
 from typing import List
 
 from inv_trader.core.precondition cimport Precondition
+from inv_trader.c_enums.order_side cimport OrderSide, order_side_string
+from inv_trader.c_enums.order_type cimport OrderType, order_type_string
+from inv_trader.c_enums.order_status cimport OrderStatus, order_status_string
+from inv_trader.c_enums.time_in_force cimport TimeInForce, time_in_force_string
 from inv_trader.common.clock cimport Clock, LiveClock
-from inv_trader.enums.order_side cimport OrderSide, order_side_string
-from inv_trader.enums.order_type cimport OrderType, order_type_string
-from inv_trader.enums.order_status cimport OrderStatus, order_status_string
-from inv_trader.enums.time_in_force cimport TimeInForce, time_in_force_string
 from inv_trader.model.objects cimport Quantity, Symbol, Price
 from inv_trader.model.events cimport OrderEvent
 from inv_trader.model.events cimport OrderInitialized, OrderSubmitted, OrderAccepted, OrderRejected

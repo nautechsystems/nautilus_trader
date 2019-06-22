@@ -10,7 +10,7 @@
 from inv_trader.common.logger import Logger
 from inv_trader.data import LiveDataClient
 from inv_trader.execution import LiveExecClient
-from inv_trader.model.enums import Venue, Resolution, QuoteType
+from inv_trader.enums import Venue, Resolution, QuoteType
 from inv_trader.model.objects import Symbol, BarType
 from test_kit.strategies import EMACross
 

@@ -12,8 +12,8 @@ from decimal import Decimal
 from cpython.datetime cimport datetime
 from typing import List
 
-from inv_trader.enums.market_position cimport MarketPosition, market_position_string
-from inv_trader.enums.order_side cimport OrderSide
+from inv_trader.c_enums.market_position cimport MarketPosition, market_position_string
+from inv_trader.c_enums.order_side cimport OrderSide
 from inv_trader.model.objects cimport Symbol
 from inv_trader.model.events cimport OrderEvent
 from inv_trader.model.identifiers cimport PositionId, ExecutionId, ExecutionTicket
