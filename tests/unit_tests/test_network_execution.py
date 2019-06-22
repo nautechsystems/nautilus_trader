@@ -12,7 +12,7 @@ import time
 
 from inv_trader.model.enums import Venue, OrderSide
 from inv_trader.model.objects import Quantity, Symbol, Price
-from inv_trader.execution import LiveExecClient
+from inv_trader.network.execution import LiveExecClient
 from test_kit.stubs import TestStubs
 from test_kit.mocks import MockServer
 from test_kit.strategies import TestStrategy1

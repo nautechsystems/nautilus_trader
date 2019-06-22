@@ -21,7 +21,7 @@ cdef class Message:
 
     def __init__(self, GUID identifier, datetime timestamp):
         """
-        Initializes a new instance of the Response abstract class.
+        Initializes a new instance of the Message abstract class.
 
         :param identifier: The message identifier.
         :param timestamp: The message timestamp.
@@ -148,3 +148,4 @@ cdef class Response(Message):
         :param timestamp: The response timestamp.
         """
         super().__init__(correlation_id, identifier, timestamp)
+        self.correlation_id = correlation_id

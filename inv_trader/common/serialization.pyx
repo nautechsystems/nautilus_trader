@@ -15,10 +15,12 @@ from cpython.datetime cimport datetime
 
 # Do not reorder imports (enums need to be in below order)
 from inv_trader.core.message cimport Command, Event, Request, Response
-from inv_trader.model.enums import Venue
+from inv_trader.model.enums import Venue, Resolution, QuoteType
 from inv_trader.enums.venue cimport Venue
+from inv_trader.enums.resolution cimport Resolution
+from inv_trader.enums.quote_type cimport QuoteType
 from inv_trader.model.identifiers cimport Label
-from inv_trader.model.objects cimport Symbol, Price, Instrument
+from inv_trader.model.objects cimport Symbol, BarSpecification, Price, Instrument
 from inv_trader.model.order cimport Order
 
 cdef str NONE = 'NONE'
@@ -28,11 +30,30 @@ cpdef Symbol parse_symbol(str symbol_string):
     """
     Return the parsed symbol from the given string.
 
+    Note: String format example is 'AUDUSD.FXCM'.
     :param symbol_string: The symbol string to parse.
     :return: Symbol.
     """
     cdef tuple split_symbol = symbol_string.partition('.')
     return Symbol(split_symbol[0], Venue[split_symbol[2].upper()])
+
+cpdef BarSpecification parse_bar_spec(str bar_spec_string):
+    """
+    Return the parsed bar specification from the given string.
+    
+    Note: String format example is '1-MINUTE-[BID]'.
+    :param bar_spec_string: The bar specification string to parse.
+    :return: BarSpecification.
+    """
+    cdef list split1 = bar_spec_string.split('-')
+    cdef list split2 = split1[1].split('[')
+    cdef str resolution = split2[0]
+    cdef str quote_type = split2[1].strip(']')
+
+    return BarSpecification(
+        int(split1[0]),
+        Resolution[resolution.upper()],
+        QuoteType[quote_type.upper()])
 
 cpdef str convert_price_to_string(Price price):
     """
