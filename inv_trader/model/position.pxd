@@ -14,8 +14,8 @@ from cpython.datetime cimport datetime
 from inv_trader.model.objects cimport Quantity, Symbol, Price
 from inv_trader.model.events cimport OrderEvent
 from inv_trader.model.identifiers cimport PositionId, OrderId, ExecutionId, ExecutionTicket
-from inv_trader.enums.market_position cimport MarketPosition
-from inv_trader.enums.order_side cimport OrderSide
+from inv_trader.c_enums.market_position cimport MarketPosition
+from inv_trader.c_enums.order_side cimport OrderSide
 
 
 cdef class Position:

@@ -13,11 +13,11 @@ from cpython.datetime cimport datetime
 
 from inv_trader.core.precondition cimport Precondition
 from inv_trader.core.message cimport Event
-from inv_trader.enums.brokerage cimport Broker
-from inv_trader.enums.currency cimport Currency
-from inv_trader.enums.order_side cimport OrderSide, order_side_string
-from inv_trader.enums.order_type cimport OrderType
-from inv_trader.enums.time_in_force cimport TimeInForce
+from inv_trader.c_enums.brokerage cimport Broker
+from inv_trader.c_enums.currency cimport Currency
+from inv_trader.c_enums.order_side cimport OrderSide, order_side_string
+from inv_trader.c_enums.order_type cimport OrderType
+from inv_trader.c_enums.time_in_force cimport TimeInForce
 from inv_trader.model.identifiers cimport GUID, Label, AccountNumber, AccountId
 from inv_trader.model.identifiers cimport StrategyId, OrderId, ExecutionId, ExecutionTicket
 from inv_trader.model.objects cimport ValidString, Quantity, Symbol, Price

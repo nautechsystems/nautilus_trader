@@ -13,11 +13,11 @@ from decimal import Decimal
 from cpython.datetime cimport datetime
 
 from inv_trader.core.precondition cimport Precondition
-from inv_trader.enums.venue cimport Venue, venue_string
-from inv_trader.enums.resolution cimport Resolution, resolution_string
-from inv_trader.enums.quote_type cimport QuoteType, quote_type_string
-from inv_trader.enums.security_type cimport SecurityType
-from inv_trader.enums.currency cimport Currency
+from inv_trader.c_enums.venue cimport Venue, venue_string
+from inv_trader.c_enums.resolution cimport Resolution, resolution_string
+from inv_trader.c_enums.quote_type cimport QuoteType, quote_type_string
+from inv_trader.c_enums.security_type cimport SecurityType
+from inv_trader.c_enums.currency cimport Currency
 
 
 cdef class ValidString:

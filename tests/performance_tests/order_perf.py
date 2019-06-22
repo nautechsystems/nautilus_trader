@@ -12,7 +12,7 @@ import timeit
 from time import time
 
 from inv_trader.model.objects import Symbol
-from inv_trader.model.enums import Venue
+from inv_trader.enums import Venue
 from inv_trader.model.identifiers import OrderIdGenerator
 
 MILLISECONDS_IN_SECOND = 1000

@@ -12,8 +12,8 @@ import uuid
 
 from decimal import Decimal
 
-from inv_trader.model.enums import Broker
-from inv_trader.model.enums import Currency
+from inv_trader.enums import Broker
+from inv_trader.enums import Currency
 from inv_trader.model.objects import ValidString, Money
 from inv_trader.model.events import AccountEvent
 from inv_trader.model.identifiers import GUID, AccountId, AccountNumber

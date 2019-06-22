@@ -13,7 +13,7 @@ import unittest
 from datetime import datetime
 from pandas import Timestamp
 
-from inv_trader.model.enums import Resolution
+from inv_trader.enums import Resolution
 from inv_trader.model.objects import Tick, Bar
 from inv_trader.model.events import TimeEvent
 from inv_trader.backtest.config import BacktestConfig

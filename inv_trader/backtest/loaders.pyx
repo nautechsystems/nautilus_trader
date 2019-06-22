@@ -12,9 +12,9 @@ from datetime import timezone
 from decimal import Decimal
 
 from inv_trader.core.precondition cimport Precondition
-from inv_trader.enums.security_type cimport SecurityType
-from inv_trader.model.enums import Currency
-from inv_trader.enums.currency cimport Currency
+from inv_trader.c_enums.security_type cimport SecurityType
+from inv_trader.enums import Currency
+from inv_trader.c_enums.currency cimport Currency
 from inv_trader.model.objects cimport Symbol, Instrument, Quantity
 from inv_trader.model.identifiers cimport InstrumentId
 

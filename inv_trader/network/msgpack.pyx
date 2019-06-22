@@ -24,14 +24,14 @@ from inv_trader.commands cimport (
     ModifyOrder,
     CancelOrder
 )
-from inv_trader.model.enums import Broker, OrderSide, OrderType, TimeInForce, Currency, SecurityType
-from inv_trader.enums.venue cimport venue_string
-from inv_trader.enums.brokerage cimport Broker, broker_string
-from inv_trader.enums.time_in_force cimport TimeInForce, time_in_force_string
-from inv_trader.enums.order_side cimport OrderSide, order_side_string
-from inv_trader.enums.order_type cimport OrderType, order_type_string
-from inv_trader.enums.currency cimport Currency, currency_string
-from inv_trader.enums.security_type cimport SecurityType, security_type_string
+from inv_trader.enums import Broker, OrderSide, OrderType, TimeInForce, Currency, SecurityType
+from inv_trader.c_enums.venue cimport venue_string
+from inv_trader.c_enums.brokerage cimport Broker, broker_string
+from inv_trader.c_enums.time_in_force cimport TimeInForce, time_in_force_string
+from inv_trader.c_enums.order_side cimport OrderSide, order_side_string
+from inv_trader.c_enums.order_type cimport OrderType, order_type_string
+from inv_trader.c_enums.currency cimport Currency, currency_string
+from inv_trader.c_enums.security_type cimport SecurityType, security_type_string
 from inv_trader.model.identifiers cimport TraderId, StrategyId, OrderId, ExecutionId, AccountId, InstrumentId
 from inv_trader.model.identifiers cimport GUID, Label, ExecutionTicket, AccountNumber, PositionId
 from inv_trader.model.objects cimport ValidString, Quantity, Price, Money, Instrument, BarSpecification

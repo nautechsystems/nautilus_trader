@@ -9,7 +9,7 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
-from inv_trader.enums.currency cimport Currency
+from inv_trader.c_enums.currency cimport Currency
 from inv_trader.model.objects cimport Money
 
 cdef class BacktestConfig:

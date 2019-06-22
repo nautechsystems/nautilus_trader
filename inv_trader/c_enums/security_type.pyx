@@ -7,4 +7,4 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from inv_trader.enums.security_type cimport SecurityType
+from inv_trader.c_enums.security_type cimport SecurityType

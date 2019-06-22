@@ -12,7 +12,7 @@ import logging
 
 from datetime import datetime
 
-from inv_trader.model.enums import Resolution, Currency
+from inv_trader.enums import Resolution, Currency
 from inv_trader.backtest.models import FillModel
 from inv_trader.backtest.config import BacktestConfig
 from inv_trader.backtest.engine import BacktestEngine

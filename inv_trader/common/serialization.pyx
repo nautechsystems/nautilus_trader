@@ -15,10 +15,10 @@ from cpython.datetime cimport datetime
 
 # Do not reorder imports (enums need to be in below order)
 from inv_trader.core.message cimport Command, Event, Request, Response
-from inv_trader.model.enums import Venue, Resolution, QuoteType
-from inv_trader.enums.venue cimport Venue
-from inv_trader.enums.resolution cimport Resolution
-from inv_trader.enums.quote_type cimport QuoteType
+from inv_trader.enums import Venue, Resolution, QuoteType
+from inv_trader.c_enums.venue cimport Venue
+from inv_trader.c_enums.resolution cimport Resolution
+from inv_trader.c_enums.quote_type cimport QuoteType
 from inv_trader.model.identifiers cimport Label
 from inv_trader.model.objects cimport Symbol, BarSpecification, Price, Instrument
 from inv_trader.model.order cimport Order

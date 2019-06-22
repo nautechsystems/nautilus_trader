@@ -37,8 +37,8 @@ from inv_trader.common.brokerage import CommissionCalculator
 from inv_trader.common.clock cimport LiveClock, TestClock
 from inv_trader.common.guid cimport TestGuidFactory
 from inv_trader.common.logger cimport TestLogger
-from inv_trader.enums.currency cimport currency_string
-from inv_trader.enums.resolution cimport Resolution, resolution_string
+from inv_trader.c_enums.currency cimport currency_string
+from inv_trader.c_enums.resolution cimport Resolution, resolution_string
 from inv_trader.model.objects cimport Symbol, Instrument, Tick
 from inv_trader.model.events cimport TimeEvent
 from inv_trader.portfolio.portfolio cimport Portfolio

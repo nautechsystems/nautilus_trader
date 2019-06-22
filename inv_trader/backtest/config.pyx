@@ -12,7 +12,7 @@
 import logging
 
 from inv_trader.core.precondition cimport Precondition
-from inv_trader.enums.currency cimport Currency
+from inv_trader.c_enums.currency cimport Currency
 from inv_trader.model.objects cimport Money
 
 

@@ -15,7 +15,7 @@ from pandas import Timestamp
 
 from inv_trader.common.clock import TestClock
 from inv_trader.common.logger import TestLogger
-from inv_trader.model.enums import Resolution
+from inv_trader.enums import Resolution
 from inv_trader.backtest.data import BacktestDataClient
 from test_kit.objects import ObjectStorer
 from test_kit.data import TestDataProvider

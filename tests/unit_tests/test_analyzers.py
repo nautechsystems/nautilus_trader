@@ -12,7 +12,7 @@ import unittest
 from decimal import Decimal
 
 from inv_trader.analyzers import SpreadAnalyzer, LiquidityAnalyzer
-from inv_trader.model.enums import Venue
+from inv_trader.enums import Venue
 from inv_trader.model.objects import Symbol, Price, Tick
 from test_kit.stubs import TestStubs
 

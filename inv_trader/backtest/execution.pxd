@@ -11,7 +11,7 @@
 
 from inv_trader.common.brokerage cimport CommissionCalculator
 from inv_trader.common.execution cimport ExecutionClient
-from inv_trader.enums.market_position cimport MarketPosition
+from inv_trader.c_enums.market_position cimport MarketPosition
 from inv_trader.model.currency cimport ExchangeRateCalculator
 from inv_trader.model.objects cimport Symbol, Price, Tick, Bar, Money, Quantity
 from inv_trader.model.order cimport Order, OrderEvent

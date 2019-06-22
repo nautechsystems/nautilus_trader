@@ -19,12 +19,12 @@ from inv_trader.common.brokerage import CommissionCalculator
 from inv_trader.common.clock import TestClock
 from inv_trader.common.guid import TestGuidFactory
 from inv_trader.common.logger import TestLogger
-from inv_trader.model.enums import Venue, OrderSide
+from inv_trader.enums import Venue, OrderSide
 from inv_trader.model.objects import Quantity, Symbol, Price, Money, Tick, Bar
 from inv_trader.model.identifiers import OrderId, PositionId
 from inv_trader.model.position import Position
-from inv_trader.model.enums import OrderStatus, Currency
-from inv_trader.model.enums import MarketPosition
+from inv_trader.enums import OrderStatus, Currency
+from inv_trader.enums import MarketPosition
 from inv_trader.model.objects import Tick, Bar
 from inv_trader.model.events import TimeEvent
 from inv_trader.model.identifiers import StrategyId, Label

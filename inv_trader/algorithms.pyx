@@ -11,7 +11,7 @@
 
 from collections import deque
 
-from inv_trader.enums.order_side cimport OrderSide
+from inv_trader.c_enums.order_side cimport OrderSide
 from inv_trader.model.objects cimport Symbol, Tick, BarType, Bar
 from inv_trader.model.order cimport Order
 from inv_trader.strategy cimport TradeStrategy

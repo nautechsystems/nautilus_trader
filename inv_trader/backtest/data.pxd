@@ -12,7 +12,7 @@
 from cpython.datetime cimport datetime, timedelta
 
 from inv_trader.common.data cimport DataClient
-from inv_trader.enums.resolution cimport Resolution
+from inv_trader.c_enums.resolution cimport Resolution
 from inv_trader.model.objects cimport Symbol, Tick, BarType, Bar, Instrument
 
 

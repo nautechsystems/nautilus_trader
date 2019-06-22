@@ -9,8 +9,7 @@
 
 import unittest
 
-from inv_trader.enums.currency import Currency
-from inv_trader.enums.quote_type import QuoteType
+from inv_trader.enums import Currency, QuoteType
 from inv_trader.model.currency import ExchangeRateCalculator
 
 
