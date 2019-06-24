@@ -147,5 +147,5 @@ cdef class Response(Message):
         :param identifier: The response identifier.
         :param timestamp: The response timestamp.
         """
-        super().__init__(correlation_id, identifier, timestamp)
+        super().__init__(identifier, timestamp)
         self.correlation_id = correlation_id

@@ -20,9 +20,10 @@ from inv_trader.c_enums.venue cimport Venue
 from inv_trader.c_enums.resolution cimport Resolution
 from inv_trader.c_enums.quote_type cimport QuoteType
 from inv_trader.model.identifiers cimport Label
-from inv_trader.model.objects cimport Symbol, BarSpecification, Price, Instrument
+from inv_trader.model.objects cimport Symbol, Price, BarSpecification, Bar, Tick, Instrument, Quantity
 from inv_trader.model.order cimport Order
 
+cdef str UTF8 = 'utf-8'
 cdef str NONE = 'NONE'
 
 
@@ -54,6 +55,70 @@ cpdef BarSpecification parse_bar_spec(str bar_spec_string):
         int(split1[0]),
         Resolution[resolution.upper()],
         QuoteType[quote_type.upper()])
+
+cpdef Tick deserialize_tick(Symbol symbol, bytes tick_bytes):
+    """
+    Return a parsed a tick from the given UTF-8 string.
+
+    :param symbol: The ticks symbol.
+    :param tick_bytes: The tick bytes to deserialize.
+    :return: Tick.
+    """
+    cdef list values = tick_bytes.decode(UTF8).split(',')
+
+    return Tick(
+        symbol,
+        Price(values[0]),
+        Price(values[1]),
+        iso8601.parse_date(values[2]))
+
+cpdef Bar deserialize_bar(bytes bar_bytes):
+    """
+    Return the deserialized bar from the give bytes.
+    
+    :param bar_bytes: The bar bytes to deserialize.
+    :return: Bar.
+    """
+    cdef list values = bar_bytes.decode(UTF8).split(',')
+
+    return Bar(
+        Price(values[0]),
+        Price(values[1]),
+        Price(values[2]),
+        Price(values[3]),
+        Quantity(values[4]),
+        iso8601.parse_date(values[5]))
+
+cpdef list deserialize_ticks(Symbol symbol, bytes[:] tick_bytes_array):
+    """
+    Return a list of deserialized ticks from the given symbol and tick bytes.
+    
+    :param symbol: The tick symbol.
+    :param tick_bytes_array: The tick bytes to deserialize.
+    :return: List[Tick].
+    """
+    cdef list ticks = []
+    cdef int i
+    cdef int array_length = len(tick_bytes_array)
+    for i in range(array_length):
+        ticks.append(deserialize_tick(symbol, tick_bytes_array[i]))
+
+    return ticks
+
+cpdef list deserialize_bars(bytes[:] bar_bytes_array):
+    """
+    Return a list of deserialized bars from the given bars bytes.
+    
+    :param bar_bytes_array: The bar bytes to deserialize.
+    :return: List[Tick].
+    """
+    cdef list bars = []
+    cdef int i
+    cdef int array_length = len(bar_bytes_array)
+    for i in range(array_length):
+        bars.append(deserialize_bar(bar_bytes_array[i]))
+
+    return bars
 
 cpdef str convert_price_to_string(Price price):
     """

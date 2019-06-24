@@ -86,7 +86,7 @@ cdef class GUID(Identifier):
         :param value: The value of the GUID (input must be of type UUID).
         :raises ValueError: If the value is not of type UUID.
         """
-        Precondition.type_or_none(value, UUID, 'value')
+        Precondition.type(value, UUID, 'value')
 
         super().__init__(str(value))
 
