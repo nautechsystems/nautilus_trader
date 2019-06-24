@@ -1,4 +1,4 @@
-#  Invariance Software License
+#  Nautech Systems Software License
 ###  Version 1.0, April 2018
 
 TERMS AND CONDITIONS FOR USE

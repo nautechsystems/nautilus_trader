@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-# <copyright file="test_strategy.py" company="Invariance Pte">
-#  Copyright (C) 2018-2019 Invariance Pte. All rights reserved.
+# <copyright file="test_strategy.py" company="Nautech Systems Pty Ltd">
+#  Copyright (C) 2015-2019 Nautech Systems Pty Ltd. All rights reserved.
 #  The use of this source code is governed by the license as found in the LICENSE.md file.
-#  http://www.invariance.com
+#  http://www.nautechsystems.io
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
@@ -13,25 +13,25 @@ import time
 
 from datetime import datetime, timezone, timedelta
 
-from inv_trader.common.clock import LiveClock
-from inv_trader.common.account import Account
-from inv_trader.common.brokerage import CommissionCalculator
-from inv_trader.common.clock import TestClock
-from inv_trader.common.guid import TestGuidFactory
-from inv_trader.common.logger import TestLogger
-from inv_trader.enums import Venue, OrderSide
-from inv_trader.model.objects import Quantity, Symbol, Price, Money, Tick, Bar
-from inv_trader.model.identifiers import OrderId, PositionId
-from inv_trader.model.position import Position
-from inv_trader.enums import OrderStatus, Currency
-from inv_trader.enums import MarketPosition
-from inv_trader.model.objects import Tick, Bar
-from inv_trader.model.events import TimeEvent
-from inv_trader.model.identifiers import StrategyId, Label
-from inv_trader.backtest.execution import BacktestExecClient
-from inv_trader.backtest.models import FillModel
-from inv_trader.portfolio.portfolio import Portfolio
-from inv_trader.strategy import TradeStrategy
+from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.account import Account
+from nautilus_trader.common.brokerage import CommissionCalculator
+from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.guid import TestGuidFactory
+from nautilus_trader.common.logger import TestLogger
+from nautilus_trader.enums import Venue, OrderSide
+from nautilus_trader.model.objects import Quantity, Symbol, Price, Money, Tick, Bar
+from nautilus_trader.model.identifiers import OrderId, PositionId
+from nautilus_trader.model.position import Position
+from nautilus_trader.enums import OrderStatus, Currency
+from nautilus_trader.enums import MarketPosition
+from nautilus_trader.model.objects import Tick, Bar
+from nautilus_trader.model.events import TimeEvent
+from nautilus_trader.model.identifiers import StrategyId, Label
+from nautilus_trader.backtest.execution import BacktestExecClient
+from nautilus_trader.backtest.models import FillModel
+from nautilus_trader.portfolio.portfolio import Portfolio
+from nautilus_trader.strategy import TradeStrategy
 from test_kit.stubs import TestStubs
 from test_kit.strategies import TestStrategy1
 

@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-# <copyright file="ema_cross.py" company="Invariance Pte">
-#  Copyright (C) 2018-2019 Invariance Pte. All rights reserved.
+# <copyright file="ema_cross.py" company="Nautech Systems Pty Ltd">
+#  Copyright (C) 2015-2019 Nautech Systems Pty Ltd. All rights reserved.
 #  The use of this source code is governed by the license as found in the LICENSE.md file.
-#  http://www.invariance.com
+#  http://www.nautechsystems.io
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from inv_trader.enums import OrderSide
-from inv_trader.model.objects import Tick, BarType, Bar, Instrument, Quantity
-from inv_trader.model.events import Event, PositionOpened
-from inv_trader.strategy import TradeStrategy
+from nautilus_trader.enums import OrderSide
+from nautilus_trader.model.objects import Tick, BarType, Bar, Instrument, Quantity
+from nautilus_trader.model.events import Event, PositionOpened
+from nautilus_trader.strategy import TradeStrategy
 
 from inv_indicators.intrinsic_network import IntrinsicNetwork
 

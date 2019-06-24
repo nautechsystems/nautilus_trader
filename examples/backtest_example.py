@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-# <copyright file="backtest_example.py" company="Invariance Pte">
-#  Copyright (C) 2018-2019 Invariance Pte. All rights reserved.
+# <copyright file="backtest_example.py" company="Nautech Systems Pty Ltd">
+#  Copyright (C) 2015-2019 Nautech Systems Pty Ltd. All rights reserved.
 #  The use of this source code is governed by the license as found in the LICENSE.md file.
-#  http://www.invariance.com
+#  http://www.nautechsystems.io
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
@@ -12,10 +12,10 @@ import logging
 
 from datetime import datetime
 
-from inv_trader.enums import Resolution, Currency
-from inv_trader.backtest.models import FillModel
-from inv_trader.backtest.config import BacktestConfig
-from inv_trader.backtest.engine import BacktestEngine
+from nautilus_trader.enums import Resolution, Currency
+from nautilus_trader.backtest.models import FillModel
+from nautilus_trader.backtest.config import BacktestConfig
+from nautilus_trader.backtest.engine import BacktestEngine
 from test_kit.strategies import EMACross
 from test_kit.data import TestDataProvider
 from test_kit.stubs import TestStubs

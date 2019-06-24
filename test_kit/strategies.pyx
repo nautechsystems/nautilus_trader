@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-# <copyright file="strategies.pyx" company="Invariance Pte">
-#  Copyright (C) 2018-2019 Invariance Pte. All rights reserved.
+# <copyright file="strategies.pyx" company="Nautech Systems Pty Ltd">
+#  Copyright (C) 2015-2019 Nautech Systems Pty Ltd. All rights reserved.
 #  The use of this source code is governed by the license as found in the LICENSE.md file.
-#  http://www.invariance.com
+#  http://www.nautechsystems.io
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
@@ -13,16 +13,16 @@ from datetime import timedelta
 
 from inv_indicators.atr import AverageTrueRange
 from inv_indicators.average.ema import ExponentialMovingAverage
-from inv_trader.model.events cimport Event
-from inv_trader.model.identifiers cimport Label, PositionId
-from inv_trader.model.objects cimport Symbol, Price, Tick, BarType, Bar, Instrument
-from inv_trader.model.order cimport Order, AtomicOrder
-from inv_trader.strategy cimport TradeStrategy
-from inv_trader.analyzers cimport SpreadAnalyzer, LiquidityAnalyzer
-from inv_trader.c_enums.order_side cimport OrderSide
-from inv_trader.c_enums.time_in_force cimport TimeInForce
-from inv_trader.common.clock cimport Clock, TestClock
-from inv_trader.portfolio.sizing cimport PositionSizer, FixedRiskSizer
+from nautilus_trader.model.events cimport Event
+from nautilus_trader.model.identifiers cimport Label, PositionId
+from nautilus_trader.model.objects cimport Symbol, Price, Tick, BarType, Bar, Instrument
+from nautilus_trader.model.order cimport Order, AtomicOrder
+from nautilus_trader.strategy cimport TradeStrategy
+from nautilus_trader.analyzers cimport SpreadAnalyzer, LiquidityAnalyzer
+from nautilus_trader.c_enums.order_side cimport OrderSide
+from nautilus_trader.c_enums.time_in_force cimport TimeInForce
+from nautilus_trader.common.clock cimport Clock, TestClock
+from nautilus_trader.portfolio.sizing cimport PositionSizer, FixedRiskSizer
 from test_kit.objects cimport ObjectStorer
 
 

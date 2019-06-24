@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-# <copyright file="test_execution.py" company="Invariance Pte">
-#  Copyright (C) 2018-2019 Invariance Pte. All rights reserved.
+# <copyright file="test_execution.py" company="Nautech Systems Pty Ltd">
+#  Copyright (C) 2015-2019 Nautech Systems Pty Ltd. All rights reserved.
 #  The use of this source code is governed by the license as found in the LICENSE.md file.
-#  http://www.invariance.com
+#  http://www.nautechsystems.io
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
 import unittest
 import time
 
-from inv_trader.enums import Venue, OrderSide
-from inv_trader.model.objects import Quantity, Symbol, Price
-from inv_trader.network.execution import LiveExecClient
+from nautilus_trader.enums import Venue, OrderSide
+from nautilus_trader.model.objects import Quantity, Symbol, Price
+from nautilus_trader.network.execution import LiveExecClient
 from test_kit.stubs import TestStubs
 from test_kit.mocks import MockServer
 from test_kit.strategies import TestStrategy1

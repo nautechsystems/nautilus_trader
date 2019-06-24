@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-# <copyright file="console_tester_fxcm.py" company="Invariance Pte">
-#  Copyright (C) 2018-2019 Invariance Pte. All rights reserved.
+# <copyright file="console_tester_fxcm.py" company="Nautech Systems Pty Ltd">
+#  Copyright (C) 2015-2019 Nautech Systems Pty Ltd. All rights reserved.
 #  The use of this source code is governed by the license as found in the LICENSE.md file.
-#  http://www.invariance.com
+#  http://www.nautechsystems.io
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from inv_trader.common.logger import Logger
-from inv_trader.data import LiveDataClient
-from inv_trader.execution import LiveExecClient
-from inv_trader.enums import Venue, Resolution, QuoteType
-from inv_trader.model.objects import Symbol, BarType
+from nautilus_trader.common.logger import Logger
+from nautilus_trader.network.data import LiveDataClient
+from nautilus_trader.network.execution import LiveExecClient
+from nautilus_trader.enums import Venue, Resolution, QuoteType
+from nautilus_trader.model.objects import Symbol, BarType
 from test_kit.strategies import EMACross
 
 AUDUSD_FXCM = Symbol('AUDUSD', Venue.FXCM)

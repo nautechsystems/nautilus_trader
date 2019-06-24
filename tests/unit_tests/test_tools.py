@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-# <copyright file="test_tools.py" company="Invariance Pte">
-#  Copyright (C) 2018-2019 Invariance Pte. All rights reserved.
+# <copyright file="test_tools.py" company="Nautech Systems Pty Ltd">
+#  Copyright (C) 2015-2019 Nautech Systems Pty Ltd. All rights reserved.
 #  The use of this source code is governed by the license as found in the LICENSE.md file.
-#  http://www.invariance.com
+#  http://www.nautechsystems.io
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
@@ -12,8 +12,8 @@ import unittest
 from pandas import Timestamp
 from datetime import datetime, timezone
 
-from inv_trader.model.objects import Price, Bar
-from inv_trader.tools import TickBuilder, BarBuilder, IndicatorUpdater
+from nautilus_trader.model.objects import Price, Bar
+from nautilus_trader.tools import TickBuilder, BarBuilder, IndicatorUpdater
 from inv_indicators.average.ema import ExponentialMovingAverage
 from inv_indicators.intrinsic_network import IntrinsicNetwork
 from test_kit.data import TestDataProvider

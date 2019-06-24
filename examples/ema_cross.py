@@ -1,22 +1,22 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-# <copyright file="ema_cross.py" company="Invariance Pte">
-#  Copyright (C) 2018-2019 Invariance Pte. All rights reserved.
+# <copyright file="ema_cross.py" company="Nautech Systems Pty Ltd">
+#  Copyright (C) 2015-2019 Nautech Systems Pty Ltd. All rights reserved.
 #  The use of this source code is governed by the license as found in the LICENSE.md file.
-#  http://www.invariance.com
+#  http://www.nautechsystems.io
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
 from datetime import timedelta
 
-from inv_trader.enums.order_side import OrderSide
-from inv_trader.enums.time_in_force import TimeInForce
-from inv_trader.model.objects import Price, Tick, BarType, Bar, Instrument
-from inv_trader.model.events import Event
-from inv_trader.model.identifiers import Label
-from inv_trader.strategy import TradeStrategy
-from inv_trader.portfolio.sizing import FixedRiskSizer
-from inv_trader.analyzers import SpreadAnalyzer, LiquidityAnalyzer
+from nautilus_trader.c_enums.order_side import OrderSide
+from nautilus_trader.c_enums.time_in_force import TimeInForce
+from nautilus_trader.model.objects import Price, Tick, BarType, Bar, Instrument
+from nautilus_trader.model.events import Event
+from nautilus_trader.model.identifiers import Label
+from nautilus_trader.strategy import TradeStrategy
+from nautilus_trader.portfolio.sizing import FixedRiskSizer
+from nautilus_trader.analyzers import SpreadAnalyzer, LiquidityAnalyzer
 
 from inv_indicators.average.ema import ExponentialMovingAverage
 from inv_indicators.atr import AverageTrueRange

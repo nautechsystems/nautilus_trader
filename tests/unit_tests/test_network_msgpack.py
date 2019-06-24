@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-# <copyright file="test_network_msgpack.py" company="Invariance Pte">
-#  Copyright (C) 2018-2019 Invariance Pte. All rights reserved.
+# <copyright file="test_network_msgpack.py" company="Nautech Systems Pty Ltd">
+#  Copyright (C) 2015-2019 Nautech Systems Pty Ltd. All rights reserved.
 #  The use of this source code is governed by the license as found in the LICENSE.md file.
-#  http://www.invariance.com
+#  http://www.nautechsystems.io
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
@@ -12,16 +12,16 @@ import uuid
 
 from base64 import b64encode, b64decode
 
-from inv_trader.common.clock import *
-from inv_trader.commands import *
-from inv_trader.model.identifiers import *
-from inv_trader.model.objects import *
-from inv_trader.model.order import *
-from inv_trader.model.events import *
-from inv_trader.network.msgpack import *
-from inv_trader.common.serialization import *
-from inv_trader.network.requests import *
-from inv_trader.network.responses import *
+from nautilus_trader.common.clock import *
+from nautilus_trader.commands import *
+from nautilus_trader.model.identifiers import *
+from nautilus_trader.model.objects import *
+from nautilus_trader.model.order import *
+from nautilus_trader.model.events import *
+from nautilus_trader.network.msgpack import *
+from nautilus_trader.common.serialization import *
+from nautilus_trader.network.requests import *
+from nautilus_trader.network.responses import *
 from test_kit.stubs import *
 
 UNIX_EPOCH = TestStubs.unix_epoch()

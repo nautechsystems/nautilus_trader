@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-# <copyright file="strategies.py" company="Invariance Pte">
-#  Copyright (C) 2018-2019 Invariance Pte. All rights reserved.
+# <copyright file="strategies.py" company="Nautech Systems Pty Ltd">
+#  Copyright (C) 2015-2019 Nautech Systems Pty Ltd. All rights reserved.
 #  The use of this source code is governed by the license as found in the LICENSE.md file.
-#  http://www.invariance.com
+#  http://www.nautechsystems.io
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
 # cython: language_level=3, boundscheck=False
 
-from inv_trader.model.events cimport Event
-from inv_trader.model.objects cimport Tick, BarType, Bar
-from inv_trader.strategy cimport TradeStrategy
+from nautilus_trader.model.events cimport Event
+from nautilus_trader.model.objects cimport Tick, BarType, Bar
+from nautilus_trader.strategy cimport TradeStrategy
 
 
 cdef class EmptyStrategyCython(TradeStrategy):

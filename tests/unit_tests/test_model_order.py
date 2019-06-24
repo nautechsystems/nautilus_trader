@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-# <copyright file="test_order.py" company="Invariance Pte">
-#  Copyright (C) 2018-2019 Invariance Pte. All rights reserved.
+# <copyright file="test_order.py" company="Nautech Systems Pty Ltd">
+#  Copyright (C) 2015-2019 Nautech Systems Pty Ltd. All rights reserved.
 #  The use of this source code is governed by the license as found in the LICENSE.md file.
-#  http://www.invariance.com
+#  http://www.nautechsystems.io
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
@@ -12,14 +12,14 @@ import uuid
 
 from decimal import Decimal
 
-from inv_trader.common.clock import TestClock
-from inv_trader.enums import Venue, OrderSide, OrderType, OrderStatus, TimeInForce
-from inv_trader.model.objects import ValidString, Quantity, Symbol, Price
-from inv_trader.model.identifiers import GUID, Label, OrderId, ExecutionId, ExecutionTicket
-from inv_trader.model.order import Order, OrderFactory
-from inv_trader.model.events import OrderInitialized, OrderSubmitted, OrderAccepted, OrderRejected
-from inv_trader.model.events import OrderWorking, OrderExpired, OrderModified, OrderCancelled
-from inv_trader.model.events import OrderCancelReject, OrderPartiallyFilled, OrderFilled
+from nautilus_trader.common.clock import TestClock
+from nautilus_trader.enums import Venue, OrderSide, OrderType, OrderStatus, TimeInForce
+from nautilus_trader.model.objects import ValidString, Quantity, Symbol, Price
+from nautilus_trader.model.identifiers import GUID, Label, OrderId, ExecutionId, ExecutionTicket
+from nautilus_trader.model.order import Order, OrderFactory
+from nautilus_trader.model.events import OrderInitialized, OrderSubmitted, OrderAccepted, OrderRejected
+from nautilus_trader.model.events import OrderWorking, OrderExpired, OrderModified, OrderCancelled
+from nautilus_trader.model.events import OrderCancelReject, OrderPartiallyFilled, OrderFilled
 from test_kit.stubs import TestStubs
 
 UNIX_EPOCH = TestStubs.unix_epoch()
