@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-# <copyright file="test_identifiers.py" company="Invariance Pte">
-#  Copyright (C) 2018-2019 Invariance Pte. All rights reserved.
+# <copyright file="test_identifiers.py" company="Nautech Systems Pty Ltd">
+#  Copyright (C) 2015-2019 Nautech Systems Pty Ltd. All rights reserved.
 #  The use of this source code is governed by the license as found in the LICENSE.md file.
-#  http://www.invariance.com
+#  http://www.nautechsystems.io
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
 import unittest
 import uuid
 
-from inv_trader.common.clock import TestClock
-from inv_trader.model.identifiers import GUID, Label, OrderId, PositionId, OrderIdGenerator, PositionIdGenerator
+from nautilus_trader.common.clock import TestClock
+from nautilus_trader.model.identifiers import GUID, Label, OrderId, PositionId, OrderIdGenerator, PositionIdGenerator
 
 
 class IdentifierTests(unittest.TestCase):

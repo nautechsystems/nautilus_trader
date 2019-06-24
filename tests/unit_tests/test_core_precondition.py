@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-# <copyright file="test_precondition.py" company="Invariance Pte">
-#  Copyright (C) 2018-2019 Invariance Pte. All rights reserved.
+# <copyright file="test_precondition.py" company="Nautech Systems Pty Ltd">
+#  Copyright (C) 2015-2019 Nautech Systems Pty Ltd. All rights reserved.
 #  The use of this source code is governed by the license as found in the LICENSE.md file.
-#  http://www.invariance.com
+#  http://www.nautechsystems.io
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
@@ -11,8 +11,8 @@ import unittest
 
 from decimal import Decimal
 
-from inv_trader.core.precondition import PyPrecondition
-from inv_trader.model.identifiers import OrderId
+from nautilus_trader.core.precondition import PyPrecondition
+from nautilus_trader.model.identifiers import OrderId
 
 
 class PreconditionTests(unittest.TestCase):

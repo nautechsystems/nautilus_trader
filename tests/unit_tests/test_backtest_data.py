@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-# <copyright file="test_backtest_data.py" company="Invariance Pte">
-#  Copyright (C) 2018-2019 Invariance Pte. All rights reserved.
+# <copyright file="test_backtest_data.py" company="Nautech Systems Pty Ltd">
+#  Copyright (C) 2015-2019 Nautech Systems Pty Ltd. All rights reserved.
 #  The use of this source code is governed by the license as found in the LICENSE.md file.
-#  http://www.invariance.com
+#  http://www.nautechsystems.io
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
@@ -13,10 +13,10 @@ import pandas as pd
 from datetime import datetime, timezone, timedelta
 from pandas import Timestamp
 
-from inv_trader.common.clock import TestClock
-from inv_trader.common.logger import TestLogger
-from inv_trader.enums import Resolution
-from inv_trader.backtest.data import BacktestDataClient
+from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.logger import TestLogger
+from nautilus_trader.enums import Resolution
+from nautilus_trader.backtest.data import BacktestDataClient
 from test_kit.objects import ObjectStorer
 from test_kit.data import TestDataProvider
 from test_kit.stubs import TestStubs

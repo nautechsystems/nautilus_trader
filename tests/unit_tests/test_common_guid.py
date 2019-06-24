@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-# <copyright file="test_guid.py" company="Invariance Pte">
-#  Copyright (C) 2018-2019 Invariance Pte. All rights reserved.
+# <copyright file="test_guid.py" company="Nautech Systems Pty Ltd">
+#  Copyright (C) 2015-2019 Nautech Systems Pty Ltd. All rights reserved.
 #  The use of this source code is governed by the license as found in the LICENSE.md file.
-#  http://www.invariance.com
+#  http://www.nautechsystems.io
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
 import unittest
 
-from inv_trader.model.identifiers import GUID
-from inv_trader.common.guid import TestGuidFactory, LiveGuidFactory
+from nautilus_trader.model.identifiers import GUID
+from nautilus_trader.common.guid import TestGuidFactory, LiveGuidFactory
 
 
 class TestGuidFactoryTests(unittest.TestCase):

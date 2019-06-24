@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-# <copyright file="setup.py" company="Invariance Pte">
-#  Copyright (C) 2018-2019 Invariance Pte. All rights reserved.
+# <copyright file="setup.py" company="Nautech Systems Pty Ltd">
+#  Copyright (C) 2015-2019 Nautech Systems Pty Ltd. All rights reserved.
 #  The use of this source code is governed by the license as found in the LICENSE.md file.
-#  http://www.invariance.com
+#  http://www.nautechsystems.io
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
@@ -16,12 +16,12 @@ from Cython.Compiler import Options
 from typing import List
 from setuptools import setup, Extension
 
-from inv_trader.version import __version__
+from nautilus_trader.version import __version__
 
-AUTHOR = 'Invariance'
-INV_TRADER = 'inv_trader'
-DESCRIPTION = 'The python trading client for Invariance.'
-LICENSE = 'Invariance Software License, April 2018'
+AUTHOR = 'Nautech Systems Pty Ltd'
+INV_TRADER = 'nautilus_trader'
+DESCRIPTION = 'The python trading client for Nautilus.'
+LICENSE = 'Nautech Systems Software License, April 2018'
 REQUIREMENTS = ['cython',
                 'numpy',
                 'scipy',
