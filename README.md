@@ -6,4 +6,4 @@ Use the following terminal command to compile the c extensions for the package;
 $ python setup.py build_ext --inplace
 ```
 
-> https://www.nautechsystems.io/
+> http://nautechsystems.io/
