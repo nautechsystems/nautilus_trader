@@ -24,7 +24,7 @@ from inv_trader.commands cimport (
     ModifyOrder,
     CancelOrder
 )
-from inv_trader.enums import Broker, OrderSide, OrderType, TimeInForce, Currency, SecurityType
+from inv_trader.enums import Broker, OrderSide, OrderType, TimeInForce, Currency, SecurityType, Venue
 from inv_trader.c_enums.venue cimport venue_string
 from inv_trader.c_enums.brokerage cimport Broker, broker_string
 from inv_trader.c_enums.time_in_force cimport TimeInForce, time_in_force_string
@@ -51,12 +51,6 @@ from inv_trader.model.events cimport (
     OrderPartiallyFilled,
     OrderFilled
 )
-from inv_trader.network.requests cimport (
-    TickDataRequest,
-    BarDataRequest,
-    InstrumentRequest,
-    InstrumentsRequest
-)
 from inv_trader.common.serialization cimport (
     parse_symbol,
     parse_bar_spec,
@@ -73,11 +67,21 @@ from inv_trader.common.serialization cimport (
     RequestSerializer,
     ResponseSerializer
 )
+from inv_trader.network.requests cimport (
+    TickDataRequest,
+    BarDataRequest,
+    InstrumentRequest,
+    InstrumentsRequest
+)
+from inv_trader.network.responses cimport (
+    TickDataResponse,
+    BarDataResponse,
+    InstrumentResponse,
+)
 
 
 cdef str UTF8 = 'utf-8'
 
-cdef str NONE = 'NONE'
 cdef str TYPE = 'Type'
 cdef str ID = 'Id'
 cdef str CANCEL_REASON = 'CancelReason'
@@ -694,6 +698,16 @@ cdef class MsgPackRequestSerializer(RequestSerializer):
                 convert_string_to_datetime(unpacked[TO_DATETIME]),
                 request_id,
                 request_timestamp)
+        if request_type == InstrumentRequest.__name__:
+            return InstrumentRequest(
+                parse_symbol(unpacked[SYMBOL]),
+                request_id,
+                request_timestamp)
+        if request_type == InstrumentsRequest.__name__:
+            return InstrumentsRequest(
+                Venue[(unpacked[VENUE])],
+                request_id,
+                request_timestamp)
         else:
             raise ValueError("Cannot deserialize request (unrecognized request).")
 
@@ -717,24 +731,66 @@ cdef class MsgPackResponseSerializer(ResponseSerializer):
             TIMESTAMP: convert_datetime_to_string(response.timestamp)
         }
 
-        # else:
-        #     raise ValueError("Cannot serialize response (unrecognized response.")
+        if isinstance(response, TickDataResponse):
+            package[SYMBOL] = response.symbol.value
+            package[TICKS] = response.ticks
+            return msgpack.packb(package)
+        if isinstance(response, BarDataResponse):
+            package[SYMBOL] = response.symbol.value
+            package[BAR_SPECIFICATION] = str(response.bar_spec)
+            package[BARS] = response.bars
+        if isinstance(response, InstrumentResponse):
+            package[INSTRUMENTS] = response.instruments
+        else:
+            raise ValueError("Cannot serialize response (unrecognized response.")
 
     cpdef Response deserialize(self, bytes response_bytes):
         """
-        Deserialize the given bytes to a request.
+        Deserialize the given bytes to a response.
 
         :param response_bytes: The bytes to deserialize.
-        :return: Request.
+        :return: Response.
         """
         Precondition.not_empty(response_bytes, 'response_bytes')
 
-        cdef dict unpacked = msgpack.unpackb(response_bytes, raw=False)
+        cdef dict unpacked_raw = msgpack.unpackb(response_bytes)
+        cdef dict unpacked = {}
+
+        # Manually unpack and decode
+        for k, v in unpacked_raw.items():
+            if k not in (b'Ticks', b'Bars', b'Instruments'):
+                if isinstance(v, bytes):
+                    unpacked[k.decode(UTF8)] = v.decode(UTF8)
+                else:
+                    unpacked[k.decode(UTF8)] = v
+            else:
+                unpacked[k.decode(UTF8)] = v
 
         cdef str response_type = unpacked[TYPE]
         cdef GUID correlation_id = GUID(UUID(unpacked[CORRELATION_ID]))
         cdef GUID response_id = GUID(UUID(unpacked[ID]))
         cdef datetime response_timestamp = convert_string_to_datetime(unpacked[TIMESTAMP])
 
-        # else:
-        #     raise ValueError("Cannot deserialize request (unrecognized request).")
+        if response_type == TickDataResponse.__name__:
+            return TickDataResponse(
+                parse_symbol(unpacked[SYMBOL]),
+                bytearray(unpacked[TICKS]),
+                correlation_id,
+                response_id,
+                response_timestamp)
+        if response_type == BarDataResponse.__name__:
+            return BarDataResponse(
+                parse_symbol(unpacked[SYMBOL]),
+                parse_bar_spec(unpacked[BAR_SPECIFICATION]),
+                unpacked[BARS],
+                correlation_id,
+                response_id,
+                response_timestamp)
+        if response_type == InstrumentResponse.__name__:
+            return InstrumentResponse(
+                unpacked[INSTRUMENTS],
+                correlation_id,
+                response_id,
+                response_timestamp)
+        else:
+            raise ValueError("Cannot deserialize response (unrecognized response).")

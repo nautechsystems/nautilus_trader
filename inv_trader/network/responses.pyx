@@ -23,7 +23,7 @@ cdef class TickDataResponse(Response):
 
     def __init__(self,
                  Symbol symbol,
-                 bytes[:] ticks,
+                 bytearray ticks,
                  GUID correlation_id,
                  GUID response_id,
                  datetime response_timestamp):
@@ -49,7 +49,7 @@ cdef class BarDataResponse(Response):
     def __init__(self,
                  Symbol symbol,
                  BarSpecification bar_spec,
-                 bytes[:] bars,
+                 list bars,
                  GUID correlation_id,
                  GUID response_id,
                  datetime response_timestamp):
@@ -74,7 +74,7 @@ cdef class InstrumentResponse(Response):
     """
 
     def __init__(self,
-                 bytes[:] instruments,
+                 list instruments,
                  GUID correlation_id,
                  GUID response_id,
                  datetime response_timestamp):

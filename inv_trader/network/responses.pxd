@@ -11,7 +11,6 @@
 
 from inv_trader.core.message cimport Response
 from inv_trader.model.objects cimport Symbol, BarSpecification
-from inv_trader.model.identifiers cimport GUID
 
 
 cdef class TickDataResponse(Response):
@@ -19,7 +18,7 @@ cdef class TickDataResponse(Response):
     Represents a response of historical tick data.
     """
     cdef readonly Symbol symbol
-    cdef readonly bytes[:] ticks
+    cdef readonly bytearray ticks
 
 
 cdef class BarDataResponse(Response):
@@ -28,11 +27,11 @@ cdef class BarDataResponse(Response):
     """
     cdef readonly Symbol symbol
     cdef readonly BarSpecification bar_spec
-    cdef readonly bytes[:] bars
+    cdef readonly list bars
 
 
 cdef class InstrumentResponse(Response):
     """
     Represents a response of instrument data.
     """
-    cdef readonly bytes[:] instruments
+    cdef readonly list instruments
