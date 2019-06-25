@@ -279,6 +279,14 @@ class ObjectTests(unittest.TestCase):
         result5 = Price('3.0000') - Decimal('1.0000')
         result6 = Price('3.0000') - Price('1.0000')
 
+        result7 = Price('1.0000') / 1.0000
+        result8 = Price('1.0000') / Decimal('1.0000')
+        result9 = Price('1.0000') / Price('1.0000')
+
+        result10 = Price('3.0000') * 1.0000
+        result11 = Price('3.0000') * Decimal('1.0000')
+        result12 = Price('3.0000') * Price('1.0000')
+
         # Assert
         self.assertEqual(Decimal, type(result1))
         self.assertEqual(Decimal('2.0000'), result1)
@@ -293,6 +301,20 @@ class ObjectTests(unittest.TestCase):
         self.assertEqual(Decimal('2.0000'), result5)
         self.assertEqual(Decimal, type(result6))
         self.assertEqual(Decimal('2.0000'), result6)
+
+        self.assertEqual(Decimal, type(result7))
+        self.assertEqual(Decimal('1.0000'), result7)
+        self.assertEqual(Decimal, type(result8))
+        self.assertEqual(Decimal('1.0000'), result8)
+        self.assertEqual(Decimal, type(result9))
+        self.assertEqual(Decimal('1.0000'), result9)
+
+        self.assertEqual(Decimal, type(result10))
+        self.assertEqual(Decimal('3.0000'), result10)
+        self.assertEqual(Decimal, type(result11))
+        self.assertEqual(Decimal('3.0000'), result11)
+        self.assertEqual(Decimal, type(result12))
+        self.assertEqual(Decimal('3.0000'), result12)
 
     def test_price_as_float(self):
         # Arrange

@@ -172,7 +172,7 @@ cdef class Quantity:
     def __ge__(self, Quantity other) -> bool:
         return self.value >= other.value
 
-    def __add__(self, other):
+    def __add__(self, other) -> int:
         if isinstance(other, Quantity):
             return self.value + other.value
         elif isinstance(other, long):
@@ -180,7 +180,7 @@ cdef class Quantity:
         else:
             raise NotImplementedError(f"Cannot add {type(other)} to a quantity.")
 
-    def __sub__(self, other):
+    def __sub__(self, other) -> int:
         if isinstance(other, Quantity):
             return self.value - other.value
         elif isinstance(other, long):
@@ -368,6 +368,26 @@ cdef class Price:
             return Decimal(_get_decimal_str(float(self.value) - other.as_float(), self.precision))
         else:
             raise NotImplementedError(f"Cannot subtract {type(other)} from a price.")
+
+    def __truediv__(self, other) -> Decimal:
+        if isinstance(other, float):
+            return Decimal(_get_decimal_str(float(self.value) / other, self.precision))
+        elif isinstance(other, Decimal):
+            return Decimal(_get_decimal_str(float(self.value) / float(other), self.precision))
+        elif isinstance(other, Price):
+            return Decimal(_get_decimal_str(float(self.value) / other.as_float(), self.precision))
+        else:
+            raise NotImplementedError(f"Cannot divide price by {type(other)}.")
+
+    def __mul__(self, other) -> Decimal:
+        if isinstance(other, float):
+            return Decimal(_get_decimal_str(float(self.value) * other, self.precision))
+        elif isinstance(other, Decimal):
+            return Decimal(_get_decimal_str(float(self.value) * float(other), self.precision))
+        elif isinstance(other, Price):
+            return Decimal(_get_decimal_str(float(self.value) * other.as_float(), self.precision))
+        else:
+            raise NotImplementedError(f"Cannot multiply price with {type(other)}.")
 
     cpdef float as_float(self):
         """
