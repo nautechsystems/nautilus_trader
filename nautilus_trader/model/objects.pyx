@@ -580,6 +580,13 @@ cdef class Tick:
         else:
             return 1
 
+    cdef str values_str(self):
+        """
+        Return the string representation of the ticks quote values and timestamp.
+        :return: str.
+        """
+        return f"{self.bid},{self.ask},{self.timestamp.isoformat()}"
+
     def __hash__(self) -> int:
         """"
         Override the default hash implementation.

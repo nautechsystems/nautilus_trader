@@ -12,7 +12,7 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.message cimport Command, Event, Request, Response
-from nautilus_trader.model.objects cimport Symbol, BarSpecification, Price, Instrument
+from nautilus_trader.model.objects cimport Symbol, Tick, BarSpecification, Bar, Price, Instrument
 from nautilus_trader.model.identifiers cimport Label
 from nautilus_trader.model.order cimport Order
 
@@ -26,6 +26,8 @@ cpdef Label convert_string_to_label(str label)
 cpdef str convert_datetime_to_string(datetime time)
 cpdef datetime convert_string_to_datetime(str time_string)
 
+# cpdef bytes serialize_ticks(Tick[:] ticks)
+# cpdef Tick[:] deserialize_ticks(Symbol symbol, bytes tick_bytes)
 
 cdef class OrderSerializer:
     """

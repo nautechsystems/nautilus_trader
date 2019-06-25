@@ -89,21 +89,35 @@ cpdef Bar deserialize_bar(bytes bar_bytes):
         Quantity(values[4]),
         iso8601.parse_date(values[5]))
 
-cpdef list deserialize_ticks(Symbol symbol, bytes[:] tick_bytes_array):
-    """
-    Return a list of deserialized ticks from the given symbol and tick bytes.
-    
-    :param symbol: The tick symbol.
-    :param tick_bytes_array: The tick bytes to deserialize.
-    :return: List[Tick].
-    """
-    cdef list ticks = []
-    cdef int i
-    cdef int array_length = len(tick_bytes_array)
-    for i in range(array_length):
-        ticks.append(deserialize_tick(symbol, tick_bytes_array[i]))
-
-    return ticks
+# cpdef bytes serialize_ticks(Tick[:] ticks):
+#     """
+#     TBD.
+#     :param ticks:
+#     :return:
+#     """
+#     cdef int ticks_length = len(ticks)
+#     cdef bytearray tick_bytes = bytearray(ticks_length)
+#     cdef int i
+#     for i in range(ticks_length):
+#         tick_bytes[i] = str(ticks[i].values_str()).encode(UTF8)
+#
+#     return bytes(tick_bytes)
+#
+# cpdef Tick[:] deserialize_ticks(Symbol symbol, bytes tick_bytes):
+#     """
+#     Return a list of deserialized ticks from the given symbol and tick bytes.
+#
+#     :param symbol: The tick symbol.
+#     :param tick_bytes: The tick bytes to deserialize.
+#     :return: Tick[:].
+#     """
+#     cdef list ticks = []
+#     cdef int i
+#     cdef int array_length = len(tick_bytes)
+#     for i in range(array_length):
+#         ticks.append(deserialize_tick(symbol, tick_bytes[i]))
+#
+#     return ticks
 
 cpdef list deserialize_bars(bytes[:] bar_bytes_array):
     """
