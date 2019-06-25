@@ -10,7 +10,7 @@
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
 from nautilus_trader.core.message cimport Response
-from nautilus_trader.model.objects cimport Symbol, BarSpecification
+from nautilus_trader.model.objects cimport Symbol, Tick, BarSpecification, Bar, Instrument
 
 
 cdef class TickDataResponse(Response):
@@ -18,7 +18,7 @@ cdef class TickDataResponse(Response):
     Represents a response of historical tick data.
     """
     cdef readonly Symbol symbol
-    cdef readonly bytearray ticks
+    cdef readonly Tick[:] ticks
 
 
 cdef class BarDataResponse(Response):
@@ -27,11 +27,11 @@ cdef class BarDataResponse(Response):
     """
     cdef readonly Symbol symbol
     cdef readonly BarSpecification bar_spec
-    cdef readonly list bars
+    cdef readonly Bar[:] bars
 
 
 cdef class InstrumentResponse(Response):
     """
     Represents a response of instrument data.
     """
-    cdef readonly list instruments
+    cdef readonly Instrument[:] instruments

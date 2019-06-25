@@ -22,7 +22,9 @@ from nautilus_trader.network.msgpack import *
 from nautilus_trader.common.serialization import *
 from nautilus_trader.network.requests import *
 from nautilus_trader.network.responses import *
+from nautilus_trader.tools import TickBuilder
 from test_kit.stubs import *
+from test_kit.data import TestDataProvider
 
 UNIX_EPOCH = TestStubs.unix_epoch()
 
@@ -865,6 +867,26 @@ class MsgPackResponseSerializerTests(unittest.TestCase):
         self.assertTrue(ticks, deserialized.ticks)
 
         print(deserialized.ticks)
+
+    def test_can_deserialize__ticks(self):
+        # Arrange
+        tick_data = TestDataProvider.usdjpy_test_ticks()
+        bid_data = TestDataProvider.usdjpy_1min_bid()[:1000]
+        ask_data = TestDataProvider.usdjpy_1min_ask()[:1000]
+        self.tick_builder = TickBuilder(symbol=TestStubs.instrument_usdjpy().symbol,
+                                        decimal_precision=5,
+                                        tick_data=tick_data,
+                                        bid_data=bid_data,
+                                        ask_data=ask_data)
+
+        # Act
+        ticks = self.tick_builder.build_ticks_all()
+
+        # Act
+        result = serialize_ticks(ticks)
+
+        # Assert
+        print(result)
 
     def test_can_deserialize_order_tick_data_response_from_csharp(self):
         # Arrange

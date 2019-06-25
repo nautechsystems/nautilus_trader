@@ -75,6 +75,7 @@ cdef class Tick:
     cdef readonly Price bid
     cdef readonly Price ask
     cdef readonly datetime timestamp
+    cdef str values_str(self)
 
 
 cdef class BarSpecification:

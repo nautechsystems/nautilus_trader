@@ -12,7 +12,7 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.message cimport Response
-from nautilus_trader.model.objects cimport Symbol, BarSpecification
+from nautilus_trader.model.objects cimport Symbol, Tick, BarSpecification, Bar, Instrument
 from nautilus_trader.model.identifiers cimport GUID
 
 
@@ -23,7 +23,7 @@ cdef class TickDataResponse(Response):
 
     def __init__(self,
                  Symbol symbol,
-                 bytearray ticks,
+                 Tick[:] ticks,
                  GUID correlation_id,
                  GUID response_id,
                  datetime response_timestamp):
@@ -49,7 +49,7 @@ cdef class BarDataResponse(Response):
     def __init__(self,
                  Symbol symbol,
                  BarSpecification bar_spec,
-                 list bars,
+                 Bar[:] bars,
                  GUID correlation_id,
                  GUID response_id,
                  datetime response_timestamp):
@@ -74,7 +74,7 @@ cdef class InstrumentResponse(Response):
     """
 
     def __init__(self,
-                 list instruments,
+                 Instrument[:] instruments,
                  GUID correlation_id,
                  GUID response_id,
                  datetime response_timestamp):
