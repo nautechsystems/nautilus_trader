@@ -290,21 +290,17 @@ cdef class Price:
         if isinstance(value, str):
             self.value = Decimal(value)
             self.precision = _get_precision(value)
-
         elif isinstance(value, float):
             Precondition.positive(precision, 'precision')
             self.value = Decimal(_get_decimal_str(value, precision))
             self.precision = precision
-
         elif isinstance(value, int):
             Precondition.positive(precision, 'precision')
             self.value = Decimal(_get_decimal_str(float(value), precision))
             self.precision = precision
-
         elif isinstance(value, Decimal):
             self.value = value
             self.precision = _get_precision(str(value))
-
         else:
             raise TypeError(f'Cannot initialize a Price with a {type(value)}.')
 
