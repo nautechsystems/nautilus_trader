@@ -25,8 +25,8 @@ from nautilus_trader.commands cimport Command, CollateralInquiry
 from nautilus_trader.commands cimport SubmitOrder, SubmitAtomicOrder, CancelOrder, ModifyOrder
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.network.workers import RequestWorker, SubscriberWorker
-from nautilus_trader.network.msgpack cimport MsgPackCommandSerializer
-from nautilus_trader.network.msgpack cimport MsgPackEventSerializer
+from nautilus_trader.serializers.serializer_msgpack cimport MsgPackCommandSerializer
+from nautilus_trader.serializers.serializer_msgpack cimport MsgPackEventSerializer
 from nautilus_trader.portfolio.portfolio cimport Portfolio
 
 cdef str UTF8 = 'utf-8'

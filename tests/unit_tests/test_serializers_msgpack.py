@@ -18,13 +18,11 @@ from nautilus_trader.model.identifiers import *
 from nautilus_trader.model.objects import *
 from nautilus_trader.model.order import *
 from nautilus_trader.model.events import *
-from nautilus_trader.network.msgpack import *
+from nautilus_trader.serializers.msgpack import *
 from nautilus_trader.common.serialization import *
 from nautilus_trader.network.requests import *
 from nautilus_trader.network.responses import *
-from nautilus_trader.tools import TickBuilder
 from test_kit.stubs import *
-from test_kit.data import TestDataProvider
 
 UNIX_EPOCH = TestStubs.unix_epoch()
 

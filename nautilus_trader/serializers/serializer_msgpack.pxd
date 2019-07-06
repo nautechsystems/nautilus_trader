@@ -13,12 +13,12 @@ from nautilus_trader.core.message cimport Command, Event, Request, Response
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.objects cimport Instrument
 from nautilus_trader.common.serialization cimport (
-OrderSerializer,
-InstrumentSerializer,
-EventSerializer,
-CommandSerializer,
-RequestSerializer,
-ResponseSerializer
+    OrderSerializer,
+    InstrumentSerializer,
+    EventSerializer,
+    CommandSerializer,
+    RequestSerializer,
+    ResponseSerializer
 )
 
 

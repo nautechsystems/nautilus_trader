@@ -10,7 +10,7 @@
 import unittest
 
 from nautilus_trader.common.clock import *
-from nautilus_trader.network.msgpack import *
+from nautilus_trader.serializers.msgpack import *
 from nautilus_trader.common.serialization import *
 from test_kit.stubs import *
 
