@@ -17,8 +17,8 @@ from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.identifiers cimport Label, PositionId
 from nautilus_trader.model.objects cimport Symbol, Price, Tick, BarType, Bar, Instrument
 from nautilus_trader.model.order cimport Order, AtomicOrder
-from nautilus_trader.strategy cimport TradeStrategy
-from nautilus_trader.analyzers cimport SpreadAnalyzer, LiquidityAnalyzer
+from nautilus_trader.trade.strategy cimport TradeStrategy
+from nautilus_trader.data.analyzers cimport SpreadAnalyzer, LiquidityAnalyzer
 from nautilus_trader.c_enums.order_side cimport OrderSide
 from nautilus_trader.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.common.clock cimport Clock, TestClock

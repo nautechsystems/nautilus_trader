@@ -17,14 +17,14 @@ from uuid import UUID
 
 from nautilus_trader.core.precondition cimport Precondition
 from nautilus_trader.core.message cimport Command, Event, Request, Response
-from nautilus_trader.commands cimport (
+from nautilus_trader.trade.commands cimport (
     CollateralInquiry,
     SubmitOrder,
     SubmitAtomicOrder,
     ModifyOrder,
     CancelOrder
 )
-from nautilus_trader.enums import Broker, OrderSide, OrderType, TimeInForce, Currency, SecurityType, Venue
+from nautilus_trader.model.enums import Venue
 from nautilus_trader.c_enums.venue cimport venue_string
 from nautilus_trader.c_enums.brokerage cimport Broker, broker_string
 from nautilus_trader.c_enums.time_in_force cimport TimeInForce, time_in_force_string
@@ -34,7 +34,7 @@ from nautilus_trader.c_enums.currency cimport Currency, currency_string
 from nautilus_trader.c_enums.security_type cimport SecurityType, security_type_string
 from nautilus_trader.model.identifiers cimport TraderId, StrategyId, OrderId, ExecutionId, AccountId, InstrumentId
 from nautilus_trader.model.identifiers cimport GUID, Label, ExecutionTicket, AccountNumber, PositionId
-from nautilus_trader.model.objects cimport ValidString, Quantity, Price, Money, Instrument, BarSpecification
+from nautilus_trader.model.objects cimport ValidString, Quantity, Price, Money, Instrument
 from nautilus_trader.model.order cimport Order, AtomicOrder
 from nautilus_trader.model.events cimport (
     AccountEvent,

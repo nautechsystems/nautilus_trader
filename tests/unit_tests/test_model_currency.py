@@ -9,7 +9,7 @@
 
 import unittest
 
-from nautilus_trader.enums import Currency, QuoteType
+from nautilus_trader.model.enums import Currency, QuoteType
 from nautilus_trader.model.currency import ExchangeRateCalculator
 
 

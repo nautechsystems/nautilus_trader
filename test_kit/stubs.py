@@ -10,7 +10,7 @@
 from decimal import Decimal
 from datetime import datetime, timedelta, timezone
 
-from nautilus_trader.enums import Venue, Resolution, QuoteType, Currency, SecurityType
+from nautilus_trader.model.enums import Venue, Resolution, QuoteType, Currency, SecurityType
 from nautilus_trader.model.objects import Quantity, Symbol, Price, BarSpecification, BarType, Bar, Instrument
 from nautilus_trader.model.identifiers import InstrumentId
 

@@ -11,7 +11,7 @@ import unittest
 
 from decimal import Decimal
 
-from nautilus_trader.enums import Venue
+from nautilus_trader.model.enums import Venue
 from nautilus_trader.model.objects import Symbol
 from nautilus_trader.backtest.loaders import InstrumentLoader
 

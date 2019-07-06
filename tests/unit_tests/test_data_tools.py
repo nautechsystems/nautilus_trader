@@ -13,7 +13,7 @@ from pandas import Timestamp
 from datetime import datetime, timezone
 
 from nautilus_trader.model.objects import Price, Bar
-from nautilus_trader.tools import TickBuilder, BarBuilder, IndicatorUpdater
+from nautilus_trader.data.tools import TickBuilder, BarBuilder, IndicatorUpdater
 from inv_indicators.average.ema import ExponentialMovingAverage
 from inv_indicators.intrinsic_network import IntrinsicNetwork
 from test_kit.data import TestDataProvider

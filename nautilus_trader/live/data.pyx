@@ -22,12 +22,11 @@ from nautilus_trader.common.clock cimport Clock, LiveClock
 from nautilus_trader.common.logger cimport Logger
 from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.common.serialization cimport InstrumentSerializer
-from nautilus_trader.enums import Resolution, QuoteType, Venue
 from nautilus_trader.c_enums.resolution cimport Resolution
 from nautilus_trader.c_enums.quote_type cimport QuoteType
 from nautilus_trader.c_enums.venue cimport Venue
 from nautilus_trader.model.objects cimport Symbol, Price, Tick, BarSpecification, BarType, Bar, Instrument
-from nautilus_trader.strategy cimport TradeStrategy
+from nautilus_trader.trade.strategy cimport TradeStrategy
 
 cdef str UTF8 = 'utf-8'
 

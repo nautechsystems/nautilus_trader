@@ -13,9 +13,9 @@ import time
 
 from datetime import datetime, timezone
 
-from nautilus_trader.enums import Venue, Resolution, QuoteType
+from nautilus_trader.model.enums import Venue, Resolution, QuoteType
 from nautilus_trader.model.objects import Symbol, Price, Tick, BarSpecification, BarType, Bar
-from nautilus_trader.network.data import LiveDataClient
+from nautilus_trader.live.data import LiveDataClient
 from test_kit.objects import ObjectStorer
 from test_kit.stubs import TestStubs
 

@@ -21,12 +21,12 @@ from nautilus_trader.common.guid cimport GuidFactory, LiveGuidFactory
 from nautilus_trader.common.logger cimport Logger
 from nautilus_trader.common.execution cimport ExecutionClient
 from nautilus_trader.common.serialization cimport CommandSerializer, EventSerializer
-from nautilus_trader.commands cimport Command, CollateralInquiry
-from nautilus_trader.commands cimport SubmitOrder, SubmitAtomicOrder, CancelOrder, ModifyOrder
+from nautilus_trader.trade.commands cimport Command, CollateralInquiry
+from nautilus_trader.trade.commands cimport SubmitOrder, SubmitAtomicOrder, CancelOrder, ModifyOrder
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.network.workers import RequestWorker, SubscriberWorker
-from nautilus_trader.serializers.serializer_msgpack cimport MsgPackCommandSerializer
-from nautilus_trader.serializers.serializer_msgpack cimport MsgPackEventSerializer
+from nautilus_trader.serialization.message cimport MsgPackCommandSerializer
+from nautilus_trader.serialization.message cimport MsgPackEventSerializer
 from nautilus_trader.portfolio.portfolio cimport Portfolio
 
 cdef str UTF8 = 'utf-8'

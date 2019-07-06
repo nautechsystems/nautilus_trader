@@ -17,7 +17,7 @@ from nautilus_trader.model.identifiers cimport StrategyId, OrderId, PositionId
 from nautilus_trader.model.events cimport AccountEvent, OrderEvent
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.position cimport Position
-from nautilus_trader.strategy cimport TradeStrategy
+from nautilus_trader.trade.strategy cimport TradeStrategy
 from nautilus_trader.portfolio.performance cimport PerformanceAnalyzer
 
 

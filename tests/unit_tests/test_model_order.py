@@ -13,7 +13,7 @@ import uuid
 from decimal import Decimal
 
 from nautilus_trader.common.clock import TestClock
-from nautilus_trader.enums import Venue, OrderSide, OrderType, OrderStatus, TimeInForce
+from nautilus_trader.model.enums import Venue, OrderSide, OrderType, OrderStatus, TimeInForce
 from nautilus_trader.model.objects import ValidString, Quantity, Symbol, Price
 from nautilus_trader.model.identifiers import GUID, Label, OrderId, ExecutionId, ExecutionTicket
 from nautilus_trader.model.order import Order, OrderFactory

@@ -13,12 +13,12 @@ import uuid
 from base64 import b64encode, b64decode
 
 from nautilus_trader.common.clock import *
-from nautilus_trader.commands import *
+from nautilus_trader.trade.commands import *
 from nautilus_trader.model.identifiers import *
 from nautilus_trader.model.objects import *
 from nautilus_trader.model.order import *
 from nautilus_trader.model.events import *
-from nautilus_trader.serializers.msgpack import *
+from nautilus_trader.serialization.message_msgpack import *
 from nautilus_trader.common.serialization import *
 from nautilus_trader.network.requests import *
 from nautilus_trader.network.responses import *

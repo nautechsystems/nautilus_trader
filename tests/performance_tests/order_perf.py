@@ -12,7 +12,7 @@ import timeit
 from time import time
 
 from nautilus_trader.model.objects import Symbol
-from nautilus_trader.enums import Venue
+from nautilus_trader.model.enums import Venue
 from nautilus_trader.model.identifiers import OrderIdGenerator
 
 MILLISECONDS_IN_SECOND = 1000

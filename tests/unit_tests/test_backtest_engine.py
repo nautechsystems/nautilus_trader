@@ -13,7 +13,7 @@ import unittest
 from datetime import datetime
 from pandas import Timestamp
 
-from nautilus_trader.enums import Resolution
+from nautilus_trader.model.enums import Resolution
 from nautilus_trader.model.objects import Tick, Bar
 from nautilus_trader.model.events import TimeEvent
 from nautilus_trader.backtest.config import BacktestConfig

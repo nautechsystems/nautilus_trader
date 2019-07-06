@@ -10,9 +10,9 @@
 import unittest
 import time
 
-from nautilus_trader.enums import Venue, OrderSide
+from nautilus_trader.model.enums import Venue, OrderSide
 from nautilus_trader.model.objects import Quantity, Symbol, Price
-from nautilus_trader.network.execution import LiveExecClient
+from nautilus_trader.live.execution import LiveExecClient
 from test_kit.stubs import TestStubs
 from test_kit.mocks import MockServer
 from test_kit.strategies import TestStrategy1

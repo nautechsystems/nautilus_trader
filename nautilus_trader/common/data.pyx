@@ -17,7 +17,7 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logger cimport Logger, LoggerAdapter
 from nautilus_trader.common.handlers cimport TickHandler, BarHandler
 from nautilus_trader.model.objects cimport Symbol, Tick, BarType, Bar, Instrument
-from nautilus_trader.strategy cimport TradeStrategy
+from nautilus_trader.trade.strategy cimport TradeStrategy
 
 
 cdef class DataClient:
