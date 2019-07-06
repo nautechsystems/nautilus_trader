@@ -30,8 +30,8 @@ from nautilus_trader.model.identifiers cimport Label, TraderId, StrategyId, Orde
 from nautilus_trader.model.objects cimport ValidString, Symbol, Price, Tick, BarType, Bar, Instrument
 from nautilus_trader.model.order cimport Order, AtomicOrder, OrderFactory
 from nautilus_trader.model.position cimport Position
-from nautilus_trader.commands cimport CollateralInquiry, SubmitOrder, SubmitAtomicOrder, ModifyOrder, CancelOrder
-from nautilus_trader.tools cimport IndicatorUpdater
+from nautilus_trader.trade.commands cimport CollateralInquiry, SubmitOrder, SubmitAtomicOrder, ModifyOrder, CancelOrder
+from nautilus_trader.data.tools cimport IndicatorUpdater
 Indicator = object
 
 

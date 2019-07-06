@@ -14,8 +14,6 @@ from collections import deque
 from nautilus_trader.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.objects cimport Symbol, Tick, BarType, Bar
 from nautilus_trader.model.order cimport Order
-from nautilus_trader.strategy cimport TradeStrategy
-
 
 cdef class TrailingStopSignal:
     """

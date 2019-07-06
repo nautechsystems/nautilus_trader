@@ -12,13 +12,18 @@ import os
 types_to_clean = (".c", ".so", ".o", ".pyd", ".html")
 package_name = 'nautilus_trader'
 directories = [package_name,
+               f'{package_name}/algorithm',
                f'{package_name}/backtest',
                f'{package_name}/c_enums',
                f'{package_name}/common',
                f'{package_name}/core',
+               f'{package_name}/data',
+               f'{package_name}/live',
                f'{package_name}/model',
                f'{package_name}/network',
                f'{package_name}/portfolio',
+               f'{package_name}/serialization',
+               f'{package_name}/trade',
                'test_kit']
 
 if __name__ == "__main__":

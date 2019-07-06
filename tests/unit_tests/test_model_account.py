@@ -12,8 +12,8 @@ import uuid
 
 from decimal import Decimal
 
-from nautilus_trader.enums import Broker
-from nautilus_trader.enums import Currency
+from nautilus_trader.model.enums import Broker
+from nautilus_trader.model.enums import Currency
 from nautilus_trader.model.objects import ValidString, Money
 from nautilus_trader.model.events import AccountEvent
 from nautilus_trader.model.identifiers import GUID, AccountId, AccountNumber

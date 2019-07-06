@@ -15,14 +15,14 @@ from nautilus_trader.common.brokerage import CommissionCalculator
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.guid import TestGuidFactory
 from nautilus_trader.common.logger import TestLogger
-from nautilus_trader.enums import Resolution
+from nautilus_trader.model.enums import Resolution
 from nautilus_trader.model.objects import ValidString, Money
 from nautilus_trader.model.identifiers import TraderId, StrategyId
 from nautilus_trader.backtest.execution import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.data import BacktestDataClient
 from nautilus_trader.portfolio.portfolio import Portfolio
-from nautilus_trader.trader import Trader
+from nautilus_trader.trade.trader import Trader
 
 from test_kit.strategies import EmptyStrategy
 from test_kit.stubs import TestStubs

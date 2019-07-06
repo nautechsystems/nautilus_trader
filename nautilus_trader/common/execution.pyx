@@ -22,9 +22,9 @@ from nautilus_trader.model.events cimport Event, OrderEvent, PositionEvent, Acco
 from nautilus_trader.model.events cimport OrderModified, OrderRejected, OrderCancelled, OrderCancelReject
 from nautilus_trader.model.events cimport OrderFilled, OrderPartiallyFilled
 from nautilus_trader.model.identifiers cimport StrategyId, OrderId, PositionId
-from nautilus_trader.commands cimport Command, CollateralInquiry
-from nautilus_trader.commands cimport SubmitOrder, SubmitAtomicOrder, ModifyOrder, CancelOrder
-from nautilus_trader.strategy cimport TradeStrategy
+from nautilus_trader.trade.commands cimport Command, CollateralInquiry
+from nautilus_trader.trade.commands cimport SubmitOrder, SubmitAtomicOrder, ModifyOrder, CancelOrder
+from nautilus_trader.trade.strategy cimport TradeStrategy
 from nautilus_trader.portfolio.portfolio cimport Portfolio
 
 

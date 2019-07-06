@@ -23,7 +23,7 @@ from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.logger cimport Logger
 from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.model.objects cimport Symbol, Instrument, Tick, BarType, Bar, BarSpecification
-from nautilus_trader.tools cimport TickBuilder, BarBuilder
+from nautilus_trader.data.tools cimport TickBuilder, BarBuilder
 
 
 cdef class BidAskBarPair:

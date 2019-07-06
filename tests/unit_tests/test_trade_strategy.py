@@ -19,19 +19,19 @@ from nautilus_trader.common.brokerage import CommissionCalculator
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.guid import TestGuidFactory
 from nautilus_trader.common.logger import TestLogger
-from nautilus_trader.enums import Venue, OrderSide
-from nautilus_trader.model.objects import Quantity, Symbol, Price, Money, Tick, Bar
+from nautilus_trader.model.enums import Venue, OrderSide
+from nautilus_trader.model.objects import Quantity, Symbol, Price, Money
 from nautilus_trader.model.identifiers import OrderId, PositionId
 from nautilus_trader.model.position import Position
-from nautilus_trader.enums import OrderStatus, Currency
-from nautilus_trader.enums import MarketPosition
+from nautilus_trader.model.enums import OrderStatus, Currency
+from nautilus_trader.model.enums import MarketPosition
 from nautilus_trader.model.objects import Tick, Bar
 from nautilus_trader.model.events import TimeEvent
 from nautilus_trader.model.identifiers import StrategyId, Label
 from nautilus_trader.backtest.execution import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.portfolio.portfolio import Portfolio
-from nautilus_trader.strategy import TradeStrategy
+from nautilus_trader.trade.strategy import TradeStrategy
 from test_kit.stubs import TestStubs
 from test_kit.strategies import TestStrategy1
 

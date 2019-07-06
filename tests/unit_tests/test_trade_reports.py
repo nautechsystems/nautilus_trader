@@ -14,13 +14,13 @@ from decimal import Decimal
 from datetime import timedelta
 
 from nautilus_trader.common.clock import TestClock
-from nautilus_trader.enums import Venue, OrderSide
-from nautilus_trader.model.objects import ValidString, Quantity, Symbol, Price
-from nautilus_trader.model.identifiers import GUID, Label, OrderId, ExecutionId, ExecutionTicket, PositionId
-from nautilus_trader.model.order import Order, OrderFactory
+from nautilus_trader.model.enums import Venue, OrderSide
+from nautilus_trader.model.objects import Quantity, Symbol, Price
+from nautilus_trader.model.identifiers import GUID, ExecutionId, ExecutionTicket, PositionId
+from nautilus_trader.model.order import OrderFactory
 from nautilus_trader.model.position import Position
 from nautilus_trader.model.events import OrderFilled
-from nautilus_trader.reports import ReportProvider
+from nautilus_trader.trade.reports import ReportProvider
 from test_kit.stubs import TestStubs
 
 UNIX_EPOCH = TestStubs.unix_epoch()

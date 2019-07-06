@@ -11,7 +11,7 @@ import unittest
 
 from datetime import datetime
 
-from nautilus_trader.enums import Venue
+from nautilus_trader.model.enums import Venue
 from nautilus_trader.model.objects import Symbol, Money
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.position import Position

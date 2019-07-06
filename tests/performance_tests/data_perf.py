@@ -14,7 +14,7 @@ import pandas as pd
 from time import time
 from datetime import timedelta
 
-from nautilus_trader.enums import Resolution
+from nautilus_trader.model.enums import Resolution
 from nautilus_trader.backtest.data import DataProvider
 from test_kit.stubs import TestStubs
 from test_kit.data import TestDataProvider

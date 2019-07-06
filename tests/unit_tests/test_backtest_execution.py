@@ -15,10 +15,10 @@ from nautilus_trader.common.brokerage import CommissionCalculator
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.guid import TestGuidFactory
 from nautilus_trader.common.logger import TestLogger
-from nautilus_trader.enums import Venue, OrderSide
+from nautilus_trader.model.enums import Venue, OrderSide
 from nautilus_trader.model.objects import Quantity, Symbol, Price, Money
 from nautilus_trader.model.events import OrderRejected, OrderCancelled, OrderWorking, OrderModified, OrderFilled
-from nautilus_trader.strategy import TradeStrategy
+from nautilus_trader.trade.strategy import TradeStrategy
 from nautilus_trader.backtest.execution import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.portfolio.portfolio import Portfolio

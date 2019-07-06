@@ -42,7 +42,7 @@ from nautilus_trader.c_enums.resolution cimport Resolution, resolution_string
 from nautilus_trader.model.objects cimport Symbol, Instrument, Tick
 from nautilus_trader.model.events cimport TimeEvent
 from nautilus_trader.portfolio.portfolio cimport Portfolio
-from nautilus_trader.strategy cimport TradeStrategy
+from nautilus_trader.trade.strategy cimport TradeStrategy
 
 
 cdef class BacktestEngine:

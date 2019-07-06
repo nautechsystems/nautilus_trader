@@ -7,10 +7,10 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.enums import OrderSide
+from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.objects import Tick, BarType, Bar, Instrument, Quantity
 from nautilus_trader.model.events import Event, PositionOpened
-from nautilus_trader.strategy import TradeStrategy
+from nautilus_trader.trade.strategy import TradeStrategy
 
 from inv_indicators.intrinsic_network import IntrinsicNetwork
 

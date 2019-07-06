@@ -8,9 +8,9 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.common.logger import Logger
-from nautilus_trader.network.data import LiveDataClient
-from nautilus_trader.network.execution import LiveExecClient
-from nautilus_trader.enums import Venue, Resolution, QuoteType
+from nautilus_trader.live.data import LiveDataClient
+from nautilus_trader.live.execution import LiveExecClient
+from nautilus_trader.model.enums import Venue, Resolution, QuoteType
 from nautilus_trader.model.objects import Symbol, BarType
 from test_kit.strategies import EMACross
 

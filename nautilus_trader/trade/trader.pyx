@@ -20,8 +20,8 @@ from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.common.execution cimport ExecutionClient
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.portfolio.portfolio cimport Portfolio
-from nautilus_trader.strategy cimport TradeStrategy
-from nautilus_trader.reports cimport ReportProvider
+from nautilus_trader.trade.strategy cimport TradeStrategy
+from nautilus_trader.trade.reports cimport ReportProvider
 
 
 cdef class Trader:
