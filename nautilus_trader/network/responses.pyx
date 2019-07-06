@@ -12,79 +12,29 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.message cimport Response
-from nautilus_trader.model.objects cimport Symbol, Tick, BarSpecification, Bar, Instrument
 from nautilus_trader.model.identifiers cimport GUID
 
 
-cdef class TickDataResponse(Response):
+cdef class DataResponse(Response):
     """
     Represents a response of historical tick data.
     """
 
     def __init__(self,
-                 Symbol symbol,
-                 Tick[:] ticks,
+                 str data_type,
+                 bytearray data,
                  GUID correlation_id,
                  GUID response_id,
                  datetime response_timestamp):
         """
         Initializes a new instance of the TickDataResponse class.
 
-        :param symbol: The response symbol.
-        :param ticks: The response ticks.
+        :param data_type: The response data type.
+        :param data: The response data.
         :param correlation_id: The correlation identifier.
         :param response_id: The response identifier.
         :param response_timestamp: The response timestamp.
         """
         super().__init__(correlation_id, response_id, response_timestamp)
-        self.symbol = symbol
-        self.ticks = ticks
-
-
-cdef class BarDataResponse(Response):
-    """
-    Represents a response of historical bar data.
-    """
-
-    def __init__(self,
-                 Symbol symbol,
-                 BarSpecification bar_spec,
-                 Bar[:] bars,
-                 GUID correlation_id,
-                 GUID response_id,
-                 datetime response_timestamp):
-        """
-        Initializes a new instance of the BarDataResponse class.
-
-        :param symbol: The response symbol.
-        :param bar_spec: The response bar specification.
-        :param bars: The response bars.
-        :param correlation_id: The correlation identifier.
-        :param response_id: The response identifier.
-        :param response_timestamp: The response timestamp.
-        """
-        super().__init__(correlation_id, response_id, response_timestamp)
-        self.symbol = symbol
-        self.bars = bars
-
-
-cdef class InstrumentResponse(Response):
-    """
-    Represents a response of instrument data.
-    """
-
-    def __init__(self,
-                 Instrument[:] instruments,
-                 GUID correlation_id,
-                 GUID response_id,
-                 datetime response_timestamp):
-        """
-        Initializes a new instance of the InstrumentResponse class.
-
-        :param instruments: The response instruments.
-        :param correlation_id: The correlation identifier.
-        :param response_id: The response identifier.
-        :param response_timestamp: The response timestamp.
-        """
-        super().__init__(correlation_id, response_id, response_timestamp)
-        self.instruments = instruments
+        self.data_type = data_type
+        self.data = data

@@ -73,11 +73,8 @@ from nautilus_trader.network.requests cimport (
     InstrumentRequest,
     InstrumentsRequest
 )
-from nautilus_trader.network.responses cimport (
-    TickDataResponse,
-    BarDataResponse,
-    InstrumentResponse,
-)
+
+from nautilus_trader.network.responses cimport DataResponse
 
 
 cdef str UTF8 = 'utf-8'
@@ -731,16 +728,10 @@ cdef class MsgPackResponseSerializer(ResponseSerializer):
             TIMESTAMP: convert_datetime_to_string(response.timestamp)
         }
 
-        if isinstance(response, TickDataResponse):
+        if isinstance(response, DataResponse):
             package[SYMBOL] = response.symbol.value
             package[TICKS] = response.ticks
             return msgpack.packb(package)
-        if isinstance(response, BarDataResponse):
-            package[SYMBOL] = response.symbol.value
-            package[BAR_SPECIFICATION] = str(response.bar_spec)
-            package[BARS] = response.bars
-        if isinstance(response, InstrumentResponse):
-            package[INSTRUMENTS] = response.instruments
         else:
             raise ValueError("Cannot serialize response (unrecognized response.")
 
@@ -771,24 +762,10 @@ cdef class MsgPackResponseSerializer(ResponseSerializer):
         cdef GUID response_id = GUID(UUID(unpacked[ID]))
         cdef datetime response_timestamp = convert_string_to_datetime(unpacked[TIMESTAMP])
 
-        if response_type == TickDataResponse.__name__:
-            return TickDataResponse(
+        if response_type == DataResponse.__name__:
+            return DataResponse(
                 parse_symbol(unpacked[SYMBOL]),
                 bytearray(unpacked[TICKS]),
-                correlation_id,
-                response_id,
-                response_timestamp)
-        if response_type == BarDataResponse.__name__:
-            return BarDataResponse(
-                parse_symbol(unpacked[SYMBOL]),
-                parse_bar_spec(unpacked[BAR_SPECIFICATION]),
-                unpacked[BARS],
-                correlation_id,
-                response_id,
-                response_timestamp)
-        if response_type == InstrumentResponse.__name__:
-            return InstrumentResponse(
-                unpacked[INSTRUMENTS],
                 correlation_id,
                 response_id,
                 response_timestamp)
