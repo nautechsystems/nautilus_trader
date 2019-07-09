@@ -14,12 +14,12 @@ from cpython.datetime cimport datetime, timedelta
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logger cimport Logger, LoggerAdapter
+from nautilus_trader.portfolio.portfolio cimport Portfolio
+from nautilus_trader.trade.trader cimport Trader
 from nautilus_trader.backtest.config cimport BacktestConfig
 from nautilus_trader.backtest.data cimport BacktestDataClient
 from nautilus_trader.backtest.execution cimport BacktestExecClient
 from nautilus_trader.backtest.models cimport FillModel
-from nautilus_trader.portfolio.portfolio cimport Portfolio
-from nautilus_trader.trade.trader cimport Trader
 
 
 cdef class BacktestEngine:

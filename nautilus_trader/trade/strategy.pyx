@@ -18,11 +18,6 @@ from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.quote_type cimport QuoteType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition
-from nautilus_trader.common.clock cimport Clock, LiveClock
-from nautilus_trader.common.logger cimport Logger, LoggerAdapter
-from nautilus_trader.common.execution cimport ExecutionClient
-from nautilus_trader.common.data cimport DataClient
-from nautilus_trader.common.guid cimport GuidFactory, LiveGuidFactory
 from nautilus_trader.model.currency cimport ExchangeRateCalculator
 from nautilus_trader.model.events cimport Event, OrderRejected, OrderExpired, OrderCancelled
 from nautilus_trader.model.events cimport OrderCancelReject, OrderModified, OrderFilled, OrderPartiallyFilled
@@ -30,6 +25,11 @@ from nautilus_trader.model.identifiers cimport Label, TraderId, StrategyId, Orde
 from nautilus_trader.model.objects cimport ValidString, Symbol, Price, Tick, BarType, Bar, Instrument
 from nautilus_trader.model.order cimport Order, AtomicOrder, OrderFactory
 from nautilus_trader.model.position cimport Position
+from nautilus_trader.common.clock cimport Clock, LiveClock
+from nautilus_trader.common.logger cimport Logger, LoggerAdapter
+from nautilus_trader.common.execution cimport ExecutionClient
+from nautilus_trader.common.data cimport DataClient
+from nautilus_trader.common.guid cimport GuidFactory, LiveGuidFactory
 from nautilus_trader.trade.commands cimport CollateralInquiry, SubmitOrder, SubmitAtomicOrder, ModifyOrder, CancelOrder
 from nautilus_trader.data.tools cimport IndicatorUpdater
 Indicator = object
