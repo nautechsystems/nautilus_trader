@@ -9,18 +9,14 @@
 
 import os
 
-from setup import PACKAGE_NAME
 
 types_to_clean = (".c", ".so", ".o", ".pyd", ".html")
-directories_to_include = ['test_kit']
-
-directories_all = [PACKAGE_NAME] + directories_to_include
-
+directories_all = ['nautilus_trader', 'test_kit']
 
 if __name__ == "__main__":
     for directory in directories_all:
-        for file in os.walk(directory):
-            path = os.path.join(directory, file)
-            print(path)
-            if os.path.isfile(path) and path.endswith(types_to_clean):
-                os.remove(path)
+        for root, dirs, files in os.walk(directory):
+            for name in files:
+                path = os.path.join(root, name)
+                if os.path.isfile(path) and path.endswith(types_to_clean):
+                    os.remove(path)
