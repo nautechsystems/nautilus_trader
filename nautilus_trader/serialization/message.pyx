@@ -25,13 +25,13 @@ from nautilus_trader.trade.commands cimport (
     CancelOrder
 )
 from nautilus_trader.model.enums import Venue
-from nautilus_trader.c_enums.venue cimport venue_string
-from nautilus_trader.c_enums.brokerage cimport Broker, broker_string
-from nautilus_trader.c_enums.time_in_force cimport TimeInForce, time_in_force_string
-from nautilus_trader.c_enums.order_side cimport OrderSide, order_side_string
-from nautilus_trader.c_enums.order_type cimport OrderType, order_type_string
-from nautilus_trader.c_enums.currency cimport Currency, currency_string
-from nautilus_trader.c_enums.security_type cimport SecurityType, security_type_string
+from nautilus_trader.model.c_enums.venue cimport venue_string
+from nautilus_trader.model.c_enums.brokerage cimport Broker, broker_string
+from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce, time_in_force_string
+from nautilus_trader.model.c_enums.order_side cimport OrderSide, order_side_string
+from nautilus_trader.model.c_enums.order_type cimport OrderType, order_type_string
+from nautilus_trader.model.c_enums.currency cimport Currency, currency_string
+from nautilus_trader.model.c_enums.security_type cimport SecurityType, security_type_string
 from nautilus_trader.model.identifiers cimport TraderId, StrategyId, OrderId, ExecutionId, AccountId, InstrumentId
 from nautilus_trader.model.identifiers cimport GUID, Label, ExecutionTicket, AccountNumber, PositionId
 from nautilus_trader.model.objects cimport ValidString, Quantity, Price, Money, Instrument

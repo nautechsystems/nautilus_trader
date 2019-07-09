@@ -9,14 +9,14 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
-from nautilus_trader.c_enums.brokerage import Broker
-from nautilus_trader.c_enums.currency import Currency
-from nautilus_trader.c_enums.market_position import MarketPosition
-from nautilus_trader.c_enums.order_side import OrderSide
-from nautilus_trader.c_enums.order_status import OrderStatus
-from nautilus_trader.c_enums.order_type import OrderType
-from nautilus_trader.c_enums.quote_type import QuoteType
-from nautilus_trader.c_enums.resolution import Resolution
-from nautilus_trader.c_enums.security_type import SecurityType
-from nautilus_trader.c_enums.time_in_force import TimeInForce
-from nautilus_trader.c_enums.venue import Venue
+from nautilus_trader.model.c_enums.brokerage import Broker
+from nautilus_trader.model.c_enums.currency import Currency
+from nautilus_trader.model.c_enums.market_position import MarketPosition
+from nautilus_trader.model.c_enums.order_side import OrderSide
+from nautilus_trader.model.c_enums.order_status import OrderStatus
+from nautilus_trader.model.c_enums.order_type import OrderType
+from nautilus_trader.model.c_enums.quote_type import QuoteType
+from nautilus_trader.model.c_enums.resolution import Resolution
+from nautilus_trader.model.c_enums.security_type import SecurityType
+from nautilus_trader.model.c_enums.time_in_force import TimeInForce
+from nautilus_trader.model.c_enums.venue import Venue

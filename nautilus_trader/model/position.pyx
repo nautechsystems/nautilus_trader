@@ -8,12 +8,13 @@
 # -------------------------------------------------------------------------------------------------
 
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
+
 from decimal import Decimal
 from cpython.datetime cimport datetime
 from typing import List
 
-from nautilus_trader.c_enums.market_position cimport MarketPosition, market_position_string
-from nautilus_trader.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.c_enums.market_position cimport MarketPosition, market_position_string
+from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.objects cimport Symbol
 from nautilus_trader.model.events cimport OrderEvent
 from nautilus_trader.model.identifiers cimport PositionId, ExecutionId, ExecutionTicket

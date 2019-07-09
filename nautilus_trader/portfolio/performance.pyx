@@ -29,7 +29,7 @@ from empyrical.stats import (
     beta,
     tail_ratio)
 
-from nautilus_trader.c_enums.currency cimport Currency, currency_string
+from nautilus_trader.model.c_enums.currency cimport Currency, currency_string
 from nautilus_trader.model.objects cimport Money
 
 

@@ -19,8 +19,8 @@ from nautilus_trader.model.objects cimport Symbol, Price, Tick, BarType, Bar, In
 from nautilus_trader.model.order cimport Order, AtomicOrder
 from nautilus_trader.trade.strategy cimport TradeStrategy
 from nautilus_trader.data.analyzers cimport SpreadAnalyzer, LiquidityAnalyzer
-from nautilus_trader.c_enums.order_side cimport OrderSide
-from nautilus_trader.c_enums.time_in_force cimport TimeInForce
+from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.common.clock cimport Clock, TestClock
 from nautilus_trader.portfolio.sizing cimport PositionSizer, FixedRiskSizer
 from test_kit.objects cimport ObjectStorer

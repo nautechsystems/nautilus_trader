@@ -13,8 +13,8 @@ from typing import Dict
 from itertools import permutations
 
 from nautilus_trader.core.precondition cimport Precondition
-from nautilus_trader.c_enums.currency cimport Currency, currency_string
-from nautilus_trader.c_enums.quote_type cimport QuoteType, quote_type_string
+from nautilus_trader.model.c_enums.currency cimport Currency, currency_string
+from nautilus_trader.model.c_enums.quote_type cimport QuoteType, quote_type_string
 
 
 cdef class ExchangeRateCalculator:

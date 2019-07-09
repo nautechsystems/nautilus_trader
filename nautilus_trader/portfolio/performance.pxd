@@ -11,7 +11,7 @@
 
 from cpython.datetime cimport datetime
 
-from nautilus_trader.c_enums.currency cimport Currency
+from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.objects cimport Money
 
 

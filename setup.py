@@ -19,7 +19,7 @@ from setuptools import setup, Extension
 from nautilus_trader.version import __version__
 
 AUTHOR = 'Nautech Systems Pty Ltd'
-NAUTILUS_TRADER = 'nautilus_trader'
+PACKAGE_NAME = 'nautilus_trader'
 DESCRIPTION = 'The black box trading client and backtester for the Nautilus stack.'
 LICENSE = 'Nautech Systems Software License, April 2018'
 REQUIREMENTS = ['cython',
@@ -34,7 +34,7 @@ REQUIREMENTS = ['cython',
                 'inv_indicators',
                 'empyrical',
                 'pymc3']
-DIRECTORIES = [NAUTILUS_TRADER, 'test_kit']
+DIRECTORIES = [PACKAGE_NAME, 'test_kit']
 
 
 # Command to compile c extensions
@@ -83,7 +83,7 @@ def make_extension(ext_name) -> Extension:
 extensions = [make_extension(name) for name in scan_directories(DIRECTORIES)]
 
 setup(
-    name=NAUTILUS_TRADER,
+    name=PACKAGE_NAME,
     version=__version__,
     author=AUTHOR,
     description=DESCRIPTION,

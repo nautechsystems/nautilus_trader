@@ -14,8 +14,8 @@ from cpython.datetime cimport datetime
 from nautilus_trader.model.objects cimport Quantity, Symbol, Price
 from nautilus_trader.model.events cimport OrderEvent
 from nautilus_trader.model.identifiers cimport PositionId, OrderId, ExecutionId, ExecutionTicket
-from nautilus_trader.c_enums.market_position cimport MarketPosition
-from nautilus_trader.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.c_enums.market_position cimport MarketPosition
+from nautilus_trader.model.c_enums.order_side cimport OrderSide
 
 
 cdef class Position:
