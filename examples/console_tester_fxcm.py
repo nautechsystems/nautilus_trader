@@ -12,6 +12,7 @@ from nautilus_trader.live.data import LiveDataClient
 from nautilus_trader.live.execution import LiveExecClient
 from nautilus_trader.model.enums import Venue, Resolution, QuoteType
 from nautilus_trader.model.objects import Symbol, BarType
+
 from test_kit.strategies import EMACross
 
 AUDUSD_FXCM = Symbol('AUDUSD', Venue.FXCM)

@@ -14,6 +14,7 @@ from decimal import Decimal
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.precondition cimport Precondition
+from nautilus_trader.model.enums import Currency
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.security_type cimport SecurityType
 from nautilus_trader.model.identifiers cimport InstrumentId

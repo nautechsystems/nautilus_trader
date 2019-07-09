@@ -15,6 +15,7 @@ from queue import Queue
 from threading import Thread
 
 from nautilus_trader.core.precondition cimport Precondition
+from nautilus_trader.model.events cimport Event
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport Clock, LiveClock
 from nautilus_trader.common.guid cimport GuidFactory, LiveGuidFactory
@@ -23,7 +24,6 @@ from nautilus_trader.common.execution cimport ExecutionClient
 from nautilus_trader.common.serialization cimport CommandSerializer, EventSerializer
 from nautilus_trader.trade.commands cimport Command, CollateralInquiry
 from nautilus_trader.trade.commands cimport SubmitOrder, SubmitAtomicOrder, CancelOrder, ModifyOrder
-from nautilus_trader.model.events cimport Event
 from nautilus_trader.network.workers import RequestWorker, SubscriberWorker
 from nautilus_trader.serialization.message cimport MsgPackCommandSerializer
 from nautilus_trader.serialization.message cimport MsgPackEventSerializer

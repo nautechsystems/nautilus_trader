@@ -13,14 +13,14 @@ from typing import List, Dict
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.precondition cimport Precondition
-from nautilus_trader.common.logger cimport Logger, LoggerAdapter
-from nautilus_trader.common.clock cimport LiveClock
-from nautilus_trader.common.guid cimport LiveGuidFactory
-from nautilus_trader.common.execution cimport ExecutionClient
 from nautilus_trader.model.events cimport AccountEvent, OrderEvent, PositionOpened, PositionModified, PositionClosed
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.identifiers cimport StrategyId, OrderId, PositionId
 from nautilus_trader.model.position cimport Position
+from nautilus_trader.common.logger cimport Logger, LoggerAdapter
+from nautilus_trader.common.clock cimport LiveClock
+from nautilus_trader.common.guid cimport LiveGuidFactory
+from nautilus_trader.common.execution cimport ExecutionClient
 from nautilus_trader.portfolio.performance cimport PerformanceAnalyzer
 
 

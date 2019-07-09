@@ -14,7 +14,6 @@ from cpython.datetime cimport datetime
 from typing import List, Dict
 
 from nautilus_trader.core.precondition cimport Precondition
-from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.model.c_enums.brokerage cimport Broker
 from nautilus_trader.model.c_enums.quote_type cimport QuoteType
 from nautilus_trader.model.c_enums.order_type cimport OrderType
@@ -36,9 +35,10 @@ from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.guid cimport TestGuidFactory
 from nautilus_trader.common.logger cimport Logger
 from nautilus_trader.common.execution cimport ExecutionClient
+from nautilus_trader.portfolio.portfolio cimport Portfolio
 from nautilus_trader.trade.commands cimport Command, CollateralInquiry
 from nautilus_trader.trade.commands cimport SubmitOrder, SubmitAtomicOrder, ModifyOrder, CancelOrder
-from nautilus_trader.portfolio.portfolio cimport Portfolio
+from nautilus_trader.backtest.models cimport FillModel
 
 # Stop order types
 cdef set STOP_ORDER_TYPES = {

@@ -13,7 +13,6 @@ import iso8601
 
 from cpython.datetime cimport datetime
 
-# Do not reorder imports (enums need to be in below order)
 from nautilus_trader.core.message cimport Command, Event, Request, Response
 from nautilus_trader.model.c_enums.venue cimport Venue
 from nautilus_trader.model.c_enums.resolution cimport Resolution

@@ -13,12 +13,12 @@ from cpython.datetime cimport datetime
 from typing import List
 
 from nautilus_trader.core.precondition cimport Precondition
+from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logger cimport Logger, LoggerAdapter, LiveLogger
 from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.common.execution cimport ExecutionClient
-from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.portfolio.portfolio cimport Portfolio
 from nautilus_trader.trade.strategy cimport TradeStrategy
 from nautilus_trader.trade.reports cimport ReportProvider
