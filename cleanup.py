@@ -10,13 +10,13 @@
 import os
 
 
-types_to_clean = (".c", ".so", ".o", ".pyd", ".html")
-directories_all = ['nautilus_trader', 'test_kit']
+extensions_to_clean = (".c", ".so", ".o", ".pyd", ".html")
+directories = ['nautilus_trader', 'test_kit']
 
 if __name__ == "__main__":
-    for directory in directories_all:
+    for directory in directories:
         for root, dirs, files in os.walk(directory):
             for name in files:
                 path = os.path.join(root, name)
-                if os.path.isfile(path) and path.endswith(types_to_clean):
+                if os.path.isfile(path) and path.endswith(extensions_to_clean):
                     os.remove(path)
