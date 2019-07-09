@@ -13,9 +13,9 @@ import pandas as pd
 
 from typing import Dict
 
-from nautilus_trader.c_enums.order_status cimport OrderStatus
-from nautilus_trader.c_enums.order_side cimport order_side_string
-from nautilus_trader.c_enums.order_type cimport order_type_string
+from nautilus_trader.model.c_enums.order_status cimport OrderStatus
+from nautilus_trader.model.c_enums.order_side cimport order_side_string
+from nautilus_trader.model.c_enums.order_type cimport order_type_string
 from nautilus_trader.model.identifiers cimport OrderId, PositionId
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.position cimport Position

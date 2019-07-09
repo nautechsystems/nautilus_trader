@@ -9,10 +9,8 @@
 
 import os
 import pandas as pd
-import gzip
 
-from pandas import Series, DataFrame, read_csv
-from pyfolio.utils import (to_utc, to_series)  # TODO: Remove reference to pyfolio
+from pandas import Series, DataFrame
 
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -45,16 +43,16 @@ class TestDataProvider:
                            index_col='Time (UTC)',
                            parse_dates=True)
 
-    @staticmethod
-    def test_returns() -> Series:
-        data = read_csv(gzip.open(os.path.join(ROOT_DIR, 'test_returns.csv.gz')),
-                        index_col=0,
-                        parse_dates=True)
-        return to_series(to_utc(data))
-
-    @staticmethod
-    def test_positions() -> DataFrame:
-        data = read_csv(gzip.open(os.path.join(ROOT_DIR, 'test_positions.csv.gz')),
-                        index_col=0,
-                        parse_dates=True)
-        return to_utc(data)
+    # @staticmethod
+    # def test_returns() -> Series:
+    #     data = read_csv(gzip.open(os.path.join(ROOT_DIR, 'test_returns.csv.gz')),
+    #                     index_col=0,
+    #                     parse_dates=True)
+    #     return to_series(to_utc(data))
+    #
+    # @staticmethod
+    # def test_positions() -> DataFrame:
+    #     data = read_csv(gzip.open(os.path.join(ROOT_DIR, 'test_positions.csv.gz')),
+    #                     index_col=0,
+    #                     parse_dates=True)
+    #     return to_utc(data)

@@ -15,12 +15,12 @@ from typing import List, Dict
 
 from nautilus_trader.core.precondition cimport Precondition
 from nautilus_trader.backtest.models cimport FillModel
-from nautilus_trader.c_enums.brokerage cimport Broker
-from nautilus_trader.c_enums.quote_type cimport QuoteType
-from nautilus_trader.c_enums.order_type cimport OrderType
-from nautilus_trader.c_enums.order_side cimport OrderSide
-from nautilus_trader.c_enums.order_status cimport OrderStatus
-from nautilus_trader.c_enums.market_position cimport MarketPosition, market_position_string
+from nautilus_trader.model.c_enums.brokerage cimport Broker
+from nautilus_trader.model.c_enums.quote_type cimport QuoteType
+from nautilus_trader.model.c_enums.order_type cimport OrderType
+from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.c_enums.order_status cimport OrderStatus
+from nautilus_trader.model.c_enums.market_position cimport MarketPosition, market_position_string
 from nautilus_trader.model.currency cimport ExchangeRateCalculator
 from nautilus_trader.model.objects cimport ValidString, Symbol, Price, Tick, Bar, Money, Instrument, Quantity
 from nautilus_trader.model.order cimport Order

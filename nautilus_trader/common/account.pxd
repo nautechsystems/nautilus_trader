@@ -11,8 +11,8 @@
 
 from cpython.datetime cimport datetime
 
-from nautilus_trader.c_enums.brokerage cimport Broker
-from nautilus_trader.c_enums.currency cimport Currency
+from nautilus_trader.model.c_enums.brokerage cimport Broker
+from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.events cimport AccountEvent
 from nautilus_trader.model.objects cimport ValidString
 from nautilus_trader.model.identifiers cimport AccountId, AccountNumber

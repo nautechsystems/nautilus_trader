@@ -12,7 +12,7 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.message cimport Request
-from nautilus_trader.c_enums.venue cimport Venue
+from nautilus_trader.model.c_enums.venue cimport Venue
 from nautilus_trader.model.objects cimport Symbol, BarSpecification
 
 

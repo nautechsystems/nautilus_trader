@@ -13,11 +13,11 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.core.precondition cimport Precondition
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.c_enums.brokerage cimport Broker
-from nautilus_trader.c_enums.currency cimport Currency
-from nautilus_trader.c_enums.order_side cimport OrderSide, order_side_string
-from nautilus_trader.c_enums.order_type cimport OrderType
-from nautilus_trader.c_enums.time_in_force cimport TimeInForce
+from nautilus_trader.model.c_enums.brokerage cimport Broker
+from nautilus_trader.model.c_enums.currency cimport Currency
+from nautilus_trader.model.c_enums.order_side cimport OrderSide, order_side_string
+from nautilus_trader.model.c_enums.order_type cimport OrderType
+from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.identifiers cimport GUID, Label, AccountNumber, AccountId
 from nautilus_trader.model.identifiers cimport StrategyId, OrderId, ExecutionId, ExecutionTicket
 from nautilus_trader.model.objects cimport ValidString, Quantity, Symbol, Price

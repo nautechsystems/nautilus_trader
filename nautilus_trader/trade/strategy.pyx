@@ -14,10 +14,10 @@ from collections import deque
 from typing import Callable, Dict, List, Deque
 
 from nautilus_trader.core.precondition cimport Precondition
-from nautilus_trader.c_enums.currency cimport Currency
-from nautilus_trader.c_enums.quote_type cimport QuoteType
-from nautilus_trader.c_enums.order_side cimport OrderSide
-from nautilus_trader.c_enums.market_position cimport MarketPosition
+from nautilus_trader.model.c_enums.currency cimport Currency
+from nautilus_trader.model.c_enums.quote_type cimport QuoteType
+from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.c_enums.market_position cimport MarketPosition
 from nautilus_trader.common.clock cimport Clock, LiveClock
 from nautilus_trader.common.logger cimport Logger, LoggerAdapter
 from nautilus_trader.common.execution cimport ExecutionClient

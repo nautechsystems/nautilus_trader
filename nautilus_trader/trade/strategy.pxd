@@ -9,7 +9,7 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
-from cpython.datetime cimport datetime, timedelta
+from cpython.datetime cimport datetime
 
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport Clock
@@ -17,9 +17,9 @@ from nautilus_trader.common.guid cimport GuidFactory
 from nautilus_trader.common.logger cimport Logger, LoggerAdapter
 from nautilus_trader.common.execution cimport ExecutionClient
 from nautilus_trader.common.data cimport DataClient
-from nautilus_trader.c_enums.currency cimport Currency
-from nautilus_trader.c_enums.order_side cimport OrderSide
-from nautilus_trader.c_enums.market_position cimport MarketPosition
+from nautilus_trader.model.c_enums.currency cimport Currency
+from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.c_enums.market_position cimport MarketPosition
 from nautilus_trader.model.currency cimport ExchangeRateCalculator
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.identifiers cimport TraderId, StrategyId, OrderId, PositionId

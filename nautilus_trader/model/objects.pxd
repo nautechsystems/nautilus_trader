@@ -11,11 +11,11 @@
 
 from cpython.datetime cimport datetime
 
-from nautilus_trader.c_enums.currency cimport Currency
-from nautilus_trader.c_enums.security_type cimport SecurityType
-from nautilus_trader.c_enums.venue cimport Venue
-from nautilus_trader.c_enums.resolution cimport Resolution
-from nautilus_trader.c_enums.quote_type cimport QuoteType
+from nautilus_trader.model.c_enums.currency cimport Currency
+from nautilus_trader.model.c_enums.security_type cimport SecurityType
+from nautilus_trader.model.c_enums.venue cimport Venue
+from nautilus_trader.model.c_enums.resolution cimport Resolution
+from nautilus_trader.model.c_enums.quote_type cimport QuoteType
 from nautilus_trader.model.identifiers cimport InstrumentId
 
 

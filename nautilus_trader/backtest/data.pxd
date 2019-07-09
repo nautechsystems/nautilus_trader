@@ -12,7 +12,7 @@
 from cpython.datetime cimport datetime, timedelta
 
 from nautilus_trader.common.data cimport DataClient
-from nautilus_trader.c_enums.resolution cimport Resolution
+from nautilus_trader.model.c_enums.resolution cimport Resolution
 from nautilus_trader.model.objects cimport Symbol, Tick, BarType, Bar, Instrument
 
 

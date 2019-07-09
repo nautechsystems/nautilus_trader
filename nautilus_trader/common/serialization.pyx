@@ -15,9 +15,9 @@ from cpython.datetime cimport datetime
 
 # Do not reorder imports (enums need to be in below order)
 from nautilus_trader.core.message cimport Command, Event, Request, Response
-from nautilus_trader.c_enums.venue cimport Venue
-from nautilus_trader.c_enums.resolution cimport Resolution
-from nautilus_trader.c_enums.quote_type cimport QuoteType
+from nautilus_trader.model.c_enums.venue cimport Venue
+from nautilus_trader.model.c_enums.resolution cimport Resolution
+from nautilus_trader.model.c_enums.quote_type cimport QuoteType
 from nautilus_trader.model.identifiers cimport Label
 from nautilus_trader.model.objects cimport Symbol, Price, BarSpecification, Bar, Tick, Instrument, Quantity
 from nautilus_trader.model.order cimport Order

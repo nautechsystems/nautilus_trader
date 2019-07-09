@@ -9,8 +9,8 @@
 
 from datetime import timedelta
 
-from nautilus_trader.c_enums.order_side import OrderSide
-from nautilus_trader.c_enums.time_in_force import TimeInForce
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.objects import Price, Tick, BarType, Bar, Instrument
 from nautilus_trader.model.events import Event
 from nautilus_trader.model.identifiers import Label

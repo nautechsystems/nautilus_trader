@@ -37,8 +37,8 @@ from nautilus_trader.common.brokerage import CommissionCalculator
 from nautilus_trader.common.clock cimport LiveClock, TestClock
 from nautilus_trader.common.guid cimport TestGuidFactory
 from nautilus_trader.common.logger cimport TestLogger
-from nautilus_trader.c_enums.currency cimport currency_string
-from nautilus_trader.c_enums.resolution cimport Resolution, resolution_string
+from nautilus_trader.model.c_enums.currency cimport currency_string
+from nautilus_trader.model.c_enums.resolution cimport Resolution, resolution_string
 from nautilus_trader.model.objects cimport Symbol, Instrument, Tick
 from nautilus_trader.model.events cimport TimeEvent
 from nautilus_trader.portfolio.portfolio cimport Portfolio
