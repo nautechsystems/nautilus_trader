@@ -27,7 +27,7 @@ from nautilus_trader.model.identifiers cimport PositionIdGenerator
 from nautilus_trader.model.objects cimport ValidString, Symbol, Price, Tick, BarType, Bar, Instrument
 from nautilus_trader.model.order cimport Order, AtomicOrder, OrderFactory
 from nautilus_trader.model.position cimport Position
-from nautilus_trader.portfolio.portfolio cimport Portfolio
+from nautilus_trader.trade.portfolio cimport Portfolio
 
 
 cdef class TradeStrategy:

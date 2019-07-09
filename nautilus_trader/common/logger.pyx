@@ -366,19 +366,23 @@ cdef class LoggerAdapter:
 
     def __init__(self,
                  str component_name=None,
-                 Logger logger=TestLogger()):
+                 Logger logger=None):
         """
         Initializes a new instance of the LoggerAdapter class.
 
         :param logger: The logger for the component.
         :param component_name: The name of the component.
         """
-        if component_name is not None:
-            Precondition.valid_string(component_name, 'component_name')
-        else:
+        if component_name is None:
             component_name = ''
+        else:
+            Precondition.valid_string(component_name, 'component_name')
+
+        if logger is None:
+            logger = TestLogger()
 
         self._logger = logger
+
         self.component_name = component_name
         self.bypassed = logger.bypass_logging
 

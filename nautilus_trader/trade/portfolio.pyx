@@ -21,7 +21,7 @@ from nautilus_trader.common.logger cimport Logger, LoggerAdapter
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.guid cimport LiveGuidFactory
 from nautilus_trader.common.execution cimport ExecutionClient
-from nautilus_trader.portfolio.performance cimport PerformanceAnalyzer
+from nautilus_trader.trade.performance cimport PerformanceAnalyzer
 
 
 cdef class Portfolio:

@@ -20,7 +20,7 @@ from nautilus_trader.model.identifiers cimport StrategyId, OrderId, PositionId
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.trade.commands cimport Command, CollateralInquiry
 from nautilus_trader.trade.commands cimport SubmitOrder, SubmitAtomicOrder, ModifyOrder, CancelOrder
-from nautilus_trader.portfolio.portfolio cimport Portfolio
+from nautilus_trader.trade.portfolio cimport Portfolio
 from nautilus_trader.trade.strategy cimport TradeStrategy
 
 

@@ -14,7 +14,7 @@ from cpython.datetime cimport datetime, timedelta
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logger cimport Logger, LoggerAdapter
-from nautilus_trader.portfolio.portfolio cimport Portfolio
+from nautilus_trader.trade.portfolio cimport Portfolio
 from nautilus_trader.trade.trader cimport Trader
 from nautilus_trader.backtest.config cimport BacktestConfig
 from nautilus_trader.backtest.data cimport BacktestDataClient

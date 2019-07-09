@@ -21,7 +21,7 @@ from nautilus_trader.model.events import OrderRejected, OrderCancelled, OrderWor
 from nautilus_trader.trade.strategy import TradeStrategy
 from nautilus_trader.backtest.execution import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
-from nautilus_trader.portfolio.portfolio import Portfolio
+from nautilus_trader.trade.portfolio import Portfolio
 from test_kit.strategies import TestStrategy1
 from test_kit.data import TestDataProvider
 from test_kit.stubs import TestStubs

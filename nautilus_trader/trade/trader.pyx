@@ -19,7 +19,7 @@ from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logger cimport Logger, LoggerAdapter, LiveLogger
 from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.common.execution cimport ExecutionClient
-from nautilus_trader.portfolio.portfolio cimport Portfolio
+from nautilus_trader.trade.portfolio cimport Portfolio
 from nautilus_trader.trade.strategy cimport TradeStrategy
 from nautilus_trader.trade.reports cimport ReportProvider
 
