@@ -35,7 +35,7 @@ from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.guid cimport TestGuidFactory
 from nautilus_trader.common.logger cimport Logger
 from nautilus_trader.common.execution cimport ExecutionClient
-from nautilus_trader.portfolio.portfolio cimport Portfolio
+from nautilus_trader.trade.portfolio cimport Portfolio
 from nautilus_trader.trade.commands cimport Command, CollateralInquiry
 from nautilus_trader.trade.commands cimport SubmitOrder, SubmitAtomicOrder, ModifyOrder, CancelOrder
 from nautilus_trader.backtest.models cimport FillModel

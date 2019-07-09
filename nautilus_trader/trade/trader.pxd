@@ -15,7 +15,7 @@ from nautilus_trader.common.logger cimport LoggerAdapter
 from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.common.execution cimport ExecutionClient
 from nautilus_trader.model.identifiers cimport ValidString, TraderId
-from nautilus_trader.portfolio.portfolio cimport Portfolio
+from nautilus_trader.trade.portfolio cimport Portfolio
 from nautilus_trader.trade.reports cimport ReportProvider
 
 

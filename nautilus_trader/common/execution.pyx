@@ -22,7 +22,7 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.guid cimport GuidFactory
 from nautilus_trader.common.logger cimport Logger, LoggerAdapter
 from nautilus_trader.common.account cimport Account
-from nautilus_trader.portfolio.portfolio cimport Portfolio
+from nautilus_trader.trade.portfolio cimport Portfolio
 from nautilus_trader.trade.commands cimport Command, CollateralInquiry
 from nautilus_trader.trade.commands cimport SubmitOrder, SubmitAtomicOrder, ModifyOrder, CancelOrder
 from nautilus_trader.trade.strategy cimport TradeStrategy

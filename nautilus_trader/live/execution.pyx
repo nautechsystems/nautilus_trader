@@ -27,7 +27,7 @@ from nautilus_trader.trade.commands cimport SubmitOrder, SubmitAtomicOrder, Canc
 from nautilus_trader.network.workers import RequestWorker, SubscriberWorker
 from nautilus_trader.serialization.message cimport MsgPackCommandSerializer
 from nautilus_trader.serialization.message cimport MsgPackEventSerializer
-from nautilus_trader.portfolio.portfolio cimport Portfolio
+from nautilus_trader.trade.portfolio cimport Portfolio
 
 cdef str UTF8 = 'utf-8'
 

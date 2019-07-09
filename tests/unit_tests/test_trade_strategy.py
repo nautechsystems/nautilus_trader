@@ -30,7 +30,7 @@ from nautilus_trader.model.events import TimeEvent
 from nautilus_trader.model.identifiers import StrategyId, Label
 from nautilus_trader.backtest.execution import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
-from nautilus_trader.portfolio.portfolio import Portfolio
+from nautilus_trader.trade.portfolio import Portfolio
 from nautilus_trader.trade.strategy import TradeStrategy
 from test_kit.stubs import TestStubs
 from test_kit.strategies import TestStrategy1

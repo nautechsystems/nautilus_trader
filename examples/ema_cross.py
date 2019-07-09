@@ -14,9 +14,9 @@ from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.objects import Price, Tick, BarType, Bar, Instrument
 from nautilus_trader.model.events import Event
 from nautilus_trader.model.identifiers import Label
-from nautilus_trader.trade.strategy import TradeStrategy
-from nautilus_trader.portfolio.sizing import FixedRiskSizer
 from nautilus_trader.data.analyzers import SpreadAnalyzer, LiquidityAnalyzer
+from nautilus_trader.trade.strategy import TradeStrategy
+from nautilus_trader.trade.sizing import FixedRiskSizer
 
 from inv_indicators.average.ema import ExponentialMovingAverage
 from inv_indicators.atr import AverageTrueRange

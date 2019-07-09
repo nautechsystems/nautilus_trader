@@ -15,7 +15,7 @@ from nautilus_trader.model.enums import Venue
 from nautilus_trader.model.objects import Symbol, Money
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.position import Position
-from nautilus_trader.portfolio.performance import PerformanceAnalyzer
+from nautilus_trader.trade.performance import PerformanceAnalyzer
 from test_kit.stubs import TestStubs
 
 UNIX_EPOCH = TestStubs.unix_epoch()
