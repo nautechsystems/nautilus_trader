@@ -61,10 +61,7 @@ cdef class Trader:
         self._clock = clock
         self.id = TraderId(self.__class__.__name__ + '-' + id_tag_trader)
         self.id_tag_trader = ValidString(id_tag_trader)
-        if logger is None:
-            self._log = LoggerAdapter(f"{self.id.value}")
-        else:
-            self._log = LoggerAdapter(f"{self.id.value}", logger)
+        self._log = LoggerAdapter(f"{self.id.value}", logger)
         self._data_client = data_client
         self._exec_client = exec_client
         self._report_provider = ReportProvider()

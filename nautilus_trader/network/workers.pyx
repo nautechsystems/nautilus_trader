@@ -59,10 +59,7 @@ cdef class MQWorker:
         self._context = context
         self._service_address = f'tcp://{host}:{port}'
         self._handler = handler
-        if logger is None:
-            self._log = LoggerAdapter(name)
-        else:
-            self._log = LoggerAdapter(name, logger)
+        self._log = LoggerAdapter(name, logger)
         self._socket = self._context.socket(socket_type)
         self._socket.setsockopt(zmq.LINGER, 0)
         self._cycles = 0
