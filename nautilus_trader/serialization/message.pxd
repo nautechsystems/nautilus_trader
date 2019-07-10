@@ -12,7 +12,7 @@
 from nautilus_trader.core.message cimport Command, Event, Request, Response
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.objects cimport Instrument
-from nautilus_trader.common.serialization cimport (
+from nautilus_trader.serialization.common cimport (
     OrderSerializer,
     InstrumentSerializer,
     EventSerializer,

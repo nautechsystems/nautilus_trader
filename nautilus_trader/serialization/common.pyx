@@ -14,6 +14,7 @@ import iso8601
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.message cimport Command, Event, Request, Response
+from nautilus_trader.model.enums import Venue, Resolution, QuoteType, OrderSide
 from nautilus_trader.model.c_enums.venue cimport Venue
 from nautilus_trader.model.c_enums.resolution cimport Resolution
 from nautilus_trader.model.c_enums.quote_type cimport QuoteType
@@ -87,35 +88,6 @@ cpdef Bar deserialize_bar(bytes bar_bytes):
         Quantity(values[4]),
         iso8601.parse_date(values[5]))
 
-# cpdef bytes serialize_ticks(Tick[:] ticks):
-#     """
-#     TBD.
-#     :param ticks:
-#     :return:
-#     """
-#     cdef int ticks_length = len(ticks)
-#     cdef bytearray tick_bytes = bytearray(ticks_length)
-#     cdef int i
-#     for i in range(ticks_length):
-#         tick_bytes[i] = str(ticks[i].values_str()).encode(UTF8)
-#
-#     return bytes(tick_bytes)
-#
-# cpdef Tick[:] deserialize_ticks(Symbol symbol, bytes tick_bytes):
-#     """
-#     Return a list of deserialized ticks from the given symbol and tick bytes.
-#
-#     :param symbol: The tick symbol.
-#     :param tick_bytes: The tick bytes to deserialize.
-#     :return: Tick[:].
-#     """
-#     cdef list ticks = []
-#     cdef int i
-#     cdef int array_length = len(tick_bytes)
-#     for i in range(array_length):
-#         ticks.append(deserialize_tick(symbol, tick_bytes[i]))
-#
-#     return ticks
 
 cpdef list deserialize_bars(bytes[:] bar_bytes_array):
     """

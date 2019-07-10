@@ -17,6 +17,7 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logger import TestLogger
 from nautilus_trader.model.enums import Resolution
 from nautilus_trader.backtest.data import BacktestDataClient
+
 from test_kit.objects import ObjectStorer
 from test_kit.data import TestDataProvider
 from test_kit.stubs import TestStubs
