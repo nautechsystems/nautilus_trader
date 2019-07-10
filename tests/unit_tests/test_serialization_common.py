@@ -10,8 +10,8 @@
 import unittest
 
 from nautilus_trader.common.clock import *
-from nautilus_trader.serializers.msgpack import *
-from nautilus_trader.common.serialization import *
+from nautilus_trader.serialization.common import *
+from nautilus_trader.serialization.message import *
 from test_kit.stubs import *
 
 UNIX_EPOCH = TestStubs.unix_epoch()

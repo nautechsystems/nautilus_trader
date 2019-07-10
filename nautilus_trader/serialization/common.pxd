@@ -26,8 +26,6 @@ cpdef Label convert_string_to_label(str label)
 cpdef str convert_datetime_to_string(datetime time)
 cpdef datetime convert_string_to_datetime(str time_string)
 
-# cpdef bytes serialize_ticks(Tick[:] ticks)
-# cpdef Tick[:] deserialize_ticks(Symbol symbol, bytes tick_bytes)
 
 cdef class OrderSerializer:
     """

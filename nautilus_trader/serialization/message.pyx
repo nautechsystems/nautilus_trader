@@ -17,14 +17,7 @@ from uuid import UUID
 
 from nautilus_trader.core.precondition cimport Precondition
 from nautilus_trader.core.message cimport Command, Event, Request, Response
-from nautilus_trader.trade.commands cimport (
-    CollateralInquiry,
-    SubmitOrder,
-    SubmitAtomicOrder,
-    ModifyOrder,
-    CancelOrder
-)
-from nautilus_trader.model.enums import Venue
+from nautilus_trader.model.enums import Broker, Venue, Currency, OrderSide, OrderType, TimeInForce, SecurityType
 from nautilus_trader.model.c_enums.venue cimport venue_string
 from nautilus_trader.model.c_enums.brokerage cimport Broker, broker_string
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce, time_in_force_string
@@ -51,7 +44,7 @@ from nautilus_trader.model.events cimport (
     OrderPartiallyFilled,
     OrderFilled
 )
-from nautilus_trader.common.serialization cimport (
+from nautilus_trader.serialization.common cimport (
     parse_symbol,
     parse_bar_spec,
     convert_price_to_string,
@@ -73,8 +66,14 @@ from nautilus_trader.network.requests cimport (
     InstrumentRequest,
     InstrumentsRequest
 )
-
 from nautilus_trader.network.responses cimport DataResponse
+from nautilus_trader.trade.commands cimport (
+    CollateralInquiry,
+    SubmitOrder,
+    SubmitAtomicOrder,
+    ModifyOrder,
+    CancelOrder
+)
 
 
 cdef str UTF8 = 'utf-8'
