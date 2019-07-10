@@ -35,8 +35,6 @@ class DataSerializerTests(unittest.TestCase):
                     Price('1.00001'),
                     UNIX_EPOCH)
 
-        serialized = self.serializer.serialize_ticks([tick])
-
         # Act
         serialized = self.serializer.serialize_ticks([tick])
         deserialized = bson.BSON.decode(serialized.raw)
