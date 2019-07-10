@@ -76,10 +76,7 @@ cdef class TradeStrategy:
         self.id_tag_strategy = ValidString(id_tag_strategy)
 
         # Components
-        if logger is None:
-            self.log = LoggerAdapter(f"{self.id.value}")
-        else:
-            self.log = LoggerAdapter(f"{self.id.value}", logger)
+        self.log = LoggerAdapter(f"{self.id.value}", logger)
         self._guid_factory = guid_factory
         self.clock = clock
         self.clock.register_logger(self.log)

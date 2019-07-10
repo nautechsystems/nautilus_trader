@@ -35,11 +35,7 @@ cdef class DataClient:
         :param logger: The logger for the component.
         """
         self._clock = clock
-        if logger is None:
-            self._log = LoggerAdapter(f"DataClient")
-        else:
-            self._log = LoggerAdapter(f"DataClient", logger)
-
+        self._log = LoggerAdapter(f"DataClient", logger)
         self._instruments = {}    # type: Dict[Symbol, Instrument]
         self._tick_handlers = {}  # type: Dict[Symbol, List[TickHandler]]
         self._bar_handlers = {}   # type: Dict[BarType, List[BarHandler]]
