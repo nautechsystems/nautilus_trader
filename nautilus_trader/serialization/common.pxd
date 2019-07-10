@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-# <copyright file="serialization.pxd" company="Nautech Systems Pty Ltd">
+# <copyright file="common.pxd" company="Nautech Systems Pty Ltd">
 #  Copyright (C) 2015-2019 Nautech Systems Pty Ltd. All rights reserved.
 #  The use of this source code is governed by the license as found in the LICENSE.md file.
 #  http://www.nautechsystems.io
@@ -12,19 +12,20 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.message cimport Command, Event, Request, Response
+from nautilus_trader.model.enums import Venue, Resolution, QuoteType, OrderSide
 from nautilus_trader.model.objects cimport Symbol, Tick, BarSpecification, Bar, Price, Instrument
 from nautilus_trader.model.identifiers cimport Label
 from nautilus_trader.model.order cimport Order
 
 
-cpdef Symbol parse_symbol(str symbol_string)
-cpdef BarSpecification parse_bar_spec(str bar_spec_string)
 cpdef str convert_price_to_string(Price price)
 cpdef Price convert_string_to_price(str price_string)
 cpdef str convert_label_to_string(Label label)
 cpdef Label convert_string_to_label(str label)
 cpdef str convert_datetime_to_string(datetime time)
 cpdef datetime convert_string_to_datetime(str time_string)
+cpdef Symbol parse_symbol(str symbol_string)
+cpdef BarSpecification parse_bar_spec(str bar_spec_string)
 
 
 cdef class OrderSerializer:

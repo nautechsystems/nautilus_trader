@@ -18,6 +18,7 @@ from nautilus_trader.model.identifiers import *
 from nautilus_trader.model.objects import *
 from nautilus_trader.model.order import *
 from nautilus_trader.model.events import *
+from nautilus_trader.serialization.data import *
 from nautilus_trader.serialization.message import *
 from nautilus_trader.serialization.common import *
 from nautilus_trader.network.requests import *

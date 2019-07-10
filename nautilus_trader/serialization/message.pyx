@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-# <copyright file="msgpack.pyx" company="Nautech Systems Pty Ltd">
+# <copyright file="message.pyx" company="Nautech Systems Pty Ltd">
 #  Copyright (C) 2015-2019 Nautech Systems Pty Ltd. All rights reserved.
 #  The use of this source code is governed by the license as found in the LICENSE.md file.
 #  http://www.nautechsystems.io
@@ -44,22 +44,8 @@ from nautilus_trader.model.events cimport (
     OrderPartiallyFilled,
     OrderFilled
 )
-from nautilus_trader.serialization.common cimport (
-    parse_symbol,
-    parse_bar_spec,
-    convert_price_to_string,
-    convert_string_to_price,
-    convert_label_to_string,
-    convert_string_to_label,
-    convert_datetime_to_string,
-    convert_string_to_datetime,
-    OrderSerializer,
-    InstrumentSerializer,
-    EventSerializer,
-    CommandSerializer,
-    RequestSerializer,
-    ResponseSerializer
-)
+from nautilus_trader.serialization.common cimport *
+from nautilus_trader.serialization.keys cimport *
 from nautilus_trader.network.requests cimport (
     TickDataRequest,
     BarDataRequest,
@@ -74,83 +60,6 @@ from nautilus_trader.trade.commands cimport (
     ModifyOrder,
     CancelOrder
 )
-
-
-cdef str UTF8 = 'utf-8'
-
-cdef str TYPE = 'Type'
-cdef str ID = 'Id'
-cdef str CANCEL_REASON = 'CancelReason'
-cdef str ORDER = 'Order'
-cdef str TIMESTAMP = 'Timestamp'
-cdef str VENUE = 'Venue'
-cdef str SYMBOL = 'Symbol'
-cdef str ORDER_ID_BROKER = 'OrderIdBroker'
-cdef str TRADER_ID = 'TraderId'
-cdef str STRATEGY_ID = 'StrategyId'
-cdef str POSITION_ID = 'PositionId'
-cdef str ORDER_ID = 'OrderId'
-cdef str INIT_ID = 'InitId'
-cdef str LABEL = 'Label'
-cdef str SUBMITTED_TIME = 'SubmittedTime'
-cdef str ACCEPTED_TIME = 'AcceptedTime'
-cdef str REJECTED_TIME = 'RejectedTime'
-cdef str REJECTED_RESPONSE_TO = 'RejectedResponseTo'
-cdef str REJECTED_REASON = 'RejectedReason'
-cdef str WORKING_TIME = 'WorkingTime'
-cdef str CANCELLED_TIME = 'CancelledTime'
-cdef str MODIFIED_TIME = 'ModifiedTime'
-cdef str MODIFIED_PRICE = 'ModifiedPrice'
-cdef str EXPIRE_TIME = 'ExpireTime'
-cdef str EXPIRED_TIME = 'ExpiredTime'
-cdef str EXECUTION_TIME = 'ExecutionTime'
-cdef str EXECUTION_ID = 'ExecutionId'
-cdef str EXECUTION_TICKET = 'ExecutionTicket'
-cdef str ORDER_SIDE = 'OrderSide'
-cdef str ORDER_TYPE = 'OrderType'
-cdef str ENTRY = 'Entry'
-cdef str STOP_LOSS = 'StopLoss'
-cdef str TAKE_PROFIT = 'TakeProfit'
-cdef str FILLED_QUANTITY = 'FilledQuantity'
-cdef str LEAVES_QUANTITY = 'LeavesQuantity'
-cdef str QUANTITY = 'Quantity'
-cdef str AVERAGE_PRICE = 'AveragePrice'
-cdef str PRICE = 'Price'
-cdef str TIME_IN_FORCE = 'TimeInForce'
-cdef str ACCOUNT_ID = 'AccountId'
-cdef str ACCOUNT_NUMBER = 'AccountNumber'
-cdef str BROKER = 'Broker'
-cdef str CURRENCY = 'Currency'
-cdef str CASH_BALANCE = 'CashBalance'
-cdef str CASH_START_DAY = 'CashStartDay'
-cdef str CASH_ACTIVITY_DAY = 'CashActivityDay'
-cdef str MARGIN_USED_LIQUIDATION = 'MarginUsedLiquidation'
-cdef str MARGIN_USED_MAINTENANCE = 'MarginUsedMaintenance'
-cdef str MARGIN_RATIO = 'MarginRatio'
-cdef str MARGIN_CALL_STATUS = 'MarginCallStatus'
-
-cdef str BROKER_SYMBOL = 'BrokerSymbol'
-cdef str QUOTE_CURRENCY = 'QuoteCurrency'
-cdef str SECURITY_TYPE = 'SecurityType'
-cdef str TICK_PRECISION = 'TickPrecision'
-cdef str TICK_SIZE = 'TickSize'
-cdef str ROUND_LOT_SIZE = 'RoundLotSize'
-cdef str MIN_STOP_DISTANCE_ENTRY = 'MinStopDistanceEntry'
-cdef str MIN_STOP_DISTANCE = 'MinStopDistance'
-cdef str MIN_LIMIT_DISTANCE_ENTRY = 'MinLimitDistanceEntry'
-cdef str MIN_LIMIT_DISTANCE = 'MinLimitDistance'
-cdef str MIN_TRADE_SIZE = 'MinTradeSize'
-cdef str MAX_TRADE_SIZE = 'MaxTradeSize'
-cdef str ROLL_OVER_INTEREST_BUY = 'RollOverInterestBuy'
-cdef str ROLL_OVER_INTEREST_SELL = 'RollOverInterestSell'
-
-cdef str CORRELATION_ID = 'CorrelationId'
-cdef str BARS = 'Bars'
-cdef str TICKS = 'Ticks'
-cdef str INSTRUMENTS = 'Instruments'
-cdef str BAR_SPECIFICATION = 'BarSpecification'
-cdef str FROM_DATETIME = 'FromDateTime'
-cdef str TO_DATETIME = 'ToDateTime'
 
 
 cdef class MsgPackOrderSerializer(OrderSerializer):
@@ -206,67 +115,6 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
                      label=convert_string_to_label(unpacked[LABEL]),
                      time_in_force=TimeInForce[unpacked[TIME_IN_FORCE]],
                      expire_time=convert_string_to_datetime(unpacked[EXPIRE_TIME]))
-
-
-cdef class MsgPackInstrumentSerializer(InstrumentSerializer):
-    """
-    Provides an instrument serializer for the MessagePack specification.
-    """
-
-    cpdef bytes serialize(self, Instrument instrument):
-        """
-        Return the MessagePack specification bytes serialized from the given instrument.
-
-        :param instrument: The instrument to serialize.
-        :return: bytes.
-        """
-        return msgpack.packb({
-            ID: instrument.id.value,
-            SYMBOL: instrument.symbol.value,
-            BROKER_SYMBOL: instrument.broker_symbol,
-            QUOTE_CURRENCY: currency_string(instrument.quote_currency),
-            SECURITY_TYPE: security_type_string(instrument.security_type),
-            TICK_PRECISION: instrument.tick_precision,
-            TICK_SIZE: str(instrument.tick_size),
-            ROUND_LOT_SIZE: instrument.round_lot_size.value,
-            MIN_STOP_DISTANCE_ENTRY: instrument.min_stop_distance_entry,
-            MIN_STOP_DISTANCE: instrument.min_stop_distance,
-            MIN_LIMIT_DISTANCE_ENTRY: instrument.min_limit_distance_entry,
-            MIN_LIMIT_DISTANCE: instrument.min_limit_distance,
-            MIN_TRADE_SIZE: instrument.min_trade_size.value,
-            MAX_TRADE_SIZE: instrument.max_trade_size.value,
-            ROLL_OVER_INTEREST_BUY: str(instrument.rollover_interest_buy),
-            ROLL_OVER_INTEREST_SELL: str(instrument.rollover_interest_sell),
-            TIMESTAMP: convert_datetime_to_string(instrument.timestamp),
-        })
-
-    cpdef Instrument deserialize(self, bytes instrument_bytes):
-        """
-        Return the instrument deserialized from the given MessagePack specification bytes.
-
-        :param instrument_bytes: The bytes to deserialize.
-        :return: Instrument.
-        """
-        cdef dict unpacked = msgpack.unpackb(instrument_bytes, raw=False)
-
-        return Instrument(
-            instrument_id=InstrumentId(unpacked[ID]),
-            symbol=parse_symbol(unpacked[SYMBOL]),
-            broker_symbol=unpacked[BROKER_SYMBOL],
-            quote_currency=Currency[(unpacked[QUOTE_CURRENCY])],
-            security_type=SecurityType[(unpacked[SECURITY_TYPE])],
-            tick_precision=unpacked[TICK_PRECISION],
-            tick_size=Decimal(unpacked[TICK_SIZE]),
-            round_lot_size=Quantity(unpacked[ROUND_LOT_SIZE]),
-            min_stop_distance_entry=unpacked[MIN_STOP_DISTANCE_ENTRY],
-            min_stop_distance=unpacked[MIN_STOP_DISTANCE],
-            min_limit_distance_entry=unpacked[MIN_LIMIT_DISTANCE_ENTRY],
-            min_limit_distance=unpacked[MIN_LIMIT_DISTANCE],
-            min_trade_size=Quantity(unpacked[MIN_TRADE_SIZE]),
-            max_trade_size=Quantity(unpacked[MAX_TRADE_SIZE]),
-            rollover_interest_buy=Decimal(unpacked[ROLL_OVER_INTEREST_BUY]),
-            rollover_interest_sell=Decimal(unpacked[ROLL_OVER_INTEREST_SELL]),
-            timestamp=convert_string_to_datetime(unpacked[TIMESTAMP]))
 
 
 cdef class MsgPackCommandSerializer(CommandSerializer):

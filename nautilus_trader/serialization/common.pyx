@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-# <copyright file="serialization.pyx" company="Nautech Systems Pty Ltd">
+# <copyright file="common.pyx" company="Nautech Systems Pty Ltd">
 #  Copyright (C) 2015-2019 Nautech Systems Pty Ltd. All rights reserved.
 #  The use of this source code is governed by the license as found in the LICENSE.md file.
 #  http://www.nautechsystems.io
@@ -21,88 +21,8 @@ from nautilus_trader.model.c_enums.quote_type cimport QuoteType
 from nautilus_trader.model.identifiers cimport Label
 from nautilus_trader.model.objects cimport Symbol, Price, BarSpecification, Bar, Tick, Instrument, Quantity
 from nautilus_trader.model.order cimport Order
+from nautilus_trader.serialization.keys cimport *
 
-cdef str UTF8 = 'utf-8'
-cdef str NONE = 'NONE'
-
-
-cpdef Symbol parse_symbol(str symbol_string):
-    """
-    Return the parsed symbol from the given string.
-
-    Note: String format example is 'AUDUSD.FXCM'.
-    :param symbol_string: The symbol string to parse.
-    :return: Symbol.
-    """
-    cdef tuple split_symbol = symbol_string.partition('.')
-    return Symbol(split_symbol[0], Venue[split_symbol[2].upper()])
-
-cpdef BarSpecification parse_bar_spec(str bar_spec_string):
-    """
-    Return the parsed bar specification from the given string.
-    
-    Note: String format example is '1-MINUTE-[BID]'.
-    :param bar_spec_string: The bar specification string to parse.
-    :return: BarSpecification.
-    """
-    cdef list split1 = bar_spec_string.split('-')
-    cdef list split2 = split1[1].split('[')
-    cdef str resolution = split2[0]
-    cdef str quote_type = split2[1].strip(']')
-
-    return BarSpecification(
-        int(split1[0]),
-        Resolution[resolution.upper()],
-        QuoteType[quote_type.upper()])
-
-cpdef Tick deserialize_tick(Symbol symbol, bytes tick_bytes):
-    """
-    Return a parsed a tick from the given UTF-8 string.
-
-    :param symbol: The ticks symbol.
-    :param tick_bytes: The tick bytes to deserialize.
-    :return: Tick.
-    """
-    cdef list values = tick_bytes.decode(UTF8).split(',')
-
-    return Tick(
-        symbol,
-        Price(values[0]),
-        Price(values[1]),
-        iso8601.parse_date(values[2]))
-
-cpdef Bar deserialize_bar(bytes bar_bytes):
-    """
-    Return the deserialized bar from the give bytes.
-    
-    :param bar_bytes: The bar bytes to deserialize.
-    :return: Bar.
-    """
-    cdef list values = bar_bytes.decode(UTF8).split(',')
-
-    return Bar(
-        Price(values[0]),
-        Price(values[1]),
-        Price(values[2]),
-        Price(values[3]),
-        Quantity(values[4]),
-        iso8601.parse_date(values[5]))
-
-
-cpdef list deserialize_bars(bytes[:] bar_bytes_array):
-    """
-    Return a list of deserialized bars from the given bars bytes.
-    
-    :param bar_bytes_array: The bar bytes to deserialize.
-    :return: List[Tick].
-    """
-    cdef list bars = []
-    cdef int i
-    cdef int array_length = len(bar_bytes_array)
-    for i in range(array_length):
-        bars.append(deserialize_bar(bar_bytes_array[i]))
-
-    return bars
 
 cpdef str convert_price_to_string(Price price):
     """
@@ -157,6 +77,35 @@ cpdef datetime convert_string_to_datetime(str time_string):
     :return: datetime or None.
     """
     return None if time_string == NONE else iso8601.parse_date(time_string)
+
+cpdef Symbol parse_symbol(str symbol_string):
+    """
+    Return the parsed symbol from the given string.
+
+    Note: String format example is 'AUDUSD.FXCM'.
+    :param symbol_string: The symbol string to parse.
+    :return: Symbol.
+    """
+    cdef tuple split_symbol = symbol_string.partition('.')
+    return Symbol(split_symbol[0], Venue[split_symbol[2].upper()])
+
+cpdef BarSpecification parse_bar_spec(str bar_spec_string):
+    """
+    Return the parsed bar specification from the given string.
+    
+    Note: String format example is '1-MINUTE-[BID]'.
+    :param bar_spec_string: The bar specification string to parse.
+    :return: BarSpecification.
+    """
+    cdef list split1 = bar_spec_string.split('-')
+    cdef list split2 = split1[1].split('[')
+    cdef str resolution = split2[0]
+    cdef str quote_type = split2[1].strip(']')
+
+    return BarSpecification(
+        int(split1[0]),
+        Resolution[resolution.upper()],
+        QuoteType[quote_type.upper()])
 
 
 cdef class OrderSerializer:
