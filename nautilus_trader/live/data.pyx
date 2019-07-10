@@ -19,6 +19,7 @@ from typing import Callable
 
 # Do not rearrange below enums imports (import vs cimport)
 from nautilus_trader.core.precondition cimport Precondition
+from nautilus_trader.model.enums import Resolution, QuoteType, Venue
 from nautilus_trader.model.c_enums.resolution cimport Resolution
 from nautilus_trader.model.c_enums.quote_type cimport QuoteType
 from nautilus_trader.model.c_enums.venue cimport Venue
