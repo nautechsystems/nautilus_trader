@@ -255,7 +255,7 @@ cdef class Position:
         elif self.entry_direction == OrderSide.SELL:
             return entry_price.value - exit_price.value
         else:
-            raise ValueError(f'Cannot calculate the points of a {self.entry_direction} direction.')
+            raise ValueError(f'Cannot calculate the points of a {self.entry_direction} entry direction.')
 
     cdef float _calculate_return(self, Price entry_price, Price exit_price):
         """
@@ -268,4 +268,4 @@ cdef class Position:
         elif self.market_position == MarketPosition.SHORT:
             return (entry_price.as_float() - exit_price.as_float()) / entry_price.as_float()
         else:
-            raise ValueError(f'Cannot calculate the return of a {self.market_position} direction.')
+            raise ValueError(f'Cannot calculate the return of a {self.market_position} market position.')
