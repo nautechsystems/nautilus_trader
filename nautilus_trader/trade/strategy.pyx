@@ -30,7 +30,7 @@ from nautilus_trader.common.logger cimport Logger, LoggerAdapter
 from nautilus_trader.common.execution cimport ExecutionClient
 from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.common.guid cimport GuidFactory, LiveGuidFactory
-from nautilus_trader.trade.commands cimport CollateralInquiry, SubmitOrder, SubmitAtomicOrder, ModifyOrder, CancelOrder
+from nautilus_trader.model.commands cimport CollateralInquiry, SubmitOrder, SubmitAtomicOrder, ModifyOrder, CancelOrder
 from nautilus_trader.data.tools cimport IndicatorUpdater
 Indicator = object
 
