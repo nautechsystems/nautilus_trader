@@ -24,11 +24,29 @@ from nautilus_trader.model.currency cimport ExchangeRateCalculator
 from nautilus_trader.model.objects cimport ValidString, Symbol, Price, Tick, Bar, Money, Instrument, Quantity
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.position cimport Position
-from nautilus_trader.model.events cimport Event, OrderEvent, AccountEvent
-from nautilus_trader.model.events cimport OrderSubmitted, OrderAccepted, OrderRejected, OrderWorking
-from nautilus_trader.model.events cimport OrderExpired, OrderModified, OrderCancelled, OrderCancelReject
-from nautilus_trader.model.events cimport OrderFilled
+from nautilus_trader.model.events cimport (
+    Event,
+    OrderEvent,
+    AccountEvent,
+    OrderSubmitted,
+    OrderAccepted,
+    OrderRejected,
+    OrderWorking,
+    OrderExpired,
+    OrderModified,
+    OrderCancelled,
+    OrderCancelReject,
+    OrderFilled
+)
 from nautilus_trader.model.identifiers cimport OrderId, ExecutionId, ExecutionTicket, AccountNumber
+from nautilus_trader.model.commands cimport (
+    Command,
+    CollateralInquiry,
+    SubmitOrder,
+    SubmitAtomicOrder,
+    ModifyOrder,
+    CancelOrder
+)
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.brokerage cimport CommissionCalculator
 from nautilus_trader.common.clock cimport TestClock
@@ -36,8 +54,6 @@ from nautilus_trader.common.guid cimport TestGuidFactory
 from nautilus_trader.common.logger cimport Logger
 from nautilus_trader.common.execution cimport ExecutionClient
 from nautilus_trader.trade.portfolio cimport Portfolio
-from nautilus_trader.model.commands cimport Command, CollateralInquiry
-from nautilus_trader.model.commands cimport SubmitOrder, SubmitAtomicOrder, ModifyOrder, CancelOrder
 from nautilus_trader.backtest.models cimport FillModel
 
 # Stop order types

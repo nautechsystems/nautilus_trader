@@ -21,7 +21,7 @@ from nautilus_trader.common.clock cimport Clock, LiveClock
 from nautilus_trader.common.guid cimport GuidFactory, LiveGuidFactory
 from nautilus_trader.common.logger cimport Logger
 from nautilus_trader.common.execution cimport ExecutionClient
-from nautilus_trader.serialization.common cimport CommandSerializer, EventSerializer
+from nautilus_trader.serialization.base cimport CommandSerializer, EventSerializer
 from nautilus_trader.model.commands cimport Command, CollateralInquiry
 from nautilus_trader.model.commands cimport SubmitOrder, SubmitAtomicOrder, CancelOrder, ModifyOrder
 from nautilus_trader.network.workers import RequestWorker, SubscriberWorker

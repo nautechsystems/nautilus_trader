@@ -27,7 +27,7 @@ from nautilus_trader.model.objects cimport Symbol, Price, Tick, BarSpecification
 from nautilus_trader.common.clock cimport Clock, LiveClock
 from nautilus_trader.common.logger cimport Logger
 from nautilus_trader.common.data cimport DataClient
-from nautilus_trader.serialization.common cimport InstrumentSerializer
+from nautilus_trader.serialization.base cimport InstrumentSerializer
 from nautilus_trader.trade.strategy cimport TradeStrategy
 
 cdef str UTF8 = 'utf-8'

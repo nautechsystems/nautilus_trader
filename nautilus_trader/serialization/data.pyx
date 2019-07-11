@@ -26,7 +26,7 @@ from nautilus_trader.model.c_enums.order_type cimport OrderType, order_type_stri
 from nautilus_trader.model.c_enums.currency cimport Currency, currency_string
 from nautilus_trader.model.c_enums.security_type cimport SecurityType, security_type_string
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.serialization.common cimport InstrumentSerializer
+from nautilus_trader.serialization.base cimport InstrumentSerializer
 from nautilus_trader.serialization.common cimport *
 from nautilus_trader.serialization.keys cimport *
 

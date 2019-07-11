@@ -28,6 +28,13 @@ from nautilus_trader.model.identifiers cimport GUID, ExecutionTicket, AccountNum
 from nautilus_trader.model.objects cimport ValidString, Quantity, Money, Price
 from nautilus_trader.model.order cimport  AtomicOrder
 from nautilus_trader.serialization.keys cimport *  # Imports all cdef keys
+from nautilus_trader.serialization.base cimport (
+    OrderSerializer,
+    CommandSerializer,
+    EventSerializer,
+    RequestSerializer,
+    ResponseSerializer
+)
 from nautilus_trader.serialization.common cimport (
     convert_price_to_string,
     convert_label_to_string,
@@ -36,12 +43,7 @@ from nautilus_trader.serialization.common cimport (
     convert_string_to_price,
     convert_string_to_label,
     parse_symbol,
-    parse_bar_spec,
-    OrderSerializer,
-    CommandSerializer,
-    EventSerializer,
-    RequestSerializer,
-    ResponseSerializer
+    parse_bar_spec
 )
 from nautilus_trader.model.commands cimport (
     CollateralInquiry,
