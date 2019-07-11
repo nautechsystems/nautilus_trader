@@ -28,21 +28,21 @@ from typing import List, Dict, Callable
 from nautilus_trader.version import __version__
 from nautilus_trader.core.precondition cimport Precondition
 from nautilus_trader.core.functions cimport as_utc_timestamp, format_zulu_datetime, pad_string
-from nautilus_trader.backtest.config cimport BacktestConfig
-from nautilus_trader.backtest.data cimport BidAskBarPair, BacktestDataClient
-from nautilus_trader.backtest.execution cimport BacktestExecClient
-from nautilus_trader.backtest.models cimport FillModel
+from nautilus_trader.model.c_enums.currency cimport currency_string
+from nautilus_trader.model.c_enums.resolution cimport Resolution, resolution_string
+from nautilus_trader.model.objects cimport Symbol, Instrument, Tick
+from nautilus_trader.model.events cimport TimeEvent
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.brokerage import CommissionCalculator
 from nautilus_trader.common.clock cimport LiveClock, TestClock
 from nautilus_trader.common.guid cimport TestGuidFactory
 from nautilus_trader.common.logger cimport TestLogger
-from nautilus_trader.model.c_enums.currency cimport currency_string
-from nautilus_trader.model.c_enums.resolution cimport Resolution, resolution_string
-from nautilus_trader.model.objects cimport Symbol, Instrument, Tick
-from nautilus_trader.model.events cimport TimeEvent
 from nautilus_trader.trade.portfolio cimport Portfolio
 from nautilus_trader.trade.strategy cimport TradeStrategy
+from nautilus_trader.backtest.config cimport BacktestConfig
+from nautilus_trader.backtest.data cimport BidAskBarPair, BacktestDataClient
+from nautilus_trader.backtest.execution cimport BacktestExecClient
+from nautilus_trader.backtest.models cimport FillModel
 
 
 cdef class BacktestEngine:

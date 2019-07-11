@@ -10,7 +10,7 @@
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
 from nautilus_trader.model.objects cimport Symbol, Price, Tick, Bar, Instrument
-from nautilus_trader.serialization.common cimport InstrumentSerializer
+from nautilus_trader.serialization.base cimport InstrumentSerializer
 
 
 cdef class MsgPackInstrumentSerializer(InstrumentSerializer):
