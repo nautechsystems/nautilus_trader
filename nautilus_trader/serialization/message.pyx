@@ -16,19 +16,40 @@ from decimal import Decimal
 from uuid import UUID
 
 from nautilus_trader.core.precondition cimport Precondition
-from nautilus_trader.core.message cimport Command, Event, Request, Response
-from nautilus_trader.model.enums import Broker, Venue, Currency, OrderSide, OrderType, TimeInForce, SecurityType
+from nautilus_trader.model.enums import Venue, Broker, OrderSide, OrderType, Currency, TimeInForce
 from nautilus_trader.model.c_enums.venue cimport venue_string
 from nautilus_trader.model.c_enums.brokerage cimport Broker, broker_string
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce, time_in_force_string
-from nautilus_trader.model.c_enums.order_side cimport OrderSide, order_side_string
+from nautilus_trader.model.c_enums.order_side cimport  order_side_string
 from nautilus_trader.model.c_enums.order_type cimport OrderType, order_type_string
 from nautilus_trader.model.c_enums.currency cimport Currency, currency_string
-from nautilus_trader.model.c_enums.security_type cimport SecurityType, security_type_string
-from nautilus_trader.model.identifiers cimport TraderId, StrategyId, OrderId, ExecutionId, AccountId, InstrumentId
-from nautilus_trader.model.identifiers cimport GUID, Label, ExecutionTicket, AccountNumber, PositionId
-from nautilus_trader.model.objects cimport ValidString, Quantity, Price, Money, Instrument
-from nautilus_trader.model.order cimport Order, AtomicOrder
+from nautilus_trader.model.identifiers cimport TraderId, StrategyId, OrderId, ExecutionId, AccountId
+from nautilus_trader.model.identifiers cimport GUID, ExecutionTicket, AccountNumber, PositionId, Label
+from nautilus_trader.model.objects cimport ValidString, Quantity, Money, Price
+from nautilus_trader.model.order cimport  AtomicOrder
+from nautilus_trader.serialization.keys cimport *  # Imports all cdef keys
+from nautilus_trader.serialization.common cimport (
+    convert_price_to_string,
+    convert_label_to_string,
+    convert_datetime_to_string,
+    convert_string_to_datetime,
+    convert_string_to_price,
+    convert_string_to_label,
+    parse_symbol,
+    parse_bar_spec,
+    OrderSerializer,
+    CommandSerializer,
+    EventSerializer,
+    RequestSerializer,
+    ResponseSerializer
+)
+from nautilus_trader.model.commands cimport (
+    CollateralInquiry,
+    SubmitOrder,
+    SubmitAtomicOrder,
+    ModifyOrder,
+    CancelOrder
+)
 from nautilus_trader.model.events cimport (
     AccountEvent,
     OrderEvent,
@@ -44,8 +65,6 @@ from nautilus_trader.model.events cimport (
     OrderPartiallyFilled,
     OrderFilled
 )
-from nautilus_trader.serialization.common cimport *
-from nautilus_trader.serialization.keys cimport *
 from nautilus_trader.network.requests cimport (
     TickDataRequest,
     BarDataRequest,
@@ -53,13 +72,6 @@ from nautilus_trader.network.requests cimport (
     InstrumentsRequest
 )
 from nautilus_trader.network.responses cimport DataResponse
-from nautilus_trader.trade.commands cimport (
-    CollateralInquiry,
-    SubmitOrder,
-    SubmitAtomicOrder,
-    ModifyOrder,
-    CancelOrder
-)
 
 
 cdef class MsgPackOrderSerializer(OrderSerializer):
