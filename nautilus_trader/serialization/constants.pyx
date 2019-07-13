@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-# <copyright file="keys.pyx" company="Nautech Systems Pty Ltd">
+# <copyright file="constants.pyx" company="Nautech Systems Pty Ltd">
 #  Copyright (C) 2015-2019 Nautech Systems Pty Ltd. All rights reserved.
 #  The use of this source code is governed by the license as found in the LICENSE.md file.
 #  http://www.nautechsystems.io
@@ -9,8 +9,9 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
-NONE = 'NONE'
 UTF8 = 'utf-8'
+
+NONE = 'NONE'
 TYPE = 'Type'
 ID = 'Id'
 CANCEL_REASON = 'CancelReason'
@@ -61,6 +62,7 @@ MARGIN_USED_LIQUIDATION = 'MarginUsedLiquidation'
 MARGIN_USED_MAINTENANCE = 'MarginUsedMaintenance'
 MARGIN_RATIO = 'MarginRatio'
 MARGIN_CALL_STATUS = 'MarginCallStatus'
+
 BROKER_SYMBOL = 'BrokerSymbol'
 QUOTE_CURRENCY = 'QuoteCurrency'
 SECURITY_TYPE = 'SecurityType'
@@ -75,6 +77,7 @@ MIN_TRADE_SIZE = 'MinTradeSize'
 MAX_TRADE_SIZE = 'MaxTradeSize'
 ROLL_OVER_INTEREST_BUY = 'RollOverInterestBuy'
 ROLL_OVER_INTEREST_SELL = 'RollOverInterestSell'
+
 CORRELATION_ID = 'CorrelationId'
 BARS = 'Bars'
 TICKS = 'Ticks'
