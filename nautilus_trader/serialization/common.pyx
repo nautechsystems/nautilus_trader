@@ -19,7 +19,7 @@ from nautilus_trader.model.c_enums.resolution cimport Resolution
 from nautilus_trader.model.c_enums.quote_type cimport QuoteType
 from nautilus_trader.model.identifiers cimport Label
 from nautilus_trader.model.objects cimport Symbol, Price, BarSpecification
-from nautilus_trader.serialization.keys cimport *
+from nautilus_trader.serialization.constants cimport *
 
 
 cpdef str convert_price_to_string(Price price):

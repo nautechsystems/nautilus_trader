@@ -27,7 +27,7 @@ from nautilus_trader.model.identifiers cimport TraderId, StrategyId, OrderId, Ex
 from nautilus_trader.model.identifiers cimport GUID, ExecutionTicket, AccountNumber, PositionId, Label
 from nautilus_trader.model.objects cimport ValidString, Quantity, Money, Price
 from nautilus_trader.model.order cimport  AtomicOrder
-from nautilus_trader.serialization.keys cimport *  # Imports all cdef keys
+from nautilus_trader.serialization.constants cimport *
 from nautilus_trader.serialization.base cimport (
     OrderSerializer,
     CommandSerializer,

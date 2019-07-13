@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-# <copyright file="keys.pxd" company="Nautech Systems Pty Ltd">
+# <copyright file="constants.pxd" company="Nautech Systems Pty Ltd">
 #  Copyright (C) 2015-2019 Nautech Systems Pty Ltd. All rights reserved.
 #  The use of this source code is governed by the license as found in the LICENSE.md file.
 #  http://www.nautechsystems.io
@@ -9,9 +9,9 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
-cdef str NONE
 cdef str UTF8
 
+cdef str NONE
 cdef str TYPE
 cdef str ID
 cdef str CANCEL_REASON
