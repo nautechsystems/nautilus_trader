@@ -9,8 +9,8 @@
 
 # cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
 
-from nautilus_trader.model.objects cimport Symbol, Price, Tick, Bar, Instrument
-from nautilus_trader.serialization.base cimport InstrumentSerializer
+from nautilus_trader.model.objects cimport Symbol, Price, Tick, Bar, BarType, Instrument
+from nautilus_trader.serialization.base cimport DataSerializer, InstrumentSerializer
 
 
 cdef class MsgPackInstrumentSerializer(InstrumentSerializer):
@@ -21,9 +21,19 @@ cdef class MsgPackInstrumentSerializer(InstrumentSerializer):
     cpdef Instrument deserialize(self, bytes instrument_bytes)
 
 
-cdef class DataSerializer:
+cdef class DataMapper:
     """
-    Provides a serializer for data objects.
+    Provides a data mapper for data objects.
     """
 
-    cpdef object serialize_ticks(self, list ticks)
+    cpdef dict map_ticks(self, list ticks)
+    cpdef dict map_bars(self, list bars, BarType bar_type)
+    cpdef dict map_instruments(self, list instruments)
+
+
+cdef class BsonDataSerializer(DataSerializer):
+    """
+    Provides a serializer for data objects to BSON specification.
+    """
+    cpdef bytes serialize(self, dict data)
+    cpdef dict deserialize(self, bytes data_bytes)

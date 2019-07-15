@@ -14,6 +14,32 @@ from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.objects cimport Instrument
 
 
+cdef class DataSerializer:
+    """
+    The abstract base class for all data serializers.
+    """
+
+    cpdef bytes serialize(self, dict data):
+        """
+        Serialize the given data mapping to bytes.
+
+        :param: data: The data to serialize.
+        :return: bytes.
+        """
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
+    cpdef dict deserialize(self, bytes data_bytes):
+        """
+        Deserialize the given bytes to a mapping of data.
+
+        :param: data_bytes: The data bytes to deserialize.
+        :return: Dict.
+        """
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
+
 cdef class OrderSerializer:
     """
     The abstract base class for all order serializers.
