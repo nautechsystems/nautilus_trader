@@ -16,7 +16,8 @@ from bson import BSON
 from bson.raw_bson import RawBSONDocument
 from decimal import Decimal
 
-from nautilus_trader.model.objects cimport Symbol, Price, BarSpecification, Bar, Tick, Instrument, Quantity
+from nautilus_trader.core.precondition cimport Precondition
+from nautilus_trader.model.objects cimport Symbol, Price, BarSpecification, Bar, BarType, Tick, Instrument, Quantity
 from nautilus_trader.model.enums import Broker, Venue, Currency, OrderSide, OrderType, TimeInForce, SecurityType
 from nautilus_trader.model.c_enums.venue cimport venue_string
 from nautilus_trader.model.c_enums.brokerage cimport Broker, broker_string
@@ -27,7 +28,7 @@ from nautilus_trader.model.c_enums.currency cimport Currency, currency_string
 from nautilus_trader.model.c_enums.security_type cimport SecurityType, security_type_string
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.serialization.constants cimport *
-from nautilus_trader.serialization.base cimport InstrumentSerializer
+from nautilus_trader.serialization.base cimport DataSerializer, InstrumentSerializer
 from nautilus_trader.serialization.common cimport *
 
 
@@ -142,18 +143,69 @@ cdef class MsgPackInstrumentSerializer(InstrumentSerializer):
             timestamp=convert_string_to_datetime(unpacked[TIMESTAMP]))
 
 
-cdef class DataSerializer:
+cdef class DataMapper:
     """
-    Provides a serializer for data objects.
+    Provides a data mapper for data objects.
     """
 
-    cpdef object serialize_ticks(self, list ticks):
+    cpdef dict map_ticks(self, list ticks):
+        Precondition.not_empty(ticks, 'ticks')
+        Precondition.type(ticks[0], Tick, 'ticks')
+
+        cdef dict data = {
+            'DataType': '[Tick]',
+            'Symbol': ticks[0].symbol.value,
+            'Values': [str(tick) for tick in ticks]
+        }
+
+        return data
+
+    cpdef dict map_bars(self, list bars, BarType bar_type):
+        Precondition.not_empty(bars, 'bars')
+        Precondition.type(bars[0], Bar, 'bars')
+
+        cdef dict data = {
+            'DataType': '[Bar]',
+            'BarType': str(bar_type),
+            'Values': [str(bar) for bar in bars]
+        }
+
+        return data
+
+    cpdef dict map_instruments(self, list instruments):
+        Precondition.not_empty(instruments, 'instruments')
+        Precondition.type(instruments[0], Instrument, 'instruments')
+
+        cdef dict data = {
+            'DataType': '[Instrument]',
+        }
+
+        return data
+
+
+cdef class BsonDataSerializer(DataSerializer):
+    """
+    Provides a serializer for data objects for the BSON specification.
+    """
+
+    cpdef bytes serialize(self, dict data):
         """
-        Serialize the given tick.
-        
-        :param ticks: The ticks to serialize.
-        :return: RawBSONDocument.
+        Serialize the given data to bytes.
+
+        :param: data: The data to serialize.
+        :return: bytes.
+        :raises: ValueError: If the data is empty.
         """
-        return RawBSONDocument(BSON.encode({
-            "Symbol": ticks[0].symbol.value,
-            "Values": [str(tick) for tick in ticks]}))
+        Precondition.not_empty(data, 'data')
+
+        data['Encoding'] = 'BSON1.1'
+        return bytes(RawBSONDocument(BSON.encode(data)).raw)
+
+    cpdef dict deserialize(self, bytes data_bytes):
+        """
+        Deserialize the given bytearray to a data object.
+
+        :param: data_bytes: The data bytearray to deserialize.
+        :return: object.
+        """
+        return BSON.decode(data_bytes)

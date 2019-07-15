@@ -596,13 +596,6 @@ cdef class Tick:
         else:
             return 1
 
-    cdef str values_str(self):
-        """
-        Return the string representation of the ticks quote values and timestamp.
-        :return: str.
-        """
-        return f"{self.bid},{self.ask},{self.timestamp.isoformat()}"
-
     def __hash__(self) -> int:
         """"
         Override the default hash implementation.
@@ -613,13 +606,13 @@ cdef class Tick:
         """
         :return: The str() string representation of the tick.
         """
-        return f"{self.symbol},{self.bid},{self.ask},{self.timestamp.isoformat()}"
+        return f"{self.bid},{self.ask},{self.timestamp.isoformat()}"
 
     def __repr__(self) -> str:
         """
         :return: The repr() string representation of the tick.
         """
-        return f"<{self.__class__.__name__}({str(self)}) object at {id(self)}>"
+        return f"<{self.__class__.__name__}({self.symbol},{str(self)}) object at {id(self)}>"
 
 
 cdef class BarSpecification:

@@ -25,7 +25,8 @@ class DataSerializerTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
-        self.serializer = DataSerializer()
+        self.mapper = DataMapper()
+        self.serializer = BsonDataSerializer()
         self.test_ticks = TestDataProvider.usdjpy_test_ticks()
 
     def test_can_serialize_and_deserialize_ticks(self):
@@ -35,13 +36,18 @@ class DataSerializerTests(unittest.TestCase):
                     Price('1.00001'),
                     UNIX_EPOCH)
 
+        data = self.mapper.map_ticks([tick])
+
         # Act
-        serialized = self.serializer.serialize_ticks([tick])
-        deserialized = bson.BSON.decode(serialized.raw)
+        serialized = self.serializer.serialize(data)
+
+        print(type(data))
+        print(data)
+        print(type(serialized))
+        deserialized = self.serializer.deserialize(serialized)
 
         print(deserialized)
-        print(type(deserialized))
-
 
         # Assert
+        self.assertEqual(data, deserialized)
 

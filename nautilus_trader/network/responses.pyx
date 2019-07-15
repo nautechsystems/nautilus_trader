@@ -22,7 +22,8 @@ cdef class DataResponse(Response):
 
     def __init__(self,
                  str data_type,
-                 bytearray data,
+                 str data_encoding,
+                 bytes data,
                  GUID correlation_id,
                  GUID response_id,
                  datetime response_timestamp):
@@ -30,6 +31,7 @@ cdef class DataResponse(Response):
         Initializes a new instance of the TickDataResponse class.
 
         :param data_type: The response data type.
+        :param data_encoding: The encoding for the data.
         :param data: The response data.
         :param correlation_id: The correlation identifier.
         :param response_id: The response identifier.

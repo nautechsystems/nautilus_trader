@@ -17,4 +17,5 @@ cdef class DataResponse(Response):
     Represents a response of data.
     """
     cdef readonly str data_type
-    cdef readonly bytearray data
+    cdef readonly str data_encoding
+    cdef readonly bytes data
