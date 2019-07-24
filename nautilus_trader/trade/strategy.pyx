@@ -32,7 +32,8 @@ from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.common.guid cimport GuidFactory, LiveGuidFactory
 from nautilus_trader.model.commands cimport CollateralInquiry, SubmitOrder, SubmitAtomicOrder, ModifyOrder, CancelOrder
 from nautilus_trader.data.tools cimport IndicatorUpdater
-Indicator = object
+
+Indicator = object # TODO: When able change this to; from nautilus_indicators.core cimport Indicator
 
 
 cdef class TradeStrategy:
