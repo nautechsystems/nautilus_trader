@@ -149,8 +149,9 @@ cdef class DataMapper:
         Precondition.not_empty(ticks, 'ticks')
         Precondition.type(ticks[0], Tick, 'ticks')
 
+
         cdef dict data = {
-            'DataType': '[Tick]',
+            'DataType': type(ticks[0]).__name__,
             'Symbol': ticks[0].symbol.value,
             'Values': [str(tick) for tick in ticks]
         }
@@ -162,7 +163,7 @@ cdef class DataMapper:
         Precondition.type(bars[0], Bar, 'bars')
 
         cdef dict data = {
-            'DataType': '[Bar]',
+            'DataType': type(bars[0]).__name__,
             'BarType': str(bar_type),
             'Values': [str(bar) for bar in bars]
         }
@@ -174,7 +175,7 @@ cdef class DataMapper:
         Precondition.type(instruments[0], Instrument, 'instruments')
 
         cdef dict data = {
-            'DataType': '[Instrument]',
+            'DataType': type(instruments[0]).__name__,
         }
 
         return data
@@ -195,14 +196,13 @@ cdef class BsonDataSerializer(DataSerializer):
         """
         Precondition.not_empty(data, 'data')
 
-        data['Encoding'] = 'BSON1.1'
         return bytes(RawBSONDocument(BSON.encode(data)).raw)
 
     cpdef dict deserialize(self, bytes data_bytes):
         """
-        Deserialize the given bytearray to a data object.
+        Deserialize the given bytes to a data object.
 
-        :param: data_bytes: The data bytearray to deserialize.
-        :return: object.
+        :param: data_bytes: The data bytes to deserialize.
+        :return: Dict.
         """
         return BSON.decode(data_bytes)

@@ -6,6 +6,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+ENCODING = 'Encoding'
 UTF8 = 'utf-8'
 
 NONE = 'NONE'
@@ -76,6 +77,7 @@ ROLL_OVER_INTEREST_BUY = 'RollOverInterestBuy'
 ROLL_OVER_INTEREST_SELL = 'RollOverInterestSell'
 
 CORRELATION_ID = 'CorrelationId'
+DATA = 'Data'
 BARS = 'Bars'
 TICKS = 'Ticks'
 INSTRUMENTS = 'Instruments'
