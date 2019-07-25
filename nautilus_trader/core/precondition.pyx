@@ -198,7 +198,7 @@ cdef class Precondition:
                 f"(the lengths of {collection1_name} and {collection2_name} were not equal, lengths = {len(collection1)} and {len(collection2)}).")
 
     @staticmethod
-    cdef positive(double value, str param_name):
+    cdef positive(float value, str param_name):
         """
         Check the preconditions value is positive (> 0.)
 
@@ -210,7 +210,7 @@ cdef class Precondition:
             raise ValueError(f"{PRE_FAILED} (the {param_name} was not positive, value was {value}).")
 
     @staticmethod
-    cdef not_negative(double value, str param_name):
+    cdef not_negative(float value, str param_name):
         """
         Check the preconditions value is not negative (>= 0).
 
@@ -223,10 +223,10 @@ cdef class Precondition:
 
     @staticmethod
     cdef in_range(
-            double value,
+            float value,
             str param_name,
-            double start,
-            double end):
+            float start,
+            float end):
         """
         Check the preconditions value is within the specified range (inclusive).
 
