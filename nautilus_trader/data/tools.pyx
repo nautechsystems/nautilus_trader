@@ -296,7 +296,7 @@ cdef class IndicatorUpdater:
             features[output] = []
 
         cdef Bar bar
-        cdef float value
+        cdef tuple value
         for bar in bars:
             self.update_bar(bar)
             for value in self._get_values():
@@ -314,8 +314,8 @@ cdef class IndicatorUpdater:
         for output in self._outputs:
             features[output] = []
 
-        cdef Bar bar
-        cdef float value
+        cdef DataBar bar
+        cdef tuple value
         for bar in bars:
             self.update_databar(bar)
             for value in self._get_values():
