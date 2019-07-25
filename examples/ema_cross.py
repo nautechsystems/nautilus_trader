@@ -18,8 +18,8 @@ from nautilus_trader.data.analyzers import SpreadAnalyzer, LiquidityAnalyzer
 from nautilus_trader.trade.strategy import TradeStrategy
 from nautilus_trader.trade.sizing import FixedRiskSizer
 
-from inv_indicators.average.ema import ExponentialMovingAverage
-from inv_indicators.atr import AverageTrueRange
+from nautilus_indicators.average.ema import ExponentialMovingAverage
+from nautilus_indicators.atr import AverageTrueRange
 
 
 class EMACrossPy(TradeStrategy):
