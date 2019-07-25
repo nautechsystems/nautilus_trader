@@ -36,15 +36,15 @@ cdef class Precondition:
             str collection1_name,
             str collection2_name)
     @staticmethod
-    cdef positive(double value, str param_name)
+    cdef positive(float value, str param_name)
     @staticmethod
-    cdef not_negative(double value, str param_name)
+    cdef not_negative(float value, str param_name)
     @staticmethod
     cdef in_range(
-            double value,
+            float value,
             str param_name,
-            double start,
-            double end)
+            float start,
+            float end)
     @staticmethod
     cdef not_empty(object argument, str param_name)
     @staticmethod
