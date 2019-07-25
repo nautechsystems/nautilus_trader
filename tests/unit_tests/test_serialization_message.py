@@ -843,57 +843,25 @@ class MsgPackResponseSerializerTests(unittest.TestCase):
         # Fixture Setup
         self.serializer = MsgPackResponseSerializer()
 
-    # def test_can_serialize_and_deserialize_tick_data_responses(self):
-    #     # Arrange
-    #     ticks = bytearray()
-    #     ticks.extend(b'\x000.80000,0.80010')
-    #     ticks.extend(b'\x000.80000,0.80010')
-    #
-    #     response = TickDataResponse(
-    #         Symbol('AUDUSD', Venue.FXCM),
-    #         ticks,
-    #         GUID(uuid4()),
-    #         GUID(uuid4()),
-    #         UNIX_EPOCH)
-    #
-    #     # Act
-    #     serialized = self.serializer.serialize(response)
-    #     deserialized = self.serializer.deserialize(serialized)
-    #
-    #     # Assert
-    #     self.assertTrue(isinstance(deserialized, TickDataResponse))
-    #     self.assertTrue(ticks, deserialized.ticks)
-    #
-    #     print(deserialized.ticks)
-    #
-    # def test_can_deserialize__ticks(self):
-    #     # Arrange
-    #     tick_data = TestDataProvider.usdjpy_test_ticks()
-    #     bid_data = TestDataProvider.usdjpy_1min_bid()[:1000]
-    #     ask_data = TestDataProvider.usdjpy_1min_ask()[:1000]
-    #     self.tick_builder = TickBuilder(symbol=TestStubs.instrument_usdjpy().symbol,
-    #                                     decimal_precision=5,
-    #                                     tick_data=tick_data,
-    #                                     bid_data=bid_data,
-    #                                     ask_data=ask_data)
-    #
-    #     # Act
-    #     ticks = self.tick_builder.build_ticks_all()
-    #
-    #     # Act
-    #     result = serialize_ticks(ticks)
-    #
-    #     # Assert
-    #     print(result)
-    #
-    # def test_can_deserialize_order_tick_data_response_from_csharp(self):
-    #     # Arrange
-    #     # Base64 bytes string from C# MsgPack.Cli
-    #     base64 = 'hqRUeXBlsFRpY2tEYXRhUmVzcG9uc2WtQ29ycmVsYXRpb25JZNkkNzgyYjA1NWYtNmIyYi00Njg4LTg5ZGQtMTk5ZDAxMjYwZmRhoklk2SRkYzhkNWRjNS1hMzRmLTQ5MDctODg1Ny1jNWIzMGU2MGE4ZDOpVGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWqZTeW1ib2yrQVVEVVNELkZYQ02lVGlja3PEVZLEKDEuMDAwMDAsMS4wMDAwMCwxOTcwLTAxLTAxVDAwOjAxOjAwLjAwMFrEKDEuMDAwMTAsMS4wMDAyMCwxOTcwLTAxLTAxVDAwOjAyOjAwLjAwMFo='
-    #     body = b64decode(base64)
-    #
-    #     # Act
-    #     result = self.serializer.deserialize(body)
-    #
-    #     # Assert
-    #     self.assertTrue(isinstance(result, TickDataResponse))
+    def test_can_serialize_and_deserialize_data_responses(self):
+        # Arrange
+        data = b'\x01 \x00'
+        encoding = 'BSON1.1'
+
+        response = DataResponse(
+            data=data,
+            encoding=encoding,
+            correlation_id=GUID(uuid4()),
+            response_id=GUID(uuid4()),
+            response_timestamp=UNIX_EPOCH)
+
+        # Act
+        serialized = self.serializer.serialize(response)
+        deserialized = self.serializer.deserialize(serialized)
+
+        # Assert
+        self.assertTrue(isinstance(deserialized, DataResponse))
+        self.assertEqual(data, deserialized.data)
+        self.assertEqual(encoding, deserialized.encoding)
+
+        print(deserialized)

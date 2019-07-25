@@ -6,6 +6,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+cdef str ENCODING
 cdef str UTF8
 
 cdef str NONE
@@ -76,6 +77,7 @@ cdef str ROLL_OVER_INTEREST_BUY
 cdef str ROLL_OVER_INTEREST_SELL
 
 cdef str CORRELATION_ID
+cdef str DATA
 cdef str BARS
 cdef str TICKS
 cdef str INSTRUMENTS

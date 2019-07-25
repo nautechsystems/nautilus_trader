@@ -9,6 +9,7 @@
 from nautilus_trader.core.message cimport Command, Event, Request, Response
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.serialization.base cimport (
+    DataSerializer,
     OrderSerializer,
     EventSerializer,
     CommandSerializer,

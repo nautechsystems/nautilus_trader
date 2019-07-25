@@ -42,6 +42,7 @@ from nautilus_trader.serialization.common cimport (
     parse_symbol,
     parse_bar_spec
 )
+from nautilus_trader.serialization.data cimport BsonDataSerializer
 from nautilus_trader.model.commands cimport (
     CollateralInquiry,
     SubmitOrder,
@@ -71,6 +72,7 @@ from nautilus_trader.network.requests cimport (
     InstrumentsRequest
 )
 from nautilus_trader.network.responses cimport DataResponse
+
 
 
 cdef class MsgPackOrderSerializer(OrderSerializer):
@@ -587,8 +589,8 @@ cdef class MsgPackResponseSerializer(ResponseSerializer):
         }
 
         if isinstance(response, DataResponse):
-            package[SYMBOL] = response.symbol.value
-            package[TICKS] = response.ticks
+            package[DATA] = response.data
+            package[ENCODING] = response.encoding
             return msgpack.packb(package)
         else:
             raise ValueError("Cannot serialize response (unrecognized response.")
@@ -607,7 +609,7 @@ cdef class MsgPackResponseSerializer(ResponseSerializer):
 
         # Manually unpack and decode
         for k, v in unpacked_raw.items():
-            if k not in (b'Ticks', b'Bars', b'Instruments'):
+            if k not in b'Data':
                 if isinstance(v, bytes):
                     unpacked[k.decode(UTF8)] = v.decode(UTF8)
                 else:
@@ -622,8 +624,8 @@ cdef class MsgPackResponseSerializer(ResponseSerializer):
 
         if response_type == DataResponse.__name__:
             return DataResponse(
-                parse_symbol(unpacked[SYMBOL]),
-                bytearray(unpacked[TICKS]),
+                bytes(unpacked[DATA]),
+                unpacked[ENCODING],
                 correlation_id,
                 response_id,
                 response_timestamp)
