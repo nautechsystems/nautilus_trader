@@ -7,8 +7,6 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-# cython: language_level=3, boundscheck=False, nonecheck=False
-
 from cpython.datetime cimport datetime
 
 

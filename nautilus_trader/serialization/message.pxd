@@ -7,8 +7,6 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-# cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
-
 from nautilus_trader.core.message cimport Command, Event, Request, Response
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.serialization.base cimport (

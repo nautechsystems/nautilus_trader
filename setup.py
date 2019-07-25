@@ -33,7 +33,6 @@ REQUIREMENTS = ['cython',
                 'pymongo',
                 'msgpack',
                 'psutil',
-                'inv_indicators',
                 'empyrical',
                 'pymc3']
 
@@ -82,6 +81,7 @@ def make_extension(ext_name) -> Extension:
 
 # Generate list of extensions
 extensions = [make_extension(name) for name in scan_directories(DIRECTORIES)]
+compiler_directives = {'language_level': 3, 'profile': Profile_Hooks}
 
 setup(
     name=PACKAGE_NAME,
@@ -93,7 +93,7 @@ setup(
     package_data={'': ['*.pyx', '*.pxd']},
     license=LICENSE,
     requires=REQUIREMENTS,
-    ext_modules=cythonize(extensions, compiler_directives={'profile': Profile_Hooks}),
+    ext_modules=cythonize(extensions, compiler_directives=compiler_directives),
     cmdclass={'build_ext': Cython.Build.build_ext},
     options={'build_ext': {'inplace': False, 'force': False}},
     zip_safe=False)

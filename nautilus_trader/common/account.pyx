@@ -7,8 +7,6 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-# cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
-
 from nautilus_trader.model.c_enums.brokerage cimport Broker
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.events cimport AccountEvent

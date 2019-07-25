@@ -7,8 +7,6 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-# cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
-
 from nautilus_trader.common.brokerage cimport CommissionCalculator
 from nautilus_trader.common.execution cimport ExecutionClient
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition

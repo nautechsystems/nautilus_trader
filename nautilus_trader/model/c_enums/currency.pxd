@@ -7,8 +7,6 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-# cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
-
 
 cpdef enum Currency:
     UNKNOWN = -1,
@@ -33,7 +31,6 @@ cpdef enum Currency:
     XPT = 962,
     XAU = 959,
     ZAR = 710
-
 
 cdef inline str currency_string(int value):
     if value == 36:

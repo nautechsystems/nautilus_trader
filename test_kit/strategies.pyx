@@ -7,8 +7,6 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-# cython: language_level=3, boundscheck=False
-
 from datetime import timedelta
 
 from inv_indicators.atr import AverageTrueRange

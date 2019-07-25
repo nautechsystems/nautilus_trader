@@ -7,8 +7,6 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-# cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
-
 from nautilus_trader.model.objects cimport Price, Symbol, Tick, BarType, Bar
 from nautilus_trader.model.order cimport Order
 
