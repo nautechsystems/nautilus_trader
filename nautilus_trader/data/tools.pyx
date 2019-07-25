@@ -17,7 +17,7 @@ from pandas.core.frame import DataFrame
 from nautilus_trader.core.precondition cimport Precondition
 from nautilus_trader.core.functions cimport with_utc_index
 from nautilus_trader.model.objects cimport Symbol, Price, Bar, DataBar, Tick
-Indicator = object # (see the development document)
+Indicator = object # (see documentation/development.md)
 
 cdef str POINT = 'point'
 cdef str PRICE = 'price'
