@@ -7,8 +7,6 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-# cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
-
 from collections import deque
 from decimal import Decimal
 from typing import List, Deque

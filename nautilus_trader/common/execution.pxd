@@ -7,8 +7,6 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-# cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
-
 from cpython.datetime cimport datetime
 
 from nautilus_trader.common.account cimport Account

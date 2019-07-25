@@ -7,8 +7,6 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-# cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
-
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.model.identifiers cimport OrderId, TraderId, StrategyId, PositionId
 from nautilus_trader.model.objects cimport ValidString, Price

@@ -7,9 +7,6 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-# cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
-
-
 cdef class Precondition:
     @staticmethod
     cdef true(bint predicate, str description)

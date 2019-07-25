@@ -7,8 +7,6 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-# cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
-
 import numpy as np
 import pandas as pd
 

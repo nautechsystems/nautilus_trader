@@ -172,3 +172,5 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 28/04/19 15175781 function calls (14947405 primitive calls) in 15.073 seconds (increase resolution of time events)
         # 29/04/19 15128798 function calls (14900430 primitive calls) in 14.235 seconds (add bid-ask bar pair class)
         # 09/07/19 15323948 function calls (15095596 primitive calls) in 14.408 seconds (performance check)
+        # 25/07/19 15274063 function calls (15045703 primitive calls) in 15.573 seconds (removed compiler directives for perf)
+

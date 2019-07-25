@@ -7,8 +7,6 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-# cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
-
 from nautilus_trader.model.objects cimport Symbol, Price, Tick, Bar, BarType, Instrument
 from nautilus_trader.serialization.base cimport DataSerializer, InstrumentSerializer
 

@@ -7,8 +7,6 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-# cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
-
 from cpython.datetime cimport datetime, timedelta
 
 from nautilus_trader.common.logger cimport LoggerAdapter

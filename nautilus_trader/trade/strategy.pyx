@@ -7,8 +7,6 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-# cython: language_level=3, boundscheck=False, wraparound=False, nonecheck=False
-
 from cpython.datetime cimport datetime
 from collections import deque
 from typing import Callable, Dict, List, Deque
@@ -33,7 +31,7 @@ from nautilus_trader.common.guid cimport GuidFactory, LiveGuidFactory
 from nautilus_trader.model.commands cimport CollateralInquiry, SubmitOrder, SubmitAtomicOrder, ModifyOrder, CancelOrder
 from nautilus_trader.data.tools cimport IndicatorUpdater
 
-Indicator = object # TODO: When able change this to; from nautilus_indicators.core cimport Indicator
+Indicator = object
 
 
 cdef class TradeStrategy:
