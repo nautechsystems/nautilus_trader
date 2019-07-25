@@ -79,7 +79,6 @@ def make_extension(ext_name) -> Extension:
         define_macros=[('CYTHON_TRACE', '1')])
 
 
-# Generate list of extensions
 extensions = [make_extension(name) for name in scan_directories(DIRECTORIES)]
 compiler_directives = {'language_level': 3, 'profile': Profile_Hooks}
 

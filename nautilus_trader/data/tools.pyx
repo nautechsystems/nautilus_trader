@@ -17,7 +17,7 @@ from pandas.core.frame import DataFrame
 from nautilus_trader.core.precondition cimport Precondition
 from nautilus_trader.core.functions cimport with_utc_index
 from nautilus_trader.model.objects cimport Symbol, Price, Bar, DataBar, Tick
-from inv_indicators.base.indicator import Indicator
+Indicator = object # (see the development document)
 
 cdef str POINT = 'point'
 cdef str PRICE = 'price'
@@ -274,6 +274,7 @@ cdef class IndicatorUpdater:
 
         :param bar: The bar to update with.
         """
+        cdef str param
         self._input_method(*[bar.__getattribute__(param).value for param in self._input_params])
 
     cpdef void update_databar(self, DataBar bar):
@@ -282,6 +283,7 @@ cdef class IndicatorUpdater:
 
         :param bar: The bar to update with.
         """
+        cdef str param
         self._input_method(*[bar.__getattribute__(param) for param in self._input_params])
 
     cpdef dict build_features(self, list bars):
@@ -294,9 +296,10 @@ cdef class IndicatorUpdater:
         for output in self._outputs:
             features[output] = []
 
+        cdef Bar bar
+        cdef float value
         for bar in bars:
             self.update_bar(bar)
-
             for value in self._get_values():
                 features[value[0]].append(value[1])
 
@@ -312,9 +315,10 @@ cdef class IndicatorUpdater:
         for output in self._outputs:
             features[output] = []
 
+        cdef Bar bar
+        cdef float value
         for bar in bars:
             self.update_databar(bar)
-
             for value in self._get_values():
                 features[value[0]].append(value[1])
 
@@ -322,6 +326,5 @@ cdef class IndicatorUpdater:
 
     cdef list _get_values(self):
         # Create a list of the current indicator outputs. The list will contain
-        # a tuple of the name of the output and the float value.
-        # :return: List[(str, float)].
+        # a tuple of the name of the output and the float value. Returns List[(str, float)].
         return [(output, self._indicator.__getattribute__(output)) for output in self._outputs]
