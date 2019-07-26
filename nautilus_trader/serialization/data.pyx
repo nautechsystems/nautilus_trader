@@ -68,7 +68,7 @@ cpdef list deserialize_bars(bytes[:] bar_bytes_array):
     Return a list of deserialized bars from the given bars bytes.
     
     :param bar_bytes_array: The bar bytes to deserialize.
-    :return: List[Tick].
+    :return: List[Bar].
     """
     cdef list bars = []
     cdef int i
@@ -79,7 +79,7 @@ cpdef list deserialize_bars(bytes[:] bar_bytes_array):
     return bars
 
 
-cdef class MsgPackInstrumentSerializer(InstrumentSerializer):
+cdef class BsonInstrumentSerializer(InstrumentSerializer):
     """
     Provides an instrument serializer for the MessagePack specification.
     """
@@ -91,7 +91,7 @@ cdef class MsgPackInstrumentSerializer(InstrumentSerializer):
         :param instrument: The instrument to serialize.
         :return: bytes.
         """
-        return msgpack.packb({
+        return bytes(RawBSONDocument(BSON.encode({
             ID: instrument.id.value,
             SYMBOL: instrument.symbol.value,
             BROKER_SYMBOL: instrument.broker_symbol,
@@ -109,7 +109,7 @@ cdef class MsgPackInstrumentSerializer(InstrumentSerializer):
             ROLL_OVER_INTEREST_BUY: str(instrument.rollover_interest_buy),
             ROLL_OVER_INTEREST_SELL: str(instrument.rollover_interest_sell),
             TIMESTAMP: convert_datetime_to_string(instrument.timestamp),
-        })
+        })).raw)
 
     cpdef Instrument deserialize(self, bytes instrument_bytes):
         """
@@ -118,26 +118,26 @@ cdef class MsgPackInstrumentSerializer(InstrumentSerializer):
         :param instrument_bytes: The bytes to deserialize.
         :return: Instrument.
         """
-        cdef dict unpacked = msgpack.unpackb(instrument_bytes, raw=False)
+        cdef dict deserialized = BSON.decode(instrument_bytes)
 
         return Instrument(
-            instrument_id=InstrumentId(unpacked[ID]),
-            symbol=parse_symbol(unpacked[SYMBOL]),
-            broker_symbol=unpacked[BROKER_SYMBOL],
-            quote_currency=Currency[(unpacked[QUOTE_CURRENCY])],
-            security_type=SecurityType[(unpacked[SECURITY_TYPE])],
-            tick_precision=unpacked[TICK_PRECISION],
-            tick_size=Decimal(unpacked[TICK_SIZE]),
-            round_lot_size=Quantity(unpacked[ROUND_LOT_SIZE]),
-            min_stop_distance_entry=unpacked[MIN_STOP_DISTANCE_ENTRY],
-            min_stop_distance=unpacked[MIN_STOP_DISTANCE],
-            min_limit_distance_entry=unpacked[MIN_LIMIT_DISTANCE_ENTRY],
-            min_limit_distance=unpacked[MIN_LIMIT_DISTANCE],
-            min_trade_size=Quantity(unpacked[MIN_TRADE_SIZE]),
-            max_trade_size=Quantity(unpacked[MAX_TRADE_SIZE]),
-            rollover_interest_buy=Decimal(unpacked[ROLL_OVER_INTEREST_BUY]),
-            rollover_interest_sell=Decimal(unpacked[ROLL_OVER_INTEREST_SELL]),
-            timestamp=convert_string_to_datetime(unpacked[TIMESTAMP]))
+            instrument_id=InstrumentId(deserialized[ID]),
+            symbol=parse_symbol(deserialized[SYMBOL]),
+            broker_symbol=deserialized[BROKER_SYMBOL],
+            quote_currency=Currency[(deserialized[QUOTE_CURRENCY])],
+            security_type=SecurityType[(deserialized[SECURITY_TYPE])],
+            tick_precision=deserialized[TICK_PRECISION],
+            tick_size=Decimal(deserialized[TICK_SIZE]),
+            round_lot_size=Quantity(deserialized[ROUND_LOT_SIZE]),
+            min_stop_distance_entry=deserialized[MIN_STOP_DISTANCE_ENTRY],
+            min_stop_distance=deserialized[MIN_STOP_DISTANCE],
+            min_limit_distance_entry=deserialized[MIN_LIMIT_DISTANCE_ENTRY],
+            min_limit_distance=deserialized[MIN_LIMIT_DISTANCE],
+            min_trade_size=Quantity(deserialized[MIN_TRADE_SIZE]),
+            max_trade_size=Quantity(deserialized[MAX_TRADE_SIZE]),
+            rollover_interest_buy=Decimal(deserialized[ROLL_OVER_INTEREST_BUY]),
+            rollover_interest_sell=Decimal(deserialized[ROLL_OVER_INTEREST_SELL]),
+            timestamp=convert_string_to_datetime(deserialized[TIMESTAMP]))
 
 
 cdef class DataMapper:

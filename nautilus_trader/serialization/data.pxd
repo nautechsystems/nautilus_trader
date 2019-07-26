@@ -10,14 +10,6 @@ from nautilus_trader.model.objects cimport BarType, Instrument
 from nautilus_trader.serialization.base cimport DataSerializer, InstrumentSerializer
 
 
-cdef class MsgPackInstrumentSerializer(InstrumentSerializer):
-    """
-    Provides an instrument serializer for the MessagePack specification.
-    """
-    cpdef bytes serialize(self, Instrument instrument)
-    cpdef Instrument deserialize(self, bytes instrument_bytes)
-
-
 cdef class DataMapper:
     """
     Provides a data mapper for data objects.
@@ -25,6 +17,14 @@ cdef class DataMapper:
     cpdef dict map_ticks(self, list ticks)
     cpdef dict map_bars(self, list bars, BarType bar_type)
     cpdef dict map_instruments(self, list instruments)
+
+
+cdef class BsonInstrumentSerializer(InstrumentSerializer):
+    """
+    Provides an instrument serializer for the MessagePack specification.
+    """
+    cpdef bytes serialize(self, Instrument instrument)
+    cpdef Instrument deserialize(self, bytes instrument_bytes)
 
 
 cdef class BsonDataSerializer(DataSerializer):
