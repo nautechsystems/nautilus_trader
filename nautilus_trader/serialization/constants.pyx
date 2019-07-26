@@ -78,6 +78,7 @@ ROLL_OVER_INTEREST_SELL = 'RollOverInterestSell'
 
 CORRELATION_ID = 'CorrelationId'
 DATA = 'Data'
+VALUES = 'Values'
 BARS = 'Bars'
 TICKS = 'Ticks'
 INSTRUMENTS = 'Instruments'

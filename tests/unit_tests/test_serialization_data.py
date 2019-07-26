@@ -76,3 +76,29 @@ class DataSerializerTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(data, deserialized)
+
+    def test_can_deserialize_tick_data_response_from_csharp(self):
+        # Arrange
+        # Base64 bytes string from C# MsgPack.Cli
+        bar_type = TestStubs.bartype_audusd_1min_bid()
+        bar1 = Bar(Price('1.00001'),
+                   Price('1.00004'),
+                   Price('1.00002'),
+                   Price('1.00003'),
+                   100000,
+                   UNIX_EPOCH)
+
+        data = self.mapper.map_bars([bar1, bar1], bar_type)
+
+        # Act
+        serialized = self.serializer.serialize(data)
+
+        print(type(data))
+        print(data)
+        print(type(serialized))
+        deserialized = self.serializer.deserialize(serialized)
+
+        print(deserialized)
+
+        # Assert
+        self.assertEqual(data, deserialized)

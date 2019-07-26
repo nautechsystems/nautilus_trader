@@ -721,7 +721,7 @@ class MsgPackInstrumentSerializerTests(unittest.TestCase):
 
     def test_can_serialize_and_deserialize_instrument(self):
         # Arrange
-        serializer = MsgPackInstrumentSerializer()
+        serializer = BsonInstrumentSerializer()
 
         instrument = Instrument(
             instrument_id=InstrumentId('AUDUSD.FXCM'),
