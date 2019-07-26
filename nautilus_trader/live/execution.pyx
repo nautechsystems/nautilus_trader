@@ -12,33 +12,39 @@ from queue import Queue
 from threading import Thread
 
 from nautilus_trader.core.precondition cimport Precondition
-from nautilus_trader.model.events cimport Event
+from nautilus_trader.core.message cimport Command, Event, Response
+from nautilus_trader.model.commands cimport (
+    CollateralInquiry,
+    SubmitOrder,
+    SubmitAtomicOrder,
+    CancelOrder,
+    ModifyOrder)
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport Clock, LiveClock
 from nautilus_trader.common.guid cimport GuidFactory, LiveGuidFactory
 from nautilus_trader.common.logger cimport Logger
 from nautilus_trader.common.execution cimport ExecutionClient
-from nautilus_trader.serialization.base cimport CommandSerializer, EventSerializer
-from nautilus_trader.model.commands cimport Command, CollateralInquiry
-from nautilus_trader.model.commands cimport SubmitOrder, SubmitAtomicOrder, CancelOrder, ModifyOrder
-from nautilus_trader.network.workers import RequestWorker, SubscriberWorker
-from nautilus_trader.serialization.message cimport MsgPackCommandSerializer
-from nautilus_trader.serialization.message cimport MsgPackEventSerializer
 from nautilus_trader.trade.portfolio cimport Portfolio
-
-cdef str UTF8 = 'utf-8'
+from nautilus_trader.network.workers import RequestWorker, SubscriberWorker
+from nautilus_trader.serialization.base cimport CommandSerializer, ResponseSerializer, EventSerializer
+from nautilus_trader.serialization.message cimport (
+    MsgPackCommandSerializer,
+    MsgPackResponseSerializer,
+    MsgPackEventSerializer
+)
 
 
 cdef class LiveExecClient(ExecutionClient):
     """
     Provides an execution client for live trading utilizing a ZMQ transport
-    with the execution service.
+    to the execution service.
     """
     cdef object _message_bus
     cdef object _thread
     cdef object _commands_worker
     cdef object _events_worker
     cdef CommandSerializer _command_serializer
+    cdef ResponseSerializer _response_serializer
     cdef EventSerializer _event_serializer
 
     cdef readonly object zmq_context
@@ -48,7 +54,9 @@ cdef class LiveExecClient(ExecutionClient):
             str host='localhost',
             int commands_port=5555,
             int events_port=5556,
+            str events_topic='nautilus_execution_events',
             CommandSerializer command_serializer=MsgPackCommandSerializer(),
+            ResponseSerializer response_serializer=MsgPackResponseSerializer(),
             EventSerializer event_serializer=MsgPackEventSerializer(),
             Account account=Account(),
             Portfolio portfolio=Portfolio(),
@@ -62,6 +70,7 @@ cdef class LiveExecClient(ExecutionClient):
         :param commands_port: The execution service commands port.
         :param events_port: The execution service events port.
         :param command_serializer: The command serializer for the client.
+        :param response_serializer: The response serializer for the client.
         :param event_serializer: The event serializer for the client.
         :param clock: The clock for the component.
         :param guid_factory: The GUID factory for the component.
@@ -87,17 +96,18 @@ cdef class LiveExecClient(ExecutionClient):
             self.zmq_context,
             host,
             commands_port,
-            self._deserialize_command_acknowledgement,
+            self._deserialize_response,
             logger)
         self._events_worker = SubscriberWorker(
             "ExecClient.EventSubscriber",
             self.zmq_context,
             host,
             events_port,
-            "nautilus_execution_events",
+            events_topic,
             self._deserialize_event,
             logger)
         self._command_serializer = command_serializer
+        self._response_serializer = response_serializer
         self._event_serializer = event_serializer
 
         self._log.info(f"ZMQ v{zmq.pyzmq_version()}.")
@@ -141,7 +151,6 @@ cdef class LiveExecClient(ExecutionClient):
         self._message_bus.put(event)
 
     cpdef void _process(self):
-        # Process the message bus of commands and events
         while True:
             item = self._message_bus.get()
             if isinstance(item, Event):
@@ -149,52 +158,34 @@ cdef class LiveExecClient(ExecutionClient):
             elif isinstance(item, Command):
                 self._execute_command(item)
 
-    cdef void _collateral_inquiry(self, CollateralInquiry command):
-        # Send a collateral inquiry command to the execution service
-        cdef bytes message = self._command_serializer.serialize(command)
+    cpdef void _collateral_inquiry(self, CollateralInquiry command):
+        self._send_command(command)
 
-        self._commands_worker.send(message)
+    cpdef void _submit_order(self, SubmitOrder command):
+        self._send_command(command)
+
+    cpdef void _submit_atomic_order(self, SubmitAtomicOrder command):
+        self._send_command(command)
+
+    cpdef void _modify_order(self, ModifyOrder command):
+        self._send_command(command)
+
+    cpdef void _cancel_order(self, CancelOrder command):
+        self._send_command(command)
+
+    cpdef void _send_command(self, Command command):
+        self._commands_worker.send(self._command_serializer.serialize(command))
         self._log.debug(f"Sent {command}")
 
-    cdef void _submit_order(self, SubmitOrder command):
-        # Send a submit order command to the execution service
-        cdef bytes message = self._command_serializer.serialize(command)
+    cpdef void _deserialize_event(self, bytes event_bytes):
+        cdef Event event = self._event_serializer.deserialize(event_bytes)
 
-        self._commands_worker.send(message)
-        self._log.debug(f"Sent {command}")
-
-    cdef void _submit_atomic_order(self, SubmitAtomicOrder command):
-        # Send a submit atomic order command to the execution service
-        cdef bytes message = self._command_serializer.serialize(command)
-
-        self._commands_worker.send(message)
-        self._log.debug(f"Sent {command}")
-
-    cdef void _modify_order(self, ModifyOrder command):
-        # Send a modify order command to the execution service
-        cdef bytes message = self._command_serializer.serialize(command)
-
-        self._commands_worker.send(message)
-        self._log.debug(f"Sent {command}")
-
-    cdef void _cancel_order(self, CancelOrder command):
-        # Send a cancel order command to the execution service
-        cdef bytes message = self._command_serializer.serialize(command)
-
-        self._commands_worker.send(message)
-        self._log.debug(f"Sent {command}")
-
-    cdef void _deserialize_event(self, bytes body):
-        # Deserialize the given bytes into an event object and send to _handle_event()
-        cdef Event event = self._event_serializer.deserialize(body)
-
-        # If no registered strategies then print message to console
+        # If no registered strategies then just log
         if len(self._registered_strategies) == 0:
             self._log.debug(f"Received {event}")
 
         self._handle_event(event)
 
-    cdef void _deserialize_command_acknowledgement(self, bytes body):
-        # Deserialize the given bytes into a command object
-        cdef Command command = self._command_serializer.deserialize(body)
-        self._log.debug(f"Received order command ack for command_id {command.id}.")
+    cpdef void _deserialize_response(self, bytes response_bytes):
+        cdef Response response = self._response_serializer.deserialize(response_bytes)
+        self._log.debug(f"Received {response}")
