@@ -127,7 +127,7 @@ cdef class BsonInstrumentSerializer(InstrumentSerializer):
             quote_currency=Currency[(deserialized[QUOTE_CURRENCY])],
             security_type=SecurityType[(deserialized[SECURITY_TYPE])],
             tick_precision=deserialized[TICK_PRECISION],
-            tick_size=Decimal(deserialized[TICK_SIZE]),
+            tick_size=Decimal(str(deserialized[TICK_SIZE])),
             round_lot_size=Quantity(deserialized[ROUND_LOT_SIZE]),
             min_stop_distance_entry=deserialized[MIN_STOP_DISTANCE_ENTRY],
             min_stop_distance=deserialized[MIN_STOP_DISTANCE],
@@ -135,8 +135,8 @@ cdef class BsonInstrumentSerializer(InstrumentSerializer):
             min_limit_distance=deserialized[MIN_LIMIT_DISTANCE],
             min_trade_size=Quantity(deserialized[MIN_TRADE_SIZE]),
             max_trade_size=Quantity(deserialized[MAX_TRADE_SIZE]),
-            rollover_interest_buy=Decimal(deserialized[ROLL_OVER_INTEREST_BUY]),
-            rollover_interest_sell=Decimal(deserialized[ROLL_OVER_INTEREST_SELL]),
+            rollover_interest_buy=Decimal(str(deserialized[ROLL_OVER_INTEREST_BUY])),
+            rollover_interest_sell=Decimal(str(deserialized[ROLL_OVER_INTEREST_SELL])),
             timestamp=convert_string_to_datetime(deserialized[TIMESTAMP]))
 
 

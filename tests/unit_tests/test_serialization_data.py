@@ -8,6 +8,7 @@
 
 import bson
 import unittest
+from base64 import b64encode, b64decode
 
 from datetime import datetime
 
@@ -76,6 +77,19 @@ class DataSerializerTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(data, deserialized)
+
+    def test_can_serialize_and_deserialize_instruments(self):
+        # Arrange
+        # Base64 bytes string from C# MongoDB.Bson
+        base64 = 'sAEAAAJJZAAMAAAAQVVEVVNELkZYQ00AAlN5bWJvbAAMAAAAQVVEVVNELkZYQ00AAkJyb2tlclN5bWJvbAAIAAAAQVVEL1VTRAACUXVvdGVDdXJyZW5jeQAEAAAAQVVEAAJTZWN1cml0eVR5cGUABgAAAEZPUkVYABBUaWNrUHJlY2lzaW9uAAUAAAATVGlja1NpemUAAQAAAAAAAAAAAAAAAAA2MBBSb3VuZExvdFNpemUA6AMAABBNaW5TdG9wRGlzdGFuY2VFbnRyeQAAAAAAEE1pblN0b3BEaXN0YW5jZQAAAAAAEE1pbkxpbWl0RGlzdGFuY2VFbnRyeQAAAAAAEE1pbkxpbWl0RGlzdGFuY2UAAAAAABBNaW5UcmFkZVNpemUAAQAAABBNYXhUcmFkZVNpemUAgPD6AhNSb2xsb3ZlckludGVyZXN0QnV5AAEAAAAAAAAAAAAAAAAAQDATUm9sbG92ZXJJbnRlcmVzdFNlbGwAAQAAAAAAAAAAAAAAAABAMAJUaW1lc3RhbXAAGQAAADE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWgAA'
+        encoded = b64decode(base64)
+
+        # Act
+        serializer = BsonInstrumentSerializer()
+        deserialized = serializer.deserialize(encoded)
+
+        # Assert
+        self.assertEqual('AUDUSD.FXCM', deserialized.symbol.value)
 
     def test_can_deserialize_tick_data_response_from_csharp(self):
         # Arrange
