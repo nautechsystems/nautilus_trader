@@ -481,29 +481,7 @@ cdef class TradeStrategy:
 
         return self._data_client.get_instrument(symbol)
 
-    cpdef void historical_bars(self, BarType bar_type, int quantity=0):
-        """
-        Download the historical bars for the given parameters from the data service.
-
-        Note: Logs warning if the downloaded bars does not equal the requested quantity.
-
-        :param bar_type: The historical bar type to download.
-        :param quantity: The number of historical bars to download (>= 0)
-        Note: If zero then will download to specified bar capacity.
-        :raises ValueError: If the quantity is negative (< 0).
-        """
-        Precondition.not_negative(quantity, 'quantity')
-
-        if not self.is_data_client_registered:
-            self.log.error("Cannot download historical bars (data client not registered).")
-            return
-
-        if quantity == 0:
-            quantity = self.bar_capacity
-
-        self._data_client.historical_bars(bar_type, quantity, self.handle_bar)
-
-    cpdef void historical_bars_from(self, BarType bar_type, datetime from_datetime):
+    cpdef void historical_bars(self, BarType bar_type, datetime from_datetime=None, datetime to_datetime=None):
         """
         Download the historical bars for the given parameters from the data service.
 
@@ -511,6 +489,7 @@ cdef class TradeStrategy:
 
         :param bar_type: The historical bar type to download.
         :param from_datetime: The datetime from which the historical bars should be downloaded.
+        :param to_datetime: The datetime to which the historical bars should be downloaded.
         :raises ValueError: If the from_datetime is not less than datetime.utcnow().
         """
         Precondition.true(from_datetime < self.clock.time_now(),
@@ -520,7 +499,7 @@ cdef class TradeStrategy:
             self.log.error("Cannot download historical bars (data client not registered).")
             return
 
-        self._data_client.historical_bars_from(bar_type, from_datetime, self.handle_bar)
+        self._data_client.request_bars(bar_type, from_datetime, to_datetime, self.handle_bar)
 
     cpdef void subscribe_bars(self, BarType bar_type):
         """

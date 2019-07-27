@@ -12,7 +12,7 @@ import unittest
 from datetime import datetime
 from pandas import Timestamp
 
-from nautilus_trader.model.enums import Resolution
+from nautilus_trader.model.enums import Venue, Resolution
 from nautilus_trader.model.objects import Tick, Bar
 from nautilus_trader.model.events import TimeEvent
 from nautilus_trader.backtest.config import BacktestConfig
@@ -35,6 +35,7 @@ class BacktestEngineTests(unittest.TestCase):
         ask_data = {USDJPY_FXCM: {Resolution.MINUTE: TestDataProvider.usdjpy_1min_ask()}}
 
         self.engine = BacktestEngine(
+            venue=Venue.FXCM,
             instruments=instruments,
             data_ticks=tick_data,
             data_bars_bid=bid_data,
@@ -173,6 +174,7 @@ class BacktestEngineTests(unittest.TestCase):
         tick_tock = TickTock(instrument=instrument, bar_type=bar_type)
 
         engine = BacktestEngine(
+            venue=Venue.FXCM,
             instruments=instruments,
             data_ticks=tick_data,
             data_bars_bid=bid_data,
@@ -209,6 +211,7 @@ class BacktestEngineTests(unittest.TestCase):
         tick_tock = TickTock(instrument=instrument, bar_type=bar_type)
 
         engine = BacktestEngine(
+            venue=Venue.FXCM,
             instruments=instruments,
             data_ticks=tick_data,
             data_bars_bid=bid_data,

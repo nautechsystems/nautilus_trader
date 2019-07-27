@@ -25,6 +25,7 @@ from typing import List, Dict, Callable
 from nautilus_trader.version import __version__
 from nautilus_trader.core.precondition cimport Precondition
 from nautilus_trader.core.functions cimport as_utc_timestamp, format_zulu_datetime, pad_string
+from nautilus_trader.model.c_enums.venue cimport Venue
 from nautilus_trader.model.c_enums.currency cimport currency_string
 from nautilus_trader.model.c_enums.resolution cimport Resolution, resolution_string
 from nautilus_trader.model.objects cimport Symbol, Instrument, Tick
@@ -49,6 +50,7 @@ cdef class BacktestEngine:
     """
 
     def __init__(self,
+                 Venue venue,
                  list instruments: List[Instrument],
                  dict data_ticks: Dict[Symbol, DataFrame],
                  dict data_bars_bid: Dict[Symbol, Dict[Resolution, DataFrame]],
@@ -59,12 +61,13 @@ cdef class BacktestEngine:
         """
         Initializes a new instance of the BacktestEngine class.
 
-        :param strategies: The strategies to backtest.
-        :param data_bars_bid: The historical bid market data needed for the backtest.
-        :param data_bars_ask: The historical ask market data needed for the backtest.
-        :param strategies: The initial strategies for the backtest.
+        :param venue: The venue for the backtest engine.
+        :param data_ticks: The tick data for the backtest engine.
+        :param data_bars_bid: The bid bar data needed for the backtest engine.
+        :param data_bars_ask: The ask bar data needed for the backtest engine.
+        :param strategies: The initial strategies for the backtest engine.
         :param fill_model: The initial fill model for the backtest engine.
-        :param config: The configuration for the backtest.
+        :param config: The configuration for the backtest engine.
         :raises ValueError: If the instruments list contains a type other than Instrument.
         :raises ValueError: If the strategies list contains a type other than TradeStrategy.
         """
@@ -114,6 +117,7 @@ cdef class BacktestEngine:
             logger=self.test_logger)
         self.instruments = instruments
         self.data_client = BacktestDataClient(
+            venue=venue,
             instruments=instruments,
             data_ticks=data_ticks,
             data_bars_bid=data_bars_bid,
