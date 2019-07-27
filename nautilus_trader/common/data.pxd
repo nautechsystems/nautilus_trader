@@ -28,6 +28,8 @@ cdef class DataClient:
     cdef dict _instrument_handlers
     cdef dict _instruments
 
+    cdef readonly Venue venue
+
     cpdef datetime time_now(self)
     cpdef list subscribed_ticks(self)
     cpdef list subscribed_bars(self)
@@ -43,14 +45,14 @@ cdef class DataClient:
     cpdef void request_ticks(self, Symbol symbol, datetime from_datetime, datetime to_datetime, callback)
     cpdef void request_bars(self, BarType bar_type, datetime from_datetime, datetime to_datetime, callback)
     cpdef void request_instrument(self, Symbol symbol, callback)
-    cpdef void request_instruments(self, Venue venue, callback)
+    cpdef void request_instruments(self, callback)
     cpdef void subscribe_ticks(self, Symbol symbol, handler)
     cpdef void subscribe_bars(self, BarType bar_type, handler)
     cpdef void subscribe_instrument(self, Symbol symbol, handler)
     cpdef void unsubscribe_ticks(self, Symbol symbol, handler)
     cpdef void unsubscribe_bars(self, BarType bar_type, handler)
     cpdef void unsubscribe_instrument(self, Symbol symbol, handler)
-    cpdef void update_instruments(self, Venue venue)
+    cpdef void update_instruments(self)
     cpdef dict get_all_instruments(self)
     cpdef Instrument get_instrument(self, Symbol symbol)
 

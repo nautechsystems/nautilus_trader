@@ -263,7 +263,7 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         Check for any residual objects and log warnings if any are found.
         """
-        self._check_residuals()
+        self.check_residuals()
 
         for order_list in self.atomic_child_orders.values():
             for order in order_list:

@@ -47,6 +47,7 @@ cdef class BacktestDataClient(DataClient):
     """
 
     def __init__(self,
+                 Venue venue,
                  list instruments: List[Instrument],
                  dict data_ticks: Dict[Symbol, DataFrame],
                  dict data_bars_bid: Dict[Symbol, Dict[Resolution, DataFrame]],
@@ -56,6 +57,7 @@ cdef class BacktestDataClient(DataClient):
         """
         Initializes a new instance of the BacktestDataClient class.
 
+        :param venue: The venue for the data client.
         :param instruments: The instruments needed for the backtest.
         :param data_ticks: The historical tick data needed for the backtest.
         :param data_bars_bid: The historical bid bar data needed for the backtest.
@@ -81,7 +83,7 @@ cdef class BacktestDataClient(DataClient):
         Precondition.not_none(clock, 'clock')
         Precondition.not_none(logger, 'logger')
 
-        super().__init__(clock, TestGuidFactory(), logger)
+        super().__init__(venue, clock, TestGuidFactory(), logger)
         self.data_ticks = data_ticks                    # type: Dict[Symbol, DataFrame]
         self.data_bars_bid = data_bars_bid              # type: Dict[Symbol, Dict[Resolution, DataFrame]]
         self.data_bars_ask = data_bars_ask              # type: Dict[Symbol, Dict[Resolution, DataFrame]]
@@ -338,12 +340,6 @@ cdef class BacktestDataClient(DataClient):
         """
         self._log.info("Disconnected.")
 
-    cpdef void update_instruments(self, Venue venue):
-        """
-        Update all instruments from the database.
-        """
-        self._log.info(f"Updated all instruments for the {venue} venue.")
-
     cpdef void request_ticks(
             self,
             Symbol symbol,
@@ -394,8 +390,8 @@ cdef class BacktestDataClient(DataClient):
         Precondition.is_in(symbol, self.data_providers, 'symbol', 'data_providers')
         Precondition.type_or_none(handler, Callable, 'handler')
 
+        self._add_tick_handler(symbol, handler)
         self.data_providers[symbol].set_tick_iteration_index(self.time_now())
-        self._subscribe_ticks(symbol, handler)
 
     cpdef void unsubscribe_ticks(self, Symbol symbol, handler: Callable):
         """
@@ -410,7 +406,7 @@ cdef class BacktestDataClient(DataClient):
         Precondition.type_or_none(handler, Callable, 'handler')
 
         self.data_providers[symbol].deregister_ticks()
-        self._unsubscribe_ticks(symbol, handler)
+        self._remove_tick_handler(symbol, handler)
 
     cpdef void subscribe_bars(self, BarType bar_type, handler: Callable):
         """
@@ -425,10 +421,10 @@ cdef class BacktestDataClient(DataClient):
         Precondition.type_or_none(handler, Callable, 'handler')
 
         cdef start = datetime.utcnow()
+        self._add_bar_handler(bar_type, handler)
         if bar_type not in self.data_providers[bar_type.symbol].bars:
             self._build_bars(bar_type)
         self.data_providers[bar_type.symbol].set_bar_iteration_index(bar_type, self.time_now())
-        self._subscribe_bars(bar_type, handler)
 
     cpdef void unsubscribe_bars(self, BarType bar_type, handler: Callable):
         """
@@ -443,7 +439,13 @@ cdef class BacktestDataClient(DataClient):
         Precondition.type_or_none(handler, Callable, 'handler')
 
         self.data_providers[bar_type.symbol].deregister_bars(bar_type)
-        self._unsubscribe_bars(bar_type, handler)
+        self._remove_bar_handler(bar_type, handler)
+
+    cpdef void update_instruments(self):
+        """
+        Update all instruments from the database.
+        """
+        self._log.info(f"Updated all instruments for the {self.venue} venue.")
 
 
 cdef class DataProvider:

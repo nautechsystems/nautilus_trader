@@ -55,6 +55,7 @@ cdef class ExecutionClient:
         self._order_strategy_index = {}   # type: Dict[OrderId, StrategyId]
         self._orders_active = {}          # type: Dict[StrategyId, Dict[OrderId, Order]]
         self._orders_completed = {}       # type: Dict[StrategyId, Dict[OrderId, Order]]
+
         self.command_count = 0
         self.event_count = 0
 
@@ -84,55 +85,31 @@ cdef class ExecutionClient:
         """
         return self._portfolio
 
-    cpdef void check_residuals(self):
-        # Check for any residual active orders and log warnings if any are found
-        for orders in self._orders_active.values():
-            for order in orders.values():
-                self._log.warning(f"Residual active {order}")
-
     cpdef void connect(self):
-        """
-        Connect to the execution service.
-        """
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
     cpdef void disconnect(self):
-        """
-        Disconnect from the execution service.
-        """
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
+    cpdef void check_residuals(self):
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
     cpdef void reset(self):
-        """
-        Reset the execution client.
-        """
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
     cpdef void dispose(self):
-        """
-        Dispose of the execution client.
-        """
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
     cpdef void execute_command(self, Command command):
-        """
-        Execute the given command with the execution client.
-        
-        :param command: The command to execute.
-        """
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
     cpdef void handle_event(self, Event event):
-        """
-        Handle the given event with the execution client.
-        
-        :param event: The event to handle
-        """
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
@@ -397,6 +374,12 @@ cdef class ExecutionClient:
         # Send a cancel order command to the execution service
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
+
+    cdef void _check_residuals(self):
+        # Check for any residual active orders and log warnings if any are found
+        for orders in self._orders_active.values():
+            for order in orders.values():
+                self._log.warning(f"Residual active {order}")
 
     cdef void _reset(self):
         # Reset the execution client by returning all stateful internal values to their initial value

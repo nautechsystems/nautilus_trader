@@ -23,16 +23,19 @@ cdef class DataClient:
     """
 
     def __init__(self,
+                 Venue venue,
                  Clock clock,
                  GuidFactory guid_factory,
                  Logger logger):
         """
         Initializes a new instance of the DataClient class.
 
+        :param venue: The venue for the data client.
         :param clock: The clock for the component.
-        :param clock: The GUID factory for the component.
+        :param guid_factory: The GUID factory for the component.
         :param logger: The logger for the component.
         """
+        self.venue = venue
         self._clock = clock
         self._guid_factory = guid_factory
         self._log = LoggerAdapter(f"DataClient", logger)
@@ -133,7 +136,7 @@ cdef class DataClient:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void request_instruments(self, Venue venue, callback: Callable):
+    cpdef void request_instruments(self, callback: Callable):
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
@@ -161,7 +164,7 @@ cdef class DataClient:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void update_instruments(self, Venue venue):
+    cpdef void update_instruments(self):
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 

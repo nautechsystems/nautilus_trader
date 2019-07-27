@@ -94,7 +94,7 @@ cdef class Trader:
         self._data_client.connect()
         self._exec_client.connect()
 
-        self._data_client.update_all_instruments()
+        self._data_client.update_instruments()
 
         for strategy in self.strategies:
             strategy.start()
