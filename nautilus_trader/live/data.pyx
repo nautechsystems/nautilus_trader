@@ -262,12 +262,12 @@ cdef class LiveDataClient(DataClient):
 
         self._log.info(f"Requested instrument for {symbol}.")
 
-    cpdef void request_instruments(self, Venue venue, callback: Callable):
+    cpdef void request_instruments(self, callback: Callable):
         """
         Update all instruments from the live database.
         """
         cdef InstrumentsRequest request = InstrumentsRequest(
-            venue,
+            self.venue,
             self._guid_factory.generate(),
             self.time_now())
 
@@ -276,15 +276,13 @@ cdef class LiveDataClient(DataClient):
             self._handle_response,
             callback)
 
-        self._log.info(f"Requested all instruments for the {venue} venue.")
+        self._log.info(f"Requested all instruments for the {self.venue} venue.")
 
-    cpdef void update_instruments(self, Venue venue):
+    cpdef void update_instruments(self):
         """
-        Update all instruments for the given venue.
-        
-        :param venue: The venue for the instruments update.
+        Update all instruments for the data clients venue.
         """
-        self.request_instruments(venue, self._handle_instruments_response)
+        self.request_instruments(self._handle_instruments_response)
 
     cpdef void subscribe_ticks(self, Symbol symbol, handler: Callable):
         """
