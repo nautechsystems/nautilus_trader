@@ -14,10 +14,12 @@ from pandas import DataFrame
 from typing import Set, List, Dict, Callable
 
 from nautilus_trader.core.precondition cimport Precondition
+from nautilus_trader.model.c_enums.venue cimport Venue
 from nautilus_trader.model.c_enums.quote_type cimport QuoteType
 from nautilus_trader.model.c_enums.resolution cimport Resolution, resolution_string
 from nautilus_trader.model.objects cimport Symbol, Instrument, Tick, BarType, Bar, BarSpecification
 from nautilus_trader.common.clock cimport TestClock
+from nautilus_trader.common.guid cimport TestGuidFactory
 from nautilus_trader.common.logger cimport Logger
 from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.data.tools cimport TickBuilder, BarBuilder
@@ -79,7 +81,7 @@ cdef class BacktestDataClient(DataClient):
         Precondition.not_none(clock, 'clock')
         Precondition.not_none(logger, 'logger')
 
-        super().__init__(clock, logger)
+        super().__init__(clock, TestGuidFactory(), logger)
         self.data_ticks = data_ticks                    # type: Dict[Symbol, DataFrame]
         self.data_bars_bid = data_bars_bid              # type: Dict[Symbol, Dict[Resolution, DataFrame]]
         self.data_bars_ask = data_bars_ask              # type: Dict[Symbol, Dict[Resolution, DataFrame]]
@@ -336,61 +338,49 @@ cdef class BacktestDataClient(DataClient):
         """
         self._log.info("Disconnected.")
 
-    cpdef void update_all_instruments(self):
+    cpdef void update_instruments(self, Venue venue):
         """
         Update all instruments from the database.
         """
-        self._log.info(f"Updated all instruments.")
+        self._log.info(f"Updated all instruments for the {venue} venue.")
 
-    cpdef void update_instrument(self, Symbol symbol):
+    cpdef void request_ticks(
+            self,
+            Symbol symbol,
+            datetime from_datetime,
+            datetime to_datetime,
+            callback: Callable):
         """
         Update the instrument corresponding to the given symbol (if found).
         Will log a warning is symbol is not found.
 
-        :param symbol: The symbol to update.
+        :param symbol: The symbol for the request.
+        :param from_datetime: The from date time for the request.
+        :param to_datetime: The to date time for the request.
+        :param callback: The callback for the response.
         """
-        self._log.info(f"Updated instrument {symbol}.")
+        Precondition.type(callback, Callable, 'callback')
 
-    cpdef void historical_bars(
-            self,
-            BarType bar_type,
-            int quantity,
-            handler: Callable):
-        """
-        Download the historical bars for the given parameters from the data
-        service, then pass them to the callable bar handler.
+        self._log.info(f"Simulating download of historical ticks for {symbol}.")
 
-        :param bar_type: The historical bar type to download.
-        :param quantity: The number of historical bars to download (optional can be None - will download all).
-        :param handler: The bar handler to pass the bars to.
-        :raises ValueError: If the quantity is not None and not positive (> 0).
-        :raises ValueError: If the handler is not of type Callable.
-        """
-        if quantity is not None:
-            Precondition.positive(quantity, 'quantity')
-        Precondition.type(handler, Callable, 'handler')
-
-        self._log.info(f"Simulating download of {quantity} historical bars for {bar_type}.")
-
-    cpdef void historical_bars_from(
+    cpdef void request_bars(
             self,
             BarType bar_type,
             datetime from_datetime,
-            handler: Callable):
+            datetime to_datetime,
+            callback: Callable):
         """
-        Download the historical bars for the given parameters from the data
-        service, then pass them to the callable bar handler.
+        Update the instrument corresponding to the given symbol (if found).
+        Will log a warning is symbol is not found.
 
-        :param bar_type: The historical bar type to download.
-        :param from_datetime: The datetime from which the historical bars should be downloaded.
-        :param handler: The handler to pass the bars to.
-        :raises ValueError: If the handler is not of type Callable.
-        :raises ValueError: If the from_datetime is not less than that current datetime.
+        :param bar_type: The bar type for the request.
+        :param from_datetime: The from date time for the request.
+        :param to_datetime: The to date time for the request.
+        :param callback: The callback for the response.
         """
-        Precondition.type(handler, Callable, 'handler')
-        Precondition.true(from_datetime < self._clock.time_now(), 'from_datetime < self._clock.time_now().')
+        Precondition.type(callback, Callable, 'callback')
 
-        self._log.info(f"Simulating download of historical bars from {from_datetime} for {bar_type}.")
+        self._log.info(f"Simulating download of historical bars for {bar_type}.")
 
     cpdef void subscribe_ticks(self, Symbol symbol, handler: Callable):
         """

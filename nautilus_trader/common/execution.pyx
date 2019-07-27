@@ -84,6 +84,12 @@ cdef class ExecutionClient:
         """
         return self._portfolio
 
+    cpdef void check_residuals(self):
+        # Check for any residual active orders and log warnings if any are found
+        for orders in self._orders_active.values():
+            for order in orders.values():
+                self._log.warning(f"Residual active {order}")
+
     cpdef void connect(self):
         """
         Connect to the execution service.
@@ -98,9 +104,16 @@ cdef class ExecutionClient:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void check_residuals(self):
+    cpdef void reset(self):
         """
-        Check for any residual objects and log warnings if any are found.
+        Reset the execution client.
+        """
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
+    cpdef void dispose(self):
+        """
+        Dispose of the execution client.
         """
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
@@ -384,12 +397,6 @@ cdef class ExecutionClient:
         # Send a cancel order command to the execution service
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
-
-    cdef void _check_residuals(self):
-        # Check for any residual active orders and log warnings if any are found
-        for orders in self._orders_active.values():
-            for order in orders.values():
-                self._log.warning(f"Residual active {order}")
 
     cdef void _reset(self):
         # Reset the execution client by returning all stateful internal values to their initial value

@@ -16,7 +16,6 @@ from nautilus_trader.core.precondition cimport Precondition
 from nautilus_trader.common.logger cimport Logger, LoggerAdapter
 
 cdef str UTF8 = 'utf-8'
-cdef bytes DELIMITER = b' '
 
 
 cdef class MQWorker:
@@ -26,39 +25,42 @@ cdef class MQWorker:
 
     def __init__(
             self,
-            str name,
+            str worker_name,
+            str service_name,
+            str service_address,
+            int service_port,
             context: Context,
             int socket_type,
-            str host,
-            int port,
-            handler: Callable,
             Logger logger=None):
         """
         Initializes a new instance of the MQWorker class.
 
-        :param name: The name of the worker.
+        :param worker_name: The name of the worker.
+        :param service_address: The service name.
+        :param service_address: The service host address.
+        :param service_port: The service port.
         :param context: The ZeroMQ context.
-        :param host: The service host address.
-        :param port: The service port.
-        :param handler: The response handler.
+        :param socket_type: The ZeroMQ socket type.
         :param logger: The logger for the component.
-        :raises ValueError: If the name is not a valid string.
-        :raises ValueError: If the host is not a valid string.
-        :raises ValueError: If the port is not in range [0, 65535].
+        :raises ValueError: If the worker_name is not a valid string.
+        :raises ValueError: If the service_name is not a valid string.
+        :raises ValueError: If the service_address is not a valid string.
+        :raises ValueError: If the service_port is not in range [0, 65535].
         """
-        Precondition.valid_string(name, 'name')
-        Precondition.valid_string(host, 'host')
-        Precondition.in_range(port, 'port', 0, 65535)
+        Precondition.valid_string(worker_name, 'worker_name')
+        Precondition.valid_string(service_name, 'service_name')
+        Precondition.valid_string(service_address, 'service_address')
+        Precondition.in_range(service_port, 'service_port', 0, 65535)
 
         super().__init__()
         self._thread = Thread(target=self._open_connection, daemon=True)
-        self.name = name
+        self.name = worker_name
+        self._service_name = service_name
+        self._service_address = f'tcp://{service_address}:{service_port}'
         self._context = context
-        self._service_address = f'tcp://{host}:{port}'
-        self._handler = handler
-        self._log = LoggerAdapter(name, logger)
         self._socket = self._context.socket(socket_type)
         self._socket.setsockopt(zmq.LINGER, 0)
+        self._log = LoggerAdapter(worker_name, logger)
         self._cycles = 0
 
     cpdef void start(self):
@@ -69,19 +71,6 @@ cdef class MQWorker:
         in a separate thread).
         """
         self._thread.start()
-
-    cpdef void send(self, bytes message):
-        """
-        Send the given message to the service socket.
-
-        :param message: The message bytes to send.
-        """
-        self._socket.send(message)
-        self._cycles += 1
-        self._log.debug(f"Sending message[{self._cycles}] {message}")
-
-        cdef bytes response = self._socket.recv()
-        self._log.debug(f"Received {response.decode(UTF8)}[{self._cycles}] response.")
 
     cpdef void stop(self):
         """
@@ -108,46 +97,65 @@ cdef class RequestWorker(MQWorker):
 
     def __init__(
             self,
-            str name,
+            str worker_name,
+            str service_name,
+            str service_address,
+            int service_port,
             context: Context,
-            str host,
-            int port,
-            handler: Callable,
             Logger logger=None):
         """
         Initializes a new instance of the RequestWorker class.
 
+        :param worker_name: The name of the worker.
+        :param service_name: The service name.
+        :param service_address: The service host address.
+        :param service_port: The service port.
         :param context: The ZeroMQ context.
-        :param host: The service host address.
-        :param port: The service port.
-        :param handler: The response handler.
         :param logger: The logger for the component.
-        :raises ValueError: If the name is not a valid string.
-        :raises ValueError: If the host is not a valid string.
-        :raises ValueError: If the port is not in range [0, 65535].
+        :raises ValueError: If the worker_name is not a valid string.
+        :raises ValueError: If the service_name is not a valid string.
+        :raises ValueError: If the service_address is not a valid string.
+        :raises ValueError: If the service_port is not in range [0, 65535].
         """
-        Precondition.valid_string(name, 'name')
-        Precondition.valid_string(host, 'host')
-        Precondition.in_range(port, 'port', 0, 65535)
+        Precondition.valid_string(worker_name, 'worker_name')
+        Precondition.valid_string(service_name, 'service_name')
+        Precondition.valid_string(service_address, 'service_address')
+        Precondition.in_range(service_port, 'service_port', 0, 65535)
 
         super().__init__(
-            name,
+            worker_name,
+            service_name,
+            service_address,
+            service_port,
             context,
             zmq.REQ,
-            host,
-            port,
-            handler,
             logger)
+
+    cpdef void send(self, bytes request, handler: Callable, callback: Callable):
+        """
+        Send the given message to the service socket.
+
+        :param request: The request message bytes to send.
+        :param handler: The handler for the response message.
+        :param callback: The callback for the response message.
+        """
+        self._socket.send(request)
+        self._cycles += 1
+        self._log.debug(f"Sending[{self._cycles}] request {request}")
+
+        cdef bytes response = self._socket.recv()
+        handler(response, callback)
+        self._log.debug(f"Received[{self._cycles}] response {response}.")
 
     cpdef void _open_connection(self):
         # Open a connection to the service
         self._socket.connect(self._service_address)
-        self._log.info(f"Connected to {self._service_address}")
+        self._log.info(f"Connected to {self._service_name} at {self._service_address}")
 
     cpdef void _close_connection(self):
         # Close the connection with the service
         self._socket.disconnect(self._service_address)
-        self._log.info(f"Disconnected from {self._service_address}")
+        self._log.info(f"Disconnected from {self._service_name} at {self._service_address}")
 
 
 cdef class SubscriberWorker(MQWorker):
@@ -157,20 +165,21 @@ cdef class SubscriberWorker(MQWorker):
 
     def __init__(
             self,
-            str name,
+            str worker_name,
+            str service_name,
+            str service_address,
+            int service_port,
             context: Context,
-            str host,
-            int port,
-            str topic,
             handler: Callable,
             Logger logger=None):
         """
         Initializes a new instance of the SubscriberWorker class.
 
+        :param worker_name: The name of the worker.
+        :param service_name: The service name.
+        :param service_address: The service host address.
+        :param service_port: The service port.
         :param context: The ZeroMQ context.
-        :param host: The service host address.
-        :param port: The service port.
-        :param topic: The topic to subscribe to.
         :param handler: The message handler.
         :param logger: The logger for the component.
         :raises ValueError: If the name is not a valid string.
@@ -178,27 +187,40 @@ cdef class SubscriberWorker(MQWorker):
         :raises ValueError: If the port is not in range [0, 65535].
         :raises ValueError: If the topic is not a valid string.
         """
-        Precondition.valid_string(name, 'name')
-        Precondition.valid_string(host, 'host')
-        Precondition.in_range(port, 'port', 0, 65535)
-        Precondition.valid_string(topic, 'topic')
+        Precondition.valid_string(worker_name, 'worker_name')
+        Precondition.valid_string(service_address, 'service_address')
+        Precondition.in_range(service_port, 'port', 0, 65535)
 
         super().__init__(
-            name,
+            worker_name,
+            service_address,
+            service_port,
             context,
             zmq.SUB,
-            host,
-            port,
-            handler,
             logger)
-        self._topic = topic
+
+        self._handler = handler
+
+    cpdef void subscribe(self, str topic):
+        """
+        Subscribe the worker to the given topic.
+        :param topic: The topic to subscribe to.
+        """
+        self._socket.setsockopt(zmq.SUBSCRIBE, self._topic.encode(UTF8))
+        self._log.info(f"Subscribed to topic {self._topic}.")
+
+    cpdef void unsubscribe(self, str topic):
+        """
+        Unsubscribe the worker from the given topic.
+        :param topic: The topic to unsubscribe from.
+        """
+        self._socket.setsockopt(zmq.UNSUBSCRIBE, self._topic.encode(UTF8))
+        self._log.info(f"Unsubscribed from topic {self._topic}.")
 
     cpdef void _open_connection(self):
         # Open a connection to the service
         self._socket.connect(self._service_address)
-        self._log.info(f"Connected to {self._service_address}")
-        self._socket.setsockopt(zmq.SUBSCRIBE, self._topic.encode(UTF8))
-        self._log.info(f"Subscribed to topic {self._topic}.")
+        self._log.info(f"Connected to {self._service_name} at {self._service_address}")
         self._consume_messages()
 
     cpdef void _consume_messages(self):
@@ -207,19 +229,21 @@ cdef class SubscriberWorker(MQWorker):
 
         cdef bytes message
         cdef bytes topic
-        cdef bytes data
+        cdef bytes body
+        cdef str topic_str
 
         while True:
             message = self._socket.recv()
 
             # Split on first occurrence of empty byte delimiter
-            topic, data = message.split(DELIMITER, 1)
+            topic, body = message.split(b' ', 1)
+            topic_str = topic.decode(UTF8)
 
-            self._handler(data)
+            self._handler(topic_str, body)
             self._cycles += 1
-            self._log.debug(f"Received[{self._cycles}] message for topic {topic.decode(UTF8)}: {data}")
+            self._log.debug(f"Received[{self._cycles}] message for topic {topic_str}: {body}")
 
     cpdef void _close_connection(self):
         # Close the connection with the service
         self._socket.disconnect(self._service_address)
-        self._log.info(f"Disconnected from {self._service_address}")
+        self._log.info(f"Disconnected from {self._service_name} at {self._service_address}")

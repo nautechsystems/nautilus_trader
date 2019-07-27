@@ -19,20 +19,20 @@ cdef class DataSerializer:
     cpdef dict deserialize(self, bytes data_bytes)
 
 
-cdef class OrderSerializer:
-    """
-    The abstract base class for all order serializers.
-    """
-    cpdef bytes serialize(self, Order order)
-    cpdef Order deserialize(self, bytes order_bytes)
-
-
 cdef class InstrumentSerializer:
     """
     The abstract base class for all instrument serializers.
     """
     cpdef bytes serialize(self, Instrument instrument)
     cpdef Instrument deserialize(self, bytes instrument_bytes)
+
+
+cdef class OrderSerializer:
+    """
+    The abstract base class for all order serializers.
+    """
+    cpdef bytes serialize(self, Order order)
+    cpdef Order deserialize(self, bytes order_bytes)
 
 
 cdef class CommandSerializer:

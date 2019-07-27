@@ -9,7 +9,7 @@
 from typing import Callable
 
 from nautilus_trader.core.precondition cimport Precondition
-from nautilus_trader.model.objects cimport Tick, BarType, Bar
+from nautilus_trader.model.objects cimport Tick, BarType, Bar, Instrument
 
 
 cdef class Handler:
@@ -67,6 +67,20 @@ cdef class BarHandler(Handler):
     def __init__(self, handler: Callable):
         """
         Initializes a new instance of the BarHandler class.
+
+        :param handler: The callable handler.
+        """
+        super().__init__(handler)
+
+
+cdef class InstrumentHandler(Handler):
+    """
+    Provides a handler for instrument objects.
+    """
+
+    def __init__(self, handler: Callable):
+        """
+        Initializes a new instance of the InstrumentHandler class.
 
         :param handler: The callable handler.
         """

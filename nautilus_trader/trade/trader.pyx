@@ -137,6 +137,8 @@ cdef class Trader:
             strategy.reset()
 
         self.portfolio.reset()
+        self._data_client.reset()
+        self._exec_client.reset()
         self._log.info("Reset.")
 
     cpdef dispose(self):
@@ -149,6 +151,8 @@ cdef class Trader:
 
         self._data_client.disconnect()
         self._exec_client.disconnect()
+        self._data_client.dispose()
+        self._exec_client.dispose()
         self._log.info("Disposed.")
 
     cpdef change_strategies(self, list strategies: List[TradeStrategy]):

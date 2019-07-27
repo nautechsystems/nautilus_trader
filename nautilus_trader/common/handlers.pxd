@@ -31,6 +31,13 @@ cdef class BarHandler(Handler):
     pass
 
 
+cdef class InstrumentHandler(Handler):
+    """
+    Provides a handler for instrument objects.
+    """
+    pass
+
+
 cdef class EventHandler(Handler):
     """
     Provides a handler for event objects.

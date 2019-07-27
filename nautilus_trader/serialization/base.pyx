@@ -37,32 +37,6 @@ cdef class DataSerializer:
         raise NotImplementedError("Method must be implemented in the subclass.")
 
 
-cdef class OrderSerializer:
-    """
-    The abstract base class for all order serializers.
-    """
-
-    cpdef bytes serialize(self, Order order):
-        """
-        Serialize the given order to bytes.
-
-        :param order: The order to serialize.
-        :return: bytes.
-        """
-        # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
-
-    cpdef Order deserialize(self, bytes order_bytes):
-        """
-        Deserialize the given bytes to an order.
-
-        :param order_bytes: The bytes to deserialize.
-        :return: Order.
-        """
-        # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass. ")
-
-
 cdef class InstrumentSerializer:
     """
     The abstract base class for all instrument serializers.
@@ -87,6 +61,32 @@ cdef class InstrumentSerializer:
         """
         # Raise exception if not overridden in implementation.
         raise NotImplementedError("Method must be implemented in the subclass.")
+
+
+cdef class OrderSerializer:
+    """
+    The abstract base class for all order serializers.
+    """
+
+    cpdef bytes serialize(self, Order order):
+        """
+        Serialize the given order to bytes.
+
+        :param order: The order to serialize.
+        :return: bytes.
+        """
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
+    cpdef Order deserialize(self, bytes order_bytes):
+        """
+        Deserialize the given bytes to an order.
+
+        :param order_bytes: The bytes to deserialize.
+        :return: Order.
+        """
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass. ")
 
 
 cdef class CommandSerializer:

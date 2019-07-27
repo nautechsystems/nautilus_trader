@@ -51,7 +51,7 @@ cdef class LiveExecClient(ExecutionClient):
 
     def __init__(
             self,
-            str host='localhost',
+            str service_address='localhost',
             int commands_port=5555,
             int events_port=5556,
             str events_topic='nautilus_execution_events',
@@ -66,7 +66,7 @@ cdef class LiveExecClient(ExecutionClient):
         """
         Initializes a new instance of the LiveExecClient class.
 
-        :param host: The execution service host IP address (default=127.0.0.1).
+        :param service_address: The execution service host IP address (default=127.0.0.1).
         :param commands_port: The execution service commands port.
         :param events_port: The execution service events port.
         :param command_serializer: The command serializer for the client.
@@ -79,7 +79,7 @@ cdef class LiveExecClient(ExecutionClient):
         :raises ValueError: If the commands_port is not in range [0, 65535]
         :raises ValueError: If the events_port is not in range [0, 65535]
         """
-        Precondition.valid_string(host, 'host')
+        Precondition.valid_string(service_address, 'service_address')
         Precondition.in_range(commands_port, 'commands_port', 0, 65535)
         Precondition.in_range(events_port, 'events_port', 0, 65535)
 
@@ -93,19 +93,21 @@ cdef class LiveExecClient(ExecutionClient):
         self.zmq_context = zmq.Context()
         self._commands_worker = RequestWorker(
             'ExecClient.CommandSender',
-            self.zmq_context,
-            host,
+            'nautilus_command_router',
+            service_address,
             commands_port,
+            self.zmq_context,
             self._deserialize_response,
             logger)
         self._events_worker = SubscriberWorker(
-            "ExecClient.EventSubscriber",
-            self.zmq_context,
-            host,
+            'ExecClient.EventSubscriber',
+            'nautilus_events',
+            service_address,
             events_port,
-            events_topic,
+            self.zmq_context,
             self._deserialize_event,
             logger)
+        self._events_worker.subscribe(events_topic)
         self._command_serializer = command_serializer
         self._response_serializer = response_serializer
         self._event_serializer = event_serializer
@@ -126,13 +128,19 @@ cdef class LiveExecClient(ExecutionClient):
         """
         self._commands_worker.stop()
         self._events_worker.stop()
-        #self.zmq_context.term()
 
-    cpdef void check_residuals(self):
+    cpdef void reset(self):
         """
-        Check for any residual objects and log warnings if any are found.
+        Resets the live execution client by clearing all stateful internal values 
+        and returning it to a fresh state.
         """
-        self._check_residuals()
+        self._reset()
+
+    cpdef void dispose(self):
+        """
+        Disposes of the live execution client.
+        """
+        self.zmq_context.term()
 
     cpdef void execute_command(self, Command command):
         """
@@ -177,12 +185,12 @@ cdef class LiveExecClient(ExecutionClient):
         self._commands_worker.send(self._command_serializer.serialize(command))
         self._log.debug(f"Sent {command}")
 
-    cpdef void _deserialize_event(self, bytes event_bytes):
+    cpdef void _deserialize_event(self, str topic, bytes event_bytes):
         cdef Event event = self._event_serializer.deserialize(event_bytes)
 
         # If no registered strategies then just log
         if len(self._registered_strategies) == 0:
-            self._log.debug(f"Received {event}")
+            self._log.info(f"Received {event} for topic {topic}.")
 
         self._handle_event(event)
 
