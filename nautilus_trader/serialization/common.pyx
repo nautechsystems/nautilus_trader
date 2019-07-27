@@ -6,6 +6,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+import re
 import iso8601
 
 from cpython.datetime cimport datetime
@@ -15,7 +16,7 @@ from nautilus_trader.model.c_enums.venue cimport Venue
 from nautilus_trader.model.c_enums.resolution cimport Resolution
 from nautilus_trader.model.c_enums.quote_type cimport QuoteType
 from nautilus_trader.model.identifiers cimport Label
-from nautilus_trader.model.objects cimport Symbol, Price, BarSpecification
+from nautilus_trader.model.objects cimport Symbol, Price, BarSpecification, BarType, Tick, Bar
 from nautilus_trader.serialization.constants cimport *
 
 
@@ -82,7 +83,23 @@ cpdef Symbol parse_symbol(str symbol_string):
     :return: Symbol.
     """
     cdef tuple split_symbol = symbol_string.partition('.')
-    return Symbol(split_symbol[0], Venue[split_symbol[2].upper()])
+    return Symbol(split_symbol[0], Venue[split_symbol[2]])
+
+cpdef Tick parse_tick(Symbol symbol, str tick_string):
+    """
+    Return a parsed a tick from the given UTF-8 string.
+
+    :param symbol: The tick symbol.
+    :param tick_string: The tick string.
+    :return: Tick.
+    """
+    cdef str[:] split_tick = tick_string.split(',')
+
+    return Tick(
+        symbol,
+        Price(split_tick[0]),
+        Price(split_tick[1]),
+        iso8601.parse_date(split_tick[2]))
 
 cpdef BarSpecification parse_bar_spec(str bar_spec_string):
     """
@@ -92,12 +109,44 @@ cpdef BarSpecification parse_bar_spec(str bar_spec_string):
     :param bar_spec_string: The bar specification string to parse.
     :return: BarSpecification.
     """
-    cdef list split1 = bar_spec_string.split('-')
-    cdef list split2 = split1[1].split('[')
+    cdef str[:] split1 = bar_spec_string.split('-')
+    cdef str[:] split2 = split1[1].split('[')
     cdef str resolution = split2[0]
     cdef str quote_type = split2[1].strip(']')
 
     return BarSpecification(
         int(split1[0]),
-        Resolution[resolution.upper()],
-        QuoteType[quote_type.upper()])
+        Resolution[resolution],
+        QuoteType[quote_type])
+
+cpdef BarType parse_bar_type(str bar_type_string):
+    """
+    Return a parsed a bar type from the given UTF-8 string.
+
+    :param bar_type_string: The bar type string to parse.
+    :return: BarType.
+    """
+    cdef str[:] split_string = re.split(r'[.-]+', bar_type_string)
+    cdef str resolution = split_string[3].split('[')[0]
+    cdef str quote_type = split_string[3].split('[')[1].strip(']')
+    cdef Symbol symbol = Symbol(split_string[0], Venue[split_string[1].upper()])
+    cdef BarSpecification bar_spec = BarSpecification(int(split_string[2]),
+                                                          Resolution[resolution.upper()],
+                                                          QuoteType[quote_type.upper()])
+    return BarType(symbol, bar_spec)
+
+cpdef Bar parse_bar(str bar_string):
+    """
+    Return a parsed bar from the given UTF-8 string.
+
+    :param bar_string: The bar string to parse.
+    :return: Bar.
+    """
+    cdef str[:] split_bar = bar_string.split(',')
+
+    return Bar(Price(split_bar[0]),
+               Price(split_bar[1]),
+               Price(split_bar[2]),
+               Price(split_bar[3]),
+               int(split_bar[4]),
+               iso8601.parse_date(split_bar[5]))

@@ -48,9 +48,12 @@ cdef class ExecutionClient:
     cpdef datetime time_now(self)
     cpdef Account get_account(self)
     cpdef Portfolio get_portfolio(self)
+    cpdef void check_residuals(self)
     cpdef void connect(self)
     cpdef void disconnect(self)
-    cpdef void check_residuals(self)
+    cpdef void reset(self)
+    cpdef void dispose(self)
+
     cpdef void execute_command(self, Command command)
     cpdef void handle_event(self, Event event)
     cpdef void register_strategy(self, TradeStrategy strategy)
@@ -70,11 +73,10 @@ cdef class ExecutionClient:
     cdef void _handle_event(self, Event event)
     cdef void _register_order(self, Order order, StrategyId strategy_id, PositionId position_id)
 
-# -- ABSTRACT METHODS ---------------------------------------------------------------------------- #
+# -- ABSTRACT METHOD IMPLEMENTATIONS ------------------------------------------------------------- #
     cdef void _collateral_inquiry(self, CollateralInquiry command)
     cdef void _submit_order(self, SubmitOrder command)
     cdef void _submit_atomic_order(self, SubmitAtomicOrder command)
     cdef void _modify_order(self, ModifyOrder command)
     cdef void _cancel_order(self, CancelOrder command)
-    cdef void _check_residuals(self)
     cdef void _reset(self)

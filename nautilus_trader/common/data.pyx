@@ -13,7 +13,7 @@ from nautilus_trader.core.precondition cimport Precondition
 from nautilus_trader.model.objects cimport Symbol, Tick, BarType, Bar, Instrument
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logger cimport Logger, LoggerAdapter
-from nautilus_trader.common.handlers cimport TickHandler, BarHandler
+from nautilus_trader.common.handlers cimport TickHandler, BarHandler, InstrumentHandler
 from nautilus_trader.trade.strategy cimport TradeStrategy
 
 
@@ -24,18 +24,22 @@ cdef class DataClient:
 
     def __init__(self,
                  Clock clock,
+                 GuidFactory guid_factory,
                  Logger logger):
         """
         Initializes a new instance of the DataClient class.
 
         :param clock: The clock for the component.
+        :param clock: The GUID factory for the component.
         :param logger: The logger for the component.
         """
         self._clock = clock
+        self._guid_factory = guid_factory
         self._log = LoggerAdapter(f"DataClient", logger)
-        self._instruments = {}    # type: Dict[Symbol, Instrument]
-        self._tick_handlers = {}  # type: Dict[Symbol, List[TickHandler]]
-        self._bar_handlers = {}   # type: Dict[BarType, List[BarHandler]]
+        self._tick_handlers = {}        # type: Dict[Symbol, List[TickHandler]]
+        self._bar_handlers = {}         # type: Dict[BarType, List[BarHandler]]
+        self._instrument_handlers = {}  # type: Dict[Symbol, List[InstrumentHandler]]
+        self._instruments = {}          # type: Dict[Symbol, Instrument]
 
         self._log.info("Initialized.")
 
@@ -47,25 +51,9 @@ cdef class DataClient:
         """
         return self._clock.time_now()
 
-    cpdef list symbols(self):
-        """
-        Return all instrument symbols held by the data client.
-        
-        :return: List[Symbol].
-        """
-        return list(self._instruments).copy()
-
-    cpdef list instruments(self):
-        """
-        Return all instruments held by the data client.
-        
-        :return: List[Instrument].
-        """
-        return list(self._instruments.values()).copy()
-
     cpdef list subscribed_ticks(self):
         """
-        Return the list of tick channels subscribed to.
+        Return the list of tick symbols subscribed to.
         
         :return: List[Symbol].
         """
@@ -73,11 +61,27 @@ cdef class DataClient:
 
     cpdef list subscribed_bars(self):
         """
-        Return the list of bar channels subscribed to.
+        Return the list of bar types subscribed to.
         
         :return: List[BarType].
         """
         return list(self._bar_handlers.keys())
+
+    cpdef list subscribed_instruments(self):
+        """
+        Return the list of instruments subscribed to.
+        
+        :return: List[Symbol].
+        """
+        return list(self._instrument_handlers.keys())
+
+    cpdef list instrument_symbols(self):
+        """
+        Return all instrument symbols held by the data client.
+        
+        :return: List[Symbol].
+        """
+        return list(self._instruments).copy()
 
     cpdef void connect(self):
         """
@@ -93,14 +97,71 @@ cdef class DataClient:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void update_all_instruments(self):
+    cpdef void reset(self):
         """
-        Update all instruments from the database.
+        Reset the data client.
         """
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void update_instrument(self, Symbol symbol):
+    cpdef void dispose(self):
+        """
+        Dispose of the data client.
+        """
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
+    cpdef void register_strategy(self, TradeStrategy strategy):
+        """
+        Register the given trade strategy with the data client.
+
+        :param strategy: The strategy to register.
+        """
+        strategy.register_data_client(self)
+
+        self._log.debug(f"Registered {strategy}.")
+
+    cpdef void request_ticks(self, Symbol symbol, datetime from_datetime, datetime to_datetime, callback: Callable):
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
+    cpdef void request_bars(self, BarType bar_type, datetime from_datetime, datetime to_datetime, callback: Callable):
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
+    cpdef void request_instrument(self, Symbol symbol, callback: Callable):
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
+    cpdef void request_instruments(self, Venue venue, callback: Callable):
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
+    cpdef void subscribe_ticks(self, Symbol symbol, handler: Callable):
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
+    cpdef void subscribe_bars(self, BarType bar_type, handler: Callable):
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
+    cpdef void subscribe_instrument(self, Symbol symbol, handler: Callable):
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
+    cpdef void unsubscribe_ticks(self, Symbol symbol, handler: Callable):
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
+    cpdef void unsubscribe_bars(self, BarType bar_type, handler: Callable):
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
+    cpdef void unsubscribe_instrument(self, Symbol symbol, handler: Callable):
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
+    cpdef void update_instruments(self, Venue venue):
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
@@ -124,175 +185,134 @@ cdef class DataClient:
 
         return self._instruments[symbol]
 
-    cpdef void register_strategy(self, TradeStrategy strategy):
-        """
-        Register the given trade strategy with the data client.
-
-        :param strategy: The strategy to register.
-        """
-        strategy.register_data_client(self)
-
-        self._log.debug(f"Registered {strategy}.")
-
-    cpdef void historical_bars(
-            self,
-            BarType bar_type,
-            int quantity,
-            handler: Callable):
-        """
-        Download the historical bars for the given parameters from the data
-        service, then pass them to the callable bar handler.
-
-        :param bar_type: The historical bar type to download.
-        :param quantity: The number of historical bars to download (optional can be None - will download all).
-        :param handler: The bar handler to pass the bars to.
-        :raises ValueError: If the quantity is not None and not positive (> 0).
-        """
-        # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
-
-    cpdef void historical_bars_from(
-            self,
-            BarType bar_type,
-            datetime from_datetime,
-            handler: Callable):
-        """
-        Download the historical bars for the given parameters from the data
-        service, then pass them to the callable bar handler.
-
-        :param bar_type: The historical bar type to download.
-        :param from_datetime: The datetime from which the historical bars should be downloaded.
-        :param handler: The handler to pass the bars to.
-        """
-        # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
-
-    cpdef void subscribe_ticks(self, Symbol symbol, handler: Callable):
-        """
-        Subscribe to tick data for the given symbol and handler.
-
-        :param symbol: The tick symbol to subscribe to.
-        :param handler: The callable handler for subscription.
-        """
-        # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
-
-    cpdef void unsubscribe_ticks(self, Symbol symbol, handler: Callable):
-        """
-        Unsubscribe from tick data for the given symbol and handler.
-
-        :param symbol: The tick symbol to unsubscribe from.
-        :param handler: The callable handler which was subscribed.
-        """
-        # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
-
-    cpdef void subscribe_bars(self, BarType bar_type, handler: Callable):
-        """
-        Subscribe to bar data for the given bar type and handler.
-
-        :param bar_type: The bar type to subscribe to.
-        :param handler: The callable handler for subscription.
-        """
-        # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
-
-    cpdef void unsubscribe_bars(self, BarType bar_type, handler: Callable):
-        """
-        Unsubscribe from bar data for the given symbol and handler.
-
-        :param bar_type: The bar type to unsubscribe from.
-        :param handler: The callable handler which was subscribed.
-        """
-        # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
-
-    cdef void _subscribe_ticks(self, Symbol symbol, handler: Callable):
+    cdef void _add_tick_handler(self, Symbol symbol, handler: Callable):
         # Subscribe to tick data for the given symbol and handler
         Precondition.type(handler, Callable, 'handler')
 
         if symbol not in self._tick_handlers:
             self._tick_handlers[symbol] = []  # type: List[TickHandler]
-            self._log.info(f"Subscribed to tick data for {symbol}.")
 
         cdef TickHandler tick_handler = TickHandler(handler)
         if tick_handler not in self._tick_handlers[symbol]:
             self._tick_handlers[symbol].append(tick_handler)
-            self._log.debug(f"Added tick handler {handler}.")
+            self._log.debug(f"Added {tick_handler} for {symbol} ticks.")
+            self._log.info(f"Subscribed to ticks for {symbol}.")
+        else:
+            self._log.error(f"Cannot add {tick_handler} (duplicate handler found).")
 
-    cdef void _unsubscribe_ticks(self, Symbol symbol, handler: Callable):
+    cdef void _add_bar_handler(self, BarType bar_type, handler: Callable):
+        # Subscribe to bar data for the given bar type and handler.
+        Precondition.type(handler, Callable, 'handler')
+
+        if bar_type not in self._bar_handlers:
+            self._bar_handlers[bar_type] = []  # type: List[BarHandler]
+
+        cdef BarHandler bar_handler = BarHandler(handler)
+        if bar_handler not in self._bar_handlers[bar_type]:
+            self._bar_handlers[bar_type].append(bar_handler)
+            self._log.debug(f"Added {bar_handler} for {bar_type} bars.")
+            self._log.info(f"Subscribed to bars for {bar_type}.")
+        else:
+            self._log.error(f"Cannot add {bar_handler} (duplicate handler found).")
+
+    cdef void _add_instrument_handler(self, Symbol symbol, handler: Callable):
+        # Subscribe to tick data for the given symbol and handler
+        Precondition.type(handler, Callable, 'handler')
+
+        if symbol not in self._instrument_handlers:
+            self._instrument_handlers[symbol] = []  # type: List[InstrumentHandler]
+
+        cdef InstrumentHandler instrument_handler = InstrumentHandler(handler)
+        if instrument_handler not in self._instrument_handlers[symbol]:
+            self._instrument_handlers[symbol].append(instrument_handler)
+            self._log.debug(f"Added {handler} for {symbol} instruments.")
+            self._log.info(f"Subscribed to instrument for {symbol}.")
+        else:
+            self._log.error(f"Cannot add {instrument_handler} (duplicate handler found).")
+
+    cdef void _remove_tick_handler(self, Symbol symbol, handler: Callable):
         # Unsubscribe from tick data for the given symbol and handler
-
         Precondition.type(handler, Callable, 'handler')
 
         if symbol not in self._tick_handlers:
-            self._log.warning(f"Cannot unsubscribe ticks (no handlers for {symbol}).")
+            self._log.error(f"Cannot remove handler (no handlers for {symbol}).")
             return
 
         cdef TickHandler tick_handler = TickHandler(handler)
         if tick_handler in self._tick_handlers[symbol]:
             self._tick_handlers[symbol].remove(tick_handler)
-            self._log.debug(f"Removed handler {handler} from tick handlers.")
+            self._log.debug(f"Removed {tick_handler} for {symbol}.")
         else:
-            self._log.error(f"Cannot remove handler {handler} from tick handlers (not found).")
+            self._log.error(f"Cannot remove {tick_handler} (no matching handler found).")
 
         if len(self._tick_handlers[symbol]) == 0:
             del self._tick_handlers[symbol]
-            self._log.info(f"Unsubscribed from tick data for {symbol}.")
 
-    cdef void _subscribe_bars(self, BarType bar_type, handler: Callable):
-        # Subscribe to bar data for the given bar type and handler.
-
-        Precondition.type(handler, Callable, 'handler')
-
-        if bar_type not in self._bar_handlers:
-            self._bar_handlers[bar_type] = []  # type: List[BarHandler]
-            self._log.info(f"Subscribed to bar data for {bar_type}.")
-
-        cdef BarHandler bar_handler = BarHandler(handler)
-        if bar_handler not in self._bar_handlers[bar_type]:
-            self._bar_handlers[bar_type].append(bar_handler)
-            self._log.debug(f"Added bar handler {handler} for {bar_type} bars.")
-
-    cdef void _unsubscribe_bars(self, BarType bar_type, handler: Callable):
+    cdef void _remove_bar_handler(self, BarType bar_type, handler: Callable):
         # Unsubscribe from bar data for the given bar type and handler.
-
         Precondition.type(handler, Callable, 'handler')
 
         if bar_type not in self._bar_handlers:
-            self._log.warning(f"Cannot unsubscribe bars (no handlers for {bar_type}).")
+            self._log.error(f"Cannot remove handler (no handlers for {bar_type}).")
             return
 
         cdef BarHandler bar_handler = BarHandler(handler)
         if bar_handler in self._bar_handlers[bar_type]:
             self._bar_handlers[bar_type].remove(bar_handler)
-            self._log.debug(f"Removed handler {handler} from bar handlers.")
+            self._log.debug(f"Removed {bar_handler} for {bar_type}.")
         else:
-            self._log.error(f"Cannot remove handler {handler} from bar handlers (not found).")
+            self._log.error(f"Cannot remove {bar_handler} (no matching handler found).")
 
         if len(self._bar_handlers[bar_type]) == 0:
             del self._bar_handlers[bar_type]
-            self._log.info(f"Unsubscribed from bar data for {bar_type}.")
+
+    cdef void _remove_instrument_handler(self, Symbol symbol, handler: Callable):
+        # Unsubscribe from tick data for the given symbol and handler
+        Precondition.type(handler, Callable, 'handler')
+
+        if symbol not in self._instrument_handlers:
+            self._log.error(f"Cannot remove handler (no handlers for {symbol}).")
+            return
+
+        cdef InstrumentHandler instrument_handler = InstrumentHandler(handler)
+        if instrument_handler in self._instrument_handlers[symbol]:
+            self._instrument_handlers[symbol].remove(instrument_handler)
+            self._log.debug(f"Removed {instrument_handler} for {symbol}.")
+        else:
+            self._log.error(f"Cannot remove {instrument_handler} (no matching handler found).")
+
+        if len(self._instrument_handlers[symbol]) == 0:
+            del self._instrument_handlers[symbol]
 
     cdef void _handle_tick(self, Tick tick):
         # Handle the given tick by sending it to all tick handlers for that symbol
-
-        cdef TickHandler tick_handler
+        cdef TickHandler handler
         if tick.symbol in self._tick_handlers:
-            for tick_handler in self._tick_handlers[tick.symbol]:
-                tick_handler.handle(tick)
+            for handler in self._tick_handlers[tick.symbol]:
+                handler.handle(tick)
 
     cdef void _handle_bar(self, BarType bar_type, Bar bar):
         # Handle the given bar by sending it to all bar handlers for that bar type
-
-        cdef BarHandler bar_handler
+        cdef BarHandler handler
         if bar_type in self._bar_handlers:
-            for bar_handler in self._bar_handlers[bar_type]:
-                bar_handler.handle(bar_type, bar)
+            for handler in self._bar_handlers[bar_type]:
+                handler.handle(bar_type, bar)
+
+    cdef void _handle_instrument(self, Instrument instrument):
+        # Handle the given instrument by sending it to all instrument handlers for that symbol
+        if instrument.symbol in self._instruments:
+            # Remove instrument key if already exists
+            del self._instruments[instrument.symbol]
+        self._instruments[instrument.symbol] = instrument
+        self._log.info(f"Updated instrument for {instrument.symbol}.")
+
+        cdef InstrumentHandler handler
+        if instrument.symbol in self._instrument_handlers:
+            for handler in self._instrument_handlers[instrument.symbol]:
+                handler.handle(instrument)
 
     cdef void _reset(self):
-        # Reset the DataClient by clearing all stateful internal value
-
+        # Reset the data client by returning all stateful internal values to their initial value
         self._instruments = {}       # type: Dict[Symbol, Instrument]
         self._tick_handlers = {}     # type: Dict[Symbol, List[TickHandler]]
         self._bar_handlers = {}      # type: Dict[BarType, List[BarHandler]]

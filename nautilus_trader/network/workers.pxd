@@ -15,9 +15,9 @@ cdef class MQWorker:
     """
     cdef LoggerAdapter _log
     cdef object _thread
-    cdef object _context
+    cdef str _service_name
     cdef str _service_address
-    cdef object _handler
+    cdef object _context
     cdef object _socket
     cdef int _cycles
 
@@ -25,16 +25,24 @@ cdef class MQWorker:
     cdef readonly bint is_running
 
     cpdef void start(self)
-    cpdef void send(self, bytes message)
     cpdef void stop(self)
     cpdef void _open_connection(self)
     cpdef void _close_connection(self)
+
+
+cdef class RequestWorker(MQWorker):
+    """
+    Provides an asynchronous worker thread for ZMQ request messaging.
+    """
+    cpdef void send(self, bytes message, handler, callback)
 
 
 cdef class SubscriberWorker(MQWorker):
     """
     Provides an asynchronous worker thread for ZMQ subscriber messaging.
     """
-    cdef str _topic
+    cdef object _handler
 
+    cpdef void subscribe(self, str topic)
+    cpdef void unsubscribe(self, str topic)
     cpdef void _consume_messages(self)
