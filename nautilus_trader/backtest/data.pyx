@@ -233,6 +233,40 @@ cdef class BacktestDataClient(DataClient):
         self.data_providers[bar_type.symbol].register_bars(bar_type)
         self._log.info(f"Built {len(self.data_providers[bar_type.symbol].bars[bar_type])} {bar_type} bars in {round((datetime.utcnow() - start).total_seconds(), 2)}s.")
 
+    cpdef void connect(self):
+        """
+        Connect to the data service.
+        """
+        self._log.info("Connected.")
+
+    cpdef void disconnect(self):
+        """
+        Disconnect from the data service.
+        """
+        self._log.info("Disconnected.")
+
+    cpdef void reset(self):
+        """
+        Reset the data client by returning all stateful internal values to their
+        initial value, whilst preserving any constructed bar and tick data.
+        """
+        self._log.info(f"Resetting...")
+
+        self._reset()
+        cdef Symbol symbol
+        cdef DataProvider data_provider
+        for symbol, data_provider in self.data_providers.items():
+            data_provider.reset()
+            self._log.debug(f"Reset data provider for {symbol}.")
+
+        self._log.info("Reset.")
+
+    cpdef void dispose(self):
+        """
+        TBD.
+        """
+        pass
+
     cpdef void set_initial_iteration_indexes(self, datetime to_time):
         """
         Set the initial tick and bar iteration indexes for each data provider
@@ -312,33 +346,6 @@ cdef class BacktestDataClient(DataClient):
         cdef Bar bar
         for bar_type, bar in bars.items():
             self._handle_bar(bar_type, bar)
-
-    cpdef void reset(self):
-        """
-        Reset the data client by returning all stateful internal values to their
-        initial value, whilst preserving any constructed bar and tick data.
-        """
-        self._log.info(f"Resetting...")
-
-        cdef Symbol symbol
-        cdef DataProvider data_provider
-        for symbol, data_provider in self.data_providers.items():
-            data_provider.reset()
-            self._log.debug(f"Reset data provider for {symbol}.")
-
-        self._log.info("Reset.")
-
-    cpdef void connect(self):
-        """
-        Connect to the data service.
-        """
-        self._log.info("Connected.")
-
-    cpdef void disconnect(self):
-        """
-        Disconnect from the data service.
-        """
-        self._log.info("Disconnected.")
 
     cpdef void request_ticks(
             self,

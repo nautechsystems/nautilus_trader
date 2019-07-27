@@ -312,6 +312,12 @@ cdef class BacktestExecClient(ExecutionClient):
         self.reset_account()
         self._log.info("Reset.")
 
+    cpdef void dispose(self):
+        """
+        TBD.
+        """
+        pass
+
     cdef void _set_slippage_index(self):
         cdef dict slippage_index = {}
 
