@@ -1,9 +1,12 @@
 # Nautilus Trader
 The black box trading client and backtester for the Nautilus stack.
 
-Use the following terminal command to compile the c extensions for the package;
-```console
-$ python setup.py build_ext --inplace
-```
+To manually compile the c extensions for the package;
 
-> http://nautechsystems.io/
+    $ python setup.py build_ext --inplace
+
+![Alt text](documentation/nautechsystems_logo_small.png?raw=true "logo")
+
+Nautech Systems Pty Ltd.
+
+> https://nautechsystems.io/nautilus
