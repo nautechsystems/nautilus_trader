@@ -63,7 +63,8 @@ setup(
     package_data={'': ['*.pyx', '*.pxd']},
     license=LICENSE,
     requires=REQUIREMENTS,
-    ext_modules=cythonize(make_cython_extensions(DIRECTORIES_TO_CYTHONIZE), compiler_directives=compiler_directives),
+    ext_modules=cythonize(module_list=make_cython_extensions(DIRECTORIES_TO_CYTHONIZE),
+                          compiler_directives=compiler_directives),
     cmdclass={'build_ext': Cython.Build.build_ext},
     options={'build_ext': {'inplace': False, 'force': False}},
     zip_safe=False)
