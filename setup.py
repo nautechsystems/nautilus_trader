@@ -6,20 +6,19 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import Cython.Build
-import os
 import setuptools
+import Cython.Build
 
+from setuptools import setup
 from Cython.Build import cythonize
 from Cython.Compiler import Options
-from typing import List
-from setuptools import setup, Extension
 
 from nautilus_trader.version import __version__
+from setup_tools import check_file_headers, make_cython_extensions
 
-AUTHOR = 'Nautech Systems Pty Ltd'
+
 PACKAGE_NAME = 'nautilus_trader'
-DIRECTORIES = [PACKAGE_NAME, 'test_kit']
+AUTHOR = 'Nautech Systems Pty Ltd'
 DESCRIPTION = 'The black box trading client and backtester for the Nautilus stack.'
 LICENSE = 'Nautech Systems Software License, April 2018'
 REQUIREMENTS = ['cython',
@@ -35,9 +34,9 @@ REQUIREMENTS = ['cython',
                 'empyrical',
                 'pymc3']
 
+DIRECTORIES_TO_CYTHONIZE = [PACKAGE_NAME, 'test_kit']
+DIRECTORIES_ALL = [PACKAGE_NAME, 'test_kit', 'tests']
 
-# Command to compile c extensions
-# python setup.py build_ext --inplace
 
 # Cython compiler options
 # -----------------------
@@ -46,40 +45,13 @@ Options.warning_errors = True  # Treat compiler warnings as errors
 Options.cimport_from_pyx = True  # Allows cimporting from a pyx file without a pxd file
 Profile_Hooks = False  # Write profiling hooks into methods (x2 overhead, use for profiling only)
 
-
-# Recursively scan given directories
-def scan_directories(directories: List[str]) -> List[str]:
-    file_names = []
-    for directory in directories:
-        files = scan_files(directory)
-        for file in files:
-            file_names.append(file)
-    return file_names
-
-
-# Recursively scan directory for all files to cythonize
-def scan_files(directory: str, files: List[str]=[]) -> List[str]:
-    for file in os.listdir(directory):
-        path = os.path.join(directory, file)
-        if os.path.isfile(path) and path.endswith(".pyx"):
-            files.append(path.replace(os.path.sep, ".")[:-4])
-        elif os.path.isdir(path):
-            scan_files(path, files)
-    return files
-
-
-# Generate an Extension object from its dotted name
-def make_extension(ext_name) -> Extension:
-    ext_path = ext_name.replace(".", os.path.sep) + ".pyx"
-    return Extension(
-        ext_name,
-        [ext_path],
-        include_dirs=["."],
-        define_macros=[('CYTHON_TRACE', '1')])
-
-
-extensions = [make_extension(name) for name in scan_directories(DIRECTORIES)]
 compiler_directives = {'language_level': 3, 'profile': Profile_Hooks}
+
+
+# Check file headers
+artifacts_to_ignore = ['', '.c', '.so', '.gz', '.o', '.pyd', '.pyc', '.prof', '.html', '.csv']
+check_file_headers(DIRECTORIES_ALL, ignore=artifacts_to_ignore, author=AUTHOR)
+
 
 setup(
     name=PACKAGE_NAME,
@@ -91,7 +63,7 @@ setup(
     package_data={'': ['*.pyx', '*.pxd']},
     license=LICENSE,
     requires=REQUIREMENTS,
-    ext_modules=cythonize(extensions, compiler_directives=compiler_directives),
+    ext_modules=cythonize(make_cython_extensions(DIRECTORIES_TO_CYTHONIZE), compiler_directives=compiler_directives),
     cmdclass={'build_ext': Cython.Build.build_ext},
     options={'build_ext': {'inplace': False, 'force': False}},
     zip_safe=False)
