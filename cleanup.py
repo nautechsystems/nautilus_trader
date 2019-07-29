@@ -9,10 +9,10 @@
 import os
 
 
-extensions_to_clean = (".c", ".so", ".o", ".pyd", ".html")
+extensions_to_clean = ('.c', '.so', '.o', '.pyd', '.html')
 directories = ['nautilus_trader', 'test_kit']
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     for directory in directories:
         for root, dirs, files in os.walk(directory):
             for name in files:
