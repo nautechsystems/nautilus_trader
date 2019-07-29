@@ -97,7 +97,6 @@ cdef class LiveExecClient(ExecutionClient):
             service_address,
             commands_port,
             self.zmq_context,
-            self._deserialize_response,
             logger)
         self._events_worker = SubscriberWorker(
             'ExecClient.EventSubscriber',

@@ -93,7 +93,7 @@ cpdef Tick parse_tick(Symbol symbol, str tick_string):
     :param tick_string: The tick string.
     :return: Tick.
     """
-    cdef str[:] split_tick = tick_string.split(',')
+    cdef list split_tick = tick_string.split(',')
 
     return Tick(
         symbol,
@@ -109,8 +109,8 @@ cpdef BarSpecification parse_bar_spec(str bar_spec_string):
     :param bar_spec_string: The bar specification string to parse.
     :return: BarSpecification.
     """
-    cdef str[:] split1 = bar_spec_string.split('-')
-    cdef str[:] split2 = split1[1].split('[')
+    cdef list split1 = bar_spec_string.split('-')
+    cdef list split2 = split1[1].split('[')
     cdef str resolution = split2[0]
     cdef str quote_type = split2[1].strip(']')
 
@@ -126,7 +126,7 @@ cpdef BarType parse_bar_type(str bar_type_string):
     :param bar_type_string: The bar type string to parse.
     :return: BarType.
     """
-    cdef str[:] split_string = re.split(r'[.-]+', bar_type_string)
+    cdef list split_string = re.split(r'[.-]+', bar_type_string)
     cdef str resolution = split_string[3].split('[')[0]
     cdef str quote_type = split_string[3].split('[')[1].strip(']')
     cdef Symbol symbol = Symbol(split_string[0], Venue[split_string[1].upper()])
@@ -142,7 +142,7 @@ cpdef Bar parse_bar(str bar_string):
     :param bar_string: The bar string to parse.
     :return: Bar.
     """
-    cdef str[:] split_bar = bar_string.split(',')
+    cdef list split_bar = bar_string.split(',')
 
     return Bar(Price(split_bar[0]),
                Price(split_bar[1]),

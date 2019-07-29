@@ -56,7 +56,7 @@ def check_file_headers(directories: List[str], ignore: List[str], author: str) -
                         raise ValueError(f"The file header for {file} is incorrect"
                                          f" (company= should be '{author}' was '{company}')")
 
-    print(f"Checked headers for extensions; {checked_extensions} (file name and company name all OK).")
+    print(f"Checked headers for extensions; {checked_extensions} file name and company name all OK")
 
 
 def find_pyx_files(directories: List[str]) -> List[str]:
