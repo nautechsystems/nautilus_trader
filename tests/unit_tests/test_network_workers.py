@@ -12,8 +12,8 @@ import zmq
 
 from nautilus_trader.network.workers import RequestWorker, SubscriberWorker
 from test_kit.mocks import MockServer, MockPublisher
+from test_kit.objects import ObjectStorer
 
-UTF8 = 'utf8'
 LOCAL_HOST = "127.0.0.1"
 TEST_PORT = 5557
 TEST_ADDRESS = f"tcp://{LOCAL_HOST}:{TEST_PORT}"
@@ -26,20 +26,16 @@ class RequestWorkerTests(unittest.TestCase):
         print("\n")
 
         self.context = zmq.Context()
-        self.response_list = []
-        self.response_handler = self.response_list.append
+        self.response_handler = ObjectStorer()
 
         self.worker = RequestWorker(
             "TestRequester",
-            self.context,
+            "TestResponder",
             LOCAL_HOST,
             TEST_PORT,
-            self.response_handler)
+            self.context)
 
-        self.server = MockServer(
-            self.context,
-            TEST_PORT,
-            self.response_handler)
+        self.server = MockServer(self.context, TEST_PORT)
 
     def tearDown(self):
         # Tear Down
@@ -52,10 +48,10 @@ class RequestWorkerTests(unittest.TestCase):
         self.worker.start()
 
         # Act
-        self.worker.send(b'hello')
+        self.worker.send(b'hello', self.response_handler.store)
 
         # Assert
-        self.assertEqual(b'hello', self.response_list[0])
+        self.assertEqual(b'OK', self.response_handler.get_store()[0])
 
     def test_can_send_multiple_messages_and_receive_correctly_ordered_responses(self):
         # Arrange
@@ -63,14 +59,14 @@ class RequestWorkerTests(unittest.TestCase):
         self.worker.start()
 
         # Act
-        self.worker.send(b'hello1')
-        self.worker.send(b'hello2')
-        self.worker.send(b'hello3')
+        self.worker.send(b'hello1', self.response_handler.store)
+        self.worker.send(b'hello2', self.response_handler.store)
+        self.worker.send(b'hello3', self.response_handler.store)
 
         # Assert
-        self.assertEqual(b'hello1', self.response_list[0])
-        self.assertEqual(b'hello2', self.response_list[1])
-        self.assertEqual(b'hello3', self.response_list[2])
+        self.assertEqual(b'OK', self.response_handler.get_store()[0])
+        self.assertEqual(b'OK', self.response_handler.get_store()[1])
+        self.assertEqual(b'OK', self.response_handler.get_store()[2])
 
 
 class SubscriberWorkerTests(unittest.TestCase):
@@ -80,21 +76,19 @@ class SubscriberWorkerTests(unittest.TestCase):
         print("\n")
 
         self.context = zmq.Context()
-        self.response_list = []
-        self.response_handler = self.response_list.append
+        self.response_handler = ObjectStorer()
 
         self.worker = SubscriberWorker(
             "TestSubscriber",
-            self.context,
+            "TestPublisher",
             LOCAL_HOST,
             TEST_PORT,
-            "test_topic",
-            self.response_handler)
-
-        self.publisher = MockPublisher(
             self.context,
-            TEST_PORT,
-            self.response_handler)
+            self.response_handler.store_2)
+
+        self.publisher = MockPublisher(self.context, TEST_PORT)
+
+        self.worker.subscribe("test_topic")
 
     def tearDown(self):
         # Tear Down
@@ -112,7 +106,7 @@ class SubscriberWorkerTests(unittest.TestCase):
 
         time.sleep(0.3)
         # Assert
-        self.assertEqual(b'hello subscribers', self.response_list[0])
+        self.assertEqual(('test_topic', b'hello subscribers'), self.response_handler.get_store()[0])
 
     def test_can_subscribe_to_topic_and_receive_multiple_published_messages_in_correct_order(self):
         # Arrange
@@ -127,6 +121,6 @@ class SubscriberWorkerTests(unittest.TestCase):
 
         time.sleep(0.3)
         # Assert
-        self.assertEqual(b'hello1', self.response_list[0])
-        self.assertEqual(b'hello2', self.response_list[1])
-        self.assertEqual(b'hello3', self.response_list[2])
+        self.assertEqual(('test_topic', b'hello1'), self.response_handler.get_store()[0])
+        self.assertEqual(('test_topic', b'hello2'), self.response_handler.get_store()[1])
+        self.assertEqual(('test_topic', b'hello3'), self.response_handler.get_store()[2])

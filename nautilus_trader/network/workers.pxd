@@ -17,8 +17,8 @@ cdef class MQWorker:
     cdef object _thread
     cdef str _service_name
     cdef str _service_address
-    cdef object _context
-    cdef object _socket
+    cdef object _zmq_context
+    cdef object _zmq_socket
     cdef int _cycles
 
     cdef readonly str name
@@ -34,7 +34,7 @@ cdef class RequestWorker(MQWorker):
     """
     Provides an asynchronous worker thread for ZMQ request messaging.
     """
-    cpdef void send(self, bytes message, handler, callback)
+    cpdef void send(self, bytes message, handler)
 
 
 cdef class SubscriberWorker(MQWorker):

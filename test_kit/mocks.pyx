@@ -18,24 +18,18 @@ cdef str UTF8 = 'utf-8'
 
 class MockServer(Thread):
 
-    def __init__(
-            self,
-            context: Context,
-            int port,
-            handler: Callable):
+    def __init__(self, zmq_context: Context, int port):
         """
         Initializes a new instance of the MockServer class.
 
-        :param context: The ZeroMQ context.
+        :param zmq_context: The ZeroMQ context.
         :param port: The service port.
-        :param handler: The response handler.
         """
         super().__init__()
         self.daemon = True
-        self._context = context
         self._service_address = f'tcp://127.0.0.1:{port}'
-        self._handler = handler
-        self._socket = self._context.socket(zmq.REP)
+        self._zmq_context = zmq_context
+        self._socket = self._zmq_context.socket(zmq.REP)
         self._cycles = 0
 
     def run(self):
@@ -80,7 +74,6 @@ class MockServer(Thread):
 
         while True:
             message = self._socket.recv()
-            self._handler(message)
             self._cycles += 1
             self._log(f"Received message[{self._cycles}] {message}")
             self._socket.send("OK".encode(UTF8))
@@ -103,24 +96,18 @@ class MockServer(Thread):
 
 class MockPublisher(Thread):
 
-    def __init__(
-            self,
-            context: Context,
-            int port,
-            handler: Callable):
+    def __init__(self, zmq_context: Context, int port):
         """
-        Initializes a new instance of the MockServer class.
+        Initializes a new instance of the MockPublisher class.
 
-        :param context: The ZeroMQ context.
+        :param zmq_context: The ZeroMQ context.
         :param port: The service port.
-        :param handler: The response handler.
         """
         super().__init__()
         self.daemon = True
-        self._context = context
         self._service_address = f'tcp://127.0.0.1:{port}'
-        self._handler = handler
-        self._socket = self._context.socket(zmq.PUB)
+        self._zmq_context = zmq_context
+        self._socket = self._zmq_context.socket(zmq.PUB)
         self._cycles = 0
 
     def run(self):

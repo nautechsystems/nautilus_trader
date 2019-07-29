@@ -14,7 +14,7 @@ from nautilus_trader.common.brokerage import CommissionCalculator
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.guid import TestGuidFactory
 from nautilus_trader.common.logger import TestLogger
-from nautilus_trader.model.enums import Resolution
+from nautilus_trader.model.enums import Resolution, Venue
 from nautilus_trader.model.objects import ValidString, Money
 from nautilus_trader.model.identifiers import TraderId, StrategyId
 from nautilus_trader.backtest.execution import BacktestExecClient
@@ -40,6 +40,7 @@ class TraderTests(unittest.TestCase):
         test_clock = TestClock()
 
         data_client = BacktestDataClient(
+            venue=Venue.FXCM,
             instruments=[TestStubs.instrument_usdjpy()],
             data_ticks={USDJPY_FXCM: pd.DataFrame()},
             data_bars_bid={USDJPY_FXCM: {Resolution.MINUTE: bid_data_1min}},
