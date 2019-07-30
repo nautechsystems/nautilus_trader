@@ -7,7 +7,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from cpython.datetime cimport datetime
+from cpython.datetime cimport datetime, timedelta
 
 from nautilus_trader.core.precondition cimport Precondition
 from nautilus_trader.model.c_enums.venue cimport Venue, venue_string
@@ -634,6 +634,24 @@ cdef class BarSpecification:
         self.resolution = resolution
         self.quote_type = quote_type
 
+    cpdef timedelta timedelta(self):
+        """
+        Return the time bar timedelta.
+        :return: timedelta.
+        """
+        if self.resolution == Resolution.TICK:
+            return timedelta(0)
+        if self.resolution == Resolution.SECOND:
+            return timedelta(seconds=self.period)
+        if self.resolution == Resolution.MINUTE:
+            return timedelta(minutes=self.period)
+        if self.resolution == Resolution.HOUR:
+            return timedelta(hours=self.period)
+        if self.resolution == Resolution.DAY:
+            return timedelta(days=self.period)
+        else:
+            raise RuntimeError(f"Cannot calculate timedelta for {resolution_string(self.resolution)}")
+
     cdef bint equals(self, BarSpecification other):
         """
         Compare if the object equals the given object.
@@ -660,6 +678,9 @@ cdef class BarSpecification:
         :return: str.
         """
         return quote_type_string(self.quote_type)
+
+
+
 
     def __eq__(self, BarSpecification other) -> bool:
         """

@@ -15,6 +15,7 @@ from nautilus_trader.common.logger cimport Logger, LoggerAdapter
 from nautilus_trader.common.execution cimport ExecutionClient
 from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.model.c_enums.currency cimport Currency
+from nautilus_trader.model.c_enums.venue cimport Venue
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition
 from nautilus_trader.model.currency cimport ExchangeRateCalculator
@@ -99,10 +100,10 @@ cdef class TradeStrategy:
     cdef void _process_modify_order_buffer(self, OrderId order_id)
 
 # -- DATA METHODS -------------------------------------------------------------------------------- #
-    cpdef readonly datetime time_now(self)
-    cpdef readonly list symbols(self)
-    cpdef readonly list instruments(self)
+    cpdef datetime time_now(self)
+    cpdef list instrument_symbols(self)
     cpdef Instrument get_instrument(self, Symbol symbol)
+    cpdef dict get_instruments_all(self)
     cpdef void historical_bars(self, BarType bar_type, datetime from_datetime=*, datetime to_datetime=*)
     cpdef void subscribe_bars(self, BarType bar_type)
     cpdef void unsubscribe_bars(self, BarType bar_type)
