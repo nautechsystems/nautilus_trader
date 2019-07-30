@@ -9,6 +9,7 @@
 import unittest
 
 from decimal import Decimal, InvalidOperation
+from datetime import timedelta
 
 from nautilus_trader.model.enums import Venue, Resolution, QuoteType
 from nautilus_trader.model.objects import ValidString, Quantity, Symbol, Price, Money
@@ -549,6 +550,22 @@ class ObjectTests(unittest.TestCase):
         self.assertTrue(bar_spec1 == bar_spec1)
         self.assertTrue(bar_spec1 == bar_spec2)
         self.assertTrue(bar_spec1 != bar_spec3)
+
+    def test_bar_spec_timedelta(self):
+        # Arrange
+        # Act
+        timedelta1 = BarSpecification(1, Resolution.TICK, QuoteType.BID).timedelta()
+        timedelta2 = BarSpecification(2, Resolution.SECOND, QuoteType.BID).timedelta()
+        timedelta3 = BarSpecification(3, Resolution.MINUTE, QuoteType.BID).timedelta()
+        timedelta4 = BarSpecification(4, Resolution.HOUR, QuoteType.BID).timedelta()
+        timedelta5 = BarSpecification(5, Resolution.DAY, QuoteType.BID).timedelta()
+
+        # Assert
+        self.assertEqual(timedelta(0), timedelta1)
+        self.assertEqual(timedelta(seconds=2), timedelta2)
+        self.assertEqual(timedelta(minutes=3), timedelta3)
+        self.assertEqual(timedelta(hours=4), timedelta4)
+        self.assertEqual(timedelta(days=5), timedelta5)
 
     def test_bar_spec_str_and_repr(self):
         # Arrange

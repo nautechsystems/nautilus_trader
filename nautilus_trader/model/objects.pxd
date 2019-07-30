@@ -6,7 +6,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
+from cpython.datetime cimport datetime, timedelta
 
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.security_type cimport SecurityType
@@ -81,6 +81,7 @@ cdef class BarSpecification:
     cdef readonly int period
     cdef readonly Resolution resolution
     cdef readonly QuoteType quote_type
+    cpdef timedelta timedelta(self)
     cdef bint equals(self, BarSpecification other)
     cdef str resolution_string(self)
     cdef str quote_type_string(self)

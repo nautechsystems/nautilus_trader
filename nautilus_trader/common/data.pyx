@@ -168,9 +168,9 @@ cdef class DataClient:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef dict get_all_instruments(self):
+    cpdef dict get_instruments_all(self):
         """
-        Return a dictionary of all instruments.
+        Return a dictionary of all instruments held by the data client.
         
         :return: Dict[Symbol, Instrument].
         """

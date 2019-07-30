@@ -40,7 +40,6 @@ cdef class DataClient:
     cpdef void disconnect(self)
     cpdef void reset(self)
     cpdef void dispose(self)
-
     cpdef void register_strategy(self, TradeStrategy strategy)
     cpdef void request_ticks(self, Symbol symbol, datetime from_datetime, datetime to_datetime, callback)
     cpdef void request_bars(self, BarType bar_type, datetime from_datetime, datetime to_datetime, callback)
@@ -53,7 +52,7 @@ cdef class DataClient:
     cpdef void unsubscribe_bars(self, BarType bar_type, handler)
     cpdef void unsubscribe_instrument(self, Symbol symbol, handler)
     cpdef void update_instruments(self)
-    cpdef dict get_all_instruments(self)
+    cpdef dict get_instruments_all(self)
     cpdef Instrument get_instrument(self, Symbol symbol)
 
     cdef void _add_tick_handler(self, Symbol symbol, handler)

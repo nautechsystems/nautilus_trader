@@ -446,18 +446,7 @@ cdef class TradeStrategy:
         """
         return self.clock.time_now()
 
-    cpdef list symbols(self):
-        """
-        Return all instrument symbols held by the data client.
-        
-        :return: List[Symbol].
-        :raises ValueError: If the strategy has not been registered with a data client.
-        """
-        Precondition.not_none(self._data_client, 'data_client')
-
-        return self._data_client.symbols
-
-    cpdef list instruments(self):
+    cpdef list instrument_symbols(self):
         """
         Return all instruments held by the data client.
         
@@ -466,7 +455,7 @@ cdef class TradeStrategy:
         """
         Precondition.not_none(self._data_client, 'data_client')
 
-        return self._data_client.symbols
+        return self._data_client.instrument_symbols()
 
     cpdef Instrument get_instrument(self, Symbol symbol):
         """
@@ -481,6 +470,14 @@ cdef class TradeStrategy:
 
         return self._data_client.get_instrument(symbol)
 
+    cpdef dict get_instruments_all(self):
+        """
+        Return a dictionary of all instruments held by the data client.
+        
+        :return: Dict[Symbol, Instrument].
+        """
+        return self._data_client.get_instruments_all()
+
     cpdef void historical_bars(self, BarType bar_type, datetime from_datetime=None, datetime to_datetime=None):
         """
         Download the historical bars for the given parameters from the data service.
@@ -490,10 +487,14 @@ cdef class TradeStrategy:
         :param bar_type: The historical bar type to download.
         :param from_datetime: The datetime from which the historical bars should be downloaded.
         :param to_datetime: The datetime to which the historical bars should be downloaded.
-        :raises ValueError: If the from_datetime is not less than datetime.utcnow().
+        :raises ValueError: If the from_datetime is not None and not less than to_datetime.
         """
-        Precondition.true(from_datetime < self.clock.time_now(),
-                          'from_datetime < self.clock.time_now()')
+        if to_datetime is None:
+            to_datetime = self.clock.time_now()
+        if from_datetime is None:
+            from_datetime = to_datetime - (self.bar_capacity * bar_type.specification.timedelta())
+
+        Precondition.true(from_datetime < to_datetime, 'from_datetime < to_date')
 
         if not self.is_data_client_registered:
             self.log.error("Cannot download historical bars (data client not registered).")
