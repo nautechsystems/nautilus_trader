@@ -51,6 +51,7 @@ cdef class MQWorker:
         Precondition.valid_string(service_name, 'service_name')
         Precondition.valid_string(service_address, 'service_address')
         Precondition.in_range(service_port, 'service_port', 0, 65535)
+        Precondition.type(zmq_context, Context, 'zmq_context')
 
         super().__init__()
         self._thread = Thread(target=self._open_connection, daemon=True)
@@ -121,6 +122,7 @@ cdef class RequestWorker(MQWorker):
         Precondition.valid_string(service_name, 'service_name')
         Precondition.valid_string(service_address, 'service_address')
         Precondition.in_range(service_port, 'service_port', 0, 65535)
+        Precondition.type(zmq_context, Context, 'zmq_context')
 
         super().__init__(
             worker_name,
@@ -138,6 +140,9 @@ cdef class RequestWorker(MQWorker):
         :param request: The request message bytes to send.
         :param handler: The handler for the response message.
         """
+        Precondition.not_empty(request, 'request')
+        Precondition.type(handler, Callable, 'handler')
+
         self._zmq_socket.send(request)
         self._cycles += 1
         self._log.debug(f"Sending[{self._cycles}] request {request}")
@@ -181,14 +186,16 @@ cdef class SubscriberWorker(MQWorker):
         :param zmq_context: The ZeroMQ context.
         :param handler: The message handler.
         :param logger: The logger for the component.
-        :raises ValueError: If the name is not a valid string.
-        :raises ValueError: If the host is not a valid string.
+        :raises ValueError: If the worker_name is not a valid string.
+        :raises ValueError: If the service_name is not a valid string.
         :raises ValueError: If the port is not in range [0, 65535].
         :raises ValueError: If the topic is not a valid string.
         """
         Precondition.valid_string(worker_name, 'worker_name')
+        Precondition.valid_string(service_name, 'service_name')
         Precondition.valid_string(service_address, 'service_address')
         Precondition.in_range(service_port, 'port', 0, 65535)
+        Precondition.type(handler, Callable, 'handler')
 
         super().__init__(
             worker_name,
