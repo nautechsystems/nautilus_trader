@@ -52,7 +52,6 @@ from nautilus_trader.model.commands cimport (
 )
 from nautilus_trader.model.events cimport (
     AccountEvent,
-    OrderEvent,
     OrderInitialized,
     OrderSubmitted,
     OrderAccepted,
@@ -71,8 +70,12 @@ from nautilus_trader.network.requests cimport (
     InstrumentRequest,
     InstrumentsRequest
 )
-from nautilus_trader.network.responses cimport DataResponse
-
+from nautilus_trader.network.responses cimport (
+    MessageReceived,
+    MessageRejected,
+    QueryFailure,
+    DataResponse
+)
 
 
 cdef class MsgPackOrderSerializer(OrderSerializer):
@@ -156,35 +159,33 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         }
 
         if isinstance(command, CollateralInquiry):
-            return msgpack.packb(package)
-        if isinstance(command, SubmitOrder):
+            pass
+        elif isinstance(command, SubmitOrder):
             package[TRADER_ID] = command.trader_id.value
             package[STRATEGY_ID] = command.strategy_id.value
             package[POSITION_ID] = command.position_id.value
             package[ORDER] = self.order_serializer.serialize(command.order)
-            return msgpack.packb(package)
-        if isinstance(command, SubmitAtomicOrder):
+        elif isinstance(command, SubmitAtomicOrder):
             package[TRADER_ID] = command.trader_id.value
             package[STRATEGY_ID] = command.strategy_id.value
             package[POSITION_ID] = command.position_id.value
             package[ENTRY] = self.order_serializer.serialize(command.atomic_order.entry)
             package[STOP_LOSS] = self.order_serializer.serialize(command.atomic_order.stop_loss)
             package[TAKE_PROFIT] = self.order_serializer.serialize(command.atomic_order.take_profit)
-            return msgpack.packb(package)
-        if isinstance(command, ModifyOrder):
+        elif isinstance(command, ModifyOrder):
             package[TRADER_ID] = command.trader_id.value
             package[STRATEGY_ID] = command.strategy_id.value
             package[ORDER_ID] = command.order_id.value
             package[MODIFIED_PRICE] = str(command.modified_price)
-            return msgpack.packb(package)
-        if isinstance(command, CancelOrder):
+        elif isinstance(command, CancelOrder):
             package[TRADER_ID] = command.trader_id.value
             package[STRATEGY_ID] = command.strategy_id.value
             package[ORDER_ID] = command.order_id.value
             package[CANCEL_REASON] = command.cancel_reason.value
-            return msgpack.packb(package)
         else:
             raise ValueError("Cannot serialize command (unrecognized command).")
+
+        return msgpack.packb(package)
 
     cpdef Command deserialize(self, bytes command_bytes):
         """
@@ -287,13 +288,8 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[MARGIN_USED_MAINTENANCE] = str(event.margin_used_maintenance)
             package[MARGIN_RATIO] = str(event.margin_ratio)
             package[MARGIN_CALL_STATUS] = event.margin_call_status.value
-            return msgpack.packb(package)
-
-        # Add order id to order event
-        if isinstance(event, OrderEvent):
+        elif isinstance(event, OrderInitialized):
             package[ORDER_ID] = event.order_id.value
-
-        if isinstance(event, OrderInitialized):
             package[SYMBOL] = event.symbol.value
             package[LABEL] = event.label.value
             package[ORDER_SIDE] = order_side_string(event.order_side)
@@ -302,18 +298,18 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[PRICE] = str(event.price)
             package[TIME_IN_FORCE] = time_in_force_string(event.time_in_force)
             package[EXPIRE_TIME] = convert_datetime_to_string(event.expire_time)
-            return msgpack.packb(package)
-        if isinstance(event, OrderSubmitted):
+        elif isinstance(event, OrderSubmitted):
+            package[ORDER_ID] = event.order_id.value
             package[SUBMITTED_TIME] = convert_datetime_to_string(event.submitted_time)
-            return msgpack.packb(package)
-        if isinstance(event, OrderAccepted):
+        elif isinstance(event, OrderAccepted):
+            package[ORDER_ID] = event.order_id.value
             package[ACCEPTED_TIME] = convert_datetime_to_string(event.accepted_time)
-            return msgpack.packb(package)
-        if isinstance(event, OrderRejected):
+        elif isinstance(event, OrderRejected):
+            package[ORDER_ID] = event.order_id.value
             package[REJECTED_TIME] = convert_datetime_to_string(event.rejected_time)
             package[REJECTED_REASON] =  str(event.rejected_reason)
-            return msgpack.packb(package)
-        if isinstance(event, OrderWorking):
+        elif isinstance(event, OrderWorking):
+            package[ORDER_ID] = event.order_id.value
             package[ORDER_ID_BROKER] = event.order_id_broker.value
             package[SYMBOL] = event.symbol.value
             package[LABEL] = event.label.value
@@ -324,24 +320,24 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[TIME_IN_FORCE] = time_in_force_string(event.time_in_force)
             package[EXPIRE_TIME] = convert_datetime_to_string(event.expire_time)
             package[WORKING_TIME] = convert_datetime_to_string(event.working_time)
-            return msgpack.packb(package)
-        if isinstance(event, OrderCancelReject):
+        elif isinstance(event, OrderCancelReject):
+            package[ORDER_ID] = event.order_id.value
             package[REJECTED_TIME] = convert_datetime_to_string(event.rejected_time)
             package[REJECTED_RESPONSE_TO] = event.rejected_response_to.value
             package[REJECTED_REASON] = event.rejected_reason.value
-            return msgpack.packb(package)
-        if isinstance(event, OrderCancelled):
+        elif isinstance(event, OrderCancelled):
+            package[ORDER_ID] = event.order_id.value
             package[CANCELLED_TIME] = convert_datetime_to_string(event.cancelled_time)
-            return msgpack.packb(package)
-        if isinstance(event, OrderModified):
+        elif isinstance(event, OrderModified):
+            package[ORDER_ID] = event.order_id.value
             package[ORDER_ID_BROKER] = event.order_id_broker.value
             package[MODIFIED_TIME] = convert_datetime_to_string(event.modified_time)
             package[MODIFIED_PRICE] = str(event.modified_price)
-            return msgpack.packb(package)
-        if isinstance(event, OrderExpired):
+        elif isinstance(event, OrderExpired):
+            package[ORDER_ID] = event.order_id.value
             package[EXPIRED_TIME] = convert_datetime_to_string(event.expired_time)
-            return msgpack.packb(package)
-        if isinstance(event, OrderPartiallyFilled):
+        elif isinstance(event, OrderPartiallyFilled):
+            package[ORDER_ID] = event.order_id.value
             package[EXECUTION_ID] = event.execution_id.value
             package[EXECUTION_TICKET] = event.execution_ticket.value
             package[SYMBOL] = event.symbol.value
@@ -350,8 +346,8 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[LEAVES_QUANTITY] = event.leaves_quantity.value
             package[AVERAGE_PRICE] = str(event.average_price)
             package[EXECUTION_TIME] = convert_datetime_to_string(event.execution_time)
-            return msgpack.packb(package)
-        if isinstance(event, OrderFilled):
+        elif isinstance(event, OrderFilled):
+            package[ORDER_ID] = event.order_id.value
             package[EXECUTION_ID] = event.execution_id.value
             package[EXECUTION_TICKET] = event.execution_ticket.value
             package[SYMBOL] = event.symbol.value
@@ -359,9 +355,10 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[FILLED_QUANTITY] = event.filled_quantity.value
             package[AVERAGE_PRICE] = str(event.average_price)
             package[EXECUTION_TIME] = convert_datetime_to_string(event.execution_time)
-            return msgpack.packb(package)
         else:
             raise ValueError("Cannot serialize event (unrecognized event.")
+
+        return msgpack.packb(package)
 
     cpdef Event deserialize(self, bytes event_bytes):
         """
@@ -509,21 +506,19 @@ cdef class MsgPackRequestSerializer(RequestSerializer):
             package[SYMBOL] = request.symbol.value
             package[FROM_DATETIME] = convert_datetime_to_string(request.from_datetime)
             package[TO_DATETIME] = convert_datetime_to_string(request.to_datetime)
-            return msgpack.packb(package)
-        if isinstance(request, BarDataRequest):
+        elif isinstance(request, BarDataRequest):
             package[SYMBOL] = request.symbol.value
             package[BAR_SPECIFICATION] = str(request.bar_spec)
             package[FROM_DATETIME] = convert_datetime_to_string(request.from_datetime)
             package[TO_DATETIME] = convert_datetime_to_string(request.to_datetime)
-            return msgpack.packb(package)
-        if isinstance(request, InstrumentRequest):
+        elif isinstance(request, InstrumentRequest):
             package[SYMBOL] = request.symbol.value
-            return msgpack.packb(package)
-        if isinstance(request, InstrumentsRequest):
+        elif isinstance(request, InstrumentsRequest):
             package[VENUE] = venue_string(request.venue)
-            return msgpack.packb(package)
         else:
             raise ValueError("Cannot serialize request (unrecognized request.")
+
+        return msgpack.packb(package)
 
     cpdef Request deserialize(self, bytes request_bytes):
         """
@@ -588,12 +583,17 @@ cdef class MsgPackResponseSerializer(ResponseSerializer):
             TIMESTAMP: convert_datetime_to_string(response.timestamp)
         }
 
-        if isinstance(response, DataResponse):
+        if isinstance(response, MessageReceived):
+            package[RECEIVED_TYPE] = response.received_type
+        elif isinstance(response, MessageRejected):
+            package[MESSAGE] = response.received_type
+        elif isinstance(response, DataResponse):
             package[DATA] = response.data
             package[ENCODING] = response.encoding
-            return msgpack.packb(package)
         else:
             raise ValueError("Cannot serialize response (unrecognized response.")
+
+        return msgpack.packb(package)
 
     cpdef Response deserialize(self, bytes response_bytes):
         """
@@ -622,6 +622,24 @@ cdef class MsgPackResponseSerializer(ResponseSerializer):
         cdef GUID response_id = GUID(UUID(unpacked[ID]))
         cdef datetime response_timestamp = convert_string_to_datetime(unpacked[TIMESTAMP])
 
+        if response_type == MessageReceived.__name__:
+            return MessageReceived(
+                unpacked[RECEIVED_TYPE],
+                correlation_id,
+                response_id,
+                response_timestamp)
+        if response_type == MessageRejected.__name__:
+            return MessageRejected(
+                unpacked[MESSAGE],
+                correlation_id,
+                response_id,
+                response_timestamp)
+        if response_type == QueryFailure.__name__:
+            return QueryFailure(
+                unpacked[MESSAGE],
+                correlation_id,
+                response_id,
+                response_timestamp)
         if response_type == DataResponse.__name__:
             return DataResponse(
                 bytes(unpacked[DATA]),

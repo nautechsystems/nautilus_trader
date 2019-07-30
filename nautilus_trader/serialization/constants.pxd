@@ -77,6 +77,8 @@ cdef str ROLL_OVER_INTEREST_BUY
 cdef str ROLL_OVER_INTEREST_SELL
 
 cdef str CORRELATION_ID
+cdef str RECEIVED_TYPE
+cdef str MESSAGE
 cdef str DATA
 cdef str VALUES
 cdef str BARS

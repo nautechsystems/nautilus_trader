@@ -77,6 +77,8 @@ ROLL_OVER_INTEREST_BUY = 'RolloverInterestBuy'
 ROLL_OVER_INTEREST_SELL = 'RolloverInterestSell'
 
 CORRELATION_ID = 'CorrelationId'
+RECEIVED_TYPE = 'ReceivedType'
+MESSAGE = 'Message'
 DATA = 'Data'
 VALUES = 'Values'
 BARS = 'Bars'

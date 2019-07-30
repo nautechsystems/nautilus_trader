@@ -52,9 +52,9 @@ cdef class LiveExecClient(ExecutionClient):
     def __init__(
             self,
             str service_address='localhost',
-            int commands_port=5555,
-            int events_port=5556,
-            str events_topic='nautilus_execution_events',
+            str events_topic='NAUTILUS:EXECUTION',
+            int commands_port=55555,
+            int events_port=55556,
             CommandSerializer command_serializer=MsgPackCommandSerializer(),
             ResponseSerializer response_serializer=MsgPackResponseSerializer(),
             EventSerializer event_serializer=MsgPackEventSerializer(),
@@ -66,20 +66,24 @@ cdef class LiveExecClient(ExecutionClient):
         """
         Initializes a new instance of the LiveExecClient class.
 
-        :param service_address: The execution service host IP address (default=127.0.0.1).
-        :param commands_port: The execution service commands port.
-        :param events_port: The execution service events port.
+        :param service_address: The execution service host IP address (default='localhost').
+        :param events_topic: The execution service events topic (default='NAUTILUS:EXECUTION').
+        :param commands_port: The execution service commands port (default=55555).
+        :param events_port: The execution service events port (default=55556).
         :param command_serializer: The command serializer for the client.
         :param response_serializer: The response serializer for the client.
         :param event_serializer: The event serializer for the client.
+        :param account: The account for the execution client.
         :param clock: The clock for the component.
         :param guid_factory: The GUID factory for the component.
         :param logger: The logger for the component (can be None).
-        :raises ValueError: If the host is not a valid string.
+        :raises ValueError: If the service_address is not a valid string.
+        :raises ValueError: If the events_topic is not a valid string.
         :raises ValueError: If the commands_port is not in range [0, 65535]
         :raises ValueError: If the events_port is not in range [0, 65535]
         """
         Precondition.valid_string(service_address, 'service_address')
+        Precondition.valid_string(events_topic, 'events_topic')
         Precondition.in_range(commands_port, 'commands_port', 0, 65535)
         Precondition.in_range(events_port, 'events_port', 0, 65535)
 
@@ -93,14 +97,14 @@ cdef class LiveExecClient(ExecutionClient):
         self.zmq_context = zmq.Context()
         self._commands_worker = RequestWorker(
             'ExecClient.CommandSender',
-            'nautilus_command_router',
+            'NAUTILUS:COMMAND_ROUTER',
             service_address,
             commands_port,
             self.zmq_context,
             logger)
         self._events_worker = SubscriberWorker(
             'ExecClient.EventSubscriber',
-            'nautilus_events',
+            'NAUTILUS:EVENTS_PUBLISHER',
             service_address,
             events_port,
             self.zmq_context,
@@ -181,7 +185,7 @@ cdef class LiveExecClient(ExecutionClient):
         self._send_command(command)
 
     cpdef void _send_command(self, Command command):
-        self._commands_worker.send(self._command_serializer.serialize(command))
+        self._commands_worker.send(self._command_serializer.serialize(command), self._deserialize_response)
         self._log.debug(f"Sent {command}")
 
     cpdef void _deserialize_event(self, str topic, bytes event_bytes):

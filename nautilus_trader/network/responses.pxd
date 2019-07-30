@@ -9,6 +9,27 @@
 from nautilus_trader.core.message cimport Response
 
 
+cdef class MessageReceived(Response):
+    """
+    Represents a response acknowledging receipt of a message.
+    """
+    cdef readonly str received_type
+
+
+cdef class MessageRejected(Response):
+    """
+    Represents a response indicating rejection of a message.
+    """
+    cdef readonly str message
+
+
+cdef class QueryFailure(Response):
+    """
+    Represents a response indicating query failure.
+    """
+    cdef readonly str message
+
+
 cdef class DataResponse(Response):
     """
     Represents a response of data.
