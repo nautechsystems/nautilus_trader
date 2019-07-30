@@ -80,7 +80,7 @@ cdef class QueryFailure(Response):
 
 cdef class DataResponse(Response):
     """
-    Represents a response of historical tick data.
+    Represents a data response.
     """
 
     def __init__(self,
