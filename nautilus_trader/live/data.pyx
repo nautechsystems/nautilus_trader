@@ -29,7 +29,7 @@ from nautilus_trader.network.workers import RequestWorker, SubscriberWorker
 from nautilus_trader.serialization.base cimport DataSerializer, InstrumentSerializer, RequestSerializer, ResponseSerializer
 from nautilus_trader.serialization.data cimport BsonDataSerializer, BsonInstrumentSerializer
 from nautilus_trader.serialization.common cimport parse_symbol, parse_symbol, parse_tick, parse_bar_type, parse_bar, convert_datetime_to_string
-from nautilus_trader.serialization.message cimport MsgPackRequestSerializer, MsgPackResponseSerializer
+from nautilus_trader.serialization.serializers cimport MsgPackRequestSerializer, MsgPackResponseSerializer
 from nautilus_trader.network.requests cimport DataRequest
 from nautilus_trader.network.responses cimport MessageRejected, QueryFailure, DataResponse
 from nautilus_trader.trade.strategy cimport TradeStrategy
