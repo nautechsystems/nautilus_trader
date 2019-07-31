@@ -10,6 +10,7 @@ import zmq
 
 from queue import Queue
 from threading import Thread
+from zmq import Context
 
 from nautilus_trader.core.precondition cimport Precondition
 from nautilus_trader.core.message cimport Command, Event, Response
@@ -22,7 +23,7 @@ from nautilus_trader.model.commands cimport (
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport Clock, LiveClock
 from nautilus_trader.common.guid cimport GuidFactory, LiveGuidFactory
-from nautilus_trader.common.logger cimport Logger
+from nautilus_trader.common.logger cimport Logger, LiveLogger
 from nautilus_trader.common.execution cimport ExecutionClient
 from nautilus_trader.trade.portfolio cimport Portfolio
 from nautilus_trader.network.workers import RequestWorker, SubscriberWorker
@@ -51,6 +52,7 @@ cdef class LiveExecClient(ExecutionClient):
 
     def __init__(
             self,
+            zmq_context: Context,
             str service_address='localhost',
             str events_topic='NAUTILUS:EXECUTION',
             int commands_port=55555,
@@ -62,10 +64,11 @@ cdef class LiveExecClient(ExecutionClient):
             Portfolio portfolio=Portfolio(),
             Clock clock=LiveClock(),
             GuidFactory guid_factory=LiveGuidFactory(),
-            Logger logger=None):
+            Logger logger=LiveLogger()):
         """
         Initializes a new instance of the LiveExecClient class.
 
+        :param zmq_context: The ZMQ context.
         :param service_address: The execution service host IP address (default='localhost').
         :param events_topic: The execution service events topic (default='NAUTILUS:EXECUTION').
         :param commands_port: The execution service commands port (default=55555).
@@ -92,9 +95,9 @@ cdef class LiveExecClient(ExecutionClient):
                          clock,
                          guid_factory,
                          logger)
+        self.zmq_context = zmq_context
         self._message_bus = Queue()
         self._thread = Thread(target=self._process, daemon=True)
-        self.zmq_context = zmq.Context()
         self._commands_worker = RequestWorker(
             'ExecClient.CommandSender',
             'NAUTILUS:COMMAND_ROUTER',

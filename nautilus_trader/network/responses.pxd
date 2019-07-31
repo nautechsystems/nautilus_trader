@@ -35,4 +35,4 @@ cdef class DataResponse(Response):
     Represents a response of data.
     """
     cdef readonly bytes data
-    cdef readonly str encoding
+    cdef readonly str data_encoding

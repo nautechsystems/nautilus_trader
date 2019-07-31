@@ -593,7 +593,7 @@ cdef class MsgPackResponseSerializer(ResponseSerializer):
             package[MESSAGE] = response.received_type
         elif isinstance(response, DataResponse):
             package[DATA] = response.data
-            package[ENCODING] = response.encoding
+            package[DATA_ENCODING] = response.encoding
         else:
             raise ValueError("Cannot serialize response (unrecognized response.")
 
@@ -647,7 +647,7 @@ cdef class MsgPackResponseSerializer(ResponseSerializer):
         if response_type == DataResponse.__name__:
             return DataResponse(
                 bytes(unpacked[DATA]),
-                unpacked[ENCODING],
+                unpacked[DATA_ENCODING],
                 correlation_id,
                 response_id,
                 response_timestamp)

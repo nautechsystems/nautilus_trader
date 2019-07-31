@@ -48,10 +48,10 @@ class RequestWorkerTests(unittest.TestCase):
         self.worker.start()
 
         # Act
-        self.worker.send(b'hello', self.response_handler.store)
+        response = self.worker.send(b'hello')
 
         # Assert
-        self.assertEqual(b'OK', self.response_handler.get_store()[0])
+        self.assertEqual(b'OK', response)
 
     def test_can_send_multiple_messages_and_receive_correctly_ordered_responses(self):
         # Arrange
@@ -59,14 +59,14 @@ class RequestWorkerTests(unittest.TestCase):
         self.worker.start()
 
         # Act
-        self.worker.send(b'hello1', self.response_handler.store)
-        self.worker.send(b'hello2', self.response_handler.store)
-        self.worker.send(b'hello3', self.response_handler.store)
+        response1 = self.worker.send(b'hello1')
+        response2 = self.worker.send(b'hello2')
+        response3 = self.worker.send(b'hello3')
 
         # Assert
-        self.assertEqual(b'OK', self.response_handler.get_store()[0])
-        self.assertEqual(b'OK', self.response_handler.get_store()[1])
-        self.assertEqual(b'OK', self.response_handler.get_store()[2])
+        self.assertEqual(b'OK', response1)
+        self.assertEqual(b'OK', response2)
+        self.assertEqual(b'OK', response3)
 
 
 class SubscriberWorkerTests(unittest.TestCase):
