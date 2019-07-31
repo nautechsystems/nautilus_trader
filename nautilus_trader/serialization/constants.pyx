@@ -6,7 +6,6 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-ENCODING = 'Encoding'
 UTF8 = 'utf-8'
 
 NONE = 'NONE'
@@ -77,6 +76,7 @@ ROLL_OVER_INTEREST_BUY = 'RolloverInterestBuy'
 ROLL_OVER_INTEREST_SELL = 'RolloverInterestSell'
 
 CORRELATION_ID = 'CorrelationId'
+DATA_ENCODING = 'DataEncoding'
 RECEIVED_TYPE = 'ReceivedType'
 MESSAGE = 'Message'
 QUERY = 'Query'

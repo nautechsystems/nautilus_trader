@@ -133,23 +133,22 @@ cdef class RequestWorker(MQWorker):
             zmq.REQ,
             logger)
 
-    cpdef void send(self, bytes request, handler: Callable):
+    cpdef bytes send(self, bytes request):
         """
         Send the given message to the service socket.
 
         :param request: The request message bytes to send.
-        :param handler: The handler for the response message.
         """
         Precondition.not_empty(request, 'request')
-        Precondition.type(handler, Callable, 'handler')
 
         self._zmq_socket.send(request)
         self._cycles += 1
         self._log.debug(f"Sending[{self._cycles}] request {request}")
 
         cdef bytes response = self._zmq_socket.recv()
-        handler(response)
-        self._log.debug(f"Received[{self._cycles}] response {response}.")
+        self._log.debug(f"Received[{self._cycles}] response of {len(response)} bytes.")
+
+        return response
 
     cpdef void _open_connection(self):
         # Open a connection to the service

@@ -199,7 +199,7 @@ cdef class DataClient:
         if tick_handler not in self._tick_handlers[symbol]:
             self._tick_handlers[symbol].append(tick_handler)
             self._log.debug(f"Added {tick_handler} for {symbol} ticks.")
-            self._log.info(f"Subscribed to ticks for {symbol}.")
+            self._log.info(f"Subscribed to ticks for {symbol}")
         else:
             self._log.error(f"Cannot add {tick_handler} (duplicate handler found).")
 
@@ -214,7 +214,7 @@ cdef class DataClient:
         if bar_handler not in self._bar_handlers[bar_type]:
             self._bar_handlers[bar_type].append(bar_handler)
             self._log.debug(f"Added {bar_handler} for {bar_type} bars.")
-            self._log.info(f"Subscribed to bars for {bar_type}.")
+            self._log.info(f"Subscribed to bars for {bar_type}")
         else:
             self._log.error(f"Cannot add {bar_handler} (duplicate handler found).")
 
@@ -229,7 +229,7 @@ cdef class DataClient:
         if instrument_handler not in self._instrument_handlers[symbol]:
             self._instrument_handlers[symbol].append(instrument_handler)
             self._log.debug(f"Added {handler} for {symbol} instruments.")
-            self._log.info(f"Subscribed to instrument for {symbol}.")
+            self._log.info(f"Subscribed to instrument for {symbol}")
         else:
             self._log.error(f"Cannot add {instrument_handler} (duplicate handler found).")
 
@@ -307,7 +307,7 @@ cdef class DataClient:
             # Remove instrument key if already exists
             del self._instruments[instrument.symbol]
         self._instruments[instrument.symbol] = instrument
-        self._log.info(f"Updated instrument for {instrument.symbol}.")
+        self._log.info(f"Updated instrument for {instrument.symbol}")
 
         cdef InstrumentHandler handler
         if instrument.symbol in self._instrument_handlers:

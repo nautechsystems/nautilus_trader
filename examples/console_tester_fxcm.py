@@ -7,50 +7,57 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.common.logger import Logger
+import zmq
+from nautilus_trader.common.logger import LiveLogger
+from nautilus_trader.common.account import Account
 from nautilus_trader.live.data import LiveDataClient
 from nautilus_trader.live.execution import LiveExecClient
-from nautilus_trader.model.enums import Venue, Resolution, QuoteType
-from nautilus_trader.model.objects import Symbol, BarType
+from nautilus_trader.model.enums import Venue, Resolution, QuoteType, Currency
+from nautilus_trader.model.objects import Symbol, BarType, BarSpecification
+from nautilus_trader.trade.portfolio import Portfolio
+from nautilus_trader.trade.trader import Trader
 
 from test_kit.strategies import EMACross
 
 AUDUSD_FXCM = Symbol('AUDUSD', Venue.FXCM)
-AUDUSD_FXCM_1_SEC_MID = BarType(AUDUSD_FXCM, 1, Resolution.SECOND, QuoteType.MID)
+AUDUSD_FXCM_1_SEC_BID = BarType(AUDUSD_FXCM, BarSpecification(1, Resolution.SECOND, QuoteType.BID))
 
 
 if __name__ == "__main__":
 
-    logger = Logger(log_to_file=False)
-    data_client = LiveDataClient(logger=logger)
-    exec_client = LiveExecClient(logger=logger)
+    logger = LiveLogger(log_to_file=False)
+    data_client = LiveDataClient(zmq_context=zmq.Context(), venue=Venue.FXCM, logger=logger)
+    exec_client = LiveExecClient(zmq_context=zmq.Context(), logger=logger)
     data_client.connect()
     exec_client.connect()
 
-    data_client.update_all_instruments()
+    data_client.update_instruments()
 
     instrument = data_client.get_instrument(AUDUSD_FXCM)
+
     strategy = EMACross(
-        'AUDUSD-01',
-        '001',
         instrument,
-        AUDUSD_FXCM_1_SEC_MID,
-        1,
+        AUDUSD_FXCM_1_SEC_BID,
+        0.1,
         10,
         20,
-        20,
-        2.0,
-        1000,
-        logger=logger)
+        20)
 
-    data_client.register_strategy(strategy)
-    exec_client.register_strategy(strategy)
+    trader = Trader(
+        '000',
+        [strategy],
+        data_client,
+        exec_client,
+        Account(currency=Currency.USD),
+        Portfolio())
 
-    strategy.start()
+    trader.start()
 
     input("Press Enter to stop strategy...\n")
-    strategy.stop()
+    trader.stop()
 
     input("Press Enter to disconnect...\n")
     print("Disconnecting...")
+
+    data_client.disconnect()
     exec_client.disconnect()

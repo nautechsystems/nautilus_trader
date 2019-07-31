@@ -34,7 +34,7 @@ cdef class RequestWorker(MQWorker):
     """
     Provides an asynchronous worker thread for ZMQ request messaging.
     """
-    cpdef void send(self, bytes message, handler)
+    cpdef bytes send(self, bytes message)
 
 
 cdef class SubscriberWorker(MQWorker):

@@ -10,18 +10,20 @@ import zmq
 
 from cpython.datetime cimport datetime
 from typing import Callable
+from zmq import Context
 
 # Do not rearrange below enums imports (import vs cimport)
 from nautilus_trader.core.precondition cimport Precondition
-from nautilus_trader.core.message cimport Request
-from nautilus_trader.model.enums import Resolution, QuoteType, Venue
+from nautilus_trader.core.message cimport Request, Response
+from nautilus_trader.model.enums import Resolution, QuoteType
+from nautilus_trader.model.c_enums.venue cimport Venue
 from nautilus_trader.model.c_enums.resolution cimport Resolution
 from nautilus_trader.model.c_enums.quote_type cimport QuoteType
 from nautilus_trader.model.c_enums.venue cimport venue_string
 from nautilus_trader.model.objects cimport Symbol, Price, Tick, BarSpecification, BarType, Bar, Instrument
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.guid cimport LiveGuidFactory
-from nautilus_trader.common.logger cimport Logger
+from nautilus_trader.common.logger cimport Logger, LiveLogger
 from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.network.workers import RequestWorker, SubscriberWorker
 from nautilus_trader.serialization.base cimport DataSerializer, InstrumentSerializer, RequestSerializer, ResponseSerializer
@@ -29,7 +31,7 @@ from nautilus_trader.serialization.data cimport BsonDataSerializer, BsonInstrume
 from nautilus_trader.serialization.common cimport parse_symbol, parse_symbol, parse_tick, parse_bar_type, parse_bar, convert_datetime_to_string
 from nautilus_trader.serialization.message cimport MsgPackRequestSerializer, MsgPackResponseSerializer
 from nautilus_trader.network.requests cimport DataRequest
-from nautilus_trader.network.responses cimport DataResponse
+from nautilus_trader.network.responses cimport MessageRejected, QueryFailure, DataResponse
 from nautilus_trader.trade.strategy cimport TradeStrategy
 
 cdef str UTF8 = 'utf-8'
@@ -43,14 +45,18 @@ cdef class LiveDataClient(DataClient):
     cdef object _tick_sub_worker
     cdef object _bar_req_worker
     cdef object _bar_sub_worker
-    cdef object _instrument_req_worker
-    cdef object _instrument_sub_worker
+    cdef object _inst_req_worker
+    cdef object _inst_sub_worker
     cdef RequestSerializer _request_serializer
     cdef ResponseSerializer _response_serializer
     cdef DataSerializer _data_serializer
     cdef InstrumentSerializer _instrument_serializer
 
+    cdef readonly object zmq_context
+
     def __init__(self,
+                 zmq_context: Context,
+                 Venue venue,
                  str service_address='localhost',
                  int tick_req_port=55501,
                  int tick_sub_port=55502,
@@ -62,10 +68,11 @@ cdef class LiveDataClient(DataClient):
                  ResponseSerializer response_serializer=MsgPackResponseSerializer(),
                  DataSerializer data_serializer=BsonDataSerializer(),
                  InstrumentSerializer instrument_serializer=BsonInstrumentSerializer(),
-                 Logger logger=None):
+                 Logger logger=LiveLogger()):
         """
         Initializes a new instance of the DataClient class.
 
+        :param zmq_context: The ZMQ context.
         :param service_address: The data service host IP address (default=127.0.0.1).
         :param tick_req_port: The data service port for tick requests (default=55501).
         :param tick_sub_port: The data service port for tick subscriptions (default=55502).
@@ -89,45 +96,51 @@ cdef class LiveDataClient(DataClient):
         Precondition.in_range(inst_req_port, 'inst_req_port', 0, 65535)
         Precondition.in_range(inst_sub_port, 'inst_sub_port', 0, 65535)
 
-        super().__init__(LiveClock(), LiveGuidFactory(), logger)
-        self.zmq_context = zmq.Context()
+        super().__init__(venue, LiveClock(), LiveGuidFactory(), logger)
+        self.zmq_context = zmq_context
         self._tick_req_worker = RequestWorker(
             'DataClient.TickReqWorker',
-            self.zmq_context,
+            'NautilusData',
             service_address,
             tick_req_port,
+            self.zmq_context,
             logger)
         self._bar_req_worker = RequestWorker(
             'DataClient.BarReqWorker',
-            self.zmq_context,
+            'NautilusData',
             service_address,
             bar_req_port,
+            self.zmq_context,
             logger)
         self._inst_req_worker = RequestWorker(
             'DataClient.InstReqWorker',
-            self.zmq_context,
+            'NautilusData',
             service_address,
             inst_req_port,
+            self.zmq_context,
             logger)
         self._tick_sub_worker = SubscriberWorker(
             "DataClient.TickSubWorker",
-            self.zmq_context,
+            'NautilusData',
             service_address,
             tick_sub_port,
+            self.zmq_context,
             self._handle_tick_sub,
             logger)
         self._bar_sub_worker = SubscriberWorker(
             "DataClient.BarSubWorker",
-            self.zmq_context,
+            'NautilusData',
             service_address,
             bar_sub_port,
+            self.zmq_context,
             self._handle_bar_sub,
             logger)
         self._inst_sub_worker = SubscriberWorker(
             "DataClient.InstSubWorker",
-            self.zmq_context,
+            'NautilusData',
             service_address,
             inst_sub_port,
+            self.zmq_context,
             self._handle_inst_sub,
             logger)
         self._request_serializer = request_serializer
@@ -145,8 +158,8 @@ cdef class LiveDataClient(DataClient):
         self._tick_sub_worker.start()
         self._bar_req_worker.start()
         self._bar_sub_worker.start()
-        self._instrument_req_worker.start()
-        self._instrument_sub_worker.start()
+        self._inst_req_worker.start()
+        self._inst_sub_worker.start()
 
     cpdef void disconnect(self):
         """
@@ -157,8 +170,8 @@ cdef class LiveDataClient(DataClient):
         self._tick_sub_worker.stop()
         self._bar_req_worker.stop()
         self._bar_sub_worker.stop()
-        self._instrument_req_worker.stop()
-        self._instrument_sub_worker.stop()
+        self._inst_req_worker.stop()
+        self._inst_sub_worker.stop()
 
     cpdef void reset(self):
         """
@@ -206,17 +219,12 @@ cdef class LiveDataClient(DataClient):
             "ToDateTime": convert_datetime_to_string(to_datetime),
         }
 
-        cdef DataRequest request = DataRequest(
-            query,
-            self._guid_factory.generate(),
-            self.time_now())
+        cdef DataRequest request = DataRequest(query, self._guid_factory.generate(), self.time_now())
+        cdef bytes request_bytes = self._request_serializer.serialize(request)
 
-        self._tick_req_worker(
-            self._request_serializer.serialize(request),
-            self._handle_response,
-            callback)
-
-        self._log.info(f"Requested {symbol} ticks from {from_datetime} to {to_datetime}.")
+        self._log.info(f"Requesting {symbol} ticks from {from_datetime} to {to_datetime}...")
+        cdef bytes response_bytes = self._tick_req_worker.send(request_bytes)
+        self._handle_response(response_bytes, callback)
 
     cpdef void request_bars(
             self,
@@ -241,17 +249,12 @@ cdef class LiveDataClient(DataClient):
             "ToDateTime": convert_datetime_to_string(to_datetime),
         }
 
-        cdef DataRequest request = DataRequest(
-            query,
-            self._guid_factory.generate(),
-            self.time_now())
+        cdef DataRequest request = DataRequest(query, self._guid_factory.generate(), self.time_now())
+        cdef bytes request_bytes = self._request_serializer.serialize(request)
 
-        self._bar_req_worker(
-            self._request_serializer.serialize(request),
-            self._handle_response,
-            callback)
-
-        self._log.info(f"Requested {bar_type} bars from {from_datetime} to {to_datetime}.")
+        self._log.info(f"Requesting {bar_type} bars from {from_datetime} to {to_datetime}...")
+        cdef bytes response_bytes = self._bar_req_worker.send(request_bytes)
+        self._handle_response(response_bytes, callback)
 
     cpdef void request_instrument(self, Symbol symbol, callback: Callable):
         """
@@ -266,17 +269,12 @@ cdef class LiveDataClient(DataClient):
             "Symbol": symbol.value,
         }
 
-        cdef DataRequest request = Request(
-            query,
-            self._guid_factory.generate(),
-            self.time_now())
+        cdef DataRequest request = DataRequest(query, self._guid_factory.generate(), self.time_now())
+        cdef bytes request_bytes = self._request_serializer.serialize(request)
 
-        self._inst_req_worker(
-            self._request_serializer.serialize(request),
-            self._handle_response,
-            callback)
-
-        self._log.info(f"Requested instrument for {symbol}.")
+        self._log.info(f"Requesting instrument for {symbol}...")
+        cdef bytes response_bytes = self._inst_req_worker.send(request_bytes)
+        self._handle_response(response_bytes, callback)
 
     cpdef void request_instruments(self, callback: Callable):
         """
@@ -287,23 +285,18 @@ cdef class LiveDataClient(DataClient):
             "Venue": venue_string(self.venue),
         }
 
-        cdef DataRequest request = DataRequest(
-            query,
-            self._guid_factory.generate(),
-            self.time_now())
+        cdef DataRequest request = DataRequest(query, self._guid_factory.generate(), self.time_now())
+        cdef bytes request_bytes = self._request_serializer.serialize(request)
 
-        self._inst_req_worker.send(
-            self._request_serializer.serialize(request),
-            self._handle_response,
-            callback)
-
-        self._log.info(f"Requested all instruments for the {self.venue} venue.")
+        self._log.info(f"Requesting all instruments for the {venue_string(self.venue)} venue...")
+        cdef bytes response_bytes = self._inst_req_worker.send(request_bytes)
+        self._handle_response(response_bytes, callback)
 
     cpdef void update_instruments(self):
         """
         Update all instruments for the data clients venue.
         """
-        self.request_instruments(self._handle_instruments_response)
+        self.request_instruments(self._update_instruments_data)
 
     cpdef void subscribe_ticks(self, Symbol symbol, handler: Callable):
         """
@@ -383,42 +376,27 @@ cdef class LiveDataClient(DataClient):
         self._inst_sub_worker.unsubscribe(symbol.value)
         self._remove_instrument_handler(symbol, handler)
 
-    cpdef void _handle_response(self, bytes message, callback: Callable):
-        """
-        Handle the given tick response message and send to the give callback.
-        
-        :param message: The response message bytes to handle.
-        :param callback: The callback to send the deserialized response to.
-        """
-        callback(self._response_serializer.deserialize(message))
+    cpdef void _handle_response(self, bytes response_bytes, callback: Callable):
+        cdef Response response = self._response_serializer.deserialize(response_bytes)
 
-    cpdef void _handle_instruments_response(self, DataResponse response):
-        """
-        Handle the instruments data response by deserializing all instrument data.
-        """
+        if isinstance(response, (MessageRejected, QueryFailure)):
+            self._log.error(response)
+        else:
+            callback(response)
+
+    cpdef void _update_instruments_data(self, DataResponse response):
+        # Handle the given data response by updating all instruments.
         for inst_bson in self._data_serializer.deserialize(response.data)['Values']:
             self._handle_instrument(self._instrument_serializer.deserialize(inst_bson))
 
     cpdef void _handle_tick_sub(self, str topic, bytes message):
-        """
-        Handle the given tick message published for the given topic.
-        
-        :param message: The published message to handle.
-        """
+        # Handle the given tick message published for the given topic
         self._handle_tick(parse_tick(parse_symbol(topic), message.decode(UTF8)))
 
     cpdef void _handle_bar_sub(self, str topic, bytes message):
-        """
-        Handle the given bar message published for the given topic.
-        
-        :param message: The published message to handle.
-        """
+        # Handle the given bar message published for the given topic
         self._handle_bar(parse_bar_type(topic), parse_bar(message.decode(UTF8)))
 
     cpdef void _handle_inst_sub(self, str topic, bytes message):
-        """
-        Handle the given instrument message published for the given topic.
-        
-        :param message: The published message to handle.
-        """
+        # Handle the given instrument message published for the given topic
         self._handle_instrument(self._instrument_serializer.deserialize(message))

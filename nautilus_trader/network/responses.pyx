@@ -85,7 +85,7 @@ cdef class DataResponse(Response):
 
     def __init__(self,
                  bytes data,
-                 str encoding,
+                 str data_encoding,
                  GUID correlation_id,
                  GUID response_id,
                  datetime response_timestamp):
@@ -93,11 +93,11 @@ cdef class DataResponse(Response):
         Initializes a new instance of the DataResponse class.
 
         :param data: The response data.
-        :param encoding: The encoding for the data.
+        :param data_encoding: The encoding for the data.
         :param correlation_id: The correlation identifier.
         :param response_id: The response identifier.
         :param response_timestamp: The response timestamp.
         """
         super().__init__(correlation_id, response_id, response_timestamp)
         self.data = data
-        self.encoding = encoding
+        self.data_encoding = data_encoding
