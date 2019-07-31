@@ -25,21 +25,18 @@ cdef class Command(Message):
     """
     The base class for all commands.
     """
-    pass
 
 
 cdef class Event(Message):
     """
     The base class for all events.
     """
-    pass
 
 
 cdef class Request(Message):
     """
     The base class for all requests.
     """
-    pass
 
 
 cdef class Response(Message):
