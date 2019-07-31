@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-# <copyright file="test_serialization_message.py" company="Nautech Systems Pty Ltd">
+# <copyright file="test_serialization_serializers.py" company="Nautech Systems Pty Ltd">
 #  Copyright (C) 2015-2019 Nautech Systems Pty Ltd. All rights reserved.
 #  The use of this source code is governed by the license as found in the LICENSE.md file.
 #  https://nautechsystems.io
@@ -11,6 +11,7 @@ import uuid
 
 from base64 import b64encode, b64decode
 
+from nautilus_trader.core.types import *
 from nautilus_trader.common.clock import *
 from nautilus_trader.model.commands import *
 from nautilus_trader.model.identifiers import *
@@ -18,7 +19,7 @@ from nautilus_trader.model.objects import *
 from nautilus_trader.model.order import *
 from nautilus_trader.model.events import *
 from nautilus_trader.serialization.data import *
-from nautilus_trader.serialization.message import *
+from nautilus_trader.serialization.serializers import *
 from nautilus_trader.serialization.common import *
 from nautilus_trader.network.requests import *
 from nautilus_trader.network.responses import *
@@ -870,11 +871,11 @@ class MsgPackResponseSerializerTests(unittest.TestCase):
     def test_can_serialize_and_deserialize_data_responses(self):
         # Arrange
         data = b'\x01 \x00'
-        encoding = 'BSON1.1'
+        data_encoding = 'BSON1.1'
 
         response = DataResponse(
             data=data,
-            encoding=encoding,
+            data_encoding=data_encoding,
             correlation_id=GUID(uuid4()),
             response_id=GUID(uuid4()),
             response_timestamp=UNIX_EPOCH)
@@ -886,6 +887,6 @@ class MsgPackResponseSerializerTests(unittest.TestCase):
         # Assert
         self.assertTrue(isinstance(deserialized, DataResponse))
         self.assertEqual(data, deserialized.data)
-        self.assertEqual(encoding, deserialized.encoding)
+        self.assertEqual(data_encoding, deserialized.data_encoding)
 
         print(deserialized)

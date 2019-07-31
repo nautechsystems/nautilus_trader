@@ -594,7 +594,7 @@ cdef class MsgPackResponseSerializer(ResponseSerializer):
             package[MESSAGE] = response.received_type
         elif isinstance(response, DataResponse):
             package[DATA] = response.data
-            package[DATA_ENCODING] = response.encoding
+            package[DATA_ENCODING] = response.data_encoding
         else:
             raise ValueError("Cannot serialize response (unrecognized response.")
 

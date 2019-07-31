@@ -11,8 +11,9 @@ import unittest
 from decimal import Decimal, InvalidOperation
 from datetime import timedelta
 
+from nautilus_trader.core.types import ValidString
 from nautilus_trader.model.enums import Venue, Resolution, QuoteType
-from nautilus_trader.model.objects import ValidString, Quantity, Symbol, Price, Money
+from nautilus_trader.model.objects import Quantity, Symbol, Price, Money
 from nautilus_trader.model.objects import BarSpecification, BarType
 
 

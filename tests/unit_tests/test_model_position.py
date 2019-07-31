@@ -11,10 +11,11 @@ import uuid
 
 from decimal import Decimal
 
+from nautilus_trader.core.types import GUID
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.model.enums import Venue, OrderSide, MarketPosition
 from nautilus_trader.model.objects import Quantity, Symbol, Price
-from nautilus_trader.model.identifiers import GUID, OrderId, PositionId, ExecutionId, ExecutionTicket
+from nautilus_trader.model.identifiers import OrderId, PositionId, ExecutionId, ExecutionTicket
 from nautilus_trader.model.order import OrderFactory
 from nautilus_trader.model.position import Position
 from nautilus_trader.model.events import OrderPartiallyFilled, OrderFilled

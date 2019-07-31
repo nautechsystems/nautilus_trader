@@ -28,7 +28,7 @@ from nautilus_trader.common.execution cimport ExecutionClient
 from nautilus_trader.trade.portfolio cimport Portfolio
 from nautilus_trader.network.workers import RequestWorker, SubscriberWorker
 from nautilus_trader.serialization.base cimport CommandSerializer, ResponseSerializer, EventSerializer
-from nautilus_trader.serialization.message cimport (
+from nautilus_trader.serialization.serializers cimport (
     MsgPackCommandSerializer,
     MsgPackResponseSerializer,
     MsgPackEventSerializer

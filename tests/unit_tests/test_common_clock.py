@@ -12,8 +12,9 @@ import unittest
 from datetime import datetime, timezone, timedelta
 from uuid import uuid4
 
+from nautilus_trader.core.types import GUID
 from nautilus_trader.common.clock import Clock, LiveClock, TestClock, TestTimer
-from nautilus_trader.model.identifiers import Label, GUID
+from nautilus_trader.model.identifiers import Label
 from nautilus_trader.model.events import TimeEvent
 from test_kit.stubs import UNIX_EPOCH
 
