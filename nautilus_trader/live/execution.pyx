@@ -13,7 +13,7 @@ from threading import Thread
 from zmq import Context
 
 from nautilus_trader.core.precondition cimport Precondition
-from nautilus_trader.core.message cimport Command, Event, Response
+from nautilus_trader.core.message cimport MessageType, Message, Command, Event, Response
 from nautilus_trader.model.commands cimport (
     CollateralInquiry,
     SubmitOrder,
@@ -165,12 +165,15 @@ cdef class LiveExecClient(ExecutionClient):
         self._message_bus.put(event)
 
     cpdef void _process(self):
+        cdef Message message
         while True:
-            item = self._message_bus.get()
-            if isinstance(item, Event):
-                self._handle_event(item)
-            elif isinstance(item, Command):
-                self._execute_command(item)
+            message = self._message_bus.get()
+            if message.message_type == MessageType.EVENT:
+                self._handle_event(message)
+            elif message.message_type == MessageType.COMMAND:
+                self._execute_command(message)
+            else:
+                raise RuntimeError(f"Invalid message type on bus ({type(message)}).")
 
     cpdef void _collateral_inquiry(self, CollateralInquiry command):
         self._send_command(command)
