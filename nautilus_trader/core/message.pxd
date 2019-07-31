@@ -11,10 +11,20 @@ from cpython.datetime cimport datetime
 from nautilus_trader.core.types cimport GUID
 
 
+cpdef enum MessageType:
+    UNKNOWN = -1,
+    MESSAGE = 0
+    COMMAND = 1,
+    EVENT = 2,
+    REQUEST = 3,
+    RESPONSE = 4
+
+
 cdef class Message:
     """
     The base class for all messages.
     """
+    cdef readonly MessageType message_type
     cdef readonly GUID id
     cdef readonly datetime timestamp
 
