@@ -8,6 +8,7 @@
 
 import unittest
 import time
+import zmq
 
 from nautilus_trader.model.enums import Venue, OrderSide
 from nautilus_trader.model.objects import Quantity, Symbol, Price
@@ -30,10 +31,10 @@ class LiveExecClientTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
-        self.bar_type = TestStubs.bartype_audusd_1min_bid()
-        self.exec_client = LiveExecClient()
+        zmq_context = zmq.Context()
 
-        zmq_context = self.exec_client.zmq_context
+        self.bar_type = TestStubs.bartype_audusd_1min_bid()
+        self.exec_client = LiveExecClient(zmq_context)
 
         self.response_list = []
         self.response_handler = self.response_list.append

@@ -188,8 +188,10 @@ cdef class LiveExecClient(ExecutionClient):
         self._send_command(command)
 
     cpdef void _send_command(self, Command command):
-        self._commands_worker.send(self._command_serializer.serialize(command), self._deserialize_response)
-        self._log.debug(f"Sent {command}")
+        self._log.debug(f"Sending {command}")
+        cdef bytes response_bytes = self._commands_worker.send(self._command_serializer.serialize(command))
+        cdef Response response =  self._deserialize_response(response_bytes)
+        self._log.debug(f"Received response {response}")
 
     cpdef void _deserialize_event(self, str topic, bytes event_bytes):
         cdef Event event = self._event_serializer.deserialize(event_bytes)
