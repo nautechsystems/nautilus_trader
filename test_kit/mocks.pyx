@@ -1,4 +1,3 @@
-
 # -------------------------------------------------------------------------------------------------
 # <copyright file="mocks.pyx" company="Nautech Systems Pty Ltd">
 #  Copyright (C) 2015-2019 Nautech Systems Pty Ltd. All rights reserved.
@@ -15,8 +14,8 @@ from threading import Thread
 from zmq import Context
 from uuid import uuid4
 
+from nautilus_trader.core.types cimport GUID
 from nautilus_trader.network.responses cimport MessageReceived
-from nautilus_trader.model.identifiers cimport GUID
 from nautilus_trader.serialization.base cimport CommandSerializer, ResponseSerializer
 from test_kit.stubs import TestStubs
 

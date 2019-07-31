@@ -8,6 +8,7 @@
 
 from cpython.datetime cimport datetime
 
+from nautilus_trader.core.types cimport GUID
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_status cimport OrderStatus
@@ -15,7 +16,7 @@ from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.model.objects cimport Quantity, Symbol, Price
 from nautilus_trader.model.events cimport OrderEvent
-from nautilus_trader.model.identifiers cimport GUID, Label, OrderId, ExecutionId, ExecutionTicket
+from nautilus_trader.model.identifiers cimport Label, OrderId, ExecutionId, ExecutionTicket
 from nautilus_trader.model.identifiers cimport OrderIdGenerator
 
 

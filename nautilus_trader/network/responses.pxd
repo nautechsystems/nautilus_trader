@@ -6,6 +6,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.core.types cimport GUID
 from nautilus_trader.core.message cimport Response
 
 

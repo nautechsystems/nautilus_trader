@@ -8,8 +8,8 @@
 
 from cpython.datetime cimport datetime
 
+from nautilus_trader.core.types cimport GUID
 from nautilus_trader.core.message cimport Response
-from nautilus_trader.model.identifiers cimport GUID
 
 
 cdef class MessageReceived(Response):

@@ -12,6 +12,7 @@ from uuid import uuid4
 from typing import List
 
 from nautilus_trader.core.precondition cimport Precondition
+from nautilus_trader.core.types cimport GUID
 from nautilus_trader.model.c_enums.order_side cimport OrderSide, order_side_string
 from nautilus_trader.model.c_enums.order_type cimport OrderType, order_type_string
 from nautilus_trader.model.c_enums.order_status cimport OrderStatus, order_status_string
@@ -22,7 +23,7 @@ from nautilus_trader.model.events cimport OrderInitialized, OrderSubmitted, Orde
 from nautilus_trader.model.events cimport OrderWorking, OrderExpired, OrderModified, OrderCancelled
 from nautilus_trader.model.events cimport OrderCancelReject, OrderPartiallyFilled, OrderFilled
 from nautilus_trader.model.identifiers cimport Label, OrderId, ExecutionId, ExecutionTicket
-from nautilus_trader.model.identifiers cimport OrderIdGenerator, GUID
+from nautilus_trader.model.identifiers cimport OrderIdGenerator
 from nautilus_trader.common.clock cimport Clock, LiveClock
 
 

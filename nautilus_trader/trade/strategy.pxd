@@ -8,6 +8,7 @@
 
 from cpython.datetime cimport datetime
 
+from nautilus_trader.core.types cimport ValidString
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.guid cimport GuidFactory
@@ -22,7 +23,7 @@ from nautilus_trader.model.currency cimport ExchangeRateCalculator
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.identifiers cimport TraderId, StrategyId, OrderId, PositionId
 from nautilus_trader.model.identifiers cimport PositionIdGenerator
-from nautilus_trader.model.objects cimport ValidString, Symbol, Price, Tick, BarType, Bar, Instrument
+from nautilus_trader.model.objects cimport Symbol, Price, Tick, BarType, Bar, Instrument
 from nautilus_trader.model.order cimport Order, AtomicOrder, OrderFactory
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.trade.portfolio cimport Portfolio

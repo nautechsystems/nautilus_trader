@@ -10,6 +10,7 @@ from cpython.datetime cimport datetime
 from typing import List
 
 from nautilus_trader.core.precondition cimport Precondition
+from nautilus_trader.core.types cimport ValidString
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport LiveClock

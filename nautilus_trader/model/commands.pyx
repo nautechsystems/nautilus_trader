@@ -8,8 +8,9 @@
 
 from cpython.datetime cimport datetime
 
-from nautilus_trader.model.objects cimport ValidString, Price
-from nautilus_trader.model.identifiers cimport GUID, PositionId, TraderId, StrategyId
+from nautilus_trader.core.types cimport ValidString, GUID
+from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.identifiers cimport PositionId, TraderId, StrategyId
 from nautilus_trader.model.order cimport Order, AtomicOrder
 
 

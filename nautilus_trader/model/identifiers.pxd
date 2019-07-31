@@ -6,16 +6,9 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.core.types cimport Identifier
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.model.objects cimport ValidString, Symbol
 
-
-cdef class Identifier:
-    cdef readonly str value
-    cpdef bint equals(self, Identifier other)
-
-cdef class GUID(Identifier):
-    pass
 
 cdef class Label(Identifier):
     pass
