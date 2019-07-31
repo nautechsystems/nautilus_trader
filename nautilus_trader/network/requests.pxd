@@ -6,41 +6,11 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
-
 from nautilus_trader.core.message cimport Request
-from nautilus_trader.model.c_enums.venue cimport Venue
-from nautilus_trader.model.objects cimport Symbol, BarSpecification
 
 
-cdef class TickDataRequest(Request):
+cdef class DataRequest(Request):
     """
     Represents a request for historical tick data.
     """
-    cdef readonly Symbol symbol
-    cdef readonly datetime from_datetime
-    cdef readonly datetime to_datetime
-
-
-cdef class BarDataRequest(Request):
-    """
-    Represents a request for historical bar data.
-    """
-    cdef readonly Symbol symbol
-    cdef readonly BarSpecification bar_spec
-    cdef readonly datetime from_datetime
-    cdef readonly datetime to_datetime
-
-
-cdef class InstrumentRequest(Request):
-    """
-    Represents a request for an instrument.
-    """
-    cdef readonly Symbol symbol
-
-
-cdef class InstrumentsRequest(Request):
-    """
-    Represents a request for all instruments for a venue.
-    """
-    cdef readonly Venue venue
+    cdef readonly dict query

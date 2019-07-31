@@ -6,54 +6,49 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.message cimport Command, Event, Request, Response
-from nautilus_trader.model.order cimport Order
 from nautilus_trader.serialization.base cimport (
+    QuerySerializer,
     OrderSerializer,
     EventSerializer,
     CommandSerializer,
     RequestSerializer,
-    ResponseSerializer
+    ResponseSerializer,
 )
+
+
+cdef class MsgPackQuerySerializer(QuerySerializer):
+    """
+    Provides a serializer for data query objects for the MsgPack specification.
+    """
 
 
 cdef class MsgPackOrderSerializer(OrderSerializer):
     """
     Provides a command serializer for the MessagePack specification
     """
-    cpdef bytes serialize(self, Order order)
-    cpdef Order deserialize(self, bytes order_bytes)
 
 
 cdef class MsgPackCommandSerializer(CommandSerializer):
     """
     Provides a command serializer for the MessagePack specification.
     """
-    cpdef OrderSerializer order_serializer
-
-    cpdef bytes serialize(self, Command command)
-    cpdef Command deserialize(self, bytes command_bytes)
+    cdef OrderSerializer order_serializer
 
 
 cdef class MsgPackEventSerializer(EventSerializer):
     """
     Provides an event serializer for the MessagePack specification
     """
-    cpdef bytes serialize(self, Event event)
-    cpdef Event deserialize(self, bytes event_bytes)
 
 
 cdef class MsgPackRequestSerializer(RequestSerializer):
     """
     Provides a request serializer for the MessagePack specification
     """
-    cpdef bytes serialize(self, Request request)
-    cpdef Request deserialize(self, bytes request_bytes)
+    cdef QuerySerializer query_serializer
 
 
 cdef class MsgPackResponseSerializer(ResponseSerializer):
     """
     Provides a response serializer for the MessagePack specification
     """
-    cpdef bytes serialize(self, Response request)
-    cpdef Response deserialize(self, bytes response_bytes)

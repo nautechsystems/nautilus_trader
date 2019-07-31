@@ -11,6 +11,14 @@ from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.objects cimport Instrument
 
 
+cdef class QuerySerializer:
+    """
+    The abstract base class for all query serializers.
+    """
+    cpdef bytes serialize(self, dict data)
+    cpdef dict deserialize(self, bytes data_bytes)
+
+
 cdef class DataSerializer:
     """
     The abstract base class for all data serializers.

@@ -6,7 +6,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.objects cimport BarType, Instrument
+from nautilus_trader.model.objects cimport BarType
 from nautilus_trader.serialization.base cimport DataSerializer, InstrumentSerializer
 
 
@@ -23,13 +23,9 @@ cdef class BsonInstrumentSerializer(InstrumentSerializer):
     """
     Provides an instrument serializer for the MessagePack specification.
     """
-    cpdef bytes serialize(self, Instrument instrument)
-    cpdef Instrument deserialize(self, bytes instrument_bytes)
 
 
 cdef class BsonDataSerializer(DataSerializer):
     """
     Provides a serializer for data objects to BSON specification.
     """
-    cpdef bytes serialize(self, dict data)
-    cpdef dict deserialize(self, bytes data_bytes)

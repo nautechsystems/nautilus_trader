@@ -11,6 +11,32 @@ from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.objects cimport Instrument
 
 
+cdef class QuerySerializer:
+    """
+    The abstract base class for all query serializers.
+    """
+
+    cpdef bytes serialize(self, dict query):
+        """
+        Serialize the given data query to bytes.
+
+        :param: data: The data query to serialize.
+        :return: bytes.
+        """
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
+    cpdef dict deserialize(self, bytes query_bytes):
+        """
+        Deserialize the given bytes to a data query.
+
+        :param: data_bytes: The data query bytes to deserialize.
+        :return: Dict.
+        """
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
+
 cdef class DataSerializer:
     """
     The abstract base class for all data serializers.

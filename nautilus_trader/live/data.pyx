@@ -17,7 +17,7 @@ from nautilus_trader.core.message cimport Request
 from nautilus_trader.model.enums import Resolution, QuoteType, Venue
 from nautilus_trader.model.c_enums.resolution cimport Resolution
 from nautilus_trader.model.c_enums.quote_type cimport QuoteType
-from nautilus_trader.model.c_enums.venue cimport Venue
+from nautilus_trader.model.c_enums.venue cimport venue_string
 from nautilus_trader.model.objects cimport Symbol, Price, Tick, BarSpecification, BarType, Bar, Instrument
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.guid cimport LiveGuidFactory
@@ -26,9 +26,9 @@ from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.network.workers import RequestWorker, SubscriberWorker
 from nautilus_trader.serialization.base cimport DataSerializer, InstrumentSerializer, RequestSerializer, ResponseSerializer
 from nautilus_trader.serialization.data cimport BsonDataSerializer, BsonInstrumentSerializer
-from nautilus_trader.serialization.common cimport parse_symbol, parse_symbol, parse_tick, parse_bar_type, parse_bar
+from nautilus_trader.serialization.common cimport parse_symbol, parse_symbol, parse_tick, parse_bar_type, parse_bar, convert_datetime_to_string
 from nautilus_trader.serialization.message cimport MsgPackRequestSerializer, MsgPackResponseSerializer
-from nautilus_trader.network.requests cimport TickDataRequest, BarDataRequest, InstrumentRequest, InstrumentsRequest
+from nautilus_trader.network.requests cimport DataRequest
 from nautilus_trader.network.responses cimport DataResponse
 from nautilus_trader.trade.strategy cimport TradeStrategy
 
@@ -188,7 +188,7 @@ cdef class LiveDataClient(DataClient):
             self,
             Symbol symbol,
             datetime from_datetime,
-            datetime to_date_time,
+            datetime to_datetime,
             callback: Callable):
         """
         Update the instrument corresponding to the given symbol (if found).
@@ -196,13 +196,18 @@ cdef class LiveDataClient(DataClient):
 
         :param symbol: The symbol for the request.
         :param from_datetime: The from date time for the request.
-        :param to_date_time: The to date time for the request.
+        :param to_datetime: The to date time for the request.
         :param callback: The callback for the response.
         """
-        cdef TickDataRequest request = TickDataRequest(
-            symbol,
-            from_datetime,
-            to_date_time,
+        cdef dict query = {
+            "DataType": "Tick[]",
+            "Symbol": symbol.value,
+            "FromDateTime": convert_datetime_to_string(from_datetime),
+            "ToDateTime": convert_datetime_to_string(to_datetime),
+        }
+
+        cdef DataRequest request = DataRequest(
+            query,
             self._guid_factory.generate(),
             self.time_now())
 
@@ -211,13 +216,13 @@ cdef class LiveDataClient(DataClient):
             self._handle_response,
             callback)
 
-        self._log.info(f"Requested {symbol} ticks from {from_datetime} to {to_date_time}.")
+        self._log.info(f"Requested {symbol} ticks from {from_datetime} to {to_datetime}.")
 
     cpdef void request_bars(
             self,
             BarType bar_type,
             datetime from_datetime,
-            datetime to_date_time,
+            datetime to_datetime,
             callback: Callable):
         """
         Update the instrument corresponding to the given symbol (if found).
@@ -225,13 +230,19 @@ cdef class LiveDataClient(DataClient):
 
         :param bar_type: The bar type for the request.
         :param from_datetime: The from date time for the request.
-        :param to_date_time: The to date time for the request.
+        :param to_datetime: The to date time for the request.
         :param callback: The callback for the response.
         """
-        cdef BarDataRequest request = BarDataRequest(
-            bar_type,
-            from_datetime,
-            to_date_time,
+        cdef dict query = {
+            "DataType": "Bar[]",
+            "Symbol": bar_type.symbol.value,
+            "Specification": str(bar_type.specification),
+            "FromDateTime": convert_datetime_to_string(from_datetime),
+            "ToDateTime": convert_datetime_to_string(to_datetime),
+        }
+
+        cdef DataRequest request = DataRequest(
+            query,
             self._guid_factory.generate(),
             self.time_now())
 
@@ -240,7 +251,7 @@ cdef class LiveDataClient(DataClient):
             self._handle_response,
             callback)
 
-        self._log.info(f"Requested {bar_type} bars from {from_datetime} to {to_date_time}.")
+        self._log.info(f"Requested {bar_type} bars from {from_datetime} to {to_datetime}.")
 
     cpdef void request_instrument(self, Symbol symbol, callback: Callable):
         """
@@ -250,8 +261,13 @@ cdef class LiveDataClient(DataClient):
         :param symbol: The symbol to update.
         :param callback: The callback for the response.
         """
-        cdef InstrumentRequest request = InstrumentRequest(
-            symbol,
+        cdef dict query = {
+            "DataType": "Instrument",
+            "Symbol": symbol.value,
+        }
+
+        cdef DataRequest request = Request(
+            query,
             self._guid_factory.generate(),
             self.time_now())
 
@@ -266,8 +282,13 @@ cdef class LiveDataClient(DataClient):
         """
         Update all instruments from the live database.
         """
-        cdef InstrumentsRequest request = InstrumentsRequest(
-            self.venue,
+        cdef dict query = {
+            "DataType": "Instrument[]",
+            "Venue": venue_string(self.venue),
+        }
+
+        cdef DataRequest request = DataRequest(
+            query,
             self._guid_factory.generate(),
             self.time_now())
 

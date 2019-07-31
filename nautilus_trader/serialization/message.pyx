@@ -13,8 +13,8 @@ from decimal import Decimal
 from uuid import UUID
 
 from nautilus_trader.core.precondition cimport Precondition
-from nautilus_trader.model.enums import Venue, Broker, OrderSide, OrderType, Currency, TimeInForce
-from nautilus_trader.model.c_enums.venue cimport venue_string
+from nautilus_trader.core.message cimport Command, Event, Request, Response
+from nautilus_trader.model.enums import Broker, OrderSide, OrderType, Currency, TimeInForce
 from nautilus_trader.model.c_enums.brokerage cimport Broker, broker_string
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce, time_in_force_string
 from nautilus_trader.model.c_enums.order_side cimport  order_side_string
@@ -23,7 +23,7 @@ from nautilus_trader.model.c_enums.currency cimport Currency, currency_string
 from nautilus_trader.model.identifiers cimport TraderId, StrategyId, OrderId, ExecutionId, AccountId
 from nautilus_trader.model.identifiers cimport GUID, ExecutionTicket, AccountNumber, PositionId, Label
 from nautilus_trader.model.objects cimport ValidString, Quantity, Money, Price
-from nautilus_trader.model.order cimport  AtomicOrder
+from nautilus_trader.model.order cimport Order, AtomicOrder
 from nautilus_trader.serialization.constants cimport *
 from nautilus_trader.serialization.base cimport (
     OrderSerializer,
@@ -42,7 +42,6 @@ from nautilus_trader.serialization.common cimport (
     parse_symbol,
     parse_bar_spec
 )
-from nautilus_trader.serialization.data cimport BsonDataSerializer
 from nautilus_trader.model.commands cimport (
     CollateralInquiry,
     SubmitOrder,
@@ -64,18 +63,37 @@ from nautilus_trader.model.events cimport (
     OrderPartiallyFilled,
     OrderFilled
 )
-from nautilus_trader.network.requests cimport (
-    TickDataRequest,
-    BarDataRequest,
-    InstrumentRequest,
-    InstrumentsRequest
-)
+from nautilus_trader.network.requests cimport DataRequest
 from nautilus_trader.network.responses cimport (
     MessageReceived,
     MessageRejected,
     QueryFailure,
     DataResponse
 )
+
+
+cdef class MsgPackQuerySerializer(QuerySerializer):
+    """
+    Provides a serializer for data query objects for the MsgPack specification.
+    """
+
+    cpdef bytes serialize(self, dict query):
+        """
+        Serialize the given data query to bytes.
+
+        :param: data: The data query to serialize.
+        :return: bytes.
+        """
+        return msgpack.packb(query)
+
+    cpdef dict deserialize(self, bytes query_bytes):
+        """
+        Deserialize the given bytes to a data query.
+
+        :param: data_bytes: The data query bytes to deserialize.
+        :return: Dict.
+        """
+        return msgpack.unpackb(query_bytes, raw=False)
 
 
 cdef class MsgPackOrderSerializer(OrderSerializer):
@@ -489,6 +507,12 @@ cdef class MsgPackRequestSerializer(RequestSerializer):
     Provides a request serializer for the MessagePack specification.
     """
 
+    def __init__(self):
+        """
+        Initializes a new instance of the MsgPackRequestSerializer class.
+        """
+        self.query_serializer = MsgPackQuerySerializer()
+
     cpdef bytes serialize(self, Request request):
         """
         Serialize the given request to bytes.
@@ -502,19 +526,8 @@ cdef class MsgPackRequestSerializer(RequestSerializer):
             TIMESTAMP: convert_datetime_to_string(request.timestamp)
         }
 
-        if isinstance(request, TickDataRequest):
-            package[SYMBOL] = request.symbol.value
-            package[FROM_DATETIME] = convert_datetime_to_string(request.from_datetime)
-            package[TO_DATETIME] = convert_datetime_to_string(request.to_datetime)
-        elif isinstance(request, BarDataRequest):
-            package[SYMBOL] = request.symbol.value
-            package[BAR_SPECIFICATION] = str(request.bar_spec)
-            package[FROM_DATETIME] = convert_datetime_to_string(request.from_datetime)
-            package[TO_DATETIME] = convert_datetime_to_string(request.to_datetime)
-        elif isinstance(request, InstrumentRequest):
-            package[SYMBOL] = request.symbol.value
-        elif isinstance(request, InstrumentsRequest):
-            package[VENUE] = venue_string(request.venue)
+        if isinstance(request, DataRequest):
+            package[QUERY] = self.query_serializer.serialize(request.query)
         else:
             raise ValueError("Cannot serialize request (unrecognized request.")
 
@@ -529,35 +542,26 @@ cdef class MsgPackRequestSerializer(RequestSerializer):
         """
         Precondition.not_empty(request_bytes, 'request_bytes')
 
-        cdef dict unpacked = msgpack.unpackb(request_bytes, raw=False)
+        cdef dict unpacked_raw = msgpack.unpackb(request_bytes)
+        cdef dict unpacked = {}
+
+        # Manually unpack and decode
+        for k, v in unpacked_raw.items():
+            if k not in b'Query':
+                if isinstance(v, bytes):
+                    unpacked[k.decode(UTF8)] = v.decode(UTF8)
+                else:
+                    unpacked[k.decode(UTF8)] = v
+            else:
+                unpacked[k.decode(UTF8)] = v
 
         cdef str request_type = unpacked[TYPE]
         cdef GUID request_id = GUID(UUID(unpacked[ID]))
         cdef datetime request_timestamp = convert_string_to_datetime(unpacked[TIMESTAMP])
 
-        if request_type == TickDataRequest.__name__:
-            return TickDataRequest(
-                parse_symbol(unpacked[SYMBOL]),
-                convert_string_to_datetime(unpacked[FROM_DATETIME]),
-                convert_string_to_datetime(unpacked[TO_DATETIME]),
-                request_id,
-                request_timestamp)
-        if request_type == BarDataRequest.__name__:
-            return BarDataRequest(
-                parse_symbol(unpacked[SYMBOL]),
-                parse_bar_spec(unpacked[BAR_SPECIFICATION]),
-                convert_string_to_datetime(unpacked[FROM_DATETIME]),
-                convert_string_to_datetime(unpacked[TO_DATETIME]),
-                request_id,
-                request_timestamp)
-        if request_type == InstrumentRequest.__name__:
-            return InstrumentRequest(
-                parse_symbol(unpacked[SYMBOL]),
-                request_id,
-                request_timestamp)
-        if request_type == InstrumentsRequest.__name__:
-            return InstrumentsRequest(
-                Venue[(unpacked[VENUE])],
+        if request_type == DataRequest.__name__:
+            return DataRequest(
+                self.query_serializer.deserialize(unpacked[QUERY]),
                 request_id,
                 request_timestamp)
         else:

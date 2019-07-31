@@ -7,20 +7,14 @@
 # -------------------------------------------------------------------------------------------------
 
 import iso8601
-import msgpack
 
 from bson import BSON
 from bson.raw_bson import RawBSONDocument
 from decimal import Decimal
 
 from nautilus_trader.core.precondition cimport Precondition
-from nautilus_trader.model.objects cimport Symbol, Price, BarSpecification, Bar, BarType, Tick, Instrument, Quantity
-from nautilus_trader.model.enums import Broker, Venue, Currency, OrderSide, OrderType, TimeInForce, SecurityType
-from nautilus_trader.model.c_enums.venue cimport venue_string
-from nautilus_trader.model.c_enums.brokerage cimport Broker, broker_string
-from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce, time_in_force_string
-from nautilus_trader.model.c_enums.order_side cimport OrderSide, order_side_string
-from nautilus_trader.model.c_enums.order_type cimport OrderType, order_type_string
+from nautilus_trader.model.objects cimport Instrument, Quantity
+from nautilus_trader.model.enums import Currency, SecurityType
 from nautilus_trader.model.c_enums.currency cimport Currency, currency_string
 from nautilus_trader.model.c_enums.security_type cimport SecurityType, security_type_string
 from nautilus_trader.model.identifiers cimport InstrumentId
