@@ -43,7 +43,8 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         strategies = [EmptyStrategy('001')]
 
         config = BacktestConfig()
-        engine = BacktestEngine(instruments=instruments,
+        engine = BacktestEngine(venue=Venue.FXCM,
+                                instruments=instruments,
                                 data_ticks=tick_data,
                                 data_bars_bid=bid_data,
                                 data_bars_ask=ask_data,
@@ -69,7 +70,8 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 13/03/19  614197 function calls  (614015 primitive calls) in 0.694 seconds (numerous changes)
         # 16/03/19 2193923 function calls (2193741 primitive calls) in 2.690 seconds (changed)
         # 27/03/19 2255252 function calls (2255070 primitive calls) in 2.738 seconds (performance check)
-        # 09/07/19   78020 function calls (77838 primitive calls) in 2.179 seconds (performance check)
+        # 09/07/19   78020 function calls   (77838 primitive calls) in 2.179 seconds (performance check)
+        # 31/07/19   13792 function calls   (13610 primitive calls) in 2.037 seconds (performance check)
 
     def test_run_with_ema_cross_strategy(self):
         # Arrange
@@ -101,6 +103,7 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
             console_prints=False)
 
         engine = BacktestEngine(
+            venue=Venue.FXCM,
             instruments=instruments,
             data_ticks=tick_data,
             data_bars_bid=bid_data,
@@ -172,3 +175,4 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 29/04/19 15128798 function calls (14900430 primitive calls) in 14.235 seconds (add bid-ask bar pair class)
         # 09/07/19 15323948 function calls (15095596 primitive calls) in 14.408 seconds (performance check)
         # 25/07/19 15274063 function calls (15045703 primitive calls) in 14.408 seconds (removed compiler directives for perf)
+        # 31/07/19 15274063 function calls (15045703 primitive calls) in 14.589 seconds (numerous changes)
