@@ -64,7 +64,6 @@ cpdef object with_utc_index(dataframe):
                 return dataframe.tz_convert('UTC')
             else:
                 return dataframe  # Already UTC
-
         return dataframe  # The input argument was None
 
 

@@ -9,6 +9,7 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.types cimport GUID
+from nautilus_trader.core.message cimport MessageType
 
 
 cdef class Message:
@@ -16,13 +17,18 @@ cdef class Message:
     The base class for all messages.
     """
 
-    def __init__(self, GUID identifier, datetime timestamp):
+    def __init__(self,
+                 MessageType message_type,
+                 GUID identifier,
+                 datetime timestamp):
         """
         Initializes a new instance of the Message abstract class.
 
+        :param message_type: The message type.
         :param identifier: The message identifier.
         :param timestamp: The message timestamp.
         """
+        self.message_type = message_type
         self.id = identifier
         self.timestamp = timestamp
 
@@ -33,7 +39,7 @@ cdef class Message:
         :param other: The other message to compare
         :return: True if the messages are equal, otherwise False.
         """
-        if isinstance(other, self.__class__):
+        if self.message_type == other.message_type:
             return self.id == other.id
         else:
             return False
@@ -93,7 +99,7 @@ cdef class Command(Message):
         :param identifier: The command identifier.
         :param timestamp: The command timestamp.
         """
-        super().__init__(identifier, timestamp)
+        super().__init__(MessageType.COMMAND, identifier, timestamp)
 
 
 cdef class Event(Message):
@@ -110,7 +116,7 @@ cdef class Event(Message):
         :param identifier: The event identifier.
         :param timestamp: The event timestamp.
         """
-        super().__init__(identifier, timestamp)
+        super().__init__(MessageType.EVENT, identifier, timestamp)
 
 
 cdef class Request(Message):
@@ -125,7 +131,7 @@ cdef class Request(Message):
         :param identifier: The request identifier.
         :param timestamp: The request timestamp.
         """
-        super().__init__(identifier, timestamp)
+        super().__init__(MessageType.REQUEST, identifier, timestamp)
 
 
 cdef class Response(Message):
@@ -144,5 +150,5 @@ cdef class Response(Message):
         :param identifier: The response identifier.
         :param timestamp: The response timestamp.
         """
-        super().__init__(identifier, timestamp)
+        super().__init__(MessageType.RESPONSE, identifier, timestamp)
         self.correlation_id = correlation_id
