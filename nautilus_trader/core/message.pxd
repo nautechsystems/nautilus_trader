@@ -8,7 +8,7 @@
 
 from cpython.datetime cimport datetime
 
-from nautilus_trader.model.identifiers cimport GUID
+from nautilus_trader.core.types cimport GUID
 
 
 cdef class Message:

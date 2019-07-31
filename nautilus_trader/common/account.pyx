@@ -6,10 +6,11 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.core.types cimport ValidString
 from nautilus_trader.model.c_enums.brokerage cimport Broker
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.events cimport AccountEvent
-from nautilus_trader.model.objects import ValidString, Money
+from nautilus_trader.model.objects cimport Money
 
 
 cdef class Account:

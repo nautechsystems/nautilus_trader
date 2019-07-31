@@ -17,8 +17,8 @@ from threading import Thread
 from queue import Queue
 
 from nautilus_trader.core.precondition cimport Precondition
+from nautilus_trader.core.types cimport ValidString
 from nautilus_trader.core.functions cimport format_zulu_datetime
-from nautilus_trader.model.objects cimport ValidString
 from nautilus_trader.common.clock cimport Clock, LiveClock, TestClock
 
 

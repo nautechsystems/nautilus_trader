@@ -16,16 +16,6 @@ from nautilus_trader.model.c_enums.quote_type cimport QuoteType
 from nautilus_trader.model.identifiers cimport InstrumentId
 
 
-cdef class ValidString:
-    """
-    Represents a validated string (validated with Precondition.valid_string()).
-    """
-    cdef readonly str value
-    @staticmethod
-    cdef ValidString none()
-    cdef bint equals(self, ValidString other)
-
-
 cdef class Quantity:
     """
     Represents a non-negative integer quantity.

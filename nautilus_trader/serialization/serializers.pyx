@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-# <copyright file="message.pyx" company="Nautech Systems Pty Ltd">
+# <copyright file="serializers.pyx" company="Nautech Systems Pty Ltd">
 #  Copyright (C) 2015-2019 Nautech Systems Pty Ltd. All rights reserved.
 #  The use of this source code is governed by the license as found in the LICENSE.md file.
 #  https://nautechsystems.io
@@ -13,6 +13,7 @@ from decimal import Decimal
 from uuid import UUID
 
 from nautilus_trader.core.precondition cimport Precondition
+from nautilus_trader.core.types cimport ValidString, GUID
 from nautilus_trader.core.message cimport Command, Event, Request, Response
 from nautilus_trader.model.enums import Broker, OrderSide, OrderType, Currency, TimeInForce
 from nautilus_trader.model.c_enums.brokerage cimport Broker, broker_string
@@ -21,8 +22,8 @@ from nautilus_trader.model.c_enums.order_side cimport  order_side_string
 from nautilus_trader.model.c_enums.order_type cimport OrderType, order_type_string
 from nautilus_trader.model.c_enums.currency cimport Currency, currency_string
 from nautilus_trader.model.identifiers cimport TraderId, StrategyId, OrderId, ExecutionId, AccountId
-from nautilus_trader.model.identifiers cimport GUID, ExecutionTicket, AccountNumber, PositionId, Label
-from nautilus_trader.model.objects cimport ValidString, Quantity, Money, Price
+from nautilus_trader.model.identifiers cimport ExecutionTicket, AccountNumber, PositionId, Label
+from nautilus_trader.model.objects cimport Quantity, Money, Price
 from nautilus_trader.model.order cimport Order, AtomicOrder
 from nautilus_trader.serialization.constants cimport *
 from nautilus_trader.serialization.base cimport (

@@ -8,8 +8,8 @@
 
 from cpython.datetime cimport datetime
 
+from nautilus_trader.core.types cimport ValidString
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.model.objects cimport ValidString
 
 
 cdef class Logger:

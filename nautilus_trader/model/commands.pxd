@@ -6,9 +6,10 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.core.types cimport ValidString
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.model.identifiers cimport OrderId, TraderId, StrategyId, PositionId
-from nautilus_trader.model.objects cimport ValidString, Price
+from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.order cimport Order, AtomicOrder
 
 
