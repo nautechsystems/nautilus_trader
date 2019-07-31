@@ -78,12 +78,10 @@ cdef str ROLL_OVER_INTEREST_SELL
 
 cdef str CORRELATION_ID
 cdef str RECEIVED_TYPE
+cdef str QUERY
 cdef str MESSAGE
 cdef str DATA
 cdef str VALUES
 cdef str BARS
 cdef str TICKS
 cdef str INSTRUMENTS
-cdef str BAR_SPECIFICATION
-cdef str FROM_DATETIME
-cdef str TO_DATETIME

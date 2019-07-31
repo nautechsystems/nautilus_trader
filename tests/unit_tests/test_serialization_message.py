@@ -777,10 +777,15 @@ class MsgPackRequestSerializerTests(unittest.TestCase):
 
     def test_can_serialize_and_deserialize_tick_data_requests(self):
         # Arrange
-        request = TickDataRequest(
-            Symbol('AUDUSD', Venue.FXCM),
-            UNIX_EPOCH,
-            UNIX_EPOCH,
+        query = {
+            "DataType": "Tick[]",
+            "Symbol": "AUDUSD.FXCM",
+            "FromDateTime": convert_datetime_to_string(UNIX_EPOCH),
+            "ToDateTime": convert_datetime_to_string(UNIX_EPOCH),
+        }
+
+        request = DataRequest(
+            query,
             GUID(uuid4()),
             UNIX_EPOCH)
 
@@ -789,15 +794,21 @@ class MsgPackRequestSerializerTests(unittest.TestCase):
         deserialized = self.serializer.deserialize(serialized)
 
         # Assert
-        self.assertTrue(isinstance(deserialized, TickDataRequest))
+        self.assertTrue(isinstance(deserialized, DataRequest))
+        self.assertEqual("Tick[]", deserialized.query["DataType"])
 
     def test_can_serialize_and_deserialize_bar_data_requests(self):
         # Arrange
-        request = BarDataRequest(
-            Symbol('AUDUSD', Venue.FXCM),
-            BarSpecification(1, Resolution.MINUTE, QuoteType.MID),
-            UNIX_EPOCH,
-            UNIX_EPOCH,
+        query = {
+            "DataType": "Bar[]",
+            "Symbol": "AUDUSD.FXCM",
+            "Specification": "1-MIN[BID]",
+            "FromDateTime": convert_datetime_to_string(UNIX_EPOCH),
+            "ToDateTime": convert_datetime_to_string(UNIX_EPOCH),
+        }
+
+        request = DataRequest(
+            query,
             GUID(uuid4()),
             UNIX_EPOCH)
 
@@ -806,12 +817,18 @@ class MsgPackRequestSerializerTests(unittest.TestCase):
         deserialized = self.serializer.deserialize(serialized)
 
         # Assert
-        self.assertTrue(isinstance(deserialized, BarDataRequest))
+        self.assertTrue(isinstance(deserialized, DataRequest))
+        self.assertEqual("Bar[]", deserialized.query["DataType"])
 
     def test_can_serialize_and_deserialize_instrument_requests(self):
         # Arrange
-        request = InstrumentRequest(
-            Symbol('AUDUSD', Venue.FXCM),
+        query = {
+            "DataType": "Instrument",
+            "Symbol": "AUDUSD.FXCM",
+        }
+
+        request = DataRequest(
+            query,
             GUID(uuid4()),
             UNIX_EPOCH)
 
@@ -820,12 +837,18 @@ class MsgPackRequestSerializerTests(unittest.TestCase):
         deserialized = self.serializer.deserialize(serialized)
 
         # Assert
-        self.assertTrue(isinstance(deserialized, InstrumentRequest))
+        self.assertTrue(isinstance(deserialized, DataRequest))
+        self.assertEqual("Instrument", deserialized.query["DataType"])
 
     def test_can_serialize_and_deserialize_instruments_requests(self):
         # Arrange
-        request = InstrumentsRequest(
-            Venue.FXCM,
+        query = {
+            "DataType": "Instrument[]",
+            "Symbol": "FXCM",
+        }
+
+        request = DataRequest(
+            query,
             GUID(uuid4()),
             UNIX_EPOCH)
 
@@ -834,7 +857,8 @@ class MsgPackRequestSerializerTests(unittest.TestCase):
         deserialized = self.serializer.deserialize(serialized)
 
         # Assert
-        self.assertTrue(isinstance(deserialized, InstrumentsRequest))
+        self.assertTrue(isinstance(deserialized, DataRequest))
+        self.assertEqual("Instrument[]", deserialized.query["DataType"])
 
 
 class MsgPackResponseSerializerTests(unittest.TestCase):

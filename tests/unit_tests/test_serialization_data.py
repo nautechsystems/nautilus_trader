@@ -6,12 +6,10 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import bson
 import unittest
 from base64 import b64encode, b64decode
 
-from datetime import datetime
-
+from nautilus_trader.model.enums import Venue
 from nautilus_trader.common.clock import *
 from nautilus_trader.model.objects import *
 from nautilus_trader.serialization.data import *
