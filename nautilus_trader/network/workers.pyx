@@ -54,7 +54,6 @@ cdef class MQWorker:
         Precondition.type(zmq_context, Context, 'zmq_context')
 
         super().__init__()
-        self._thread = Thread(target=self._open_connection, daemon=True)
         self.name = worker_name
         self._service_name = service_name
         self._service_address = f'tcp://{service_address}:{service_port}'
@@ -64,36 +63,35 @@ cdef class MQWorker:
         self._log = LoggerAdapter(worker_name, logger)
         self._cycles = 0
 
-    cpdef void start(self):
+    cpdef void connect(self):
         """
-        Starts the worker and opens a connection.
-        
-        Overrides the threads run method (.start() should be called to run this
-        in a separate thread).
+        Connect to the service.
         """
-        self._thread.start()
+        self._log.debug(f"Connecting to {self._service_address}...")
+        self._zmq_socket.connect(self._service_address)
+        self._log.info(f"Connected to {self._service_name} at {self._service_address}")
 
-    cpdef void stop(self):
+    cpdef void disconnect(self):
         """
-        Close the connection and stop the worker.
+        Disconnect from the service.
+        :return: 
         """
-        self._close_connection()
-        self._log.debug(f"Stopped.")
+        self._log.debug(f"Disconnecting from {self._service_address}...")
+        self._zmq_socket.disconnect(self._service_address)
+        self._log.info(f"Disconnected from {self._service_name} at {self._service_address}")
 
-    cpdef void _open_connection(self):
-        # Open a connection to the service
-        # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
-
-    cpdef void _close_connection(self):
-        # Close the connection with the service
-        # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
+    cpdef void dispose(self):
+        """
+        Dispose of the MQWorker which close the socket (call disconnect first).
+        """
+        self._log.debug(f"Disposing...")
+        self._zmq_socket.close()
+        self._log.debug(f"Disposed.")
 
 
 cdef class RequestWorker(MQWorker):
     """
-    Provides an asynchronous worker thread for ZMQ request messaging.
+    Provides a worker for ZMQ request messaging.
     """
 
     def __init__(
@@ -141,29 +139,19 @@ cdef class RequestWorker(MQWorker):
         """
         Precondition.not_empty(request, 'request')
 
+        self._log.debug(f"Sending[{self._cycles}] request {request}...")
         self._zmq_socket.send(request)
         self._cycles += 1
-        self._log.debug(f"Sending[{self._cycles}] request {request}")
 
         cdef bytes response = self._zmq_socket.recv()
         self._log.debug(f"Received[{self._cycles}] response of {len(response)} bytes.")
 
         return response
 
-    cpdef void _open_connection(self):
-        # Open a connection to the service
-        self._zmq_socket.connect(self._service_address)
-        self._log.info(f"Connected to {self._service_name} at {self._service_address}")
-
-    cpdef void _close_connection(self):
-        # Close the connection with the service
-        self._zmq_socket.disconnect(self._service_address)
-        self._log.info(f"Disconnected from {self._service_name} at {self._service_address}")
-
 
 cdef class SubscriberWorker(MQWorker):
     """
-    Provides an asynchronous worker thread for ZMQ subscriber messaging.
+    Provides an asynchronous worker for ZMQ subscriber messaging.
     """
 
     def __init__(
@@ -204,8 +192,10 @@ cdef class SubscriberWorker(MQWorker):
             zmq_context,
             zmq.SUB,
             logger)
-
+        self._thread = Thread(target=self._consume_messages, daemon=True)
         self._handler = handler
+
+        self._thread.start()
 
     cpdef void subscribe(self, str topic):
         """
@@ -223,15 +213,8 @@ cdef class SubscriberWorker(MQWorker):
         self._zmq_socket.setsockopt(zmq.UNSUBSCRIBE, topic.encode(UTF8))
         self._log.info(f"Unsubscribed from topic {topic}.")
 
-    cpdef void _open_connection(self):
-        # Open a connection to the service
-        self._zmq_socket.connect(self._service_address)
-        self._log.info(f"Connected to {self._service_name} at {self._service_address}")
-        self._consume_messages()
-
     cpdef void _consume_messages(self):
-        # Start the consumption loop to receive published messages
-        self._log.info("Ready to consume messages...")
+        self._log.info("Starting message consumption loop...")
 
         cdef bytes message
         cdef bytes topic
@@ -248,8 +231,3 @@ cdef class SubscriberWorker(MQWorker):
             self._handler(topic_str, body)
             self._cycles += 1
             self._log.debug(f"Received[{self._cycles}] message for topic {topic_str}: {body}")
-
-    cpdef void _close_connection(self):
-        # Close the connection with the service
-        self._zmq_socket.disconnect(self._service_address)
-        self._log.info(f"Disconnected from {self._service_name} at {self._service_address}")

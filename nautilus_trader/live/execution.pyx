@@ -44,6 +44,7 @@ cdef class LiveExecClient(ExecutionClient):
     cdef object _thread
     cdef object _commands_worker
     cdef object _events_worker
+    cdef str _events_topic
     cdef CommandSerializer _command_serializer
     cdef ResponseSerializer _response_serializer
     cdef EventSerializer _event_serializer
@@ -113,7 +114,7 @@ cdef class LiveExecClient(ExecutionClient):
             self.zmq_context,
             self._deserialize_event,
             logger)
-        self._events_worker.subscribe(events_topic)
+        self._events_topic = events_topic
         self._command_serializer = command_serializer
         self._response_serializer = response_serializer
         self._event_serializer = event_serializer
@@ -125,15 +126,17 @@ cdef class LiveExecClient(ExecutionClient):
         """
         Connect to the execution service and send a collateral inquiry command.
         """
-        self._events_worker.start()
-        self._commands_worker.start()
+        self._events_worker.connect()
+        self._commands_worker.connect()
+        self._events_worker.subscribe(self._events_topic)
 
     cpdef void disconnect(self):
         """
         Disconnect from the execution service.
         """
-        self._commands_worker.stop()
-        self._events_worker.stop()
+        self._events_worker.unsubscribe(self._events_topic)
+        self._commands_worker.disconnect()
+        self._events_worker.disconnect()
 
     cpdef void reset(self):
         """
@@ -146,7 +149,8 @@ cdef class LiveExecClient(ExecutionClient):
         """
         Disposes of the live execution client.
         """
-        self.zmq_context.term()
+        self._commands_worker.dispose()
+        self._events_worker.dispose()
 
     cpdef void execute_command(self, Command command):
         """

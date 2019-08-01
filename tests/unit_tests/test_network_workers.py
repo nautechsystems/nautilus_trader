@@ -36,16 +36,16 @@ class RequestWorkerTests(unittest.TestCase):
             self.context)
 
         self.server = MockServer(self.context, TEST_PORT)
+        self.server.start()
 
     def tearDown(self):
         # Tear Down
-        self.worker.stop()
+        self.worker.disconnect()
         self.server.stop()
 
     def test_can_send_one_message_and_receive_response(self):
         # Arrange
-        self.server.start()
-        self.worker.start()
+        self.worker.connect()
 
         # Act
         response = self.worker.send(b'hello')
@@ -55,8 +55,7 @@ class RequestWorkerTests(unittest.TestCase):
 
     def test_can_send_multiple_messages_and_receive_correctly_ordered_responses(self):
         # Arrange
-        self.server.start()
-        self.worker.start()
+        self.worker.connect()
 
         # Act
         response1 = self.worker.send(b'hello1')
@@ -88,38 +87,37 @@ class SubscriberWorkerTests(unittest.TestCase):
 
         self.publisher = MockPublisher(self.context, TEST_PORT)
 
-        self.worker.subscribe("test_topic")
-
     def tearDown(self):
         # Tear Down
-        self.worker.stop()
+        self.worker.disconnect()
+        self.worker.dispose()
         self.publisher.stop()
 
     def test_can_subscribe_to_topic_and_receive_one_published_message(self):
         # Arrange
-        self.publisher.start()
-        self.worker.start()
+        self.worker.connect()
+        self.worker.subscribe("test_topic")
 
-        time.sleep(0.3)
+        time.sleep(0.1)
         # Act
         self.publisher.publish("test_topic", b'hello subscribers')
 
-        time.sleep(0.3)
+        time.sleep(0.1)
         # Assert
         self.assertEqual(('test_topic', b'hello subscribers'), self.response_handler.get_store()[0])
 
     def test_can_subscribe_to_topic_and_receive_multiple_published_messages_in_correct_order(self):
         # Arrange
-        self.publisher.start()
-        self.worker.start()
+        self.worker.connect()
+        self.worker.subscribe("test_topic")
 
-        time.sleep(0.3)
+        time.sleep(0.1)
         # Act
         self.publisher.publish("test_topic", b'hello1')
         self.publisher.publish("test_topic", b'hello2')
         self.publisher.publish("test_topic", b'hello3')
 
-        time.sleep(0.3)
+        time.sleep(0.1)
         # Assert
         self.assertEqual(('test_topic', b'hello1'), self.response_handler.get_store()[0])
         self.assertEqual(('test_topic', b'hello2'), self.response_handler.get_store()[1])
