@@ -66,7 +66,7 @@ cdef class LiveDataClient(DataClient):
                  InstrumentSerializer instrument_serializer=BsonInstrumentSerializer(),
                  Logger logger=LiveLogger()):
         """
-        Initializes a new instance of the DataClient class.
+        Initializes a new instance of the LiveDataClient class.
 
         :param zmq_context: The ZMQ context.
         :param service_address: The data service host IP address (default=127.0.0.1).
@@ -94,6 +94,7 @@ cdef class LiveDataClient(DataClient):
 
         super().__init__(venue, LiveClock(), LiveGuidFactory(), logger)
         self.zmq_context = zmq_context
+
         self._tick_req_worker = RequestWorker(
             'DataClient.TickReqWorker',
             'NautilusData',
@@ -101,6 +102,7 @@ cdef class LiveDataClient(DataClient):
             tick_req_port,
             self.zmq_context,
             logger)
+
         self._bar_req_worker = RequestWorker(
             'DataClient.BarReqWorker',
             'NautilusData',
@@ -108,6 +110,7 @@ cdef class LiveDataClient(DataClient):
             bar_req_port,
             self.zmq_context,
             logger)
+
         self._inst_req_worker = RequestWorker(
             'DataClient.InstReqWorker',
             'NautilusData',
@@ -115,6 +118,7 @@ cdef class LiveDataClient(DataClient):
             inst_req_port,
             self.zmq_context,
             logger)
+
         self._tick_sub_worker = SubscriberWorker(
             "DataClient.TickSubWorker",
             'NautilusData',
@@ -123,6 +127,7 @@ cdef class LiveDataClient(DataClient):
             self.zmq_context,
             self._handle_tick_sub,
             logger)
+
         self._bar_sub_worker = SubscriberWorker(
             "DataClient.BarSubWorker",
             'NautilusData',
@@ -131,6 +136,7 @@ cdef class LiveDataClient(DataClient):
             self.zmq_context,
             self._handle_bar_sub,
             logger)
+
         self._inst_sub_worker = SubscriberWorker(
             "DataClient.InstSubWorker",
             'NautilusData',
@@ -139,6 +145,7 @@ cdef class LiveDataClient(DataClient):
             self.zmq_context,
             self._handle_inst_sub,
             logger)
+
         self._request_serializer = request_serializer
         self._response_serializer = response_serializer
         self._data_serializer = data_serializer
@@ -148,46 +155,49 @@ cdef class LiveDataClient(DataClient):
 
     cpdef void connect(self):
         """
-        Connect to the data service, creating a pub/sub server.
+        Connect to the data service.
         """
-        self._tick_req_worker.start()
-        self._tick_sub_worker.start()
-        self._bar_req_worker.start()
-        self._bar_sub_worker.start()
-        self._inst_req_worker.start()
-        self._inst_sub_worker.start()
+        self._tick_req_worker.connect()
+        self._tick_sub_worker.connect()
+        self._bar_req_worker.connect()
+        self._bar_sub_worker.connect()
+        self._inst_req_worker.connect()
+        self._inst_sub_worker.connect()
 
     cpdef void disconnect(self):
         """
-        Disconnect from the data service, unsubscribes from the pub/sub server
-        and stops the pub/sub thread.
+        Disconnect from the data service.
         """
-        self._tick_req_worker.stop()
-        self._tick_sub_worker.stop()
-        self._bar_req_worker.stop()
-        self._bar_sub_worker.stop()
-        self._inst_req_worker.stop()
-        self._inst_sub_worker.stop()
+        self._tick_req_worker.disconnect()
+        self._tick_sub_worker.disconnect()
+        self._bar_req_worker.disconnect()
+        self._bar_sub_worker.disconnect()
+        self._inst_req_worker.disconnect()
+        self._inst_sub_worker.disconnect()
 
     cpdef void reset(self):
         """
-        Resets the live data client by clearing all stateful internal values and
+        Resets the data client by clearing all stateful internal values and
         returning it to a fresh state.
         """
         self._reset()
 
     cpdef void dispose(self):
         """
-        Disposes of the live data client.
+        Disposes of the data client.
         """
-        self.zmq_context.term()
+        self._tick_req_worker.dispose()
+        self._tick_sub_worker.dispose()
+        self._bar_req_worker.dispose()
+        self._bar_sub_worker.dispose()
+        self._inst_req_worker.dispose()
+        self._inst_sub_worker.dispose()
 
     cpdef void register_strategy(self, TradeStrategy strategy):
         """
         Register the given trade strategy with the data client.
 
         :param strategy: The strategy to register.
-        :raises ValueError: If the strategy does not inherit from TradeStrategy.
         """
         strategy.register_data_client(self)
 
@@ -200,8 +210,7 @@ cdef class LiveDataClient(DataClient):
             datetime to_datetime,
             callback: Callable):
         """
-        Update the instrument corresponding to the given symbol (if found).
-        Will log a warning is symbol is not found.
+        Request ticks for the given symbol and query parameters.
 
         :param symbol: The symbol for the request.
         :param from_datetime: The from date time for the request.
@@ -229,8 +238,7 @@ cdef class LiveDataClient(DataClient):
             datetime to_datetime,
             callback: Callable):
         """
-        Update the instrument corresponding to the given symbol (if found).
-        Will log a warning is symbol is not found.
+        Request bars for the given bar type and query parameters.
 
         :param bar_type: The bar type for the request.
         :param from_datetime: The from date time for the request.
@@ -254,8 +262,7 @@ cdef class LiveDataClient(DataClient):
 
     cpdef void request_instrument(self, Symbol symbol, callback: Callable):
         """
-        Update the instrument corresponding to the given symbol (if found).
-        Will log a warning is symbol is not found.
+        Request the instrument for the given symbol.
 
         :param symbol: The symbol to update.
         :param callback: The callback for the response.
@@ -274,7 +281,7 @@ cdef class LiveDataClient(DataClient):
 
     cpdef void request_instruments(self, callback: Callable):
         """
-        Update all instruments from the live database.
+        Request all instrument for the data clients venue.
         """
         cdef dict query = {
             "DataType": "Instrument[]",
@@ -348,7 +355,7 @@ cdef class LiveDataClient(DataClient):
 
     cpdef void subscribe_instrument(self, Symbol symbol, handler: Callable):
         """
-        Subscribe to the instrument for the given symbol and handler.
+        Subscribe to live instrument data updates for the given symbol and handler.
 
         :param symbol: The instrument symbol to subscribe to.
         :param handler: The callable handler for subscription.
@@ -361,7 +368,7 @@ cdef class LiveDataClient(DataClient):
 
     cpdef void unsubscribe_instrument(self, Symbol symbol, handler: Callable):
         """
-        Unsubscribe from the instrument for the given symbol.
+        Unsubscribe from live instrument data updates for the given symbol and handler.
 
         :param symbol: The instrument symbol to unsubscribe from.
         :param handler: The callable handler which was subscribed.

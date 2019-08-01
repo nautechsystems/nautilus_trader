@@ -199,7 +199,7 @@ cdef class DataClient:
         if tick_handler not in self._tick_handlers[symbol]:
             self._tick_handlers[symbol].append(tick_handler)
             self._log.debug(f"Added {tick_handler} for {symbol} ticks.")
-            self._log.info(f"Subscribed to ticks for {symbol}")
+            self._log.info(f"Subscribed to {symbol} ticks")
         else:
             self._log.error(f"Cannot add {tick_handler} (duplicate handler found).")
 
@@ -214,7 +214,7 @@ cdef class DataClient:
         if bar_handler not in self._bar_handlers[bar_type]:
             self._bar_handlers[bar_type].append(bar_handler)
             self._log.debug(f"Added {bar_handler} for {bar_type} bars.")
-            self._log.info(f"Subscribed to bars for {bar_type}")
+            self._log.info(f"Subscribed to {bar_type} bars")
         else:
             self._log.error(f"Cannot add {bar_handler} (duplicate handler found).")
 
@@ -229,7 +229,7 @@ cdef class DataClient:
         if instrument_handler not in self._instrument_handlers[symbol]:
             self._instrument_handlers[symbol].append(instrument_handler)
             self._log.debug(f"Added {handler} for {symbol} instruments.")
-            self._log.info(f"Subscribed to instrument for {symbol}")
+            self._log.info(f"Subscribed to {symbol} instrument updates")
         else:
             self._log.error(f"Cannot add {instrument_handler} (duplicate handler found).")
 
@@ -244,7 +244,7 @@ cdef class DataClient:
         cdef TickHandler tick_handler = TickHandler(handler)
         if tick_handler in self._tick_handlers[symbol]:
             self._tick_handlers[symbol].remove(tick_handler)
-            self._log.debug(f"Removed {tick_handler} for {symbol}.")
+            self._log.debug(f"Removed handler {tick_handler} for {symbol}.")
         else:
             self._log.error(f"Cannot remove {tick_handler} (no matching handler found).")
 
@@ -262,7 +262,7 @@ cdef class DataClient:
         cdef BarHandler bar_handler = BarHandler(handler)
         if bar_handler in self._bar_handlers[bar_type]:
             self._bar_handlers[bar_type].remove(bar_handler)
-            self._log.debug(f"Removed {bar_handler} for {bar_type}.")
+            self._log.debug(f"Removed handler {bar_handler} for {bar_type}.")
         else:
             self._log.error(f"Cannot remove {bar_handler} (no matching handler found).")
 
@@ -280,7 +280,7 @@ cdef class DataClient:
         cdef InstrumentHandler instrument_handler = InstrumentHandler(handler)
         if instrument_handler in self._instrument_handlers[symbol]:
             self._instrument_handlers[symbol].remove(instrument_handler)
-            self._log.debug(f"Removed {instrument_handler} for {symbol}.")
+            self._log.debug(f"Removed handler {instrument_handler} for {symbol}.")
         else:
             self._log.error(f"Cannot remove {instrument_handler} (no matching handler found).")
 
