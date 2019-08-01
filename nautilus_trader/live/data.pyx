@@ -37,6 +37,7 @@ cdef class LiveDataClient(DataClient):
     """
     Provides a data client for live trading.
     """
+    cdef object _zmq_context
     cdef object _tick_req_worker
     cdef object _tick_sub_worker
     cdef object _bar_req_worker
@@ -47,8 +48,6 @@ cdef class LiveDataClient(DataClient):
     cdef ResponseSerializer _response_serializer
     cdef DataSerializer _data_serializer
     cdef InstrumentSerializer _instrument_serializer
-
-    cdef readonly object zmq_context
 
     def __init__(self,
                  zmq_context: Context,
@@ -93,14 +92,14 @@ cdef class LiveDataClient(DataClient):
         Precondition.in_range(inst_sub_port, 'inst_sub_port', 0, 65535)
 
         super().__init__(venue, LiveClock(), LiveGuidFactory(), logger)
-        self.zmq_context = zmq_context
+        self._zmq_context = zmq_context
 
         self._tick_req_worker = RequestWorker(
             'DataClient.TickReqWorker',
             'NautilusData',
             service_address,
             tick_req_port,
-            self.zmq_context,
+            self._zmq_context,
             logger)
 
         self._bar_req_worker = RequestWorker(
@@ -108,7 +107,7 @@ cdef class LiveDataClient(DataClient):
             'NautilusData',
             service_address,
             bar_req_port,
-            self.zmq_context,
+            self._zmq_context,
             logger)
 
         self._inst_req_worker = RequestWorker(
@@ -116,7 +115,7 @@ cdef class LiveDataClient(DataClient):
             'NautilusData',
             service_address,
             inst_req_port,
-            self.zmq_context,
+            self._zmq_context,
             logger)
 
         self._tick_sub_worker = SubscriberWorker(
@@ -124,7 +123,7 @@ cdef class LiveDataClient(DataClient):
             'NautilusData',
             service_address,
             tick_sub_port,
-            self.zmq_context,
+            self._zmq_context,
             self._handle_tick_sub,
             logger)
 
@@ -133,7 +132,7 @@ cdef class LiveDataClient(DataClient):
             'NautilusData',
             service_address,
             bar_sub_port,
-            self.zmq_context,
+            self._zmq_context,
             self._handle_bar_sub,
             logger)
 
@@ -142,7 +141,7 @@ cdef class LiveDataClient(DataClient):
             'NautilusData',
             service_address,
             inst_sub_port,
-            self.zmq_context,
+            self._zmq_context,
             self._handle_inst_sub,
             logger)
 

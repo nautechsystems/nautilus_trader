@@ -40,16 +40,16 @@ cdef class LiveExecClient(ExecutionClient):
     Provides an execution client for live trading utilizing a ZMQ transport
     to the execution service.
     """
+    cdef object _zmq_context
     cdef object _message_bus
     cdef object _thread
     cdef object _commands_worker
     cdef object _events_worker
-    cdef str _events_topic
     cdef CommandSerializer _command_serializer
     cdef ResponseSerializer _response_serializer
     cdef EventSerializer _event_serializer
 
-    cdef readonly object zmq_context
+    cdef readonly str events_topic
 
     def __init__(
             self,
@@ -96,17 +96,16 @@ cdef class LiveExecClient(ExecutionClient):
                          clock,
                          guid_factory,
                          logger)
+        self._zmq_context = zmq_context
         self._message_bus = Queue()
         self._thread = Thread(target=self._process, daemon=True)
-
-        self.zmq_context = zmq_context
 
         self._commands_worker = RequestWorker(
             'ExecClient.CommandSender',
             'NAUTILUS:COMMAND_ROUTER',
             service_address,
             commands_port,
-            self.zmq_context,
+            self._zmq_context,
             logger)
 
         self._events_worker = SubscriberWorker(
@@ -114,17 +113,18 @@ cdef class LiveExecClient(ExecutionClient):
             'NAUTILUS:EVENTS_PUBLISHER',
             service_address,
             events_port,
-            self.zmq_context,
+            self._zmq_context,
             self._deserialize_event,
             logger)
 
-        self._events_topic = events_topic
         self._command_serializer = command_serializer
         self._response_serializer = response_serializer
         self._event_serializer = event_serializer
 
-        self._log.info(f"ZMQ v{zmq.pyzmq_version()}.")
+        self.events_topic = events_topic
         self._thread.start()
+
+        self._log.info(f"ZMQ v{zmq.pyzmq_version()}.")
 
     cpdef void connect(self):
         """
@@ -132,13 +132,13 @@ cdef class LiveExecClient(ExecutionClient):
         """
         self._events_worker.connect()
         self._commands_worker.connect()
-        self._events_worker.subscribe(self._events_topic)
+        self._events_worker.subscribe(self.events_topic)
 
     cpdef void disconnect(self):
         """
         Disconnect from the execution service.
         """
-        self._events_worker.unsubscribe(self._events_topic)
+        self._events_worker.unsubscribe(self.events_topic)
         self._commands_worker.disconnect()
         self._events_worker.disconnect()
 

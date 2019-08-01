@@ -291,6 +291,8 @@ cdef class LiveLogger(Logger):
                 self._error(log_message.timestamp, log_message.text)
             elif log_message.log_level == logging.CRITICAL:
                 self._critical(log_message.timestamp, log_message.text)
+            else:
+                raise RuntimeError(f"Log level {log_message.log_level} not recognized")
 
 
 cdef class TestLogger(Logger):
@@ -353,6 +355,8 @@ cdef class TestLogger(Logger):
             self._error(time_now, message)
         elif log_level == logging.CRITICAL:
             self._critical(time_now, message)
+        else:
+            raise RuntimeError(f"Log level {log_level} not recognized")
 
 
 cdef class LoggerAdapter:
