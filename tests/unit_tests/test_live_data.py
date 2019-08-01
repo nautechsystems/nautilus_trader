@@ -12,7 +12,7 @@ import zmq
 
 from datetime import datetime, timezone
 
-from nautilus_trader.common.logger import TestLogger
+from nautilus_trader.common.logger import LiveLogger
 from nautilus_trader.model.enums import Venue, Resolution, QuoteType
 from nautilus_trader.model.objects import Symbol, Price, Tick, BarSpecification, BarType, Bar
 from nautilus_trader.live.data import LiveDataClient
@@ -34,7 +34,7 @@ class LiveDataClientTests(unittest.TestCase):
         self.bar_publisher = MockPublisher(zmq_context=zmq_context, port=55504)
         self.inst_publisher = MockPublisher(zmq_context=zmq_context, port=55506)
 
-        self.data_client = LiveDataClient(venue=Venue.FXCM, zmq_context=zmq.Context(), logger=TestLogger())
+        self.data_client = LiveDataClient(venue=Venue.FXCM, zmq_context=zmq.Context(), logger=LiveLogger())
 
     # Fixture Tear Down
     def tearDown(self):
@@ -43,7 +43,7 @@ class LiveDataClientTests(unittest.TestCase):
         self.bar_publisher.stop()
         self.inst_publisher.stop()
 
-    def test_can_connect_and_disconnect_from_live_db(self):
+    def test_can_connect_and_disconnect_from_service(self):
         # Act
         self.data_client.connect()
 

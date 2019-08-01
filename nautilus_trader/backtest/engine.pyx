@@ -341,36 +341,7 @@ cdef class BacktestEngine:
         """
         Return the performance statistics from the last backtest run.
         
-        Note: Money objects as converted to floats.
-        
-        Statistics Keys
-        ---------------
-        - PNL
-        - PNL%
-        - MaxWinner
-        - AvgWinner
-        - MinWinner
-        - MinLoser
-        - AvgLoser
-        - MaxLoser
-        - WinRate
-        - Expectancy
-        - AnnualReturn
-        - CumReturn
-        - MaxDrawdown
-        - AnnualVol
-        - SharpeRatio
-        - CalmarRatio
-        - SortinoRatio
-        - OmegaRatio
-        - Stability
-        - ReturnsMean
-        - ReturnsVariance
-        - ReturnsSkew
-        - ReturnsKurtosis
-        - TailRatio
-        - Alpha
-        - Beta
+        Note: Money objects are converted to floats.
         
         :return: Dict[str, float].
         """
