@@ -10,7 +10,6 @@ import os
 import re
 
 from typing import List
-from setuptools import Extension
 
 
 def scan_directories(directories: List[str]) -> List[str]:
@@ -66,16 +65,3 @@ def find_pyx_files(directories: List[str]) -> List[str]:
         if file.endswith('.pyx'):
             pyx_files.append(file)
     return pyx_files
-
-
-def make_cython_extensions(directories: List[str]) -> [Extension]:
-    # Generate an Extension object from its dotted name
-    extensions = []
-    for file in find_pyx_files(directories):
-        if file.endswith('.pyx'):
-            extensions.append(Extension(
-                name=file.replace(os.path.sep, ".")[:-4],
-                sources=[file],
-                include_dirs=['.'],
-                define_macros=[('CYTHON_TRACE', '1')]))
-    return extensions

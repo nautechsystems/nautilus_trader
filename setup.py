@@ -7,15 +7,17 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+import os
 import setuptools
 import Cython.Build
 
-from setuptools import setup
+from typing import List
+from setuptools import setup, Extension
 from Cython.Build import cythonize
 from Cython.Compiler import Options
 
 from nautilus_trader.version import __version__
-from setup_tools import check_file_headers, make_cython_extensions
+from setup_tools import check_file_headers, find_pyx_files
 
 
 PACKAGE_NAME = 'nautilus_trader'
@@ -39,19 +41,33 @@ DIRECTORIES_TO_CYTHONIZE = [PACKAGE_NAME, 'test_kit']
 DIRECTORIES_ALL = [PACKAGE_NAME, 'test_kit', 'tests']
 
 
-# Cython compiler options
-# -----------------------
+# Cython build options (edit here only)
+# -------------------------------------
+Options.annotate = True                # Create html annotations file
 Options.embed_pos_in_docstring = True  # Embed docstrings in extensions
-Options.warning_errors = True  # Treat compiler warnings as errors
-Options.cimport_from_pyx = True  # Allows cimporting from a pyx file without a pxd file
-Profile_Hooks = False  # Write profiling hooks into methods (x2 overhead, use for profiling only)
+Options.warning_errors = True          # Treat compiler warnings as errors
+Options.cimport_from_pyx = True        # Allows cimporting from a pyx file without a pxd file
+Profile_Hooks = False                  # Write profiling hooks into methods (x2 overhead)
 
 compiler_directives = {'language_level': 3, 'profile': Profile_Hooks}
+# -------------------------------------
 
 
 # Check file headers
 artifacts_to_ignore = ['', '.c', '.so', '.gz', '.o', '.pyd', '.pyc', '.prof', '.html', '.csv']
 check_file_headers(DIRECTORIES_ALL, ignore=artifacts_to_ignore, author=AUTHOR)
+
+
+def make_cython_extensions(directories: List[str]) -> [Extension]:
+    # Generate an Extension object from its dotted name
+    extensions = []
+    for file in find_pyx_files(directories):
+        extensions.append(Extension(
+            name=file.replace(os.path.sep, ".")[:-4],
+            sources=[file],
+            include_dirs=['.'],
+            define_macros=[('CYTHON_TRACE', '1')]))
+    return extensions
 
 
 setup(
