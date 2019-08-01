@@ -332,6 +332,13 @@ cdef class TradeStrategy:
             except Exception as ex:
                 self.log.exception(ex)
 
+    cpdef void handle_ticks(self, list ticks):
+        """
+        System method. Handle the given list of ticks by handling each tick individually.
+        """
+        for i in range(len(ticks)):
+            self.handle_tick(ticks[i])
+
     cpdef void handle_bar(self, BarType bar_type, Bar bar):
         """"
         System method. Update the internal dictionary of bars with the given bar, 
@@ -355,6 +362,14 @@ cdef class TradeStrategy:
                 self.on_bar(bar_type, bar)
             except Exception as ex:
                 self.log.exception(ex)
+
+    cpdef void handle_bars(self, BarType bar_type, list bars):
+        """
+        System method. Handle the given bar type and list of bars by handling 
+        each bar individually.
+        """
+        for i in range(len(bars)):
+            self.handle_bar(bar_type, bars[i])
 
     cpdef void handle_event(self, Event event):
         """
