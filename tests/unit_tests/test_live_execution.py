@@ -44,15 +44,15 @@ class LiveExecClientTests(unittest.TestCase):
             55555,
             MsgPackCommandSerializer(),
             MsgPackResponseSerializer())
+        self.command_router.start()
         self.event_publisher = MockPublisher(zmq_context, 55556)
 
-        self.command_router.start()
-        self.event_publisher.start()
         self.exec_client.connect()
 
     def tearDown(self):
         # Tear Down
         self.exec_client.disconnect()
+        self.exec_client.dispose()
         self.command_router.stop()
         self.event_publisher.stop()
 

@@ -12,15 +12,11 @@ from cpython.datetime cimport datetime
 from typing import Callable
 from zmq import Context
 
-# Do not rearrange below enums imports (import vs cimport)
 from nautilus_trader.core.precondition cimport Precondition
-from nautilus_trader.core.message cimport Request, Response
-from nautilus_trader.model.enums import Resolution, QuoteType
+from nautilus_trader.core.message cimport Response
 from nautilus_trader.model.c_enums.venue cimport Venue
-from nautilus_trader.model.c_enums.resolution cimport Resolution
-from nautilus_trader.model.c_enums.quote_type cimport QuoteType
 from nautilus_trader.model.c_enums.venue cimport venue_string
-from nautilus_trader.model.objects cimport Symbol, Price, Tick, BarSpecification, BarType, Bar, Instrument
+from nautilus_trader.model.objects cimport Symbol, BarType
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.guid cimport LiveGuidFactory
 from nautilus_trader.common.logger cimport Logger, LiveLogger
@@ -28,7 +24,7 @@ from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.network.workers import RequestWorker, SubscriberWorker
 from nautilus_trader.serialization.base cimport DataSerializer, InstrumentSerializer, RequestSerializer, ResponseSerializer
 from nautilus_trader.serialization.data cimport BsonDataSerializer, BsonInstrumentSerializer
-from nautilus_trader.serialization.common cimport parse_symbol, parse_symbol, parse_tick, parse_bar_type, parse_bar, convert_datetime_to_string
+from nautilus_trader.serialization.common cimport parse_symbol, parse_tick, parse_bar_type, parse_bar, convert_datetime_to_string
 from nautilus_trader.serialization.serializers cimport MsgPackRequestSerializer, MsgPackResponseSerializer
 from nautilus_trader.network.requests cimport DataRequest
 from nautilus_trader.network.responses cimport MessageRejected, QueryFailure, DataResponse

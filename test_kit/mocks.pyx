@@ -40,6 +40,7 @@ class MockServer(Thread):
         self._service_address = f'tcp://127.0.0.1:{port}'
         self._zmq_context = zmq_context
         self._socket = self._zmq_context.socket(zmq.REP)
+        self._socket.bind(self._service_address)
         self._cycles = 0
 
     def run(self):
@@ -47,40 +48,21 @@ class MockServer(Thread):
         Overrides the threads run method (call .start() to run in a separate thread).
         Starts the worker and opens a connection.
         """
-        self._open_connection()
-
-    def send(self, bytes message):
-        """
-        Send the given message to the connected requesters.
-
-        :param message: The message bytes to send.
-        """
-        self._socket.send(message)
-        self._cycles += 1
-        self._log(f"Sending message[{self._cycles}] {message}")
-
-        response = self._socket.recv()
-        self._log(f"Received {response}")
+        self._consume_messages()
 
     def stop(self):
         """
         Close the connection and stop the mock server.
         """
-        self._close_connection()
-
-    def _open_connection(self):
-        """
-        Open a new connection to the service..
-        """
-        self._log(f"Connecting to {self._service_address}...")
-        self._socket.bind(self._service_address)
-        self._consume_messages()
+        self._log(f"Unbinding from {self._service_address}...")
+        self._socket.unbind(self._service_address)
+        self._socket.close()
 
     def _consume_messages(self):
         """
         Start the consumption loop to receive published messages.
         """
-        self._log("Ready to consume...")
+        self._log("Starting message consumption loop...")
 
         while True:
             message = self._socket.recv()
@@ -88,23 +70,16 @@ class MockServer(Thread):
             self._log(f"Received message[{self._cycles}] {message}")
             self._socket.send("OK".encode(UTF8))
 
-    def _close_connection(self):
-        """
-        Close the connection with the service socket.
-        """
-        self._log(f"Disconnecting from {self._service_address}...")
-        self._socket.unbind(self._service_address)
-
     def _log(self, message: str):
         """
         Log the given message (if no logger then prints).
 
         :param message: The message to log.
         """
-        print(f"MockServer: {message}")
+        print(f"{self.__class__.__name__}: {message}")
 
 
-class MockPublisher(Thread):
+class MockPublisher:
 
     def __init__(self, zmq_context: Context, int port):
         """
@@ -114,18 +89,13 @@ class MockPublisher(Thread):
         :param port: The service port.
         """
         super().__init__()
-        self.daemon = True
         self._service_address = f'tcp://127.0.0.1:{port}'
         self._zmq_context = zmq_context
         self._socket = self._zmq_context.socket(zmq.PUB)
+        self._socket.bind(self._service_address)
         self._cycles = 0
 
-    def run(self):
-        """
-        Overrides the threads run method.
-        Starts the mock server and opens a connection (use the start method).
-        """
-        self._open_connection()
+        self._log(f"Bound to {self._service_address}...")
 
     def publish(
             self,
@@ -143,23 +113,11 @@ class MockPublisher(Thread):
 
     def stop(self):
         """
-        Close the connection and stop the publisher.
+        Stop the mock which unbinds the socket.
         """
-        self._close_connection()
-
-    def _open_connection(self):
-        """
-        Open a new connection to the service.
-        """
-        self._log(f"Connecting to {self._service_address}...")
-        self._socket.bind(self._service_address)
-
-    def _close_connection(self):
-        """
-        Close the connection with the service.
-        """
-        self._log(f"Disconnecting from {self._service_address}...")
-        self._socket.disconnect(self._service_address)
+        self._log(f"Unbinding from {self._service_address}...")
+        self._socket.unbind(self._service_address)
+        self._socket.close()
 
     def _log(self, str message):
         """
@@ -167,7 +125,7 @@ class MockPublisher(Thread):
 
         :param message: The message to log.
         """
-        print(f"MockServer: {message}")
+        print(f"{self.__class__.__name__}: {message}")
 
 
 class MockCommandRouter(Thread):
@@ -193,36 +151,26 @@ class MockCommandRouter(Thread):
         self._response_serializer = response_serializer
         self._zmq_context = zmq_context
         self._socket = self._zmq_context.socket(zmq.REP)
+        self._socket.bind(self._service_address)
         self._cycles = 0
+
         self.commands_received = []  # List[Command]
         self.responses_sent = []     # List[Response]
 
+        self._log(f"Bound to {self._service_address}...")
+
     def run(self):
         """
-        Overrides the threads run method (call .start() to run in a separate thread).
-        Starts the worker and opens a connection.
+        Overrides the threads run method.
+        Starts the mock server and opens a connection (use the start method).
         """
-        self._open_connection()
-
-    def stop(self):
-        """
-        Close the connection and stop the mock server.
-        """
-        self._close_connection()
-
-    def _open_connection(self):
-        """
-        Open a new connection to the service..
-        """
-        self._log(f"Connecting to {self._service_address}...")
-        self._socket.bind(self._service_address)
         self._consume_messages()
 
     def _consume_messages(self):
         """
         Start the consumption loop to receive published messages.
         """
-        self._log("Ready to consume...")
+        self._log("Starting message consumption loop...")
 
         while True:
             message = self._command_serializer.deserialize(self._socket.recv())
@@ -234,12 +182,13 @@ class MockCommandRouter(Thread):
             self.responses_sent.append(response)
             self._socket.send(self._response_serializer.serialize(response))
 
-    def _close_connection(self):
+    def stop(self):
         """
-        Close the connection with the service socket.
+        Stop the router which closes the socket.
         """
-        self._log(f"Disconnecting from {self._service_address}...")
+        self._log(f"Unbinding from {self._service_address}...")
         self._socket.unbind(self._service_address)
+        self._socket.close()
 
     def _log(self, message: str):
         """
@@ -247,4 +196,4 @@ class MockCommandRouter(Thread):
 
         :param message: The message to log.
         """
-        print(f"MockServer: {message}")
+        print(f"{self.__class__.__name__}: {message}")
