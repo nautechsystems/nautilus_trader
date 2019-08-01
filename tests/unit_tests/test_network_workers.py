@@ -104,7 +104,7 @@ class SubscriberWorkerTests(unittest.TestCase):
 
         time.sleep(0.1)
         # Assert
-        self.assertEqual(('test_topic', b'hello subscribers'), self.response_handler.get_store()[0])
+        self.assertIn(('test_topic', b'hello subscribers'), self.response_handler.get_store())
 
     def test_can_subscribe_to_topic_and_receive_multiple_published_messages_in_correct_order(self):
         # Arrange

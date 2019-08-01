@@ -144,14 +144,14 @@ cdef class LiveExecClient(ExecutionClient):
 
     cpdef void reset(self):
         """
-        Resets the live execution client by clearing all stateful internal values 
+        Resets the execution client by clearing all stateful internal values 
         and returning it to a fresh state.
         """
         self._reset()
 
     cpdef void dispose(self):
         """
-        Disposes of the live execution client.
+        Disposes of the execution client.
         """
         self._commands_worker.dispose()
         self._events_worker.dispose()

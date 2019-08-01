@@ -67,7 +67,6 @@ cdef class MQWorker:
         """
         Connect to the service.
         """
-        self._log.debug(f"Connecting to {self._service_address}...")
         self._zmq_socket.connect(self._service_address)
         self._log.info(f"Connected to {self._service_name} at {self._service_address}")
 
@@ -76,7 +75,6 @@ cdef class MQWorker:
         Disconnect from the service.
         :return: 
         """
-        self._log.debug(f"Disconnecting from {self._service_address}...")
         self._zmq_socket.disconnect(self._service_address)
         self._log.info(f"Disconnected from {self._service_name} at {self._service_address}")
 
@@ -84,7 +82,6 @@ cdef class MQWorker:
         """
         Dispose of the MQWorker which close the socket (call disconnect first).
         """
-        self._log.debug(f"Disposing...")
         self._zmq_socket.close()
         self._log.debug(f"Disposed.")
 
@@ -203,7 +200,7 @@ cdef class SubscriberWorker(MQWorker):
         :param topic: The topic to subscribe to.
         """
         self._zmq_socket.setsockopt(zmq.SUBSCRIBE, topic.encode(UTF8))
-        self._log.info(f"Subscribed to topic {topic}.")
+        self._log.debug(f"Subscribed to topic {topic}")
 
     cpdef void unsubscribe(self, str topic):
         """
@@ -211,10 +208,10 @@ cdef class SubscriberWorker(MQWorker):
         :param topic: The topic to unsubscribe from.
         """
         self._zmq_socket.setsockopt(zmq.UNSUBSCRIBE, topic.encode(UTF8))
-        self._log.info(f"Unsubscribed from topic {topic}.")
+        self._log.debug(f"Unsubscribed from topic {topic}.")
 
     cpdef void _consume_messages(self):
-        self._log.info("Starting message consumption loop...")
+        self._log.debug("Starting message consumption loop...")
 
         cdef bytes message
         cdef bytes topic

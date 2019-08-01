@@ -301,7 +301,7 @@ cdef class TestLogger(Logger):
     def __init__(self,
                  str name=None,
                  bint bypass_logging=False,
-                 int level_console: logging=logging.INFO,
+                 int level_console: logging=logging.DEBUG,
                  int level_file: logging=logging.DEBUG,
                  int level_store: logging=logging.WARNING,
                  bint console_prints=True,
