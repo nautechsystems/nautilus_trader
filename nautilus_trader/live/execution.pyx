@@ -96,9 +96,11 @@ cdef class LiveExecClient(ExecutionClient):
                          clock,
                          guid_factory,
                          logger)
-        self.zmq_context = zmq_context
         self._message_bus = Queue()
         self._thread = Thread(target=self._process, daemon=True)
+
+        self.zmq_context = zmq_context
+
         self._commands_worker = RequestWorker(
             'ExecClient.CommandSender',
             'NAUTILUS:COMMAND_ROUTER',
@@ -106,6 +108,7 @@ cdef class LiveExecClient(ExecutionClient):
             commands_port,
             self.zmq_context,
             logger)
+
         self._events_worker = SubscriberWorker(
             'ExecClient.EventSubscriber',
             'NAUTILUS:EVENTS_PUBLISHER',
@@ -114,6 +117,7 @@ cdef class LiveExecClient(ExecutionClient):
             self.zmq_context,
             self._deserialize_event,
             logger)
+
         self._events_topic = events_topic
         self._command_serializer = command_serializer
         self._response_serializer = response_serializer
@@ -124,7 +128,7 @@ cdef class LiveExecClient(ExecutionClient):
 
     cpdef void connect(self):
         """
-        Connect to the execution service and send a collateral inquiry command.
+        Connect to the execution service.
         """
         self._events_worker.connect()
         self._commands_worker.connect()
@@ -177,7 +181,7 @@ cdef class LiveExecClient(ExecutionClient):
             elif message.message_type == MessageType.COMMAND:
                 self._execute_command(message)
             else:
-                raise RuntimeError(f"Invalid message type on bus ({type(message)}).")
+                raise RuntimeError(f"Invalid message type on bus ({repr(message)}).")
 
     cpdef void _collateral_inquiry(self, CollateralInquiry command):
         self._send_command(command)
@@ -195,7 +199,7 @@ cdef class LiveExecClient(ExecutionClient):
         self._send_command(command)
 
     cpdef void _send_command(self, Command command):
-        self._log.debug(f"Sending {command}")
+        self._log.debug(f"Sending {command} ...")
         cdef bytes response_bytes = self._commands_worker.send(self._command_serializer.serialize(command))
         cdef Response response =  self._response_serializer.deserialize(response_bytes)
         self._log.debug(f"Received response {response}")
@@ -203,8 +207,5 @@ cdef class LiveExecClient(ExecutionClient):
     cpdef void _deserialize_event(self, str topic, bytes event_bytes):
         cdef Event event = self._event_serializer.deserialize(event_bytes)
 
-        # If no registered strategies then just log
-        if len(self._registered_strategies) == 0:
-            self._log.info(f"Received {event} for topic {topic}.")
-
+        self._log.debug(f"Received {topic} topic event {event}")
         self._handle_event(event)

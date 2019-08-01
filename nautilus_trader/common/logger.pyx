@@ -276,10 +276,9 @@ cdef class LiveLogger(Logger):
         self._queue.put(LogMessage(log_level, self.clock.time_now(), message))
 
     cpdef void _process_messages(self):
-        # Process the queue one item at a time
         cdef LogMessage log_message
-
         while True:
+            # Process the queue one item at a time
             log_message = self._queue.get()
 
             if log_message.log_level == logging.DEBUG:
