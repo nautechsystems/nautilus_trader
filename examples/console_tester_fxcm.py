@@ -8,7 +8,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import zmq
-from nautilus_trader.common.logger import LiveLogger
+from nautilus_trader.common.logger import LiveLogger, TestLogger
 from nautilus_trader.common.account import Account
 from nautilus_trader.live.data import LiveDataClient
 from nautilus_trader.live.execution import LiveExecClient
@@ -24,17 +24,17 @@ AUDUSD_FXCM_1_SEC_BID = BarType(AUDUSD_FXCM, BarSpecification(1, Resolution.SECO
 
 
 if __name__ == "__main__":
-
+    zmq_context = zmq.Context()
     logger = LiveLogger(log_to_file=False)
-    data_client = LiveDataClient(zmq_context=zmq.Context(), venue=Venue.FXCM, logger=logger)
-    exec_client = LiveExecClient(zmq_context=zmq.Context(), logger=logger)
+    data_client = LiveDataClient(zmq_context=zmq_context, venue=Venue.FXCM, logger=logger)
+    exec_client = LiveExecClient(zmq_context=zmq_context, logger=logger)
     data_client.connect()
     exec_client.connect()
 
     data_client.update_instruments()
 
     instrument = data_client.get_instrument(AUDUSD_FXCM)
-
+    print(instrument)
     strategy = EMACross(
         instrument,
         AUDUSD_FXCM_1_SEC_BID,
@@ -51,6 +51,7 @@ if __name__ == "__main__":
         Account(currency=Currency.USD),
         Portfolio())
 
+    input("Press Enter to start strategy...\n")
     trader.start()
 
     input("Press Enter to stop strategy...\n")

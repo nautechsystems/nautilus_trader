@@ -93,7 +93,9 @@ cdef class TradeStrategy:
 
 # -- HANDLER METHODS ----------------------------------------------------------------------------- #
     cpdef void handle_tick(self, Tick tick)
+    cpdef void handle_ticks(self, list ticks)
     cpdef void handle_bar(self, BarType bar_type, Bar bar)
+    cpdef void handle_bars(self, BarType bar_type, list bars)
     cpdef void handle_event(self, Event event)
 
     cdef void _remove_atomic_child_orders(self, OrderId order_id)

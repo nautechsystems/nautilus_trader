@@ -136,7 +136,7 @@ cdef class RequestWorker(MQWorker):
         """
         Precondition.not_empty(request, 'request')
 
-        self._log.debug(f"Sending[{self._cycles}] request {request}...")
+        self._log.debug(f"Sending[{self._cycles}] request of {len(request)} bytes ...")
         self._zmq_socket.send(request)
         self._cycles += 1
 

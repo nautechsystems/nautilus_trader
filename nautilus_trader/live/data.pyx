@@ -229,7 +229,20 @@ cdef class LiveDataClient(DataClient):
 
         self._log.info(f"Requesting {symbol} ticks from {from_datetime} to {to_datetime}...")
         cdef bytes response_bytes = self._tick_req_worker.send(request_bytes)
-        self._handle_response(response_bytes, callback)
+        cdef Response response = self._response_serializer.deserialize(response_bytes)
+
+        if isinstance(response, (MessageRejected, QueryFailure)):
+            self._log.error(response)
+            return
+
+        cdef dict data = self._data_serializer.deserialize(response.data)
+        cdef Symbol received_symbol = parse_symbol(data["Symbol"])
+
+        if received_symbol != symbol:
+            self._log.error(f"Incorrect tick symbol received (needed {symbol} was {received_symbol}).")
+            return
+
+        callback([parse_tick(symbol, values) for values in data["Values"]])
 
     cpdef void request_bars(
             self,
@@ -258,7 +271,20 @@ cdef class LiveDataClient(DataClient):
 
         self._log.info(f"Requesting {bar_type} bars from {from_datetime} to {to_datetime}...")
         cdef bytes response_bytes = self._bar_req_worker.send(request_bytes)
-        self._handle_response(response_bytes, callback)
+        cdef Response response = self._response_serializer.deserialize(response_bytes)
+
+        if isinstance(response, (MessageRejected, QueryFailure)):
+            self._log.error(response)
+            return
+
+        cdef dict data = self._data_serializer.deserialize(response.data)
+        cdef BarType received_bar_type = parse_bar_type(data["BarType"])
+
+        if received_bar_type != bar_type:
+            self._log.error(f"Incorrect bar type received (needed {bar_type} was {received_bar_type}).")
+            return
+
+        callback(bar_type, [parse_bar(values) for values in data["Values"]])
 
     cpdef void request_instrument(self, Symbol symbol, callback: Callable):
         """
@@ -277,7 +303,12 @@ cdef class LiveDataClient(DataClient):
 
         self._log.info(f"Requesting instrument for {symbol}...")
         cdef bytes response_bytes = self._inst_req_worker.send(request_bytes)
-        self._handle_response(response_bytes, callback)
+        cdef Response response = self._response_serializer.deserialize(response_bytes)
+
+        if isinstance(response, (MessageRejected, QueryFailure)):
+            self._log.error(response)
+        else:
+            callback(self._data_serializer.deserialize(response.data)['Values'][0])
 
     cpdef void request_instruments(self, callback: Callable):
         """
@@ -293,7 +324,12 @@ cdef class LiveDataClient(DataClient):
 
         self._log.info(f"Requesting all instruments for the {venue_string(self.venue)} venue...")
         cdef bytes response_bytes = self._inst_req_worker.send(request_bytes)
-        self._handle_response(response_bytes, callback)
+        cdef Response response = self._response_serializer.deserialize(response_bytes)
+
+        if isinstance(response, (MessageRejected, QueryFailure)):
+            self._log.error(response)
+        else:
+            callback(response)
 
     cpdef void update_instruments(self):
         """
@@ -378,14 +414,6 @@ cdef class LiveDataClient(DataClient):
 
         self._inst_sub_worker.unsubscribe(symbol.value)
         self._remove_instrument_handler(symbol, handler)
-
-    cpdef void _handle_response(self, bytes response_bytes, callback: Callable):
-        cdef Response response = self._response_serializer.deserialize(response_bytes)
-
-        if isinstance(response, (MessageRejected, QueryFailure)):
-            self._log.error(response)
-        else:
-            callback(response)
 
     cpdef void _update_instruments_data(self, DataResponse response):
         # Handle the given data response by updating all instruments.
