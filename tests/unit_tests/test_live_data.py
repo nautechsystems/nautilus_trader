@@ -34,11 +34,14 @@ class LiveDataClientTests(unittest.TestCase):
         self.bar_publisher = MockPublisher(zmq_context=zmq_context, port=55504)
         self.inst_publisher = MockPublisher(zmq_context=zmq_context, port=55506)
 
-        self.data_client = LiveDataClient(zmq_context=zmq.Context(), venue=Venue.FXCM, logger=TestLogger())
+        self.data_client = LiveDataClient(venue=Venue.FXCM, zmq_context=zmq.Context(), logger=TestLogger())
 
     # Fixture Tear Down
     def tearDown(self):
         self.data_client.disconnect()
+        self.tick_publisher.stop()
+        self.bar_publisher.stop()
+        self.inst_publisher.stop()
 
     def test_can_connect_and_disconnect_from_live_db(self):
         # Act
