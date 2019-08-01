@@ -52,7 +52,6 @@ class LiveExecClientTests(unittest.TestCase):
     def tearDown(self):
         # Tear Down
         self.exec_client.disconnect()
-        self.exec_client.dispose()
         self.command_router.stop()
         self.event_publisher.stop()
 
@@ -128,11 +127,11 @@ class LiveExecClientTests(unittest.TestCase):
 
         # Act
         strategy.submit_order(order, strategy.position_id_generator.generate())
-        time.sleep(1)
+        time.sleep(0.1)
         strategy.cancel_order(order, 'ORDER_EXPIRED')
 
         # Assert
-        time.sleep(1)
+        time.sleep(0.1)
         self.assertEqual(order, strategy.order(order.id))
         self.assertEqual(2, len(self.command_router.responses_sent))
         self.assertEqual(MessageReceived, type(self.command_router.responses_sent[0]))
@@ -150,11 +149,11 @@ class LiveExecClientTests(unittest.TestCase):
 
         # Act
         strategy.submit_order(order, strategy.position_id_generator.generate())
-        time.sleep(1)
+        time.sleep(0.1)
         strategy.modify_order(order, Price('1.00001'))
 
         # Assert
-        time.sleep(1)
+        time.sleep(0.1)
         self.assertEqual(order, strategy.order(order.id))
         self.assertEqual(2, len(self.command_router.responses_sent))
         self.assertEqual(MessageReceived, type(self.command_router.responses_sent[0]))
@@ -169,6 +168,6 @@ class LiveExecClientTests(unittest.TestCase):
         strategy.collateral_inquiry()
 
         # Assert
-        time.sleep(1)
+        time.sleep(0.1)
         self.assertEqual(1, len(self.command_router.responses_sent))
         self.assertEqual(MessageReceived, type(self.command_router.responses_sent[0]))

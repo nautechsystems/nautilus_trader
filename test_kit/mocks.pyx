@@ -24,6 +24,9 @@ cdef str UTF8 = 'utf-8'
 
 
 class MockServer(Thread):
+    """
+    Provides a mock server.
+    """
 
     def __init__(
             self,
@@ -58,7 +61,6 @@ class MockServer(Thread):
         """
         self._log(f"Unbinding from {self._service_address}...")
         self._socket.unbind(self._service_address)
-        self._socket.close()
 
     def _consume_messages(self):
         """
@@ -88,6 +90,9 @@ class MockServer(Thread):
 
 
 class MockPublisher:
+    """
+    Provides a mock publisher.
+    """
 
     def __init__(self, zmq_context: Context, int port):
         """
@@ -122,7 +127,6 @@ class MockPublisher:
         """
         self._log(f"Unbinding from {self._service_address}...")
         self._socket.unbind(self._service_address)
-        self._socket.close()
 
     def _log(self, str message):
         """
@@ -134,6 +138,9 @@ class MockPublisher:
 
 
 class MockCommandRouter(Thread):
+    """
+    Provides a mock command router.
+    """
 
     def __init__(
             self,
@@ -192,7 +199,6 @@ class MockCommandRouter(Thread):
         """
         self._log(f"Unbinding from {self._service_address}...")
         self._socket.unbind(self._service_address)
-        self._socket.close()
 
     def _log(self, message: str):
         """
