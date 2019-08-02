@@ -127,9 +127,9 @@ cdef class ExecutionClient:
         self._registered_strategies[strategy.id] = strategy
         self._orders_active[strategy.id] = {}     # type: Dict[OrderId, Order]
         self._orders_completed[strategy.id] = {}  # type: Dict[OrderId, Order]
-
         self._portfolio.register_strategy(strategy)
         strategy.register_execution_client(self)
+        strategy.change_logger(self._log.get_logger())
 
         self._log.debug(f"Registered {strategy}.")
 

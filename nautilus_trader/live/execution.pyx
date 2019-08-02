@@ -142,6 +142,12 @@ cdef class LiveExecClient(ExecutionClient):
         self._commands_worker.disconnect()
         self._events_worker.disconnect()
 
+    cpdef void check_residuals(self):
+        """
+        TBD.
+        """
+        self._check_residuals()
+
     cpdef void reset(self):
         """
         Resets the execution client by clearing all stateful internal values 

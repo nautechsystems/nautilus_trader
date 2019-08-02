@@ -80,6 +80,7 @@ cdef class LoggerAdapter:
     cdef readonly bint bypassed
     cdef readonly str component_name
 
+    cpdef Logger get_logger(self)
     cpdef void debug(self, str message)
     cpdef void info(self, str message)
     cpdef void warning(self, str message)

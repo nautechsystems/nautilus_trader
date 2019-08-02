@@ -7,8 +7,10 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+import logging
 import zmq
-from nautilus_trader.common.logger import LiveLogger, TestLogger
+
+from nautilus_trader.common.logger import LiveLogger
 from nautilus_trader.common.account import Account
 from nautilus_trader.live.data import LiveDataClient
 from nautilus_trader.live.execution import LiveExecClient
@@ -17,7 +19,7 @@ from nautilus_trader.model.objects import Symbol, BarType, BarSpecification
 from nautilus_trader.trade.portfolio import Portfolio
 from nautilus_trader.trade.trader import Trader
 
-from test_kit.strategies import EMACross
+from examples.ema_cross import EMACrossPy
 
 AUDUSD_FXCM = Symbol('AUDUSD', Venue.FXCM)
 AUDUSD_FXCM_1_SEC_BID = BarType(AUDUSD_FXCM, BarSpecification(1, Resolution.SECOND, QuoteType.BID))
@@ -25,7 +27,7 @@ AUDUSD_FXCM_1_SEC_BID = BarType(AUDUSD_FXCM, BarSpecification(1, Resolution.SECO
 
 if __name__ == "__main__":
     zmq_context = zmq.Context()
-    logger = LiveLogger(log_to_file=False)
+    logger = LiveLogger(level_console=logging.DEBUG, log_to_file=False)
     data_client = LiveDataClient(zmq_context=zmq_context, venue=Venue.FXCM, logger=logger)
     exec_client = LiveExecClient(zmq_context=zmq_context, logger=logger)
     data_client.connect()
@@ -34,8 +36,8 @@ if __name__ == "__main__":
     data_client.update_instruments()
 
     instrument = data_client.get_instrument(AUDUSD_FXCM)
-    print(instrument)
-    strategy = EMACross(
+
+    strategy = EMACrossPy(
         instrument,
         AUDUSD_FXCM_1_SEC_BID,
         0.1,
@@ -56,9 +58,5 @@ if __name__ == "__main__":
 
     input("Press Enter to stop strategy...\n")
     trader.stop()
-
-    input("Press Enter to disconnect...\n")
-    print("Disconnecting...")
-
     data_client.disconnect()
     exec_client.disconnect()

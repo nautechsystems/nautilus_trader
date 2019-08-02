@@ -197,6 +197,7 @@ cdef class SubscriberWorker(MQWorker):
     cpdef void subscribe(self, str topic):
         """
         Subscribe the worker to the given topic.
+        
         :param topic: The topic to subscribe to.
         """
         self._zmq_socket.setsockopt(zmq.SUBSCRIBE, topic.encode(UTF8))
@@ -205,6 +206,7 @@ cdef class SubscriberWorker(MQWorker):
     cpdef void unsubscribe(self, str topic):
         """
         Unsubscribe the worker from the given topic.
+        
         :param topic: The topic to unsubscribe from.
         """
         self._zmq_socket.setsockopt(zmq.UNSUBSCRIBE, topic.encode(UTF8))
@@ -213,18 +215,11 @@ cdef class SubscriberWorker(MQWorker):
     cpdef void _consume_messages(self):
         self._log.debug("Starting message consumption loop...")
 
-        cdef bytes message
-        cdef bytes topic
+        cdef str topic
         cdef bytes body
-        cdef str topic_str
-
         while True:
-            message = self._zmq_socket.recv()
-
-            # Split on first occurrence of empty byte delimiter
-            topic, body = message.split(b' ', 1)
-            topic_str = topic.decode(UTF8)
-
-            self._handler(topic_str, body)
+            topic = self._zmq_socket.recv().decode(UTF8)
+            body = self._zmq_socket.recv()
             self._cycles += 1
-            self._log.debug(f"Received[{self._cycles}] message for topic {topic_str}: {body}")
+            self._log.debug(f"Received[{self._cycles}] topic={topic}, message={body}")
+            self._handler(topic, body)
