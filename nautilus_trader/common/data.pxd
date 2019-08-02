@@ -64,4 +64,5 @@ cdef class DataClient:
     cdef void _handle_tick(self, Tick tick)
     cdef void _handle_bar(self, BarType bar_type, Bar bar)
     cdef void _handle_instrument(self, Instrument instrument)
+    cdef void _handle_instruments(self, list instruments)
     cdef void _reset(self)

@@ -14,6 +14,8 @@ cdef class DataMapper:
     """
     Provides a data mapper for data objects.
     """
+    cdef InstrumentSerializer instrument_serializer
+
     cpdef dict map_ticks(self, list ticks)
     cpdef dict map_bars(self, list bars, BarType bar_type)
     cpdef dict map_instruments(self, list instruments)

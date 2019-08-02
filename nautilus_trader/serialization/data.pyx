@@ -139,6 +139,12 @@ cdef class DataMapper:
     Provides a data mapper for data objects.
     """
 
+    def __init__(self):
+        """
+        Initializes a new instance of the DataMapper class.
+        """
+        self.instrument_serializer = BsonInstrumentSerializer()
+
     cpdef dict map_ticks(self, list ticks):
         Precondition.not_empty(ticks, 'ticks')
         Precondition.type(ticks[0], Tick, 'ticks')
@@ -170,6 +176,7 @@ cdef class DataMapper:
 
         cdef dict data = {
             'DataType': type(instruments[0]).__name__,
+            'Values': [self.instrument_serializer.serialize(instrument) for instrument in instruments]
         }
 
         return data
