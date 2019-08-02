@@ -5,9 +5,10 @@ To run the tests manually compile the C extensions for the package first;
 
     $ python setup.py build_ext --inplace
 
-![Alt text](documentation/assets/cython-logo-small.jpeg "cython")
+![Alt text](documentation/assets/cython-logo-small.png "cython")
+![Alt text](documentation/assets/msgpack-logo-white.png "msgpack")
 
-![Alt text](documentation/assets/nautechsystems_logo_small.png "logo")
+![Alt text](documentation/assets/nautechsystems_logo_small.png?raw=true "logo")
 
 Nautech Systems Pty Ltd.
 
