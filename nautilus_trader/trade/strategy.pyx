@@ -31,8 +31,6 @@ from nautilus_trader.common.guid cimport GuidFactory, LiveGuidFactory
 from nautilus_trader.model.commands cimport CollateralInquiry, SubmitOrder, SubmitAtomicOrder, ModifyOrder, CancelOrder
 from nautilus_trader.data.tools cimport IndicatorUpdater
 
-Indicator = object
-
 
 cdef class TradeStrategy:
     """
@@ -106,7 +104,7 @@ cdef class TradeStrategy:
         self.bar_capacity = bar_capacity
         self._ticks = {}                 # type: Dict[Symbol, Tick]
         self._bars = {}                  # type: Dict[BarType, Deque[Bar]]
-        self._indicators = {}            # type: Dict[BarType, List[Indicator]]
+        self._indicators = {}            # type: Dict[BarType, List[object]]
         self._indicator_updaters = {}    # type: Dict[BarType, List[IndicatorUpdater]]
         self._exchange_calculator = ExchangeRateCalculator()
 
@@ -263,7 +261,7 @@ cdef class TradeStrategy:
     cpdef void register_indicator(
             self,
             BarType bar_type,
-            indicator: Indicator,
+            indicator,
             update_method: Callable):
         """
         Register the given indicator with the strategy. The indicator must be from the
@@ -271,16 +269,15 @@ cdef class TradeStrategy:
         bar type.
 
         :param bar_type: The indicators bar type.
-        :param indicator: The indicator to set.
+        :param indicator: The indicator to register.
         :param update_method: The update method for the indicator.
         :raises ValueError: If the indicator is not of type Indicator.
         :raises ValueError: If the update_method is not of type Callable.
         """
-        Precondition.type(indicator, Indicator, 'indicator')
         Precondition.type(update_method, Callable, 'update_method')
 
         if bar_type not in self._indicators:
-            self._indicators[bar_type] = []  # type: List[Indicator]
+            self._indicators[bar_type] = []          # type: List[object]
         self._indicators[bar_type].append(indicator)
 
         if bar_type not in self._indicator_updaters:
