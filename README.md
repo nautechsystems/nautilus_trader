@@ -12,4 +12,4 @@ To run the tests manually compile the C extensions for the package first;
 
 Nautech Systems Pty Ltd.
 
-> nautechsystems.io
+> https://nautechsystems.io
