@@ -1,11 +1,13 @@
 # Nautilus Trader
-The black box trading client and backtester for the Nautilus stack.
+An algorithmic trading framework written in Cython.
 
-To manually compile the c extensions for the package;
+To run the tests manually compile the C extensions for the package first;
 
     $ python setup.py build_ext --inplace
 
-![Alt text](documentation/nautechsystems_logo_small.png?raw=true "logo")
+![Alt text](documentation/assets/cython-logo-small.jpeg "cython")
+
+![Alt text](documentation/assets/nautechsystems_logo_small.png "logo")
 
 Nautech Systems Pty Ltd.
 

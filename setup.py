@@ -22,7 +22,7 @@ from setup_tools import check_file_headers, find_pyx_files
 
 PACKAGE_NAME = 'nautilus_trader'
 AUTHOR = 'Nautech Systems Pty Ltd'
-DESCRIPTION = 'The black box trading client and backtester for the Nautilus stack.'
+DESCRIPTION = 'An algorithmic trading framework written in Cython.'
 LICENSE = 'Nautech Systems Software License, April 2018'
 REQUIREMENTS = ['cython',
                 'numpy',
@@ -69,7 +69,7 @@ check_file_headers(DIRECTORIES_ALL, ignore=artifacts_to_ignore, author=AUTHOR)
 
 
 def make_cython_extensions(directories: List[str]) -> [Extension]:
-    # Generate an Extension object from its dotted name
+    # Generate a a list of Extension objects from the given directories list
     extensions = []
     for file in find_pyx_files(directories):
         extensions.append(Extension(
