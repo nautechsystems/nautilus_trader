@@ -314,6 +314,11 @@ cdef class DataClient:
             for handler in self._instrument_handlers[instrument.symbol]:
                 handler.handle(instrument)
 
+    cdef void _handle_instruments(self, list instruments):
+        # Handle all instruments individually
+        for instrument in instruments:
+            self._handle_instrument(instrument)
+
     cdef void _reset(self):
         # Reset the data client by returning all stateful internal values to their initial value
         self._instruments = {}       # type: Dict[Symbol, Instrument]

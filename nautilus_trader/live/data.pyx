@@ -16,7 +16,7 @@ from nautilus_trader.core.precondition cimport Precondition
 from nautilus_trader.core.message cimport Response
 from nautilus_trader.model.c_enums.venue cimport Venue
 from nautilus_trader.model.c_enums.venue cimport venue_string
-from nautilus_trader.model.objects cimport Symbol, BarType
+from nautilus_trader.model.objects cimport Symbol, BarType, Instrument
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.guid cimport LiveGuidFactory
 from nautilus_trader.common.logger cimport Logger, LiveLogger
@@ -223,10 +223,10 @@ cdef class LiveDataClient(DataClient):
             "ToDateTime": convert_datetime_to_string(to_datetime),
         }
 
+        self._log.info(f"Requesting {symbol} ticks from {from_datetime} to {to_datetime}...")
+
         cdef DataRequest request = DataRequest(query, self._guid_factory.generate(), self.time_now())
         cdef bytes request_bytes = self._request_serializer.serialize(request)
-
-        self._log.info(f"Requesting {symbol} ticks from {from_datetime} to {to_datetime}...")
         cdef bytes response_bytes = self._tick_req_worker.send(request_bytes)
         cdef Response response = self._response_serializer.deserialize(response_bytes)
 
@@ -265,10 +265,10 @@ cdef class LiveDataClient(DataClient):
             "ToDateTime": convert_datetime_to_string(to_datetime),
         }
 
+        self._log.info(f"Requesting {bar_type} bars from {from_datetime} to {to_datetime}...")
+
         cdef DataRequest request = DataRequest(query, self._guid_factory.generate(), self.time_now())
         cdef bytes request_bytes = self._request_serializer.serialize(request)
-
-        self._log.info(f"Requesting {bar_type} bars from {from_datetime} to {to_datetime}...")
         cdef bytes response_bytes = self._bar_req_worker.send(request_bytes)
         cdef Response response = self._response_serializer.deserialize(response_bytes)
 
@@ -297,17 +297,25 @@ cdef class LiveDataClient(DataClient):
             "Symbol": symbol.value,
         }
 
+        self._log.info(f"Requesting instrument for {symbol}...")
+
         cdef DataRequest request = DataRequest(query, self._guid_factory.generate(), self.time_now())
         cdef bytes request_bytes = self._request_serializer.serialize(request)
-
-        self._log.info(f"Requesting instrument for {symbol}...")
         cdef bytes response_bytes = self._inst_req_worker.send(request_bytes)
         cdef Response response = self._response_serializer.deserialize(response_bytes)
 
         if isinstance(response, (MessageRejected, QueryFailure)):
             self._log.error(response)
-        else:
-            callback(self._data_serializer.deserialize(response.data)['Values'][0])
+            return
+
+        cdef dict data = self._data_serializer.deserialize(response.data)
+        cdef Instrument instrument = self._instrument_serializer.deserialize(data['Values'][0])
+
+        if instrument.symbol != symbol:
+            self._log.error(f"Incorrect instrument received (needed {symbol} was {instrument.symbol}).")
+            return
+
+        callback(instrument)
 
     cpdef void request_instruments(self, callback: Callable):
         """
@@ -318,23 +326,26 @@ cdef class LiveDataClient(DataClient):
             "Venue": venue_string(self.venue),
         }
 
+        self._log.info(f"Requesting all instruments for the {venue_string(self.venue)} ...")
+
         cdef DataRequest request = DataRequest(query, self._guid_factory.generate(), self.time_now())
         cdef bytes request_bytes = self._request_serializer.serialize(request)
-
-        self._log.info(f"Requesting all instruments for the {venue_string(self.venue)} venue...")
         cdef bytes response_bytes = self._inst_req_worker.send(request_bytes)
         cdef Response response = self._response_serializer.deserialize(response_bytes)
 
         if isinstance(response, (MessageRejected, QueryFailure)):
             self._log.error(response)
-        else:
-            callback(response)
+            return
+
+        cdef dict data = self._data_serializer.deserialize(response.data)
+        cdef list instruments = [self._instrument_serializer.deserialize(inst) for inst in data['Values']]
+        callback(instruments)
 
     cpdef void update_instruments(self):
         """
         Update all instruments for the data clients venue.
         """
-        self.request_instruments(self._update_instruments_data)
+        self.request_instruments(self._handle_instruments)
 
     cpdef void subscribe_ticks(self, Symbol symbol, handler: Callable):
         """
@@ -413,11 +424,6 @@ cdef class LiveDataClient(DataClient):
 
         self._inst_sub_worker.unsubscribe(symbol.value)
         self._remove_instrument_handler(symbol, handler)
-
-    cpdef void _update_instruments_data(self, DataResponse response):
-        # Handle the given data response by updating all instruments.
-        for inst_bson in self._data_serializer.deserialize(response.data)['Values']:
-            self._handle_instrument(self._instrument_serializer.deserialize(inst_bson))
 
     cpdef void _handle_tick_sub(self, str topic, bytes message):
         # Handle the given tick message published for the given topic
