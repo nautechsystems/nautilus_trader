@@ -47,6 +47,8 @@ cdef class LiveDataClient(DataClient):
     cdef ResponseSerializer _response_serializer
     cdef DataSerializer _data_serializer
     cdef InstrumentSerializer _instrument_serializer
+    cdef dict _cached_symbols
+    cdef dict _cached_bar_types
 
     def __init__(self,
                  zmq_context: Context,
@@ -149,6 +151,9 @@ cdef class LiveDataClient(DataClient):
         self._data_serializer = data_serializer
         self._instrument_serializer = instrument_serializer
 
+        self._cached_symbols = {}
+        self._cached_bar_types = {}
+
         self._log.info(f"ZMQ v{zmq.pyzmq_version()}.")
 
     cpdef void connect(self):
@@ -234,13 +239,18 @@ cdef class LiveDataClient(DataClient):
             return
 
         cdef dict data = self._data_serializer.deserialize(response.data)
-        cdef Symbol received_symbol = parse_symbol(data[SYMBOL])
 
-        if received_symbol != symbol:
-            self._log.error(f"Incorrect tick symbol received (needed {symbol} was {received_symbol}).")
-            return
+        cdef str symbol_str = data[SYMBOL]
+        cdef Symbol received_symbol
+        if symbol_str in self._cached_symbols:
+            received_symbol = self._cached_symbols[symbol_str]
+        else:
+            received_symbol = parse_symbol(symbol_str)
+            self._cached_symbols[symbol_str] = symbol
 
-        callback([parse_tick(symbol, values.decode(UTF8)) for values in data[DATA]])
+        assert(received_symbol == symbol)
+
+        callback([parse_tick(received_symbol, values.decode(UTF8)) for values in data[DATA]])
 
     cpdef void request_bars(
             self,
@@ -276,14 +286,18 @@ cdef class LiveDataClient(DataClient):
             return
 
         cdef dict data = self._data_serializer.deserialize(response.data)
-        cdef BarType received_bar_type = parse_bar_type(data[SYMBOL] + '-' + data[SPECIFICATION])
 
-        print(received_bar_type)
-        if received_bar_type != bar_type:
-            self._log.error(f"Incorrect bar type received (needed {bar_type} was {received_bar_type}).")
-            return
+        cdef str bar_type_str = data[SYMBOL] + '-' + data[SPECIFICATION]
+        cdef BarType received_bar_type
+        if bar_type_str in self._cached_bar_types:
+            received_bar_type = self._cached_bar_types[bar_type_str]
+        else:
+            received_bar_type = parse_bar_type(bar_type_str)
+            self._cached_bar_types[bar_type_str] = received_bar_type
 
-        callback(bar_type, [parse_bar(values.decode(UTF8)) for values in data[DATA]])
+        assert(received_bar_type == bar_type)
+
+        callback(received_bar_type, [parse_bar(values.decode(UTF8)) for values in data[DATA]])
 
     cpdef void request_instrument(self, Symbol symbol, callback: Callable):
         """
@@ -311,9 +325,7 @@ cdef class LiveDataClient(DataClient):
         cdef dict data = self._data_serializer.deserialize(response.data)
         cdef Instrument instrument = self._instrument_serializer.deserialize(data[DATA][0])
 
-        if instrument.symbol != symbol:
-            self._log.error(f"Incorrect instrument received (needed {symbol} was {instrument.symbol}).")
-            return
+        assert(instrument.symbol == symbol)
 
         callback(instrument)
 
@@ -430,11 +442,25 @@ cdef class LiveDataClient(DataClient):
 
     cpdef void _handle_tick_sub(self, str topic, bytes message):
         # Handle the given tick message published for the given topic
-        self._handle_tick(parse_tick(parse_symbol(topic), message.decode(UTF8)))
+        cdef Symbol symbol
+        if topic in self._cached_symbols:
+            symbol = self._cached_symbols[topic]
+        else:
+            symbol = parse_symbol(topic)
+            self._cached_symbols[topic] = symbol
+
+        self._handle_tick(parse_tick(symbol, message.decode(UTF8)))
 
     cpdef void _handle_bar_sub(self, str topic, bytes message):
         # Handle the given bar message published for the given topic
-        self._handle_bar(parse_bar_type(topic), parse_bar(message.decode(UTF8)))
+        cdef BarType bar_type
+        if topic in self._cached_bar_types:
+            bar_type = self._cached_bar_types[topic]
+        else:
+            bar_type = parse_bar_type(topic)
+            self._cached_bar_types[topic] = bar_type
+
+        self._handle_bar(bar_type, parse_bar(message.decode(UTF8)))
 
     cpdef void _handle_inst_sub(self, str topic, bytes message):
         # Handle the given instrument message published for the given topic
