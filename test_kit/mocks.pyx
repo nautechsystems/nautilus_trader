@@ -117,7 +117,7 @@ class MockPublisher:
         :param topic: The topic of the message being published.
         :param message: The message bytes to send.
         """
-        self._socket.send(topic.encode(UTF8) + b' ' + message)
+        self._socket.send_multipart([topic.encode(UTF8), message])
         self._cycles += 1
         self._log(f"Publishing[{self._cycles}] topic={topic}, message={message}")
 
