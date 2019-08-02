@@ -240,7 +240,7 @@ cdef class LiveDataClient(DataClient):
             self._log.error(f"Incorrect tick symbol received (needed {symbol} was {received_symbol}).")
             return
 
-        callback([parse_tick(symbol, values) for values in data[DATA]])
+        callback([parse_tick(symbol, values.decode(UTF8)) for values in data[DATA]])
 
     cpdef void request_bars(
             self,
@@ -276,13 +276,14 @@ cdef class LiveDataClient(DataClient):
             return
 
         cdef dict data = self._data_serializer.deserialize(response.data)
-        cdef BarType received_bar_type = parse_bar_type(data[BAR_TYPE])
+        cdef BarType received_bar_type = parse_bar_type(data[SYMBOL] + '-' + data[SPECIFICATION])
 
+        print(received_bar_type)
         if received_bar_type != bar_type:
             self._log.error(f"Incorrect bar type received (needed {bar_type} was {received_bar_type}).")
             return
 
-        callback(bar_type, [parse_bar(values) for values in data[DATA]])
+        callback(bar_type, [parse_bar(values.decode(UTF8)) for values in data[DATA]])
 
     cpdef void request_instrument(self, Symbol symbol, callback: Callable):
         """

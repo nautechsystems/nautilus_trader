@@ -136,9 +136,9 @@ cdef class RequestWorker(MQWorker):
         """
         Precondition.not_empty(request, 'request')
 
-        self._log.debug(f"Sending[{self._cycles}] request of {len(request)} bytes ...")
-        self._zmq_socket.send(request)
         self._cycles += 1
+        self._zmq_socket.send(request)
+        self._log.debug(f"Sent[{self._cycles}] request of {len(request)} bytes.")
 
         cdef bytes response = self._zmq_socket.recv()
         self._log.debug(f"Received[{self._cycles}] response of {len(response)} bytes.")
@@ -218,9 +218,9 @@ cdef class SubscriberWorker(MQWorker):
         cdef str topic
         cdef bytes body
         while True:
+            self._cycles += 1
             topic = self._zmq_socket.recv().decode(UTF8)
             body = self._zmq_socket.recv()
 
-            self._cycles += 1
             self._log.debug(f"Received[{self._cycles}] topic={topic}, message={body}")
             self._handler(topic, body)

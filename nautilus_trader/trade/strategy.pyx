@@ -516,7 +516,7 @@ cdef class TradeStrategy:
             self.log.error("Cannot download historical bars (data client not registered).")
             return
 
-        self._data_client.request_bars(bar_type, from_datetime, to_datetime, self.handle_bar)
+        self._data_client.request_bars(bar_type, from_datetime, to_datetime, self.handle_bars)
 
     cpdef void subscribe_bars(self, BarType bar_type):
         """
