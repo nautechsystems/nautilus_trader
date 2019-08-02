@@ -81,8 +81,13 @@ cdef class LiveDataClient(DataClient):
         :param data_serializer: The data serializer for the component.
         :param data_serializer: The instrument serializer for the component.
         :param logger: The logger for the component.
-        :raises ValueError: If the host is not a valid string.
-        :raises ValueError: If the port is not in range [0, 65535]
+        :raises ValueError: If the service_address is not a valid string.
+        :raises ValueError: If the tick_req_port is not in range [0, 65535]
+        :raises ValueError: If the tick_sub_port is not in range [0, 65535]
+        :raises ValueError: If the bar_req_port is not in range [0, 65535]
+        :raises ValueError: If the bar_sub_port is not in range [0, 65535]
+        :raises ValueError: If the inst_req_port is not in range [0, 65535]
+        :raises ValueError: If the inst_sub_port is not in range [0, 65535]
         """
         Precondition.valid_string(service_address, 'service_address')
         Precondition.in_range(tick_req_port, 'tick_req_port', 0, 65535)
