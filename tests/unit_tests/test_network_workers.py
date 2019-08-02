@@ -15,7 +15,7 @@ from test_kit.mocks import MockServer, MockPublisher
 from test_kit.objects import ObjectStorer
 
 LOCAL_HOST = "127.0.0.1"
-TEST_PORT = 5557
+TEST_PORT = 55557
 TEST_ADDRESS = f"tcp://{LOCAL_HOST}:{TEST_PORT}"
 
 
@@ -74,18 +74,18 @@ class SubscriberWorkerTests(unittest.TestCase):
         # Fixture Setup
         print("\n")
 
-        self.context = zmq.Context()
+        self.zmq_context = zmq.Context()
         self.response_handler = ObjectStorer()
 
         self.worker = SubscriberWorker(
-            "TestSubscriber",
-            "TestPublisher",
+            'TestSubscriber',
+            'TestPublisher',
             LOCAL_HOST,
             TEST_PORT,
-            self.context,
+            self.zmq_context,
             self.response_handler.store_2)
 
-        self.publisher = MockPublisher(self.context, TEST_PORT)
+        self.publisher = MockPublisher(self.zmq_context, TEST_PORT)
 
     def tearDown(self):
         # Tear Down
@@ -96,26 +96,26 @@ class SubscriberWorkerTests(unittest.TestCase):
     def test_can_subscribe_to_topic_and_receive_one_published_message(self):
         # Arrange
         self.worker.connect()
-        self.worker.subscribe("test_topic")
+        self.worker.subscribe('test_topic')
 
         time.sleep(0.1)
         # Act
-        self.publisher.publish("test_topic", b'hello subscribers')
+        self.publisher.publish('test_topic', b'hello subscribers')
 
         time.sleep(0.1)
         # Assert
-        self.assertIn(('test_topic', b'hello subscribers'), self.response_handler.get_store())
+        self.assertEqual(('test_topic', b'hello subscribers'), self.response_handler.get_store()[0])
 
     def test_can_subscribe_to_topic_and_receive_multiple_published_messages_in_correct_order(self):
         # Arrange
         self.worker.connect()
-        self.worker.subscribe("test_topic")
+        self.worker.subscribe('test_topic')
 
         time.sleep(0.1)
         # Act
-        self.publisher.publish("test_topic", b'hello1')
-        self.publisher.publish("test_topic", b'hello2')
-        self.publisher.publish("test_topic", b'hello3')
+        self.publisher.publish('test_topic', b'hello1')
+        self.publisher.publish('test_topic', b'hello2')
+        self.publisher.publish('test_topic', b'hello3')
 
         time.sleep(0.1)
         # Assert
