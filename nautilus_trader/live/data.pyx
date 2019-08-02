@@ -345,7 +345,10 @@ cdef class LiveDataClient(DataClient):
         """
         Update all instruments for the data clients venue.
         """
-        self.request_instruments(self._handle_instruments)
+        self.request_instruments(self.temp_handle_instruments)
+
+    cpdef void temp_handle_instruments(self, list instruments):
+        self._handle_instruments(instruments)
 
     cpdef void subscribe_ticks(self, Symbol symbol, handler: Callable):
         """

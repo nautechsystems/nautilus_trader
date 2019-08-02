@@ -386,6 +386,14 @@ cdef class LoggerAdapter:
         self.component_name = component_name
         self.bypassed = logger.bypass_logging
 
+    cpdef Logger get_logger(self):
+        """
+        System method. Return the encapsulated logger
+        
+        :return: logging.logger.
+        """
+        return self._logger
+
     cpdef void debug(self, str message):
         """
         Log the given debug message with the logger.
