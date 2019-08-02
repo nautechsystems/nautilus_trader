@@ -216,10 +216,10 @@ cdef class LiveDataClient(DataClient):
         :param callback: The callback for the response.
         """
         cdef dict query = {
-            "DataType": "Tick[]",
-            "Symbol": symbol.value,
-            "FromDateTime": convert_datetime_to_string(from_datetime),
-            "ToDateTime": convert_datetime_to_string(to_datetime),
+            DATA_TYPE: "Tick[]",
+            SYMBOL: symbol.value,
+            FROM_DATETIME: convert_datetime_to_string(from_datetime),
+            TO_DATETIME: convert_datetime_to_string(to_datetime),
         }
 
         self._log.info(f"Requesting {symbol} ticks from {from_datetime} to {to_datetime}...")
