@@ -23,7 +23,6 @@ from nautilus_trader.serialization.base cimport DataSerializer, InstrumentSerial
 from nautilus_trader.serialization.common cimport *
 
 
-
 cpdef Tick deserialize_tick(Symbol symbol, bytes tick_bytes):
     """
     Return a deserialized tick from the given symbol and bytes.
@@ -149,37 +148,30 @@ cdef class DataMapper:
         Precondition.not_empty(ticks, 'ticks')
         Precondition.type(ticks[0], Tick, 'ticks')
 
-
-        cdef dict data = {
-            'DataType': type(ticks[0]).__name__,
-            'Symbol': ticks[0].symbol.value,
-            'Values': [str(tick) for tick in ticks]
+        return {
+            DATA_TYPE: type(ticks[0]).__name__,
+            SYMBOL: ticks[0].symbol.value,
+            DATA: [str(tick) for tick in ticks]
         }
-
-        return data
 
     cpdef dict map_bars(self, list bars, BarType bar_type):
         Precondition.not_empty(bars, 'bars')
         Precondition.type(bars[0], Bar, 'bars')
 
-        cdef dict data = {
-            'DataType': type(bars[0]).__name__,
-            'BarType': str(bar_type),
-            'Values': [str(bar) for bar in bars]
+        return {
+            DATA_TYPE: type(bars[0]).__name__,
+            BAR_TYPE: str(bar_type),
+            DATA: [str(bar) for bar in bars]
         }
-
-        return data
 
     cpdef dict map_instruments(self, list instruments):
         Precondition.not_empty(instruments, 'instruments')
         Precondition.type(instruments[0], Instrument, 'instruments')
 
-        cdef dict data = {
-            'DataType': type(instruments[0]).__name__,
-            'Values': [self.instrument_serializer.serialize(instrument) for instrument in instruments]
+        return {
+            DATA_TYPE: type(instruments[0]).__name__,
+            DATA: [self.instrument_serializer.serialize(instrument) for instrument in instruments]
         }
-
-        return data
 
 
 cdef class BsonDataSerializer(DataSerializer):

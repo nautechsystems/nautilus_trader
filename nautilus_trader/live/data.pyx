@@ -24,13 +24,12 @@ from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.network.workers import RequestWorker, SubscriberWorker
 from nautilus_trader.serialization.base cimport DataSerializer, InstrumentSerializer, RequestSerializer, ResponseSerializer
 from nautilus_trader.serialization.data cimport BsonDataSerializer, BsonInstrumentSerializer
+from nautilus_trader.serialization.constants cimport *
 from nautilus_trader.serialization.common cimport parse_symbol, parse_tick, parse_bar_type, parse_bar, convert_datetime_to_string
 from nautilus_trader.serialization.serializers cimport MsgPackRequestSerializer, MsgPackResponseSerializer
 from nautilus_trader.network.requests cimport DataRequest
 from nautilus_trader.network.responses cimport MessageRejected, QueryFailure, DataResponse
 from nautilus_trader.trade.strategy cimport TradeStrategy
-
-cdef str UTF8 = 'utf-8'
 
 
 cdef class LiveDataClient(DataClient):
@@ -235,13 +234,13 @@ cdef class LiveDataClient(DataClient):
             return
 
         cdef dict data = self._data_serializer.deserialize(response.data)
-        cdef Symbol received_symbol = parse_symbol(data["Symbol"])
+        cdef Symbol received_symbol = parse_symbol(data[SYMBOL])
 
         if received_symbol != symbol:
             self._log.error(f"Incorrect tick symbol received (needed {symbol} was {received_symbol}).")
             return
 
-        callback([parse_tick(symbol, values) for values in data["Values"]])
+        callback([parse_tick(symbol, values) for values in data[DATA]])
 
     cpdef void request_bars(
             self,
@@ -258,11 +257,11 @@ cdef class LiveDataClient(DataClient):
         :param callback: The callback for the response.
         """
         cdef dict query = {
-            "DataType": "Bar[]",
-            "Symbol": bar_type.symbol.value,
-            "Specification": str(bar_type.specification),
-            "FromDateTime": convert_datetime_to_string(from_datetime),
-            "ToDateTime": convert_datetime_to_string(to_datetime),
+            DATA_TYPE: "Bar[]",
+            SYMBOL: bar_type.symbol.value,
+            SPECIFICATION: str(bar_type.specification),
+            FROM_DATETIME: convert_datetime_to_string(from_datetime),
+            TO_DATETIME: convert_datetime_to_string(to_datetime),
         }
 
         self._log.info(f"Requesting {bar_type} bars from {from_datetime} to {to_datetime}...")
@@ -277,13 +276,13 @@ cdef class LiveDataClient(DataClient):
             return
 
         cdef dict data = self._data_serializer.deserialize(response.data)
-        cdef BarType received_bar_type = parse_bar_type(data["BarType"])
+        cdef BarType received_bar_type = parse_bar_type(data[BAR_TYPE])
 
         if received_bar_type != bar_type:
             self._log.error(f"Incorrect bar type received (needed {bar_type} was {received_bar_type}).")
             return
 
-        callback(bar_type, [parse_bar(values) for values in data["Values"]])
+        callback(bar_type, [parse_bar(values) for values in data[DATA]])
 
     cpdef void request_instrument(self, Symbol symbol, callback: Callable):
         """
@@ -293,8 +292,8 @@ cdef class LiveDataClient(DataClient):
         :param callback: The callback for the response.
         """
         cdef dict query = {
-            "DataType": "Instrument",
-            "Symbol": symbol.value,
+            DATA_TYPE: "Instrument",
+            SYMBOL: symbol.value,
         }
 
         self._log.info(f"Requesting instrument for {symbol}...")
@@ -309,7 +308,7 @@ cdef class LiveDataClient(DataClient):
             return
 
         cdef dict data = self._data_serializer.deserialize(response.data)
-        cdef Instrument instrument = self._instrument_serializer.deserialize(data['Values'][0])
+        cdef Instrument instrument = self._instrument_serializer.deserialize(data[DATA][0])
 
         if instrument.symbol != symbol:
             self._log.error(f"Incorrect instrument received (needed {symbol} was {instrument.symbol}).")
@@ -322,8 +321,8 @@ cdef class LiveDataClient(DataClient):
         Request all instrument for the data clients venue.
         """
         cdef dict query = {
-            "DataType": "Instrument[]",
-            "Venue": venue_string(self.venue),
+            DATA_TYPE: "Instrument[]",
+            VENUE: venue_string(self.venue),
         }
 
         self._log.info(f"Requesting all instruments for the {venue_string(self.venue)} ...")
@@ -338,7 +337,7 @@ cdef class LiveDataClient(DataClient):
             return
 
         cdef dict data = self._data_serializer.deserialize(response.data)
-        cdef list instruments = [self._instrument_serializer.deserialize(inst) for inst in data['Values']]
+        cdef list instruments = [self._instrument_serializer.deserialize(inst) for inst in data[DATA]]
         callback(instruments)
 
     cpdef void update_instruments(self):
