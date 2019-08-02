@@ -160,7 +160,8 @@ cdef class DataMapper:
 
         return {
             DATA_TYPE: type(bars[0]).__name__,
-            BAR_TYPE: str(bar_type),
+            SYMBOL: bar_type.symbol.value,
+            SPECIFICATION: str(bar_type.specification),
             DATA: [str(bar) for bar in bars]
         }
 
