@@ -612,9 +612,6 @@ cdef class BarSpecification:
         """
         return quote_type_string(self.quote_type)
 
-
-
-
     def __eq__(self, BarSpecification other) -> bool:
         """
         Override the default equality comparison.
