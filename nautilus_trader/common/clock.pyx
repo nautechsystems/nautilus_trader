@@ -12,7 +12,7 @@ from datetime import timezone
 from threading import Timer
 from typing import List, Dict, Callable
 
-from nautilus_trader.core.precondition cimport Precondition
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport GUID
 from nautilus_trader.common.clock cimport TestTimer
 from nautilus_trader.common.logger cimport LoggerAdapter
@@ -151,8 +151,8 @@ cdef class LiveClock(Clock):
         :raises ValueError: If the label is not unique for this clock.
         :raises ValueError: If the alert_time is not > than the clocks current time.
         """
-        Precondition.true(alert_time > self.time_now(), 'alert_time > time_now()')
-        Precondition.not_in(label, self._time_alerts, 'label', 'time_alerts')
+        Condition.true(alert_time > self.time_now(), 'alert_time > time_now()')
+        Condition.not_in(label, self._time_alerts, 'label', 'time_alerts')
 
         timer = Timer(
             interval=(alert_time - self.time_now()).total_seconds(),
@@ -190,16 +190,16 @@ cdef class LiveClock(Clock):
         :raises ValueError: If the stop_time is not None and start_time plus interval is greater
         than the stop_time.
         """
-        Precondition.not_in(label, self._timers, 'label', 'timers')
+        Condition.not_in(label, self._timers, 'label', 'timers')
 
         if start_time is not None:
-            Precondition.true(start_time >= self.time_now(),
+            Condition.true(start_time >= self.time_now(),
                               'start_time >= self.clock.time_now()')
         else:
             start_time = self.time_now()
         if stop_time is not None:
-            Precondition.true(stop_time > start_time, 'stop_time > start_time')
-            Precondition.true(start_time + interval <= stop_time,
+            Condition.true(stop_time > start_time, 'stop_time > start_time')
+            Condition.true(start_time + interval <= stop_time,
                               'start_time + interval <= stop_time')
 
         cdef datetime alert_time = start_time + interval
@@ -235,7 +235,7 @@ cdef class LiveClock(Clock):
         :param label: The label for the alert to cancel.
         :raises ValueError: If the label is not found in the internal time alerts.
         """
-        Precondition.is_in(label, self._time_alerts, 'label', 'timers')
+        Condition.is_in(label, self._time_alerts, 'label', 'timers')
 
         self._time_alerts[label].cancel()
         del self._time_alerts[label]
@@ -250,7 +250,7 @@ cdef class LiveClock(Clock):
         :param label: The label for the timer to cancel.
         :raises ValueError: If the label is not found in the internal timers.
         """
-        Precondition.is_in(label, self._timers, 'label', 'timers')
+        Condition.is_in(label, self._timers, 'label', 'timers')
 
         self._timers[label].cancel()
         del self._timers[label]
@@ -412,8 +412,8 @@ cdef class TestClock(Clock):
         :raises ValueError: If the label is not unique for this strategy.
         :raises ValueError: If the alert_time is not > than the clocks current time.
         """
-        Precondition.true(alert_time > self.time_now(), 'alert_time > time_now()')
-        Precondition.not_in(label, self._time_alerts, 'label', 'time_alerts')
+        Condition.true(alert_time > self.time_now(), 'alert_time > time_now()')
+        Condition.not_in(label, self._time_alerts, 'label', 'time_alerts')
 
         self._time_alerts[label] = alert_time
 
@@ -444,16 +444,16 @@ cdef class TestClock(Clock):
         :raises ValueError: If the stop_time is not None and start_time plus interval is greater
         than the stop_time.
         """
-        Precondition.not_in(label, self._timers, 'label', 'timers')
+        Condition.not_in(label, self._timers, 'label', 'timers')
 
         if start_time is not None:
-            Precondition.true(start_time >= self.time_now(),
+            Condition.true(start_time >= self.time_now(),
                               'start_time >= self.clock.time_now()')
         else:
             start_time = self.time_now()
         if stop_time is not None:
-            Precondition.true(stop_time > start_time, 'stop_time > start_time')
-            Precondition.true(start_time + interval <= stop_time,
+            Condition.true(stop_time > start_time, 'stop_time > start_time')
+            Condition.true(start_time + interval <= stop_time,
                               'start_time + interval <= stop_time')
 
         cdef TestTimer timer = TestTimer(
@@ -481,7 +481,7 @@ cdef class TestClock(Clock):
         :param label: The label for the alert to cancel.
         :raises ValueError: If the label is not found in the internal timers.
         """
-        Precondition.is_in(label, self._time_alerts, 'label', 'time_alerts')
+        Condition.is_in(label, self._time_alerts, 'label', 'time_alerts')
 
         del self._time_alerts[label]
 
@@ -495,7 +495,7 @@ cdef class TestClock(Clock):
         :param label: The label for the timer to cancel.
         :raises ValueError: If the label is not found in the internal timers.
         """
-        Precondition.is_in(label, self._timers, 'label', 'timers')
+        Condition.is_in(label, self._timers, 'label', 'timers')
 
         del self._timers[label]
 

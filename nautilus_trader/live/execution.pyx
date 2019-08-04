@@ -12,7 +12,7 @@ from queue import Queue
 from threading import Thread
 from zmq import Context
 
-from nautilus_trader.core.precondition cimport Precondition
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport MessageType, Message, Command, Event, Response
 from nautilus_trader.model.commands cimport (
     CollateralInquiry,
@@ -86,10 +86,10 @@ cdef class LiveExecClient(ExecutionClient):
         :raises ValueError: If the commands_port is not in range [0, 65535]
         :raises ValueError: If the events_port is not in range [0, 65535]
         """
-        Precondition.valid_string(service_address, 'service_address')
-        Precondition.valid_string(events_topic, 'events_topic')
-        Precondition.in_range(commands_port, 'commands_port', 0, 65535)
-        Precondition.in_range(events_port, 'events_port', 0, 65535)
+        Condition.valid_string(service_address, 'service_address')
+        Condition.valid_string(events_topic, 'events_topic')
+        Condition.in_range(commands_port, 'commands_port', 0, 65535)
+        Condition.in_range(events_port, 'events_port', 0, 65535)
 
         super().__init__(account,
                          portfolio,

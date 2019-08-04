@@ -8,7 +8,7 @@
 
 import logging
 
-from nautilus_trader.core.precondition cimport Precondition
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.objects cimport Money
 
@@ -49,8 +49,8 @@ cdef class BacktestConfig:
         :raises ValueError: If the starting capital is not positive (> 0).
         :raises ValueError: If the commission_rate is negative (< 0).
         """
-        Precondition.positive(starting_capital, 'starting_capital')
-        Precondition.not_negative(commission_rate_bp, 'commission_rate_bp')
+        Condition.positive(starting_capital, 'starting_capital')
+        Condition.not_negative(commission_rate_bp, 'commission_rate_bp')
 
         self.frozen_account = frozen_account
         self.starting_capital = Money(starting_capital)

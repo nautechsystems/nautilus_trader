@@ -12,7 +12,7 @@ from bson import BSON
 from bson.raw_bson import RawBSONDocument
 from decimal import Decimal
 
-from nautilus_trader.core.precondition cimport Precondition
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.objects cimport Instrument, Quantity
 from nautilus_trader.model.enums import Currency, SecurityType
 from nautilus_trader.model.c_enums.currency cimport Currency, currency_string
@@ -145,8 +145,8 @@ cdef class DataMapper:
         self.instrument_serializer = BsonInstrumentSerializer()
 
     cpdef dict map_ticks(self, list ticks):
-        Precondition.not_empty(ticks, 'ticks')
-        Precondition.type(ticks[0], Tick, 'ticks')
+        Condition.not_empty(ticks, 'ticks')
+        Condition.type(ticks[0], Tick, 'ticks')
 
         return {
             DATA_TYPE: type(ticks[0]).__name__,
@@ -155,8 +155,8 @@ cdef class DataMapper:
         }
 
     cpdef dict map_bars(self, list bars, BarType bar_type):
-        Precondition.not_empty(bars, 'bars')
-        Precondition.type(bars[0], Bar, 'bars')
+        Condition.not_empty(bars, 'bars')
+        Condition.type(bars[0], Bar, 'bars')
 
         return {
             DATA_TYPE: type(bars[0]).__name__,
@@ -166,8 +166,8 @@ cdef class DataMapper:
         }
 
     cpdef dict map_instruments(self, list instruments):
-        Precondition.not_empty(instruments, 'instruments')
-        Precondition.type(instruments[0], Instrument, 'instruments')
+        Condition.not_empty(instruments, 'instruments')
+        Condition.type(instruments[0], Instrument, 'instruments')
 
         return {
             DATA_TYPE: type(instruments[0]).__name__,
@@ -188,7 +188,7 @@ cdef class BsonDataSerializer(DataSerializer):
         :return: bytes.
         :raises: ValueError: If the data is empty.
         """
-        Precondition.not_empty(data, 'data')
+        Condition.not_empty(data, 'data')
 
         return bytes(RawBSONDocument(BSON.encode(data)).raw)
 

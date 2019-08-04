@@ -8,7 +8,7 @@
 
 import random
 
-from nautilus_trader.core.precondition cimport Precondition
+from nautilus_trader.core.correctness cimport Condition
 
 
 cdef class FillModel:
@@ -32,11 +32,11 @@ cdef class FillModel:
         :raises ValueError: If any probability argument is not within range [0, 1].
         :raises ValueError: If the random_seed is not None and not of type int.
         """
-        Precondition.in_range(prob_fill_at_limit, 'prob_fill_at_limit', 0.0, 1.0)
-        Precondition.in_range(prob_fill_at_stop, 'prob_fill_at_stop', 0.0, 1.0)
-        Precondition.in_range(prob_slippage, 'prob_slippage', 0.0, 1.0)
+        Condition.in_range(prob_fill_at_limit, 'prob_fill_at_limit', 0.0, 1.0)
+        Condition.in_range(prob_fill_at_stop, 'prob_fill_at_stop', 0.0, 1.0)
+        Condition.in_range(prob_slippage, 'prob_slippage', 0.0, 1.0)
         if random_seed is not None:
-            Precondition.type(random_seed, int, 'random_seed')
+            Condition.type(random_seed, int, 'random_seed')
 
         self.prob_fill_at_limit = prob_fill_at_limit
         self.prob_fill_at_stop = prob_fill_at_stop

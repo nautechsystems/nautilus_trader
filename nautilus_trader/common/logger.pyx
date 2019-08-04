@@ -16,7 +16,7 @@ from cpython.datetime cimport datetime
 from threading import Thread
 from queue import Queue
 
-from nautilus_trader.core.precondition cimport Precondition
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport ValidString
 from nautilus_trader.core.functions cimport format_zulu_datetime
 from nautilus_trader.common.clock cimport Clock, LiveClock, TestClock
@@ -64,11 +64,11 @@ cdef class Logger:
         :raises ValueError: If the log_file_path is not a valid string.
         """
         if name is not None:
-            Precondition.valid_string(name, 'name')
+            Condition.valid_string(name, 'name')
         else:
             name = 'tmp'
 
-        Precondition.valid_string(log_file_path, 'log_file_path')
+        Condition.valid_string(log_file_path, 'log_file_path')
 
         self.name = name
         self.bypass_logging = bypass_logging
@@ -99,7 +99,7 @@ cdef class Logger:
         
         :param name: The new name of the log file.
         """
-        Precondition.valid_string(name, 'name')
+        Condition.valid_string(name, 'name')
 
         self._log_file = f'{self._log_file_path}{name}.log'
         self._logger.removeHandler(self._log_file_handler)
@@ -376,7 +376,7 @@ cdef class LoggerAdapter:
         if component_name is None:
             component_name = ''
         else:
-            Precondition.valid_string(component_name, 'component_name')
+            Condition.valid_string(component_name, 'component_name')
 
         if logger is None:
             logger = TestLogger()

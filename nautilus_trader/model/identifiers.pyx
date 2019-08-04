@@ -8,7 +8,7 @@
 
 from cpython.datetime cimport datetime
 
-from nautilus_trader.core.precondition cimport Precondition
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.common.clock cimport Clock, LiveClock
 
 
@@ -173,9 +173,9 @@ cdef class IdentifierGenerator:
         :raises ValueError: If the id_tag_trader is not a valid string.
         :raises ValueError: If the id_tag_strategy is not a valid string.
         """
-        Precondition.valid_string(prefix, 'prefix')
-        Precondition.valid_string(id_tag_trader, 'id_tag_trader')
-        Precondition.valid_string(id_tag_strategy, 'id_tag_strategy')
+        Condition.valid_string(prefix, 'prefix')
+        Condition.valid_string(id_tag_trader, 'id_tag_trader')
+        Condition.valid_string(id_tag_strategy, 'id_tag_strategy')
 
         self._clock = clock
         self.prefix = prefix

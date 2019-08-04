@@ -8,7 +8,7 @@
 
 from decimal import Decimal
 
-from nautilus_trader.core.precondition cimport Precondition
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport basis_points_as_percentage
 from nautilus_trader.model.objects cimport Symbol, Money, Quantity, Price
 
@@ -31,7 +31,7 @@ cdef class CommissionCalculator:
         :param default_rate_bp: The default rate if not found in dictionary (optional).
         :param minimum: The minimum commission charge per transaction.
         """
-        Precondition.dict_types(rates, Symbol, Decimal, 'rates')
+        Condition.dict_types(rates, Symbol, Decimal, 'rates')
 
         self.rates = rates
         self.default_rate_bp = default_rate_bp

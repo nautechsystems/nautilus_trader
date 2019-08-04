@@ -9,7 +9,7 @@
 from cpython.datetime cimport datetime
 from typing import List
 
-from nautilus_trader.core.precondition cimport Precondition
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport ValidString
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.common.account cimport Account
@@ -49,12 +49,12 @@ cdef class Trader:
         :raises ValueError: If the exec client is None.
         :raises ValueError: If the clock is None.
         """
-        Precondition.valid_string(id_tag_trader, 'id_tag_trader')
-        Precondition.not_empty(strategies, 'strategies')
-        Precondition.list_type(strategies, TradeStrategy, 'strategies')
-        Precondition.not_none(data_client, 'data_client')
-        Precondition.not_none(exec_client, 'exec_client')
-        Precondition.not_none(clock, 'clock')
+        Condition.valid_string(id_tag_trader, 'id_tag_trader')
+        Condition.not_empty(strategies, 'strategies')
+        Condition.list_type(strategies, TradeStrategy, 'strategies')
+        Condition.not_none(data_client, 'data_client')
+        Condition.not_none(exec_client, 'exec_client')
+        Condition.not_none(clock, 'clock')
 
         self._clock = clock
         self.id = TraderId(self.__class__.__name__ + '-' + id_tag_trader)
@@ -164,8 +164,8 @@ cdef class Trader:
         :raises ValueError: If the strategies list is empty.
         :raises ValueError: If the strategies list contains a type other than TradeStrategy.
         """
-        Precondition.not_empty(strategies, 'strategies')
-        Precondition.list_type(strategies, TradeStrategy, 'strategies')
+        Condition.not_empty(strategies, 'strategies')
+        Condition.list_type(strategies, TradeStrategy, 'strategies')
 
         if self.is_running:
             self._log.error('Cannot change the strategies of a running trader.')

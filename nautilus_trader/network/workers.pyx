@@ -12,7 +12,7 @@ from typing import Callable
 from threading import Thread
 from zmq import Context
 
-from nautilus_trader.core.precondition cimport Precondition
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.common.logger cimport Logger, LoggerAdapter
 
 cdef str UTF8 = 'utf-8'
@@ -47,11 +47,11 @@ cdef class MQWorker:
         :raises ValueError: If the service_address is not a valid string.
         :raises ValueError: If the service_port is not in range [0, 65535].
         """
-        Precondition.valid_string(worker_name, 'worker_name')
-        Precondition.valid_string(service_name, 'service_name')
-        Precondition.valid_string(service_address, 'service_address')
-        Precondition.in_range(service_port, 'service_port', 0, 65535)
-        Precondition.type(zmq_context, Context, 'zmq_context')
+        Condition.valid_string(worker_name, 'worker_name')
+        Condition.valid_string(service_name, 'service_name')
+        Condition.valid_string(service_address, 'service_address')
+        Condition.in_range(service_port, 'service_port', 0, 65535)
+        Condition.type(zmq_context, Context, 'zmq_context')
 
         super().__init__()
         self.name = worker_name
@@ -113,11 +113,11 @@ cdef class RequestWorker(MQWorker):
         :raises ValueError: If the service_address is not a valid string.
         :raises ValueError: If the service_port is not in range [0, 65535].
         """
-        Precondition.valid_string(worker_name, 'worker_name')
-        Precondition.valid_string(service_name, 'service_name')
-        Precondition.valid_string(service_address, 'service_address')
-        Precondition.in_range(service_port, 'service_port', 0, 65535)
-        Precondition.type(zmq_context, Context, 'zmq_context')
+        Condition.valid_string(worker_name, 'worker_name')
+        Condition.valid_string(service_name, 'service_name')
+        Condition.valid_string(service_address, 'service_address')
+        Condition.in_range(service_port, 'service_port', 0, 65535)
+        Condition.type(zmq_context, Context, 'zmq_context')
 
         super().__init__(
             worker_name,
@@ -134,7 +134,7 @@ cdef class RequestWorker(MQWorker):
 
         :param request: The request message bytes to send.
         """
-        Precondition.not_empty(request, 'request')
+        Condition.not_empty(request, 'request')
 
         self._cycles += 1
         self._zmq_socket.send(request)
@@ -175,11 +175,11 @@ cdef class SubscriberWorker(MQWorker):
         :raises ValueError: If the port is not in range [0, 65535].
         :raises ValueError: If the topic is not a valid string.
         """
-        Precondition.valid_string(worker_name, 'worker_name')
-        Precondition.valid_string(service_name, 'service_name')
-        Precondition.valid_string(service_address, 'service_address')
-        Precondition.in_range(service_port, 'port', 0, 65535)
-        Precondition.type(handler, Callable, 'handler')
+        Condition.valid_string(worker_name, 'worker_name')
+        Condition.valid_string(service_name, 'service_name')
+        Condition.valid_string(service_address, 'service_address')
+        Condition.in_range(service_port, 'port', 0, 65535)
+        Condition.type(handler, Callable, 'handler')
 
         super().__init__(
             worker_name,

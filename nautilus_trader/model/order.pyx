@@ -11,7 +11,7 @@ from decimal import Decimal
 from uuid import uuid4
 from typing import List
 
-from nautilus_trader.core.precondition cimport Precondition
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport GUID
 from nautilus_trader.model.c_enums.order_side cimport OrderSide, order_side_string
 from nautilus_trader.model.c_enums.order_type cimport OrderType, order_type_string
@@ -72,18 +72,18 @@ cdef class Order:
         :raises ValueError: If the order type should have a price and the price is None.
         :raises ValueError: If the time_in_force is GTD and the expire_time is None.
         """
-        Precondition.positive(quantity.value, 'quantity')
-        Precondition.true(order_side != OrderSide.UNKNOWN, 'order_side != UNKNOWN')
+        Condition.positive(quantity.value, 'quantity')
+        Condition.true(order_side != OrderSide.UNKNOWN, 'order_side != UNKNOWN')
 
         # For orders which require a price
         if order_type in PRICED_ORDER_TYPES:
-            Precondition.not_none(price, 'price')
+            Condition.not_none(price, 'price')
         # For orders which require no price
         else:
-            Precondition.none(price, 'price')
+            Condition.none(price, 'price')
 
         if time_in_force is TimeInForce.GTD:
-            Precondition.not_none(expire_time, 'expire_time')
+            Condition.not_none(expire_time, 'expire_time')
 
         self._order_ids_broker = []         # type: List[OrderId]
         self._execution_ids = []            # type: List[ExecutionId]
@@ -229,7 +229,7 @@ cdef class Order:
         :param event: The order event to apply.
         :raises ValueError: If the order_events order_id is not equal to the order identifier.
         """
-        Precondition.equal(event.order_id, self.id)
+        Condition.equal(event.order_id, self.id)
 
         # Update events
         self._events.append(event)

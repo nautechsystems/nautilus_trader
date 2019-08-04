@@ -12,7 +12,7 @@ from cpython.datetime cimport datetime
 from typing import Callable
 from zmq import Context
 
-from nautilus_trader.core.precondition cimport Precondition
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Response
 from nautilus_trader.model.c_enums.venue cimport Venue
 from nautilus_trader.model.c_enums.venue cimport venue_string
@@ -89,13 +89,13 @@ cdef class LiveDataClient(DataClient):
         :raises ValueError: If the inst_req_port is not in range [0, 65535]
         :raises ValueError: If the inst_sub_port is not in range [0, 65535]
         """
-        Precondition.valid_string(service_address, 'service_address')
-        Precondition.in_range(tick_req_port, 'tick_req_port', 0, 65535)
-        Precondition.in_range(tick_sub_port, 'tick_sub_port', 0, 65535)
-        Precondition.in_range(bar_req_port, 'bar_req_port', 0, 65535)
-        Precondition.in_range(bar_sub_port, 'bar_sub_port', 0, 65535)
-        Precondition.in_range(inst_req_port, 'inst_req_port', 0, 65535)
-        Precondition.in_range(inst_sub_port, 'inst_sub_port', 0, 65535)
+        Condition.valid_string(service_address, 'service_address')
+        Condition.in_range(tick_req_port, 'tick_req_port', 0, 65535)
+        Condition.in_range(tick_sub_port, 'tick_sub_port', 0, 65535)
+        Condition.in_range(bar_req_port, 'bar_req_port', 0, 65535)
+        Condition.in_range(bar_sub_port, 'bar_sub_port', 0, 65535)
+        Condition.in_range(inst_req_port, 'inst_req_port', 0, 65535)
+        Condition.in_range(inst_sub_port, 'inst_sub_port', 0, 65535)
 
         super().__init__(venue, LiveClock(), LiveGuidFactory(), logger)
         self._zmq_context = zmq_context
@@ -375,7 +375,7 @@ cdef class LiveDataClient(DataClient):
         :param handler: The callable handler for subscription (if None will just call print).
         :raises ValueError: If the handler is not of type Callable.
         """
-        Precondition.type(handler, Callable, 'handler')
+        Condition.type(handler, Callable, 'handler')
 
         self._add_tick_handler(symbol, handler)
         self._tick_sub_worker.subscribe(str(symbol))
@@ -388,7 +388,7 @@ cdef class LiveDataClient(DataClient):
         :param handler: The callable handler which was subscribed.
         :raises ValueError: If the handler is not of type Callable.
         """
-        Precondition.type(handler, Callable, 'handler')
+        Condition.type(handler, Callable, 'handler')
 
         self._tick_sub_worker.unsubscribe(str(symbol))
         self._remove_tick_handler(symbol, handler)
@@ -401,7 +401,7 @@ cdef class LiveDataClient(DataClient):
         :param handler: The callable handler for subscription.
         :raises ValueError: If the handler is not of type Callable.
         """
-        Precondition.type(handler, Callable, 'handler')
+        Condition.type(handler, Callable, 'handler')
 
         self._add_bar_handler(bar_type, handler)
         self._bar_sub_worker.subscribe(str(bar_type))
@@ -414,7 +414,7 @@ cdef class LiveDataClient(DataClient):
         :param handler: The callable handler which was subscribed.
         :raises ValueError: If the handler is not of type Callable.
         """
-        Precondition.type(handler, Callable, 'handler')
+        Condition.type(handler, Callable, 'handler')
 
         self._bar_sub_worker.unsubscribe(str(bar_type))
         self._remove_bar_handler(bar_type, handler)
@@ -427,7 +427,7 @@ cdef class LiveDataClient(DataClient):
         :param handler: The callable handler for subscription.
         :raises ValueError: If the handler is not of type Callable.
         """
-        Precondition.type(handler, Callable, 'handler')
+        Condition.type(handler, Callable, 'handler')
 
         self._add_instrument_handler(symbol, handler)
         self._inst_sub_worker.subscribe(symbol.value)
@@ -440,7 +440,7 @@ cdef class LiveDataClient(DataClient):
         :param handler: The callable handler which was subscribed.
         :raises ValueError: If the handler is not of type Callable.
         """
-        Precondition.type(handler, Callable, 'handler')
+        Condition.type(handler, Callable, 'handler')
 
         self._inst_sub_worker.unsubscribe(symbol.value)
         self._remove_instrument_handler(symbol, handler)

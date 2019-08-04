@@ -23,7 +23,7 @@ from pandas import DataFrame
 from typing import List, Dict, Callable
 
 from nautilus_trader.version import __version__
-from nautilus_trader.core.precondition cimport Precondition
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport as_utc_timestamp, format_zulu_datetime, pad_string
 from nautilus_trader.model.c_enums.venue cimport Venue
 from nautilus_trader.model.c_enums.currency cimport currency_string
@@ -72,8 +72,8 @@ cdef class BacktestEngine:
         :raises ValueError: If the strategies list contains a type other than TradeStrategy.
         """
         # Data checked in BacktestDataClient
-        Precondition.list_type(instruments, Instrument, 'instruments')
-        Precondition.list_type(strategies, TradeStrategy, 'strategies')
+        Condition.list_type(instruments, Instrument, 'instruments')
+        Condition.list_type(strategies, TradeStrategy, 'strategies')
 
         self.config = config
         self.clock = LiveClock()
@@ -200,18 +200,18 @@ cdef class BacktestEngine:
         if time_step is None:
             time_step = self.data_client.max_time_step
         else:
-            Precondition.true(time_step <= self.data_client.max_time_step, 'time_step <= data_client.max_time_step')
+            Condition.true(time_step <= self.data_client.max_time_step, 'time_step <= data_client.max_time_step')
 
-        Precondition.true(start.tz == pytz.UTC, 'start.tz == UTC')
-        Precondition.true(stop.tz == pytz.UTC, 'stop.tz == UTC')
-        Precondition.true(start >= self.data_client.execution_data_index_min, 'start >= execution_data_index_min')
-        Precondition.true(start <= self.data_client.execution_data_index_max, 'stop <= execution_data_index_max')
-        Precondition.true(start < stop, 'start < stop')
-        Precondition.type_or_none(fill_model, FillModel, 'fill_model')
-        Precondition.type_or_none(strategies, list, 'strategies')
+        Condition.true(start.tz == pytz.UTC, 'start.tz == UTC')
+        Condition.true(stop.tz == pytz.UTC, 'stop.tz == UTC')
+        Condition.true(start >= self.data_client.execution_data_index_min, 'start >= execution_data_index_min')
+        Condition.true(start <= self.data_client.execution_data_index_max, 'stop <= execution_data_index_max')
+        Condition.true(start < stop, 'start < stop')
+        Condition.type_or_none(fill_model, FillModel, 'fill_model')
+        Condition.type_or_none(strategies, list, 'strategies')
         if strategies is not None:
-            Precondition.not_empty(strategies, 'strategies')
-            Precondition.list_type(strategies, TradeStrategy, 'strategies')
+            Condition.not_empty(strategies, 'strategies')
+            Condition.list_type(strategies, TradeStrategy, 'strategies')
         # ---------------------------------------------------------------------#
 
         cdef datetime run_started = self.clock.time_now()

@@ -10,7 +10,7 @@ from collections import deque
 from decimal import Decimal
 from typing import List, Deque
 
-from nautilus_trader.core.precondition cimport Precondition
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.objects cimport Tick
 
 
@@ -100,7 +100,7 @@ cdef class LiquidityAnalyzer:
         which constitutes a liquid market (> 0) (default=2.0).
         :raises ValueError: If the liquidity threshold is not positive (> 0).
         """
-        Precondition.positive(liquidity_threshold, 'liquidity_threshold')
+        Condition.positive(liquidity_threshold, 'liquidity_threshold')
 
         self.liquidity_threshold = liquidity_threshold
         self.value = 0.0
@@ -118,7 +118,7 @@ cdef class LiquidityAnalyzer:
         :param volatility: The current volatility of the market.
         :raises ValueError: If the volatility is negative (< 0).
         """
-        Precondition.not_negative(volatility, 'volatility')
+        Condition.not_negative(volatility, 'volatility')
 
         if average_spread == 0:
             return  # Divide by zero protection

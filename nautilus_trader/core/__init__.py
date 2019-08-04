@@ -6,4 +6,4 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core import precondition
+from nautilus_trader.core import correctness

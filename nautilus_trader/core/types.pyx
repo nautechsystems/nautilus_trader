@@ -8,12 +8,12 @@
 
 from uuid import UUID
 
-from nautilus_trader.core.precondition cimport Precondition
+from nautilus_trader.core.correctness cimport Condition
 
 
 cdef class ValidString:
     """
-    Represents a previously validated string (validated with Precondition.valid_string()).
+    Represents a previously validated string (validated with Condition.valid_string()).
     """
 
     def __init__(self, str value=None):
@@ -25,7 +25,7 @@ cdef class ValidString:
         if value is None or value == '':
             value = 'NONE'
         else:
-            Precondition.valid_string(value, 'value')
+            Condition.valid_string(value, 'value')
 
         self.value = value
 
@@ -89,7 +89,7 @@ cdef class Identifier:
 
         :param value: The value of the identifier.
         """
-        Precondition.valid_string(value, 'value')
+        Condition.valid_string(value, 'value')
 
         self.value = value
 
@@ -148,6 +148,6 @@ cdef class GUID(Identifier):
         :param value: The value of the GUID (input must be of type UUID).
         :raises ValueError: If the value is not of type UUID.
         """
-        Precondition.type(value, UUID, 'value')
+        Condition.type(value, UUID, 'value')
 
         super().__init__(str(value))

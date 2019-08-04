@@ -12,7 +12,7 @@ from cpython.datetime cimport datetime
 from decimal import Decimal
 from uuid import UUID
 
-from nautilus_trader.core.precondition cimport Precondition
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport ValidString, GUID
 from nautilus_trader.core.message cimport Command, Event, Request, Response
 from nautilus_trader.model.enums import Broker, OrderSide, OrderType, Currency, TimeInForce
@@ -133,7 +133,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
         :return: Order.
         :raises ValueError: If the event_bytes is empty.
         """
-        Precondition.not_empty(order_bytes, 'order_bytes')
+        Condition.not_empty(order_bytes, 'order_bytes')
 
         cdef dict unpacked = msgpack.unpackb(order_bytes, raw=False)
 
@@ -215,7 +215,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         :raises ValueError: If the command_bytes is empty.
         :raises ValueError: If the command cannot be deserialized.
         """
-        Precondition.not_empty(command_bytes, 'command_bytes')
+        Condition.not_empty(command_bytes, 'command_bytes')
 
         cdef dict unpacked_raw = msgpack.unpackb(command_bytes)
         cdef dict unpacked = {}
@@ -388,7 +388,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
         :raises ValueError: If the event_bytes is empty.
         :raises ValueError: If the event cannot be deserialized.
         """
-        Precondition.not_empty(event_bytes, 'event_bytes')
+        Condition.not_empty(event_bytes, 'event_bytes')
 
         cdef dict unpacked = msgpack.unpackb(event_bytes, raw=False)
 
@@ -541,7 +541,7 @@ cdef class MsgPackRequestSerializer(RequestSerializer):
         :param request_bytes: The bytes to deserialize.
         :return: Request.
         """
-        Precondition.not_empty(request_bytes, 'request_bytes')
+        Condition.not_empty(request_bytes, 'request_bytes')
 
         cdef dict unpacked_raw = msgpack.unpackb(request_bytes)
         cdef dict unpacked = {}
@@ -607,7 +607,7 @@ cdef class MsgPackResponseSerializer(ResponseSerializer):
         :param response_bytes: The bytes to deserialize.
         :return: Response.
         """
-        Precondition.not_empty(response_bytes, 'response_bytes')
+        Condition.not_empty(response_bytes, 'response_bytes')
 
         cdef dict unpacked_raw = msgpack.unpackb(response_bytes)
         cdef dict unpacked = {}
