@@ -10,7 +10,7 @@ from decimal import Decimal
 from cpython.datetime cimport datetime
 from typing import List, Dict
 
-from nautilus_trader.core.precondition cimport Precondition
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport ValidString
 from nautilus_trader.model.c_enums.brokerage cimport Broker
 from nautilus_trader.model.c_enums.quote_type cimport QuoteType
@@ -89,7 +89,7 @@ cdef class BacktestExecClient(ExecutionClient):
         :param logger: The logger for the component.
         :raises ValueError: If the instruments list contains a type other than Instrument.
         """
-        Precondition.list_type(instruments, Instrument, 'instruments')
+        Condition.list_type(instruments, Instrument, 'instruments')
 
         super().__init__(account,
                          portfolio,
@@ -510,7 +510,7 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef void _process_order(self, Order order):
         # Work the given order
 
-        Precondition.not_in(order.id, self.working_orders, 'order.id', 'working_orders')
+        Condition.not_in(order.id, self.working_orders, 'order.id', 'working_orders')
 
         cdef Instrument instrument = self.instruments[order.symbol]
 

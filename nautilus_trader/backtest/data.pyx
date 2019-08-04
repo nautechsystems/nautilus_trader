@@ -13,7 +13,7 @@ from cpython.datetime cimport datetime, timedelta
 from pandas import DataFrame
 from typing import Set, List, Dict, Callable
 
-from nautilus_trader.core.precondition cimport Precondition
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.venue cimport Venue
 from nautilus_trader.model.c_enums.quote_type cimport QuoteType
 from nautilus_trader.model.c_enums.resolution cimport Resolution, resolution_string
@@ -75,13 +75,13 @@ cdef class BacktestDataClient(DataClient):
         :raises ValueError: If the clock is None.
         :raises ValueError: If the logger is None.
         """
-        Precondition.list_type(instruments, Instrument, 'instruments')
-        Precondition.dict_types(data_ticks, Symbol, DataFrame, 'dataframes_ticks')
-        Precondition.dict_types(data_bars_bid, Symbol, dict, 'dataframes_bars_bid')
-        Precondition.dict_types(data_bars_ask, Symbol, dict, 'dataframes_bars_ask')
-        Precondition.true(data_bars_bid.keys() == data_bars_ask.keys(), 'dataframes_bars_bid.keys() == dataframes_bars_ask.keys()')
-        Precondition.not_none(clock, 'clock')
-        Precondition.not_none(logger, 'logger')
+        Condition.list_type(instruments, Instrument, 'instruments')
+        Condition.dict_types(data_ticks, Symbol, DataFrame, 'dataframes_ticks')
+        Condition.dict_types(data_bars_bid, Symbol, dict, 'dataframes_bars_bid')
+        Condition.dict_types(data_bars_ask, Symbol, dict, 'dataframes_bars_ask')
+        Condition.true(data_bars_bid.keys() == data_bars_ask.keys(), 'dataframes_bars_bid.keys() == dataframes_bars_ask.keys()')
+        Condition.not_none(clock, 'clock')
+        Condition.not_none(logger, 'logger')
 
         super().__init__(venue, clock, TestGuidFactory(), logger)
         self.data_ticks = data_ticks                    # type: Dict[Symbol, DataFrame]
@@ -225,7 +225,7 @@ cdef class BacktestDataClient(DataClient):
             self.execution_data_index_max = last
 
     cdef void _build_bars(self, BarType bar_type):
-        Precondition.is_in(bar_type.symbol, self.data_providers, 'symbol', 'data_providers')
+        Condition.is_in(bar_type.symbol, self.data_providers, 'symbol', 'data_providers')
 
         # Build bars of the given bar type inside the data provider
         cdef datetime start = datetime.utcnow()
@@ -362,7 +362,7 @@ cdef class BacktestDataClient(DataClient):
         :param to_datetime: The to date time for the request.
         :param callback: The callback for the response.
         """
-        Precondition.type(callback, Callable, 'callback')
+        Condition.type(callback, Callable, 'callback')
 
         self._log.info(f"Simulating download of historical ticks for {symbol}.")
 
@@ -381,7 +381,7 @@ cdef class BacktestDataClient(DataClient):
         :param to_datetime: The to date time for the request.
         :param callback: The callback for the response.
         """
-        Precondition.type(callback, Callable, 'callback')
+        Condition.type(callback, Callable, 'callback')
 
         self._log.info(f"Simulating download of historical bars for {bar_type}.")
 
@@ -394,8 +394,8 @@ cdef class BacktestDataClient(DataClient):
         :raises ValueError: If the symbol is not a key in data_providers.
         :raises ValueError: If the handler is not of type Callable.
         """
-        Precondition.is_in(symbol, self.data_providers, 'symbol', 'data_providers')
-        Precondition.type_or_none(handler, Callable, 'handler')
+        Condition.is_in(symbol, self.data_providers, 'symbol', 'data_providers')
+        Condition.type_or_none(handler, Callable, 'handler')
 
         self._add_tick_handler(symbol, handler)
         self.data_providers[symbol].set_tick_iteration_index(self.time_now())
@@ -409,8 +409,8 @@ cdef class BacktestDataClient(DataClient):
         :raises ValueError: If the symbol is not a key in data_providers.
         :raises ValueError: If the handler is not of type Callable.
         """
-        Precondition.is_in(symbol, self.data_providers, 'symbol', 'data_providers')
-        Precondition.type_or_none(handler, Callable, 'handler')
+        Condition.is_in(symbol, self.data_providers, 'symbol', 'data_providers')
+        Condition.type_or_none(handler, Callable, 'handler')
 
         self.data_providers[symbol].deregister_ticks()
         self._remove_tick_handler(symbol, handler)
@@ -424,8 +424,8 @@ cdef class BacktestDataClient(DataClient):
         :raises ValueError: If the symbol is not a key in data_providers.
         :raises ValueError: If the handler is not of type Callable.
         """
-        Precondition.is_in(bar_type.symbol, self.data_providers, 'symbol', 'data_providers')
-        Precondition.type_or_none(handler, Callable, 'handler')
+        Condition.is_in(bar_type.symbol, self.data_providers, 'symbol', 'data_providers')
+        Condition.type_or_none(handler, Callable, 'handler')
 
         cdef start = datetime.utcnow()
         self._add_bar_handler(bar_type, handler)
@@ -442,8 +442,8 @@ cdef class BacktestDataClient(DataClient):
         :raises ValueError: If the symbol is not a key in data_providers.
         :raises ValueError: If the handler is not of type Callable.
         """
-        Precondition.is_in(bar_type.symbol, self.data_providers, 'symbol', 'data_providers')
-        Precondition.type_or_none(handler, Callable, 'handler')
+        Condition.is_in(bar_type.symbol, self.data_providers, 'symbol', 'data_providers')
+        Condition.type_or_none(handler, Callable, 'handler')
 
         self.data_providers[bar_type.symbol].deregister_bars(bar_type)
         self._remove_bar_handler(bar_type, handler)
@@ -476,9 +476,9 @@ cdef class DataProvider:
         :raises ValueError: If the data_bars_bid is None.
         :raises ValueError: If the data_bars_ask is None.
         """
-        Precondition.type_or_none(data_ticks, DataFrame, 'data_ticks')
-        Precondition.not_none(data_bars_bid, 'data_bars_bid')
-        Precondition.not_none(data_bars_ask, 'data_bars_ask')
+        Condition.type_or_none(data_ticks, DataFrame, 'data_ticks')
+        Condition.not_none(data_bars_bid, 'data_bars_bid')
+        Condition.not_none(data_bars_ask, 'data_bars_ask')
 
         self.instrument = instrument
         self._dataframe_ticks = data_ticks
@@ -533,7 +533,7 @@ cdef class DataProvider:
         
         :param bar_type: The bar type to register.
         """
-        Precondition.true(bar_type.symbol == self.instrument.symbol, 'bar_type.symbol == self.instrument.symbol')
+        Condition.true(bar_type.symbol == self.instrument.symbol, 'bar_type.symbol == self.instrument.symbol')
 
         # TODO: Add capability for re-sampled bars
 
@@ -562,7 +562,7 @@ cdef class DataProvider:
         
         :param bar_type: The bar type to deregister.
         """
-        Precondition.true(bar_type.symbol == self.instrument.symbol, 'bar_type.symbol == self.instrument.symbol')
+        Condition.true(bar_type.symbol == self.instrument.symbol, 'bar_type.symbol == self.instrument.symbol')
 
         if bar_type in self.iterations:
             del self.iterations[bar_type]

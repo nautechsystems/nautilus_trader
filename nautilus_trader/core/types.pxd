@@ -8,7 +8,7 @@
 
 cdef class ValidString:
     """
-    Represents a validated string (validated with Precondition.valid_string()).
+    Represents a validated string (validated with Condition.valid_string()).
     """
     cdef readonly str value
     @staticmethod

@@ -8,7 +8,7 @@
 
 from cpython.datetime cimport datetime
 
-from nautilus_trader.core.precondition cimport Precondition
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport ValidString, GUID
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.model.c_enums.brokerage cimport Broker
@@ -58,7 +58,7 @@ cdef class AccountEvent(Event):
         :param event_id: The event identifier.
         :param event_timestamp: The event timestamp.
         """
-        Precondition.not_negative(margin_ratio, 'margin_ratio')
+        Condition.not_negative(margin_ratio, 'margin_ratio')
 
         super().__init__(event_id, event_timestamp)
         self.account_id = account_id
@@ -283,7 +283,7 @@ cdef class OrderWorking(OrderEvent):
         :param event_timestamp: The event timestamp.
         :param expire_time: The event order expire time (optional can be None).
         """
-        Precondition.type_or_none(expire_time, datetime, 'expire_time')
+        Condition.type_or_none(expire_time, datetime, 'expire_time')
 
         super().__init__(order_id,
                          event_id,

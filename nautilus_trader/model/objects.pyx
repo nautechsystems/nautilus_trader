@@ -9,7 +9,7 @@
 from decimal import Decimal
 from cpython.datetime cimport datetime, timedelta
 
-from nautilus_trader.core.precondition cimport Precondition
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.venue cimport Venue, venue_string
 from nautilus_trader.model.c_enums.resolution cimport Resolution, resolution_string
 from nautilus_trader.model.c_enums.quote_type cimport QuoteType, quote_type_string
@@ -32,7 +32,7 @@ cdef class Quantity:
         :param value: The value of the quantity (>= 0).
         :raises ValueError: If the value is negative (< 0).
         """
-        Precondition.not_negative(value, 'value')
+        Condition.not_negative(value, 'value')
 
         self.value = value
 
@@ -134,7 +134,7 @@ cdef class Symbol:
         :param venue: The symbols venue.
         :raises ValueError: If the code is not a valid string.
         """
-        Precondition.valid_string(code, 'code')
+        Condition.valid_string(code, 'code')
 
         self.code = code.upper()
         self.venue = venue
@@ -221,11 +221,11 @@ cdef class Price:
             self.value = Decimal(value)
             self.precision = _get_precision(value)
         elif isinstance(value, float):
-            Precondition.positive(precision, 'precision')
+            Condition.positive(precision, 'precision')
             self.value = Decimal(_get_decimal_str(value, precision))
             self.precision = precision
         elif isinstance(value, int):
-            Precondition.positive(precision, 'precision')
+            Condition.positive(precision, 'precision')
             self.value = Decimal(_get_decimal_str(float(value), precision))
             self.precision = precision
         elif isinstance(value, Decimal):
@@ -335,7 +335,7 @@ cdef class Price:
         :return: Price.
         :raises ValueError: If the precision of the prices are not equal.
         """
-        Precondition.true(self.precision == price.precision, 'self.precision == price.precision')
+        Condition.true(self.precision == price.precision, 'self.precision == price.precision')
 
         return Price(self.value + price.value)
 
@@ -347,7 +347,7 @@ cdef class Price:
         :return: Price.
         :raises ValueError: If the precision of the prices are not equal.
         """
-        Precondition.true(self.precision == price.precision, 'self.precision == price.precision')
+        Condition.true(self.precision == price.precision, 'self.precision == price.precision')
 
         return Price(self.value - price.value)
 
@@ -561,7 +561,7 @@ cdef class BarSpecification:
         :param quote_type: The bar quote type.
         :raises ValueError: If the period is not positive (> 0).
         """
-        Precondition.positive(period, 'period')
+        Condition.positive(period, 'period')
 
         self.period = period
         self.resolution = resolution
@@ -748,10 +748,10 @@ cdef class Bar:
         :raises ValueError: If checked is true and the low_price is not <= close_price.
         """
         if checked:
-            Precondition.not_negative(volume, 'volume')
-            Precondition.true(high_price >= low_price, 'high_price >= low_price')
-            Precondition.true(high_price >= close_price, 'high_price >= close_price')
-            Precondition.true(low_price <= close_price, 'low_price <= close_price')
+            Condition.not_negative(volume, 'volume')
+            Condition.true(high_price >= low_price, 'high_price >= low_price')
+            Condition.true(high_price >= close_price, 'high_price >= close_price')
+            Condition.true(low_price <= close_price, 'low_price <= close_price')
 
         self.open = open_price
         self.high = high_price
@@ -903,16 +903,16 @@ cdef class Instrument:
         :param rollover_interest_sell: The instruments rollover interest for short positions.
         :param timestamp: The timestamp the instrument was created/updated at.
         """
-        Precondition.valid_string(broker_symbol, 'broker_symbol')
-        Precondition.not_negative(tick_precision, 'tick_precision')
-        Precondition.positive(tick_size, 'tick_size')
-        Precondition.not_negative(min_stop_distance_entry, 'min_stop_distance_entry')
-        Precondition.not_negative(min_limit_distance_entry, 'min_limit_distance_entry')
-        Precondition.not_negative(min_stop_distance, 'min_stop_distance')
-        Precondition.not_negative(min_limit_distance, 'min_limit_distance')
-        Precondition.not_negative(min_limit_distance, 'min_limit_distance')
-        Precondition.positive(min_trade_size.value, 'min_trade_size')
-        Precondition.positive(max_trade_size.value, 'max_trade_size')
+        Condition.valid_string(broker_symbol, 'broker_symbol')
+        Condition.not_negative(tick_precision, 'tick_precision')
+        Condition.positive(tick_size, 'tick_size')
+        Condition.not_negative(min_stop_distance_entry, 'min_stop_distance_entry')
+        Condition.not_negative(min_limit_distance_entry, 'min_limit_distance_entry')
+        Condition.not_negative(min_stop_distance, 'min_stop_distance')
+        Condition.not_negative(min_limit_distance, 'min_limit_distance')
+        Condition.not_negative(min_limit_distance, 'min_limit_distance')
+        Condition.positive(min_trade_size.value, 'min_trade_size')
+        Condition.positive(max_trade_size.value, 'max_trade_size')
 
         self.id = instrument_id
         self.symbol = symbol

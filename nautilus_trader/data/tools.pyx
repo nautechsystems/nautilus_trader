@@ -13,7 +13,7 @@ from cpython.datetime cimport datetime
 from typing import Callable, List
 from pandas.core.frame import DataFrame
 
-from nautilus_trader.core.precondition cimport Precondition
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport with_utc_index
 from nautilus_trader.model.objects cimport Symbol, Price, Bar, DataBar, Tick
 
@@ -51,10 +51,10 @@ cdef class TickBuilder:
         :raises: ValueError: If the bid_data is a type other than None or DataFrame.
         :raises: ValueError: If the ask_data is a type other than None or DataFrame.
         """
-        Precondition.not_negative(decimal_precision, 'decimal_precision')
-        Precondition.type_or_none(tick_data, DataFrame, 'tick_data')
-        Precondition.type_or_none(bid_data, DataFrame, 'bid_data')
-        Precondition.type_or_none(ask_data, DataFrame, 'ask_data')
+        Condition.not_negative(decimal_precision, 'decimal_precision')
+        Condition.type_or_none(tick_data, DataFrame, 'tick_data')
+        Condition.type_or_none(bid_data, DataFrame, 'bid_data')
+        Condition.type_or_none(ask_data, DataFrame, 'ask_data')
 
         self._symbol = symbol
         self._decimal_precision = decimal_precision
@@ -121,9 +121,9 @@ cdef class BarBuilder:
         :raises: ValueError: If the volume_multiple is not positive (> 0).
         :raises: ValueError: If the data is a type other than DataFrame.
         """
-        Precondition.not_negative(decimal_precision, 'decimal_precision')
-        Precondition.positive(volume_multiple, 'volume_multiple')
-        Precondition.type(data, DataFrame, 'data')
+        Condition.not_negative(decimal_precision, 'decimal_precision')
+        Condition.positive(volume_multiple, 'volume_multiple')
+        Condition.type(data, DataFrame, 'data')
 
         self._decimal_precision = decimal_precision
         self._volume_multiple = volume_multiple
@@ -145,7 +145,7 @@ cdef class BarBuilder:
         
         :return: List[DataBar].
         """
-        Precondition.not_negative(index, 'index')
+        Condition.not_negative(index, 'index')
 
         return list(map(self._build_databar,
                         self._data.iloc[index:].values,
@@ -157,7 +157,7 @@ cdef class BarBuilder:
         
         :return: List[DataBar].
         """
-        Precondition.not_negative(start, 'start')
+        Condition.not_negative(start, 'start')
 
         return list(map(self._build_databar,
                         self._data.iloc[start:end].values,
@@ -179,7 +179,7 @@ cdef class BarBuilder:
 
         :return: List[Bar].
         """
-        Precondition.not_negative(index, 'index')
+        Condition.not_negative(index, 'index')
 
         return list(map(self._build_bar,
                         self._data.iloc[index:].values,
@@ -191,7 +191,7 @@ cdef class BarBuilder:
 
         :return: List[Bar].
         """
-        Precondition.not_negative(start, 'start')
+        Condition.not_negative(start, 'start')
 
         return list(map(self._build_bar,
                         self._data.iloc[start:end].values,
@@ -237,7 +237,7 @@ cdef class IndicatorUpdater:
         :param outputs: The list of the indicators output properties.
         :raises ValueError: If the input_method is not None and not of type Callable.
         """
-        Precondition.type_or_none(input_method, Callable, 'input_method')
+        Condition.type_or_none(input_method, Callable, 'input_method')
 
         self._indicator = indicator
         if input_method is None:

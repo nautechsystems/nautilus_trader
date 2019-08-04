@@ -10,7 +10,7 @@ from datetime import timezone
 from decimal import Decimal
 from cpython.datetime cimport datetime
 
-from nautilus_trader.core.precondition cimport Precondition
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.enums import Currency  # Do not remove
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.security_type cimport SecurityType
@@ -32,15 +32,15 @@ cdef class InstrumentLoader:
         :raises ValueError: If the symbol.code length is not == 6.
         :raises ValueError: If the tick_precision is not 3 or 5.
         """
-        Precondition.true(len(symbol.code) == 6, 'len(symbol) == 6')
-        Precondition.true(tick_precision == 3 or tick_precision == 5, 'tick_precision == 3 or 5')
+        Condition.true(len(symbol.code) == 6, 'len(symbol) == 6')
+        Condition.true(tick_precision == 3 or tick_precision == 5, 'tick_precision == 3 or 5')
 
         cdef Currency quote_currency = Currency[symbol.code[3:]]
         # Check tick precision of quote currency
         if quote_currency == Currency.USD:
-            Precondition.true(tick_precision == 5, 'USD tick_precision == 5')
+            Condition.true(tick_precision == 5, 'USD tick_precision == 5')
         elif quote_currency == Currency.JPY:
-            Precondition.true(tick_precision == 3, 'JPY tick_precision == 3')
+            Condition.true(tick_precision == 3, 'JPY tick_precision == 3')
 
         return Instrument(
             instrument_id=InstrumentId(str(symbol)),

@@ -10,7 +10,7 @@ from cpython.datetime cimport datetime
 from collections import deque
 from typing import Callable, Dict, List, Deque
 
-from nautilus_trader.core.precondition cimport Precondition
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport ValidString
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.quote_type cimport QuoteType
@@ -63,8 +63,8 @@ cdef class TradeStrategy:
         :raises ValueError: If the id_tag_strategy is not a valid string.
         :raises ValueError: If the bar_capacity is not positive (> 0).
         """
-        Precondition.valid_string(id_tag_strategy, 'id_tag_strategy')
-        Precondition.positive(bar_capacity, 'bar_capacity')
+        Condition.valid_string(id_tag_strategy, 'id_tag_strategy')
+        Condition.positive(bar_capacity, 'bar_capacity')
 
         # Identification
         self.trader_id = TraderId('Trader-000')
@@ -274,7 +274,7 @@ cdef class TradeStrategy:
         :raises ValueError: If the indicator is not of type Indicator.
         :raises ValueError: If the update_method is not of type Callable.
         """
-        Precondition.type(update_method, Callable, 'update_method')
+        Condition.type(update_method, Callable, 'update_method')
 
         if bar_type not in self._indicators:
             self._indicators[bar_type] = []          # type: List[object]
@@ -466,7 +466,7 @@ cdef class TradeStrategy:
         :return: List[Instrument].
         :raises ValueError: If the strategy has not been registered with a data client.
         """
-        Precondition.not_none(self._data_client, 'data_client')
+        Condition.not_none(self._data_client, 'data_client')
 
         return self._data_client.instrument_symbols()
 
@@ -479,7 +479,7 @@ cdef class TradeStrategy:
         :raises ValueError: If strategy has not been registered with a data client.
         :raises ValueError: If the instrument is not found.
         """
-        Precondition.not_none(self._data_client, 'data_client')
+        Condition.not_none(self._data_client, 'data_client')
 
         return self._data_client.get_instrument(symbol)
 
@@ -507,7 +507,7 @@ cdef class TradeStrategy:
         if from_datetime is None:
             from_datetime = to_datetime - (self.bar_capacity * bar_type.specification.timedelta())
 
-        Precondition.true(from_datetime < to_datetime, 'from_datetime < to_date')
+        Condition.true(from_datetime < to_datetime, 'from_datetime < to_date')
 
         if not self.is_data_client_registered:
             self.log.error("Cannot download historical bars (data client not registered).")
@@ -575,7 +575,7 @@ cdef class TradeStrategy:
         :return: List[Bar] (if found).
         :raises ValueError: If the strategies bars dictionary does not contain the bar type.
         """
-        Precondition.is_in(bar_type, self._bars, 'bar_type', 'bars')
+        Condition.is_in(bar_type, self._bars, 'bar_type', 'bars')
 
         return list(self._bars[bar_type])
 
@@ -591,8 +591,8 @@ cdef class TradeStrategy:
         :raises ValueError: If the index is negative (< 0).
         :raises IndexError: If the strategies bars dictionary does not contain a bar at the given index.
         """
-        Precondition.is_in(bar_type, self._bars, 'bar_type', 'bars')
-        Precondition.not_negative(index, 'index')
+        Condition.is_in(bar_type, self._bars, 'bar_type', 'bars')
+        Condition.not_negative(index, 'index')
 
         return self._bars[bar_type][index]
 
@@ -605,7 +605,7 @@ cdef class TradeStrategy:
         :raises ValueError: If the strategies bars dictionary does not contain the bar type.
         :raises IndexError: If the strategies bars dictionary does not contain a bar at the given index.
         """
-        Precondition.is_in(bar_type, self._bars, 'bar_type', 'bars')
+        Condition.is_in(bar_type, self._bars, 'bar_type', 'bars')
 
         return self._bars[bar_type][0]
 
@@ -617,7 +617,7 @@ cdef class TradeStrategy:
         :return: Tick (if found).
         :raises ValueError: If the strategies tick dictionary does not contain a tick for the given symbol.
         """
-        Precondition.is_in(symbol, self._ticks, 'symbol', 'ticks')
+        Condition.is_in(symbol, self._ticks, 'symbol', 'ticks')
 
         return self._ticks[symbol]
 
@@ -632,7 +632,7 @@ cdef class TradeStrategy:
         :return: List[Indicator] (if found).
         :raises ValueError: If the strategies indicators dictionary does not contain the given bar_type.
         """
-        Precondition.is_in(bar_type, self._indicators, 'bar_type', 'indicators')
+        Condition.is_in(bar_type, self._indicators, 'bar_type', 'indicators')
 
         return self._indicators[bar_type].copy()
 
@@ -643,7 +643,7 @@ cdef class TradeStrategy:
         :return: True if indicators initialized, otherwise False.
         :raises ValueError: If the strategies indicators dictionary does not contain the given bar_type.
         """
-        Precondition.is_in(bar_type, self._indicators, 'bar_type', 'indicators')
+        Condition.is_in(bar_type, self._indicators, 'bar_type', 'indicators')
 
         for indicator in self._indicators[bar_type]:
             if indicator.initialized is False:
@@ -802,7 +802,7 @@ cdef class TradeStrategy:
         :return: Order.
         :raises ValueError. If the order identifier is not registered with an entry.
         """
-        Precondition.is_in(order_id, self._entry_orders, 'order_id', 'pending_entry_orders')
+        Condition.is_in(order_id, self._entry_orders, 'order_id', 'pending_entry_orders')
 
         return self._entry_orders[order_id].order
 
@@ -814,7 +814,7 @@ cdef class TradeStrategy:
         :return: Order.
         :raises ValueError. If the order identifier is not registered with a stop-loss.
         """
-        Precondition.is_in(order_id, self._stop_loss_orders, 'order_id', 'stop_loss_orders')
+        Condition.is_in(order_id, self._stop_loss_orders, 'order_id', 'stop_loss_orders')
 
         return self._stop_loss_orders[order_id].order
 
@@ -826,7 +826,7 @@ cdef class TradeStrategy:
         :return: Order.
         :raises ValueError. If the order identifier is not registered with a take-profit.
         """
-        Precondition.is_in(order_id, self._take_profit_orders, 'order_id', 'take_profit_orders')
+        Condition.is_in(order_id, self._take_profit_orders, 'order_id', 'take_profit_orders')
 
         return self._take_profit_orders[order_id].order
 

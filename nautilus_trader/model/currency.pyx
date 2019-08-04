@@ -9,7 +9,7 @@
 from typing import Dict
 from itertools import permutations
 
-from nautilus_trader.core.precondition cimport Precondition
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.currency cimport Currency, currency_string
 from nautilus_trader.model.c_enums.quote_type cimport QuoteType, quote_type_string
 
@@ -39,7 +39,7 @@ cdef class ExchangeRateCalculator:
         :return: float.
         :raises ValueError: If the bid rates length is not equal to the ask rates length.
         """
-        Precondition.true(len(bid_rates) == len(ask_rates), 'len(bid_rates) == len(ask_rates)')
+        Condition.true(len(bid_rates) == len(ask_rates), 'len(bid_rates) == len(ask_rates)')
 
         if quote_currency == base_currency:
             return 1.0  # No exchange necessary

@@ -8,7 +8,7 @@
 
 from typing import Callable
 
-from nautilus_trader.core.precondition cimport Precondition
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.objects cimport Tick, BarType, Bar, Instrument
 
 
@@ -22,7 +22,7 @@ cdef class Handler:
 
         :param handler: The callable handler.
         """
-        Precondition.type(handler, Callable, 'handler')
+        Condition.type(handler, Callable, 'handler')
 
         self.handle = handler
 

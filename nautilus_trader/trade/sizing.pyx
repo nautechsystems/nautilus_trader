@@ -8,7 +8,7 @@
 
 from decimal import Decimal
 
-from nautilus_trader.core.precondition cimport Precondition
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport basis_points_as_percentage
 from nautilus_trader.model.objects cimport Quantity, Price, Money, Instrument
 
@@ -33,7 +33,7 @@ cdef class PositionSizer:
         :param instrument: The instrument for update.
         :raises ValueError: If the instruments symbol does not equal the held instrument symbol.
         """
-        Precondition.equal(self.instrument.symbol, instrument.symbol)
+        Condition.equal(self.instrument.symbol, instrument.symbol)
 
         self.instrument = instrument
 
@@ -142,11 +142,11 @@ cdef class FixedRiskSizer(PositionSizer):
         :raises ValueError: If the unit_batch_size is not positive (> 0).
         :return: Quantity.
         """
-        Precondition.positive(risk_bp, 'risk_bp')
-        Precondition.positive(exchange_rate, 'exchange_rate')
-        Precondition.not_negative(commission_rate_bp, 'commission_rate_bp')
-        Precondition.positive(units, 'units')
-        Precondition.positive(unit_batch_size, 'unit_batch_size')
+        Condition.positive(risk_bp, 'risk_bp')
+        Condition.positive(exchange_rate, 'exchange_rate')
+        Condition.not_negative(commission_rate_bp, 'commission_rate_bp')
+        Condition.positive(units, 'units')
+        Condition.positive(unit_batch_size, 'unit_batch_size')
 
         cdef int risk_points = self._calculate_risk_ticks(price_entry, price_stop_loss)
         cdef Money risk_money = self._calculate_riskable_money(equity, risk_bp, commission_rate_bp, exchange_rate)

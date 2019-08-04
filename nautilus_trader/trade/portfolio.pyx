@@ -9,7 +9,7 @@
 from typing import List, Dict
 from cpython.datetime cimport datetime
 
-from nautilus_trader.core.precondition cimport Precondition
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.events cimport AccountEvent, OrderEvent, PositionOpened, PositionModified, PositionClosed
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.identifiers cimport StrategyId, OrderId, PositionId
@@ -86,7 +86,7 @@ cdef class Portfolio:
         :return: Position (if found).
         :raises ValueError: If the position is not found.
         """
-        Precondition.is_in(order_id, self._order_p_index, 'order_id', 'order_p_index')
+        Condition.is_in(order_id, self._order_p_index, 'order_id', 'order_p_index')
 
         cdef PositionId position_id = self._order_p_index[order_id]
         return self._position_book[position_id]
@@ -99,7 +99,7 @@ cdef class Portfolio:
         :return: Position (if found).
         :raises ValueError: If the position is not found.
         """
-        Precondition.is_in(position_id, self._position_book, 'position_id', 'position_book')
+        Condition.is_in(position_id, self._position_book, 'position_id', 'position_book')
 
         return self._position_book[position_id]
 
@@ -135,8 +135,8 @@ cdef class Portfolio:
         :return: Dict[PositionId, Position].
         :raises ValueError: If the strategy identifier is not registered with the portfolio.
         """
-        Precondition.is_in(strategy_id, self._positions_active, 'strategy_id', 'positions_active')
-        Precondition.is_in(strategy_id, self._positions_closed, 'strategy_id', 'positions_closed')
+        Condition.is_in(strategy_id, self._positions_active, 'strategy_id', 'positions_active')
+        Condition.is_in(strategy_id, self._positions_closed, 'strategy_id', 'positions_closed')
 
         return {**self._positions_active[strategy_id], **self._positions_closed[strategy_id]}  # type: Dict[PositionId, Position]
 
@@ -148,7 +148,7 @@ cdef class Portfolio:
         :return: Dict[PositionId, Position].
         :raises ValueError: If the strategy identifier is not registered with the portfolio.
         """
-        Precondition.is_in(strategy_id, self._positions_active, 'strategy_id', 'positions_active')
+        Condition.is_in(strategy_id, self._positions_active, 'strategy_id', 'positions_active')
 
         return self._positions_active[strategy_id].copy()
 
@@ -160,7 +160,7 @@ cdef class Portfolio:
         :return: Dict[PositionId, Position].
         :raises ValueError: If the strategy identifier is not registered with the portfolio.
         """
-        Precondition.is_in(strategy_id, self._positions_closed, 'strategy_id', 'positions_closed')
+        Condition.is_in(strategy_id, self._positions_closed, 'strategy_id', 'positions_closed')
 
         return self._positions_closed[strategy_id].copy()
 
@@ -212,7 +212,7 @@ cdef class Portfolio:
         :return: True if the strategy is flat, else False.
         :raises ValueError: If the strategy identifier is not registered with the portfolio.
         """
-        Precondition.is_in(strategy_id, self._positions_active, 'strategy_id', 'positions_active')
+        Condition.is_in(strategy_id, self._positions_active, 'strategy_id', 'positions_active')
 
         return not self._positions_active[strategy_id]
 
@@ -273,7 +273,7 @@ cdef class Portfolio:
         :param client: The client to register.
         :raises ValueError: If the client is None.
         """
-        Precondition.not_none(client, 'client')
+        Condition.not_none(client, 'client')
 
         self._exec_client = client
         self._log.debug("Registered execution client.")
@@ -285,9 +285,9 @@ cdef class Portfolio:
         :param strategy: The strategy to register.
         :raises ValueError: If the strategy is already registered with the portfolio.
         """
-        Precondition.true(strategy.id not in self._registered_strategies, 'strategy_id not in self._registered_strategies')
-        Precondition.not_in(strategy.id, self._positions_active, 'strategy_id', 'active_positions')
-        Precondition.not_in(strategy.id, self._positions_closed, 'strategy_id', 'closed_positions')
+        Condition.true(strategy.id not in self._registered_strategies, 'strategy_id not in self._registered_strategies')
+        Condition.not_in(strategy.id, self._positions_active, 'strategy_id', 'active_positions')
+        Condition.not_in(strategy.id, self._positions_closed, 'strategy_id', 'closed_positions')
 
         self._registered_strategies.append(strategy.id)
         self._positions_active[strategy.id] = {}  # type: Dict[PositionId, Position]
@@ -301,9 +301,9 @@ cdef class Portfolio:
         :param strategy: The strategy to deregister.
         :raises ValueError: If the strategy is not registered with the portfolio.
         """
-        Precondition.true(strategy.id in self._registered_strategies, 'strategy_id in self._registered_strategies')
-        Precondition.is_in(strategy.id, self._positions_active, 'strategy_id', 'active_positions')
-        Precondition.is_in(strategy.id, self._positions_closed, 'strategy_id', 'closed_positions')
+        Condition.true(strategy.id in self._registered_strategies, 'strategy_id in self._registered_strategies')
+        Condition.is_in(strategy.id, self._positions_active, 'strategy_id', 'active_positions')
+        Condition.is_in(strategy.id, self._positions_closed, 'strategy_id', 'closed_positions')
 
         self._registered_strategies.remove(strategy.id)
         del self._positions_active[strategy.id]
@@ -318,7 +318,7 @@ cdef class Portfolio:
         :param position_id: The position identifier to register.
         :raises ValueError: If the order is already registered with the portfolio.
         """
-        Precondition.not_in(order_id, self._order_p_index, 'order_id', 'order_position_index')
+        Condition.not_in(order_id, self._order_p_index, 'order_id', 'order_position_index')
 
         self._order_p_index[order_id] = position_id
 
@@ -331,8 +331,8 @@ cdef class Portfolio:
         :raises ValueError: If the events order identifier is not registered with the portfolio.
         :raises ValueError: If the strategy identifier is not registered with the portfolio.
         """
-        Precondition.is_in(event.order_id, self._order_p_index, 'event.order_id', 'order_position_index')
-        Precondition.true(strategy_id in self._registered_strategies, 'strategy_id in registered_strategies')
+        Condition.is_in(event.order_id, self._order_p_index, 'event.order_id', 'order_position_index')
+        Condition.true(strategy_id in self._registered_strategies, 'strategy_id in registered_strategies')
 
         cdef PositionId position_id = self._order_p_index[event.order_id]
         cdef Position position
