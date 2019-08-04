@@ -380,7 +380,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(Price('1.00010'), atomic_order.take_profit.price)
         self.assertEqual(Label('U1_E'), atomic_order.entry.label)
         self.assertEqual(Label('U1_SL'), atomic_order.stop_loss.label)
-        self.assertEqual(Label('U1_PT'), atomic_order.take_profit.label)
+        self.assertEqual(Label('U1_TP'), atomic_order.take_profit.label)
         self.assertEqual(TimeInForce.GTC, atomic_order.stop_loss.time_in_force)
         self.assertEqual(TimeInForce.GTC, atomic_order.take_profit.time_in_force)
         self.assertEqual(None, atomic_order.entry.expire_time)
@@ -401,8 +401,8 @@ class OrderTests(unittest.TestCase):
             Label('U1'))
 
         # Assert
-        self.assertEqual('AtomicOrder(AO-19700101-000000-001-001-1, EntryOrder(O-19700101-000000-001-001-1, label=U1_E, status=INITIALIZED) BUY 100,000 AUDUSD.FXCM MARKET DAY, SL=Order(O-19700101-000000-001-001-2, label=U1_SL, status=INITIALIZED) SELL 100,000 AUDUSD.FXCM STOP_MARKET @ 0.99990 GTC, TP=Order(O-19700101-000000-001-001-3, label=U1_PT, status=INITIALIZED) SELL 100,000 AUDUSD.FXCM LIMIT @ 1.00010 GTC)', str(atomic_order))
-        self.assertTrue(repr(atomic_order).startswith('<AtomicOrder(AO-19700101-000000-001-001-1, EntryOrder(O-19700101-000000-001-001-1, label=U1_E, status=INITIALIZED) BUY 100,000 AUDUSD.FXCM MARKET DAY, SL=Order(O-19700101-000000-001-001-2, label=U1_SL, status=INITIALIZED) SELL 100,000 AUDUSD.FXCM STOP_MARKET @ 0.99990 GTC, TP=Order(O-19700101-000000-001-001-3, label=U1_PT, status=INITIALIZED) SELL 100,000 AUDUSD.FXCM LIMIT @ 1.00010 GTC)'))
+        self.assertEqual('AtomicOrder(AO-19700101-000000-001-001-1, EntryOrder(O-19700101-000000-001-001-1, label=U1_E, status=INITIALIZED) BUY 100,000 AUDUSD.FXCM MARKET DAY, SL=Order(O-19700101-000000-001-001-2, label=U1_SL, status=INITIALIZED) SELL 100,000 AUDUSD.FXCM STOP_MARKET @ 0.99990 GTC, TP=Order(O-19700101-000000-001-001-3, label=U1_TP, status=INITIALIZED) SELL 100,000 AUDUSD.FXCM LIMIT @ 1.00010 GTC)', str(atomic_order))
+        self.assertTrue(repr(atomic_order).startswith('<AtomicOrder(AO-19700101-000000-001-001-1, EntryOrder(O-19700101-000000-001-001-1, label=U1_E, status=INITIALIZED) BUY 100,000 AUDUSD.FXCM MARKET DAY, SL=Order(O-19700101-000000-001-001-2, label=U1_SL, status=INITIALIZED) SELL 100,000 AUDUSD.FXCM STOP_MARKET @ 0.99990 GTC, TP=Order(O-19700101-000000-001-001-3, label=U1_TP, status=INITIALIZED) SELL 100,000 AUDUSD.FXCM LIMIT @ 1.00010 GTC)'))
 
     def test_can_apply_order_submitted_event_to_order(self):
         # Arrange
