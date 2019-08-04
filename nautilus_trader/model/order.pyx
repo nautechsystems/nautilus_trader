@@ -762,7 +762,7 @@ cdef class OrderFactory:
         cdef Label label_take_profit = None
         if original_label is not None:
             label_stop_loss = Label(original_label.value + "_SL")
-            label_take_profit = Label(original_label.value + "_PT")
+            label_take_profit = Label(original_label.value + "_TP")
 
         cdef Order stop_loss = self.stop_market(
             entry.symbol,
