@@ -21,9 +21,6 @@ cpdef enum MessageType:
 
 
 cdef class Message:
-    """
-    The base class for all messages.
-    """
     cdef readonly MessageType message_type
     cdef readonly GUID id
     cdef readonly datetime timestamp
@@ -32,25 +29,16 @@ cdef class Message:
 
 
 cdef class Command(Message):
-    """
-    The base class for all commands.
-    """
+    pass
 
 
 cdef class Event(Message):
-    """
-    The base class for all events.
-    """
+    pass
 
 
 cdef class Request(Message):
-    """
-    The base class for all requests.
-    """
+    pass
 
 
 cdef class Response(Message):
-    """
-    The base class for all responses.
-    """
     cdef readonly GUID correlation_id
