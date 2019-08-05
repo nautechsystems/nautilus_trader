@@ -138,10 +138,8 @@ cdef class BacktestEngine:
             logger=self.test_logger)
 
         for strategy in strategies:
-            # Replace strategies clocks with test clocks
-            strategy.change_clock(TestClock())  # Separate test clocks to iterate independently
-            # Replace strategies loggers with test loggers
-            strategy.change_logger(self.test_logger)
+            # Replace strategies clocks with separate test clocks for independent iteration
+            strategy.change_clock(TestClock())
 
         self.trader = Trader(
             '000',
