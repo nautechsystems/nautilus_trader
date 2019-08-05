@@ -7,7 +7,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from typing import Callable
-
 from cpython cimport pythread
 from cpython.exc cimport PyErr_NoMemory
 
@@ -134,6 +133,11 @@ cdef class ConcurrentDictionary:
         self._internal = {}
 
     def __len__(self):
+        """
+        Return the number of items in the dictionary.
+
+        :return: int.
+        """
         self._lock.acquire()
         cdef int length = len(self._internal)
         self._lock.release()
