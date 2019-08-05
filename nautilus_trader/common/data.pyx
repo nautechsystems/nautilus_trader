@@ -10,6 +10,7 @@ from cpython.datetime cimport datetime
 from typing import List, Dict, Callable
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.concurrency cimport ConcurrentDictionary
 from nautilus_trader.model.objects cimport Symbol, Tick, BarType, Bar, Instrument
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logger cimport Logger, LoggerAdapter
@@ -39,10 +40,10 @@ cdef class DataClient:
         self._clock = clock
         self._guid_factory = guid_factory
         self._log = LoggerAdapter(self.__class__.__name__, logger)
-        self._tick_handlers = {}        # type: Dict[Symbol, List[TickHandler]]
-        self._bar_handlers = {}         # type: Dict[BarType, List[BarHandler]]
-        self._instrument_handlers = {}  # type: Dict[Symbol, List[InstrumentHandler]]
-        self._instruments = {}          # type: Dict[Symbol, Instrument]
+        self._tick_handlers = ConcurrentDictionary()        # type: Dict[Symbol, List[TickHandler]]
+        self._bar_handlers = ConcurrentDictionary()         # type: Dict[BarType, List[BarHandler]]
+        self._instrument_handlers = ConcurrentDictionary()  # type: Dict[Symbol, List[InstrumentHandler]]
+        self._instruments = ConcurrentDictionary()          # type: Dict[Symbol, Instrument]
 
         self._log.info("Initialized.")
 
@@ -321,8 +322,8 @@ cdef class DataClient:
 
     cdef void _reset(self):
         # Reset the data client by returning all stateful internal values to their initial value
-        self._instruments = {}       # type: Dict[Symbol, Instrument]
-        self._tick_handlers = {}     # type: Dict[Symbol, List[TickHandler]]
-        self._bar_handlers = {}      # type: Dict[BarType, List[BarHandler]]
+        self._instruments = ConcurrentDictionary()    # type: Dict[Symbol, Instrument]
+        self._tick_handlers = ConcurrentDictionary()  # type: Dict[Symbol, List[TickHandler]]
+        self._bar_handlers = ConcurrentDictionary()   # type: Dict[BarType, List[BarHandler]]
 
         self._log.debug("Reset.")
