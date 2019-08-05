@@ -8,15 +8,24 @@
 # -------------------------------------------------------------------------------------------------
 
 import os
+import shutil
 
 
-extensions_to_clean = ('.c', '.so', '.o', '.pyd', '.html')
+to_clean = ('.c', '.so', '.o', '.pyd', '.pyc', '.html')
 directories = ['nautilus_trader', 'test_kit']
 
+
+def remove_dir_if_exists(dir_name: str):
+    if os.path.exists(dir_name):
+        shutil.rmtree(dir_name)
+
+
 if __name__ == '__main__':
+    remove_dir_if_exists('__pycache__')
+    remove_dir_if_exists('build')
     for directory in directories:
         for root, dirs, files in os.walk(directory):
             for name in files:
                 path = os.path.join(root, name)
-                if os.path.isfile(path) and path.endswith(extensions_to_clean):
+                if os.path.isfile(path) and path.endswith(to_clean):
                     os.remove(path)

@@ -51,10 +51,10 @@ cpdef float basis_points_as_percentage(float basis_points):
 
 cpdef object with_utc_index(dataframe):
         """
-        Return the given pandas dataframe with the index timestamps localized 
-        or converted to UTC. If the dataframe is None then returns None.
+        Return the given pandas DataFrame with the index timestamps localized 
+        or converted to UTC. If the DataFrame is None then returns None.
         
-        :param dataframe: The pd.Dataframe to localize.
+        :param dataframe: The pd.DataFrame to localize.
         :return: pd.DataFrame or None.
         """
         if dataframe is not None:

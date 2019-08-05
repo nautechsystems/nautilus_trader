@@ -5,5 +5,3 @@
 #  https://nautechsystems.io
 # </copyright>
 # -------------------------------------------------------------------------------------------------
-
-from nautilus_trader.core import correctness
