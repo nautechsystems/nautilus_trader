@@ -9,7 +9,6 @@
 import unittest
 from base64 import b64encode, b64decode
 
-from nautilus_trader.model.enums import Venue
 from nautilus_trader.common.clock import *
 from nautilus_trader.model.objects import *
 from nautilus_trader.serialization.data import *
@@ -18,7 +17,7 @@ from test_kit.stubs import TestStubs
 from test_kit.data import TestDataProvider
 
 UNIX_EPOCH = TestStubs.unix_epoch()
-AUDUSD_FXCM = Symbol('AUDUSD', Venue.FXCM)
+AUDUSD_FXCM = Symbol('AUDUSD', Venue('FXCM'))
 
 
 class DataSerializerTests(unittest.TestCase):

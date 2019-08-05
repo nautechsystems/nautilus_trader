@@ -13,8 +13,8 @@ from decimal import Decimal
 
 from nautilus_trader.core.types import GUID, ValidString
 from nautilus_trader.common.clock import TestClock
-from nautilus_trader.model.enums import Venue, OrderSide, OrderType, OrderStatus, TimeInForce
-from nautilus_trader.model.objects import Quantity, Symbol, Price
+from nautilus_trader.model.enums import OrderSide, OrderType, OrderStatus, TimeInForce
+from nautilus_trader.model.objects import Quantity, Venue, Symbol, Price
 from nautilus_trader.model.identifiers import Label, OrderId, ExecutionId, ExecutionTicket
 from nautilus_trader.model.order import Order, OrderFactory
 from nautilus_trader.model.events import OrderInitialized, OrderSubmitted, OrderAccepted, OrderRejected
@@ -23,8 +23,8 @@ from nautilus_trader.model.events import OrderCancelReject, OrderPartiallyFilled
 from test_kit.stubs import TestStubs
 
 UNIX_EPOCH = TestStubs.unix_epoch()
-AUDUSD_FXCM = Symbol('AUDUSD', Venue.FXCM)
-GBPUSD_FXCM = Symbol('GBPUSD', Venue.FXCM)
+AUDUSD_FXCM = Symbol('AUDUSD', Venue('FXCM'))
+GBPUSD_FXCM = Symbol('GBPUSD', Venue('FXCM'))
 
 
 class OrderTests(unittest.TestCase):

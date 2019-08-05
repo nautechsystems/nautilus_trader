@@ -12,8 +12,7 @@ from nautilus_trader.core.concurrency cimport ConcurrentDictionary
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.guid cimport GuidFactory
 from nautilus_trader.common.logger cimport LoggerAdapter
-from nautilus_trader.model.c_enums.venue cimport Venue
-from nautilus_trader.model.objects cimport Symbol, Tick, BarType, Bar, Instrument
+from nautilus_trader.model.objects cimport Venue, Symbol, Tick, BarType, Bar, Instrument
 from nautilus_trader.trade.strategy cimport TradeStrategy
 
 

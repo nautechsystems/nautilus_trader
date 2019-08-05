@@ -11,14 +11,13 @@ from cpython.datetime cimport datetime
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport ValidString, GUID
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.model.c_enums.brokerage cimport Broker
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.order_side cimport OrderSide, order_side_string
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.identifiers cimport Label, AccountNumber, AccountId
 from nautilus_trader.model.identifiers cimport StrategyId, OrderId, ExecutionId, ExecutionTicket
-from nautilus_trader.model.objects cimport Quantity, Symbol, Price
+from nautilus_trader.model.objects cimport Quantity, Brokerage, Symbol, Price
 from nautilus_trader.model.position cimport Position
 
 
@@ -28,8 +27,7 @@ cdef class AccountEvent(Event):
     """
 
     def __init__(self,
-                 AccountId account_id,
-                 Broker broker,
+                 Brokerage brokerage,
                  AccountNumber account_number,
                  Currency currency,
                  Money cash_balance,
@@ -44,8 +42,7 @@ cdef class AccountEvent(Event):
         """
         Initializes a new instance of the AccountEvent class.
 
-        :param account_id: The account identifier.
-        :param broker: The account broker.
+        :param brokerage: The account broker.
         :param account_number: The account number.
         :param currency: The currency for the account.
         :param cash_balance: The account cash balance.
@@ -61,8 +58,8 @@ cdef class AccountEvent(Event):
         Condition.not_negative(margin_ratio, 'margin_ratio')
 
         super().__init__(event_id, event_timestamp)
-        self.account_id = account_id
-        self.broker = broker
+        self.account_id = AccountId(f'{brokerage.value}-{account_number.value}')
+        self.brokerage = brokerage
         self.account_number = account_number
         self.currency = currency
         self.cash_balance = cash_balance

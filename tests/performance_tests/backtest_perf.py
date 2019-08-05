@@ -14,8 +14,7 @@ import unittest
 from datetime import datetime, timezone
 
 from nautilus_trader.model.enums import Resolution
-from nautilus_trader.model.enums import Venue
-from nautilus_trader.model.objects import Symbol
+from nautilus_trader.model.objects import Venue, Symbol
 from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.models import FillModel
@@ -24,7 +23,7 @@ from test_kit.data import TestDataProvider
 from test_kit.stubs import TestStubs
 
 UNIX_EPOCH = TestStubs.unix_epoch()
-USDJPY_FXCM = Symbol('USDJPY', Venue.FXCM)
+USDJPY_FXCM = Symbol('USDJPY', Venue('FXCM'))
 
 
 class BacktestEnginePerformanceTests(unittest.TestCase):
@@ -43,7 +42,7 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         strategies = [EmptyStrategy('001')]
 
         config = BacktestConfig()
-        engine = BacktestEngine(venue=Venue.FXCM,
+        engine = BacktestEngine(venue=Venue('FXCM'),
                                 instruments=instruments,
                                 data_ticks=tick_data,
                                 data_bars_bid=bid_data,
@@ -103,7 +102,7 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
             console_prints=False)
 
         engine = BacktestEngine(
-            venue=Venue.FXCM,
+            venue=Venue('FXCM'),
             instruments=instruments,
             data_ticks=tick_data,
             data_bars_bid=bid_data,

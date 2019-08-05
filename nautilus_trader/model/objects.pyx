@@ -10,7 +10,8 @@ from decimal import Decimal
 from cpython.datetime cimport datetime, timedelta
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.c_enums.venue cimport Venue, venue_string
+from nautilus_trader.core.types cimport StringValue
+from nautilus_trader.model.objects cimport Venue
 from nautilus_trader.model.c_enums.resolution cimport Resolution, resolution_string
 from nautilus_trader.model.c_enums.quote_type cimport QuoteType, quote_type_string
 from nautilus_trader.model.c_enums.security_type cimport SecurityType
@@ -119,6 +120,51 @@ cdef class Quantity:
             raise NotImplementedError(f"Cannot subtract {type(other)} from a quantity.")
 
 
+cdef class Brokerage(StringValue):
+    """
+    Represents a brokerage.
+    """
+
+    def __init__(self, str name):
+        """
+        Initializes a new instance of the Brokerage class.
+
+        :param name: The brokerages name.
+        :raises ValueError: If the name is not a valid string.
+        """
+        super().__init__(name.upper())
+
+
+cdef class Venue(StringValue):
+    """
+    Represents a trading venue for a financial market tradeable instrument.
+    """
+
+    def __init__(self, str name):
+        """
+        Initializes a new instance of the Venue class.
+
+        :param name: The venues name.
+        :raises ValueError: If the name is not a valid string.
+        """
+        super().__init__(name.upper())
+
+
+cdef class Exchange(Venue):
+    """
+    Represents an exchange that financial market instruments are traded on.
+    """
+
+    def __init__(self, str name):
+        """
+        Initializes a new instance of the Exchange class.
+
+        :param name: The exchanges name.
+        :raises ValueError: If the name is not a valid string.
+        """
+        super().__init__(name.upper())
+
+
 cdef class Symbol:
     """
     Represents the symbol for a financial market tradeable instrument.
@@ -138,15 +184,7 @@ cdef class Symbol:
 
         self.code = code.upper()
         self.venue = venue
-        self.value = f'{self.code}.{venue_string(self.venue)}'
-
-    cdef str venue_string(self):
-        """
-        The venue string.
-        
-        :return: str. 
-        """
-        return venue_string(self.venue)
+        self.value = f'{self.code}.{self.venue.value}'
 
     cdef bint equals(self, Symbol other):
         """

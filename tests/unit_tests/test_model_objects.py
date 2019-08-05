@@ -12,8 +12,8 @@ from decimal import Decimal, InvalidOperation
 from datetime import timedelta
 
 from nautilus_trader.core.types import ValidString
-from nautilus_trader.model.enums import Venue, Resolution, QuoteType
-from nautilus_trader.model.objects import Quantity, Symbol, Price, Money
+from nautilus_trader.model.enums import Resolution, QuoteType
+from nautilus_trader.model.objects import Quantity, Venue, Symbol, Price, Money
 from nautilus_trader.model.objects import BarSpecification, BarType
 
 
@@ -53,9 +53,9 @@ class ObjectTests(unittest.TestCase):
 
     def test_symbol_equality(self):
         # Arrange
-        symbol1 = Symbol("AUDUSD", Venue.FXCM)
-        symbol2 = Symbol("AUDUSD", Venue.IDEAL_PRO)
-        symbol3 = Symbol("GBPUSD", Venue.FXCM)
+        symbol1 = Symbol("AUDUSD", Venue('FXCM'))
+        symbol2 = Symbol("AUDUSD", Venue('IDEAL_PRO'))
+        symbol3 = Symbol("GBPUSD", Venue('FXCM'))
 
         # Act
         # Assert
@@ -65,7 +65,7 @@ class ObjectTests(unittest.TestCase):
 
     def test_symbol_str_and_repr(self):
         # Arrange
-        symbol = Symbol("AUDUSD", Venue.FXCM)
+        symbol = Symbol("AUDUSD", Venue('FXCM'))
 
         # Act
         # Assert
@@ -579,8 +579,8 @@ class ObjectTests(unittest.TestCase):
 
     def test_bar_type_equality(self):
         # Arrange
-        symbol1 = Symbol("AUDUSD", Venue.FXCM)
-        symbol2 = Symbol("GBPUSD", Venue.FXCM)
+        symbol1 = Symbol("AUDUSD", Venue('FXCM'))
+        symbol2 = Symbol("GBPUSD", Venue('FXCM'))
         bar_spec = BarSpecification(1, Resolution.MINUTE, QuoteType.BID)
         bar_type1 = BarType(symbol1, bar_spec)
         bar_type2 = BarType(symbol1, bar_spec)
@@ -594,7 +594,7 @@ class ObjectTests(unittest.TestCase):
 
     def test_bar_type_str_and_repr(self):
         # Arrange
-        symbol = Symbol("AUDUSD", Venue.FXCM)
+        symbol = Symbol("AUDUSD", Venue('FXCM'))
         bar_spec = BarSpecification(1, Resolution.MINUTE, QuoteType.BID)
         bar_type = BarType(symbol, bar_spec)
 

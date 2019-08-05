@@ -16,7 +16,6 @@ from nautilus_trader.common.logger cimport Logger, LoggerAdapter
 from nautilus_trader.common.execution cimport ExecutionClient
 from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.model.c_enums.currency cimport Currency
-from nautilus_trader.model.c_enums.venue cimport Venue
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition
 from nautilus_trader.model.currency cimport ExchangeRateCalculator

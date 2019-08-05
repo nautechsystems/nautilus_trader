@@ -15,15 +15,14 @@ from uuid import UUID
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport ValidString, GUID
 from nautilus_trader.core.message cimport Command, Event, Request, Response
-from nautilus_trader.model.enums import Broker, OrderSide, OrderType, Currency, TimeInForce
-from nautilus_trader.model.c_enums.brokerage cimport Broker, broker_string
+from nautilus_trader.model.enums import OrderSide, OrderType, Currency, TimeInForce
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce, time_in_force_string
 from nautilus_trader.model.c_enums.order_side cimport  order_side_string
 from nautilus_trader.model.c_enums.order_type cimport OrderType, order_type_string
 from nautilus_trader.model.c_enums.currency cimport Currency, currency_string
 from nautilus_trader.model.identifiers cimport TraderId, StrategyId, OrderId, ExecutionId, AccountId
 from nautilus_trader.model.identifiers cimport ExecutionTicket, AccountNumber, PositionId, Label
-from nautilus_trader.model.objects cimport Quantity, Money, Price
+from nautilus_trader.model.objects cimport Brokerage, Quantity, Money, Price
 from nautilus_trader.model.order cimport Order, AtomicOrder
 from nautilus_trader.serialization.constants cimport *
 from nautilus_trader.serialization.base cimport (
@@ -297,7 +296,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
 
         if isinstance(event, AccountEvent):
             package[ACCOUNT_ID] = event.account_id.value
-            package[BROKER] = broker_string(event.broker)
+            package[BROKER] = event.brokerage.value,
             package[ACCOUNT_NUMBER] = event.account_number.value
             package[CURRENCY] = currency_string(event.currency)
             package[CASH_BALANCE] = str(event.cash_balance)
@@ -399,7 +398,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
         if event_type == AccountEvent.__name__:
             return AccountEvent(
                 AccountId(unpacked[ACCOUNT_ID]),
-                Broker[unpacked[BROKER]],
+                Brokerage(unpacked[BROKER]),
                 AccountNumber(unpacked[ACCOUNT_NUMBER]),
                 Currency[unpacked[CURRENCY]],
                 Money(unpacked[CASH_BALANCE]),

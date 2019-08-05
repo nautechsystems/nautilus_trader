@@ -13,8 +13,8 @@ from decimal import Decimal
 
 from nautilus_trader.core.types import GUID
 from nautilus_trader.common.clock import TestClock
-from nautilus_trader.model.enums import Venue, OrderSide, MarketPosition
-from nautilus_trader.model.objects import Quantity, Symbol, Price
+from nautilus_trader.model.enums import OrderSide, MarketPosition
+from nautilus_trader.model.objects import Quantity, Venue, Symbol, Price
 from nautilus_trader.model.identifiers import OrderId, PositionId, ExecutionId, ExecutionTicket
 from nautilus_trader.model.order import OrderFactory
 from nautilus_trader.model.position import Position
@@ -22,8 +22,8 @@ from nautilus_trader.model.events import OrderPartiallyFilled, OrderFilled
 from test_kit.stubs import TestStubs
 
 UNIX_EPOCH = TestStubs.unix_epoch()
-AUDUSD_FXCM = Symbol('AUDUSD', Venue.FXCM)
-GBPUSD_FXCM = Symbol('GBPUSD', Venue.FXCM)
+AUDUSD_FXCM = Symbol('AUDUSD', Venue('FXCM'))
+GBPUSD_FXCM = Symbol('GBPUSD', Venue('FXCM'))
 
 
 class PositionTests(unittest.TestCase):

@@ -12,14 +12,13 @@ from typing import List, Dict
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport ValidString
-from nautilus_trader.model.c_enums.brokerage cimport Broker
 from nautilus_trader.model.c_enums.quote_type cimport QuoteType
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_status cimport OrderStatus
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition, market_position_string
 from nautilus_trader.model.currency cimport ExchangeRateCalculator
-from nautilus_trader.model.objects cimport Symbol, Price, Tick, Bar, Money, Instrument, Quantity
+from nautilus_trader.model.objects cimport Brokerage, Symbol, Price, Tick, Bar, Money, Instrument, Quantity
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.events cimport (
@@ -278,8 +277,7 @@ cdef class BacktestExecClient(ExecutionClient):
         Resets the account.
         """
         cdef AccountEvent initial_starting = AccountEvent(
-            self._account.id,
-            Broker.SIMULATED,
+            Brokerage('SIMULATED'),
             AccountNumber('9999'),
             self._account.currency,
             self.starting_capital,
@@ -333,8 +331,7 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef void _collateral_inquiry(self, CollateralInquiry command):
         # Generate event
         cdef AccountEvent event = AccountEvent(
-            self._account.id,
-            self._account.broker,
+            self._account.brokerage,
             self._account.account_number,
             self._account.currency,
             self._account.cash_balance,
@@ -708,8 +705,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self.account_cash_activity_day += pnl
 
         cdef AccountEvent account_event = AccountEvent(
-            self._account.id,
-            self._account.broker,
+            self._account.brokerage,
             self._account.account_number,
             self._account.currency,
             self.account_capital,

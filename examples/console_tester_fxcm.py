@@ -14,21 +14,21 @@ from nautilus_trader.common.logger import LiveLogger
 from nautilus_trader.common.account import Account
 from nautilus_trader.live.data import LiveDataClient
 from nautilus_trader.live.execution import LiveExecClient
-from nautilus_trader.model.enums import Venue, Resolution, QuoteType, Currency
-from nautilus_trader.model.objects import Symbol, BarType, BarSpecification
+from nautilus_trader.model.enums import Resolution, QuoteType, Currency
+from nautilus_trader.model.objects import Venue, Symbol, BarType, BarSpecification
 from nautilus_trader.trade.portfolio import Portfolio
 from nautilus_trader.trade.trader import Trader
 
 from examples.ema_cross import EMACrossPy
 
-AUDUSD_FXCM = Symbol('AUDUSD', Venue.FXCM)
+AUDUSD_FXCM = Symbol('AUDUSD', Venue('FXCM'))
 AUDUSD_FXCM_1_SEC_BID = BarType(AUDUSD_FXCM, BarSpecification(1, Resolution.SECOND, QuoteType.BID))
 
 
 if __name__ == "__main__":
     zmq_context = zmq.Context()
     logger = LiveLogger(level_console=logging.DEBUG, log_to_file=False)
-    data_client = LiveDataClient(zmq_context=zmq_context, venue=Venue.FXCM, logger=logger)
+    data_client = LiveDataClient(zmq_context=zmq_context, venue=Venue('FXCM'), logger=logger)
     exec_client = LiveExecClient(zmq_context=zmq_context, logger=logger)
     data_client.connect()
     exec_client.connect()

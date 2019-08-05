@@ -10,8 +10,8 @@ import unittest
 import time
 import zmq
 
-from nautilus_trader.model.enums import Venue, OrderSide
-from nautilus_trader.model.objects import Quantity, Symbol, Price
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.objects import Quantity, Venue, Symbol, Price
 from nautilus_trader.network.responses import MessageReceived
 from nautilus_trader.serialization.serializers import MsgPackCommandSerializer, MsgPackResponseSerializer
 from nautilus_trader.live.execution import LiveExecClient
@@ -20,8 +20,8 @@ from test_kit.mocks import MockCommandRouter, MockPublisher
 from test_kit.strategies import TestStrategy1
 
 UNIX_EPOCH = TestStubs.unix_epoch()
-AUDUSD_FXCM = Symbol('AUDUSD', Venue.FXCM)
-GBPUSD_FXCM = Symbol('GBPUSD', Venue.FXCM)
+AUDUSD_FXCM = Symbol('AUDUSD', Venue('FXCM'))
+GBPUSD_FXCM = Symbol('GBPUSD', Venue('FXCM'))
 
 UTF8 = 'utf8'
 LOCAL_HOST = "127.0.0.1"

@@ -14,7 +14,8 @@ from pandas import Timestamp
 
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logger import TestLogger
-from nautilus_trader.model.enums import Venue, Resolution
+from nautilus_trader.model.enums import Resolution
+from nautilus_trader.model.objects import Venue
 from nautilus_trader.backtest.data import BacktestDataClient
 
 from test_kit.objects import ObjectStorer
@@ -37,7 +38,7 @@ class BacktestDataClientTests(unittest.TestCase):
     def test_can_initialize_client_with_data(self):
         # Arrange
         client = BacktestDataClient(
-            venue=Venue.FXCM,
+            venue=Venue('FXCM'),
             instruments=[TestStubs.instrument_usdjpy()],
             data_ticks={USDJPY_FXCM: pd.DataFrame()},
             data_bars_bid={USDJPY_FXCM: {Resolution.MINUTE: self.bid_data_1min}},
@@ -54,7 +55,7 @@ class BacktestDataClientTests(unittest.TestCase):
     def test_can_set_initial_iteration(self):
         # Arrange
         client = BacktestDataClient(
-            venue=Venue.FXCM,
+            venue=Venue('FXCM'),
             instruments=[TestStubs.instrument_usdjpy()],
             data_ticks={USDJPY_FXCM: TestDataProvider.usdjpy_test_ticks()},
             data_bars_bid={USDJPY_FXCM: {Resolution.MINUTE: self.bid_data_1min}},
@@ -79,7 +80,7 @@ class BacktestDataClientTests(unittest.TestCase):
     def test_can_iterate_all_ticks(self):
         # Arrange
         client = BacktestDataClient(
-            venue=Venue.FXCM,
+            venue=Venue('FXCM'),
             instruments=[TestStubs.instrument_usdjpy()],
             data_ticks={USDJPY_FXCM: TestDataProvider.usdjpy_test_ticks()},
             data_bars_bid={USDJPY_FXCM: {Resolution.MINUTE: self.bid_data_1min}},
@@ -105,7 +106,7 @@ class BacktestDataClientTests(unittest.TestCase):
     def test_can_iterate_some_ticks(self):
         # Arrange
         client = BacktestDataClient(
-            venue=Venue.FXCM,
+            venue=Venue('FXCM'),
             instruments=[TestStubs.instrument_usdjpy()],
             data_ticks={USDJPY_FXCM: TestDataProvider.usdjpy_test_ticks()},
             data_bars_bid={USDJPY_FXCM: {Resolution.MINUTE: self.bid_data_1min}},
@@ -132,7 +133,7 @@ class BacktestDataClientTests(unittest.TestCase):
     def test_can_iterate_bars(self):
         # Arrange
         client = BacktestDataClient(
-            venue=Venue.FXCM,
+            venue=Venue('FXCM'),
             instruments=[TestStubs.instrument_usdjpy()],
             data_ticks={USDJPY_FXCM: pd.DataFrame()},
             data_bars_bid={USDJPY_FXCM: {Resolution.MINUTE: self.bid_data_1min}},
@@ -159,7 +160,7 @@ class BacktestDataClientTests(unittest.TestCase):
     def test_can_iterate_ticks_and_bars(self):
         # Arrange
         client = BacktestDataClient(
-            venue=Venue.FXCM,
+            venue=Venue('FXCM'),
             instruments=[TestStubs.instrument_usdjpy()],
             data_ticks={USDJPY_FXCM: pd.DataFrame()},
             data_bars_bid={USDJPY_FXCM: {Resolution.MINUTE: self.bid_data_1min}},

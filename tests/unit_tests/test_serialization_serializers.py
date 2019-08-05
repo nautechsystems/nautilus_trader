@@ -569,7 +569,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertTrue(isinstance(result, OrderWorking))
         self.assertEqual(OrderId('O-123456'), result.order_id)
         self.assertEqual(OrderId('BO-123456'), result.order_id_broker)
-        self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
+        self.assertEqual(Symbol('AUDUSD', Venue('FXCM')), result.symbol)
         self.assertEqual(Label('O123456_E'), result.label)
         self.assertEqual(OrderType.STOP_MARKET, result.order_type)
         self.assertEqual(Quantity(1), result.quantity)
@@ -593,7 +593,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertTrue(isinstance(result, OrderWorking))
         self.assertEqual(OrderId('O-123456'), result.order_id)
         self.assertEqual(OrderId('BO-123456'), result.order_id_broker)
-        self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
+        self.assertEqual(Symbol('AUDUSD', Venue('FXCM')), result.symbol)
         self.assertEqual(Label('O123456_E'), result.label)
         self.assertEqual(OrderSide.BUY, result.order_side)
         self.assertEqual(OrderType.STOP_MARKET, result.order_type)
@@ -687,7 +687,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertEqual(OrderId('O-123456'), result.order_id)
         self.assertEqual(ExecutionId('E123456'), result.execution_id)
         self.assertEqual(ExecutionTicket('P123456'), result.execution_ticket)
-        self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
+        self.assertEqual(Symbol('AUDUSD', Venue('FXCM')), result.symbol)
         self.assertEqual(OrderSide.BUY, result.order_side)
         self.assertEqual(Quantity(50000), result.filled_quantity)
         self.assertEqual(Quantity(50000), result.leaves_quantity)
@@ -710,7 +710,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertEqual(OrderId('O-123456'), result.order_id)
         self.assertEqual(ExecutionId('E123456'), result.execution_id)
         self.assertEqual(ExecutionTicket('P123456'), result.execution_ticket)
-        self.assertEqual(Symbol('AUDUSD', Venue.FXCM), result.symbol)
+        self.assertEqual(Symbol('AUDUSD', Venue('FXCM')), result.symbol)
         self.assertEqual(OrderSide.BUY, result.order_side)
         self.assertEqual(Quantity(100000), result.filled_quantity)
         self.assertEqual(Price('2'), result.average_price)
@@ -726,7 +726,7 @@ class MsgPackInstrumentSerializerTests(unittest.TestCase):
 
         instrument = Instrument(
             instrument_id=InstrumentId('AUDUSD.FXCM'),
-            symbol=Symbol('AUDUSD', Venue.FXCM),
+            symbol=Symbol('AUDUSD', Venue('FXCM')),
             broker_symbol='AUD/USD',
             quote_currency=Currency.USD,
             security_type=SecurityType.FOREX,

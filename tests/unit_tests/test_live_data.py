@@ -11,12 +11,10 @@ import time
 import zmq
 
 from uuid import uuid4
-from datetime import datetime, timezone
 
 from nautilus_trader.core.types import GUID
 from nautilus_trader.common.logger import LiveLogger
-from nautilus_trader.model.enums import Venue, Resolution, QuoteType
-from nautilus_trader.model.objects import Symbol, Price, Tick, BarSpecification, BarType, Bar
+from nautilus_trader.model.objects import Venue, Symbol, Price, Tick, Bar
 from nautilus_trader.live.data import LiveDataClient
 from nautilus_trader.network.responses import DataResponse
 from nautilus_trader.serialization.data import DataMapper, BsonDataSerializer, BsonInstrumentSerializer
@@ -45,7 +43,7 @@ class LiveDataClientTests(unittest.TestCase):
         self.bar_publisher = MockPublisher(zmq_context=self.zmq_context, port=55504)
         self.inst_publisher = MockPublisher(zmq_context=self.zmq_context, port=55506)
 
-        self.data_client = LiveDataClient(venue=Venue.FXCM, zmq_context=zmq.Context(), logger=LiveLogger())
+        self.data_client = LiveDataClient(venue=Venue('FXCM'), zmq_context=zmq.Context(), logger=LiveLogger())
 
     # Fixture Tear Down
     def tearDown(self):
@@ -68,33 +66,33 @@ class LiveDataClientTests(unittest.TestCase):
         self.data_client.connect()
 
         data_receiver = ObjectStorer()
-        symbol = Symbol('AUDUSD', Venue.FXCM)
+        symbol = Symbol('AUDUSD', Venue('FXCM'))
 
         # Act
         self.data_client.subscribe_ticks(symbol, handler=data_receiver.store)
 
         # Assert
-        self.assertIn(Symbol('AUDUSD', Venue.FXCM), self.data_client.subscribed_ticks())
+        self.assertIn(Symbol('AUDUSD', Venue('FXCM')), self.data_client.subscribed_ticks())
 
     def test_can_unsubscribe_from_tick_data(self):
         # Arrange
         self.data_client.connect()
 
         data_receiver = ObjectStorer()
-        symbol = Symbol('AUDUSD', Venue.FXCM)
+        symbol = Symbol('AUDUSD', Venue('FXCM'))
 
         # Act
         self.data_client.subscribe_ticks(symbol, handler=data_receiver.store)
         self.data_client.unsubscribe_ticks(symbol, handler=data_receiver.store)
 
         # Assert
-        self.assertNotIn(Symbol('AUDUSD', Venue.FXCM), self.data_client.subscribed_ticks())
+        self.assertNotIn(Symbol('AUDUSD', Venue('FXCM')), self.data_client.subscribed_ticks())
 
     def test_can_receive_published_tick_data(self):
         # Arrange
         self.data_client.connect()
 
-        symbol = Symbol('AUDUSD', Venue.FXCM)
+        symbol = Symbol('AUDUSD', Venue('FXCM'))
         data_receiver = ObjectStorer()
 
         tick = Tick(symbol,
@@ -169,27 +167,27 @@ class LiveDataClientTests(unittest.TestCase):
         self.data_client.connect()
 
         data_receiver = ObjectStorer()
-        symbol = Symbol('AUDUSD', Venue.FXCM)
+        symbol = Symbol('AUDUSD', Venue('FXCM'))
 
         # Act
         self.data_client.subscribe_instrument(symbol, handler=data_receiver.store)
 
         # Assert
-        self.assertIn(Symbol('AUDUSD', Venue.FXCM), self.data_client.subscribed_instruments())
+        self.assertIn(Symbol('AUDUSD', Venue('FXCM')), self.data_client.subscribed_instruments())
 
     def test_can_unsubscribe_from_instrument_data(self):
         # Arrange
         self.data_client.connect()
 
         data_receiver = ObjectStorer()
-        symbol = Symbol('AUDUSD', Venue.FXCM)
+        symbol = Symbol('AUDUSD', Venue('FXCM'))
 
         # Act
         self.data_client.subscribe_instrument(symbol, handler=data_receiver.store)
         self.data_client.unsubscribe_instrument(symbol, handler=data_receiver.store)
 
         # Assert
-        self.assertNotIn(Symbol('AUDUSD', Venue.FXCM), self.data_client.subscribed_instruments())
+        self.assertNotIn(Symbol('AUDUSD', Venue('FXCM')), self.data_client.subscribed_instruments())
 
     def test_can_receive_published_instrument_data(self):
         # Arrange
@@ -212,7 +210,7 @@ class LiveDataClientTests(unittest.TestCase):
 
     def test_can_request_tick_data(self):
         # Arrange
-        symbol = Symbol('AUDUSD', Venue.FXCM)
+        symbol = Symbol('AUDUSD', Venue('FXCM'))
         tick = Tick(symbol,
                     Price('1.00000'),
                     Price('1.00001'),
@@ -275,7 +273,7 @@ class LiveDataClientTests(unittest.TestCase):
 
     def test_can_request_instrument_data(self):
         # Arrange
-        symbol = Symbol('GBPUSD', Venue.FXCM)
+        symbol = Symbol('GBPUSD', Venue('FXCM'))
         instruments = [TestStubs.instrument_gbpusd()]
         instrument_data = self.data_mapper.map_instruments(instruments)
 

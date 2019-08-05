@@ -15,9 +15,7 @@ from zmq import Context
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.concurrency cimport ObjectCache
 from nautilus_trader.core.message cimport Response
-from nautilus_trader.model.c_enums.venue cimport Venue
-from nautilus_trader.model.c_enums.venue cimport venue_string
-from nautilus_trader.model.objects cimport Symbol, BarType, Instrument
+from nautilus_trader.model.objects cimport Venue, Symbol, BarType, Instrument
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.guid cimport LiveGuidFactory
 from nautilus_trader.common.logger cimport Logger, LiveLogger
@@ -327,10 +325,10 @@ cdef class LiveDataClient(DataClient):
         """
         cdef dict query = {
             DATA_TYPE: "Instrument[]",
-            VENUE: venue_string(self.venue),
+            VENUE: self.venue.value,
         }
 
-        self._log.info(f"Requesting all instruments for the {venue_string(self.venue)} ...")
+        self._log.info(f"Requesting all instruments for the {self.venue} ...")
 
         cdef DataRequest request = DataRequest(query, self._guid_factory.generate(), self.time_now())
         cdef bytes request_bytes = self._request_serializer.serialize(request)
