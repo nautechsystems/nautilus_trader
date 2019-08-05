@@ -40,10 +40,10 @@ cdef class DataClient:
         self._clock = clock
         self._guid_factory = guid_factory
         self._log = LoggerAdapter(self.__class__.__name__, logger)
-        self._tick_handlers = ConcurrentDictionary(Symbol, list)        # type: Dict[Symbol, List[TickHandler]]
-        self._bar_handlers = ConcurrentDictionary(BarType, list)        # type: Dict[BarType, List[BarHandler]]
+        self._tick_handlers = ConcurrentDictionary(Symbol, list)        # values: List[TickHandler]]
+        self._bar_handlers = ConcurrentDictionary(BarType, list)        # values: List[BarHandler]]
         self._instrument_handlers = ConcurrentDictionary(Symbol, list)  # values: List[InstrumentHandler]]
-        self._instruments = ConcurrentDictionary(Symbol, Instrument)    # type: Dict[Symbol, Instrument]
+        self._instruments = ConcurrentDictionary(Symbol, Instrument)
 
         self._log.info("Initialized.")
 
@@ -322,8 +322,9 @@ cdef class DataClient:
 
     cdef void _reset(self):
         # Reset the data client by returning all stateful internal values to their initial value
-        self._instruments = ConcurrentDictionary()    # type: Dict[Symbol, Instrument]
-        self._tick_handlers = ConcurrentDictionary()  # type: Dict[Symbol, List[TickHandler]]
-        self._bar_handlers = ConcurrentDictionary()   # type: Dict[BarType, List[BarHandler]]
+        self._tick_handlers = ConcurrentDictionary(Symbol, list)        # values: List[TickHandler]]
+        self._bar_handlers = ConcurrentDictionary(BarType, list)        # values: List[BarHandler]]
+        self._instrument_handlers = ConcurrentDictionary(Symbol, list)  # values: List[InstrumentHandler]]
+        self._instruments = ConcurrentDictionary(Symbol, Instrument)
 
         self._log.debug("Reset.")

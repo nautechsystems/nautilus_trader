@@ -61,3 +61,4 @@ cdef class ObjectCache:
     cdef object _parser
 
     cpdef object get(self, str key)
+    cpdef void clear(self)

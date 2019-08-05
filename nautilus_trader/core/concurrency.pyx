@@ -280,3 +280,9 @@ cdef class ObjectCache:
             self._cache[key] = parsed
 
         return parsed
+
+    cpdef void clear(self):
+        """
+        Clears all cached values.
+        """
+        self._cache.clear()
