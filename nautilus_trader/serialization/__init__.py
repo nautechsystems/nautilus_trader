@@ -5,3 +5,5 @@
 #  https://nautechsystems.io
 # </copyright>
 # -------------------------------------------------------------------------------------------------
+
+from nautilus_trader.serialization import common
