@@ -14,8 +14,8 @@ from nautilus_trader.common.brokerage import CommissionCalculator
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.guid import TestGuidFactory
 from nautilus_trader.common.logger import TestLogger
-from nautilus_trader.model.enums import Venue, OrderSide
-from nautilus_trader.model.objects import Quantity, Symbol, Price, Money
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.objects import Quantity, Venue, Symbol, Price, Money
 from nautilus_trader.model.events import OrderRejected, OrderCancelled, OrderWorking, OrderModified, OrderFilled
 from nautilus_trader.trade.strategy import TradeStrategy
 from nautilus_trader.backtest.execution import BacktestExecClient
@@ -26,7 +26,7 @@ from test_kit.data import TestDataProvider
 from test_kit.stubs import TestStubs
 
 UNIX_EPOCH = TestStubs.unix_epoch()
-USDJPY_FXCM = Symbol('USDJPY', Venue.FXCM)
+USDJPY_FXCM = Symbol('USDJPY', Venue('FXCM'))
 
 
 class BacktestExecClientTests(unittest.TestCase):

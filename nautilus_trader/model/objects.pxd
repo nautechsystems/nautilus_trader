@@ -8,9 +8,9 @@
 
 from cpython.datetime cimport datetime, timedelta
 
+from nautilus_trader.core.types cimport StringValue
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.security_type cimport SecurityType
-from nautilus_trader.model.c_enums.venue cimport Venue
 from nautilus_trader.model.c_enums.resolution cimport Resolution
 from nautilus_trader.model.c_enums.quote_type cimport QuoteType
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -24,6 +24,24 @@ cdef class Quantity:
     cdef bint equals(self, Quantity other)
 
 
+cdef class Brokerage(StringValue):
+    """
+    Represents a brokerage.
+    """
+
+
+cdef class Venue(StringValue):
+    """
+    Represents a trading venue for a financial market tradeable instrument.
+    """
+
+
+cdef class Exchange(Venue):
+    """
+    Represents an exchange that financial market instruments are traded on.
+    """
+
+
 cdef class Symbol:
     """
     Represents the symbol for a financial market tradeable instrument.
@@ -31,7 +49,6 @@ cdef class Symbol:
     cdef readonly str value
     cdef readonly str code
     cdef readonly Venue venue
-    cdef str venue_string(self)
     cdef bint equals(self, Symbol other)
 
 

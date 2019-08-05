@@ -7,10 +7,9 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.types cimport ValidString
-from nautilus_trader.model.c_enums.brokerage cimport Broker
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.events cimport AccountEvent
-from nautilus_trader.model.objects cimport Money
+from nautilus_trader.model.objects cimport Brokerage, Money
 
 
 cdef class Account:
@@ -26,7 +25,7 @@ cdef class Account:
 
         self.initialized = False
         self.id = None
-        self.broker = Broker.UNKNOWN
+        self.brokerage = Brokerage('UNKNOWN')
         self.account_number = None
         self.currency = currency
         self.cash_balance = Money.zero()
@@ -57,13 +56,13 @@ cdef class Account:
         """"
         Override the default hash implementation.
         """
-        return hash((self.broker, self.account_number))
+        return hash((self.brokerage, self.account_number))
 
     def __str__(self) -> str:
         """
         Return the str() string representation of the account.
         """
-        return f"Account({str(self.broker)}-{str(self.account_number)})"
+        return f"Account({str(self.brokerage)}-{str(self.account_number)})"
 
     def __repr__(self) -> str:
         """
@@ -83,7 +82,7 @@ cdef class Account:
         
         :param event: The event to initialize with.
         """
-        self.broker = event.broker
+        self.brokerage = event.brokerage
         self.account_number = event.account_number
         self.id = event.account_id
         self.currency = event.currency
@@ -121,7 +120,7 @@ cdef class Account:
 
         self.initialized = False
         self.id = None
-        self.broker = Broker.UNKNOWN
+        self.brokerage = Brokerage('UNKNOWN')
         self.account_number = None
         self.currency = Currency.UNKNOWN
         self.cash_balance = Money.zero()

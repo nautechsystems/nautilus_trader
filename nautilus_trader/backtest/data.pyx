@@ -14,10 +14,9 @@ from pandas import DataFrame
 from typing import Set, List, Dict, Callable
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.c_enums.venue cimport Venue
 from nautilus_trader.model.c_enums.quote_type cimport QuoteType
 from nautilus_trader.model.c_enums.resolution cimport Resolution, resolution_string
-from nautilus_trader.model.objects cimport Symbol, Instrument, Tick, BarType, Bar, BarSpecification
+from nautilus_trader.model.objects cimport Venue, Symbol, Instrument, Tick, BarType, Bar, BarSpecification
 from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.guid cimport TestGuidFactory
 from nautilus_trader.common.logger cimport Logger

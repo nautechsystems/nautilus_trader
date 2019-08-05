@@ -15,8 +15,8 @@ from nautilus_trader.common.brokerage import CommissionCalculator
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.guid import TestGuidFactory
 from nautilus_trader.common.logger import TestLogger
-from nautilus_trader.model.enums import Venue, OrderSide
-from nautilus_trader.model.objects import Quantity, Symbol, Price, Money
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.objects import Quantity, Venue, Symbol, Price, Money
 from nautilus_trader.model.order import OrderFactory
 from nautilus_trader.model.identifiers import OrderId, PositionId, ExecutionId, ExecutionTicket
 from nautilus_trader.model.position import Position
@@ -28,8 +28,8 @@ from nautilus_trader.trade.portfolio import Portfolio
 from test_kit.stubs import TestStubs
 
 UNIX_EPOCH = TestStubs.unix_epoch()
-AUDUSD_FXCM = Symbol('AUDUSD', Venue.FXCM)
-GBPUSD_FXCM = Symbol('GBPUSD', Venue.FXCM)
+AUDUSD_FXCM = Symbol('AUDUSD', Venue('FXCM'))
+GBPUSD_FXCM = Symbol('GBPUSD', Venue('FXCM'))
 
 
 class PortfolioTests(unittest.TestCase):

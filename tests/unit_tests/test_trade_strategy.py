@@ -18,8 +18,8 @@ from nautilus_trader.common.brokerage import CommissionCalculator
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.guid import TestGuidFactory
 from nautilus_trader.common.logger import TestLogger
-from nautilus_trader.model.enums import Venue, OrderSide
-from nautilus_trader.model.objects import Quantity, Symbol, Price, Money
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.objects import Quantity, Venue, Symbol, Price, Money
 from nautilus_trader.model.identifiers import OrderId, PositionId
 from nautilus_trader.model.position import Position
 from nautilus_trader.model.enums import OrderStatus, Currency
@@ -35,8 +35,8 @@ from test_kit.stubs import TestStubs
 from test_kit.strategies import TestStrategy1
 
 UNIX_EPOCH = TestStubs.unix_epoch()
-USDJPY_FXCM = Symbol('USDJPY', Venue.FXCM)
-AUDUSD_FXCM = Symbol('AUDUSD', Venue.FXCM)
+USDJPY_FXCM = Symbol('USDJPY', Venue('FXCM'))
+AUDUSD_FXCM = Symbol('AUDUSD', Venue('FXCM'))
 
 
 class TradeStrategyTests(unittest.TestCase):
@@ -268,7 +268,7 @@ class TradeStrategyTests(unittest.TestCase):
     def test_can_get_last_tick(self):
         strategy = TradeStrategy(id_tag_strategy='001')
 
-        tick = Tick(Symbol('AUDUSD', Venue.FXCM),
+        tick = Tick(Symbol('AUDUSD', Venue('FXCM')),
                     Price('1.00000'),
                     Price('1.00001'),
                     datetime(2018, 1, 1, 19, 59, 1, 0, timezone.utc))
@@ -419,7 +419,7 @@ class TradeStrategyTests(unittest.TestCase):
         strategy = TradeStrategy(id_tag_strategy='001')
         self.exec_client.register_strategy(strategy)
 
-        tick = Tick(Symbol('USDJPY', Venue.FXCM),
+        tick = Tick(Symbol('USDJPY', Venue('FXCM')),
                     Price('110.80000'),
                     Price('110.80010'),
                     datetime(2018, 1, 1, 19, 59, 1, 0, timezone.utc))
@@ -437,7 +437,7 @@ class TradeStrategyTests(unittest.TestCase):
         strategy = TradeStrategy(id_tag_strategy='001')
         self.exec_client.register_strategy(strategy)
 
-        tick = Tick(Symbol('AUDUSD', Venue.FXCM),
+        tick = Tick(Symbol('AUDUSD', Venue('FXCM')),
                     Price('0.80000'),
                     Price('0.80010'),
                     datetime(2018, 1, 1, 19, 59, 1, 0, timezone.utc))

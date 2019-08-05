@@ -12,9 +12,8 @@ import uuid
 from decimal import Decimal
 
 from nautilus_trader.core.types import GUID, ValidString
-from nautilus_trader.model.enums import Broker
 from nautilus_trader.model.enums import Currency
-from nautilus_trader.model.objects import Money
+from nautilus_trader.model.objects import Brokerage, Money
 from nautilus_trader.model.events import AccountEvent
 from nautilus_trader.model.identifiers import AccountId, AccountNumber
 from nautilus_trader.common.account import Account
@@ -30,8 +29,7 @@ class AccountTests(unittest.TestCase):
         account = Account()
 
         event = AccountEvent(
-            AccountId('FXCM-D102412895'),
-            Broker.FXCM,
+            Brokerage('FXCM'),
             AccountNumber('D102412895'),
             Currency.AUD,
             Money(1000000),
@@ -50,7 +48,7 @@ class AccountTests(unittest.TestCase):
         # Assert
         self.assertTrue(account.initialized)
         self.assertEqual(AccountId('FXCM-D102412895'), account.id)
-        self.assertEqual(Broker.FXCM, account.broker)
+        self.assertEqual(Brokerage('FXCM'), account.brokerage)
         self.assertEqual(AccountNumber('D102412895'), account.account_number)
         self.assertEqual(Currency.AUD, account.currency)
         self.assertEqual(Money(1000000), account.free_equity)
@@ -68,7 +66,7 @@ class AccountTests(unittest.TestCase):
 
         event = AccountEvent(
             AccountId('FXCM-D102412895'),
-            Broker.FXCM,
+            Brokerage('FXCM'),
             AccountNumber('D102412895'),
             Currency.AUD,
             Money(1000000),
@@ -95,7 +93,7 @@ class AccountTests(unittest.TestCase):
 
         event = AccountEvent(
             AccountId('FXCM-D102412895'),
-            Broker.FXCM,
+            Brokerage('FXCM'),
             AccountNumber('D102412895'),
             Currency.AUD,
             Money(100000),
@@ -114,7 +112,7 @@ class AccountTests(unittest.TestCase):
         # Assert
         self.assertTrue(account.initialized)
         self.assertEqual(AccountId('FXCM-D102412895'), account.id)
-        self.assertEqual(Broker.FXCM, account.broker)
+        self.assertEqual(Brokerage('FXCM'), account.brokerage)
         self.assertEqual(AccountNumber('D102412895'), account.account_number)
         self.assertEqual(Currency.AUD, account.currency)
         self.assertEqual(Money(97000), account.free_equity)
@@ -132,7 +130,7 @@ class AccountTests(unittest.TestCase):
 
         event = AccountEvent(
             AccountId('FXCM-D102412895'),
-            Broker.FXCM,
+            Brokerage('FXCM'),
             AccountNumber('D102412895'),
             Currency.AUD,
             Money(20000),
@@ -151,7 +149,7 @@ class AccountTests(unittest.TestCase):
         # Assert
         self.assertTrue(account.initialized)
         self.assertEqual(AccountId('FXCM-D102412895'), account.id)
-        self.assertEqual(Broker.FXCM, account.broker)
+        self.assertEqual(Brokerage('FXCM'), account.brokerage)
         self.assertEqual(AccountNumber('D102412895'), account.account_number)
         self.assertEqual(Currency.AUD, account.currency)
         self.assertEqual(Money.zero(), account.free_equity)
@@ -169,7 +167,7 @@ class AccountTests(unittest.TestCase):
 
         event = AccountEvent(
             AccountId('FXCM-D102412895'),
-            Broker.FXCM,
+            Brokerage('FXCM'),
             AccountNumber('D102412895'),
             Currency.AUD,
             Money(20000),
@@ -188,7 +186,7 @@ class AccountTests(unittest.TestCase):
         # Assert
         self.assertTrue(account.initialized)
         self.assertEqual(AccountId('FXCM-D102412895'), account.id)
-        self.assertEqual(Broker.FXCM, account.broker)
+        self.assertEqual(Brokerage('FXCM'), account.brokerage)
         self.assertEqual(AccountNumber('D102412895'), account.account_number)
         self.assertEqual(Currency.AUD, account.currency)
         self.assertEqual(Money.zero(), account.free_equity)

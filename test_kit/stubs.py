@@ -9,15 +9,15 @@
 from decimal import Decimal
 from datetime import datetime, timedelta, timezone
 
-from nautilus_trader.model.enums import Venue, Resolution, QuoteType, Currency, SecurityType
-from nautilus_trader.model.objects import Quantity, Symbol, Price, BarSpecification, BarType, Bar, Instrument
+from nautilus_trader.model.enums import Resolution, QuoteType, Currency, SecurityType
+from nautilus_trader.model.objects import Quantity, Venue, Symbol, Price, BarSpecification, BarType, Bar, Instrument
 from nautilus_trader.model.identifiers import InstrumentId
 
 # Unix epoch is the UTC time at 00:00:00 on 1/1/1970
 UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc)
-AUDUSD_FXCM = Symbol('AUDUSD', Venue.FXCM)
-GBPUSD_FXCM = Symbol('GBPUSD', Venue.FXCM)
-USDJPY_FXCM = Symbol('USDJPY', Venue.FXCM)
+AUDUSD_FXCM = Symbol('AUDUSD', Venue('FXCM'))
+GBPUSD_FXCM = Symbol('GBPUSD', Venue('FXCM'))
+USDJPY_FXCM = Symbol('USDJPY', Venue('FXCM'))
 ONE_MINUTE_BID = BarSpecification(1, Resolution.MINUTE, QuoteType.BID)
 ONE_MINUTE_ASK = BarSpecification(1, Resolution.MINUTE, QuoteType.ASK)
 ONE_MINUTE_MID = BarSpecification(1, Resolution.MINUTE, QuoteType.MID)
@@ -45,7 +45,7 @@ class TestStubs:
     def instrument_gbpusd():
         return Instrument(
             InstrumentId('GBPUSD.FXCM'),
-            Symbol('GBPUSD', Venue.FXCM),
+            Symbol('GBPUSD', Venue('FXCM')),
             'GBP/USD',
             Currency.USD,
             SecurityType.FOREX,
@@ -66,7 +66,7 @@ class TestStubs:
     def instrument_usdjpy():
         return Instrument(
             InstrumentId('USDJPY.FXCM'),
-            Symbol('USDJPY', Venue.FXCM),
+            Symbol('USDJPY', Venue('FXCM')),
             'USD/JPY',
             Currency.JPY,
             SecurityType.FOREX,

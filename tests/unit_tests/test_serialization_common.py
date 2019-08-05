@@ -20,7 +20,7 @@ class SerializationFunctionTests(unittest.TestCase):
 
     def test_can_parse_symbol_from_string(self):
         # Arrange
-        symbol = Symbol('AUDUSD', Venue.FXCM)
+        symbol = Symbol('AUDUSD', Venue('FXCM'))
 
         # Act
         result = parse_symbol(symbol.value)

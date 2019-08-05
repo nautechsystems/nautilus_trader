@@ -11,8 +11,8 @@ import iso8601
 
 from cpython.datetime cimport datetime
 
-from nautilus_trader.model.enums import Venue, Resolution, QuoteType, OrderSide
-from nautilus_trader.model.c_enums.venue cimport Venue
+from nautilus_trader.model.enums import Resolution, QuoteType, OrderSide
+from nautilus_trader.model.objects cimport Venue
 from nautilus_trader.model.c_enums.resolution cimport Resolution
 from nautilus_trader.model.c_enums.quote_type cimport QuoteType
 from nautilus_trader.model.identifiers cimport Label
@@ -83,7 +83,7 @@ cpdef Symbol parse_symbol(str symbol_string):
     :return: Symbol.
     """
     cdef tuple split_symbol = symbol_string.partition('.')
-    return Symbol(split_symbol[0], Venue[split_symbol[2]])
+    return Symbol(split_symbol[0], Venue(split_symbol[2]))
 
 cpdef Tick parse_tick(Symbol symbol, str tick_string):
     """
@@ -129,10 +129,10 @@ cpdef BarType parse_bar_type(str bar_type_string):
     cdef list split_string = re.split(r'[.-]+', bar_type_string)
     cdef str resolution = split_string[3].split('[')[0]
     cdef str quote_type = split_string[3].split('[')[1].strip(']')
-    cdef Symbol symbol = Symbol(split_string[0], Venue[split_string[1].upper()])
+    cdef Symbol symbol = Symbol(split_string[0], Venue(split_string[1].upper()))
     cdef BarSpecification bar_spec = BarSpecification(int(split_string[2]),
-                                                          Resolution[resolution.upper()],
-                                                          QuoteType[quote_type.upper()])
+                                                      Resolution[resolution.upper()],
+                                                      QuoteType[quote_type.upper()])
     return BarType(symbol, bar_spec)
 
 cpdef Bar parse_bar(str bar_string):
