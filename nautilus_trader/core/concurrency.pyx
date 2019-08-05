@@ -190,6 +190,12 @@ cdef class ConcurrentDictionary:
         self._lock.release()
         return values
 
+    cpdef object items(self):
+        self._lock.acquire()
+        items = self._internal.items()
+        self._lock.release()
+        return items
+
     cpdef object get(self, k, default=None):
         self._lock.acquire()
         item = self._internal.get(k, default)

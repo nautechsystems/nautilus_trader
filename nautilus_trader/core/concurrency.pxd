@@ -38,6 +38,7 @@ cdef class ConcurrentDictionary:
 
     cpdef object keys(self)
     cpdef object values(self)
+    cpdef object items(self)
     cpdef object get(self, k, default=*)
     cpdef object setdefault(self, k, default=*)
     cpdef object pop(self, k, d=*)

@@ -65,7 +65,7 @@ cdef class Position:
 
     cdef bint equals(self, Position other):
         """
-        Compare if the object equals the given object.
+        Return a value indicating whether the object equals the given object.
         
         :param other: The other object to compare
         :return: True if the objects are equal, otherwise False.

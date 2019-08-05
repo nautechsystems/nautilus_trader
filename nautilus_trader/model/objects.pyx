@@ -47,7 +47,7 @@ cdef class Quantity:
 
     cdef bint equals(self, Quantity other):
         """
-        Compare if the object equals the given object.
+        Return a value indicating whether the object equals the given object.
         
         :param other: The other string to compare
         :return: True if the objects are equal, otherwise False.
@@ -150,7 +150,7 @@ cdef class Symbol:
 
     cdef bint equals(self, Symbol other):
         """
-        Compare if the object equals the given object.
+        Return a value indicating whether the object equals the given object.
         
         :param other: The other object to compare
         :return: True if the objects are equal, otherwise False.
@@ -587,7 +587,7 @@ cdef class BarSpecification:
 
     cdef bint equals(self, BarSpecification other):
         """
-        Compare if the object equals the given object.
+        Return a value indicating whether the object equals the given object.
         
         :param other: The other object to compare
         :return: True if the objects are equal, otherwise False.
@@ -678,7 +678,7 @@ cdef class BarType:
 
     cdef bint equals(self, BarType other):
         """
-        Compare if the object equals the given object.
+        Return a value indicating whether the object equals the given object.
         
         :param other: The other object to compare
         :return: True if the objects are equal, otherwise False.
