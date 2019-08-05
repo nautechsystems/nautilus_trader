@@ -8,6 +8,7 @@
 
 from cpython.datetime cimport datetime
 
+from nautilus_trader.core.concurrency cimport ConcurrentDictionary
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.guid cimport GuidFactory
 from nautilus_trader.common.logger cimport LoggerAdapter
@@ -23,10 +24,10 @@ cdef class DataClient:
     cdef Clock _clock
     cdef GuidFactory _guid_factory
     cdef LoggerAdapter _log
-    cdef dict _tick_handlers
-    cdef dict _bar_handlers
-    cdef dict _instrument_handlers
-    cdef dict _instruments
+    cdef ConcurrentDictionary _tick_handlers
+    cdef ConcurrentDictionary _bar_handlers
+    cdef ConcurrentDictionary _instrument_handlers
+    cdef ConcurrentDictionary _instruments
 
     cdef readonly Venue venue
 

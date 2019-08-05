@@ -36,9 +36,11 @@ cdef class ConcurrentDictionary:
     cdef FastRLock _lock
     cdef dict _internal
 
-    cpdef get(self, k, default=*)
-    cpdef setdefault(self, k, default=*)
-    cpdef pop(self, k, d=*)
+    cpdef object keys(self)
+    cpdef object values(self)
+    cpdef object get(self, k, default=*)
+    cpdef object setdefault(self, k, default=*)
+    cpdef object pop(self, k, d=*)
 
 
 cdef class ObjectCache:

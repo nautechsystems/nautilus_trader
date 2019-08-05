@@ -67,9 +67,22 @@ class ObjectCacheTests(unittest.TestCase):
         symbol = 'AUDUSD.FXCM'
 
         # Act
-        result = cache.get('AUDUSD.FXCM')
+        result = cache.get(symbol)
 
         # Assert
         self.assertEqual(symbol, str(result))
 
+    def test_can_get_from_cache(self):
+        # Arrange
+        cache = ObjectCache(parse_symbol)
+        symbol = 'AUDUSD.FXCM'
+        cache.get(symbol)
 
+        # Act
+        cache.get(symbol)
+        result1 = cache.get(symbol)
+        result2 = cache.get(symbol)
+
+        # Assert
+        self.assertEqual(symbol, str(result1))
+        self.assertEqual(id(result1), id(result2))
