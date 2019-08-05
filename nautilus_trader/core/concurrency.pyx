@@ -6,9 +6,9 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from typing import Callable
 from cpython cimport pythread
 from cpython.exc cimport PyErr_NoMemory
+from typing import Callable
 
 from nautilus_trader.core.correctness cimport Condition
 
