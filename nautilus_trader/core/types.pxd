@@ -15,12 +15,14 @@ cdef class ValidString:
     cdef ValidString none()
     cdef bint equals(self, ValidString other)
 
+
 cdef class Identifier:
     """
     Represents an identifier.
     """
     cdef readonly str value
     cpdef bint equals(self, Identifier other)
+
 
 cdef class GUID(Identifier):
     """
