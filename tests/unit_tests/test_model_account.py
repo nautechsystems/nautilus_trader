@@ -65,7 +65,6 @@ class AccountTests(unittest.TestCase):
         account = Account()
 
         event = AccountEvent(
-            AccountId('FXCM-D102412895'),
             Brokerage('FXCM'),
             AccountNumber('D102412895'),
             Currency.AUD,
@@ -92,7 +91,6 @@ class AccountTests(unittest.TestCase):
         account = Account()
 
         event = AccountEvent(
-            AccountId('FXCM-D102412895'),
             Brokerage('FXCM'),
             AccountNumber('D102412895'),
             Currency.AUD,
@@ -129,7 +127,6 @@ class AccountTests(unittest.TestCase):
         account = Account()
 
         event = AccountEvent(
-            AccountId('FXCM-D102412895'),
             Brokerage('FXCM'),
             AccountNumber('D102412895'),
             Currency.AUD,
@@ -166,7 +163,6 @@ class AccountTests(unittest.TestCase):
         account = Account()
 
         event = AccountEvent(
-            AccountId('FXCM-D102412895'),
             Brokerage('FXCM'),
             AccountNumber('D102412895'),
             Currency.AUD,
