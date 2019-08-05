@@ -133,7 +133,7 @@ cdef class Order:
 
     cdef bint equals(self, Order other):
         """
-        Compare if the object equals the given object.
+        Return a value indicating whether the object equals the given object.
         
         :param other: The other object to compare
         :return: True if the objects are equal, otherwise False.
@@ -325,7 +325,7 @@ cdef class AtomicOrder:
 
     cdef bint equals(self, AtomicOrder other):
         """
-        Compare if the object equals the given object.
+        Return a value indicating whether the object equals the given object.
         
         :param other: The other object to compare
         :return: True if the objects are equal, otherwise False.

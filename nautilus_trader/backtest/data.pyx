@@ -96,8 +96,8 @@ cdef class BacktestDataClient(DataClient):
 
         self._log.info("Preparing data...")
 
-        # Create instruments dictionary
-        self._instruments = { instrument.symbol: instrument for instrument in instruments }  # type: Dict[Symbol, Instrument]
+        # Update instruments dictionary
+        [self._handle_instrument(instrument) for instrument in instruments]
 
         # Create data symbols set
         cdef set tick_data_symbols = { symbol for symbol in self.data_ticks }    # type: Set[Symbol]

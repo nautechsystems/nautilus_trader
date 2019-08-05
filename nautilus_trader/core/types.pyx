@@ -40,7 +40,7 @@ cdef class ValidString:
 
     cdef bint equals(self, ValidString other):
         """
-        Compare if the object equals the given object.
+        Return a value indicating whether the object equals the given object.
         
         :param other: The other string to compare
         :return: True if the objects are equal, otherwise False.
@@ -95,7 +95,7 @@ cdef class Identifier:
 
     cpdef bint equals(self, Identifier other):
         """
-        Compare if the object equals the given object.
+        Return a value indicating whether the object equals the given object.
         
         :param other: The other object to compare
         :return: True if the objects are equal, otherwise False.
