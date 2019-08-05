@@ -176,3 +176,4 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 09/07/19 15323948 function calls (15095596 primitive calls) in 14.408 seconds (performance check)
         # 25/07/19 15274063 function calls (15045703 primitive calls) in 14.408 seconds (removed compiler directives for perf)
         # 31/07/19 15274063 function calls (15045703 primitive calls) in 14.589 seconds (numerous changes)
+        # 31/07/19 15324690 function calls (15096346 primitive calls) in 15.134 seconds (add concurrent dictionaries to data client base)
