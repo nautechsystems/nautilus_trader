@@ -48,7 +48,7 @@ cdef class Message:
         """
         Return a value indicating whether the given message is equal to this message.
 
-        :param other: The other message to compare
+        :param other: The other message.
         :return: True if the messages are equal, otherwise False.
         """
         return self.equals(other)
@@ -57,7 +57,7 @@ cdef class Message:
         """
         Return a value indicating whether the given message is not equal to this message.
 
-        :param other: The other message to compare
+        :param other: The other message.
         :return: True if the messages are not equal, otherwise False.
         """
         return not self.equals(other)

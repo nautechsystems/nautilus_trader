@@ -6,25 +6,18 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-cdef class ValidString:
-    """
-    Represents a validated string (validated with Condition.valid_string()).
-    """
+cdef class StringValue:
     cdef readonly str value
-    @staticmethod
-    cdef ValidString none()
-    cdef bint equals(self, ValidString other)
+    cpdef bint equals(self, StringValue other)
 
 
-cdef class Identifier:
-    """
-    Represents an identifier.
-    """
-    cdef readonly str value
-    cpdef bint equals(self, Identifier other)
+cdef class ValidString(StringValue):
+    pass
+
+
+cdef class Identifier(StringValue):
+    pass
 
 
 cdef class GUID(Identifier):
-    """
-    Represents a globally unique identifier.
-    """
+    pass

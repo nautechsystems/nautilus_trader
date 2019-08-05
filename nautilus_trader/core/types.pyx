@@ -11,7 +11,77 @@ from uuid import UUID
 from nautilus_trader.core.correctness cimport Condition
 
 
-cdef class ValidString:
+cdef class StringValue:
+    """
+    The abstract base class for all string values.
+    """
+
+    def __init__(self, str value):
+        """
+        Initializes a new instance of the StringValue abstract class.
+
+        :param value: The value of the string.
+        """
+        Condition.valid_string(value, 'value')
+
+        self.value = value
+
+    cpdef bint equals(self, StringValue other):
+        """
+        Return a value indicating whether the given object is equal to this object.
+        
+        :param other: The other object to compare
+        :return: True if the objects are equal, otherwise False.
+        """
+        if isinstance(other, self.__class__):
+            return self.value == other.value
+        else:
+            return False
+
+    def __eq__(self, StringValue other) -> bool:
+        """
+        Return a value indicating whether the given object is equal to this object.
+
+        :param other: The other object.
+        :return: True if the objects are equal, otherwise False.
+        """
+        return self.equals(other)
+
+    def __ne__(self, StringValue other) -> bool:
+        """
+        Return a value indicating whether the object is not equal to this object.
+
+        :param other: The other object.
+        :return: True if the objects are not equal, otherwise False.
+        """
+        return not self.equals(other)
+
+    def __hash__(self) -> int:
+        """"
+        Return the hash for this object.
+
+        :return: int.
+        """
+        return hash(self.value)
+
+    def __str__(self) -> str:
+        """
+        Return the str() representation of the object.
+
+        :return: str.
+        """
+        return self.value
+
+    def __repr__(self) -> str:
+        """
+        Return the repr() representation of the object.
+
+        :return: str.
+        """
+        return f"<{str(self.__class__.__name__)}({str(self.value)}) object at {id(self)}>"
+
+
+cdef class ValidString(StringValue):
     """
     Represents a previously validated string (validated with Condition.valid_string()).
     """
@@ -24,61 +94,11 @@ cdef class ValidString:
         """
         if value is None or value == '':
             value = 'NONE'
-        else:
-            Condition.valid_string(value, 'value')
 
-        self.value = value
-
-    @staticmethod
-    cdef ValidString none():
-        """
-        Return a valid string with a value of 'NONE'.
-        
-        :return: ValidString.
-        """
-        return ValidString()
-
-    cdef bint equals(self, ValidString other):
-        """
-        Return a value indicating whether the object equals the given object.
-        
-        :param other: The other string to compare
-        :return: True if the objects are equal, otherwise False.
-        """
-        return self.value == other.value
-
-    def __eq__(self, ValidString other) -> bool:
-        """
-        Override the default equality comparison.
-        """
-        return self.equals(other)
-
-    def __ne__(self, ValidString other) -> bool:
-        """
-        Override the default not-equals comparison.
-        """
-        return not self.equals(other)
-
-    def __hash__(self) -> int:
-        """"
-        Override the default hash implementation.
-        """
-        return hash(self.value)
-
-    def __str__(self) -> str:
-        """
-        :return: The str() string representation of the valid string.
-        """
-        return self.value
-
-    def __repr__(self) -> str:
-        """
-        :return: The repr() string representation of the valid string.
-        """
-        return f"<{self.__class__.__name__}({self.value}) object at {id(self)}>"
+        super().__init__(value)
 
 
-cdef class Identifier:
+cdef class Identifier(StringValue):
     """
     The abstract base class for all identifiers.
     """
@@ -89,49 +109,21 @@ cdef class Identifier:
 
         :param value: The value of the identifier.
         """
-        Condition.valid_string(value, 'value')
-
-        self.value = value
-
-    cpdef bint equals(self, Identifier other):
-        """
-        Return a value indicating whether the object equals the given object.
-        
-        :param other: The other object to compare
-        :return: True if the objects are equal, otherwise False.
-        """
-        if isinstance(other, self.__class__):
-            return self.value == other.value
-        else:
-            return False
-
-    def __eq__(self, Identifier other) -> bool:
-        """
-        Override the default equality comparison.
-        """
-        return self.equals(other)
-
-    def __ne__(self, Identifier other) -> bool:
-        """
-        Override the default not-equals comparison.
-        """
-        return not self.equals(other)
-
-    def __hash__(self) -> int:
-        """"
-        Override the default hash implementation.
-        """
-        return hash(self.value)
+        super().__init__(value)
 
     def __str__(self) -> str:
         """
-        :return: The str() string representation of the identifier.
+        Return the str() representation of the object.
+
+        :return: str.
         """
         return f"{str(self.__class__.__name__)}({self.value})"
 
     def __repr__(self) -> str:
         """
-        :return: The repr() string representation of the identifier.
+        Return the repr() representation of the object.
+
+        :return: str.
         """
         return f"<{str(self)} object at {id(self)}>"
 
