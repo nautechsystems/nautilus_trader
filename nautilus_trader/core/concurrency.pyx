@@ -122,13 +122,20 @@ cdef inline void unlock_lock(FastRLock lock) nogil:
 
 cdef class ConcurrentDictionary:
     """
-    Provides a thread safe wrapper to a standard python dictionary.
+    Provides a strongly typed thread safe dictionary.
     """
 
-    def __init__(self):
+    def __init__(self, type type_key, type type_value):
         """
         Initializes a new instance of the ConcurrentDictionary class.
         """
+        Condition.not_none(type_key, 'type_key')
+        Condition.not_none(type_value, 'type_value')
+        Condition.true(type_key != type(None), 'type_key != NoneType')
+        Condition.true(type_value != type(None), 'type_value != NoneType')
+
+        self.type_key = type_key
+        self.type_value = type_value
         self._lock = FastRLock()
         self._internal = {}
 
@@ -157,22 +164,27 @@ cdef class ConcurrentDictionary:
         self._lock.release()
 
     def __getitem__(self, k):
+        Condition.type(k, self.type_key, 'k')
         self._lock.acquire()
         item = self._internal.__getitem__(k)
         self._lock.release()
         return item
 
     def __setitem__(self, k, v):
+        Condition.type(k, self.type_key, 'k')
+        Condition.type(v, self.type_value, 'v')
         self._lock.acquire()
         self._internal.__setitem__(k, v)
         self._lock.release()
 
     def __delitem__(self, k):
+        Condition.type(k, self.type_key, 'k')
         self._lock.acquire()
         self._internal.__delitem__(k)
         self._lock.release()
 
     def __contains__(self, k):
+        Condition.type(k, self.type_key, 'k')
         self._lock.acquire()
         result = self._internal.__contains__(k)
         self._lock.release()
@@ -197,36 +209,60 @@ cdef class ConcurrentDictionary:
         return items
 
     cpdef object get(self, k, default=None):
+        Condition.type(k, self.type_key, 'k')
         self._lock.acquire()
         item = self._internal.get(k, default)
         self._lock.release()
         return item
 
     cpdef object setdefault(self, k, default=None):
+        Condition.type(k, self.type_key, 'k')
         self._lock.acquire()
         result = self._internal.setdefault(k, default)
         self._lock.release()
         return result
 
     cpdef object pop(self, k, d=None):
+        Condition.type(k, self.type_key, 'k')
         self._lock.acquire()
         item = self._internal.pop(k, d)
         self._lock.release()
         return item
 
+    cpdef object popitem(self):
+        self._lock.acquire()
+        item = self._internal.popitem()
+        self._lock.release()
+        return item
+
+    cpdef dict copy(self):
+        self._lock.acquire()
+        copied = self._internal.copy()
+        self._lock.release()
+        return copied
+
+    cpdef void clear(self):
+        self._lock.acquire()
+        self._internal.clear()
+        self._lock.release()
+
 
 cdef class ObjectCache:
     """
-    Provides a generic object cache with strings as keys.
+    Provides a strongly typed object cache with strings as keys.
     """
 
-    def __init__(self, parser: Callable):
+    def __init__(self, type type_value, parser: Callable):
         """
         Initializes a new instance of the ObjectCache class.
         """
+        Condition.not_none(type_value, 'type_value')
+        Condition.true(type_value != type(None), 'type_value != NoneType')
         Condition.type(parser, Callable, 'parser')
 
-        self._cache = ConcurrentDictionary()
+        self.type_key = str
+        self.type_value = type_value
+        self._cache = ConcurrentDictionary(str, type_value)
         self._parser = parser
 
     cpdef object get(self, str key):

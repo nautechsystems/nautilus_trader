@@ -10,11 +10,10 @@
 import os
 import setuptools
 import Cython.Build
+import Cython.Compiler.Options
 
 from typing import List
 from setuptools import setup, Extension
-from Cython.Build import cythonize
-from Cython.Compiler import Options
 
 from nautilus_trader.version import __version__
 from setup_tools import check_file_headers, find_pyx_files
@@ -44,16 +43,16 @@ DIRECTORIES_ALL = [PACKAGE_NAME, 'test_kit', 'tests']
 # Cython build options (edit here only)
 # -------------------------------------
 # Create a html annotations file for each .pyx
-Options.annotate = False
+Cython.Compiler.Options.annotate = True
 
 # Embed docstrings in extensions
-Options.embed_pos_in_docstring = True
+Cython.Compiler.Options.embed_pos_in_docstring = True
 
 # Treat compiler warnings as errors
-Options.warning_errors = True
+Cython.Compiler.Options.warning_errors = True
 
 # Allows cimporting from a pyx file without a pxd file
-Options.cimport_from_pyx = True
+Cython.Compiler.Options.cimport_from_pyx = True
 
 # Write profiling hooks into methods (x2 overhead, use for profiling only)
 Profile_Hooks = False
@@ -90,8 +89,9 @@ setup(
     package_data={'': ['*.pyx', '*.pxd']},
     license=LICENSE,
     requires=REQUIREMENTS,
-    ext_modules=cythonize(module_list=make_cython_extensions(DIRECTORIES_TO_CYTHONIZE),
-                          compiler_directives=compiler_directives),
+    ext_modules=Cython.Build.cythonize(
+        module_list=make_cython_extensions(DIRECTORIES_TO_CYTHONIZE),
+        compiler_directives=compiler_directives),
     cmdclass={'build_ext': Cython.Build.build_ext},
     options={'build_ext': {'inplace': False, 'force': False}},
     zip_safe=False)

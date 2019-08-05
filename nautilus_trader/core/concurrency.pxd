@@ -33,6 +33,9 @@ cdef class ConcurrentDictionary:
     """
     Provides a thread safe wrapper to a standard python dictionary.
     """
+    cdef readonly type type_key
+    cdef readonly type type_value
+
     cdef FastRLock _lock
     cdef dict _internal
 
@@ -42,12 +45,18 @@ cdef class ConcurrentDictionary:
     cpdef object get(self, k, default=*)
     cpdef object setdefault(self, k, default=*)
     cpdef object pop(self, k, d=*)
+    cpdef object popitem(self)
+    cpdef dict copy(self)
+    cpdef void clear(self)
 
 
 cdef class ObjectCache:
     """
     Provides a generic object cache with strings as keys.
     """
+    cdef readonly type type_key
+    cdef readonly type type_value
+
     cdef ConcurrentDictionary _cache
     cdef object _parser
 
