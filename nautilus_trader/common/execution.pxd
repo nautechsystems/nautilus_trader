@@ -8,7 +8,7 @@
 
 from cpython.datetime cimport datetime
 
-from nautilus_trader.core.concurrency cimport ConcurrentDictionary
+from nautilus_trader.core.typed_collections cimport ConcurrentDictionary
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.guid cimport GuidFactory
@@ -37,11 +37,11 @@ cdef class ExecutionClient:
     cdef LoggerAdapter _log
     cdef Account _account
     cdef Portfolio _portfolio
-    cdef dict _registered_strategies
-    cdef dict _order_strategy_index
-    cdef dict _order_book
-    cdef dict _orders_active
-    cdef dict _orders_completed
+    cdef ConcurrentDictionary _registered_strategies
+    cdef ConcurrentDictionary _order_strategy_index
+    cdef ConcurrentDictionary _order_book
+    cdef ConcurrentDictionary _orders_active
+    cdef ConcurrentDictionary _orders_completed
 
     cdef readonly int command_count
     cdef readonly int event_count

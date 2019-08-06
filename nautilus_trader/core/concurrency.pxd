@@ -27,38 +27,3 @@ cdef class FastRLock:
     cpdef bint acquire(self, bint blocking=*)
     cpdef void release(self)
     cdef bint _is_owned(self)
-
-
-cdef class ConcurrentDictionary:
-    """
-    Provides a thread safe wrapper to a standard python dictionary.
-    """
-    cdef readonly type type_key
-    cdef readonly type type_value
-
-    cdef FastRLock _lock
-    cdef dict _internal
-
-    cpdef object keys(self)
-    cpdef object values(self)
-    cpdef object items(self)
-    cpdef object get(self, k, default=*)
-    cpdef object setdefault(self, k, default=*)
-    cpdef object pop(self, k, d=*)
-    cpdef object popitem(self)
-    cpdef dict copy(self)
-    cpdef void clear(self)
-
-
-cdef class ObjectCache:
-    """
-    Provides a generic object cache with strings as keys.
-    """
-    cdef readonly type type_key
-    cdef readonly type type_value
-
-    cdef ConcurrentDictionary _cache
-    cdef object _parser
-
-    cpdef object get(self, str key)
-    cpdef void clear(self)

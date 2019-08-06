@@ -8,7 +8,7 @@
 
 from cpython.datetime cimport datetime
 
-from nautilus_trader.core.concurrency cimport ConcurrentDictionary
+from nautilus_trader.core.typed_collections cimport ConcurrentDictionary
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.guid cimport GuidFactory
 from nautilus_trader.common.logger cimport LoggerAdapter

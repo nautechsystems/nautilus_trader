@@ -7,9 +7,9 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.datetime cimport datetime
-from typing import Dict
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.typed_collections cimport TypedDictionary, ConcurrentDictionary
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.commands cimport Command, CollateralInquiry
 from nautilus_trader.model.commands cimport SubmitOrder, SubmitAtomicOrder, ModifyOrder, CancelOrder
@@ -50,11 +50,11 @@ cdef class ExecutionClient:
         self._log = LoggerAdapter(self.__class__.__name__, logger)
         self._account = account
         self._portfolio = portfolio
-        self._registered_strategies = {}  # type: Dict[StrategyId, TradeStrategy]
-        self._order_book = {}             # type: Dict[OrderId, Order]
-        self._order_strategy_index = {}   # type: Dict[OrderId, StrategyId]
-        self._orders_active = {}          # type: Dict[StrategyId, Dict[OrderId, Order]]
-        self._orders_completed = {}       # type: Dict[StrategyId, Dict[OrderId, Order]]
+        self._registered_strategies = ConcurrentDictionary(StrategyId, TradeStrategy)
+        self._order_book = ConcurrentDictionary(OrderId, Order)
+        self._order_strategy_index = ConcurrentDictionary(OrderId, StrategyId)
+        self._orders_active = ConcurrentDictionary(StrategyId, TypedDictionary)
+        self._orders_completed = ConcurrentDictionary(StrategyId, TypedDictionary)
 
         self.command_count = 0
         self.event_count = 0
@@ -120,13 +120,13 @@ cdef class ExecutionClient:
         :param strategy: The strategy to register.
         :raises ValueError: If the strategy is already registered with the execution client.
         """
-        Condition.not_in(strategy.id, self._registered_strategies, 'strategy', 'registered_strategies')
-        Condition.not_in(strategy.id, self._orders_active, 'strategy', 'orders_active')
-        Condition.not_in(strategy.id, self._orders_completed, 'strategy', 'orders_completed')
+        # Condition.not_in(strategy.id, self._registered_strategies, 'strategy', 'registered_strategies')
+        # Condition.not_in(strategy.id, self._orders_active, 'strategy', 'orders_active')
+        # Condition.not_in(strategy.id, self._orders_completed, 'strategy', 'orders_completed')
 
         self._registered_strategies[strategy.id] = strategy
-        self._orders_active[strategy.id] = {}     # type: Dict[OrderId, Order]
-        self._orders_completed[strategy.id] = {}  # type: Dict[OrderId, Order]
+        self._orders_active[strategy.id] = TypedDictionary(OrderId, Order)
+        self._orders_completed[strategy.id] = TypedDictionary(OrderId, Order)
         self._portfolio.register_strategy(strategy)
         strategy.register_execution_client(self)
         strategy.change_logger(self._log.get_logger())
@@ -140,9 +140,9 @@ cdef class ExecutionClient:
         :param strategy: The strategy to deregister.
         :raises ValueError: If the strategy is not registered with the execution client.
         """
-        Condition.is_in(strategy.id, self._registered_strategies, 'strategy', 'registered_strategies')
-        Condition.is_in(strategy.id, self._orders_active, 'strategy', 'orders_active')
-        Condition.is_in(strategy.id, self._orders_completed, 'strategy', 'orders_completed')
+        # Condition.is_in(strategy.id, self._registered_strategies, 'strategy', 'registered_strategies')
+        # Condition.is_in(strategy.id, self._orders_active, 'strategy', 'orders_active')
+        # Condition.is_in(strategy.id, self._orders_completed, 'strategy', 'orders_completed')
 
         del self._registered_strategies[strategy.id]
         del self._orders_active[strategy.id]
@@ -159,7 +159,7 @@ cdef class ExecutionClient:
         :return: Order.
         :raises ValueError: If the order is not found.
         """
-        Condition.is_in(order_id, self._order_book, 'order_id', 'order_book')
+        # Condition.is_in(order_id, self._order_book, 'order_id', 'order_book')
 
         return self._order_book[order_id]
 
@@ -195,8 +195,8 @@ cdef class ExecutionClient:
         :return: Dict[OrderId, Order].
         :raises ValueError: If the strategy identifier is not registered with the execution client.
         """
-        Condition.is_in(strategy_id, self._orders_active, 'strategy_id', 'orders_active')
-        Condition.is_in(strategy_id, self._orders_completed, 'strategy_id', 'orders_completed')
+        # Condition.is_in(strategy_id, self._orders_active, 'strategy_id', 'orders_active')
+        # Condition.is_in(strategy_id, self._orders_completed, 'strategy_id', 'orders_completed')
 
         return {**self._orders_active[strategy_id], **self._orders_completed[strategy_id]}
 
@@ -208,7 +208,7 @@ cdef class ExecutionClient:
         :return: Dict[OrderId, Order].
         :raises ValueError: If the strategy identifier is not registered with the execution client.
         """
-        Condition.is_in(strategy_id, self._orders_active, 'strategy_id', 'orders_active')
+        # Condition.is_in(strategy_id, self._orders_active, 'strategy_id', 'orders_active')
 
         return self._orders_active[strategy_id].copy()
 
@@ -220,7 +220,7 @@ cdef class ExecutionClient:
         :return: Dict[OrderId, Order].
         :raises ValueError: If the strategy identifier is not registered with the execution client.
         """
-        Condition.is_in(strategy_id, self._orders_completed, 'strategy_id', 'orders_completed')
+        # Condition.is_in(strategy_id, self._orders_completed, 'strategy_id', 'orders_completed')
 
         return self._orders_completed[strategy_id].copy()
 
@@ -241,7 +241,7 @@ cdef class ExecutionClient:
         :return: True if the order is active, else False.
         :raises ValueError: If the order is not found.
         """
-        Condition.is_in(order_id, self._order_book, 'order_id', 'order_book')
+        # Condition.is_in(order_id, self._order_book, 'order_id', 'order_book')
 
         return self._order_book[order_id].is_active
 
@@ -253,7 +253,7 @@ cdef class ExecutionClient:
         :return: True if the order is complete, else False.
         :raises ValueError: If the order is not found.
         """
-        Condition.is_in(order_id, self._order_book, 'order_id', 'order_book')
+        # Condition.is_in(order_id, self._order_book, 'order_id', 'order_book')
 
         return self._order_book[order_id].is_complete
 
@@ -338,8 +338,8 @@ cdef class ExecutionClient:
             self._portfolio.handle_transaction(event)
 
     cdef void _register_order(self, Order order, StrategyId strategy_id, PositionId position_id):
-        Condition.not_in(order.id, self._order_book, 'order.id', 'order_book')
-        Condition.not_in(order.id, self._order_strategy_index, 'order.id', 'order_index')
+        # Condition.not_in(order.id, self._order_book, 'order.id', 'order_book')
+        # Condition.not_in(order.id, self._order_strategy_index, 'order.id', 'order_index')
 
         # Register the given order with the execution client
         self._order_book[order.id] = order
@@ -384,14 +384,14 @@ cdef class ExecutionClient:
     cdef void _reset(self):
         # Reset the execution client by returning all stateful internal values to their initial value
         self._log.debug(f"Resetting...")
-        self._order_book = {}                         # type: Dict[OrderId, Order]
-        self._order_strategy_index = {}               # type: Dict[OrderId, StrategyId]
+        self._order_book = ConcurrentDictionary(OrderId, Order)
+        self._order_strategy_index = ConcurrentDictionary(OrderId, StrategyId)
         self.event_count = 0
 
         # Reset all active orders
         for strategy_id in self._orders_active.keys():
-            self._orders_active[strategy_id] = {}     # type: Dict[OrderId, Order]
+            self._orders_active[strategy_id] = TypedDictionary(OrderId, Order)
 
         # Reset all completed orders
         for strategy_id in self._orders_completed.keys():
-            self._orders_completed[strategy_id] = {}  # type: Dict[OrderId, Order]
+            self._orders_completed[strategy_id] = TypedDictionary(OrderId, Order)
