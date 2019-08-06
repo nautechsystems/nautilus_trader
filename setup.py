@@ -16,7 +16,8 @@ from typing import List
 from setuptools import setup, Extension
 
 from nautilus_trader.version import __version__
-from setup_tools import check_file_headers, find_pyx_files
+from setup_tools import find_pyx_files
+from linter import check_file_headers
 
 
 PACKAGE_NAME = 'nautilus_trader'
@@ -62,12 +63,12 @@ compiler_directives = {'language_level': 3, 'profile': Profile_Hooks}
 # -------------------------------------
 
 
-# Check file headers
+# Lint source code (throws exception on failure)
 artifacts_to_ignore = ['', '.c', '.so', '.gz', '.o', '.pyd', '.pyc', '.prof', '.html', '.csv']
 check_file_headers(DIRECTORIES_ALL, ignore=artifacts_to_ignore, author=AUTHOR)
 
 
-def make_cython_extensions(directories: List[str]) -> [Extension]:
+def make_extensions(directories: List[str]) -> [Extension]:
     # Generate a a list of Extension objects from the given directories list
     extensions = []
     for file in find_pyx_files(directories):
@@ -90,7 +91,7 @@ setup(
     license=LICENSE,
     requires=REQUIREMENTS,
     ext_modules=Cython.Build.cythonize(
-        module_list=make_cython_extensions(DIRECTORIES_TO_CYTHONIZE),
+        module_list=make_extensions(DIRECTORIES_TO_CYTHONIZE),
         compiler_directives=compiler_directives),
     cmdclass={'build_ext': Cython.Build.build_ext},
     options={'build_ext': {'inplace': False, 'force': False}},
