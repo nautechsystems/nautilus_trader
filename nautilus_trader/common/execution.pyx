@@ -11,7 +11,7 @@ from cpython.datetime cimport datetime
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.typed_collections cimport TypedDictionary, ConcurrentDictionary
 from nautilus_trader.model.order cimport Order
-from nautilus_trader.model.commands cimport Command, CollateralInquiry
+from nautilus_trader.model.commands cimport Command, AccountInquiry
 from nautilus_trader.model.commands cimport SubmitOrder, SubmitAtomicOrder, ModifyOrder, CancelOrder
 from nautilus_trader.model.events cimport Event, OrderEvent, PositionEvent, AccountEvent
 from nautilus_trader.model.events cimport OrderModified, OrderRejected, OrderCancelled, OrderCancelReject
@@ -260,8 +260,8 @@ cdef class ExecutionClient:
     cdef void _execute_command(self, Command command):
         self.command_count += 1
 
-        if isinstance(command, CollateralInquiry):
-            self._collateral_inquiry(command)
+        if isinstance(command, AccountInquiry):
+            self._account_inquiry(command)
         elif isinstance(command, SubmitOrder):
             self._register_order(command.order, command.strategy_id, command.position_id)
             self._submit_order(command)
@@ -350,7 +350,7 @@ cdef class ExecutionClient:
 
 # -- ABSTRACT METHODS ---------------------------------------------------------------------------- #
 
-    cdef void _collateral_inquiry(self, CollateralInquiry command):
+    cdef void _account_inquiry(self, AccountInquiry command):
         # Send a collateral inquiry command to the execution service
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")

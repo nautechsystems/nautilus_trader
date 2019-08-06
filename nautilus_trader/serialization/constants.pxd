@@ -50,7 +50,7 @@ cdef str PRICE
 cdef str TIME_IN_FORCE
 cdef str ACCOUNT_ID
 cdef str ACCOUNT_NUMBER
-cdef str BROKER
+cdef str BROKERAGE
 cdef str CURRENCY
 cdef str CASH_BALANCE
 cdef str CASH_START_DAY

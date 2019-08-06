@@ -18,7 +18,7 @@ from nautilus_trader.model.identifiers cimport StrategyId, OrderId, PositionId
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.commands cimport (
     Command,
-    CollateralInquiry,
+    AccountInquiry,
     SubmitOrder,
     SubmitAtomicOrder,
     ModifyOrder,
@@ -75,7 +75,7 @@ cdef class ExecutionClient:
     cdef void _register_order(self, Order order, StrategyId strategy_id, PositionId position_id)
 
 # -- ABSTRACT METHOD IMPLEMENTATIONS ------------------------------------------------------------- #
-    cdef void _collateral_inquiry(self, CollateralInquiry command)
+    cdef void _account_inquiry(self, AccountInquiry command)
     cdef void _submit_order(self, SubmitOrder command)
     cdef void _submit_atomic_order(self, SubmitAtomicOrder command)
     cdef void _modify_order(self, ModifyOrder command)

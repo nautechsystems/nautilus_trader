@@ -13,9 +13,9 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.order cimport Order, AtomicOrder
 
 
-cdef class CollateralInquiry(Command):
+cdef class AccountInquiry(Command):
     """
-    Represents a request for a FIX collateral inquiry of all connected accounts.
+    Represents a request for account status.
     """
     pass
 

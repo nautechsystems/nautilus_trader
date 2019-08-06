@@ -14,14 +14,14 @@ from nautilus_trader.model.identifiers cimport PositionId, TraderId, StrategyId
 from nautilus_trader.model.order cimport Order, AtomicOrder
 
 
-cdef class CollateralInquiry(Command):
+cdef class AccountInquiry(Command):
     """
-    Represents a request for a FIX collateral inquiry of all connected accounts.
+    Represents a request for account status.
     """
 
     def __init__(self, GUID command_id, datetime command_timestamp):
         """
-        Initializes a new instance of the CollateralInquiry class.
+        Initializes a new instance of the AccountInquiry class.
 
         :param command_id: The command identifier.
         :param command_timestamp: The command timestamp.
