@@ -21,6 +21,7 @@ def remove_dir_if_exists(dir_name: str):
 
 
 if __name__ == '__main__':
+    remove_dir_if_exists('.pytest_cache')
     remove_dir_if_exists('__pycache__')
     remove_dir_if_exists('build')
     for directory in directories:
