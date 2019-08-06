@@ -288,7 +288,7 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(ValueError, strategy.order, OrderId('unknown_order_id'))
+        self.assertRaises(KeyError, strategy.order, OrderId('unknown_order_id'))
 
     def test_can_get_order(self):
         # Arrange
