@@ -29,8 +29,9 @@ class AccountTests(unittest.TestCase):
         account = Account()
 
         event = AccountEvent(
+            AccountId('FXCM-D123456'),
             Brokerage('FXCM'),
-            AccountNumber('D102412895'),
+            AccountNumber('D123456'),
             Currency.AUD,
             Money(1000000),
             Money(1000000),
@@ -47,9 +48,9 @@ class AccountTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(account.initialized)
-        self.assertEqual(AccountId('FXCM-D102412895'), account.id)
+        self.assertEqual(AccountId('FXCM-D123456'), account.id)
         self.assertEqual(Brokerage('FXCM'), account.brokerage)
-        self.assertEqual(AccountNumber('D102412895'), account.account_number)
+        self.assertEqual(AccountNumber('D123456'), account.account_number)
         self.assertEqual(Currency.AUD, account.currency)
         self.assertEqual(Money(1000000), account.free_equity)
         self.assertEqual(Money(1000000), account.cash_start_day)
@@ -65,8 +66,9 @@ class AccountTests(unittest.TestCase):
         account = Account()
 
         event = AccountEvent(
+            AccountId('FXCM-D123456'),
             Brokerage('FXCM'),
-            AccountNumber('D102412895'),
+            AccountNumber('D123456'),
             Currency.AUD,
             Money(1000000),
             Money(1000000),
@@ -91,8 +93,9 @@ class AccountTests(unittest.TestCase):
         account = Account()
 
         event = AccountEvent(
+            AccountId('FXCM-D123456'),
             Brokerage('FXCM'),
-            AccountNumber('D102412895'),
+            AccountNumber('D123456'),
             Currency.AUD,
             Money(100000),
             Money(100000),
@@ -109,9 +112,9 @@ class AccountTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(account.initialized)
-        self.assertEqual(AccountId('FXCM-D102412895'), account.id)
+        self.assertEqual(AccountId('FXCM-D123456'), account.id)
         self.assertEqual(Brokerage('FXCM'), account.brokerage)
-        self.assertEqual(AccountNumber('D102412895'), account.account_number)
+        self.assertEqual(AccountNumber('D123456'), account.account_number)
         self.assertEqual(Currency.AUD, account.currency)
         self.assertEqual(Money(97000), account.free_equity)
         self.assertEqual(Money(100000), account.cash_start_day)
@@ -127,8 +130,9 @@ class AccountTests(unittest.TestCase):
         account = Account()
 
         event = AccountEvent(
+            AccountId('FXCM-D123456'),
             Brokerage('FXCM'),
-            AccountNumber('D102412895'),
+            AccountNumber('D123456'),
             Currency.AUD,
             Money(20000),
             Money(100000),
@@ -145,9 +149,9 @@ class AccountTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(account.initialized)
-        self.assertEqual(AccountId('FXCM-D102412895'), account.id)
+        self.assertEqual(AccountId('FXCM-D123456'), account.id)
         self.assertEqual(Brokerage('FXCM'), account.brokerage)
-        self.assertEqual(AccountNumber('D102412895'), account.account_number)
+        self.assertEqual(AccountNumber('D123456'), account.account_number)
         self.assertEqual(Currency.AUD, account.currency)
         self.assertEqual(Money.zero(), account.free_equity)
         self.assertEqual(Money(100000), account.cash_start_day)
@@ -163,8 +167,9 @@ class AccountTests(unittest.TestCase):
         account = Account()
 
         event = AccountEvent(
+            AccountId('FXCM-D123456'),
             Brokerage('FXCM'),
-            AccountNumber('D102412895'),
+            AccountNumber('D123456'),
             Currency.AUD,
             Money(20000),
             Money(100000),
@@ -181,9 +186,9 @@ class AccountTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(account.initialized)
-        self.assertEqual(AccountId('FXCM-D102412895'), account.id)
+        self.assertEqual(AccountId('FXCM-D123456'), account.id)
         self.assertEqual(Brokerage('FXCM'), account.brokerage)
-        self.assertEqual(AccountNumber('D102412895'), account.account_number)
+        self.assertEqual(AccountNumber('D123456'), account.account_number)
         self.assertEqual(Currency.AUD, account.currency)
         self.assertEqual(Money.zero(), account.free_equity)
         self.assertEqual(Money(100000), account.cash_start_day)
