@@ -43,7 +43,7 @@ from nautilus_trader.serialization.common cimport (
     parse_bar_spec
 )
 from nautilus_trader.model.commands cimport (
-    CollateralInquiry,
+    AccountInquiry,
     SubmitOrder,
     SubmitAtomicOrder,
     ModifyOrder,
@@ -176,7 +176,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
             TIMESTAMP: convert_datetime_to_string(command.timestamp)
         }
 
-        if isinstance(command, CollateralInquiry):
+        if isinstance(command, AccountInquiry):
             pass
         elif isinstance(command, SubmitOrder):
             package[TRADER_ID] = command.trader_id.value
@@ -233,8 +233,8 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         cdef GUID command_id = GUID(UUID(unpacked[ID]))
         cdef datetime command_timestamp = convert_string_to_datetime(unpacked[TIMESTAMP])
 
-        if command_type == CollateralInquiry.__name__:
-            return CollateralInquiry(
+        if command_type == AccountInquiry.__name__:
+            return AccountInquiry(
                 command_id,
                 command_timestamp)
         if command_type == SubmitOrder.__name__:
@@ -296,7 +296,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
 
         if isinstance(event, AccountEvent):
             package[ACCOUNT_ID] = event.account_id.value
-            package[BROKER] = event.brokerage.value,
+            package[BROKERAGE] = event.brokerage.value
             package[ACCOUNT_NUMBER] = event.account_number.value
             package[CURRENCY] = currency_string(event.currency)
             package[CASH_BALANCE] = str(event.cash_balance)
@@ -397,7 +397,8 @@ cdef class MsgPackEventSerializer(EventSerializer):
 
         if event_type == AccountEvent.__name__:
             return AccountEvent(
-                Brokerage(unpacked[BROKER]),
+                AccountId(unpacked[ACCOUNT_ID]),
+                Brokerage(unpacked[BROKERAGE]),
                 AccountNumber(unpacked[ACCOUNT_NUMBER]),
                 Currency[unpacked[CURRENCY]],
                 Money(unpacked[CASH_BALANCE]),

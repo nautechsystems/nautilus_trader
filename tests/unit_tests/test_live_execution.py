@@ -165,7 +165,7 @@ class LiveExecClientTests(unittest.TestCase):
         self.exec_client.register_strategy(strategy)
 
         # Act
-        strategy.collateral_inquiry()
+        strategy.account_inquiry()
 
         # Assert
         time.sleep(0.1)

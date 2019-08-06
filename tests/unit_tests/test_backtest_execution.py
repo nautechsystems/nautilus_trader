@@ -69,7 +69,7 @@ class BacktestExecClientTests(unittest.TestCase):
         self.exec_client.register_strategy(strategy)
 
         # Act
-        strategy.collateral_inquiry()
+        strategy.account_inquiry()
 
         # Assert
         self.assertEqual(2, self.account.event_count)

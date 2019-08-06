@@ -17,6 +17,7 @@ from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_status cimport OrderStatus
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition, market_position_string
+from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.currency cimport ExchangeRateCalculator
 from nautilus_trader.model.objects cimport Brokerage, Symbol, Price, Tick, Bar, Money, Instrument, Quantity
 from nautilus_trader.model.order cimport Order
@@ -38,7 +39,7 @@ from nautilus_trader.model.events cimport (
 from nautilus_trader.model.identifiers cimport OrderId, ExecutionId, ExecutionTicket, AccountNumber
 from nautilus_trader.model.commands cimport (
     Command,
-    CollateralInquiry,
+    AccountInquiry,
     SubmitOrder,
     SubmitAtomicOrder,
     ModifyOrder,
@@ -179,7 +180,7 @@ cdef class BacktestExecClient(ExecutionClient):
         # Process the working orders for the given by simulating market dynamics
         # using the lowest bid and highest ask.
 
-        cdef CollateralInquiry command
+        cdef AccountInquiry command
         cdef datetime time_now = self._clock.time_now()
 
         if self.day_number is not time_now.day:
@@ -189,10 +190,10 @@ cdef class BacktestExecClient(ExecutionClient):
             self.account_cash_activity_day = Money.zero()
 
             # Generate command
-            command = CollateralInquiry(
+            command = AccountInquiry(
             self._guid_factory.generate(),
             self._clock.time_now())
-            self._collateral_inquiry(command)
+            self._account_inquiry(command)
 
         # Simulate market dynamics
         for order_id, order in self.working_orders.copy().items():  # Copies dict to avoid resize during loop
@@ -277,8 +278,9 @@ cdef class BacktestExecClient(ExecutionClient):
         Resets the account.
         """
         cdef AccountEvent initial_starting = AccountEvent(
+            AccountId('SIMULATED-123456'),
             Brokerage('SIMULATED'),
-            AccountNumber('9999'),
+            AccountNumber('123456'),
             self._account.currency,
             self.starting_capital,
             self.starting_capital,
@@ -328,9 +330,10 @@ cdef class BacktestExecClient(ExecutionClient):
 
 # -- COMMAND EXECUTION --------------------------------------------------------------------------- #
 
-    cdef void _collateral_inquiry(self, CollateralInquiry command):
+    cdef void _account_inquiry(self, AccountInquiry command):
         # Generate event
         cdef AccountEvent event = AccountEvent(
+            self._account.id,
             self._account.brokerage,
             self._account.account_number,
             self._account.currency,
@@ -705,6 +708,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self.account_cash_activity_day += pnl
 
         cdef AccountEvent account_event = AccountEvent(
+            self._account.id,
             self._account.brokerage,
             self._account.account_number,
             self._account.currency,

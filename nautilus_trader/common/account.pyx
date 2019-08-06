@@ -10,6 +10,7 @@ from nautilus_trader.core.types cimport ValidString
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.events cimport AccountEvent
 from nautilus_trader.model.objects cimport Brokerage, Money
+from nautilus_trader.model.identifiers cimport AccountId, AccountNumber
 
 
 cdef class Account:
@@ -82,6 +83,7 @@ cdef class Account:
         
         :param event: The event to initialize with.
         """
+        self.id = event.account_id
         self.brokerage = event.brokerage
         self.account_number = event.account_number
         self.id = event.account_id

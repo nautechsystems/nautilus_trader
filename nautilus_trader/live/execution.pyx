@@ -15,7 +15,7 @@ from zmq import Context
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport MessageType, Message, Command, Event, Response
 from nautilus_trader.model.commands cimport (
-    CollateralInquiry,
+    AccountInquiry,
     SubmitOrder,
     SubmitAtomicOrder,
     CancelOrder,
@@ -189,7 +189,7 @@ cdef class LiveExecClient(ExecutionClient):
             else:
                 raise RuntimeError(f"Invalid message type on bus ({repr(message)}).")
 
-    cpdef void _collateral_inquiry(self, CollateralInquiry command):
+    cpdef void _account_inquiry(self, AccountInquiry command):
         self._send_command(command)
 
     cpdef void _submit_order(self, SubmitOrder command):

@@ -28,7 +28,7 @@ from nautilus_trader.common.logger cimport Logger, LoggerAdapter
 from nautilus_trader.common.execution cimport ExecutionClient
 from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.common.guid cimport GuidFactory, LiveGuidFactory
-from nautilus_trader.model.commands cimport CollateralInquiry, SubmitOrder, SubmitAtomicOrder, ModifyOrder, CancelOrder
+from nautilus_trader.model.commands cimport AccountInquiry, SubmitOrder, SubmitAtomicOrder, ModifyOrder, CancelOrder
 from nautilus_trader.data.tools cimport IndicatorUpdater
 
 
@@ -1039,11 +1039,11 @@ cdef class TradeStrategy:
 
         self.log.info(f"Disposed.")
 
-    cpdef void collateral_inquiry(self):
+    cpdef void account_inquiry(self):
         """
-        Send a collateral inquiry command to the execution service.
+        Send an account inquiry command to the execution service.
         """
-        cdef CollateralInquiry command = CollateralInquiry(
+        cdef AccountInquiry command = AccountInquiry(
             self._guid_factory.generate(),
             self.clock.time_now())
 

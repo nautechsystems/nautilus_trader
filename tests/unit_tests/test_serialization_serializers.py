@@ -157,7 +157,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
 
     def test_can_serialize_and_deserialize_collateral_inquiry_command(self):
         # Arrange
-        command = CollateralInquiry(GUID(uuid.uuid4()), UNIX_EPOCH)
+        command = AccountInquiry(GUID(uuid.uuid4()), UNIX_EPOCH)
 
         # Act
         serialized = self.serializer.serialize(command)
@@ -496,7 +496,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
     def test_can_deserialize_account_events_from_csharp(self):
         # Arrange
         # Base64 bytes string from C# MsgPack.Cli
-        base64 = 'jqRUeXBlrEFjY291bnRFdmVudKJJZNkkOTk1NTdjMTMtMDZjYS00OTkyLTkyMzUtZWIxOThkMjYwNjk5qVRpbWVzdGFtcLgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFqpQWNjb3VudElkq0ZYQ00tMTIzNDU2pkJyb2tlcqRGWENNrUFjY291bnROdW1iZXKmMTIzNDU2qEN1cnJlbmN5o1VTRKtDYXNoQmFsYW5jZaYxMDAwMDCsQ2FzaFN0YXJ0RGF5pjEwMDAwMK9DYXNoQWN0aXZpdHlEYXmhMLVNYXJnaW5Vc2VkTGlxdWlkYXRpb26hMLVNYXJnaW5Vc2VkTWFpbnRlbmFuY2WhMKtNYXJnaW5SYXRpb6EwsE1hcmdpbkNhbGxTdGF0dXOg'
+        base64 = 'jqRUeXBlrEFjY291bnRFdmVudKJJZNkkNGJmY2MwYWEtZGJlZS00NzY5LTg3MzEtYTc3Y2Y5OWYxNzJkqVRpbWVzdGFtcLgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFqpQWNjb3VudElkrEZYQ00tRDEyMzQ1NqlCcm9rZXJhZ2WkRlhDTa1BY2NvdW50TnVtYmVyp0QxMjM0NTaoQ3VycmVuY3mjVVNEq0Nhc2hCYWxhbmNlpjEwMDAwMKxDYXNoU3RhcnREYXmmMTAwMDAwr0Nhc2hBY3Rpdml0eURheaEwtU1hcmdpblVzZWRMaXF1aWRhdGlvbqEwtU1hcmdpblVzZWRNYWludGVuYW5jZaEwq01hcmdpblJhdGlvoTCwTWFyZ2luQ2FsbFN0YXR1c6A='
         body = b64decode(base64)
 
         # Act

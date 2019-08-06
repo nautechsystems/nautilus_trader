@@ -156,7 +156,7 @@ cdef class TradeStrategy:
     cpdef void stop(self)
     cpdef void reset(self)
     cpdef void dispose(self)
-    cpdef void collateral_inquiry(self)
+    cpdef void account_inquiry(self)
     cpdef void submit_order(self, Order order, PositionId position_id)
     cpdef void submit_entry_order(self, Order order, PositionId position_id)
     cpdef void submit_stop_loss_order(self, Order order, PositionId position_id)
