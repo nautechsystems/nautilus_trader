@@ -397,7 +397,6 @@ cdef class MsgPackEventSerializer(EventSerializer):
 
         if event_type == AccountEvent.__name__:
             return AccountEvent(
-                AccountId(unpacked[ACCOUNT_ID]),
                 Brokerage(unpacked[BROKER]),
                 AccountNumber(unpacked[ACCOUNT_NUMBER]),
                 Currency[unpacked[CURRENCY]],
