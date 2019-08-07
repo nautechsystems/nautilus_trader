@@ -27,7 +27,7 @@ AUDUSD_FXCM_1_SEC_BID = BarType(AUDUSD_FXCM, BarSpecification(1, Resolution.SECO
 
 if __name__ == "__main__":
     zmq_context = zmq.Context()
-    logger = LiveLogger(level_console=logging.INFO, log_to_file=False)
+    logger = LiveLogger(level_console=logging.DEBUG, log_to_file=False)
     data_client = LiveDataClient(zmq_context=zmq_context, venue=Venue('FXCM'), logger=logger)
     exec_client = LiveExecClient(zmq_context=zmq_context, logger=logger)
     data_client.connect()
@@ -53,10 +53,10 @@ if __name__ == "__main__":
         Account(currency=Currency.USD),
         Portfolio())
 
-    input("Press Enter to start strategy...\n")
+    input()
     trader.start()
 
-    input("Press Enter to stop strategy...\n")
+    input()
     trader.stop()
     data_client.disconnect()
     exec_client.disconnect()

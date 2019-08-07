@@ -229,7 +229,7 @@ cdef class DataClient:
         cdef InstrumentHandler instrument_handler = InstrumentHandler(handler)
         if instrument_handler not in self._instrument_handlers[symbol]:
             self._instrument_handlers[symbol].append(instrument_handler)
-            self._log.debug(f"Added {handler} for {symbol} instruments.")
+            self._log.debug(f"Added {instrument_handler} for {symbol} instruments.")
             self._log.info(f"Subscribed to {symbol} instrument updates.")
         else:
             self._log.error(f"Cannot add {instrument_handler} (duplicate handler found).")
