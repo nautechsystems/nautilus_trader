@@ -120,9 +120,9 @@ cdef class ExecutionClient:
         :param strategy: The strategy to register.
         :raises ValueError: If the strategy is already registered with the execution client.
         """
-        # Condition.not_in(strategy.id, self._registered_strategies, 'strategy', 'registered_strategies')
-        # Condition.not_in(strategy.id, self._orders_active, 'strategy', 'orders_active')
-        # Condition.not_in(strategy.id, self._orders_completed, 'strategy', 'orders_completed')
+        Condition.true(strategy.id not in self._registered_strategies, 'strategy not in registered_strategies')
+        Condition.true(strategy.id not in self._orders_active, 'strategy not in orders_active')
+        Condition.true(strategy.id not in  self._orders_completed, 'strategy not in orders_completed')
 
         self._registered_strategies[strategy.id] = strategy
         self._orders_active[strategy.id] = TypedDictionary(OrderId, Order)
@@ -140,9 +140,9 @@ cdef class ExecutionClient:
         :param strategy: The strategy to deregister.
         :raises ValueError: If the strategy is not registered with the execution client.
         """
-        # Condition.is_in(strategy.id, self._registered_strategies, 'strategy', 'registered_strategies')
-        # Condition.is_in(strategy.id, self._orders_active, 'strategy', 'orders_active')
-        # Condition.is_in(strategy.id, self._orders_completed, 'strategy', 'orders_completed')
+        Condition.true(strategy.id in self._registered_strategies, 'strategy in registered_strategies')
+        Condition.true(strategy.id in self._orders_active, 'strategy in orders_active')
+        Condition.true(strategy.id in self._orders_completed, 'strategy in orders_completed')
 
         del self._registered_strategies[strategy.id]
         del self._orders_active[strategy.id]
@@ -159,7 +159,7 @@ cdef class ExecutionClient:
         :return: Order.
         :raises ValueError: If the order is not found.
         """
-        # Condition.is_in(order_id, self._order_book, 'order_id', 'order_book')
+        Condition.true(order_id in self._order_book, 'order_id in order_book')
 
         return self._order_book[order_id]
 
@@ -195,8 +195,8 @@ cdef class ExecutionClient:
         :return: Dict[OrderId, Order].
         :raises ValueError: If the strategy identifier is not registered with the execution client.
         """
-        # Condition.is_in(strategy_id, self._orders_active, 'strategy_id', 'orders_active')
-        # Condition.is_in(strategy_id, self._orders_completed, 'strategy_id', 'orders_completed')
+        Condition.true(strategy_id in self._orders_active, 'strategy_id in orders_active')
+        Condition.true(strategy_id in self._orders_completed, 'strategy_id in orders_completed')
 
         return {**self._orders_active[strategy_id], **self._orders_completed[strategy_id]}
 
@@ -208,7 +208,7 @@ cdef class ExecutionClient:
         :return: Dict[OrderId, Order].
         :raises ValueError: If the strategy identifier is not registered with the execution client.
         """
-        # Condition.is_in(strategy_id, self._orders_active, 'strategy_id', 'orders_active')
+        Condition.true(strategy_id in self._orders_active, 'strategy_id in orders_active')
 
         return self._orders_active[strategy_id].copy()
 
@@ -220,7 +220,7 @@ cdef class ExecutionClient:
         :return: Dict[OrderId, Order].
         :raises ValueError: If the strategy identifier is not registered with the execution client.
         """
-        # Condition.is_in(strategy_id, self._orders_completed, 'strategy_id', 'orders_completed')
+        Condition.true(strategy_id in self._orders_completed, 'strategy_id in orders_completed')
 
         return self._orders_completed[strategy_id].copy()
 
@@ -241,7 +241,7 @@ cdef class ExecutionClient:
         :return: True if the order is active, else False.
         :raises ValueError: If the order is not found.
         """
-        # Condition.is_in(order_id, self._order_book, 'order_id', 'order_book')
+        Condition.true(order_id in self._order_book, 'order_id in order_book')
 
         return self._order_book[order_id].is_active
 
@@ -253,7 +253,7 @@ cdef class ExecutionClient:
         :return: True if the order is complete, else False.
         :raises ValueError: If the order is not found.
         """
-        # Condition.is_in(order_id, self._order_book, 'order_id', 'order_book')
+        Condition.true(order_id in self._order_book, 'order_id in order_book')
 
         return self._order_book[order_id].is_complete
 
@@ -338,8 +338,8 @@ cdef class ExecutionClient:
             self._portfolio.handle_transaction(event)
 
     cdef void _register_order(self, Order order, StrategyId strategy_id, PositionId position_id):
-        # Condition.not_in(order.id, self._order_book, 'order.id', 'order_book')
-        # Condition.not_in(order.id, self._order_strategy_index, 'order.id', 'order_index')
+        Condition.true(order.id not in self._order_book, 'order.id not in order_book')
+        Condition.true(order.id not in self._order_strategy_index, 'order.id not in order_index')
 
         # Register the given order with the execution client
         self._order_book[order.id] = order
