@@ -103,8 +103,10 @@ class EMACrossPy(TradeStrategy):
         :param bar_type: The received bar type.
         :param bar: The received bar.
         """
+        self.log.info(f"Received {bar_type} Bar({bar})")  # For demonstration purposes
+
         if not self.warmed_up:
-            if self.fast_ema.initialized and self.slow_ema.initialized and self.atr.initialized:
+            if self.indicators_initialized(self.bar_type):
                 self.warmed_up = True
             else:
                 return  # Wait for indicators to warm up...

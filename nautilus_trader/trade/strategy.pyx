@@ -983,13 +983,13 @@ cdef class TradeStrategy:
         Start the trade strategy and call on_start().
         """
         self.log.info(f"Starting...")
-        self.is_running = True
 
         try:
             self.on_start()
         except Exception as ex:
             self.log.exception(ex)
 
+        self.is_running = True
         self.log.info(f"Running...")
 
     cpdef void stop(self):
@@ -1010,8 +1010,6 @@ cdef class TradeStrategy:
         # Clean up orders
         if self.cancel_all_orders_on_stop:
             self.cancel_all_orders("STOPPING STRATEGY")
-
-        self.is_running = False
 
         # Check for residual objects
         for order in self._entry_orders.values():
@@ -1036,6 +1034,7 @@ cdef class TradeStrategy:
         except Exception as ex:
             self.log.exception(ex)
 
+        self.is_running = False
         self.log.info(f"Stopped.")
 
     cpdef void reset(self):
