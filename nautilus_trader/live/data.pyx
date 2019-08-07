@@ -101,7 +101,7 @@ cdef class LiveDataClient(DataClient):
         self._zmq_context = zmq_context
 
         self._tick_req_worker = RequestWorker(
-            'DataClient.TickReqWorker',
+            f'{self.__class__.__name__}.TickReqWorker',
             'NautilusData',
             service_address,
             tick_req_port,
@@ -109,7 +109,7 @@ cdef class LiveDataClient(DataClient):
             logger)
 
         self._bar_req_worker = RequestWorker(
-            'DataClient.BarReqWorker',
+            f'{self.__class__.__name__}.BarReqWorker',
             'NautilusData',
             service_address,
             bar_req_port,
@@ -117,7 +117,7 @@ cdef class LiveDataClient(DataClient):
             logger)
 
         self._inst_req_worker = RequestWorker(
-            'DataClient.InstReqWorker',
+            f'{self.__class__.__name__}.InstReqWorker',
             'NautilusData',
             service_address,
             inst_req_port,
@@ -125,7 +125,7 @@ cdef class LiveDataClient(DataClient):
             logger)
 
         self._tick_sub_worker = SubscriberWorker(
-            "DataClient.TickSubWorker",
+            f'{self.__class__.__name__}.TickSubWorker',
             'NautilusData',
             service_address,
             tick_sub_port,
@@ -134,7 +134,7 @@ cdef class LiveDataClient(DataClient):
             logger)
 
         self._bar_sub_worker = SubscriberWorker(
-            "DataClient.BarSubWorker",
+            f'{self.__class__.__name__}.BarSubWorker',
             'NautilusData',
             service_address,
             bar_sub_port,
@@ -143,7 +143,7 @@ cdef class LiveDataClient(DataClient):
             logger)
 
         self._inst_sub_worker = SubscriberWorker(
-            "DataClient.InstSubWorker",
+            f'{self.__class__.__name__}.InstSubWorker',
             'NautilusData',
             service_address,
             inst_sub_port,
