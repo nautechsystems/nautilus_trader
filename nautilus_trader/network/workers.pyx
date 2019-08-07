@@ -201,7 +201,7 @@ cdef class SubscriberWorker(MQWorker):
         :param topic: The topic to subscribe to.
         """
         self._zmq_socket.setsockopt(zmq.SUBSCRIBE, topic.encode(UTF8))
-        self._log.debug(f"Subscribed to topic {topic}")
+        self._log.debug(f"Subscribed to topic {topic}.")
 
     cpdef void unsubscribe(self, str topic):
         """

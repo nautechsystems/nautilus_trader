@@ -151,7 +151,7 @@ cdef class DataMapper:
         return {
             DATA_TYPE: type(ticks[0]).__name__,
             SYMBOL: ticks[0].symbol.value,
-            DATA: [str(tick).encode(UTF8) for tick in ticks]
+            DATA: [str(tick) for tick in ticks]
         }
 
     cpdef dict map_bars(self, list bars, BarType bar_type):
@@ -162,7 +162,7 @@ cdef class DataMapper:
             DATA_TYPE: type(bars[0]).__name__,
             SYMBOL: bar_type.symbol.value,
             SPECIFICATION: str(bar_type.specification),
-            DATA: [str(bar).encode(UTF8) for bar in bars]
+            DATA: [str(bar) for bar in bars]
         }
 
     cpdef dict map_instruments(self, list instruments):

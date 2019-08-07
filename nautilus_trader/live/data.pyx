@@ -249,7 +249,7 @@ cdef class LiveDataClient(DataClient):
         cdef Symbol received_symbol = self._cached_symbols.get(data[SYMBOL])
         assert(received_symbol == symbol)
 
-        callback([parse_tick(received_symbol, values.decode(UTF8)) for values in data[DATA]])
+        callback([parse_tick(received_symbol, values) for values in data[DATA]])
 
     cpdef void request_bars(
             self,
@@ -288,7 +288,7 @@ cdef class LiveDataClient(DataClient):
         cdef BarType received_bar_type = self._cached_bar_types.get(data[SYMBOL] + '-' + data[SPECIFICATION])
         assert(received_bar_type == bar_type)
 
-        callback(received_bar_type, [parse_bar(values.decode(UTF8)) for values in data[DATA]])
+        callback(received_bar_type, [parse_bar(values) for values in data[DATA]])
 
     cpdef void request_instrument(self, Symbol symbol, callback: Callable):
         """
