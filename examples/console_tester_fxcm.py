@@ -60,3 +60,5 @@ if __name__ == "__main__":
     trader.stop()
     data_client.disconnect()
     exec_client.disconnect()
+
+    print("Stopped")

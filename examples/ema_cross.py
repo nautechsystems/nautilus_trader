@@ -78,7 +78,8 @@ class EMACrossPy(TradeStrategy):
         This method is called when self.start() is called, and after internal start logic.
         """
         # Put custom code to be run on strategy start here (or pass)
-        self.historical_bars(self.bar_type)
+        self.request_bars(self.bar_type)
+        self.subscribe_instrument(self.symbol)
         self.subscribe_bars(self.bar_type)
         self.subscribe_ticks(self.symbol)
 
@@ -193,6 +194,17 @@ class EMACrossPy(TradeStrategy):
                     if temp_price < trailing_stop.price:
                         self.modify_order(trailing_stop, temp_price)
 
+    def on_instrument(self, instrument: Instrument):
+        """
+        This method is called whenever the strategy receives an Instrument update.
+
+        :param instrument: The received instrument.
+        """
+        if self.instrument.symbol.equals(instrument.symbol):
+            self.instrument = instrument
+
+        self.log.info(f"Updated instrument {instrument}.")
+
     def on_event(self, event: Event):
         """
         This method is called whenever the strategy receives an Event object,
@@ -229,5 +241,6 @@ class EMACrossPy(TradeStrategy):
         resources that had been used by the strategy here.
         """
         # Put custom code to be run on a strategy disposal here (or pass)
+        self.unsubscribe_instrument(self.symbol)
         self.unsubscribe_bars(self.bar_type)
         self.unsubscribe_ticks(self.symbol)

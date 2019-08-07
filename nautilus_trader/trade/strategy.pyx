@@ -11,6 +11,7 @@ from collections import deque
 from typing import Callable, Dict, List, Deque
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.typed_collections cimport TypedList
 from nautilus_trader.core.types cimport ValidString
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.quote_type cimport QuoteType
@@ -117,11 +118,6 @@ cdef class TradeStrategy:
         self._portfolio = None           # Initialized when registered with execution client
         self.account = None              # Initialized when registered with execution client
 
-        # Registration flags
-        self.is_data_client_registered = False
-        self.is_exec_client_registered = False
-        self.is_portfolio_registered = False
-
         self.is_running = False
 
     cdef bint equals(self, TradeStrategy other):
@@ -192,6 +188,15 @@ cdef class TradeStrategy:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method on_bar() must be implemented in the strategy (or just add pass).")
 
+    cpdef on_instrument(self, Instrument bar_type):
+        """
+        Called when an instrument update is received by the strategy.
+
+        :param bar_type: The instrument received.
+        """
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method on_instrument() must be implemented in the strategy (or just add pass).")
+
     cpdef on_event(self, Event event):
         """
         Called when an event is received by the strategy.
@@ -242,7 +247,6 @@ cdef class TradeStrategy:
         :param client: The data client to register.
         """
         self._data_client = client
-        self.is_data_client_registered = True
         self.log.debug("Registered data client.")
 
     cpdef void register_execution_client(self, ExecutionClient client):
@@ -254,8 +258,6 @@ cdef class TradeStrategy:
         self._exec_client = client
         self._portfolio = client.get_portfolio()
         self.account = client.get_account()
-        self.is_exec_client_registered = True
-        self.is_portfolio_registered = True
         self.log.debug("Registered execution client, portfolio, and account.")
 
     cpdef void register_indicator(
@@ -277,11 +279,11 @@ cdef class TradeStrategy:
         Condition.type(update_method, Callable, 'update_method')
 
         if bar_type not in self._indicators:
-            self._indicators[bar_type] = []          # type: List[object]
+            self._indicators[bar_type] = []  # type: List[object]
         self._indicators[bar_type].append(indicator)
 
         if bar_type not in self._indicator_updaters:
-            self._indicator_updaters[bar_type] = []  # type: List[IndicatorUpdater]
+            self._indicator_updaters[bar_type] = TypedList(IndicatorUpdater)
         self._indicator_updaters[bar_type].append(IndicatorUpdater(indicator, update_method))
 
     cpdef void register_entry_order(self, Order order, PositionId position_id):
@@ -365,8 +367,20 @@ cdef class TradeStrategy:
         System method. Handle the given bar type and list of bars by handling 
         each bar individually.
         """
+        self.log.info(f"Received bar data for {bar_type} of {len(bars)} bars.")
+
         for i in range(len(bars)):
             self.handle_bar(bar_type, bars[i])
+
+    cpdef void handle_instrument(self, Instrument instrument):
+        """
+        System method. Handle the given instrument.
+        """
+        if self.is_running:
+            try:
+                self.on_instrument(instrument)
+            except Exception as ex:
+                self.log.exception(ex)
 
     cpdef void handle_event(self, Event event):
         """
@@ -491,9 +505,9 @@ cdef class TradeStrategy:
         """
         return self._data_client.get_instruments_all()
 
-    cpdef void historical_bars(self, BarType bar_type, datetime from_datetime=None, datetime to_datetime=None):
+    cpdef void request_bars(self, BarType bar_type, datetime from_datetime=None, datetime to_datetime=None):
         """
-        Download the historical bars for the given parameters from the data service.
+        Request the historical bars for the given parameters from the data service.
 
         Note: Logs warning if the downloaded bars 'from' datetime is greater than that given.
 
@@ -509,37 +523,11 @@ cdef class TradeStrategy:
 
         Condition.true(from_datetime < to_datetime, 'from_datetime < to_date')
 
-        if not self.is_data_client_registered:
+        if self._data_client is None:
             self.log.error("Cannot download historical bars (data client not registered).")
             return
 
         self._data_client.request_bars(bar_type, from_datetime, to_datetime, self.handle_bars)
-
-    cpdef void subscribe_bars(self, BarType bar_type):
-        """
-        Subscribe to bar data for the given bar type.
-
-        :param bar_type: The bar type to subscribe to.
-        """
-        if not self.is_data_client_registered:
-            self.log.error("Cannot subscribe to bars (data client not registered).")
-            return
-
-        self._data_client.subscribe_bars(bar_type, self.handle_bar)
-        self.log.info(f"Subscribed to bar data for {bar_type}.")
-
-    cpdef void unsubscribe_bars(self, BarType bar_type):
-        """
-        Unsubscribe from bar data for the given bar type.
-
-        :param bar_type: The bar type to unsubscribe from.
-        """
-        if not self.is_data_client_registered:
-            self.log.error("Cannot unsubscribe from bars (data client not registered).")
-            return
-
-        self._data_client.unsubscribe_bars(bar_type, self.handle_bar)
-        self.log.info(f"Unsubscribed from bar data for {bar_type}.")
 
     cpdef void subscribe_ticks(self, Symbol symbol):
         """
@@ -547,12 +535,38 @@ cdef class TradeStrategy:
 
         :param symbol: The tick symbol to subscribe to.
         """
-        if not self.is_data_client_registered:
+        if self._data_client is None:
             self.log.error("Cannot subscribe to ticks (data client not registered).")
             return
 
         self._data_client.subscribe_ticks(symbol, self.handle_tick)
         self.log.info(f"Subscribed to tick data for {symbol}.")
+
+    cpdef void subscribe_bars(self, BarType bar_type):
+        """
+        Subscribe to bar data for the given bar type.
+
+        :param bar_type: The bar type to subscribe to.
+        """
+        if self._data_client is None:
+            self.log.error("Cannot subscribe to bars (data client not registered).")
+            return
+
+        self._data_client.subscribe_bars(bar_type, self.handle_bar)
+        self.log.info(f"Subscribed to bar data for {bar_type}.")
+
+    cpdef void subscribe_instrument(self, Symbol symbol):
+        """
+        Subscribe to instrument data for the given symbol.
+
+        :param symbol: The instrument symbol to subscribe to.
+        """
+        if self._data_client is None:
+            self.log.error("Cannot subscribe to instrument (data client not registered).")
+            return
+
+        self._data_client.subscribe_instrument(symbol, self.handle_instrument)
+        self.log.info(f"Subscribed to instrument data for {symbol}.")
 
     cpdef void unsubscribe_ticks(self, Symbol symbol):
         """
@@ -560,12 +574,38 @@ cdef class TradeStrategy:
 
         :param symbol: The tick symbol to unsubscribe from.
         """
-        if not self.is_data_client_registered:
+        if self._data_client is None:
             self.log.error("Cannot unsubscribe from ticks (data client not registered).")
             return
 
         self._data_client.unsubscribe_ticks(symbol, self.handle_tick)
         self.log.info(f"Unsubscribed from tick data for {symbol}.")
+
+    cpdef void unsubscribe_bars(self, BarType bar_type):
+        """
+        Unsubscribe from bar data for the given bar type.
+
+        :param bar_type: The bar type to unsubscribe from.
+        """
+        if self._data_client is None:
+            self.log.error("Cannot unsubscribe from bars (data client not registered).")
+            return
+
+        self._data_client.unsubscribe_bars(bar_type, self.handle_bar)
+        self.log.info(f"Unsubscribed from bar data for {bar_type}.")
+
+    cpdef void unsubscribe_instrument(self, Symbol symbol):
+        """
+        Unsubscribe from instrument data for the given symbol.
+
+        :param symbol: The instrument symbol to unsubscribe from.
+        """
+        if self._data_client is None:
+            self.log.error("Cannot unsubscribe from instrument (data client not registered).")
+            return
+
+        self._data_client.unsubscribe_instrument(symbol, self.handle_instrument)
+        self.log.info(f"Unsubscribed from instrument data for {symbol}.")
 
     cpdef list bars(self, BarType bar_type):
         """
@@ -1057,7 +1097,7 @@ cdef class TradeStrategy:
         :param order: The order to submit.
         :param position_id: The position identifier to associate with this order.
         """
-        if not self.is_exec_client_registered:
+        if self._exec_client is None:
             self.log.error("Cannot submit order (execution client not registered).")
             return
 
@@ -1105,7 +1145,7 @@ cdef class TradeStrategy:
         :param atomic_order: The atomic order to submit.
         :param position_id: The position identifier to associate with this order.
         """
-        if not self.is_exec_client_registered:
+        if self._exec_client is None:
             self.log.error("Cannot submit atomic order (execution client not registered).")
             return
 
@@ -1141,7 +1181,7 @@ cdef class TradeStrategy:
         :param order: The order to modify.
         :param new_price: The new price for the given order.
         """
-        if not self.is_exec_client_registered:
+        if self._exec_client is None:
             self.log.error("Cannot modify order (execution client not registered).")
             return
 
@@ -1172,7 +1212,7 @@ cdef class TradeStrategy:
         :param cancel_reason: The reason for cancellation (will be logged).
         :raises ValueError: If the strategy has not been registered with an execution client.
         """
-        if not self.is_exec_client_registered:
+        if self._exec_client is None:
             self.log.error("Cannot cancel order (execution client not registered).")
             return
 
@@ -1196,7 +1236,7 @@ cdef class TradeStrategy:
         :param cancel_reason: The reason for cancellation (will be logged).
         :raises ValueError: If the cancel_reason is not a valid string.
         """
-        if not self.is_exec_client_registered:
+        if self._exec_client is None:
             self.log.error("Cannot cancel all orders (execution client not registered).")
             return
 
@@ -1224,7 +1264,7 @@ cdef class TradeStrategy:
         :param position_id: The position identifier to flatten.
         :raises ValueError: If the position_id is not found in the position book.
         """
-        if not self.is_exec_client_registered:
+        if self._exec_client is None:
             self.log.error("Cannot flatten position (execution client not registered).")
             return
 
@@ -1249,7 +1289,7 @@ cdef class TradeStrategy:
         them to the execution service. If no positions found or a position is None
         then will log a warning.
         """
-        if not self.is_exec_client_registered:
+        if self._exec_client is None:
             self.log.error("Cannot flatten all positions (execution client not registered).")
             return
 
