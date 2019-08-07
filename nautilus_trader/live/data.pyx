@@ -347,10 +347,7 @@ cdef class LiveDataClient(DataClient):
         """
         Update all instruments for the data clients venue.
         """
-        self.request_instruments(self.temp_handle_instruments)
-
-    cpdef void temp_handle_instruments(self, list instruments):
-        self._handle_instruments(instruments)
+        self.request_instruments(self._handle_instruments)
 
     cpdef void subscribe_ticks(self, Symbol symbol, handler: Callable):
         """
@@ -365,19 +362,6 @@ cdef class LiveDataClient(DataClient):
         self._add_tick_handler(symbol, handler)
         self._tick_sub_worker.subscribe(str(symbol))
 
-    cpdef void unsubscribe_ticks(self, Symbol symbol, handler: Callable):
-        """
-        Unsubscribe from live tick data for the given symbol and handler.
-
-        :param symbol: The tick symbol to unsubscribe from.
-        :param handler: The callable handler which was subscribed.
-        :raises ValueError: If the handler is not of type Callable.
-        """
-        Condition.type(handler, Callable, 'handler')
-
-        self._tick_sub_worker.unsubscribe(str(symbol))
-        self._remove_tick_handler(symbol, handler)
-
     cpdef void subscribe_bars(self, BarType bar_type, handler: Callable):
         """
         Subscribe to live bar data for the given bar type and handler.
@@ -391,19 +375,6 @@ cdef class LiveDataClient(DataClient):
         self._add_bar_handler(bar_type, handler)
         self._bar_sub_worker.subscribe(str(bar_type))
 
-    cpdef void unsubscribe_bars(self, BarType bar_type, handler: Callable):
-        """
-        Unsubscribe from live bar data for the given symbol and handler.
-
-        :param bar_type: The bar type to unsubscribe from.
-        :param handler: The callable handler which was subscribed.
-        :raises ValueError: If the handler is not of type Callable.
-        """
-        Condition.type(handler, Callable, 'handler')
-
-        self._bar_sub_worker.unsubscribe(str(bar_type))
-        self._remove_bar_handler(bar_type, handler)
-
     cpdef void subscribe_instrument(self, Symbol symbol, handler: Callable):
         """
         Subscribe to live instrument data updates for the given symbol and handler.
@@ -416,6 +387,32 @@ cdef class LiveDataClient(DataClient):
 
         self._add_instrument_handler(symbol, handler)
         self._inst_sub_worker.subscribe(symbol.value)
+
+    cpdef void unsubscribe_ticks(self, Symbol symbol, handler: Callable):
+        """
+        Unsubscribe from live tick data for the given symbol and handler.
+
+        :param symbol: The tick symbol to unsubscribe from.
+        :param handler: The callable handler which was subscribed.
+        :raises ValueError: If the handler is not of type Callable.
+        """
+        Condition.type(handler, Callable, 'handler')
+
+        self._tick_sub_worker.unsubscribe(str(symbol))
+        self._remove_tick_handler(symbol, handler)
+
+    cpdef void unsubscribe_bars(self, BarType bar_type, handler: Callable):
+        """
+        Unsubscribe from live bar data for the given symbol and handler.
+
+        :param bar_type: The bar type to unsubscribe from.
+        :param handler: The callable handler which was subscribed.
+        :raises ValueError: If the handler is not of type Callable.
+        """
+        Condition.type(handler, Callable, 'handler')
+
+        self._bar_sub_worker.unsubscribe(str(bar_type))
+        self._remove_bar_handler(bar_type, handler)
 
     cpdef void unsubscribe_instrument(self, Symbol symbol, handler: Callable):
         """

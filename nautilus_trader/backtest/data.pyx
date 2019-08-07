@@ -262,7 +262,7 @@ cdef class BacktestDataClient(DataClient):
 
     cpdef void dispose(self):
         """
-        TBD.
+        Dispose of the data client by releasing all resources.
         """
         pass
 
@@ -363,7 +363,7 @@ cdef class BacktestDataClient(DataClient):
         """
         Condition.type(callback, Callable, 'callback')
 
-        self._log.info(f"Simulating download of historical ticks for {symbol}.")
+        self._log.info(f"Simulated request ticks for {symbol} from {from_datetime} to {to_datetime}.")
 
     cpdef void request_bars(
             self,
@@ -382,7 +382,7 @@ cdef class BacktestDataClient(DataClient):
         """
         Condition.type(callback, Callable, 'callback')
 
-        self._log.info(f"Simulating download of historical bars for {bar_type}.")
+        self._log.info(f"Simulated download of historical bars for {bar_type} from {from_datetime} to {to_datetime}.")
 
     cpdef void subscribe_ticks(self, Symbol symbol, handler: Callable):
         """
@@ -398,21 +398,6 @@ cdef class BacktestDataClient(DataClient):
 
         self._add_tick_handler(symbol, handler)
         self.data_providers[symbol].set_tick_iteration_index(self.time_now())
-
-    cpdef void unsubscribe_ticks(self, Symbol symbol, handler: Callable):
-        """
-        Unsubscribes from tick data for the given symbol.
-
-        :param symbol: The tick symbol to unsubscribe from.
-        :param handler: The callable handler which was subscribed.
-        :raises ValueError: If the symbol is not a key in data_providers.
-        :raises ValueError: If the handler is not of type Callable.
-        """
-        Condition.is_in(symbol, self.data_providers, 'symbol', 'data_providers')
-        Condition.type_or_none(handler, Callable, 'handler')
-
-        self.data_providers[symbol].deregister_ticks()
-        self._remove_tick_handler(symbol, handler)
 
     cpdef void subscribe_bars(self, BarType bar_type, handler: Callable):
         """
@@ -431,6 +416,21 @@ cdef class BacktestDataClient(DataClient):
         if bar_type not in self.data_providers[bar_type.symbol].bars:
             self._build_bars(bar_type)
         self.data_providers[bar_type.symbol].set_bar_iteration_index(bar_type, self.time_now())
+
+    cpdef void unsubscribe_ticks(self, Symbol symbol, handler: Callable):
+        """
+        Unsubscribes from tick data for the given symbol.
+
+        :param symbol: The tick symbol to unsubscribe from.
+        :param handler: The callable handler which was subscribed.
+        :raises ValueError: If the symbol is not a key in data_providers.
+        :raises ValueError: If the handler is not of type Callable.
+        """
+        Condition.is_in(symbol, self.data_providers, 'symbol', 'data_providers')
+        Condition.type_or_none(handler, Callable, 'handler')
+
+        self.data_providers[symbol].deregister_ticks()
+        self._remove_tick_handler(symbol, handler)
 
     cpdef void unsubscribe_bars(self, BarType bar_type, handler: Callable):
         """
@@ -451,7 +451,7 @@ cdef class BacktestDataClient(DataClient):
         """
         Update all instruments from the database.
         """
-        self._log.info(f"Updated all instruments for the {self.venue} venue.")
+        self._log.info(f"Simulated update all instruments for the {self.venue} venue.")
 
 
 cdef class DataProvider:

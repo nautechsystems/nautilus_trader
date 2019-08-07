@@ -11,7 +11,7 @@ from datetime import timedelta
 from nautilus_trader.core.message import Event
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
-from nautilus_trader.model.objects import Price, Tick, BarType, Bar, Instrument
+from nautilus_trader.model.objects import Price, Symbol, Tick, BarType, Bar, Instrument
 from nautilus_trader.model.identifiers import Label
 from nautilus_trader.data.analyzers import SpreadAnalyzer, LiquidityAnalyzer
 from nautilus_trader.trade.strategy import TradeStrategy
@@ -29,7 +29,7 @@ class EMACrossPy(TradeStrategy):
     """
 
     def __init__(self,
-                 instrument: Instrument,
+                 symbol: Symbol,
                  bar_type: BarType,
                  risk_bp: float=10.0,
                  fast_ema: int=10,
@@ -39,7 +39,7 @@ class EMACrossPy(TradeStrategy):
         """
         Initializes a new instance of the EMACrossPy class.
 
-        :param instrument: The instrument for the strategy.
+        :param symbol: The symbol for the strategy.
         :param bar_type: The bar type for the strategy.
         :param risk_bp: The risk per trade (basis points).
         :param fast_ema: The fast EMA period.
@@ -48,22 +48,23 @@ class EMACrossPy(TradeStrategy):
         :param sl_atr_multiple: The ATR multiple for stop-loss prices.
         """
         # Order id tag must be unique at trader level
-        super().__init__(id_tag_strategy=instrument.symbol.code)
+        super().__init__(id_tag_strategy=symbol.code)
 
         # Custom strategy variables
-        self.warmed_up = False
-        self.instrument = instrument
-        self.symbol = instrument.symbol
+        self.symbol = symbol
         self.bar_type = bar_type
         self.risk_bp = risk_bp
-        self.position_sizer = FixedRiskSizer(self.instrument)
-        self.spread_analyzer = SpreadAnalyzer(self.instrument.tick_precision)
-        self.liquidity = LiquidityAnalyzer()
-        self.entry_buffer = instrument.tick_size
+        self.entry_buffer = 0  # instrument.tick_size
+        self.SL_buffer = 0  # instrument.tick_size * 10
         self.SL_atr_multiple = sl_atr_multiple
-        self.SL_buffer = instrument.tick_size * 10
+
+        self.instrument = None
+        self.position_sizer = None
+        self.spread_analyzer = None
+        self.liquidity = LiquidityAnalyzer()
 
         # Create the indicators for the strategy
+        self.warmed_up = False
         self.fast_ema = ExponentialMovingAverage(fast_ema)
         self.slow_ema = ExponentialMovingAverage(slow_ema)
         self.atr = AverageTrueRange(atr_period)
@@ -78,6 +79,12 @@ class EMACrossPy(TradeStrategy):
         This method is called when self.start() is called, and after internal start logic.
         """
         # Put custom code to be run on strategy start here (or pass)
+        self.instrument = self.get_instrument(self.symbol)
+        self.entry_buffer = self.instrument.tick_size
+        self.SL_buffer = self.instrument.tick_size * 10
+        self.position_sizer = FixedRiskSizer(self.instrument)
+        self.spread_analyzer = SpreadAnalyzer(self.instrument.tick_precision)
+
         self.request_bars(self.bar_type)
         self.subscribe_instrument(self.symbol)
         self.subscribe_bars(self.bar_type)

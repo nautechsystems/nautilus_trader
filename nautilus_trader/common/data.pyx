@@ -47,83 +47,22 @@ cdef class DataClient:
 
         self._log.info("Initialized.")
 
-    cpdef datetime time_now(self):
-        """
-        Return the current time of the data client.
-        
-        :return: datetime.
-        """
-        return self._clock.time_now()
-
-    cpdef list subscribed_ticks(self):
-        """
-        Return the list of tick symbols subscribed to.
-        
-        :return: List[Symbol].
-        """
-        return list(self._tick_handlers.keys())
-
-    cpdef list subscribed_bars(self):
-        """
-        Return the list of bar types subscribed to.
-        
-        :return: List[BarType].
-        """
-        return list(self._bar_handlers.keys())
-
-    cpdef list subscribed_instruments(self):
-        """
-        Return the list of instruments subscribed to.
-        
-        :return: List[Symbol].
-        """
-        return list(self._instrument_handlers.keys())
-
-    cpdef list instrument_symbols(self):
-        """
-        Return all instrument symbols held by the data client.
-        
-        :return: List[Symbol].
-        """
-        return list(self._instruments).copy()
-
+# -- ABSTRACT METHODS ---------------------------------------------------------------------------- #
     cpdef void connect(self):
-        """
-        Connect to the data service.
-        """
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
     cpdef void disconnect(self):
-        """
-        Disconnect from the data service.
-        """
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
     cpdef void reset(self):
-        """
-        Reset the data client.
-        """
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
     cpdef void dispose(self):
-        """
-        Dispose of the data client.
-        """
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
-
-    cpdef void register_strategy(self, TradeStrategy strategy):
-        """
-        Register the given trade strategy with the data client.
-
-        :param strategy: The strategy to register.
-        """
-        strategy.register_data_client(self)
-
-        self._log.debug(f"Registered {strategy}.")
 
     cpdef void request_ticks(self, Symbol symbol, datetime from_datetime, datetime to_datetime, callback: Callable):
         # Raise exception if not overridden in implementation
@@ -168,6 +107,57 @@ cdef class DataClient:
     cpdef void update_instruments(self):
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
+# ------------------------------------------------------------------------------------------------ #
+
+    cpdef datetime time_now(self):
+        """
+        Return the current time of the data client.
+        
+        :return: datetime.
+        """
+        return self._clock.time_now()
+
+    cpdef list subscribed_ticks(self):
+        """
+        Return the list of tick symbols subscribed to.
+        
+        :return: List[Symbol].
+        """
+        return list(self._tick_handlers.keys())
+
+    cpdef list subscribed_bars(self):
+        """
+        Return the list of bar types subscribed to.
+        
+        :return: List[BarType].
+        """
+        return list(self._bar_handlers.keys())
+
+    cpdef list subscribed_instruments(self):
+        """
+        Return the list of instruments subscribed to.
+        
+        :return: List[Symbol].
+        """
+        return list(self._instrument_handlers.keys())
+
+    cpdef list instrument_symbols(self):
+        """
+        Return all instrument symbols held by the data client.
+        
+        :return: List[Symbol].
+        """
+        return list(self._instruments).copy()
+
+    cpdef void register_strategy(self, TradeStrategy strategy):
+        """
+        Register the given trade strategy with the data client.
+
+        :param strategy: The strategy to register.
+        """
+        strategy.register_data_client(self)
+
+        self._log.debug(f"Registered {strategy}.")
 
     cpdef dict get_instruments_all(self):
         """
