@@ -347,7 +347,13 @@ cdef class LiveDataClient(DataClient):
         """
         Update all instruments for the data clients venue.
         """
-        self.request_instruments(self._handle_instruments)
+        self.request_instruments(self._handle_instruments_py)
+
+    cpdef void _handle_instruments_py(self, list instruments):
+        # Method provides a Python wrapper for the callback
+        # Handle all instruments individually
+        for instrument in instruments:
+            self._handle_instrument(instrument)
 
     cpdef void subscribe_ticks(self, Symbol symbol, handler: Callable):
         """
