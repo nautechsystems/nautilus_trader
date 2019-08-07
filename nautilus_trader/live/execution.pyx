@@ -101,7 +101,7 @@ cdef class LiveExecClient(ExecutionClient):
         self._thread = Thread(target=self._process, daemon=True)
 
         self._commands_worker = RequestWorker(
-            'ExecClient.CommandSender',
+            f'{self.__class__.__name__}.CommandRequester',
             'NAUTILUS:COMMAND_ROUTER',
             service_address,
             commands_port,
@@ -109,7 +109,7 @@ cdef class LiveExecClient(ExecutionClient):
             logger)
 
         self._events_worker = SubscriberWorker(
-            'ExecClient.EventSubscriber',
+            f'{self.__class__.__name__}.EventSubscriber',
             'NAUTILUS:EVENTS_PUBLISHER',
             service_address,
             events_port,
