@@ -8,6 +8,7 @@
 
 from cpython.datetime cimport datetime
 
+from nautilus_trader.core.typed_collections cimport TypedList
 from nautilus_trader.core.types cimport ValidString
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport Clock
@@ -65,9 +66,6 @@ cdef class TradeStrategy:
     cdef ExecutionClient _exec_client
     cdef Portfolio _portfolio
 
-    cdef readonly bint is_data_client_registered
-    cdef readonly bint is_exec_client_registered
-    cdef readonly bint is_portfolio_registered
     cdef readonly bint is_running
 
     cdef bint equals(self, TradeStrategy other)
@@ -76,6 +74,7 @@ cdef class TradeStrategy:
     cpdef on_start(self)
     cpdef on_tick(self, Tick tick)
     cpdef on_bar(self, BarType bar_type, Bar bar)
+    cpdef on_instrument(self, Instrument instrument)
     cpdef on_event(self, Event event)
     cpdef on_stop(self)
     cpdef on_reset(self)
@@ -95,6 +94,7 @@ cdef class TradeStrategy:
     cpdef void handle_ticks(self, list ticks)
     cpdef void handle_bar(self, BarType bar_type, Bar bar)
     cpdef void handle_bars(self, BarType bar_type, list bars)
+    cpdef void handle_instrument(self, Instrument instrument)
     cpdef void handle_event(self, Event event)
 
     cdef void _remove_atomic_child_orders(self, OrderId order_id)
@@ -106,18 +106,20 @@ cdef class TradeStrategy:
     cpdef list instrument_symbols(self)
     cpdef Instrument get_instrument(self, Symbol symbol)
     cpdef dict get_instruments_all(self)
-    cpdef void historical_bars(self, BarType bar_type, datetime from_datetime=*, datetime to_datetime=*)
-    cpdef void subscribe_bars(self, BarType bar_type)
-    cpdef void unsubscribe_bars(self, BarType bar_type)
+    cpdef void request_bars(self, BarType bar_type, datetime from_datetime=*, datetime to_datetime=*)
     cpdef void subscribe_ticks(self, Symbol symbol)
+    cpdef void subscribe_bars(self, BarType bar_type)
+    cpdef void subscribe_instrument(self, Symbol symbol)
     cpdef void unsubscribe_ticks(self, Symbol symbol)
+    cpdef void unsubscribe_bars(self, BarType bar_type)
+    cpdef void unsubscribe_instrument(self, Symbol symbol)
     cpdef list bars(self, BarType bar_type)
     cpdef Bar bar(self, BarType bar_type, int index)
     cpdef Bar last_bar(self, BarType bar_type)
     cpdef Tick last_tick(self, Symbol symbol)
 
 # -- INDICATOR METHODS --------------------------------------------------------------------------- #
-    cpdef list indicators(self, BarType bar_type)
+    cpdef readonly list indicators(self, BarType bar_type)
     cpdef readonly bint indicators_initialized(self, BarType bar_type)
     cpdef readonly bint indicators_initialized_all(self)
 

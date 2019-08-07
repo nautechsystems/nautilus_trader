@@ -46,6 +46,9 @@ class PyStrategy(TradeStrategy):
         print(bar)
         self.object_storer.store_2(bar_type, bar)
 
+    def on_instrument(self, instrument):
+        pass
+
     def on_event(self, event):
         self.object_storer.store(event)
 
@@ -77,6 +80,9 @@ cdef class EmptyStrategy(TradeStrategy):
         pass
 
     cpdef on_bar(self, BarType bar_type, Bar bar):
+        pass
+
+    cpdef on_instrument(self, Instrument instrument):
         pass
 
     cpdef on_event(self, Event event):
@@ -133,6 +139,9 @@ cdef class TickTock(TradeStrategy):
         self.time_alert_counter += 1
         self.clock.set_time_alert(label=Label(f'Test-Alert-{self.time_alert_counter}'),
                             alert_time=bar.timestamp + timedelta(seconds=30))
+
+    cpdef on_instrument(self, Instrument instrument):
+        pass
 
     cpdef on_event(self, Event event):
         self.store.append(event)
@@ -211,6 +220,9 @@ cdef class TestStrategy1(TradeStrategy):
 
                 self.submit_order(sell_order, PositionId(str(sell_order.id)))
                 self.position_id = sell_order.id
+
+    cpdef on_instrument(self, Instrument instrument):
+        self.object_storer.store(instrument)
 
     cpdef on_event(self, Event event):
         self.object_storer.store(event)
@@ -299,7 +311,8 @@ cdef class EMACross(TradeStrategy):
         start logic.
         """
         # Put custom code to be run on strategy start here
-        self.historical_bars(self.bar_type)
+        self.request_bars(self.bar_type)
+        self.subscribe_instrument(self.symbol)
         self.subscribe_bars(self.bar_type)
         self.subscribe_ticks(self.symbol)
 
@@ -416,6 +429,17 @@ cdef class EMACross(TradeStrategy):
                     if temp_price < trailing_stop.price:
                         self.modify_order(trailing_stop, temp_price)
 
+    cpdef on_instrument(self, Instrument instrument):
+        """
+        This method is called whenever the strategy receives an Instrument update.
+
+        :param instrument: The received instrument.
+        """
+        if self.instrument.symbol.equals(instrument.symbol):
+            self.instrument = instrument
+
+        self.log.info(f"Updated instrument {instrument}.")
+
     cpdef on_event(self, Event event):
         """
         This method is called whenever the strategy receives an Event object,
@@ -452,5 +476,6 @@ cdef class EMACross(TradeStrategy):
         that had been used by the strategy here.
         """
         # Put custom code to be run on a strategy disposal here (or pass)
+        self.unsubscribe_instrument(self.symbol)
         self.unsubscribe_bars(self.bar_type)
         self.unsubscribe_ticks(self.symbol)

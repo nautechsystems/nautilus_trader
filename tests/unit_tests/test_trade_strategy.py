@@ -12,6 +12,7 @@ import time
 
 from datetime import datetime, timezone, timedelta
 
+from nautilus_trader.core.typed_collections import TypedList
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.account import Account
 from nautilus_trader.common.brokerage import CommissionCalculator
@@ -288,7 +289,7 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(KeyError, strategy.order, OrderId('unknown_order_id'))
+        self.assertRaises(ValueError, strategy.order, OrderId('unknown_order_id'))
 
     def test_can_get_order(self):
         # Arrange
