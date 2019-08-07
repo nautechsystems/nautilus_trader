@@ -88,7 +88,7 @@ cdef class MQWorker:
 
 cdef class RequestWorker(MQWorker):
     """
-    Provides a worker for ZMQ request messaging.
+    Provides a worker for ZMQ requester messaging.
     """
 
     def __init__(
@@ -138,10 +138,10 @@ cdef class RequestWorker(MQWorker):
 
         self._cycles += 1
         self._zmq_socket.send(request)
-        self._log.debug(f"Sent[{self._cycles}] request of {len(request)} bytes.")
+        self._log.debug(f"[{self._cycles}]--> request of {len(request)} bytes.")
 
         cdef bytes response = self._zmq_socket.recv()
-        self._log.debug(f"Received[{self._cycles}] response of {len(response)} bytes.")
+        self._log.debug(f"[{self._cycles}]<-- response of {len(response)} bytes.")
 
         return response
 
@@ -222,5 +222,5 @@ cdef class SubscriberWorker(MQWorker):
             topic = self._zmq_socket.recv().decode(UTF8)
             body = self._zmq_socket.recv()
 
-            self._log.debug(f"Received[{self._cycles}] topic={topic}, message={body}")
+            self._log.debug(f"[{self._cycles}]<-- topic={topic}, message={body}")
             self._handler(topic, body)

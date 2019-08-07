@@ -35,10 +35,8 @@ if __name__ == "__main__":
 
     data_client.update_instruments()
 
-    instrument = data_client.get_instrument(AUDUSD_FXCM)
-
     strategy = EMACrossPy(
-        instrument,
+        AUDUSD_FXCM,
         AUDUSD_FXCM_1_SEC_BID,
         0.1,
         10,

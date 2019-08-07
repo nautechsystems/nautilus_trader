@@ -33,7 +33,7 @@ if __name__ == "__main__":
     ask_data = {usdjpy.symbol: {Resolution.MINUTE: ask_data_1min}}
 
     strategies = [EMACrossPy(
-        instrument=usdjpy,
+        symbol=usdjpy.symbol,
         bar_type=TestStubs.bartype_usdjpy_1min_bid())]
 
     config = BacktestConfig(
@@ -61,7 +61,7 @@ if __name__ == "__main__":
         config=config)
 
     start = datetime(2013, 1, 1, 0, 0, 0, 0)
-    stop = datetime(2013, 1, 10, 0, 0, 0, 0)
+    stop = datetime(2013, 1, 2, 0, 0, 0, 0)
 
     engine.run(start, stop)
 
