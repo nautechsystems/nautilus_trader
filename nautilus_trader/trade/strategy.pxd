@@ -53,6 +53,7 @@ cdef class TradeStrategy:
     cdef dict _atomic_order_ids
     cdef dict _modify_order_buffer
 
+    cdef readonly int tick_capacity
     cdef readonly int bar_capacity
     cdef dict _timers
     cdef dict _ticks
@@ -113,6 +114,7 @@ cdef class TradeStrategy:
     cpdef void unsubscribe_ticks(self, Symbol symbol)
     cpdef void unsubscribe_bars(self, BarType bar_type)
     cpdef void unsubscribe_instrument(self, Symbol symbol)
+    cpdef list ticks(self, Symbol symbol)
     cpdef list bars(self, BarType bar_type)
     cpdef Bar bar(self, BarType bar_type, int index)
     cpdef Bar last_bar(self, BarType bar_type)

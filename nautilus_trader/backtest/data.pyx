@@ -382,7 +382,30 @@ cdef class BacktestDataClient(DataClient):
         """
         Condition.type(callback, Callable, 'callback')
 
-        self._log.info(f"Simulated download of historical bars for {bar_type} from {from_datetime} to {to_datetime}.")
+        self._log.info(f"Simulated request bars for {bar_type} from {from_datetime} to {to_datetime}.")
+
+    cpdef void request_instrument(self, Symbol symbol, callback: Callable):
+        """
+        Request the instrument for the given symbol.
+
+        :param symbol: The symbol to update.
+        :param callback: The callback for the response.
+        """
+        Condition.type(callback, Callable, 'callback')
+
+        self._log.info(f"Requesting instrument for {symbol}...")
+
+        callback(self._instruments[symbol])
+
+    cpdef void request_instruments(self, callback: Callable):
+        """
+        Request all instrument for the data clients venue.
+        """
+        Condition.type(callback, Callable, 'callback')
+
+        self._log.info(f"Requesting all instruments for the {self.venue} ...")
+
+        callback([instrument for instrument in self._instruments.values()])
 
     cpdef void subscribe_ticks(self, Symbol symbol, handler: Callable):
         """
@@ -417,6 +440,19 @@ cdef class BacktestDataClient(DataClient):
             self._build_bars(bar_type)
         self.data_providers[bar_type.symbol].set_bar_iteration_index(bar_type, self.time_now())
 
+    cpdef void subscribe_instrument(self, Symbol symbol, handler: Callable):
+        """
+        Subscribe to live instrument data updates for the given symbol and handler.
+
+        :param symbol: The instrument symbol to subscribe to.
+        :param handler: The callable handler for subscription.
+        :raises ValueError: If the handler is not of type Callable.
+        """
+        Condition.type(handler, Callable, 'handler')
+
+        self._log.info(f"Simulated subscribe to {symbol} instrument updates "
+                       f"(a backtest data client wont update an instrument).")
+
     cpdef void unsubscribe_ticks(self, Symbol symbol, handler: Callable):
         """
         Unsubscribes from tick data for the given symbol.
@@ -447,11 +483,25 @@ cdef class BacktestDataClient(DataClient):
         self.data_providers[bar_type.symbol].deregister_bars(bar_type)
         self._remove_bar_handler(bar_type, handler)
 
+    cpdef void unsubscribe_instrument(self, Symbol symbol, handler: Callable):
+        """
+        Unsubscribe from live instrument data updates for the given symbol and handler.
+
+        :param symbol: The instrument symbol to unsubscribe from.
+        :param handler: The callable handler which was subscribed.
+        :raises ValueError: If the handler is not of type Callable.
+        """
+        Condition.type(handler, Callable, 'handler')
+
+        self._log.info(f"Simulated unsubscribe from {symbol} instrument updates "
+                       f"(a backtest data client wont update an instrument).")
+
     cpdef void update_instruments(self):
         """
         Update all instruments from the database.
         """
-        self._log.info(f"Simulated update all instruments for the {self.venue} venue.")
+        self._log.info(f"Simulated update all instruments for the {self.venue} venue "
+                       f"(a backtest data client already has all instruments needed).")
 
 
 cdef class DataProvider:

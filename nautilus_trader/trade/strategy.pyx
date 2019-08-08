@@ -43,6 +43,7 @@ cdef class TradeStrategy:
                  bint flatten_on_sl_reject=True,
                  bint flatten_on_stop=True,
                  bint cancel_all_orders_on_stop=True,
+                 int tick_capacity=1000,
                  int bar_capacity=1000,
                  Clock clock=LiveClock(),
                  GuidFactory guid_factory=LiveGuidFactory(),
@@ -102,8 +103,9 @@ cdef class TradeStrategy:
         self._atomic_order_ids = {}      # type: Dict[OrderId, List[OrderId]]
 
         # Data
+        self.tick_capacity = tick_capacity
         self.bar_capacity = bar_capacity
-        self._ticks = {}                 # type: Dict[Symbol, Tick]
+        self._ticks = {}                 # type: Dict[Symbol, Deque[Tick]]
         self._bars = {}                  # type: Dict[BarType, Deque[Bar]]
         self._indicators = {}            # type: Dict[BarType, List[object]]
         self._indicator_updaters = {}    # type: Dict[BarType, List[IndicatorUpdater]]
@@ -323,7 +325,10 @@ cdef class TradeStrategy:
 
         :param tick: The tick received.
         """
-        self._ticks[tick.symbol] = tick
+        if tick.symbol not in self._ticks:
+            self._ticks[tick.symbol] = deque(maxlen=self.tick_capacity)  # type: Deque[Tick]
+
+        self._ticks[tick.symbol].appendleft(tick)
 
         if self.is_running:
             try:
@@ -607,6 +612,18 @@ cdef class TradeStrategy:
         self._data_client.unsubscribe_instrument(symbol, self.handle_instrument)
         self.log.info(f"Unsubscribed from instrument data for {symbol}.")
 
+    cpdef list ticks(self, Symbol symbol):
+        """
+        Return the bars for the given bar type (returns a copy of the internal deque).
+
+        :param symbol: The symbol for the ticks to get.
+        :return: List[Tick] (if found).
+        :raises ValueError: If the strategies bars dictionary does not contain the bar type.
+        """
+        Condition.is_in(symbol, self._ticks, 'symbol', 'ticks')
+
+        return list(self._ticks[symbol])
+
     cpdef list bars(self, BarType bar_type):
         """
         Return the bars for the given bar type (returns a copy of the internal deque).
@@ -659,7 +676,7 @@ cdef class TradeStrategy:
         """
         Condition.is_in(symbol, self._ticks, 'symbol', 'ticks')
 
-        return self._ticks[symbol]
+        return self._ticks[symbol][0]
 
 
 # -- INDICATOR METHODS --------------------------------------------------------------------------- #
@@ -739,9 +756,9 @@ cdef class TradeStrategy:
         """
         cdef dict bid_rates = {}
         cdef dict ask_rates = {}
-        for symbol, tick in self._ticks.items():
-            bid_rates[symbol.code] = tick.bid.as_float()
-            ask_rates[symbol.code] = tick.ask.as_float()
+        for symbol, ticks in self._ticks.items():
+            bid_rates[symbol.code] = ticks[0].bid.as_float()
+            ask_rates[symbol.code] = ticks[0].ask.as_float()
 
         return self._exchange_calculator.get_rate(
             quote_currency=quote_currency,
