@@ -138,10 +138,10 @@ cdef class RequestWorker(MQWorker):
 
         self._cycles += 1
         self._zmq_socket.send(request)
-        self._log.debug(f"[{self._cycles}]--> request of {len(request)} bytes.")
+        self._log.debug(f"[{self._cycles}]--> Request of {len(request)} bytes.")
 
         cdef bytes response = self._zmq_socket.recv()
-        self._log.debug(f"[{self._cycles}]<-- response of {len(response)} bytes.")
+        self._log.debug(f"[{self._cycles}]<-- Response of {len(response)} bytes.")
 
         return response
 
