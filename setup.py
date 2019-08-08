@@ -59,7 +59,7 @@ Cython.Compiler.Options.cimport_from_pyx = True
 Profile_Hooks = False
 
 # Cython compiler directives
-compiler_directives = {'language_level': 3, 'profile': Profile_Hooks}
+compiler_directives = {'language_level': 3, 'embedsignature': True, 'profile': Profile_Hooks}
 # -------------------------------------
 
 
