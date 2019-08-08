@@ -6,8 +6,6 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.objects cimport Tick, BarType, Bar
-
 
 cdef class Handler:
     """
