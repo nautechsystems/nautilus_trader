@@ -227,6 +227,8 @@ cdef class LiveDataClient(DataClient):
         :param to_datetime: The to date time for the request.
         :param callback: The callback for the response.
         """
+        Condition.type(callback, Callable, 'callback')
+
         cdef dict query = {
             DATA_TYPE: "Tick[]",
             SYMBOL: symbol.value,
@@ -265,6 +267,8 @@ cdef class LiveDataClient(DataClient):
         :param to_datetime: The to date time for the request.
         :param callback: The callback for the response.
         """
+        Condition.type(callback, Callable, 'callback')
+
         cdef dict query = {
             DATA_TYPE: "Bar[]",
             SYMBOL: bar_type.symbol.value,
@@ -297,6 +301,8 @@ cdef class LiveDataClient(DataClient):
         :param symbol: The symbol to update.
         :param callback: The callback for the response.
         """
+        Condition.type(callback, Callable, 'callback')
+
         cdef dict query = {
             DATA_TYPE: "Instrument",
             SYMBOL: symbol.value,
@@ -323,6 +329,8 @@ cdef class LiveDataClient(DataClient):
         """
         Request all instrument for the data clients venue.
         """
+        Condition.type(callback, Callable, 'callback')
+
         cdef dict query = {
             DATA_TYPE: "Instrument[]",
             VENUE: self.venue.value,
