@@ -195,7 +195,7 @@ cdef class DataClient:
             self._log.error(f"Cannot add {tick_handler} (duplicate handler found).")
 
     cdef void _add_bar_handler(self, BarType bar_type, handler: Callable):
-        # Subscribe to bar data for the given bar type and handler.
+        # Subscribe to bar data for the given bar type and handler
         Condition.type(handler, Callable, 'handler')
 
         if bar_type not in self._bar_handlers:
@@ -243,7 +243,7 @@ cdef class DataClient:
             del self._tick_handlers[symbol]
 
     cdef void _remove_bar_handler(self, BarType bar_type, handler: Callable):
-        # Unsubscribe from bar data for the given bar type and handler.
+        # Unsubscribe from bar data for the given bar type and handler
         Condition.type(handler, Callable, 'handler')
 
         if bar_type not in self._bar_handlers:
