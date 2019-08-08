@@ -54,8 +54,9 @@ cdef class LiveExecClient(ExecutionClient):
     def __init__(
             self,
             zmq_context: Context,
+            str service_name='NautilusExecutor',
             str service_address='localhost',
-            str events_topic='NAUTILUS:EXECUTION',
+            str events_topic='NAUTILUS:EVENTS',
             int commands_port=55555,
             int events_port=55556,
             CommandSerializer command_serializer=MsgPackCommandSerializer(),
@@ -70,6 +71,7 @@ cdef class LiveExecClient(ExecutionClient):
         Initializes a new instance of the LiveExecClient class.
 
         :param zmq_context: The ZMQ context.
+        :param service_name: The name of the service.
         :param service_address: The execution service host IP address (default='localhost').
         :param events_topic: The execution service events topic (default='NAUTILUS:EXECUTION').
         :param commands_port: The execution service commands port (default=55555).
@@ -102,7 +104,7 @@ cdef class LiveExecClient(ExecutionClient):
 
         self._commands_worker = RequestWorker(
             f'{self.__class__.__name__}.CommandRequester',
-            'NAUTILUS:COMMAND_ROUTER',
+            f'{service_name}.CommandRouter',
             service_address,
             commands_port,
             self._zmq_context,
@@ -110,7 +112,7 @@ cdef class LiveExecClient(ExecutionClient):
 
         self._events_worker = SubscriberWorker(
             f'{self.__class__.__name__}.EventSubscriber',
-            'NAUTILUS:EVENTS_PUBLISHER',
+            f'{service_name}.EventsPublisher',
             service_address,
             events_port,
             self._zmq_context,
@@ -213,5 +215,5 @@ cdef class LiveExecClient(ExecutionClient):
     cpdef void _deserialize_event(self, str topic, bytes event_bytes):
         cdef Event event = self._event_serializer.deserialize(event_bytes)
 
-        self._log.debug(f"Received {topic} topic event {event}")
+        self._log.debug(f"Received {event}")
         self._handle_event(event)

@@ -53,6 +53,7 @@ cdef class LiveDataClient(DataClient):
     def __init__(self,
                  zmq_context: Context,
                  Venue venue,
+                 str service_name='NautilusData',
                  str service_address='localhost',
                  int tick_req_port=55501,
                  int tick_sub_port=55502,
@@ -69,6 +70,7 @@ cdef class LiveDataClient(DataClient):
         Initializes a new instance of the LiveDataClient class.
 
         :param zmq_context: The ZMQ context.
+        :param service_name: The name of the service.
         :param service_address: The data service host IP address (default=127.0.0.1).
         :param tick_req_port: The data service port for tick requests (default=55501).
         :param tick_sub_port: The data service port for tick subscriptions (default=55502).
@@ -102,7 +104,7 @@ cdef class LiveDataClient(DataClient):
 
         self._tick_req_worker = RequestWorker(
             f'{self.__class__.__name__}.TickReqWorker',
-            'NautilusData',
+            f'{service_name}.TickProvider',
             service_address,
             tick_req_port,
             self._zmq_context,
@@ -110,7 +112,7 @@ cdef class LiveDataClient(DataClient):
 
         self._bar_req_worker = RequestWorker(
             f'{self.__class__.__name__}.BarReqWorker',
-            'NautilusData',
+            f'{service_name}.BarProvider',
             service_address,
             bar_req_port,
             self._zmq_context,
@@ -118,7 +120,7 @@ cdef class LiveDataClient(DataClient):
 
         self._inst_req_worker = RequestWorker(
             f'{self.__class__.__name__}.InstReqWorker',
-            'NautilusData',
+            f'{service_name}.InstrumentProvider',
             service_address,
             inst_req_port,
             self._zmq_context,
@@ -126,7 +128,7 @@ cdef class LiveDataClient(DataClient):
 
         self._tick_sub_worker = SubscriberWorker(
             f'{self.__class__.__name__}.TickSubWorker',
-            'NautilusData',
+            f'{service_name}.TickPublisher',
             service_address,
             tick_sub_port,
             self._zmq_context,
@@ -135,7 +137,7 @@ cdef class LiveDataClient(DataClient):
 
         self._bar_sub_worker = SubscriberWorker(
             f'{self.__class__.__name__}.BarSubWorker',
-            'NautilusData',
+            f'{service_name}.BarPublisher',
             service_address,
             bar_sub_port,
             self._zmq_context,
@@ -144,7 +146,7 @@ cdef class LiveDataClient(DataClient):
 
         self._inst_sub_worker = SubscriberWorker(
             f'{self.__class__.__name__}.InstSubWorker',
-            'NautilusData',
+            f'{service_name}.InstrumentPublisher',
             service_address,
             inst_sub_port,
             self._zmq_context,
