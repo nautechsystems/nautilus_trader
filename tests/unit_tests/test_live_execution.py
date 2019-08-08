@@ -32,20 +32,25 @@ class LiveExecClientTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
         zmq_context = zmq.Context()
+        commands_port = 56555
+        events_port = 56556
 
         self.bar_type = TestStubs.bartype_audusd_1min_bid()
-        self.exec_client = LiveExecClient(zmq_context)
+        self.exec_client = LiveExecClient(
+            zmq_context=zmq_context,
+            commands_port=commands_port,
+            events_port=events_port)
 
         self.response_list = []
         self.response_handler = self.response_list.append
 
         self.command_router = MockCommandRouter(
             zmq_context,
-            55555,
+            commands_port,
             MsgPackCommandSerializer(),
             MsgPackResponseSerializer())
         self.command_router.start()
-        self.event_publisher = MockPublisher(zmq_context, 55556)
+        self.event_publisher = MockPublisher(zmq_context, events_port)
 
         self.exec_client.connect()
 

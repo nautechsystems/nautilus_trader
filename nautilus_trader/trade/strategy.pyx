@@ -612,6 +612,24 @@ cdef class TradeStrategy:
         self._data_client.unsubscribe_instrument(symbol, self.handle_instrument)
         self.log.info(f"Unsubscribed from instrument data for {symbol}.")
 
+    cpdef bint has_ticks(self, Symbol symbol):
+        """
+        Return a value indicating whether the strategy has ticks for the given symbol.
+        
+        :param symbol: The symbol of the ticks.
+        :return: bool.
+        """
+        return symbol in self._ticks and len(self._ticks[symbol]) > 0
+
+    cpdef bint has_bars(self, BarType bar_type):
+        """
+        Return a value indicating whether the strategy has bars for the given bar type.
+        
+        :param bar_type: The bar_type of the bars.
+        :return: bool.
+        """
+        return bar_type in self._bars and len(self._bars[bar_type]) > 0
+
     cpdef list ticks(self, Symbol symbol):
         """
         Return the bars for the given bar type (returns a copy of the internal deque).

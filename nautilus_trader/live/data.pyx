@@ -236,7 +236,7 @@ cdef class LiveDataClient(DataClient):
             TO_DATETIME: convert_datetime_to_string(to_datetime),
         }
 
-        self._log.info(f"Requesting {symbol} ticks from {from_datetime} to {to_datetime}...")
+        self._log.info(f"Requesting {symbol} ticks from {from_datetime} to {to_datetime} ...")
 
         cdef DataRequest request = DataRequest(query, self._guid_factory.generate(), self.time_now())
         cdef bytes request_bytes = self._request_serializer.serialize(request)
@@ -277,7 +277,7 @@ cdef class LiveDataClient(DataClient):
             TO_DATETIME: convert_datetime_to_string(to_datetime),
         }
 
-        self._log.info(f"Requesting {bar_type} bars from {from_datetime} to {to_datetime}...")
+        self._log.info(f"Requesting {bar_type} bars from {from_datetime} to {to_datetime} ...")
 
         cdef DataRequest request = DataRequest(query, self._guid_factory.generate(), self.time_now())
         cdef bytes request_bytes = self._request_serializer.serialize(request)
@@ -308,7 +308,7 @@ cdef class LiveDataClient(DataClient):
             SYMBOL: symbol.value,
         }
 
-        self._log.info(f"Requesting instrument for {symbol}...")
+        self._log.info(f"Requesting instrument for {symbol} ...")
 
         cdef DataRequest request = DataRequest(query, self._guid_factory.generate(), self.time_now())
         cdef bytes request_bytes = self._request_serializer.serialize(request)

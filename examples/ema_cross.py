@@ -31,7 +31,7 @@ class EMACrossPy(TradeStrategy):
     def __init__(self,
                  symbol: Symbol,
                  bar_type: BarType,
-                 risk_bp: float=10.0,
+                 risk_bp: float=1.0,
                  fast_ema: int=10,
                  slow_ema: int=20,
                  atr_period: int=20,
@@ -79,6 +79,7 @@ class EMACrossPy(TradeStrategy):
         This method is called when self.start() is called, and after internal start logic.
         """
         # Put custom code to be run on strategy start here (or pass)
+        self.account_inquiry()
         self.instrument = self.get_instrument(self.symbol)
         self.entry_buffer = self.instrument.tick_size
         self.SL_buffer = self.instrument.tick_size * 10
@@ -121,8 +122,10 @@ class EMACrossPy(TradeStrategy):
         self.spread_analyzer.calculate_metrics()
         self.liquidity.update(self.spread_analyzer.average_spread, self.atr.value)
 
-        self.log.info(f"Reached here *********************")
-        if True:
+        if not self.has_ticks(self.symbol):
+            return
+
+        if True is True:
             atomic_order = None
         # if self.liquidity.is_liquid and self.entry_orders_count() == 0 and self.is_flat():
         #     atomic_order = None
@@ -134,6 +137,7 @@ class EMACrossPy(TradeStrategy):
                 price_take_profit = Price(price_entry + (price_entry - price_stop_loss))
 
                 exchange_rate = self.get_exchange_rate(self.instrument.quote_currency)
+                self.log.info(f'FREE EQUITY: {self.account.free_equity}')
                 position_size = self.position_sizer.calculate(
                     equity=self.account.free_equity,
                     exchange_rate=exchange_rate,
@@ -144,8 +148,7 @@ class EMACrossPy(TradeStrategy):
                     hard_limit=20000000,
                     units=1,
                     unit_batch_size=1000)
-
-                if position_size.value > 0:  # Sufficient equity for a position
+                if position_size.value > 0:
                     atomic_order = self.order_factory.atomic_stop_market(
                         symbol=self.symbol,
                         order_side=OrderSide.BUY,
@@ -156,6 +159,8 @@ class EMACrossPy(TradeStrategy):
                         label=Label('S1'),
                         time_in_force=TimeInForce.GTD,
                         expire_time=self.time_now() + timedelta(minutes=1))
+                else:
+                    self.log.info("Insufficient equity for BUY signal.")
 
             # SELL LOGIC
             elif self.fast_ema.value < self.slow_ema.value:
@@ -164,6 +169,7 @@ class EMACrossPy(TradeStrategy):
                 price_take_profit = Price(price_entry - (price_stop_loss - price_entry))
 
                 exchange_rate = self.get_exchange_rate(self.instrument.quote_currency)
+                self.log.info(f'FREE EQUITY: {self.account.free_equity}')
                 position_size = self.position_sizer.calculate(
                     equity=self.account.free_equity,
                     exchange_rate=exchange_rate,
@@ -186,6 +192,8 @@ class EMACrossPy(TradeStrategy):
                         label=Label('S1'),
                         time_in_force=TimeInForce.GTD,
                         expire_time=self.time_now() + timedelta(minutes=1))
+                else:
+                    self.log.info("Insufficient equity for SELL signal.")
 
             # ENTRY ORDER SUBMISSION
             if atomic_order is not None:

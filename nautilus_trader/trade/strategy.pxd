@@ -114,6 +114,8 @@ cdef class TradeStrategy:
     cpdef void unsubscribe_ticks(self, Symbol symbol)
     cpdef void unsubscribe_bars(self, BarType bar_type)
     cpdef void unsubscribe_instrument(self, Symbol symbol)
+    cpdef bint has_ticks(self, Symbol symbol)
+    cpdef bint has_bars(self, BarType bar_type)
     cpdef list ticks(self, Symbol symbol)
     cpdef list bars(self, BarType bar_type)
     cpdef Bar bar(self, BarType bar_type, int index)
