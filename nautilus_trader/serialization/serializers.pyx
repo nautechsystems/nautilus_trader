@@ -396,6 +396,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
         cdef datetime event_timestamp = convert_string_to_datetime(unpacked[TIMESTAMP])
 
         if event_type == AccountEvent.__name__:
+            print(unpacked[ACCOUNT_ID])
             return AccountEvent(
                 AccountId(unpacked[ACCOUNT_ID]),
                 Brokerage(unpacked[BROKERAGE]),

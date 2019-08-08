@@ -155,7 +155,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             clock=TestClock())
         print('\n')
 
-    def test_can_serialize_and_deserialize_collateral_inquiry_command(self):
+    def test_can_serialize_and_deserialize_account_inquiry_command(self):
         # Arrange
         command = AccountInquiry(GUID(uuid.uuid4()), UNIX_EPOCH)
 

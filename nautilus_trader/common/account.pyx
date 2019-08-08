@@ -6,11 +6,11 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport ValidString
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.events cimport AccountEvent
 from nautilus_trader.model.objects cimport Brokerage, Money
-from nautilus_trader.model.identifiers cimport AccountId, AccountNumber
 
 
 cdef class Account:
@@ -96,6 +96,9 @@ cdef class Account:
 
         :param event: The account event to apply.
         """
+        if self.initialized:
+            Condition.equal(self.id, event.account_id)
+
         self._events.append(event)
         self.event_count += 1
         self.last_event = event

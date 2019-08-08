@@ -334,8 +334,14 @@ cdef class ExecutionClient:
         # Account event
         elif isinstance(event, AccountEvent):
             self._log.debug(f'{event}')
-            self._account.apply(event)
-            self._portfolio.handle_transaction(event)
+            if not self._account.initialized or self._account.id == event.account_id:
+                self._account.apply(event)
+                self._portfolio.handle_transaction(event)
+            else:
+                self._log.warning(self._account.id.value)
+                self._log.warning(event.account_id.value)
+                self._log.warning(self._account.id == event.account_id)
+                self._log.warning(f"{event} ignored (event not for this account).")
 
     cdef void _register_order(self, Order order, StrategyId strategy_id, PositionId position_id):
         Condition.true(order.id not in self._order_book, 'order.id not in order_book')
