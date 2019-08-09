@@ -321,9 +321,9 @@ cdef class ExecutionClient:
                 self._log.debug(str(event))
             # Warning Events
             elif isinstance(event, (OrderRejected, OrderCancelReject)):
-                self._log.debug(f'{event}')  # Also logged as warning by strategy
+                self._log.warning(f'{event}')  # Also logged as warning by strategy
             else:
-                self._log.debug(f'{event}')
+                self._log.warning(f'{event}')
 
         # Position events
         elif isinstance(event, PositionEvent):
@@ -351,7 +351,7 @@ cdef class ExecutionClient:
         self._order_book[order.id] = order
         self._order_strategy_index[order.id] = strategy_id
         self._portfolio.register_order(order.id, position_id)
-        self._log.debug(f"Registered {order.id} for strategy {strategy_id} with {position_id}.")
+        self._log.debug(f"Registered strategy_id={strategy_id.value}, position_id={position_id.value} order_id={order.id.value}")
 
 
 # -- ABSTRACT METHODS ---------------------------------------------------------------------------- #

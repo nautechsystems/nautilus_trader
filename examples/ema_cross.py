@@ -31,7 +31,7 @@ class EMACrossPy(TradeStrategy):
     def __init__(self,
                  symbol: Symbol,
                  bar_type: BarType,
-                 risk_bp: float=1.0,
+                 risk_bp: float=100.0,
                  fast_ema: int=10,
                  slow_ema: int=20,
                  atr_period: int=20,
@@ -48,7 +48,7 @@ class EMACrossPy(TradeStrategy):
         :param sl_atr_multiple: The ATR multiple for stop-loss prices.
         """
         # Order id tag must be unique at trader level
-        super().__init__(id_tag_strategy=symbol.code)
+        super().__init__(id_tag_strategy=symbol.code, bar_capacity=40)
 
         # Custom strategy variables
         self.symbol = symbol
@@ -99,7 +99,7 @@ class EMACrossPy(TradeStrategy):
 
         :param tick: The received tick.
         """
-        self.log.info(f"Received Tick({tick})")  # For demonstration purposes
+        # self.log.info(f"Received Tick({tick})")  # For demonstration purposes
         self.spread_analyzer.update(tick)
 
     def on_bar(self, bar_type: BarType, bar: Bar):
@@ -146,7 +146,7 @@ class EMACrossPy(TradeStrategy):
                     commission_rate_bp=0.15,
                     hard_limit=20000000,
                     units=1,
-                    unit_batch_size=1000)
+                    unit_batch_size=10000)
                 if position_size.value > 0:
                     atomic_order = self.order_factory.atomic_stop_market(
                         symbol=self.symbol,
@@ -177,7 +177,7 @@ class EMACrossPy(TradeStrategy):
                     commission_rate_bp=0.15,
                     hard_limit=20000000,
                     units=1,
-                    unit_batch_size=1000)
+                    unit_batch_size=10000)
 
                 if position_size.value > 0:  # Sufficient equity for a position
                     atomic_order = self.order_factory.atomic_stop_market(
