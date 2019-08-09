@@ -11,7 +11,7 @@ import os
 import shutil
 
 
-to_clean = ('.c', '.so', '.o', '.pyd', '.pyc', '.html')
+to_clean = ('.c', '.so', '.o', '.pyd', '.pyc', '.dll', '.html')
 directories = ['nautilus_trader', 'test_kit']
 
 
