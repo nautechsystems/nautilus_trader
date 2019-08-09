@@ -323,7 +323,7 @@ cdef class ExecutionClient:
             elif isinstance(event, (OrderRejected, OrderCancelReject)):
                 self._log.warning(f'{event}')  # Also logged as warning by strategy
             else:
-                self._log.warning(f'{event}')
+                self._log.debug(f'{event}')
 
         # Position events
         elif isinstance(event, PositionEvent):
@@ -338,9 +338,6 @@ cdef class ExecutionClient:
                 self._account.apply(event)
                 self._portfolio.handle_transaction(event)
             else:
-                self._log.warning(self._account.id.value)
-                self._log.warning(event.account_id.value)
-                self._log.warning(self._account.id == event.account_id)
                 self._log.warning(f"{event} ignored (event not for this account).")
 
     cdef void _register_order(self, Order order, StrategyId strategy_id, PositionId position_id):
