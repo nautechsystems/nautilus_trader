@@ -222,5 +222,5 @@ cdef class SubscriberWorker(MQWorker):
             topic = self._zmq_socket.recv().decode(UTF8)
             body = self._zmq_socket.recv()
 
-            self._log.debug(f"[{self._cycles}]<-- topic={topic}, message={body}")
+            # self._log.debug(f"[{self._cycles}]<-- topic={topic}, message={body}")
             self._handler(topic, body)

@@ -246,7 +246,7 @@ cdef class LiveDataClient(DataClient):
         cdef Response response = self._response_serializer.deserialize(response_bytes)
 
         if isinstance(response, (MessageRejected, QueryFailure)):
-            self._log.error(response)
+            self._log.error(response.message)
             return
 
         cdef dict data = self._data_serializer.deserialize(response.data)
@@ -287,7 +287,7 @@ cdef class LiveDataClient(DataClient):
         cdef Response response = self._response_serializer.deserialize(response_bytes)
 
         if isinstance(response, (MessageRejected, QueryFailure)):
-            self._log.error(response)
+            self._log.error(response.message)
             return
 
         cdef dict data = self._data_serializer.deserialize(response.data)
@@ -318,7 +318,7 @@ cdef class LiveDataClient(DataClient):
         cdef Response response = self._response_serializer.deserialize(response_bytes)
 
         if isinstance(response, (MessageRejected, QueryFailure)):
-            self._log.error(response)
+            self._log.error(response.message)
             return
 
         cdef dict data = self._data_serializer.deserialize(response.data)
@@ -346,7 +346,7 @@ cdef class LiveDataClient(DataClient):
         cdef Response response = self._response_serializer.deserialize(response_bytes)
 
         if isinstance(response, (MessageRejected, QueryFailure)):
-            self._log.error(response)
+            self._log.error(response.message)
             return
 
         cdef dict data = self._data_serializer.deserialize(response.data)

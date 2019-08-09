@@ -22,7 +22,8 @@ from nautilus_trader.trade.trader import Trader
 from examples.ema_cross import EMACrossPy
 
 AUDUSD_FXCM = Symbol('AUDUSD', Venue('FXCM'))
-AUDUSD_FXCM_1_SEC_BID = BarType(AUDUSD_FXCM, BarSpecification(1, Resolution.SECOND, QuoteType.BID))
+BAR_TYPE = BarType(AUDUSD_FXCM, BarSpecification(1, Resolution.MINUTE, QuoteType.BID))
+#BAR_TYPE = BarType(AUDUSD_FXCM, BarSpecification(1, Resolution.SECOND, QuoteType.BID))
 
 
 if __name__ == "__main__":
@@ -37,7 +38,7 @@ if __name__ == "__main__":
 
     strategy = EMACrossPy(
         AUDUSD_FXCM,
-        AUDUSD_FXCM_1_SEC_BID,
+        BAR_TYPE,
         0.1,
         10,
         20,
@@ -49,7 +50,8 @@ if __name__ == "__main__":
         data_client,
         exec_client,
         Account(currency=Currency.USD),
-        Portfolio())
+        Portfolio(),
+        logger=logger)
 
     input()
     trader.start()
