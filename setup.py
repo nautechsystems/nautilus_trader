@@ -92,13 +92,6 @@ modules = (get_directories(PACKAGE_NAME))
 package_data = {PACKAGE_NAME: [definition_ext]}
 for module in modules:
     package_data[f'{PACKAGE_NAME}/{module}'] = [definition_ext]
-
-
-definition_ext = '*.pxd'
-modules = (get_directories(PACKAGE_NAME))
-package_data = {PACKAGE_NAME: [definition_ext]}
-for module in modules:
-    package_data[f'{PACKAGE_NAME}/{module}'] = [definition_ext]
 print(f"Including package data; {package_data}")
 
 
