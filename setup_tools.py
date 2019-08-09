@@ -15,27 +15,38 @@ def scan_directories(directories: List[str]) -> List[str]:
     # Recursively scan given directories for all files
     file_names = []
     for directory in directories:
-        files = find_files(directory)
+        files = get_files(directory)
         for file in files:
             file_names.append(file)
     return file_names
 
 
-def find_files(directory: str, files: List[str]=[]) -> List[str]:
+def get_files(directory: str, files: List[str]=[]) -> List[str]:
     # Recursively scan for all files
     for path_name in os.listdir(directory):
         path = os.path.join(directory, path_name)
         if os.path.isfile(path):
             files.append(path)
         elif os.path.isdir(path):
-            find_files(path, files)
+            get_files(path, files)
     return files
 
 
-def find_pyx_files(directories: List[str]) -> List[str]:
-    # Recursively scan directories for all files to cythonize
-    pyx_files = []
+def find_files(extension: str, directories: List[str]) -> List[str]:
+    # Recursively scan directories for all files with the given extension
+    files = []
     for file in scan_directories(directories):
-        if file.endswith('.pyx'):
-            pyx_files.append(file)
-    return pyx_files
+        if file.endswith(extension):
+            files.append(file)
+    return files
+
+
+def get_directories(root_path: str):
+    # Recursively scan directories for given root path and return the names if not ignored
+    dir_names = []
+    for directory in os.listdir(root_path):
+        path = os.path.join(root_path, directory)
+        if os.path.isdir(path):
+            if not directory.startswith('__'):
+                dir_names.append(directory)
+    return dir_names
