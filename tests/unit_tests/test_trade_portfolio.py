@@ -110,6 +110,26 @@ class PortfolioTests(unittest.TestCase):
         # Assert
         self.assertTrue(self.portfolio.is_flat())
 
+    def test_get_position_for_order_when_no_position_returns_none(self):
+        # Arrange
+        order_id = OrderId('AUDUSD.FXCM-1-123456')
+
+        # Act
+        result = self.portfolio.get_position_for_order(order_id)
+
+        # Assert
+        self.assertIsNone(result)
+
+    def test_get_position_when_no_position_returns_none(self):
+        # Arrange
+        position_id = PositionId('AUDUSD.FXCM-1-123456')
+
+        # Act
+        result = self.portfolio.get_position(position_id)
+
+        # Assert
+        self.assertIsNone(result)
+
     def test_can_reset_portfolio(self):
         strategy = TradeStrategy(id_tag_strategy='001')
         order_id = OrderId('AUDUSD.FXCM-1-123456')
