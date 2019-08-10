@@ -6,13 +6,12 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.types cimport ValidString
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logger cimport LoggerAdapter
 from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.common.execution cimport ExecutionClient
-from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.model.identifiers cimport IdTag, TraderId
 from nautilus_trader.trade.portfolio cimport Portfolio
 from nautilus_trader.trade.reports cimport ReportProvider
 
@@ -28,7 +27,7 @@ cdef class Trader:
     cdef ReportProvider _report_provider
 
     cdef readonly TraderId id
-    cdef readonly ValidString id_tag_trader
+    cdef readonly IdTag id_tag_trader
     cdef readonly Account account
     cdef readonly Portfolio portfolio
     cdef readonly bint is_running

@@ -9,7 +9,6 @@
 import pandas as pd
 import unittest
 
-from nautilus_trader.core.types import ValidString
 from nautilus_trader.common.account import Account
 from nautilus_trader.common.brokerage import CommissionCalculator
 from nautilus_trader.common.clock import TestClock
@@ -17,7 +16,7 @@ from nautilus_trader.common.guid import TestGuidFactory
 from nautilus_trader.common.logger import TestLogger
 from nautilus_trader.model.enums import Resolution
 from nautilus_trader.model.objects import Venue, Money
-from nautilus_trader.model.identifiers import TraderId, StrategyId
+from nautilus_trader.model.identifiers import IdTag, TraderId, StrategyId
 from nautilus_trader.backtest.execution import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.data import BacktestDataClient
@@ -88,7 +87,7 @@ class TraderTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(TraderId('Trader-BT'), trader_id)
-        self.assertEqual(ValidString('BT'), id_tag_trader)
+        self.assertEqual(IdTag('BT'), id_tag_trader)
         self.assertFalse(self.trader.is_running)
         self.assertEqual(0, len(self.trader.started_datetimes))
         self.assertEqual(0, len(self.trader.stopped_datetimes))

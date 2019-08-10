@@ -18,7 +18,7 @@ from nautilus_trader.common.logger import TestLogger
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.objects import Quantity, Venue, Symbol, Price, Money
 from nautilus_trader.model.order import OrderFactory
-from nautilus_trader.model.identifiers import OrderId, PositionId, ExecutionId, ExecutionTicket
+from nautilus_trader.model.identifiers import IdTag, OrderId, PositionId, ExecutionId, ExecutionTicket
 from nautilus_trader.model.position import Position
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.trade.strategy import TradeStrategy
@@ -37,8 +37,8 @@ class PortfolioTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
         self.order_factory = OrderFactory(
-            id_tag_trader='001',
-            id_tag_strategy='001',
+            id_tag_trader=IdTag('001'),
+            id_tag_strategy=IdTag('001'),
             clock=TestClock())
         self.portfolio = Portfolio()
 

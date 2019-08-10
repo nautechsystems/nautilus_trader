@@ -55,7 +55,6 @@ cdef class TradeStrategy:
 
     cdef readonly int tick_capacity
     cdef readonly int bar_capacity
-    cdef dict _timers
     cdef dict _ticks
     cdef dict _bars
     cdef dict _indicators
@@ -82,7 +81,7 @@ cdef class TradeStrategy:
     cpdef on_dispose(self)
 
 # -- REGISTRATION METHODS ------------------------------------------------------------------------ #
-    cpdef void register_trader_id(self, TraderId trader_id, ValidString order_id_tag_trader)
+    cpdef void register_trader_id(self, TraderId trader_id, IdTag id_tag_trader)
     cpdef void register_data_client(self, DataClient client)
     cpdef void register_execution_client(self, ExecutionClient client)
     cpdef void register_indicator(self, BarType bar_type, indicator, update_method)
@@ -106,7 +105,7 @@ cdef class TradeStrategy:
     cpdef datetime time_now(self)
     cpdef list instrument_symbols(self)
     cpdef Instrument get_instrument(self, Symbol symbol)
-    cpdef dict get_instruments_all(self)
+    cpdef dict instruments_all(self)
     cpdef void request_bars(self, BarType bar_type, datetime from_datetime=*, datetime to_datetime=*)
     cpdef void subscribe_ticks(self, Symbol symbol)
     cpdef void subscribe_bars(self, BarType bar_type)
@@ -116,11 +115,12 @@ cdef class TradeStrategy:
     cpdef void unsubscribe_instrument(self, Symbol symbol)
     cpdef bint has_ticks(self, Symbol symbol)
     cpdef bint has_bars(self, BarType bar_type)
+    cpdef int tick_count(self, Symbol symbol)
+    cpdef int bar_count(self, BarType bar_type)
     cpdef list ticks(self, Symbol symbol)
     cpdef list bars(self, BarType bar_type)
+    cpdef Tick tick(self, Symbol symbol, int index)
     cpdef Bar bar(self, BarType bar_type, int index)
-    cpdef Bar last_bar(self, BarType bar_type)
-    cpdef Tick last_tick(self, Symbol symbol)
 
 # -- INDICATOR METHODS --------------------------------------------------------------------------- #
     cpdef readonly list indicators(self, BarType bar_type)

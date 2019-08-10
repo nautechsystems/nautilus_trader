@@ -16,7 +16,7 @@ from nautilus_trader.core.types import GUID
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.objects import Quantity, Venue, Symbol, Price
-from nautilus_trader.model.identifiers import ExecutionId, ExecutionTicket, PositionId
+from nautilus_trader.model.identifiers import IdTag, ExecutionId, ExecutionTicket, PositionId
 from nautilus_trader.model.order import OrderFactory
 from nautilus_trader.model.position import Position
 from nautilus_trader.model.events import OrderFilled
@@ -33,8 +33,8 @@ class ReportProviderTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
         self.order_factory = OrderFactory(
-            id_tag_trader='001',
-            id_tag_strategy='001',
+            id_tag_trader=IdTag('001'),
+            id_tag_strategy=IdTag('001'),
             clock=TestClock())
 
     def test_can_produce_orders_report(self):

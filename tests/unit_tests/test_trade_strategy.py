@@ -12,7 +12,6 @@ import time
 
 from datetime import datetime, timezone, timedelta
 
-from nautilus_trader.core.typed_collections import TypedList
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.account import Account
 from nautilus_trader.common.brokerage import CommissionCalculator
@@ -135,18 +134,6 @@ class TradeStrategyTests(unittest.TestCase):
         # Assert
         self.assertEqual(timezone.utc, result.tzinfo)
 
-    def test_can_get_indicators(self):
-        # Arrange
-        bar_type = TestStubs.bartype_gbpusd_1sec_mid()
-        strategy = TestStrategy1(bar_type)
-
-        # Act
-        result = strategy.indicators(strategy.bar_type)
-
-        # Assert
-        self.assertTrue(2, len(result))
-        print(result)
-
     def test_indicator_initialization(self):
         # Arrange
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
@@ -221,7 +208,7 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(ValueError, strategy.bar, bar_type, -2)
+        self.assertRaises(IndexError, strategy.bar, bar_type, -2)
 
     def test_can_get_bar(self):
         strategy = TradeStrategy(id_tag_strategy='001')
@@ -254,7 +241,7 @@ class TradeStrategyTests(unittest.TestCase):
         strategy.handle_bar(bar_type, bar)
 
         # Act
-        result = strategy.last_bar(bar_type)
+        result = strategy.bar(bar_type, 0)
 
         # Assert
         self.assertEqual(bar, result)
@@ -264,7 +251,7 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(ValueError, strategy.last_tick, AUDUSD_FXCM)
+        self.assertRaises(ValueError, strategy.tick, AUDUSD_FXCM, 0)
 
     def test_can_get_last_tick(self):
         strategy = TradeStrategy(id_tag_strategy='001')
@@ -277,7 +264,7 @@ class TradeStrategyTests(unittest.TestCase):
         strategy.handle_tick(tick)
 
         # Act
-        result = strategy.last_tick(AUDUSD_FXCM)
+        result = strategy.tick(AUDUSD_FXCM, 0)
 
         # Assert
         self.assertEqual(tick, result)
