@@ -21,7 +21,7 @@ from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition
 from nautilus_trader.model.currency cimport ExchangeRateCalculator
 from nautilus_trader.model.events cimport Event
-from nautilus_trader.model.identifiers cimport TraderId, StrategyId, OrderId, PositionId
+from nautilus_trader.model.identifiers cimport IdTag, TraderId, StrategyId, OrderId, PositionId
 from nautilus_trader.model.identifiers cimport PositionIdGenerator
 from nautilus_trader.model.objects cimport Symbol, Price, Tick, BarType, Bar, Instrument
 from nautilus_trader.model.order cimport Order, AtomicOrder, OrderFactory
@@ -39,8 +39,8 @@ cdef class TradeStrategy:
 
     cdef readonly TraderId trader_id
     cdef readonly StrategyId id
-    cdef readonly ValidString id_tag_trader
-    cdef readonly ValidString id_tag_strategy
+    cdef readonly IdTag id_tag_trader
+    cdef readonly IdTag id_tag_strategy
 
     cdef readonly bint flatten_on_sl_reject
     cdef readonly bint flatten_on_stop

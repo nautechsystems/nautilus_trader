@@ -22,8 +22,7 @@ from nautilus_trader.model.events cimport OrderEvent
 from nautilus_trader.model.events cimport OrderInitialized, OrderSubmitted, OrderAccepted, OrderRejected
 from nautilus_trader.model.events cimport OrderWorking, OrderExpired, OrderModified, OrderCancelled
 from nautilus_trader.model.events cimport OrderCancelReject, OrderPartiallyFilled, OrderFilled
-from nautilus_trader.model.identifiers cimport Label, OrderId, ExecutionId, ExecutionTicket
-from nautilus_trader.model.identifiers cimport OrderIdGenerator
+from nautilus_trader.model.identifiers cimport Label, IdTag, OrderId, ExecutionId, ExecutionTicket, OrderIdGenerator
 from nautilus_trader.common.clock cimport Clock, LiveClock
 
 
@@ -370,8 +369,8 @@ cdef class OrderFactory:
     """
 
     def __init__(self,
-                 str id_tag_trader,
-                 str id_tag_strategy,
+                 IdTag id_tag_trader,
+                 IdTag id_tag_strategy,
                  Clock clock=LiveClock()):
         """
         Initializes a new instance of the OrderFactory class.

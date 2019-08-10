@@ -119,14 +119,6 @@ cdef class Identifier(StringValue):
         """
         return f"{str(self.__class__.__name__)}({self.value})"
 
-    def __repr__(self) -> str:
-        """
-        Return the repr() representation of the object.
-
-        :return: str.
-        """
-        return f"<{str(self)} object at {id(self)}>"
-
 
 cdef class GUID(Identifier):
     """
