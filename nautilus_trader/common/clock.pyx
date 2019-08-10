@@ -159,6 +159,7 @@ cdef class LiveClock(Clock):
             function=self._raise_time_event,
             args=[label, alert_time])
 
+        timer.daemon = True
         timer.start()
         self._time_alerts[label] = timer
 
@@ -215,6 +216,7 @@ cdef class LiveClock(Clock):
                 function=self._raise_time_event,
                 args=[label, alert_time])
 
+        timer.daemon = True
         timer.start()
         self._timers[label] = timer
 
