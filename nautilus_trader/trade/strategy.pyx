@@ -960,7 +960,7 @@ cdef class TradeStrategy:
         :param order_id: The order identifier.
         :return: True if the order exists, else False.
         """
-        return self._exec_client.is_order_exists(order_id)
+        return self._exec_client.does_order_exist(order_id)
 
     cpdef bint is_order_active(self, OrderId order_id):
         """
