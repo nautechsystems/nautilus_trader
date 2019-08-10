@@ -154,14 +154,11 @@ cdef class ExecutionClient:
 
     cpdef Order get_order(self, OrderId order_id):
         """
-        Return the order with the given identifier (if found).
+        Return the order with the given identifier (if found, else None).
         
-        :return: Order.
-        :raises ValueError: If the order is not found.
+        :return: Order or None.
         """
-        Condition.true(order_id in self._order_book, 'order_id in order_book')
-
-        return self._order_book[order_id]
+        return self._order_book.get(order_id, None)
 
     cpdef dict get_orders_all(self):
         """
@@ -224,7 +221,7 @@ cdef class ExecutionClient:
 
         return self._orders_completed[strategy_id].copy()
 
-    cpdef bint is_order_exists(self, OrderId order_id):
+    cpdef bint does_order_exist(self, OrderId order_id):
         """
         Return a value indicating whether an order with the given identifier exists.
         
@@ -238,24 +235,18 @@ cdef class ExecutionClient:
         Return a value indicating whether an order with the given identifier is active.
          
         :param order_id: The order identifier to check.
-        :return: True if the order is active, else False.
-        :raises ValueError: If the order is not found.
+        :return: True if the order is found and active, else False.
         """
-        Condition.true(order_id in self._order_book, 'order_id in order_book')
-
-        return self._order_book[order_id].is_active
+        return order_id in self._order_book and self._order_book[order_id].is_active
 
     cpdef bint is_order_complete(self, OrderId order_id):
         """
         Return a value indicating whether an order with the given identifier is complete.
          
         :param order_id: The order identifier to check.
-        :return: True if the order is complete, else False.
-        :raises ValueError: If the order is not found.
+        :return: True if the order is found and complete, else False.
         """
-        Condition.true(order_id in self._order_book, 'order_id in order_book')
-
-        return self._order_book[order_id].is_complete
+        return order_id in self._order_book and self._order_book[order_id].is_complete
 
     cdef void _execute_command(self, Command command):
         self.command_count += 1
@@ -284,18 +275,18 @@ cdef class ExecutionClient:
 
         # Order events
         if isinstance(event, OrderEvent):
-            if event.order_id not in self._order_book:
+            if event.order_id in self._order_book:
+                order = self._order_book[event.order_id]
+                order.apply(event)
+            else:
                 self._log.error(f"Order for {event.order_id} not found.")
-                return # Cannot apply event to an order
+                return # Cannot apply event to any order
 
-            order = self._order_book[event.order_id]
-            order.apply(event)
-
-            if event.order_id not in self._order_strategy_index:
+            if event.order_id in self._order_strategy_index:
+                strategy_id = self._order_strategy_index[event.order_id]
+            else:
                 self._log.error(f"StrategyId for {event.order_id} not found.")
                 return # Cannot proceed with event processing
-
-            strategy_id = self._order_strategy_index[event.order_id]
 
             # Active order
             if order.is_active:
@@ -310,7 +301,10 @@ cdef class ExecutionClient:
                         del self._orders_active[strategy_id][order.id]
 
             # Send event to strategy
-            self._registered_strategies[strategy_id].handle_event(event)
+            if strategy_id in self._registered_strategies:
+                self._registered_strategies[strategy_id].handle_event(event)
+            else:
+                self._log.error(f"{strategy_id} not found in registered strategies.")
 
             if isinstance(event, (OrderFilled, OrderPartiallyFilled)):
                 self._log.debug(f'{event}')
@@ -328,8 +322,12 @@ cdef class ExecutionClient:
         # Position events
         elif isinstance(event, PositionEvent):
             self._log.debug(f'{event}')
+
             # Send event to strategy
-            self._registered_strategies[event.strategy_id].handle_event(event)
+            if event.strategy_id in self._registered_strategies:
+                self._registered_strategies[event.strategy_id].handle_event(event)
+            else:
+                self._log.error(f"{event.strategy_id} not found in registered strategies.")
 
         # Account event
         elif isinstance(event, AccountEvent):
@@ -354,27 +352,22 @@ cdef class ExecutionClient:
 # -- ABSTRACT METHODS ---------------------------------------------------------------------------- #
 
     cdef void _account_inquiry(self, AccountInquiry command):
-        # Send a collateral inquiry command to the execution service
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
     cdef void _submit_order(self, SubmitOrder command):
-        # Send a submit order command to the execution service
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
     cdef void _submit_atomic_order(self, SubmitAtomicOrder command):
-        # Send a submit atomic order command to the execution service
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
     cdef void _modify_order(self, ModifyOrder command):
-        # Send a modify order command to the execution service
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
     cdef void _cancel_order(self, CancelOrder command):
-        # Send a cancel order command to the execution service
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 

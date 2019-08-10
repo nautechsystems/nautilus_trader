@@ -66,7 +66,7 @@ cdef class ExecutionClient:
     cpdef dict get_orders(self, StrategyId strategy_id)
     cpdef dict get_orders_active(self, StrategyId strategy_id)
     cpdef dict get_orders_completed(self, StrategyId strategy_id)
-    cpdef bint is_order_exists(self, OrderId order_id)
+    cpdef bint does_order_exist(self, OrderId order_id)
     cpdef bint is_order_active(self, OrderId order_id)
     cpdef bint is_order_complete(self, OrderId order_id)
 
