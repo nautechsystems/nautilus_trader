@@ -13,10 +13,11 @@ from datetime import datetime, timezone
 
 from nautilus_trader.model.objects import Price, Bar
 from nautilus_trader.data.tools import TickBuilder, BarBuilder, IndicatorUpdater
-from inv_indicators.average.ema import ExponentialMovingAverage
-from inv_indicators.intrinsic_network import IntrinsicNetwork
 from test_kit.data import TestDataProvider
 from test_kit.stubs import TestStubs
+
+from nautilus_indicators.average.ema import ExponentialMovingAverage
+from nautilus_indicators.atr import AverageTrueRange
 
 
 class TickBuilderTests(unittest.TestCase):
@@ -241,10 +242,10 @@ class IndicatorUpdaterTests(unittest.TestCase):
         # Assert
         self.assertEqual(1.00003, result)
 
-    def test_can_update_intrinsic_networks_indicator(self):
+    def test_can_update_atr_indicator(self):
         # Arrange
-        intrinsic = IntrinsicNetwork(0.2, 0.2)
-        updater = IndicatorUpdater(intrinsic, input_method=intrinsic.update_mid)
+        atr = AverageTrueRange(10)
+        updater = IndicatorUpdater(atr, input_method=atr.update)
 
         bar = Bar(
             Price('1.00001'),
@@ -256,8 +257,7 @@ class IndicatorUpdaterTests(unittest.TestCase):
 
         # Act
         updater.update_bar(bar)
-        result = intrinsic.state
+        result = atr.value
 
         # Assert
-        self.assertTrue(intrinsic.initialized)
-        self.assertEqual(0, result)
+        self.assertEqual(2.002716064453125e-05, result)

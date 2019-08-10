@@ -269,7 +269,7 @@ cdef class TradeStrategy:
             update_method: Callable):
         """
         Register the given indicator with the strategy. The indicator must be from the
-        inv_indicators package. Once added it will receive bars of the given
+        nautilus_indicators package. Once added it will receive bars of the given
         bar type.
 
         :param bar_type: The indicators bar type.
