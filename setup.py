@@ -38,8 +38,7 @@ REQUIREMENTS = ['cython',
                 'pymongo',
                 'msgpack',
                 'psutil',
-                'empyrical',
-                'pymc3']
+                'empyrical']
 
 DIRECTORIES_TO_CYTHONIZE = [PACKAGE_NAME, 'test_kit']
 DIRECTORIES_ALL = [PACKAGE_NAME, 'test_kit', 'tests']

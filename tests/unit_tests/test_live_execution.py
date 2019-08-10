@@ -164,7 +164,7 @@ class LiveExecClientTests(unittest.TestCase):
         self.assertEqual(MessageReceived, type(self.command_router.responses_sent[0]))
         self.assertEqual(MessageReceived, type(self.command_router.responses_sent[1]))
 
-    def test_can_send_collateral_inquiry(self):
+    def test_can_send_account_inquiry_command(self):
         # Arrange
         strategy = TestStrategy1(self.bar_type, id_tag_strategy='006')
         self.exec_client.register_strategy(strategy)
