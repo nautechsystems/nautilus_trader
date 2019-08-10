@@ -234,10 +234,10 @@ cdef class TradeStrategy:
 
     cpdef void register_trader_id(self, TraderId trader_id, IdTag id_tag_trader):
         """
-        Register the trader identifier and order identifier tag with the strategy.
+        Change the trader identifier and trader identifier tag for the strategy.
 
-        :param trader_id: The trader identifier to register.
-        :param id_tag_trader: The trader identifier tag to register.
+        :param trader_id: The trader identifier to change to.
+        :param id_tag_trader: The trader identifier tag to change to.
         """
         self.trader_id = trader_id
         self.id_tag_trader = id_tag_trader
