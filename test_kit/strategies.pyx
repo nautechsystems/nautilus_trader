@@ -8,8 +8,6 @@
 
 from datetime import timedelta
 
-from nautilus_indicators.atr import AverageTrueRange
-from nautilus_indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.identifiers cimport Label, PositionId
 from nautilus_trader.model.objects cimport Symbol, Price, Tick, BarType, Bar, Instrument
@@ -21,6 +19,9 @@ from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.common.clock cimport Clock, TestClock
 from nautilus_trader.trade.sizing cimport PositionSizer, FixedRiskSizer
 from test_kit.objects cimport ObjectStorer
+
+from nautilus_indicators.atr import AverageTrueRange
+from nautilus_indicators.average.ema import ExponentialMovingAverage
 
 
 class PyStrategy(TradeStrategy):
