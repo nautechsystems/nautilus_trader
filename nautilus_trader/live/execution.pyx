@@ -183,13 +183,17 @@ cdef class LiveExecClient(ExecutionClient):
     cpdef void _process(self):
         cdef Message message
         while True:
+            # Process the queue one item at a time
             message = self._message_bus.get()
+
             if message.message_type == MessageType.EVENT:
                 self._handle_event(message)
             elif message.message_type == MessageType.COMMAND:
                 self._execute_command(message)
             else:
                 raise RuntimeError(f"Invalid message type on bus ({repr(message)}).")
+
+            self._message_bus.task_done()
 
     cpdef void _account_inquiry(self, AccountInquiry command):
         self._send_command(command)
