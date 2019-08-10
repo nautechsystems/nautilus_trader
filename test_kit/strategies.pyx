@@ -8,8 +8,8 @@
 
 from datetime import timedelta
 
-from inv_indicators.atr import AverageTrueRange
-from inv_indicators.average.ema import ExponentialMovingAverage
+from nautilus_indicators.atr import AverageTrueRange
+from nautilus_indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.identifiers cimport Label, PositionId
 from nautilus_trader.model.objects cimport Symbol, Price, Tick, BarType, Bar, Instrument
