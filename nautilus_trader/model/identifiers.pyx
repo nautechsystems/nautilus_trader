@@ -26,6 +26,20 @@ cdef class Label(Identifier):
         super().__init__(value)
 
 
+cdef class IdTag(Identifier):
+    """
+    Represents an identifier tag.
+    """
+
+    def __init__(self, str value):
+        """
+        Initializes a new instance of the IdTag class.
+
+        :param value: The value of the identifier tag.
+        """
+        super().__init__(value)
+
+
 cdef class TraderId(Identifier):
     """
     Represents a valid trader identifier (should be fund level unique).
@@ -159,8 +173,8 @@ cdef class IdentifierGenerator:
 
     def __init__(self,
                  str prefix,
-                 str id_tag_trader,
-                 str id_tag_strategy,
+                 IdTag id_tag_trader,
+                 IdTag id_tag_strategy,
                  Clock clock):
         """
         Initializes a new instance of the IdentifierGenerator class.
@@ -174,8 +188,6 @@ cdef class IdentifierGenerator:
         :raises ValueError: If the id_tag_strategy is not a valid string.
         """
         Condition.valid_string(prefix, 'prefix')
-        Condition.valid_string(id_tag_trader, 'id_tag_trader')
-        Condition.valid_string(id_tag_strategy, 'id_tag_strategy')
 
         self._clock = clock
         self.prefix = prefix
@@ -198,7 +210,11 @@ cdef class IdentifierGenerator:
         """
         self.counter += 1
 
-        return f'{self.prefix}-{self._get_datetime_tag()}-{self.id_tag_trader}-{self.id_tag_strategy}-{self.counter}'
+        return (f'{self.prefix}-'
+                f'{self._get_datetime_tag()}-'
+                f'{self.id_tag_trader.value}-'
+                f'{self.id_tag_strategy.value}-'
+                f'{self.counter}')
 
     cdef str _get_datetime_tag(self):
         """
@@ -222,8 +238,8 @@ cdef class OrderIdGenerator(IdentifierGenerator):
     """
 
     def __init__(self,
-                 str id_tag_trader,
-                 str id_tag_strategy,
+                 IdTag id_tag_trader,
+                 IdTag id_tag_strategy,
                  Clock clock=LiveClock()):
         """
         Initializes a new instance of the OrderIdGenerator class.
@@ -232,7 +248,6 @@ cdef class OrderIdGenerator(IdentifierGenerator):
         :param id_tag_strategy: The order identifier tag for the strategy.
         :param clock: The clock for the component.
         """
-        # Strings checked in base class
         super().__init__('O',
                          id_tag_trader,
                          id_tag_strategy,
@@ -253,8 +268,8 @@ cdef class PositionIdGenerator(IdentifierGenerator):
     """
 
     def __init__(self,
-                 str id_tag_trader,
-                 str id_tag_strategy,
+                 IdTag id_tag_trader,
+                 IdTag id_tag_strategy,
                  Clock clock=LiveClock()):
         """
         Initializes a new instance of the PositionIdGenerator class.
@@ -263,7 +278,6 @@ cdef class PositionIdGenerator(IdentifierGenerator):
         :param id_tag_strategy: The position identifier tag for the strategy.
         :param clock: The clock for the component.
         """
-        # Strings checked in base class
         super().__init__('P',
                          id_tag_trader,
                          id_tag_strategy,

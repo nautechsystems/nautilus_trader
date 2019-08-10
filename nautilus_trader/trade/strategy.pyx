@@ -71,8 +71,8 @@ cdef class TradeStrategy:
         # Identification
         self.trader_id = TraderId('Trader-000')
         self.id = StrategyId(self.__class__.__name__ + '-' + id_tag_strategy)
-        self.id_tag_trader = ValidString('000')
-        self.id_tag_strategy = ValidString(id_tag_strategy)
+        self.id_tag_trader = IdTag('000')
+        self.id_tag_strategy = IdTag(id_tag_strategy)
 
         # Components
         self.log = LoggerAdapter(f"{self.id.value}", logger)
@@ -88,12 +88,12 @@ cdef class TradeStrategy:
 
         # Order / Position components
         self.order_factory = OrderFactory(
-            id_tag_trader=self.id_tag_trader.value,
-            id_tag_strategy=self.id_tag_strategy.value,
+            id_tag_trader=self.id_tag_trader,
+            id_tag_strategy=self.id_tag_strategy,
             clock=self.clock)
         self.position_id_generator = PositionIdGenerator(
-            id_tag_trader=self.id_tag_trader.value,
-            id_tag_strategy=self.id_tag_strategy.value,
+            id_tag_trader=self.id_tag_trader,
+            id_tag_strategy=self.id_tag_strategy,
             clock=self.clock)
 
         # Registered orders
@@ -1364,13 +1364,13 @@ cdef class TradeStrategy:
         self.clock.register_handler(self.handle_event)
 
         self.order_factory = OrderFactory(
-            id_tag_trader=self.id_tag_trader.value,
-            id_tag_strategy=self.id_tag_strategy.value,
+            id_tag_trader=self.id_tag_trader,
+            id_tag_strategy=self.id_tag_strategy,
             clock=clock)
 
         self.position_id_generator = PositionIdGenerator(
-            id_tag_trader=self.id_tag_trader.value,
-            id_tag_strategy=self.id_tag_strategy.value,
+            id_tag_trader=self.id_tag_trader,
+            id_tag_strategy=self.id_tag_strategy,
             clock=clock)
 
     cpdef void change_guid_factory(self, GuidFactory guid_factory):

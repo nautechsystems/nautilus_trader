@@ -9,7 +9,7 @@
 import unittest
 
 from nautilus_trader.common.clock import TestClock
-from nautilus_trader.model.identifiers import Label, OrderId, PositionId, OrderIdGenerator, PositionIdGenerator
+from nautilus_trader.model.identifiers import Label, IdTag, OrderId, PositionId, OrderIdGenerator, PositionIdGenerator
 
 
 class IdentifierTests(unittest.TestCase):
@@ -85,8 +85,8 @@ class OrderIdGeneratorTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
         self.order_id_generator = OrderIdGenerator(
-            id_tag_trader='001',
-            id_tag_strategy='001',
+            id_tag_trader=IdTag('001'),
+            id_tag_strategy=IdTag('001'),
             clock=TestClock())
 
     def test_generate_order_id(self):
@@ -120,8 +120,8 @@ class PositionIdGeneratorTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
         self.position_id_generator = PositionIdGenerator(
-            id_tag_trader='001',
-            id_tag_strategy='001',
+            id_tag_trader=IdTag('001'),
+            id_tag_strategy=IdTag('001'),
             clock=TestClock())
 
     def test_generate_position_id(self):

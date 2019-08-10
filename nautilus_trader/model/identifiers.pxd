@@ -13,6 +13,9 @@ from nautilus_trader.common.clock cimport Clock
 cdef class Label(Identifier):
     pass
 
+cdef class IdTag(Identifier):
+    pass
+
 cdef class TraderId(Identifier):
     pass
 
@@ -48,8 +51,8 @@ cdef class IdentifierGenerator:
     cdef Clock _clock
 
     cdef readonly str prefix
-    cdef readonly str id_tag_trader
-    cdef readonly str id_tag_strategy
+    cdef readonly IdTag id_tag_trader
+    cdef readonly IdTag id_tag_strategy
     cdef readonly int counter
 
     cpdef void reset(self)
@@ -60,13 +63,13 @@ cdef class IdentifierGenerator:
 
 cdef class OrderIdGenerator(IdentifierGenerator):
     """
-    Provides a generator for unique OrderId(s).
+    Provides a generator for unique OrderIds.
     """
     cpdef OrderId generate(self)
 
 
 cdef class PositionIdGenerator(IdentifierGenerator):
     """
-    Provides a generator for unique PositionId(s).
+    Provides a generator for unique PositionIds.
     """
     cpdef PositionId generate(self)
