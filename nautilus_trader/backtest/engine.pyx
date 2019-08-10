@@ -13,9 +13,7 @@ import pandas as pd
 import logging
 import psutil
 import platform
-import empyrical
 import pytz
-import pymc3
 
 from platform import python_version
 from cpython.datetime cimport datetime, timedelta
@@ -420,8 +418,6 @@ cdef class BacktestEngine:
         self.log.info(f"numpy v{np.__version__}")
         self.log.info(f"scipy v{scipy.__version__}")
         self.log.info(f"pandas v{pd.__version__}")
-        self.log.info(f"empyrical v{empyrical.__version__}")
-        self.log.info(f"pymc3 v{pymc3.__version__}")
         self.log.info("#---------------------------------------------------------------#")
 
     cdef void _backtest_header(

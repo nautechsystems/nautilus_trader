@@ -315,7 +315,7 @@ cdef class ExecutionClient:
                 self._log.debug(str(event))
             # Warning Events
             elif isinstance(event, (OrderRejected, OrderCancelReject)):
-                self._log.warning(f'{event}')  # Also logged as warning by strategy
+                self._log.debug(f'{event}')  # Also logged as warning by strategy
             else:
                 self._log.debug(f'{event}')
 
