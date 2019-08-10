@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-# <copyright file="test_portfolio_portfolio.py" company="Nautech Systems Pty Ltd">
+# <copyright file="test_trade_portfolio.py" company="Nautech Systems Pty Ltd">
 #  Copyright (C) 2015-2019 Nautech Systems Pty Ltd. All rights reserved.
 #  The use of this source code is governed by the license as found in the LICENSE.md file.
 #  https://nautechsystems.io
@@ -9,22 +9,24 @@
 import unittest
 import uuid
 
-from nautilus_trader.core.types import GUID
+from nautilus_trader.backtest.execution import BacktestExecClient
+from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.common.account import Account
 from nautilus_trader.common.brokerage import CommissionCalculator
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.guid import TestGuidFactory
 from nautilus_trader.common.logger import TestLogger
+from nautilus_trader.core.types import GUID
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.events import OrderFilled
+from nautilus_trader.model.identifiers import IdTag, OrderId, PositionId, ExecutionId, \
+    ExecutionTicket
 from nautilus_trader.model.objects import Quantity, Venue, Symbol, Price, Money
 from nautilus_trader.model.order import OrderFactory
-from nautilus_trader.model.identifiers import IdTag, OrderId, PositionId, ExecutionId, ExecutionTicket
 from nautilus_trader.model.position import Position
-from nautilus_trader.model.events import OrderFilled
-from nautilus_trader.trade.strategy import TradeStrategy
-from nautilus_trader.backtest.execution import BacktestExecClient
-from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.trade.portfolio import Portfolio
+from nautilus_trader.trade.strategy import TradeStrategy
+
 from test_kit.stubs import TestStubs
 
 UNIX_EPOCH = TestStubs.unix_epoch()
@@ -113,7 +115,7 @@ class PortfolioTests(unittest.TestCase):
         order_id = OrderId('AUDUSD.FXCM-1-123456')
         position_id = PositionId('AUDUSD.FXCM-1-123456')
 
-        self.portfolio.register_strategy(strategy)
+        self.exec_client.register_strategy(strategy)  # Also registers with portfolio
         self.portfolio.register_order(order_id, position_id)
         event = OrderFilled(
             order_id,
@@ -143,7 +145,7 @@ class PortfolioTests(unittest.TestCase):
         order_id = OrderId('AUDUSD.FXCM-1-123456')
         position_id = PositionId('AUDUSD.FXCM-1-123456')
 
-        self.portfolio.register_strategy(strategy)
+        self.exec_client.register_strategy(strategy)  # Also registers with portfolio
         self.portfolio.register_order(order_id, position_id)
         event = OrderFilled(
             order_id,
@@ -186,7 +188,7 @@ class PortfolioTests(unittest.TestCase):
         order_id = OrderId('AUDUSD.FXCM-1-123456')
         position_id = PositionId('AUDUSD.FXCM-1-123456')
 
-        self.portfolio.register_strategy(strategy)
+        self.exec_client.register_strategy(strategy)  # Also registers with portfolio
         self.portfolio.register_order(order_id, position_id)
 
         event = OrderFilled(
@@ -229,7 +231,7 @@ class PortfolioTests(unittest.TestCase):
         order_id2 = OrderId('AUDUSD.FXCM-1-123456-2')
         position_id = PositionId('AUDUSD.FXCM-1-123456')
 
-        self.portfolio.register_strategy(strategy)
+        self.exec_client.register_strategy(strategy)  # Also registers with portfolio
         self.portfolio.register_order(order_id1, position_id)
         self.portfolio.register_order(order_id2, position_id)
 
@@ -291,8 +293,8 @@ class PortfolioTests(unittest.TestCase):
         position_id1 = PositionId('AUDUSD.FXCM-1-1')
         position_id2 = PositionId('AUDUSD.FXCM-1-2')
 
-        self.portfolio.register_strategy(strategy1)
-        self.portfolio.register_strategy(strategy2)
+        self.exec_client.register_strategy(strategy1)  # Also registers with portfolio
+        self.exec_client.register_strategy(strategy2)  # Also registers with portfolio
         self.portfolio.register_order(order_id1, position_id1)
         self.portfolio.register_order(order_id2, position_id2)
 
@@ -369,8 +371,8 @@ class PortfolioTests(unittest.TestCase):
         position_id1 = PositionId('AUDUSD.FXCM-1-1')
         position_id2 = PositionId('AUDUSD.FXCM-1-2')
 
-        self.portfolio.register_strategy(strategy1)
-        self.portfolio.register_strategy(strategy2)
+        self.exec_client.register_strategy(strategy1)  # Also registers with portfolio
+        self.exec_client.register_strategy(strategy2)  # Also registers with portfolio
         self.portfolio.register_order(order_id1, position_id1)
         self.portfolio.register_order(order_id2, position_id2)
         self.portfolio.register_order(order_id3, position_id1)

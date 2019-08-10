@@ -80,28 +80,26 @@ cdef class Portfolio:
 
     cpdef Position get_position_for_order(self, OrderId order_id):
         """
-        Return the position associated with the given order identifier.
+        Return the position associated with the given order identifier (if found, else None).
         
         :param order_id: The order identifier.
-        :return: Position (if found).
-        :raises ValueError: If the position is not found.
+        :return: Position or None.
         """
-        Condition.is_in(order_id, self._order_p_index, 'order_id', 'order_p_index')
+        cdef PositionId position_id = self._order_p_index.get(order_id)
 
-        cdef PositionId position_id = self._order_p_index[order_id]
-        return self._position_book[position_id]
+        if position_id is not None:
+            return self._position_book.get(position_id)
+        else:
+            return None
 
     cpdef Position get_position(self, PositionId position_id):
         """
-        Return the position associated with the given position identifier.
+        Return the position associated with the given position identifier (if found, else None).
         
         :param position_id: The position identifier.
-        :return: Position (if found).
-        :raises ValueError: If the position is not found.
+        :return: Position or None.
         """
-        Condition.is_in(position_id, self._position_book, 'position_id', 'position_book')
-
-        return self._position_book[position_id]
+        return self._position_book.get(position_id)
 
     cpdef dict get_positions_all(self):
         """
@@ -328,13 +326,16 @@ cdef class Portfolio:
         
         :param event: The event to handle.
         :param strategy_id: The strategy identifier.
-        :raises ValueError: If the events order identifier is not registered with the portfolio.
         :raises ValueError: If the strategy identifier is not registered with the portfolio.
         """
-        Condition.is_in(event.order_id, self._order_p_index, 'event.order_id', 'order_position_index')
         Condition.true(strategy_id in self._registered_strategies, 'strategy_id in registered_strategies')
 
-        cdef PositionId position_id = self._order_p_index[event.order_id]
+        cdef PositionId position_id = self._order_p_index.get(event.order_id)
+
+        if position_id is None:
+            self._log.error(f"{event.order_id} not found in the order position index (not registered?).")
+            return # Cannot proceed with event processing
+
         cdef Position position
 
         # Position does not exist yet
