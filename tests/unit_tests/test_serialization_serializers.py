@@ -34,8 +34,8 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
         # Fixture Setup
         self.serializer = MsgPackOrderSerializer()
         self.order_factory = OrderFactory(
-            id_tag_trader='001',
-            id_tag_strategy='001',
+            id_tag_trader=IdTag('001'),
+            id_tag_strategy=IdTag('001'),
             clock=TestClock())
         print('\n')
 
@@ -150,8 +150,8 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         # Fixture Setup
         self.serializer = MsgPackCommandSerializer()
         self.order_factory = OrderFactory(
-            id_tag_trader='001',
-            id_tag_strategy='001',
+            id_tag_trader=IdTag('001'),
+            id_tag_strategy=IdTag('001'),
             clock=TestClock())
         print('\n')
 

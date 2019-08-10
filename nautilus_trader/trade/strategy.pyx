@@ -75,7 +75,7 @@ cdef class TradeStrategy:
         self.id_tag_strategy = IdTag(id_tag_strategy)
 
         # Components
-        self.log = LoggerAdapter(f"{self.id.value}", logger)
+        self.log = LoggerAdapter(self.id.value, logger)
         self._guid_factory = guid_factory
         self.clock = clock
         self.clock.register_logger(self.log)
@@ -232,15 +232,15 @@ cdef class TradeStrategy:
 
 # -- REGISTRATION METHODS ------------------------------------------------------------------------ #
 
-    cpdef void register_trader_id(self, TraderId trader_id, ValidString order_id_tag):
+    cpdef void register_trader_id(self, TraderId trader_id, IdTag id_tag_trader):
         """
         Register the trader identifier and order identifier tag with the strategy.
 
         :param trader_id: The trader identifier to register.
-        :param order_id_tag: The trader order identifier tag to register.
+        :param id_tag_trader: The trader identifier tag to register.
         """
         self.trader_id = trader_id
-        self.id_tag_trader = order_id_tag
+        self.id_tag_trader = id_tag_trader
 
     cpdef void register_data_client(self, DataClient client):
         """
@@ -494,7 +494,7 @@ cdef class TradeStrategy:
         Return the instrument corresponding to the given symbol.
 
         :param symbol: The symbol of the instrument to return.
-        :return: Instrument (if found)
+        :return: Instrument (if found) or None.
         :raises ValueError: If strategy has not been registered with a data client.
         :raises ValueError: If the instrument is not found.
         """
@@ -502,7 +502,7 @@ cdef class TradeStrategy:
 
         return self._data_client.get_instrument(symbol)
 
-    cpdef dict get_instruments_all(self):
+    cpdef dict instruments_all(self):
         """
         Return a dictionary of all instruments held by the data client.
         
@@ -630,13 +630,33 @@ cdef class TradeStrategy:
         """
         return bar_type in self._bars and len(self._bars[bar_type]) > 0
 
+    cpdef int tick_count(self, Symbol symbol):
+        """
+        Return the count of ticks held by the strategy for the given symbol.
+        
+        :param symbol: The tick symbol to count.
+        :return: int.
+        :raises ValueError: If the strategies tick dictionary does not contain the symbol.
+        """
+        return len(self._ticks[symbol])
+
+    cpdef int bar_count(self, BarType bar_type):
+        """
+        Return the count of ticks held by the strategy for the given symbol.
+        
+        :param bar_type: The bar type to count.
+        :return: int.
+        :raises ValueError: If the strategies bars dictionary does not contain the bar type.
+        """
+        return len(self._bars[bar_type])
+
     cpdef list ticks(self, Symbol symbol):
         """
         Return the bars for the given bar type (returns a copy of the internal deque).
 
         :param symbol: The symbol for the ticks to get.
-        :return: List[Tick] (if found).
-        :raises ValueError: If the strategies bars dictionary does not contain the bar type.
+        :return: List[Tick].
+        :raises ValueError: If the strategies tick dictionary does not contain the symbol.
         """
         Condition.is_in(symbol, self._ticks, 'symbol', 'ticks')
 
@@ -647,54 +667,40 @@ cdef class TradeStrategy:
         Return the bars for the given bar type (returns a copy of the internal deque).
 
         :param bar_type: The bar type to get.
-        :return: List[Bar] (if found).
+        :return: List[Bar].
         :raises ValueError: If the strategies bars dictionary does not contain the bar type.
         """
         Condition.is_in(bar_type, self._bars, 'bar_type', 'bars')
 
         return list(self._bars[bar_type])
 
-    cpdef Bar bar(self, BarType bar_type, int index):
+    cpdef Tick tick(self, Symbol symbol, int index):
         """
-        Return the bar for the given bar type at the given index (reverse indexing, 
-        pass index=0 for the last received bar).
+        Return the tick for the given symbol at the given index.
 
-        :param bar_type: The bar type to get.
-        :param index: The index (>= 0).
-        :return: Bar (if found).
-        :raises ValueError: If the strategies bars dictionary does not contain the bar type.
-        :raises ValueError: If the index is negative (< 0).
-        :raises IndexError: If the strategies bars dictionary does not contain a bar at the given index.
-        """
-        Condition.is_in(bar_type, self._bars, 'bar_type', 'bars')
-        Condition.not_negative(index, 'index')
-
-        return self._bars[bar_type][index]
-
-    cpdef Bar last_bar(self, BarType bar_type):
-        """
-        Return the last bar for the given bar type (if a bar has been received).
-
-        :param bar_type: The bar type to get.
-        :return: Bar (if found).
-        :raises ValueError: If the strategies bars dictionary does not contain the bar type.
-        :raises IndexError: If the strategies bars dictionary does not contain a bar at the given index.
-        """
-        Condition.is_in(bar_type, self._bars, 'bar_type', 'bars')
-
-        return self._bars[bar_type][0]
-
-    cpdef Tick last_tick(self, Symbol symbol):
-        """
-        Return the last tick held for the given symbol.
-
-        :param symbol: The last ticks symbol.
-        :return: Tick (if found).
-        :raises ValueError: If the strategies tick dictionary does not contain a tick for the given symbol.
+        :param symbol: The symbol for the tick to get.
+        :param index: The index for the tick to get.
+        :return: Tick.
+        :raises ValueError: If the strategies tick dictionary does not contain the symbol.
+        :raises IndexError: If the tick index is out of range.
         """
         Condition.is_in(symbol, self._ticks, 'symbol', 'ticks')
 
-        return self._ticks[symbol][0]
+        return self._ticks[symbol][index]
+
+    cpdef Bar bar(self, BarType bar_type, int index):
+        """
+        Return the bar for the given bar type at the given index.
+
+        :param bar_type: The bar type to get.
+        :param index: The index for the bar to get.
+        :return: Bar.
+        :raises ValueError: If the strategies bars dictionary does not contain the bar type.
+        :raises IndexError: If the bar index is out of range.
+        """
+        Condition.is_in(bar_type, self._bars, 'bar_type', 'bars')
+
+        return self._bars[bar_type][index]
 
 
 # -- INDICATOR METHODS --------------------------------------------------------------------------- #
@@ -702,7 +708,6 @@ cdef class TradeStrategy:
     cpdef list indicators(self, BarType bar_type):
         """
         Return the indicators list for the given bar type (returns copy).
-
         :param bar_type: The bar type for the indicators list.
         :return: List[Indicator] (if found).
         :raises ValueError: If the strategies indicators dictionary does not contain the given bar_type.

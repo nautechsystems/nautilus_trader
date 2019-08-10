@@ -10,8 +10,7 @@ from cpython.datetime cimport datetime
 from typing import List
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.types cimport ValidString
-from nautilus_trader.model.identifiers cimport StrategyId
+from nautilus_trader.model.identifiers cimport IdTag, StrategyId
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logger cimport Logger, LoggerAdapter, LiveLogger
@@ -58,7 +57,7 @@ cdef class Trader:
 
         self._clock = clock
         self.id = TraderId(self.__class__.__name__ + '-' + id_tag_trader)
-        self.id_tag_trader = ValidString(id_tag_trader)
+        self.id_tag_trader = IdTag(id_tag_trader)
         self._log = LoggerAdapter(self.id.value, logger)
         self._data_client = data_client
         self._exec_client = exec_client
