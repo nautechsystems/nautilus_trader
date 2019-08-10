@@ -298,15 +298,15 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertTrue(strategy.is_order_exists(order.id))
         self.assertEqual(order, result)
 
-    def test_getting_position_which_does_not_exist_raises_exception(self):
+    def test_getting_position_which_does_not_exist_returns_none(self):
         # Arrange
         strategy = TradeStrategy(id_tag_strategy='001')
         self.exec_client.register_strategy(strategy)
 
         # Act
+        result = strategy.position(PositionId('unknown'))
         # Assert
-        self.assertRaises(ValueError, strategy.position, PositionId('unknown'))
-        self.assertFalse(strategy.is_position_exists(PositionId('unknown')))
+        self.assertIsNone(result)
 
     def test_can_get_position(self):
         # Arrange
