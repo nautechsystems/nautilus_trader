@@ -132,8 +132,8 @@ class EMACrossPy(TradeStrategy):
 
             # BUY LOGIC
             if self.fast_ema.value >= self.slow_ema.value:
-                price_entry = Price(self.last_bar(self.bar_type).high + self.entry_buffer + self.spread_analyzer.average_spread)
-                price_stop_loss = Price(self.last_bar(self.bar_type).low - (self.atr.value * self.SL_atr_multiple))
+                price_entry = Price(bar.high + self.entry_buffer + self.spread_analyzer.average_spread)
+                price_stop_loss = Price(bar.low - (self.atr.value * self.SL_atr_multiple))
                 price_take_profit = Price(price_entry + (price_entry - price_stop_loss))
 
                 exchange_rate = self.get_exchange_rate(self.instrument.quote_currency)
@@ -163,8 +163,8 @@ class EMACrossPy(TradeStrategy):
 
             # SELL LOGIC
             elif self.fast_ema.value < self.slow_ema.value:
-                price_entry = Price(self.last_bar(self.bar_type).low - self.entry_buffer)
-                price_stop_loss = Price(self.last_bar(self.bar_type).high + (self.atr.value * self.SL_atr_multiple) + self.spread_analyzer.average_spread)
+                price_entry = Price(bar.low - self.entry_buffer)
+                price_stop_loss = Price(bar.high + (self.atr.value * self.SL_atr_multiple) + self.spread_analyzer.average_spread)
                 price_take_profit = Price(price_entry - (price_stop_loss - price_entry))
 
                 exchange_rate = self.get_exchange_rate(self.instrument.quote_currency)
