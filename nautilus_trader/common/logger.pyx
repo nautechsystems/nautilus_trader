@@ -294,6 +294,8 @@ cdef class LiveLogger(Logger):
             else:
                 raise RuntimeError(f"Log level {log_message.log_level} not recognized")
 
+            self._queue.task_done()
+
 
 cdef class TestLogger(Logger):
     """
