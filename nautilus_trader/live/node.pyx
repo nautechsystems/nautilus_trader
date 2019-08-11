@@ -6,15 +6,41 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+import json
+import logging
+import uuid
 import zmq
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.types cimport GUID
+from nautilus_trader.common.account cimport Account
+from nautilus_trader.common.clock cimport LiveClock
+from nautilus_trader.common.guid cimport LiveGuidFactory
+from nautilus_trader.common.logger cimport LiveLogger, LoggerAdapter
+from nautilus_trader.model.objects cimport Venue
+from nautilus_trader.trade.portfolio cimport Portfolio
+from nautilus_trader.live.data cimport LiveDataClient
+from nautilus_trader.live.execution cimport LiveExecClient
 
 
 cdef class TradingNode:
     """
-    Provides a trading node which provides an external API.
+    Provides a trading node to control a live Trader instance with a WebSocket API.
     """
+    cdef LiveClock _clock
+    cdef LiveGuidFactory _guid_factory
+    cdef LiveLogger _logger
+    cdef LoggerAdapter _log
+
+    cdef object _zmq_context
+    cdef LiveDataClient _data_client
+    cdef LiveExecClient _exec_client
+    cdef Account _account
+    cdef Portfolio _portfolio
+
+    cdef readonly GUID id
+
+
 
     def __init__(
             self,
@@ -27,5 +53,63 @@ cdef class TradingNode:
         """
         Condition.valid_string(config_path, 'config_path')
 
+        # Load the configuration from the config.json file
+        with open(config_path, 'r') as config_file:
+            config = json.load(config_file)
+
+        self._clock = LiveClock()
+        self._guid_factory = LiveGuidFactory()
+        self.id = GUID(uuid.uuid4())
+
+        log_config = config['logging']
+        self._logger = LiveLogger(
+            name=log_config['log_name'],
+            level_console=getattr(logging, log_config['log_level_console']),
+            level_file=getattr(logging, log_config['log_level_file']),
+            level_store=getattr(logging, log_config['log_level_store']),
+            log_thread=log_config['log_thread'],
+            log_to_file=log_config['log_to_file'],
+            log_file_path=log_config['log_file_path'],
+            clock=self._clock)
+
+        self._log = LoggerAdapter(component_name=self.__class__.__name__, logger=self._logger)
+        self._log.info("Starting...")
+        self._log.info(f"ZMQ v{zmq.pyzmq_version()}.")
+
+        self._account = Account()
+        self._portfolio = Portfolio(
+            clock=self._clock,
+            guid_factory=self._guid_factory,
+            logger=self._logger)
+
         self._zmq_context = zmq.Context()
 
+        data_config = config['dataClient']
+        self._data_client = LiveDataClient(
+            zmq_context=self._zmq_context,
+            venue=Venue(data_config['venue']),
+            service_name=data_config['serviceName'],
+            service_address=data_config['serviceAddress'],
+            tick_req_port=data_config['tickReqPort'],
+            tick_sub_port=data_config['tickSubPort'],
+            bar_req_port=data_config['barReqPort'],
+            bar_sub_port=data_config['barSubPort'],
+            inst_req_port=data_config['instReqPort'],
+            inst_sub_port=data_config['instSubPort'],
+            clock=self._clock,
+            guid_factory=self._guid_factory,
+            logger=self._logger)
+
+        exec_config = config['execClient']
+        self._exec_client = LiveExecClient(
+            zmq_context=self._zmq_context,
+            service_name=exec_config['serviceName'],
+            service_address=exec_config['serviceAddress'],
+            events_topic=exec_config['eventsTopic'],
+            commands_port=exec_config['commandsPort'],
+            events_port=exec_config['eventsPort'],
+            account=self._account,
+            portfolio=self._portfolio,
+            clock=self._clock,
+            guid_factory=self._guid_factory,
+            logger=self._logger)
