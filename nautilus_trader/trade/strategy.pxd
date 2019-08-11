@@ -8,8 +8,6 @@
 
 from cpython.datetime cimport datetime
 
-from nautilus_trader.core.typed_collections cimport TypedList
-from nautilus_trader.core.types cimport ValidString
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.guid cimport GuidFactory
@@ -29,9 +27,9 @@ from nautilus_trader.model.position cimport Position
 from nautilus_trader.trade.portfolio cimport Portfolio
 
 
-cdef class TradeStrategy:
+cdef class TradingStrategy:
     """
-    The base class for all trade strategies.
+    The base class for all trading strategies.
     """
     cdef GuidFactory _guid_factory
     cdef readonly Clock clock
@@ -57,8 +55,9 @@ cdef class TradeStrategy:
     cdef readonly int bar_capacity
     cdef dict _ticks
     cdef dict _bars
-    cdef dict _indicators
-    cdef dict _indicator_updaters
+    cdef list _indicators
+    cdef dict _indicator_updaters_ticks
+    cdef dict _indicator_updaters_bars
     cdef ExchangeRateCalculator _exchange_calculator
 
     cdef readonly Account account
@@ -68,7 +67,7 @@ cdef class TradeStrategy:
 
     cdef readonly bint is_running
 
-    cdef bint equals(self, TradeStrategy other)
+    cdef bint equals(self, TradingStrategy other)
 
 # -- ABSTRACT METHODS ---------------------------------------------------------------------------- #
     cpdef on_start(self)
@@ -81,10 +80,11 @@ cdef class TradeStrategy:
     cpdef on_dispose(self)
 
 # -- REGISTRATION METHODS ------------------------------------------------------------------------ #
-    cpdef void register_trader_id(self, TraderId trader_id, IdTag id_tag_trader)
+    cpdef void register_trader_id(self, str trader_id)
     cpdef void register_data_client(self, DataClient client)
     cpdef void register_execution_client(self, ExecutionClient client)
-    cpdef void register_indicator(self, BarType bar_type, indicator, update_method)
+    cpdef void register_indicator_ticks(self, Symbol symbol, indicator, update_method)
+    cpdef void register_indicator_bars(self, BarType bar_type, indicator, update_method)
     cpdef void register_entry_order(self, Order order, PositionId position_id)
     cpdef void register_stop_loss_order(self, Order order, PositionId position_id)
     cpdef void register_take_profit_order(self, Order order, PositionId position_id)
@@ -123,9 +123,8 @@ cdef class TradeStrategy:
     cpdef Bar bar(self, BarType bar_type, int index)
 
 # -- INDICATOR METHODS --------------------------------------------------------------------------- #
-    cpdef readonly list indicators(self, BarType bar_type)
-    cpdef readonly bint indicators_initialized(self, BarType bar_type)
-    cpdef readonly bint indicators_initialized_all(self)
+    cpdef readonly list registered_indicators(self)
+    cpdef readonly bint indicators_initialized(self)
 
 # -- MANAGEMENT METHODS -------------------------------------------------------------------------- #
     cpdef OrderSide get_opposite_side(self, OrderSide side)

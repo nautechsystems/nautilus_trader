@@ -276,7 +276,7 @@ cdef class Portfolio:
         self._exec_client = client
         self._log.debug("Registered execution client.")
 
-    cpdef void register_strategy(self, TradeStrategy strategy):
+    cpdef void register_strategy(self, TradingStrategy strategy):
         """
         Register the given strategy identifier with the portfolio.
         
@@ -292,7 +292,7 @@ cdef class Portfolio:
         self._positions_closed[strategy.id] = {}  # type: Dict[PositionId, Position]
         self._log.debug(f"Registered {strategy}.")
 
-    cpdef void deregister_strategy(self, TradeStrategy strategy):
+    cpdef void deregister_strategy(self, TradingStrategy strategy):
         """
         Deregister the given strategy with the portfolio.
         

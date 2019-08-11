@@ -17,7 +17,7 @@ from nautilus_trader.common.logger cimport Logger, LoggerAdapter, LiveLogger
 from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.common.execution cimport ExecutionClient
 from nautilus_trader.trade.portfolio cimport Portfolio
-from nautilus_trader.trade.strategy cimport TradeStrategy
+from nautilus_trader.trade.strategy cimport TradingStrategy
 from nautilus_trader.trade.reports cimport ReportProvider
 
 
@@ -41,7 +41,7 @@ cdef class Trader:
         :param id_tag_trader: The identifier tag for the trader (unique at fund level).
         :param strategies: The initial list of strategies to manage.
         :param logger: The logger for the trader.
-        :raises ValueError: If the label is an invalid string.
+        :raises ValueError: If the id_tag_trader is an invalid string.
         :raises ValueError: If the strategies list is empty.
         :raises ValueError: If the strategies list contains a type other than TradeStrategy.
         :raises ValueError: If the data client is None.
@@ -50,7 +50,7 @@ cdef class Trader:
         """
         Condition.valid_string(id_tag_trader, 'id_tag_trader')
         Condition.not_empty(strategies, 'strategies')
-        Condition.list_type(strategies, TradeStrategy, 'strategies')
+        Condition.list_type(strategies, TradingStrategy, 'strategies')
         Condition.not_none(data_client, 'data_client')
         Condition.not_none(exec_client, 'exec_client')
         Condition.not_none(clock, 'clock')
@@ -75,7 +75,7 @@ cdef class Trader:
 
     cdef _initialize_strategies(self):
         for strategy in self.strategies:
-            strategy.register_trader_id(self.id, self.id_tag_trader)
+            strategy.register_trader_id(self.id_tag_trader.value)
             self._data_client.register_strategy(strategy)
             self._exec_client.register_strategy(strategy)
             self._log.info(f"Initialized {strategy}.")
@@ -155,7 +155,7 @@ cdef class Trader:
         self._exec_client.dispose()
         self._log.info("Disposed.")
 
-    cpdef change_strategies(self, list strategies: List[TradeStrategy]):
+    cpdef change_strategies(self, list strategies: List[TradingStrategy]):
         """
         Change strategies with the given list of trade strategies.
         
@@ -164,7 +164,7 @@ cdef class Trader:
         :raises ValueError: If the strategies list contains a type other than TradeStrategy.
         """
         Condition.not_empty(strategies, 'strategies')
-        Condition.list_type(strategies, TradeStrategy, 'strategies')
+        Condition.list_type(strategies, TradingStrategy, 'strategies')
 
         if self.is_running:
             self._log.error('Cannot change the strategies of a running trader.')

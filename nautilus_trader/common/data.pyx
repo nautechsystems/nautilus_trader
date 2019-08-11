@@ -15,7 +15,7 @@ from nautilus_trader.model.objects cimport Venue, Symbol, Tick, BarType, Bar, In
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logger cimport Logger, LoggerAdapter
 from nautilus_trader.common.handlers cimport TickHandler, BarHandler, InstrumentHandler
-from nautilus_trader.trade.strategy cimport TradeStrategy
+from nautilus_trader.trade.strategy cimport TradingStrategy
 
 
 cdef class DataClient:
@@ -149,7 +149,7 @@ cdef class DataClient:
         """
         return list(self._instruments).copy()
 
-    cpdef void register_strategy(self, TradeStrategy strategy):
+    cpdef void register_strategy(self, TradingStrategy strategy):
         """
         Register the given trade strategy with the data client.
 

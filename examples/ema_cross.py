@@ -14,14 +14,14 @@ from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.objects import Price, Symbol, Tick, BarType, Bar, Instrument
 from nautilus_trader.model.identifiers import Label
 from nautilus_trader.data.analyzers import SpreadAnalyzer, LiquidityAnalyzer
-from nautilus_trader.trade.strategy import TradeStrategy
+from nautilus_trader.trade.strategy import TradingStrategy
 from nautilus_trader.trade.sizing import FixedRiskSizer
 
 from nautilus_indicators.average.ema import ExponentialMovingAverage
 from nautilus_indicators.atr import AverageTrueRange
 
 
-class EMACrossPy(TradeStrategy):
+class EMACrossPy(TradingStrategy):
     """"
     A simple moving average cross example strategy. When the fast EMA crosses
     the slow EMA then a STOP_MARKET atomic order is placed for that direction
@@ -70,9 +70,9 @@ class EMACrossPy(TradeStrategy):
         self.atr = AverageTrueRange(atr_period)
 
         # Register the indicators for updating
-        self.register_indicator(self.bar_type, self.fast_ema, self.fast_ema.update)
-        self.register_indicator(self.bar_type, self.slow_ema, self.slow_ema.update)
-        self.register_indicator(self.bar_type, self.atr, self.atr.update)
+        self.register_indicator_bars(self.bar_type, self.fast_ema, self.fast_ema.update)
+        self.register_indicator_bars(self.bar_type, self.slow_ema, self.slow_ema.update)
+        self.register_indicator_bars(self.bar_type, self.atr, self.atr.update)
 
     def on_start(self):
         """
@@ -114,7 +114,7 @@ class EMACrossPy(TradeStrategy):
         self.log.info(f"Received {bar_type} Bar({bar})")  # For demonstration purposes
 
         if not self.warmed_up:
-            if self.indicators_initialized(self.bar_type):
+            if self.indicators_initialized():
                 self.warmed_up = True
             else:
                 return  # Wait for indicators to warm up...
