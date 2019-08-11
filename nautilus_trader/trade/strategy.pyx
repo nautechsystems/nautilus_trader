@@ -11,7 +11,6 @@ from collections import deque
 from typing import Callable, Dict, List, Deque
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.typed_collections cimport TypedList
 from nautilus_trader.core.types cimport ValidString
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.quote_type cimport QuoteType
@@ -33,13 +32,14 @@ from nautilus_trader.model.commands cimport AccountInquiry, SubmitOrder, SubmitA
 from nautilus_trader.data.tools cimport IndicatorUpdater
 
 
-cdef class TradeStrategy:
+cdef class TradingStrategy:
     """
-    The base class for all trade strategies.
+    The base class for all trading strategies.
     """
 
     def __init__(self,
-                 str id_tag_strategy,
+                 str id_tag_trader='000',
+                 str id_tag_strategy='001',
                  bint flatten_on_sl_reject=True,
                  bint flatten_on_stop=True,
                  bint cancel_all_orders_on_stop=True,
@@ -51,6 +51,7 @@ cdef class TradeStrategy:
         """
         Initializes a new instance of the TradeStrategy class.
 
+        :param id_tag_trader: The identifier tag for the trader (should be unique at fund level).
         :param id_tag_strategy: The identifier tag for the strategy (should be unique at trader level).
         :param flatten_on_sl_reject: The flag indicating whether the position with an
         associated stop order should be flattened if the order is rejected.
@@ -62,16 +63,20 @@ cdef class TradeStrategy:
         :param clock: The clock for the strategy.
         :param guid_factory: The GUID factory for the strategy.
         :param logger: The logger for the strategy (can be None).
+        :raises ValueError: If the id_tag_trader is not a valid string.
         :raises ValueError: If the id_tag_strategy is not a valid string.
+        :raises ValueError: If the tick_capacity is not positive (> 0).
         :raises ValueError: If the bar_capacity is not positive (> 0).
         """
+        Condition.valid_string(id_tag_strategy, 'id_tag_trader')
         Condition.valid_string(id_tag_strategy, 'id_tag_strategy')
+        Condition.positive(tick_capacity, 'tick_capacity')
         Condition.positive(bar_capacity, 'bar_capacity')
 
         # Identification
-        self.trader_id = TraderId('Trader-000')
+        self.trader_id = TraderId(f'Trader-{id_tag_trader}')
         self.id = StrategyId(self.__class__.__name__ + '-' + id_tag_strategy)
-        self.id_tag_trader = IdTag('000')
+        self.id_tag_trader = IdTag(id_tag_trader)
         self.id_tag_strategy = IdTag(id_tag_strategy)
 
         # Components
@@ -97,32 +102,33 @@ cdef class TradeStrategy:
             clock=self.clock)
 
         # Registered orders
-        self._entry_orders = {}          # type: Dict[OrderId, Order]
-        self._stop_loss_orders = {}      # type: Dict[OrderId, Order]
-        self._take_profit_orders = {}    # type: Dict[OrderId, Order]
-        self._atomic_order_ids = {}      # type: Dict[OrderId, List[OrderId]]
+        self._entry_orders = {}               # type: Dict[OrderId, Order]
+        self._stop_loss_orders = {}           # type: Dict[OrderId, Order]
+        self._take_profit_orders = {}         # type: Dict[OrderId, Order]
+        self._atomic_order_ids = {}           # type: Dict[OrderId, List[OrderId]]
 
         # Data
         self.tick_capacity = tick_capacity
         self.bar_capacity = bar_capacity
-        self._ticks = {}                 # type: Dict[Symbol, Deque[Tick]]
-        self._bars = {}                  # type: Dict[BarType, Deque[Bar]]
-        self._indicators = {}            # type: Dict[BarType, List[object]]
-        self._indicator_updaters = {}    # type: Dict[BarType, List[IndicatorUpdater]]
+        self._ticks = {}                      # type: Dict[Symbol, Deque[Tick]]
+        self._bars = {}                       # type: Dict[BarType, Deque[Bar]]
+        self._indicators = []                 # type: List[object]
+        self._indicator_updaters_ticks = {}   # type: Dict[Symbol, List[IndicatorUpdater]]
+        self._indicator_updaters_bars = {}    # type: Dict[BarType, List[IndicatorUpdater]]
         self._exchange_calculator = ExchangeRateCalculator()
 
         # Command buffers
         self._modify_order_buffer = {}   # type: Dict[OrderId, ModifyOrder]
 
         # Registered modules
-        self._data_client = None         # Initialized when registered with data client
-        self._exec_client = None         # Initialized when registered with execution client
-        self._portfolio = None           # Initialized when registered with execution client
-        self.account = None              # Initialized when registered with execution client
+        self._data_client = None  # Initialized when registered with data client
+        self._exec_client = None  # Initialized when registered with execution client
+        self._portfolio = None    # Initialized when registered with execution client
+        self.account = None       # Initialized when registered with execution client
 
         self.is_running = False
 
-    cdef bint equals(self, TradeStrategy other):
+    cdef bint equals(self, TradingStrategy other):
         """
         Return a value indicating whether the object equals the given object.
         
@@ -232,15 +238,15 @@ cdef class TradeStrategy:
 
 # -- REGISTRATION METHODS ------------------------------------------------------------------------ #
 
-    cpdef void register_trader_id(self, TraderId trader_id, IdTag id_tag_trader):
+    cpdef void register_trader_id(self, str id_tag_trader):
         """
-        Change the trader identifier and trader identifier tag for the strategy.
+        Change the trader identifier for the strategy.
 
-        :param trader_id: The trader identifier to change to.
         :param id_tag_trader: The trader identifier tag to change to.
+        :raises ValueError: If the id_tag_trader is not a valid string.
         """
-        self.trader_id = trader_id
-        self.id_tag_trader = id_tag_trader
+        self.trader_id = TraderId(f'Trader-{id_tag_trader}')
+        self.id_tag_trader = IdTag(id_tag_trader)
 
     cpdef void register_data_client(self, DataClient client):
         """
@@ -262,31 +268,59 @@ cdef class TradeStrategy:
         self.account = client.get_account()
         self.log.debug("Registered execution client, portfolio, and account.")
 
-    cpdef void register_indicator(
+    cpdef void register_indicator_ticks(
+            self,
+            Symbol symbol,
+            indicator,
+            update_method: Callable):
+        """
+        Register the given indicator with the strategy. 
+        It will receive ticks for the given symbol.
+
+        :param symbol: The indicators symbol.
+        :param indicator: The indicator to register.
+        :param update_method: The update method for the indicator.
+        :raises ValueError: If the update_method is not of type Callable.
+        """
+        Condition.type(update_method, Callable, 'update_method')
+
+        if indicator not in self._indicators:
+            self._indicators.append(indicator)
+
+        if symbol not in self._indicator_updaters_bars:
+            self._indicator_updaters_bars[symbol] = []  # type: List[IndicatorUpdater]
+
+        if indicator not in self._indicator_updaters_ticks[symbol]:
+            self._indicator_updaters_ticks[symbol].append(IndicatorUpdater(indicator, update_method))
+        else:
+            self.log.error(f"Indicator {indicator} already registered for {symbol}.")
+
+    cpdef void register_indicator_bars(
             self,
             BarType bar_type,
             indicator,
             update_method: Callable):
         """
-        Register the given indicator with the strategy. The indicator must be from the
-        nautilus_indicators package. Once added it will receive bars of the given
-        bar type.
+        Register the given indicator with the strategy. 
+        It will receive bars of the given bar type.
 
         :param bar_type: The indicators bar type.
         :param indicator: The indicator to register.
         :param update_method: The update method for the indicator.
-        :raises ValueError: If the indicator is not of type Indicator.
         :raises ValueError: If the update_method is not of type Callable.
         """
         Condition.type(update_method, Callable, 'update_method')
 
-        if bar_type not in self._indicators:
-            self._indicators[bar_type] = []  # type: List[object]
-        self._indicators[bar_type].append(indicator)
+        if indicator not in self._indicators:
+            self._indicators.append(indicator)
 
-        if bar_type not in self._indicator_updaters:
-            self._indicator_updaters[bar_type] = TypedList(IndicatorUpdater)
-        self._indicator_updaters[bar_type].append(IndicatorUpdater(indicator, update_method))
+        if bar_type not in self._indicator_updaters_bars:
+            self._indicator_updaters_bars[bar_type] = []  # type: List[IndicatorUpdater]
+
+        if indicator not in self._indicator_updaters_bars[bar_type]:
+            self._indicator_updaters_bars[bar_type].append(IndicatorUpdater(indicator, update_method))
+        else:
+            self.log.error(f"Indicator {indicator} already registered for {bar_type}.")
 
     cpdef void register_entry_order(self, Order order, PositionId position_id):
         """
@@ -320,15 +354,20 @@ cdef class TradeStrategy:
 
     cpdef void handle_tick(self, Tick tick):
         """"
-        System method. Update the last held tick with the given tick, then call 
-        on_tick() and pass the tick (if the strategy is running).
+        System method. Update the internal ticks with the given tick, update
+        indicators for the symbol, then call on_tick() and pass the tick 
+        (if the strategy is running).
 
         :param tick: The tick received.
         """
         if tick.symbol not in self._ticks:
             self._ticks[tick.symbol] = deque(maxlen=self.tick_capacity)  # type: Deque[Tick]
-
         self._ticks[tick.symbol].appendleft(tick)
+
+        cdef IndicatorUpdater updater
+        if tick.symbol in self._indicator_updaters_ticks:
+            for updater in self._indicator_updaters_ticks[tick.symbol]:
+                updater.update_tick(tick)
 
         if self.is_running:
             try:
@@ -345,20 +384,20 @@ cdef class TradeStrategy:
 
     cpdef void handle_bar(self, BarType bar_type, Bar bar):
         """"
-        System method. Update the internal dictionary of bars with the given bar, 
-        then call on_bar() and pass the arguments (if the strategy is running).
+        System method. Update the internal bars with the given bar, update 
+        indicators for the bar type, then call on_bar() and pass the arguments 
+        (if the strategy is running).
 
         :param bar_type: The bar type received.
         :param bar: The bar received.
         """
         if bar_type not in self._bars:
             self._bars[bar_type] = deque(maxlen=self.bar_capacity)  # type: Deque[Bar]
-
         self._bars[bar_type].appendleft(bar)
 
         cdef IndicatorUpdater updater
-        if bar_type in self._indicators:
-            for updater in self._indicator_updaters[bar_type]:
+        if bar_type in self._indicator_updaters_bars:
+            for updater in self._indicator_updaters_bars[bar_type]:
                 updater.update_bar(bar)
 
         if self.is_running:
@@ -369,7 +408,7 @@ cdef class TradeStrategy:
 
     cpdef void handle_bars(self, BarType bar_type, list bars):
         """
-        System method. Handle the given bar type and list of bars by handling 
+        System method. Handle the given bar type and bars by handling 
         each bar individually.
         """
         self.log.info(f"Received bar data for {bar_type} of {len(bars)} bars.")
@@ -705,41 +744,24 @@ cdef class TradeStrategy:
 
 # -- INDICATOR METHODS --------------------------------------------------------------------------- #
 
-    cpdef list indicators(self, BarType bar_type):
+    cpdef list registered_indicators(self):
         """
-        Return the indicators list for the given bar type (returns copy).
-        :param bar_type: The bar type for the indicators list.
-        :return: List[Indicator] (if found).
-        :raises ValueError: If the strategies indicators dictionary does not contain the given bar_type.
-        """
-        Condition.is_in(bar_type, self._indicators, 'bar_type', 'indicators')
-
-        return self._indicators[bar_type].copy()
-
-    cpdef bint indicators_initialized(self, BarType bar_type):
-        """
-        Return a value indicating whether all indicators for the given bar type are initialized.
+        Return the registered indicators for the strategy (returns copy).
         
-        :return: True if indicators initialized, otherwise False.
-        :raises ValueError: If the strategies indicators dictionary does not contain the given bar_type.
+        :param bar_type: The bar type for the indicators list.
+        :return: List[Indicator].
         """
-        Condition.is_in(bar_type, self._indicators, 'bar_type', 'indicators')
+        return self._indicators.copy()
 
-        for indicator in self._indicators[bar_type]:
+    cpdef bint indicators_initialized(self):
+        """
+        Return a value indicating whether all indicators are initialized.
+
+        :return: True if all indicators initialized, otherwise False.
+        """
+        for indicator in self._indicators:
             if indicator.initialized is False:
                 return False
-        return True
-
-    cpdef bint indicators_initialized_all(self):
-        """
-        Return a value indicating whether all indicators for the strategy are initialized.
-        
-        :return: True is all indicators initialized, otherwise False.
-        """
-        for indicator_list in self._indicators.values():
-            for indicator in indicator_list:
-                if indicator.initialized is False:
-                    return False
         return True
 
 
@@ -1091,12 +1113,14 @@ cdef class TradeStrategy:
         self.log.info(f"Resetting...")
         self.order_factory.reset()
         self.position_id_generator.reset()
-        self._ticks = {}  # type: Dict[Symbol, Tick]
-        self._bars = {}   # type: Dict[BarType, Deque[Bar]]
+        self._ticks = {}                      # type: Dict[Symbol, Deque[Tick]]
+        self._bars = {}                       # type: Dict[BarType, Deque[Bar]]
+        self._indicators = []                 # type: List[object]
+        self._indicator_updaters_ticks = {}   # type: Dict[Symbol, List[IndicatorUpdater]]
+        self._indicator_updaters_bars = {}    # type: Dict[BarType, List[IndicatorUpdater]]
 
-        # Reset all indicators
-        for indicator_list in self._indicators.values():
-            [indicator.reset() for indicator in indicator_list]
+        for indicator in self._indicators:
+            indicator.reset()
 
         try:
             self.on_reset()

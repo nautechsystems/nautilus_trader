@@ -8,10 +8,10 @@
 
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.objects cimport Tick, BarType, Bar, Instrument
-from nautilus_trader.trade.strategy cimport TradeStrategy
+from nautilus_trader.trade.strategy cimport TradingStrategy
 
 
-cdef class EmptyStrategyCython(TradeStrategy):
+cdef class EmptyStrategyCython(TradingStrategy):
     """
     A Cython strategy which is empty and does nothing.
     """

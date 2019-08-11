@@ -17,7 +17,7 @@ from nautilus_trader.common.logger import TestLogger
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.objects import Quantity, Venue, Symbol, Price, Money
 from nautilus_trader.model.events import OrderRejected, OrderCancelled, OrderWorking, OrderModified, OrderFilled
-from nautilus_trader.trade.strategy import TradeStrategy
+from nautilus_trader.trade.strategy import TradingStrategy
 from nautilus_trader.backtest.execution import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.trade.portfolio import Portfolio
@@ -65,7 +65,7 @@ class BacktestExecClientTests(unittest.TestCase):
 
     def test_can_send_collateral_inquiry(self):
         # Arrange
-        strategy = TradeStrategy(id_tag_strategy='001')
+        strategy = TradingStrategy(id_tag_strategy='001')
         self.exec_client.register_strategy(strategy)
 
         # Act

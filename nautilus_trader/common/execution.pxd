@@ -25,7 +25,7 @@ from nautilus_trader.model.commands cimport (
     CancelOrder
 )
 from nautilus_trader.trade.portfolio cimport Portfolio
-from nautilus_trader.trade.strategy cimport TradeStrategy
+from nautilus_trader.trade.strategy cimport TradingStrategy
 
 
 cdef class ExecutionClient:
@@ -57,8 +57,8 @@ cdef class ExecutionClient:
 
     cpdef void execute_command(self, Command command)
     cpdef void handle_event(self, Event event)
-    cpdef void register_strategy(self, TradeStrategy strategy)
-    cpdef void deregister_strategy(self, TradeStrategy strategy)
+    cpdef void register_strategy(self, TradingStrategy strategy)
+    cpdef void deregister_strategy(self, TradingStrategy strategy)
     cpdef Order get_order(self, OrderId order_id)
     cpdef dict get_orders_all(self)
     cpdef dict get_orders_active_all(self)

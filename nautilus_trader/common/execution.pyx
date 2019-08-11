@@ -22,7 +22,7 @@ from nautilus_trader.common.guid cimport GuidFactory
 from nautilus_trader.common.logger cimport Logger, LoggerAdapter
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.trade.portfolio cimport Portfolio
-from nautilus_trader.trade.strategy cimport TradeStrategy
+from nautilus_trader.trade.strategy cimport TradingStrategy
 
 
 cdef class ExecutionClient:
@@ -50,7 +50,7 @@ cdef class ExecutionClient:
         self._log = LoggerAdapter(self.__class__.__name__, logger)
         self._account = account
         self._portfolio = portfolio
-        self._registered_strategies = ConcurrentDictionary(StrategyId, TradeStrategy)
+        self._registered_strategies = ConcurrentDictionary(StrategyId, TradingStrategy)
         self._order_book = ConcurrentDictionary(OrderId, Order)
         self._order_strategy_index = ConcurrentDictionary(OrderId, StrategyId)
         self._orders_active = ConcurrentDictionary(StrategyId, TypedDictionary)
@@ -113,7 +113,7 @@ cdef class ExecutionClient:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void register_strategy(self, TradeStrategy strategy):
+    cpdef void register_strategy(self, TradingStrategy strategy):
         """
         Register the given strategy with the execution client.
 
@@ -133,7 +133,7 @@ cdef class ExecutionClient:
 
         self._log.debug(f"Registered {strategy}.")
 
-    cpdef void deregister_strategy(self, TradeStrategy strategy):
+    cpdef void deregister_strategy(self, TradingStrategy strategy):
         """
         Deregister the given strategy with the execution client.
 

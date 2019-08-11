@@ -13,7 +13,7 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.guid cimport GuidFactory
 from nautilus_trader.common.logger cimport LoggerAdapter
 from nautilus_trader.model.objects cimport Venue, Symbol, Tick, BarType, Bar, Instrument
-from nautilus_trader.trade.strategy cimport TradeStrategy
+from nautilus_trader.trade.strategy cimport TradingStrategy
 
 
 cdef class DataClient:
@@ -53,7 +53,7 @@ cdef class DataClient:
     cpdef list subscribed_bars(self)
     cpdef list subscribed_instruments(self)
     cpdef list instrument_symbols(self)
-    cpdef void register_strategy(self, TradeStrategy strategy)
+    cpdef void register_strategy(self, TradingStrategy strategy)
     cpdef dict get_instruments_all(self)
     cpdef Instrument get_instrument(self, Symbol symbol)
 

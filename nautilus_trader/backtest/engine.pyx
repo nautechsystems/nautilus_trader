@@ -33,7 +33,7 @@ from nautilus_trader.common.clock cimport LiveClock, TestClock
 from nautilus_trader.common.guid cimport TestGuidFactory
 from nautilus_trader.common.logger cimport TestLogger
 from nautilus_trader.trade.portfolio cimport Portfolio
-from nautilus_trader.trade.strategy cimport TradeStrategy
+from nautilus_trader.trade.strategy cimport TradingStrategy
 from nautilus_trader.backtest.config cimport BacktestConfig
 from nautilus_trader.backtest.data cimport BidAskBarPair, BacktestDataClient
 from nautilus_trader.backtest.execution cimport BacktestExecClient
@@ -52,7 +52,7 @@ cdef class BacktestEngine:
                  dict data_ticks: Dict[Symbol, DataFrame],
                  dict data_bars_bid: Dict[Symbol, Dict[Resolution, DataFrame]],
                  dict data_bars_ask: Dict[Symbol, Dict[Resolution, DataFrame]],
-                 list strategies: List[TradeStrategy],
+                 list strategies: List[TradingStrategy],
                  FillModel fill_model=FillModel(),
                  BacktestConfig config=BacktestConfig()):
         """
@@ -70,7 +70,7 @@ cdef class BacktestEngine:
         """
         # Data checked in BacktestDataClient
         Condition.list_type(instruments, Instrument, 'instruments')
-        Condition.list_type(strategies, TradeStrategy, 'strategies')
+        Condition.list_type(strategies, TradingStrategy, 'strategies')
 
         self.config = config
         self.clock = LiveClock()
@@ -206,7 +206,7 @@ cdef class BacktestEngine:
         Condition.type_or_none(strategies, list, 'strategies')
         if strategies is not None:
             Condition.not_empty(strategies, 'strategies')
-            Condition.list_type(strategies, TradeStrategy, 'strategies')
+            Condition.list_type(strategies, TradingStrategy, 'strategies')
         # ---------------------------------------------------------------------#
 
         cdef datetime run_started = self.clock.time_now()
@@ -263,7 +263,7 @@ cdef class BacktestEngine:
         # Run the backtest with tick level execution resolution
 
         cdef Tick tick
-        cdef TradeStrategy strategy
+        cdef TradingStrategy strategy
         cdef dict time_events
 
         cdef datetime time = start
@@ -296,7 +296,7 @@ cdef class BacktestEngine:
 
         cdef Symbol symbol
         cdef Tick tick
-        cdef TradeStrategy strategy
+        cdef TradingStrategy strategy
         cdef BidAskBarPair execution_bars
         cdef dict time_events
 

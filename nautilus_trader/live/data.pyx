@@ -28,7 +28,7 @@ from nautilus_trader.serialization.common cimport parse_symbol, parse_tick, pars
 from nautilus_trader.serialization.serializers cimport MsgPackRequestSerializer, MsgPackResponseSerializer
 from nautilus_trader.network.requests cimport DataRequest
 from nautilus_trader.network.responses cimport MessageRejected, QueryFailure, DataResponse
-from nautilus_trader.trade.strategy cimport TradeStrategy
+from nautilus_trader.trade.strategy cimport TradingStrategy
 from nautilus_trader.serialization.common import parse_symbol, parse_bar_type
 
 
@@ -205,7 +205,7 @@ cdef class LiveDataClient(DataClient):
         self._inst_req_worker.dispose()
         self._inst_sub_worker.dispose()
 
-    cpdef void register_strategy(self, TradeStrategy strategy):
+    cpdef void register_strategy(self, TradingStrategy strategy):
         """
         Register the given trade strategy with the data client.
 

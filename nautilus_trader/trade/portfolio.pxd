@@ -14,7 +14,7 @@ from nautilus_trader.model.identifiers cimport StrategyId, OrderId, PositionId
 from nautilus_trader.model.events cimport AccountEvent, OrderEvent
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.position cimport Position
-from nautilus_trader.trade.strategy cimport TradeStrategy
+from nautilus_trader.trade.strategy cimport TradingStrategy
 from nautilus_trader.trade.performance cimport PerformanceAnalyzer
 
 
@@ -60,8 +60,8 @@ cdef class Portfolio:
     cpdef int positions_closed_count(self)
 
     cpdef void register_execution_client(self, ExecutionClient client)
-    cpdef void register_strategy(self, TradeStrategy strategy)
-    cpdef void deregister_strategy(self, TradeStrategy strategy)
+    cpdef void register_strategy(self, TradingStrategy strategy)
+    cpdef void deregister_strategy(self, TradingStrategy strategy)
     cpdef void register_order(self, OrderId order_id, PositionId position_id)
     cpdef void handle_order_fill(self, OrderEvent event, StrategyId strategy_id)
     cpdef void handle_transaction(self, AccountEvent event)

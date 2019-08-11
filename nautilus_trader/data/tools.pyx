@@ -266,9 +266,17 @@ cdef class IndicatorUpdater:
         else:
             self._outputs = outputs
 
+    cpdef void update_tick(self, Tick tick):
+        """
+        Update the indicator with the given tick.
+        
+        :param tick: The tick to update with.
+        """
+        self._input_method(tick)
+
     cpdef void update_bar(self, Bar bar):
         """
-        Update the indicator with the given Bar object.
+        Update the indicator with the given bar.
 
         :param bar: The bar to update with.
         """
@@ -277,7 +285,7 @@ cdef class IndicatorUpdater:
 
     cpdef void update_databar(self, DataBar bar):
         """
-        Update the indicator with the given Bar object.
+        Update the indicator with the given data bar.
 
         :param bar: The bar to update with.
         """

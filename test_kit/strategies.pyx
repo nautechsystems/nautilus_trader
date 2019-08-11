@@ -12,7 +12,7 @@ from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.identifiers cimport Label, PositionId
 from nautilus_trader.model.objects cimport Symbol, Price, Tick, BarType, Bar, Instrument
 from nautilus_trader.model.order cimport Order, AtomicOrder
-from nautilus_trader.trade.strategy cimport TradeStrategy
+from nautilus_trader.trade.strategy cimport TradingStrategy
 from nautilus_trader.data.analyzers cimport SpreadAnalyzer, LiquidityAnalyzer
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
@@ -24,7 +24,7 @@ from nautilus_indicators.atr import AverageTrueRange
 from nautilus_indicators.average.ema import ExponentialMovingAverage
 
 
-class PyStrategy(TradeStrategy):
+class PyStrategy(TradingStrategy):
     """
     A strategy which is empty and does nothing.
     """
@@ -63,7 +63,7 @@ class PyStrategy(TradeStrategy):
         pass
 
 
-cdef class EmptyStrategy(TradeStrategy):
+cdef class EmptyStrategy(TradingStrategy):
     """
     A strategy which is empty and does nothing.
     """
@@ -99,7 +99,7 @@ cdef class EmptyStrategy(TradeStrategy):
         pass
 
 
-cdef class TickTock(TradeStrategy):
+cdef class TickTock(TradingStrategy):
     """
     A strategy to test correct sequencing of tick data and timers.
     """
@@ -157,7 +157,7 @@ cdef class TickTock(TradeStrategy):
         pass
 
 
-cdef class TestStrategy1(TradeStrategy):
+cdef class TestStrategy1(TradingStrategy):
     """"
     A simple strategy for unit testing.
     """
@@ -182,12 +182,12 @@ cdef class TestStrategy1(TradeStrategy):
         self.ema1 = ExponentialMovingAverage(10)
         self.ema2 = ExponentialMovingAverage(20)
 
-        self.register_indicator(bar_type=self.bar_type,
-                                indicator=self.ema1,
-                                update_method=self.ema1.update)
-        self.register_indicator(bar_type=self.bar_type,
-                                indicator=self.ema2,
-                                update_method=self.ema2.update)
+        self.register_indicator_bars(bar_type=self.bar_type,
+                                     indicator=self.ema1,
+                                     update_method=self.ema1.update)
+        self.register_indicator_bars(bar_type=self.bar_type,
+                                     indicator=self.ema2,
+                                     update_method=self.ema2.update)
 
         self.position_id = None
 
@@ -238,7 +238,7 @@ cdef class TestStrategy1(TradeStrategy):
         self.object_storer.store('custom dispose logic')
 
 
-cdef class EMACross(TradeStrategy):
+cdef class EMACross(TradingStrategy):
     """"
     A simple moving average cross example strategy. When the fast EMA crosses
     the slow EMA then a STOP_MARKET atomic order is placed for that direction
@@ -302,9 +302,9 @@ cdef class EMACross(TradeStrategy):
         self.atr = AverageTrueRange(atr_period)
 
         # Register the indicators for updating
-        self.register_indicator(self.bar_type, self.fast_ema, self.fast_ema.update)
-        self.register_indicator(self.bar_type, self.slow_ema, self.slow_ema.update)
-        self.register_indicator(self.bar_type, self.atr, self.atr.update)
+        self.register_indicator_bars(self.bar_type, self.fast_ema, self.fast_ema.update)
+        self.register_indicator_bars(self.bar_type, self.slow_ema, self.slow_ema.update)
+        self.register_indicator_bars(self.bar_type, self.atr, self.atr.update)
 
     cpdef on_start(self):
         """
