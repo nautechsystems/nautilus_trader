@@ -112,8 +112,8 @@ class TradeStrategyTests(unittest.TestCase):
         result2 = repr(strategy)
 
         # Assert
-        self.assertEqual('TradeStrategy(TradeStrategy-GBPUSD-MM)', result1)
-        self.assertTrue(result2.startswith('<TradeStrategy(TradeStrategy-GBPUSD-MM) object at'))
+        self.assertEqual('TradeStrategy(TradingStrategy-GBPUSD-MM)', result1)
+        self.assertTrue(result2.startswith('<TradeStrategy(TradingStrategy-GBPUSD-MM) object at'))
         self.assertTrue(result2.endswith('>'))
 
     def test_can_get_strategy_id(self):
