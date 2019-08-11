@@ -111,7 +111,7 @@ class TraderTests(unittest.TestCase):
                       EmptyStrategy('004')]
 
         # Act
-        self.trader.change_strategies(strategies)
+        self.trader.load_strategies(strategies)
 
         # Assert
         self.assertTrue(strategies[0].id in self.trader.strategy_status())
@@ -124,7 +124,7 @@ class TraderTests(unittest.TestCase):
                       EmptyStrategy('000')]
 
         # Act
-        self.assertRaises(RuntimeError, self.trader.change_strategies, strategies)
+        self.assertRaises(RuntimeError, self.trader.load_strategies, strategies)
 
     def test_can_start_a_trader(self):
         # Arrange
