@@ -1,0 +1,8 @@
+{
+  "logging": {
+    "name": "Log",
+    "log_level_console": "DEBUG",
+    "log_level_file": "DEBUG"
+  }
+
+}

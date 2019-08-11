@@ -19,7 +19,7 @@ from nautilus_trader.model.objects import Venue, Symbol, BarType, BarSpecificati
 from nautilus_trader.trade.portfolio import Portfolio
 from nautilus_trader.trade.trader import Trader
 
-from examples.ema_cross import EMACrossPy
+from examples.strategies.ema_cross import EMACrossPy
 
 AUDUSD_FXCM = Symbol('AUDUSD', Venue('FXCM'))
 BAR_TYPE = BarType(AUDUSD_FXCM, BarSpecification(1, Resolution.MINUTE, QuoteType.BID))

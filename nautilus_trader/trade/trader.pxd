@@ -40,7 +40,7 @@ cdef class Trader:
     cpdef stop(self)
     cpdef reset(self)
     cpdef dispose(self)
-    cpdef change_strategies(self, list strategies)
+    cpdef load_strategies(self, list strategies)
 
     cpdef dict strategy_status(self)
     cpdef void create_returns_tear_sheet(self)
