@@ -74,6 +74,14 @@ cdef class Trader:
         self._initialize_strategies()
 
     cdef _initialize_strategies(self):
+        # Check strategy identifiers are unique
+        strategy_ids = []   # type: List[StrategyId]
+        for strategy in self.strategies:
+            if strategy.id not in strategy_ids:
+                strategy_ids.append(strategy.id)
+            else:
+                raise RuntimeError(f'The strategy identifier {strategy.id} is not unique.')
+
         for strategy in self.strategies:
             strategy.register_trader_id(self.id_tag_trader.value)
             self._data_client.register_strategy(strategy)
@@ -155,7 +163,7 @@ cdef class Trader:
         self._exec_client.dispose()
         self._log.info("Disposed.")
 
-    cpdef change_strategies(self, list strategies: List[TradingStrategy]):
+    cpdef load_strategies(self, list strategies: List[TradingStrategy]):
         """
         Change strategies with the given list of trade strategies.
         
@@ -170,16 +178,13 @@ cdef class Trader:
             self._log.error('Cannot change the strategies of a running trader.')
             return
 
-        # Check strategy identifiers are unique
-        strategy_ids = []   # type: List[StrategyId]
-        for strategy in strategies:
-            if strategy.id not in strategy_ids:
-                strategy_ids.append(strategy.id)
-            else:
-                raise RuntimeError(f'The strategy identifier {strategy.id} is not unique.')
-
+        # Dispose of current strategies
         for strategy in self.strategies:
-            self._exec_client.deregister_strategy(strategy)
+            if not strategy.is_running:
+                self._exec_client.deregister_strategy(strategy)
+            else:
+                self._log.error(f"Strategy was {strategy} is still running.")
+                strategy.stop()
             strategy.dispose()
 
         self.strategies = strategies

@@ -19,7 +19,7 @@ from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.engine import BacktestEngine
 from test_kit.data import TestDataProvider
 from test_kit.stubs import TestStubs
-from examples.ema_cross import EMACrossPy
+from examples.strategies.ema_cross import EMACrossPy
 
 
 if __name__ == "__main__":

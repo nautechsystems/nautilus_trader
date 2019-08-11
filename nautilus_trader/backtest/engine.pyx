@@ -235,7 +235,7 @@ cdef class BacktestEngine:
 
         # Setup strategies
         if strategies is not None:
-            self.trader.change_strategies(strategies)
+            self.trader.load_strategies(strategies)
         self._change_clocks_and_loggers(self.trader.strategies)
 
         # -- RUN BACKTEST -----------------------------------------------------#
