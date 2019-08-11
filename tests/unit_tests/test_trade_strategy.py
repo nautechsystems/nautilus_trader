@@ -122,7 +122,7 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(StrategyId('TradeStrategy-001'), strategy.id)
+        self.assertEqual(StrategyId('TradingStrategy-001'), strategy.id)
 
     def test_can_get_current_time(self):
         # Arrange
