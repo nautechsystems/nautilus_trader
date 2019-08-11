@@ -748,7 +748,6 @@ cdef class TradingStrategy:
         """
         Return the registered indicators for the strategy (returns copy).
         
-        :param bar_type: The bar type for the indicators list.
         :return: List[Indicator].
         """
         return self._indicators.copy()
