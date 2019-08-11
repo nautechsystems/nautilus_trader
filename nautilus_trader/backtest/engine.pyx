@@ -229,11 +229,11 @@ cdef class BacktestEngine:
         self.log.debug("Setting initial iterations...")
         self.data_client.set_initial_iteration_indexes(start)  # Also sets clock to start time
 
-        # Setup fill model
+        # Setup new fill model
         if fill_model is not None:
             self.exec_client.change_fill_model(fill_model)
 
-        # Setup strategies
+        # Setup new strategies
         if strategies is not None:
             self.trader.load_strategies(strategies)
         self._change_clocks_and_loggers(self.trader.strategies)
