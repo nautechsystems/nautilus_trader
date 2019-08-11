@@ -237,7 +237,8 @@ cdef class LiveLogger(Logger):
                  bint console_prints=True,
                  bint log_thread=False,
                  bint log_to_file=False,
-                 str log_file_path='log/'):
+                 str log_file_path='log/',
+                 LiveClock clock=LiveClock()):
         """
         Initializes a new instance of the LiveLogger class.
 
@@ -249,6 +250,7 @@ cdef class LiveLogger(Logger):
         :param log_thread: The flag indicating whether log messages should log the thread.
         :param log_to_file: The flag indicating whether log messages should log to file.
         :param log_file_path: The name of the log file (cannot be None if log_to_file is True).
+        :param clock: The clock for the logger.
         :raises ValueError: If the name is not a valid string.
         :raises ValueError: If the log_file_path is not a valid string.
         """
@@ -260,7 +262,8 @@ cdef class LiveLogger(Logger):
                          console_prints,
                          log_thread,
                          log_to_file,
-                         log_file_path)
+                         log_file_path,
+                         clock)
 
         self._queue = Queue()
         self._thread = Thread(target=self._process_messages, daemon=True)
@@ -324,6 +327,7 @@ cdef class TestLogger(Logger):
         :param log_thread: The flag indicating whether log messages should log the thread.
         :param log_to_file: The flag indicating whether log messages should log to file.
         :param log_file_path: The name of the log file (cannot be None if log_to_file is True).
+        :param clock: The clock for the logger.
         :raises ValueError: If the name is not a valid string.
         :raises ValueError: If the log_file_path is not a valid string.
         """

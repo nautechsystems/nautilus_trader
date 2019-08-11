@@ -21,9 +21,9 @@ from nautilus_trader.model.commands cimport (
     CancelOrder,
     ModifyOrder)
 from nautilus_trader.common.account cimport Account
-from nautilus_trader.common.clock cimport Clock, LiveClock
-from nautilus_trader.common.guid cimport GuidFactory, LiveGuidFactory
-from nautilus_trader.common.logger cimport Logger, LiveLogger
+from nautilus_trader.common.clock cimport LiveClock
+from nautilus_trader.common.guid cimport LiveGuidFactory
+from nautilus_trader.common.logger cimport LiveLogger
 from nautilus_trader.common.execution cimport ExecutionClient
 from nautilus_trader.trade.portfolio cimport Portfolio
 from nautilus_trader.network.workers import RequestWorker, SubscriberWorker
@@ -40,16 +40,6 @@ cdef class LiveExecClient(ExecutionClient):
     Provides an execution client for live trading utilizing a ZMQ transport
     to the execution service.
     """
-    cdef object _zmq_context
-    cdef object _message_bus
-    cdef object _thread
-    cdef object _commands_worker
-    cdef object _events_worker
-    cdef CommandSerializer _command_serializer
-    cdef ResponseSerializer _response_serializer
-    cdef EventSerializer _event_serializer
-
-    cdef readonly str events_topic
 
     def __init__(
             self,
@@ -64,9 +54,9 @@ cdef class LiveExecClient(ExecutionClient):
             EventSerializer event_serializer=MsgPackEventSerializer(),
             Account account=Account(),
             Portfolio portfolio=Portfolio(),
-            Clock clock=LiveClock(),
-            GuidFactory guid_factory=LiveGuidFactory(),
-            Logger logger=LiveLogger()):
+            LiveClock clock=LiveClock(),
+            LiveGuidFactory guid_factory=LiveGuidFactory(),
+            LiveLogger logger=LiveLogger()):
         """
         Initializes a new instance of the LiveExecClient class.
 
@@ -125,8 +115,6 @@ cdef class LiveExecClient(ExecutionClient):
 
         self.events_topic = events_topic
         self._thread.start()
-
-        self._log.info(f"ZMQ v{zmq.pyzmq_version()}.")
 
     cpdef void connect(self):
         """
@@ -195,27 +183,27 @@ cdef class LiveExecClient(ExecutionClient):
 
             self._message_bus.task_done()
 
-    cpdef void _account_inquiry(self, AccountInquiry command):
+    cdef void _account_inquiry(self, AccountInquiry command):
         self._send_command(command)
 
-    cpdef void _submit_order(self, SubmitOrder command):
+    cdef void _submit_order(self, SubmitOrder command):
         self._send_command(command)
 
-    cpdef void _submit_atomic_order(self, SubmitAtomicOrder command):
+    cdef void _submit_atomic_order(self, SubmitAtomicOrder command):
         self._send_command(command)
 
-    cpdef void _modify_order(self, ModifyOrder command):
+    cdef void _modify_order(self, ModifyOrder command):
         self._send_command(command)
 
-    cpdef void _cancel_order(self, CancelOrder command):
+    cdef void _cancel_order(self, CancelOrder command):
         self._send_command(command)
 
-    cpdef void _send_command(self, Command command):
+    cdef void _send_command(self, Command command):
         self._log.debug(f"Sending {command} ...")
         cdef bytes response_bytes = self._commands_worker.send(self._command_serializer.serialize(command))
         cdef Response response =  self._response_serializer.deserialize(response_bytes)
         self._log.debug(f"Received response {response}")
 
-    cpdef void _deserialize_event(self, str topic, bytes event_bytes):
+    cdef void _deserialize_event(self, str topic, bytes event_bytes):
         cdef Event event = self._event_serializer.deserialize(event_bytes)
         self._handle_event(event)

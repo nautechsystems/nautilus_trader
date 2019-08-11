@@ -1,7 +1,7 @@
 {
   "logging": {
     "log_name": "Log",
-    "log_level_console": "DEBUG",
+    "log_level_console": "INFO",
     "log_level_file": "DEBUG",
     "log_level_store": "WARNING",
     "log_thread": true,
@@ -12,6 +12,7 @@
   "dataClient": {
     "serviceName": "NautilusData",
     "serviceAddress": "localhost",
+    "venue": "FXCM",
     "tickReqPort": 55501,
     "tickSubPort": 55502,
     "barReqPort": 55503,

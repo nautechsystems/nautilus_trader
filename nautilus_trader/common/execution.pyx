@@ -47,7 +47,7 @@ cdef class ExecutionClient:
         """
         self._clock = clock
         self._guid_factory = guid_factory
-        self._log = LoggerAdapter(self.__class__.__name__, logger)
+        self._log = LoggerAdapter('ExecClient', logger)
         self._account = account
         self._portfolio = portfolio
         self._registered_strategies = ConcurrentDictionary(StrategyId, TradingStrategy)

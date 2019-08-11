@@ -91,7 +91,7 @@ cdef class BacktestEngine:
             log_to_file=config.log_to_file,
             log_file_path=config.log_file_path,
             clock=LiveClock())
-        self.log = LoggerAdapter(component_name='BacktestEngine', logger=self.logger)
+        self.log = LoggerAdapter(component_name=self.__class__.__name__, logger=self.logger)
         self.test_logger = TestLogger(
             name='backtest',
             bypass_logging=config.bypass_logging,
