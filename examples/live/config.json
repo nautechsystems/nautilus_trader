@@ -1,8 +1,35 @@
 {
   "logging": {
-    "name": "Log",
+    "log_name": "Log",
     "log_level_console": "DEBUG",
-    "log_level_file": "DEBUG"
+    "log_level_file": "DEBUG",
+    "log_level_store": "WARNING",
+    "log_thread": true,
+    "log_to_file": true,
+    "log_file_path": "log/"
+  },
+
+  "dataClient": {
+    "serviceName": "NautilusData",
+    "serviceAddress": "localhost",
+    "tickReqPort": 55501,
+    "tickSubPort": 55502,
+    "barReqPort": 55503,
+    "barSubPort": 55504,
+    "instReqPort": 55505,
+    "instSubPort": 55506
+  },
+
+  "execClient": {
+    "serviceName": "NautilusData",
+    "serviceAddress": "localhost",
+    "eventsTopic": "NAUTILUS:EVENTS",
+    "commandsPort": 55555,
+    "eventsPort": 55556
+  },
+
+  "trader": {
+    "idTag": "TEST-001"
   }
 
 }
