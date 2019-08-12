@@ -538,6 +538,7 @@ cdef class PositionEvent(Event):
     def __init__(self,
                  Position position,
                  StrategyId strategy_id,
+                 OrderEvent order_fill,
                  GUID event_id,
                  datetime event_timestamp):
         """
@@ -545,12 +546,14 @@ cdef class PositionEvent(Event):
 
         :param position: The event position.
         :param strategy_id: The strategy identifier associated with the position.
+        :param order_fill: The order fill event which triggered the event.
         :param event_id: The event identifier.
         :param event_timestamp: The event timestamp.
         """
         super().__init__(event_id, event_timestamp)
         self.position = position
         self.strategy_id = strategy_id
+        self.order_fill = order_fill
 
     def __repr__(self) -> str:
         """
@@ -567,6 +570,7 @@ cdef class PositionOpened(PositionEvent):
     def __init__(self,
                  Position position,
                  StrategyId strategy_id,
+                 OrderEvent order_fill,
                  GUID event_id,
                  datetime event_timestamp):
         """
@@ -574,11 +578,13 @@ cdef class PositionOpened(PositionEvent):
 
         :param position: The event position.
         :param strategy_id: The strategy identifier associated with the position.
+        :param order_fill: The order fill event which triggered the event.
         :param event_id: The event identifier.
         :param event_timestamp: The event timestamp.
         """
         super().__init__(position,
                          strategy_id,
+                         order_fill,
                          event_id,
                          event_timestamp)
 
@@ -601,6 +607,7 @@ cdef class PositionModified(PositionEvent):
     def __init__(self,
                  Position position,
                  StrategyId strategy_id,
+                 OrderEvent order_fill,
                  GUID event_id,
                  datetime event_timestamp):
         """
@@ -608,11 +615,13 @@ cdef class PositionModified(PositionEvent):
 
         :param position: The event position.
         :param strategy_id: The strategy identifier associated with the position.
+        :param order_fill: The order fill event which triggered the event.
         :param event_id: The event identifier.
         :param event_timestamp: The event timestamp.
         """
         super().__init__(position,
                          strategy_id,
+                         order_fill,
                          event_id,
                          event_timestamp)
 
@@ -636,6 +645,7 @@ cdef class PositionClosed(PositionEvent):
     def __init__(self,
                  Position position,
                  StrategyId strategy_id,
+                 OrderEvent order_fill,
                  GUID event_id,
                  datetime event_timestamp):
         """
@@ -643,11 +653,13 @@ cdef class PositionClosed(PositionEvent):
 
         :param position: The event position.
         :param strategy_id: The strategy identifier associated with the position.
+        :param order_fill: The order fill event which triggered the event.
         :param event_id: The event identifier.
         :param event_timestamp: The event timestamp.
         """
         super().__init__(position,
                          strategy_id,
+                         order_fill,
                          event_id,
                          event_timestamp)
 

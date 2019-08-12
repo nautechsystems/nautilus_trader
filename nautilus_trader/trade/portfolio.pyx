@@ -10,7 +10,14 @@ from typing import List, Dict
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.events cimport AccountEvent, OrderEvent, PositionOpened, PositionModified, PositionClosed
+from nautilus_trader.model.events cimport (
+    AccountEvent,
+    OrderEvent,
+    OrderFilled,
+    OrderPartiallyFilled,
+    PositionOpened,
+    PositionModified,
+    PositionClosed)
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.identifiers cimport StrategyId, OrderId, PositionId
 from nautilus_trader.model.position cimport Position
@@ -328,6 +335,7 @@ cdef class Portfolio:
         :param strategy_id: The strategy identifier.
         :raises ValueError: If the strategy identifier is not registered with the portfolio.
         """
+        assert isinstance(event, (OrderFilled, OrderPartiallyFilled))
         Condition.true(strategy_id in self._registered_strategies, 'strategy_id in registered_strategies')
 
         cdef PositionId position_id = self._order_p_index.get(event.order_id)
@@ -353,7 +361,7 @@ cdef class Portfolio:
             # Add position to active positions
             self._positions_active[strategy_id][position_id] = position
             self._log.debug(f"Added {position} to active positions.")
-            self._position_opened(position, strategy_id)
+            self._position_opened(position, strategy_id, event)
 
         # Position exists
         else:
@@ -366,15 +374,15 @@ cdef class Portfolio:
                     self._positions_closed[strategy_id][position_id] = position
                     del self._positions_active[strategy_id][position_id]
                     self._log.debug(f"Moved {position} to closed positions.")
-                    self._position_closed(position, strategy_id)
+                    self._position_closed(position, strategy_id, event)
             else:
                 # Check for overfill
                 if position_id in self._positions_closed[strategy_id]:
                     self._positions_active[strategy_id][position_id] = position
                     del self._positions_closed[strategy_id][position_id]
                     self._log.warning(f"Moved {position} BACK to active positions due overfill.")
-                    self._position_opened(position, strategy_id)
-                self._position_modified(position, strategy_id)
+                    self._position_opened(position, strategy_id, event)
+                self._position_modified(position, strategy_id, event)
 
     cpdef void handle_transaction(self, AccountEvent event):
         """
@@ -430,30 +438,33 @@ cdef class Portfolio:
         self.analyzer = PerformanceAnalyzer()
         self._log.info("Reset.")
 
-    cdef void _position_opened(self, Position position, StrategyId strategy_id):
+    cdef void _position_opened(self, Position position, StrategyId strategy_id, OrderEvent order_fill):
         cdef PositionOpened event = PositionOpened(
             position,
             strategy_id,
+            order_fill,
             self._guid_factory.generate(),
             self._clock.time_now())
 
         self.position_opened_events.append(event)
         self._exec_client.handle_event(event)
 
-    cdef void _position_modified(self, Position position, StrategyId strategy_id):
+    cdef void _position_modified(self, Position position, StrategyId strategy_id, OrderEvent order_fill):
         cdef PositionModified event = PositionModified(
             position,
             strategy_id,
+            order_fill,
             self._guid_factory.generate(),
             self._clock.time_now())
 
         self._exec_client.handle_event(event)
 
-    cdef void _position_closed(self, Position position, StrategyId strategy_id):
+    cdef void _position_closed(self, Position position, StrategyId strategy_id, OrderEvent order_fill):
         cdef datetime time_now = self._clock.time_now()
         cdef PositionClosed event = PositionClosed(
             position,
             strategy_id,
+            order_fill,
             self._guid_factory.generate(),
             time_now)
 

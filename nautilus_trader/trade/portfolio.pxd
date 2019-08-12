@@ -68,6 +68,6 @@ cdef class Portfolio:
     cpdef void check_residuals(self)
     cpdef void reset(self)
 
-    cdef void _position_opened(self, Position position, StrategyId strategy_id)
-    cdef void _position_modified(self, Position position, StrategyId strategy_id)
-    cdef void _position_closed(self, Position position, StrategyId strategy_id)
+    cdef void _position_opened(self, Position position, StrategyId strategy_id, OrderEvent order_fill)
+    cdef void _position_modified(self, Position position, StrategyId strategy_id, OrderEvent order_fill)
+    cdef void _position_closed(self, Position position, StrategyId strategy_id, OrderEvent order_fill)
