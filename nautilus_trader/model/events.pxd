@@ -161,6 +161,7 @@ cdef class PositionEvent(Event):
     """
     cdef readonly Position position
     cdef readonly StrategyId strategy_id
+    cdef readonly OrderEvent order_fill
 
 
 cdef class PositionOpened(PositionEvent):
