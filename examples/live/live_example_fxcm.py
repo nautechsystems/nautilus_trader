@@ -7,17 +7,9 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import logging
-import zmq
-
-from nautilus_trader.common.logger import LiveLogger
-from nautilus_trader.common.account import Account
-from nautilus_trader.live.data import LiveDataClient
-from nautilus_trader.live.execution import LiveExecClient
-from nautilus_trader.model.enums import Resolution, QuoteType, Currency
+from nautilus_trader.model.enums import Resolution, QuoteType
 from nautilus_trader.model.objects import Venue, Symbol, BarType, BarSpecification
-from nautilus_trader.trade.portfolio import Portfolio
-from nautilus_trader.trade.trader import Trader
+from nautilus_trader.live.node import TradingNode
 
 from examples.strategies.ema_cross import EMACrossPy
 
@@ -26,16 +18,11 @@ BAR_TYPE = BarType(AUDUSD_FXCM, BarSpecification(1, Resolution.MINUTE, QuoteType
 #BAR_TYPE = BarType(AUDUSD_FXCM, BarSpecification(1, Resolution.SECOND, QuoteType.BID))
 
 
+# This example requires a Redis instance listening on the default port 6379
+# This example requires a NautilusData instance listening on the default ports
+# This example requires a NautilusExecutor instance listening on the default ports
+
 if __name__ == "__main__":
-    zmq_context = zmq.Context()
-    logger = LiveLogger(level_console=logging.DEBUG, log_to_file=False)
-    data_client = LiveDataClient(zmq_context=zmq_context, venue=Venue('FXCM'), logger=logger)
-    exec_client = LiveExecClient(zmq_context=zmq_context, logger=logger)
-    data_client.connect()
-    exec_client.connect()
-
-    data_client.update_instruments()
-
     strategy = EMACrossPy(
         AUDUSD_FXCM,
         BAR_TYPE,
@@ -44,21 +31,16 @@ if __name__ == "__main__":
         20,
         20)
 
-    trader = Trader(
-        '000',
-        [strategy],
-        data_client,
-        exec_client,
-        Account(currency=Currency.USD),
-        Portfolio(),
-        logger=logger)
+    node = TradingNode()
+    node.trader.load_strategies([strategy])
 
     input()
-    trader.start()
+    node.connect()
 
     input()
-    trader.stop()
-    data_client.disconnect()
-    exec_client.disconnect()
+    node.trader.start()
 
-    print("Stopped")
+    input()
+    node.trader.stop()
+    node.disconnect()
+    node.dispose()

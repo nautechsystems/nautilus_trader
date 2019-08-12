@@ -42,7 +42,7 @@ REQUIREMENTS = ['cython',
                 'empyrical']
 
 DIRECTORIES_TO_CYTHONIZE = [PACKAGE_NAME, 'test_kit']
-DIRECTORIES_ALL = [PACKAGE_NAME, 'test_kit', 'tests']
+DIRECTORIES_ALL = [PACKAGE_NAME, 'test_kit', 'test_suite']
 
 
 # Cython build options (edit here only)

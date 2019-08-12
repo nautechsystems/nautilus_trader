@@ -49,7 +49,7 @@ cdef class TradingStrategy:
                  GuidFactory guid_factory=LiveGuidFactory(),
                  Logger logger=None):
         """
-        Initializes a new instance of the TradeStrategy class.
+        Initializes a new instance of the TradingStrategy class.
 
         :param id_tag_trader: The identifier tag for the trader (should be unique at fund level).
         :param id_tag_strategy: The identifier tag for the strategy (should be unique at trader level).
@@ -159,7 +159,7 @@ cdef class TradingStrategy:
         """
         :return: The str() string representation of the strategy.
         """
-        return f"TradeStrategy({self.id.value})"
+        return f"{self.__class__.__name__}({self.id.value})"
 
     def __repr__(self) -> str:
         """

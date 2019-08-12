@@ -177,3 +177,4 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 31/07/19 15274063 function calls (15045703 primitive calls) in 14.589 seconds (numerous changes)
         # 31/07/19 15324690 function calls (15096346 primitive calls) in 15.134 seconds (add typed collections to data client base)
         # 06/08/19 15274063 function calls (15045703 primitive calls) in 14.749 seconds (add typed collections to exec client base)
+        # 13/08/19 15402949 function calls (15045703 primitive calls) in 15.589 seconds (add typed collections to trader)
