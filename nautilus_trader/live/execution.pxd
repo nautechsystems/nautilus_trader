@@ -9,6 +9,7 @@
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.common.execution cimport ExecutionClient
 from nautilus_trader.serialization.base cimport CommandSerializer, ResponseSerializer, EventSerializer
+from nautilus_trader.live.stores cimport EventStore
 
 
 cdef class LiveExecClient(ExecutionClient):
@@ -24,6 +25,7 @@ cdef class LiveExecClient(ExecutionClient):
     cdef CommandSerializer _command_serializer
     cdef ResponseSerializer _response_serializer
     cdef EventSerializer _event_serializer
+    cdef EventStore _store
 
     cdef readonly str events_topic
 

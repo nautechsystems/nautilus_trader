@@ -32,7 +32,7 @@ cdef class LogStore:
         """
         Condition.in_range(redis_port, 'redis_port', 0, 65535)
 
-        self._store_key = f'Nautilus:Traders:{trader_id.value}:LogStore'
+        self._key = f'Nautilus:Traders:{trader_id.value}:LogStore'
         self._redis = redis.StrictRedis(host='localhost', port=redis_port, db=0)
         self._queue = Queue()
         self._process = Process(target=self._process_queue, daemon=True)
@@ -51,7 +51,7 @@ cdef class LogStore:
         cdef LogMessage message
         while True:
             message = self._queue.get()
-            self._redis.rpush(self._store_key, message.as_string())
+            self._redis.rpush(self._key, message.as_string())
 
 
 cdef class EventStore:
@@ -73,7 +73,8 @@ cdef class EventStore:
         """
         Condition.in_range(redis_port, 'redis_port', 0, 65535)
 
-        self._store_key = f'Nautilus:Traders:{trader_id.value}'
+        self._key_order_event = f'Nautilus:Traders:{trader_id.value}:Orders:'
+        self._key_position_event = f'Nautilus:Traders:{trader_id.value}:Positions:'
         self._serializer = serializer
         self._redis = redis.StrictRedis(host='localhost', port=redis_port, db=0)
         self._queue = Queue()
@@ -96,6 +97,11 @@ cdef class EventStore:
 
             if isinstance(event, OrderEvent):
                 self._store_order_event(event)
+            elif isinstance(event, PositionEvent):
+                self._store_position_event(event)
 
     cdef void _store_order_event(self, OrderEvent event):
-        self._redis.rpush(self._store_key + ':' + event.order_id, self._serializer.serialize(event))
+        self._redis.rpush(self._key_order_event + event.order_id.value, self._serializer.serialize(event))
+
+    cdef void _store_position_event(self, PositionEvent event):
+        self._redis.rpush(self._key_position_event + event.position.id.value, self._serializer.serialize(event))

@@ -21,7 +21,6 @@ from nautilus_trader.model.commands cimport (
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.guid cimport LiveGuidFactory
-from nautilus_trader.live.logger cimport LiveLogger
 from nautilus_trader.common.execution cimport ExecutionClient
 from nautilus_trader.trade.portfolio cimport Portfolio
 from nautilus_trader.network.workers import RequestWorker, SubscriberWorker
@@ -31,6 +30,8 @@ from nautilus_trader.serialization.serializers cimport (
     MsgPackResponseSerializer,
     MsgPackEventSerializer
 )
+from nautilus_trader.live.logger cimport LiveLogger
+from nautilus_trader.live.stores cimport EventStore
 
 
 cdef class LiveExecClient(ExecutionClient):
@@ -54,7 +55,8 @@ cdef class LiveExecClient(ExecutionClient):
             Portfolio portfolio=Portfolio(),
             LiveClock clock=LiveClock(),
             LiveGuidFactory guid_factory=LiveGuidFactory(),
-            LiveLogger logger=LiveLogger()):
+            LiveLogger logger=LiveLogger(),
+            EventStore store=None):
         """
         Initializes a new instance of the LiveExecClient class.
 
@@ -87,6 +89,7 @@ cdef class LiveExecClient(ExecutionClient):
                          guid_factory,
                          logger)
         self._zmq_context = zmq_context
+        self._store = store
         self._queue = Queue()
         self._thread = Thread(target=self._process_queue, daemon=True)
 
@@ -174,6 +177,8 @@ cdef class LiveExecClient(ExecutionClient):
 
             if message.message_type == MessageType.EVENT:
                 self._handle_event(message)
+                if self._store is not None:  # TODO: Change this to calling a delegate
+                    self._store.store(message)
             elif message.message_type == MessageType.COMMAND:
                 self._execute_command(message)
             else:
