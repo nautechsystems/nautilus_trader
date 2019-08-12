@@ -6,6 +6,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.model.events cimport Event, OrderEvent
 from nautilus_trader.live.logger cimport LogMessage
 
 
@@ -19,4 +20,20 @@ cdef class LogStore:
     cdef str _store_key
 
     cpdef void store(self, LogMessage message)
-    cpdef void _process_messages(self)
+    cpdef void _process_queue(self)
+
+
+cdef class EventStore:
+    """
+    Provides a process and thread safe event store.
+    """
+    cdef object _process
+    cdef object _queue
+    cdef object _serializer
+    cdef object _redis
+    cdef str _store_key
+
+    cpdef void store(self, Event event)
+    cpdef void _process_queue(self)
+
+    cdef void _store_order_event(self, OrderEvent event)

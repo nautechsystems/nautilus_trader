@@ -26,7 +26,7 @@ from nautilus_trader.trade.portfolio cimport Portfolio
 from nautilus_trader.live.logger cimport LiveLogger
 from nautilus_trader.live.data cimport LiveDataClient
 from nautilus_trader.live.execution cimport LiveExecClient
-from nautilus_trader.live.stores cimport LogStore
+from nautilus_trader.live.stores cimport LogStore, EventStore
 
 
 cdef class TradingNode:
@@ -39,6 +39,7 @@ cdef class TradingNode:
     cdef LogStore _log_store
     cdef LoggerAdapter _log
 
+    cdef EventStore _event_store
     cdef object _zmq_context
     cdef LiveDataClient _data_client
     cdef LiveExecClient _exec_client
@@ -46,8 +47,6 @@ cdef class TradingNode:
     cdef Portfolio _portfolio
 
     cdef readonly GUID id
-
-
 
     def __init__(
             self,
@@ -69,8 +68,10 @@ cdef class TradingNode:
         self.id = GUID(uuid.uuid4())
 
         trader_id = TraderId(config['trader']['idTag'])
+        database_config = config['database']
+        self._log_store = LogStore(trader_id=trader_id, redis_port=database_config['log_store_port'])
+
         log_config = config['logging']
-        self._log_store = LogStore(trader_id=trader_id, redis_port=6379)
         self._logger = LiveLogger(
             name=log_config['log_name'],
             level_console=getattr(logging, log_config['log_level_console']),
@@ -91,6 +92,7 @@ cdef class TradingNode:
             guid_factory=self._guid_factory,
             logger=self._logger)
 
+        self._event_store = EventStore(trader_id=trader_id, redis_port=database_config['event_store_port'])
         self._zmq_context = zmq.Context()
 
         data_config = config['dataClient']
@@ -108,6 +110,7 @@ cdef class TradingNode:
             clock=self._clock,
             guid_factory=self._guid_factory,
             logger=self._logger)
+
 
         exec_config = config['execClient']
         self._exec_client = LiveExecClient(

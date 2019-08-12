@@ -87,8 +87,8 @@ cdef class LiveExecClient(ExecutionClient):
                          guid_factory,
                          logger)
         self._zmq_context = zmq_context
-        self._message_bus = Queue()
-        self._thread = Thread(target=self._process, daemon=True)
+        self._queue = Queue()
+        self._thread = Thread(target=self._process_queue, daemon=True)
 
         self._commands_worker = RequestWorker(
             f'{self.__class__.__name__}.CommandRequester',
@@ -156,7 +156,7 @@ cdef class LiveExecClient(ExecutionClient):
         
         :param command: The command to execute.
         """
-        self._message_bus.put(command)
+        self._queue.put(command)
 
     cpdef void handle_event(self, Event event):
         """
@@ -164,13 +164,13 @@ cdef class LiveExecClient(ExecutionClient):
         
         :param event: The event to handle
         """
-        self._message_bus.put(event)
+        self._queue.put(event)
 
-    cpdef void _process(self):
+    cpdef void _process_queue(self):
+        # Process the queue one item at a time
         cdef Message message
         while True:
-            # Process the queue one item at a time
-            message = self._message_bus.get()
+            message = self._queue.get()
 
             if message.message_type == MessageType.EVENT:
                 self._handle_event(message)
