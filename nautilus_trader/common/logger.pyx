@@ -375,7 +375,8 @@ cdef class LoggerAdapter:
 
 cpdef void nautilus_header(LoggerAdapter logger):
         logger.info("#---------------------------------------------------------------#")
-        logger.info(f" Nautilus Trader v{__version__} by Nautech Systems Pty Ltd.")
+        logger.info(f" Nautilus Trader v{__version__}")
+        logger.info(f" by Nautech Systems Pty Ltd. All Rights Reserved.")
         logger.info("#---------------------------------------------------------------#")
         logger.info("                                                                 ")
         logger.info("                            .......                              ")
