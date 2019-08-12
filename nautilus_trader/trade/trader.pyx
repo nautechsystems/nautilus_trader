@@ -12,8 +12,7 @@ from typing import List
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.identifiers cimport IdTag, StrategyId
 from nautilus_trader.common.account cimport Account
-from nautilus_trader.common.clock cimport LiveClock
-from nautilus_trader.common.logger cimport Logger, LoggerAdapter, LiveLogger
+from nautilus_trader.common.logger cimport Logger, LoggerAdapter
 from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.common.execution cimport ExecutionClient
 from nautilus_trader.trade.portfolio cimport Portfolio
@@ -33,8 +32,8 @@ cdef class Trader:
                  ExecutionClient exec_client,
                  Account account,
                  Portfolio portfolio,
-                 Clock clock=LiveClock(),
-                 Logger logger=LiveLogger()):
+                 Clock clock,
+                 Logger logger):
         """
         Initializes a new instance of the Trader class.
 

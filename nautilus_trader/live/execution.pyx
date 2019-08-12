@@ -6,8 +6,6 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import zmq
-
 from queue import Queue
 from threading import Thread
 from zmq import Context
@@ -23,7 +21,7 @@ from nautilus_trader.model.commands cimport (
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.guid cimport LiveGuidFactory
-from nautilus_trader.common.logger cimport LiveLogger
+from nautilus_trader.live.logger cimport LiveLogger
 from nautilus_trader.common.execution cimport ExecutionClient
 from nautilus_trader.trade.portfolio cimport Portfolio
 from nautilus_trader.network.workers import RequestWorker, SubscriberWorker
@@ -75,8 +73,8 @@ cdef class LiveExecClient(ExecutionClient):
         :param logger: The logger for the component (can be None).
         :raises ValueError: If the service_address is not a valid string.
         :raises ValueError: If the events_topic is not a valid string.
-        :raises ValueError: If the commands_port is not in range [0, 65535]
-        :raises ValueError: If the events_port is not in range [0, 65535]
+        :raises ValueError: If the commands_port is not in range [0, 65535].
+        :raises ValueError: If the events_port is not in range [0, 65535].
         """
         Condition.valid_string(service_address, 'service_address')
         Condition.valid_string(events_topic, 'events_topic')
@@ -180,8 +178,6 @@ cdef class LiveExecClient(ExecutionClient):
                 self._execute_command(message)
             else:
                 raise RuntimeError(f"Invalid message type on bus ({repr(message)}).")
-
-            self._message_bus.task_done()
 
     cdef void _account_inquiry(self, AccountInquiry command):
         self._send_command(command)

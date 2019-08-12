@@ -18,7 +18,7 @@ from nautilus_trader.core.message cimport Response
 from nautilus_trader.model.objects cimport Venue, Symbol, BarType, Instrument
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.guid cimport LiveGuidFactory
-from nautilus_trader.common.logger cimport LiveLogger
+from nautilus_trader.live.logger cimport LiveLogger
 from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.network.workers import RequestWorker, SubscriberWorker
 from nautilus_trader.serialization.base cimport DataSerializer, InstrumentSerializer, RequestSerializer, ResponseSerializer
@@ -73,12 +73,12 @@ cdef class LiveDataClient(DataClient):
         :param data_serializer: The instrument serializer for the component.
         :param logger: The logger for the component.
         :raises ValueError: If the service_address is not a valid string.
-        :raises ValueError: If the tick_req_port is not in range [0, 65535]
-        :raises ValueError: If the tick_sub_port is not in range [0, 65535]
-        :raises ValueError: If the bar_req_port is not in range [0, 65535]
-        :raises ValueError: If the bar_sub_port is not in range [0, 65535]
-        :raises ValueError: If the inst_req_port is not in range [0, 65535]
-        :raises ValueError: If the inst_sub_port is not in range [0, 65535]
+        :raises ValueError: If the tick_req_port is not in range [0, 65535].
+        :raises ValueError: If the tick_sub_port is not in range [0, 65535].
+        :raises ValueError: If the bar_req_port is not in range [0, 65535].
+        :raises ValueError: If the bar_sub_port is not in range [0, 65535].
+        :raises ValueError: If the inst_req_port is not in range [0, 65535].
+        :raises ValueError: If the inst_sub_port is not in range [0, 65535].
         """
         Condition.valid_string(service_address, 'service_address')
         Condition.in_range(tick_req_port, 'tick_req_port', 0, 65535)

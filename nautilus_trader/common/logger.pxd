@@ -45,24 +45,6 @@ cdef class Logger:
     cdef void _console_print_handler(self, int level, str message)
 
 
-cdef class LogMessage:
-    """
-    Represents a log message.
-    """
-    cdef readonly datetime timestamp
-    cdef readonly int level
-    cdef readonly str message
-
-
-cdef class LiveLogger(Logger):
-    """
-    Provides a thread safe logger for live concurrent operations.
-    """
-    cdef object _queue
-    cdef object _thread
-    cpdef void _process_messages(self)
-
-
 cdef class TestLogger(Logger):
     """
     Provides a single threaded logger for testing.
