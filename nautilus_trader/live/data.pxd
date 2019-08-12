@@ -6,24 +6,10 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.typed_collections cimport ObjectCache
-from nautilus_trader.core.message cimport Response
-from nautilus_trader.model.objects cimport Venue, Symbol, BarType, Instrument
-from nautilus_trader.common.clock cimport LiveClock
-from nautilus_trader.common.guid cimport LiveGuidFactory
-from nautilus_trader.common.logger cimport LiveLogger
 from nautilus_trader.common.data cimport DataClient
-from nautilus_trader.network.workers import RequestWorker, SubscriberWorker
 from nautilus_trader.serialization.base cimport DataSerializer, InstrumentSerializer, RequestSerializer, ResponseSerializer
-from nautilus_trader.serialization.data cimport BsonDataSerializer, BsonInstrumentSerializer
 from nautilus_trader.serialization.constants cimport *
-from nautilus_trader.serialization.common cimport parse_symbol, parse_tick, parse_bar_type, parse_bar, convert_datetime_to_string
-from nautilus_trader.serialization.serializers cimport MsgPackRequestSerializer, MsgPackResponseSerializer
-from nautilus_trader.network.requests cimport DataRequest
-from nautilus_trader.network.responses cimport MessageRejected, QueryFailure
-from nautilus_trader.trade.strategy cimport TradingStrategy
-from nautilus_trader.serialization.common import parse_symbol, parse_bar_type
 
 
 cdef class LiveDataClient(DataClient):

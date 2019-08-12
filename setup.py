@@ -37,6 +37,7 @@ REQUIREMENTS = ['cython',
                 'pyzmq',
                 'pymongo',
                 'msgpack',
+                'redis',
                 'psutil',
                 'empyrical']
 

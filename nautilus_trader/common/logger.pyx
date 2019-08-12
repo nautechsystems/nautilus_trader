@@ -21,8 +21,6 @@ import platform
 from platform import python_version
 from nautilus_trader.version import __version__
 from cpython.datetime cimport datetime
-from threading import Thread
-from queue import Queue
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport format_zulu_datetime
@@ -208,103 +206,6 @@ cdef class Logger:
         # >= the log_level_console level.
         if self._console_prints and level >= self._log_level_console:
             print(message)
-
-
-cdef class LogMessage:
-    """
-    Represents a log message.
-    """
-    def __init__(self,
-                 datetime timestamp,
-                 int level,
-                 str message):
-        """
-        Initializes a new instance of the LogMessage class.
-
-        :param timestamp: The log message timestamp.
-        :param level: The log message level.
-        :param message: The log message.
-        """
-        self.timestamp = timestamp
-        self.level = level
-        self.message = message
-
-
-cdef class LiveLogger(Logger):
-    """
-    Provides a thread safe logger for live concurrent operations.
-    """
-
-    def __init__(self,
-                 str name=None,
-                 bint bypass_logging=False,
-                 int level_console: logging=logging.INFO,
-                 int level_file: logging=logging.DEBUG,
-                 int level_store: logging=logging.WARNING,
-                 bint console_prints=True,
-                 bint log_thread=False,
-                 bint log_to_file=False,
-                 str log_file_path='logs/',
-                 LiveClock clock=LiveClock()):
-        """
-        Initializes a new instance of the LiveLogger class.
-
-        :param name: The name of the logger.
-        :param level_console: The minimum log level for logging messages to the console.
-        :param level_file: The minimum log level for logging messages to the log file.
-        :param level_store: The minimum log level for storing log messages in memory.
-        :param console_prints: The flag indicating whether log messages should print.
-        :param log_thread: The flag indicating whether log messages should log the thread.
-        :param log_to_file: The flag indicating whether log messages should log to file.
-        :param log_file_path: The name of the log file (cannot be None if log_to_file is True).
-        :param clock: The clock for the logger.
-        :raises ValueError: If the name is not a valid string.
-        :raises ValueError: If the log_file_path is not a valid string.
-        """
-        super().__init__(name,
-                         bypass_logging,
-                         level_console,
-                         level_file,
-                         level_store,
-                         console_prints,
-                         log_thread,
-                         log_to_file,
-                         log_file_path,
-                         clock)
-
-        self._queue = Queue()
-        self._thread = Thread(target=self._process_messages, daemon=True)
-        self._thread.start()
-
-    cpdef void log(self, int level, str message):
-        """
-        Log the given message with the given log level.
-        
-        :param level: The log level for the log message.
-        :param message: The message to log.
-        """
-        self._queue.put(LogMessage(self.clock.time_now(), level, message))
-
-    cpdef void _process_messages(self):
-        cdef LogMessage log_message
-        while True:
-            # Process the queue one item at a time
-            log_message = self._queue.get()
-
-            if log_message.level == logging.DEBUG:
-                self._debug(log_message.timestamp, log_message.message)
-            elif log_message.level == logging.INFO:
-                self._info(log_message.timestamp, log_message.message)
-            elif log_message.level == logging.WARNING:
-                self._warning(log_message.timestamp, log_message.message)
-            elif log_message.level == logging.ERROR:
-                self._error(log_message.timestamp, log_message.message)
-            elif log_message.level == logging.CRITICAL:
-                self._critical(log_message.timestamp, log_message.message)
-            else:
-                raise RuntimeError(f"Log level {log_message.level} not recognized")
-
-            self._queue.task_done()
 
 
 cdef class TestLogger(Logger):
@@ -511,5 +412,3 @@ cpdef void nautilus_header(LoggerAdapter logger):
         logger.info(f"numpy v{np.__version__}")
         logger.info(f"scipy v{scipy.__version__}")
         logger.info(f"pandas v{pd.__version__}")
-        logger.info("#---------------------------------------------------------------#")
-        logger.info("")
