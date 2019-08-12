@@ -17,7 +17,7 @@ cdef class LiveExecClient(ExecutionClient):
     to the execution service.
     """
     cdef object _zmq_context
-    cdef object _message_bus
+    cdef object _queue
     cdef object _thread
     cdef object _commands_worker
     cdef object _events_worker
@@ -27,6 +27,6 @@ cdef class LiveExecClient(ExecutionClient):
 
     cdef readonly str events_topic
 
-    cpdef void _process(self)
+    cpdef void _process_queue(self)
     cdef void _send_command(self, Command command)
     cdef void _deserialize_event(self, str topic, bytes event_bytes)

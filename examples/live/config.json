@@ -3,6 +3,11 @@
     "idTag": "TEST-001"
   },
 
+  "database": {
+    "log_store_port": 6379,
+    "event_store_port": 6379
+  },
+
   "logging": {
     "log_name": "test",
     "log_level_console": "INFO",

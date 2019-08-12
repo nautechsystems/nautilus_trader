@@ -90,7 +90,7 @@ cdef class LiveLogger(Logger):
 
         self._queue = Queue()
         self._store = store
-        self._thread = Thread(target=self._process_messages, daemon=True)
+        self._thread = Thread(target=self._process_queue, daemon=True)
         self._thread.start()
 
     cpdef void log(self, int level, str message):
@@ -102,10 +102,10 @@ cdef class LiveLogger(Logger):
         """
         self._queue.put(LogMessage(self.clock.time_now(), level, message))
 
-    cpdef void _process_messages(self):
+    cpdef void _process_queue(self):
+        # Process the queue one item at a time
         cdef LogMessage message
         while True:
-            # Process the queue one item at a time
             message = self._queue.get()
 
             if message.level == logging.DEBUG:
