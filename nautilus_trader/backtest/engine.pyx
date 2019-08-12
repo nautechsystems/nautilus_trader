@@ -6,21 +6,14 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import cython
-import numpy as np
-import scipy
-import pandas as pd
 import logging
 import psutil
-import platform
 import pytz
 
-from platform import python_version
 from cpython.datetime cimport datetime, timedelta
 from pandas import DataFrame
 from typing import List, Dict, Callable
 
-from nautilus_trader.version import __version__
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport as_utc_timestamp, format_zulu_datetime, pad_string
 from nautilus_trader.model.c_enums.currency cimport currency_string
@@ -31,7 +24,7 @@ from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.brokerage import CommissionCalculator
 from nautilus_trader.common.clock cimport LiveClock, TestClock
 from nautilus_trader.common.guid cimport TestGuidFactory
-from nautilus_trader.common.logger cimport TestLogger
+from nautilus_trader.common.logger cimport TestLogger, nautilus_header
 from nautilus_trader.trade.portfolio cimport Portfolio
 from nautilus_trader.trade.strategy cimport TradingStrategy
 from nautilus_trader.backtest.config cimport BacktestConfig
@@ -104,7 +97,7 @@ cdef class BacktestEngine:
             log_file_path=config.log_file_path,
             clock=self.test_clock)
 
-        self._engine_header()
+        nautilus_header(self.log)
         self.log.info("Building engine...")
 
         self.account = Account(currency=config.account_currency)
@@ -401,24 +394,6 @@ cdef class BacktestEngine:
         Dispose of the backtest engine by disposing the trader and releasing system resources.
         """
         self.trader.dispose()
-
-    cdef void _engine_header(self):
-        self.log.info("#---------------------------------------------------------------#")
-        self.log.info("#----------------------- BACKTEST ENGINE -----------------------#")
-        self.log.info("#---------------------------------------------------------------#")
-        self.log.info(f"Nautilus Trader v{__version__} by Nautech Systems Pty Ltd.")
-        self.log.info(f"OS: {platform.platform()}")
-        self.log.info(f"CPU architecture: {platform.processor()}" )
-        cdef str cpu_freq_str = '' if psutil.cpu_freq() is None else f'@ {int(psutil.cpu_freq()[2])}MHz'
-        self.log.info(f"CPU(s): {psutil.cpu_count()} {cpu_freq_str}")
-        self.log.info(f"RAM-total: {round(psutil.virtual_memory()[0] / 1000000)}MB")
-        self.log.info("#---------------------------------------------------------------#")
-        self.log.info(f"python v{python_version()}")
-        self.log.info(f"cython v{cython.__version__}")
-        self.log.info(f"numpy v{np.__version__}")
-        self.log.info(f"scipy v{scipy.__version__}")
-        self.log.info(f"pandas v{pd.__version__}")
-        self.log.info("#---------------------------------------------------------------#")
 
     cdef void _backtest_header(
             self,

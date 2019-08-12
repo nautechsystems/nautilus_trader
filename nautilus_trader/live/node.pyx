@@ -16,7 +16,7 @@ from nautilus_trader.core.types cimport GUID
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.guid cimport LiveGuidFactory
-from nautilus_trader.common.logger cimport LiveLogger, LoggerAdapter
+from nautilus_trader.common.logger cimport LiveLogger, LoggerAdapter, nautilus_header
 from nautilus_trader.model.objects cimport Venue
 from nautilus_trader.trade.portfolio cimport Portfolio
 from nautilus_trader.live.data cimport LiveDataClient
@@ -73,6 +73,7 @@ cdef class TradingNode:
             clock=self._clock)
 
         self._log = LoggerAdapter(component_name=self.__class__.__name__, logger=self._logger)
+        nautilus_header(self._log)
         self._log.info("Starting...")
         self._log.info(f"ZMQ v{zmq.pyzmq_version()}.")
 

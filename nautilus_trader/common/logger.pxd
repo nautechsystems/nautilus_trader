@@ -8,7 +8,6 @@
 
 from cpython.datetime cimport datetime
 
-from nautilus_trader.core.types cimport ValidString
 from nautilus_trader.common.clock cimport Clock
 
 
@@ -33,26 +32,26 @@ cdef class Logger:
     cdef readonly Clock clock
 
     cpdef void change_log_file_name(self, str name)
-    cpdef void log(self, int log_level, ValidString message)
+    cpdef void log(self, int level, str message)
     cpdef list get_log_store(self)
     cpdef void clear_log_store(self)
-    cpdef void _debug(self, datetime timestamp, ValidString message)
-    cpdef void _info(self, datetime timestamp, ValidString message)
-    cpdef void _warning(self, datetime timestamp, ValidString message)
-    cpdef void _error(self, datetime timestamp, ValidString message)
-    cpdef void _critical(self, datetime timestamp, ValidString message)
+    cpdef void _debug(self, datetime timestamp, str message)
+    cpdef void _info(self, datetime timestamp, str message)
+    cpdef void _warning(self, datetime timestamp, str message)
+    cpdef void _error(self, datetime timestamp, str message)
+    cpdef void _critical(self, datetime timestamp, str message)
     cdef str _format_message(self, datetime timestamp, str log_level, str message)
-    cdef void _log_store_handler(self, int log_level, str message)
-    cdef void _console_print_handler(self, int log_level, str message)
+    cdef void _log_store_handler(self, int level, str message)
+    cdef void _console_print_handler(self, int level, str message)
 
 
 cdef class LogMessage:
     """
     Represents a log message.
     """
-    cdef readonly int log_level
     cdef readonly datetime timestamp
-    cdef readonly ValidString text
+    cdef readonly int level
+    cdef readonly str message
 
 
 cdef class LiveLogger(Logger):
@@ -87,4 +86,7 @@ cdef class LoggerAdapter:
     cpdef void error(self, str message)
     cpdef void critical(self, str message)
     cpdef void exception(self, ex)
-    cdef ValidString _format_message(self, str message)
+    cdef str _format_message(self, str message)
+
+
+cpdef void nautilus_header(LoggerAdapter logger)
