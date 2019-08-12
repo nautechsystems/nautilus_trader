@@ -6,7 +6,7 @@
     "log_level_store": "WARNING",
     "log_thread": true,
     "log_to_file": true,
-    "log_file_path": "log/"
+    "log_file_path": "logs/"
   },
 
   "dataClient": {
@@ -22,7 +22,7 @@
   },
 
   "execClient": {
-    "serviceName": "NautilusData",
+    "serviceName": "NautilusExecutor",
     "serviceAddress": "localhost",
     "eventsTopic": "NAUTILUS:EVENTS",
     "commandsPort": 55555,
