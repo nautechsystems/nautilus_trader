@@ -20,11 +20,13 @@ from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.guid cimport LiveGuidFactory
 from nautilus_trader.common.logger cimport LoggerAdapter, nautilus_header
-from nautilus_trader.live.logger cimport LiveLogger
 from nautilus_trader.model.objects cimport Venue
+from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.trade.portfolio cimport Portfolio
+from nautilus_trader.live.logger cimport LiveLogger
 from nautilus_trader.live.data cimport LiveDataClient
 from nautilus_trader.live.execution cimport LiveExecClient
+from nautilus_trader.live.stores cimport LogStore
 
 
 cdef class TradingNode:
@@ -34,6 +36,7 @@ cdef class TradingNode:
     cdef LiveClock _clock
     cdef LiveGuidFactory _guid_factory
     cdef LiveLogger _logger
+    cdef LogStore _log_store
     cdef LoggerAdapter _log
 
     cdef object _zmq_context
@@ -65,7 +68,9 @@ cdef class TradingNode:
         self._guid_factory = LiveGuidFactory()
         self.id = GUID(uuid.uuid4())
 
+        trader_id = TraderId(config['trader']['idTag'])
         log_config = config['logging']
+        self._log_store = LogStore(trader_id=trader_id, redis_port=6379)
         self._logger = LiveLogger(
             name=log_config['log_name'],
             level_console=getattr(logging, log_config['log_level_console']),
@@ -74,8 +79,8 @@ cdef class TradingNode:
             log_thread=log_config['log_thread'],
             log_to_file=log_config['log_to_file'],
             log_file_path=log_config['log_file_path'],
-            clock=self._clock)
-
+            clock=self._clock,
+            store=self._log_store)
         self._log = LoggerAdapter(component_name=self.__class__.__name__, logger=self._logger)
         self._log_header()
         self._log.info("Starting...")

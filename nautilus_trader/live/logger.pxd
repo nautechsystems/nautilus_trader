@@ -9,6 +9,7 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.common.logger cimport Logger
+from nautilus_trader.live.stores cimport LogStore
 
 
 cdef class LogMessage:
@@ -27,4 +28,5 @@ cdef class LiveLogger(Logger):
     """
     cdef object _queue
     cdef object _thread
+    cdef LogStore _store
     cpdef void _process_messages(self)
