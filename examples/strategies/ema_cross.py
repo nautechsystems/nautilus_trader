@@ -226,7 +226,7 @@ class EMACrossPy(TradingStrategy):
     def on_event(self, event: Event):
         """
         This method is called whenever the strategy receives an Event object,
-        and after the event has been processed by the TradeStrategy base class.
+        and after the event has been processed by the TradingStrategy base class.
         These events could be AccountEvent, OrderEvent, PositionEvent, TimeEvent.
 
         :param event: The received event.

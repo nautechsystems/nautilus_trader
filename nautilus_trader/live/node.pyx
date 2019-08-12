@@ -22,6 +22,7 @@ from nautilus_trader.common.guid cimport LiveGuidFactory
 from nautilus_trader.common.logger cimport LoggerAdapter, nautilus_header
 from nautilus_trader.model.objects cimport Venue
 from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.trade.trader cimport Trader
 from nautilus_trader.trade.portfolio cimport Portfolio
 from nautilus_trader.live.logger cimport LiveLogger
 from nautilus_trader.live.data cimport LiveDataClient
@@ -38,19 +39,20 @@ cdef class TradingNode:
     cdef LiveLogger _logger
     cdef LogStore _log_store
     cdef LoggerAdapter _log
-
-    cdef EventStore _event_store
     cdef object _zmq_context
     cdef LiveDataClient _data_client
     cdef LiveExecClient _exec_client
-    cdef Account _account
-    cdef Portfolio _portfolio
 
     cdef readonly GUID id
+    cdef readonly EventStore event_store
+    cdef readonly Account account
+    cdef readonly Portfolio portfolio
+    cdef readonly Trader trader
 
     def __init__(
             self,
-            str config_path='config.json'):
+            str config_path='config.json',
+            list strategies=None):
         """
         Initializes a new instance of the TradingNode class.
 
@@ -65,6 +67,7 @@ cdef class TradingNode:
 
         self._clock = LiveClock()
         self._guid_factory = LiveGuidFactory()
+        self._zmq_context = zmq.Context()
         self.id = GUID(uuid.uuid4())
 
         trader_id = TraderId(config['trader']['idTag'])
@@ -86,14 +89,13 @@ cdef class TradingNode:
         self._log_header()
         self._log.info("Starting...")
 
-        self._account = Account()
-        self._portfolio = Portfolio(
+        self.account = Account()
+        self.portfolio = Portfolio(
             clock=self._clock,
             guid_factory=self._guid_factory,
             logger=self._logger)
 
-        self._event_store = EventStore(trader_id=trader_id, redis_port=database_config['event_store_port'])
-        self._zmq_context = zmq.Context()
+        self.event_store = EventStore(trader_id=trader_id, redis_port=database_config['event_store_port'])
 
         data_config = config['dataClient']
         self._data_client = LiveDataClient(
@@ -111,7 +113,6 @@ cdef class TradingNode:
             guid_factory=self._guid_factory,
             logger=self._logger)
 
-
         exec_config = config['execClient']
         self._exec_client = LiveExecClient(
             zmq_context=self._zmq_context,
@@ -120,11 +121,47 @@ cdef class TradingNode:
             events_topic=exec_config['eventsTopic'],
             commands_port=exec_config['commandsPort'],
             events_port=exec_config['eventsPort'],
-            account=self._account,
-            portfolio=self._portfolio,
+            account=self.account,
+            portfolio=self.portfolio,
             clock=self._clock,
             guid_factory=self._guid_factory,
+            logger=self._logger,
+            store=self.event_store)
+
+        self.trader = Trader(
+            id_tag_trader=trader_id.value,
+            strategies=[],
+            data_client=self._data_client,
+            exec_client=self._exec_client,
+            account=self.account,
+            portfolio=self.portfolio,
+            clock=self._clock,
             logger=self._logger)
+
+        self._log.info("Initialized.")
+
+    cpdef void connect(self):
+        """
+        Connect the trading node to its services.
+        """
+        self._data_client.connect()
+        self._exec_client.connect()
+        self._data_client.update_instruments()
+
+    cpdef void disconnect(self):
+        """
+        Disconnect the trading node to its services.
+        """
+        self._data_client.disconnect()
+        self._exec_client.disconnect()
+
+    cpdef void dispose(self):
+        """
+        Dispose of the trading node.
+        """
+        self._data_client.dispose()
+        self._exec_client.dispose()
+        self.trader.dispose()
 
     cdef void _log_header(self):
         nautilus_header(self._log)

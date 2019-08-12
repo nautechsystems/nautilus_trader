@@ -10,7 +10,7 @@ from cpython.datetime cimport datetime
 from typing import List
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.identifiers cimport IdTag, StrategyId
+from nautilus_trader.model.identifiers cimport IdTag
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.logger cimport Logger, LoggerAdapter
 from nautilus_trader.common.data cimport DataClient
@@ -22,7 +22,7 @@ from nautilus_trader.trade.reports cimport ReportProvider
 
 cdef class Trader:
     """
-    Provides a trader for managing a portfolio of trade strategies.
+    Provides a trader for managing a portfolio of trading strategies.
     """
 
     def __init__(self,
@@ -41,15 +41,11 @@ cdef class Trader:
         :param strategies: The initial list of strategies to manage.
         :param logger: The logger for the trader.
         :raises ValueError: If the id_tag_trader is an invalid string.
-        :raises ValueError: If the strategies list is empty.
-        :raises ValueError: If the strategies list contains a type other than TradeStrategy.
         :raises ValueError: If the data client is None.
         :raises ValueError: If the exec client is None.
         :raises ValueError: If the clock is None.
         """
         Condition.valid_string(id_tag_trader, 'id_tag_trader')
-        Condition.not_empty(strategies, 'strategies')
-        Condition.list_type(strategies, TradingStrategy, 'strategies')
         Condition.not_none(data_client, 'data_client')
         Condition.not_none(exec_client, 'exec_client')
         Condition.not_none(clock, 'clock')
@@ -66,20 +62,52 @@ cdef class Trader:
         self.portfolio = portfolio
         self.portfolio.register_execution_client(self._exec_client)
         self.is_running = False
-        self.started_datetimes = []  # type: List[datetime]
-        self.stopped_datetimes = []  # type: List[datetime]
+        self.started_datetimes = TypedList(datetime)
+        self.stopped_datetimes = TypedList(datetime)
+        self.strategies = None
 
-        self.strategies = strategies
-        self._initialize_strategies()
+        self.load_strategies(strategies)
 
-    cdef _initialize_strategies(self):
-        # Check strategy identifiers are unique
-        strategy_ids = []   # type: List[StrategyId]
+    cpdef load_strategies(self, list strategies: List[TradingStrategy]):
+        """
+        Change strategies with the given list of trading strategies.
+        
+        :param strategies: The list of strategies to load into the trader.
+        :raises ValueError: If the strategies list is empty.
+        :raises ValueError: If the strategies list contains a type other than TradingStrategy.
+        """
+        if self.strategies is None:
+            self.strategies = TypedList(TradingStrategy)
+        else:
+            Condition.not_empty(strategies, 'strategies')
+            Condition.list_type(strategies, TradingStrategy, 'strategies')
+
+        if self.is_running:
+            self._log.error('Cannot change the strategies of a running trader.')
+            return
+
         for strategy in self.strategies:
+            assert not strategy.is_running
+
+        # Check strategy identifiers are unique
+        strategy_ids = set()
+        for strategy in strategies:
             if strategy.id not in strategy_ids:
-                strategy_ids.append(strategy.id)
+                strategy_ids.add(strategy.id)
             else:
-                raise RuntimeError(f'The strategy identifier {strategy.id} is not unique.')
+                raise RuntimeError(f'The strategy identifier {strategy.id} was not unique.')
+
+        # Dispose of current strategies
+        for strategy in self.strategies:
+            self._exec_client.deregister_strategy(strategy)
+            strategy.dispose()
+
+        self.strategies.clear()
+
+        # Initialize strategies
+        for strategy in strategies:
+            strategy.change_logger(self._log._logger)
+            self.strategies.append(strategy)
 
         for strategy in self.strategies:
             strategy.register_trader_id(self.id_tag_trader.value)
@@ -161,33 +189,6 @@ cdef class Trader:
         self._data_client.dispose()
         self._exec_client.dispose()
         self._log.info("Disposed.")
-
-    cpdef load_strategies(self, list strategies: List[TradingStrategy]):
-        """
-        Change strategies with the given list of trade strategies.
-        
-        :param strategies: The list of strategies to load into the trader.
-        :raises ValueError: If the strategies list is empty.
-        :raises ValueError: If the strategies list contains a type other than TradeStrategy.
-        """
-        Condition.not_empty(strategies, 'strategies')
-        Condition.list_type(strategies, TradingStrategy, 'strategies')
-
-        if self.is_running:
-            self._log.error('Cannot change the strategies of a running trader.')
-            return
-
-        # Dispose of current strategies
-        for strategy in self.strategies:
-            if not strategy.is_running:
-                self._exec_client.deregister_strategy(strategy)
-            else:
-                self._log.error(f"Strategy was {strategy} is still running.")
-                strategy.stop()
-            strategy.dispose()
-
-        self.strategies = strategies
-        self._initialize_strategies()
 
     cpdef dict strategy_status(self):
         """

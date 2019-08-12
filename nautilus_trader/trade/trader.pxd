@@ -6,6 +6,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.core.typed_collections cimport TypedList
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logger cimport LoggerAdapter
@@ -18,7 +19,7 @@ from nautilus_trader.trade.reports cimport ReportProvider
 
 cdef class Trader:
     """
-    Provides a trader for managing a portfolio of trade strategies.
+    Provides a trader for managing a portfolio of trading strategies.
     """
     cdef Clock _clock
     cdef LoggerAdapter _log
@@ -31,16 +32,15 @@ cdef class Trader:
     cdef readonly Account account
     cdef readonly Portfolio portfolio
     cdef readonly bint is_running
-    cdef readonly list started_datetimes
-    cdef readonly list stopped_datetimes
-    cdef readonly list strategies
+    cdef readonly TypedList started_datetimes
+    cdef readonly TypedList stopped_datetimes
+    cdef readonly TypedList strategies
 
-    cdef _initialize_strategies(self)
+    cpdef load_strategies(self, list strategies)
     cpdef start(self)
     cpdef stop(self)
     cpdef reset(self)
     cpdef dispose(self)
-    cpdef load_strategies(self, list strategies)
 
     cpdef dict strategy_status(self)
     cpdef void create_returns_tear_sheet(self)
