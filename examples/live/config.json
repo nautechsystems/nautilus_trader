@@ -1,4 +1,8 @@
 {
+  "trader": {
+    "idTag": "TEST-001"
+  },
+
   "logging": {
     "log_name": "test",
     "log_level_console": "INFO",
@@ -27,10 +31,5 @@
     "eventsTopic": "NAUTILUS:EVENTS",
     "commandsPort": 55555,
     "eventsPort": 55556
-  },
-
-  "trader": {
-    "idTag": "TEST-001"
   }
-
 }

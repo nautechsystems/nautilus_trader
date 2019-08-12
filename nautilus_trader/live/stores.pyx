@@ -8,7 +8,7 @@
 
 import redis
 
-from multiprocessing import Queue, Process, Pipe
+from multiprocessing import Queue, Process
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.identifiers cimport TraderId
@@ -31,7 +31,7 @@ cdef class LogStore:
         Condition.in_range(redis_port, 'redis_port', 0, 65535)
 
         self._store_key = f'Nautilus:Traders:{trader_id.value}:LogStore'
-        self._redis = redis.StrictRedis(host='localhost', port=redis_port)
+        self._redis = redis.StrictRedis(host='localhost', port=redis_port, db=0)
         self._queue = Queue()
         self._process = Process(target=self._process_messages, daemon=True)
         self._process.start()

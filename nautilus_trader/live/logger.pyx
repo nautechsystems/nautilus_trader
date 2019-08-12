@@ -14,6 +14,7 @@ from queue import Queue
 
 from nautilus_trader.core.functions cimport format_zulu_datetime
 from nautilus_trader.common.clock cimport LiveClock
+from nautilus_trader.live.stores cimport LogStore
 
 
 cdef class LogMessage:
@@ -59,7 +60,8 @@ cdef class LiveLogger(Logger):
                  bint log_thread=False,
                  bint log_to_file=False,
                  str log_file_path='logs/',
-                 LiveClock clock=LiveClock()):
+                 LiveClock clock=LiveClock(),
+                 LogStore store=None):
         """
         Initializes a new instance of the LiveLogger class.
 
@@ -87,6 +89,7 @@ cdef class LiveLogger(Logger):
                          clock)
 
         self._queue = Queue()
+        self._store = store
         self._thread = Thread(target=self._process_messages, daemon=True)
         self._thread.start()
 
@@ -118,4 +121,5 @@ cdef class LiveLogger(Logger):
             else:
                 raise RuntimeError(f"Log level {message.level} not recognized.")
 
-            self._queue.task_done()
+            if self._store is not None and message.level >= self._log_level_store:
+                self._store.store(message)

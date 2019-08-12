@@ -13,7 +13,7 @@ import zmq
 from uuid import uuid4
 
 from nautilus_trader.core.types import GUID
-from nautilus_trader.common.logger import LiveLogger
+from nautilus_trader.live.logger import LiveLogger
 from nautilus_trader.model.objects import Venue, Symbol, Price, Tick, Bar
 from nautilus_trader.live.data import LiveDataClient
 from nautilus_trader.network.responses import DataResponse

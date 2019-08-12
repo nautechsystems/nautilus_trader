@@ -7,17 +7,8 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import logging
-import zmq
-
-from nautilus_trader.common.logger import LiveLogger
-from nautilus_trader.common.account import Account
-from nautilus_trader.live.data import LiveDataClient
-from nautilus_trader.live.execution import LiveExecClient
-from nautilus_trader.model.enums import Resolution, QuoteType, Currency
+from nautilus_trader.model.enums import Resolution, QuoteType
 from nautilus_trader.model.objects import Venue, Symbol, BarType, BarSpecification
-from nautilus_trader.trade.portfolio import Portfolio
-from nautilus_trader.trade.trader import Trader
 from nautilus_trader.live.node import TradingNode
 
 from examples.strategies.ema_cross import EMACrossPy
