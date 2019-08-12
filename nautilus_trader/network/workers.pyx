@@ -213,7 +213,7 @@ cdef class SubscriberWorker(MQWorker):
         self._log.debug(f"Unsubscribed from topic {topic}.")
 
     cpdef void _consume_messages(self):
-        self._log.debug("Starting message consumption loop...")
+        self._log.debug("Running...")
 
         cdef str topic
         cdef bytes body

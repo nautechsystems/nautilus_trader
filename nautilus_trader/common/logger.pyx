@@ -6,18 +6,25 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import logging
 import os
 import sys
 import traceback
 import threading
+import cython
+import numpy as np
+import scipy
+import pandas as pd
+import logging
+import psutil
+import platform
 
+from platform import python_version
+from nautilus_trader.version import __version__
 from cpython.datetime cimport datetime
 from threading import Thread
 from queue import Queue
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.types cimport ValidString
 from nautilus_trader.core.functions cimport format_zulu_datetime
 from nautilus_trader.common.clock cimport Clock, LiveClock, TestClock
 
@@ -106,11 +113,11 @@ cdef class Logger:
         self._log_file_handler = logging.FileHandler(self._log_file)
         self._logger.addHandler(self._log_file_handler)
 
-    cpdef void log(self, int log_level, ValidString message):
+    cpdef void log(self, int level, str message):
         """
         Log the given message with the given log level and timestamp.
         
-        :param log_level: The log level for the log message.
+        :param level: The log level for the log message.
         :param message: The message to log.
         """
         # Raise exception if not overridden in implementation
@@ -130,52 +137,52 @@ cdef class Logger:
         """
         self._log_store = []
 
-    cpdef void _debug(self, datetime timestamp, ValidString message):
-        cdef str log_message = self._format_message(timestamp, 'DBG', message.value)
-        self._log_store_handler(logging.DEBUG, log_message)
-        self._console_print_handler(logging.DEBUG, log_message)
+    cpdef void _debug(self, datetime timestamp, str message):
+        cdef str formatted_msg = self._format_message(timestamp, 'DBG', message)
+        self._log_store_handler(logging.DEBUG, formatted_msg)
+        self._console_print_handler(logging.DEBUG, formatted_msg)
 
         if self._log_to_file:
             try:
-                self._logger.debug(log_message)
+                self._logger.debug(formatted_msg)
             except IOError as ex:
                 self._console_print_handler(f"IOError: {ex}.", logging.CRITICAL)
 
-    cpdef void _info(self, datetime timestamp, ValidString message):
-        cdef str log_message = self._format_message(timestamp, 'INF', message.value)
-        self._log_store_handler(logging.INFO, log_message)
-        self._console_print_handler(logging.INFO, log_message)
+    cpdef void _info(self, datetime timestamp, str message):
+        cdef str formatted_msg = self._format_message(timestamp, 'INF', message)
+        self._log_store_handler(logging.INFO, formatted_msg)
+        self._console_print_handler(logging.INFO, formatted_msg)
 
         if self._log_to_file:
             try:
-                self._logger.info(log_message)
+                self._logger.info(formatted_msg)
             except IOError as ex:
                 self._console_print_handler(f"IOError: {ex}.", logging.CRITICAL)
 
-    cpdef void _warning(self, datetime timestamp, ValidString message):
-        cdef str log_message = self._format_message(timestamp, WARNING + 'WRN' + ENDC, WARNING + message.value + ENDC)
-        self._log_store_handler(logging.WARNING, log_message)
-        self._console_print_handler(logging.WARNING, log_message)
+    cpdef void _warning(self, datetime timestamp, str message):
+        cdef str formatted_msg = self._format_message(timestamp, WARNING + 'WRN' + ENDC, WARNING + message + ENDC)
+        self._log_store_handler(logging.WARNING, formatted_msg)
+        self._console_print_handler(logging.WARNING, formatted_msg)
 
         if self._log_to_file:
             try:
-                self._logger.warning(log_message)
+                self._logger.warning(formatted_msg)
             except IOError as ex:
                 self._console_print_handler(f"IOError: {ex}.", logging.CRITICAL)
 
-    cpdef void _error(self, datetime timestamp, ValidString message):
-        cdef str log_message = self._format_message(timestamp, FAIL + 'ERR' + ENDC, FAIL + message.value + ENDC)
-        self._log_store_handler(logging.ERROR, log_message)
-        self._console_print_handler(logging.ERROR, log_message)
+    cpdef void _error(self, datetime timestamp, str message):
+        cdef str formatted_msg = self._format_message(timestamp, FAIL + 'ERR' + ENDC, FAIL + message + ENDC)
+        self._log_store_handler(logging.ERROR, formatted_msg)
+        self._console_print_handler(logging.ERROR, formatted_msg)
 
         if self._log_to_file:
             try:
-                self._logger.error(log_message)
+                self._logger.error(formatted_msg)
             except IOError as ex:
                 self._console_print_handler(f"IOError: {ex}.", logging.CRITICAL)
 
-    cpdef void _critical(self, datetime timestamp, ValidString message):
-        cdef str log_message = self._format_message(timestamp, FAIL + 'CRT' + ENDC, FAIL + message.value + ENDC)
+    cpdef void _critical(self, datetime timestamp, str message):
+        cdef str log_message = self._format_message(timestamp, FAIL + 'CRT' + ENDC, FAIL + message + ENDC)
         self._log_store_handler(logging.CRITICAL, log_message)
         self._console_print_handler(logging.CRITICAL, log_message)
 
@@ -185,21 +192,21 @@ cdef class Logger:
             except IOError as ex:
                 self._console_print_handler(f"IOError: {ex}.", logging.CRITICAL)
 
-    cdef str _format_message(self, datetime timestamp, str log_level, str message):
+    cdef str _format_message(self, datetime timestamp, str level, str message):
         # Return the formatted log message from the given arguments
         cdef str time = format_zulu_datetime(timestamp)
         cdef str thread = '' if self._log_thread is False else f'[{threading.current_thread().ident}]'
-        return f"{BOLD}{time}{ENDC} {thread}[{log_level}] {message}"
+        return f"{BOLD}{time}{ENDC} {thread}[{level}] {message}"
 
-    cdef void _log_store_handler(self, int log_level, str message):
+    cdef void _log_store_handler(self, int level, str message):
         # Store the given log message if the given log level is >= the log_level_store
-        if log_level >= self._log_level_store:
+        if level >= self._log_level_store:
             self._log_store.append(message)
 
-    cdef void _console_print_handler(self, int log_level, str message):
+    cdef void _console_print_handler(self, int level, str message):
         # Print the given log message to the console if the given log level if
         # >= the log_level_console level.
-        if self._console_prints and log_level >= self._log_level_console:
+        if self._console_prints and level >= self._log_level_console:
             print(message)
 
 
@@ -208,19 +215,19 @@ cdef class LogMessage:
     Represents a log message.
     """
     def __init__(self,
-                  int log_level,
-                  datetime timestamp,
-                  ValidString text):
+                 datetime timestamp,
+                 int level,
+                 str message):
         """
         Initializes a new instance of the LogMessage class.
 
-        :param log_level: The log message level.
         :param timestamp: The log message timestamp.
-        :param text: The log message text.
+        :param level: The log message level.
+        :param message: The log message.
         """
-        self.log_level = log_level
         self.timestamp = timestamp
-        self.text = text
+        self.level = level
+        self.message = message
 
 
 cdef class LiveLogger(Logger):
@@ -237,7 +244,7 @@ cdef class LiveLogger(Logger):
                  bint console_prints=True,
                  bint log_thread=False,
                  bint log_to_file=False,
-                 str log_file_path='log/',
+                 str log_file_path='logs/',
                  LiveClock clock=LiveClock()):
         """
         Initializes a new instance of the LiveLogger class.
@@ -269,14 +276,14 @@ cdef class LiveLogger(Logger):
         self._thread = Thread(target=self._process_messages, daemon=True)
         self._thread.start()
 
-    cpdef void log(self, int log_level, ValidString message):
+    cpdef void log(self, int level, str message):
         """
-        Log the given message with the given log level and timestamp.
+        Log the given message with the given log level.
         
-        :param log_level: The log message level.
+        :param level: The log level for the log message.
         :param message: The message to log.
         """
-        self._queue.put(LogMessage(log_level, self.clock.time_now(), message))
+        self._queue.put(LogMessage(self.clock.time_now(), level, message))
 
     cpdef void _process_messages(self):
         cdef LogMessage log_message
@@ -284,18 +291,18 @@ cdef class LiveLogger(Logger):
             # Process the queue one item at a time
             log_message = self._queue.get()
 
-            if log_message.log_level == logging.DEBUG:
-                self._debug(log_message.timestamp, log_message.text)
-            elif log_message.log_level == logging.INFO:
-                self._info(log_message.timestamp, log_message.text)
-            elif log_message.log_level == logging.WARNING:
-                self._warning(log_message.timestamp, log_message.text)
-            elif log_message.log_level == logging.ERROR:
-                self._error(log_message.timestamp, log_message.text)
-            elif log_message.log_level == logging.CRITICAL:
-                self._critical(log_message.timestamp, log_message.text)
+            if log_message.level == logging.DEBUG:
+                self._debug(log_message.timestamp, log_message.message)
+            elif log_message.level == logging.INFO:
+                self._info(log_message.timestamp, log_message.message)
+            elif log_message.level == logging.WARNING:
+                self._warning(log_message.timestamp, log_message.message)
+            elif log_message.level == logging.ERROR:
+                self._error(log_message.timestamp, log_message.message)
+            elif log_message.level == logging.CRITICAL:
+                self._critical(log_message.timestamp, log_message.message)
             else:
-                raise RuntimeError(f"Log level {log_message.log_level} not recognized")
+                raise RuntimeError(f"Log level {log_message.level} not recognized")
 
             self._queue.task_done()
 
@@ -342,27 +349,25 @@ cdef class TestLogger(Logger):
                          log_file_path,
                          clock)
 
-    cpdef void log(self, int log_level, ValidString message):
+    cpdef void log(self, int level, str message):
         """
         Log the given message with the given log level and timestamp.
         
-        :param log_level: The log level for the log message.
+        :param level: The log level for the log message.
         :param message: The message to log.
         """
-        cdef datetime time_now = self.clock.time_now()
-
-        if log_level == logging.DEBUG:
-            self._debug(time_now, message)
-        elif log_level == logging.INFO:
-            self._info(time_now, message)
-        elif log_level == logging.WARNING:
-            self._warning(time_now, message)
-        elif log_level == logging.ERROR:
-            self._error(time_now, message)
-        elif log_level == logging.CRITICAL:
-            self._critical(time_now, message)
+        if level == logging.DEBUG:
+            self._debug(self.clock.time_now(), message)
+        elif level == logging.INFO:
+            self._info(self.clock.time_now(), message)
+        elif level == logging.WARNING:
+            self._warning(self.clock.time_now(), message)
+        elif level == logging.ERROR:
+            self._error(self.clock.time_now(), message)
+        elif level == logging.CRITICAL:
+            self._critical(self.clock.time_now(), message)
         else:
-            raise RuntimeError(f"Log level {log_level} not recognized")
+            raise RuntimeError(f"Log level {level} not recognized")
 
 
 cdef class LoggerAdapter:
@@ -462,6 +467,49 @@ cdef class LoggerAdapter:
 
         self.error(ex_string + stack_trace_lines)
 
-    cdef ValidString _format_message(self, str message):
+    cdef str _format_message(self, str message):
         # Add the components name to the front of the log message
-        return ValidString(f"{self.component_name}: {message}")
+        return f"{self.component_name}: {message}"
+
+
+cpdef void nautilus_header(LoggerAdapter logger):
+        logger.info("#---------------------------------------------------------------#")
+        logger.info(f" Nautilus Trader v{__version__} by Nautech Systems Pty Ltd.")
+        logger.info("#---------------------------------------------------------------#")
+        logger.info("                                                                 ")
+        logger.info("                            .......                              ")
+        logger.info("                         .............                           ")
+        logger.info("    .                  ......... .......                         ")
+        logger.info("   .                  ......... .. .......                       ")
+        logger.info("   .                 ......',,,,'..........                      ")
+        logger.info("   ..               ......::,,''';,.........                     ")
+        logger.info("   ..                ....'o:;oo;..:'..... ''                     ")
+        logger.info("    ..               ......,;,,..,:'.........                    ")
+        logger.info("    ..                .........';:'..... ...                     ")
+        logger.info("     ..                 .......'..... .'. .'                     ")
+        logger.info("      ..                   .....    .. .. ..                     ")
+        logger.info("       ..                           .' ....                      ")
+        logger.info("         ..                         .. .'.                       ")
+        logger.info("          ....                     .....                         ")
+        logger.info("             ....                ..'..                           ")
+        logger.info("                 ..................                              ")
+        logger.info("                                                                 ")
+        logger.info("#---------------------------------------------------------------#")
+        logger.info("#--- SYSTEM SPECIFICATION --------------------------------------#")
+        logger.info("#---------------------------------------------------------------#")
+        logger.info(f"OS: {platform.platform()}")
+        logger.info(f"CPU architecture: {platform.processor()}" )
+        cdef str cpu_freq_str = '' if psutil.cpu_freq() is None else f'@ {int(psutil.cpu_freq()[2])}MHz'
+        logger.info(f"CPU(s): {psutil.cpu_count()} {cpu_freq_str}")
+        logger.info(f"RAM-total: {round(psutil.virtual_memory()[0] / 1000000)}MB")
+        logger.info("")
+        logger.info("#---------------------------------------------------------------#")
+        logger.info("#--- PACKAGE VERSIONS ------------------------------------------#")
+        logger.info("#---------------------------------------------------------------#")
+        logger.info(f"python v{python_version()}")
+        logger.info(f"cython v{cython.__version__}")
+        logger.info(f"numpy v{np.__version__}")
+        logger.info(f"scipy v{scipy.__version__}")
+        logger.info(f"pandas v{pd.__version__}")
+        logger.info("#---------------------------------------------------------------#")
+        logger.info("")

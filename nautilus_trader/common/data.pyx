@@ -39,7 +39,7 @@ cdef class DataClient:
         self.venue = venue
         self._clock = clock
         self._guid_factory = guid_factory
-        self._log = LoggerAdapter('DataClient', logger)
+        self._log = LoggerAdapter(self.__class__.__name__, logger)
         self._tick_handlers = ConcurrentDictionary(Symbol, TypedList)
         self._bar_handlers = ConcurrentDictionary(BarType, TypedList)
         self._instrument_handlers = ConcurrentDictionary(Symbol, TypedList)
