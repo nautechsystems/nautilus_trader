@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-# <copyright file="order_perf.py" company="Nautech Systems Pty Ltd">
+# <copyright file="test_perf_order.py" company="Nautech Systems Pty Ltd">
 #  Copyright (C) 2015-2019 Nautech Systems Pty Ltd. All rights reserved.
 #  The use of this source code is governed by the license as found in the LICENSE.md file.
 #  https://nautechsystems.io
@@ -11,7 +11,7 @@ import timeit
 from time import time
 
 from nautilus_trader.model.objects import Venue, Symbol
-from nautilus_trader.model.identifiers import OrderIdGenerator
+from nautilus_trader.model.identifiers import IdTag, OrderIdGenerator
 
 MILLISECONDS_IN_SECOND = 1000
 AUDUSD_FXCM = Symbol('USDJPY', Venue('FXCM'))
@@ -20,7 +20,7 @@ AUDUSD_FXCM = Symbol('USDJPY', Venue('FXCM'))
 class OrderIdGeneratorPerformanceTest:
     def __init__(self):
         self.symbol = AUDUSD_FXCM
-        self.generator = OrderIdGenerator('001', '001')
+        self.generator = OrderIdGenerator(IdTag('001'), IdTag('001'))
 
     def generate(self):
         self.generator.generate()
