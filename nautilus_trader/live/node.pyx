@@ -148,6 +148,18 @@ cdef class TradingNode:
         self._exec_client.connect()
         self._data_client.update_instruments()
 
+    cpdef void start(self):
+        """
+        Start the trader.
+        """
+        self.trader.start()
+
+    cpdef void stop(self):
+        """
+        Stop the trader.
+        """
+        self.trader.stop()
+
     cpdef void disconnect(self):
         """
         Disconnect the trading node to its services.
@@ -159,9 +171,9 @@ cdef class TradingNode:
         """
         Dispose of the trading node.
         """
+        self.trader.dispose()
         self._data_client.dispose()
         self._exec_client.dispose()
-        self.trader.dispose()
 
     cdef void _log_header(self):
         nautilus_header(self._log)

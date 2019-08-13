@@ -31,4 +31,4 @@ cdef class LiveExecClient(ExecutionClient):
 
     cpdef void _process_queue(self)
     cdef void _send_command(self, Command command)
-    cdef void _deserialize_event(self, str topic, bytes event_bytes)
+    cpdef void _deserialize_event(self, str topic, bytes event_bytes)
