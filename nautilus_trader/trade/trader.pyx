@@ -120,7 +120,11 @@ cdef class Trader:
         Start the trader.
         """
         if self.is_running:
-            self._log.error(f"Cannot start an already running Trader...")
+            self._log.error(f"Cannot start trader (already running).")
+            return
+
+        if len(self.strategies) == 0:
+            self._log.error(f"Cannot start trader (no strategies loaded).")
             return
 
         self.started_datetimes.append(self._clock.time_now())
@@ -138,7 +142,7 @@ cdef class Trader:
         Stop the trader.
         """
         if not self.is_running:
-            self._log.error(f"Cannot stop an already stopped Trader...")
+            self._log.error(f"Cannot stop trader (already stopped).")
             return
 
         self.stopped_datetimes.append(self._clock.time_now())

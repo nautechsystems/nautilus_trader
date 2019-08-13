@@ -104,4 +104,4 @@ cdef class EventStore:
         self._redis.rpush(self._key_order_event + event.order_id.value, self._serializer.serialize(event))
 
     cdef void _store_position_event(self, PositionEvent event):
-        self._redis.rpush(self._key_position_event + event.position.id.value, self._serializer.serialize(event))
+        self._redis.rpush(self._key_position_event + event.position.id.value, self._serializer.serialize(event.order_fill))

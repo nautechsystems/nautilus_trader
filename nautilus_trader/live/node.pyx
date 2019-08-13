@@ -52,7 +52,7 @@ cdef class TradingNode:
     def __init__(
             self,
             str config_path='config.json',
-            list strategies=None):
+            list strategies=[]):
         """
         Initializes a new instance of the TradingNode class.
 
@@ -130,7 +130,7 @@ cdef class TradingNode:
 
         self.trader = Trader(
             id_tag_trader=trader_id.value,
-            strategies=[],
+            strategies=strategies,
             data_client=self._data_client,
             exec_client=self._exec_client,
             account=self.account,
@@ -139,6 +139,12 @@ cdef class TradingNode:
             logger=self._logger)
 
         self._log.info("Initialized.")
+
+    cpdef void load_strategies(self, list strategies):
+        """
+        Load the given strategies into the trading nodes trader.
+        """
+        self.trader.load_strategies(strategies)
 
     cpdef void connect(self):
         """
@@ -150,19 +156,19 @@ cdef class TradingNode:
 
     cpdef void start(self):
         """
-        Start the trader.
+        Start the trading nodes trader.
         """
         self.trader.start()
 
     cpdef void stop(self):
         """
-        Stop the trader.
+        Stop the trading nodes trader.
         """
         self.trader.stop()
 
     cpdef void disconnect(self):
         """
-        Disconnect the trading node to its services.
+        Disconnect the trading node from its services.
         """
         self._data_client.disconnect()
         self._exec_client.disconnect()

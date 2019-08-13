@@ -31,8 +31,8 @@ if __name__ == "__main__":
         20,
         20)
 
-    node = TradingNode()
-    node.trader.load_strategies([strategy])
+    node = TradingNode(strategies=[strategy])
+
     node.connect()
     node.start()
 
