@@ -8,7 +8,7 @@
 
 from cpython.datetime cimport datetime
 from collections import deque
-from typing import Callable, Dict, List, Deque
+from typing import List, Dict, Deque, Callable
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport ValidString
