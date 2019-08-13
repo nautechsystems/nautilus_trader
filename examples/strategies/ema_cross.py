@@ -122,6 +122,9 @@ class EMACrossPy(TradingStrategy):
         self.spread_analyzer.calculate_metrics()
         self.liquidity.update(self.spread_analyzer.average_spread, self.atr.value)
 
+        print(f"*** {self.has_ticks(self.symbol)} REACHED HERE ***")
+        print(self.ticks(self.symbol))
+
         if not self.has_ticks(self.symbol):
             return
 
