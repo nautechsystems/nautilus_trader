@@ -8,41 +8,12 @@
 
 import logging
 
-from cpython.datetime cimport datetime
 from threading import Thread
 from queue import Queue
 
-from nautilus_trader.core.functions cimport format_zulu_datetime
 from nautilus_trader.common.clock cimport LiveClock
+from nautilus_trader.common.logger cimport LogLevel, LogMessage
 from nautilus_trader.live.stores cimport LogStore
-
-
-cdef class LogMessage:
-    """
-    Represents a log message.
-    """
-    def __init__(self,
-                 datetime timestamp,
-                 int level,
-                 str text):
-        """
-        Initializes a new instance of the LogMessage class.
-
-        :param timestamp: The log message timestamp.
-        :param level: The log message level.
-        :param text: The log message text.
-        """
-        self.timestamp = timestamp
-        self.level = level
-        self.text = text
-
-    cdef str as_string(self):
-        """
-        Return the string representation of the log message.
-        
-        :return: str.
-        """
-        return f"{format_zulu_datetime(self.timestamp)} [{self.level}] {self.text}"
 
 
 cdef class LiveLogger(Logger):
@@ -53,9 +24,9 @@ cdef class LiveLogger(Logger):
     def __init__(self,
                  str name=None,
                  bint bypass_logging=False,
-                 int level_console: logging=logging.INFO,
-                 int level_file: logging=logging.DEBUG,
-                 int level_store: logging=logging.WARNING,
+                 LogLevel level_console=LogLevel.INFO,
+                 LogLevel level_file=LogLevel.DEBUG,
+                 LogLevel level_store=LogLevel.WARNING,
                  bint console_prints=True,
                  bint log_thread=False,
                  bint log_to_file=False,
@@ -93,33 +64,20 @@ cdef class LiveLogger(Logger):
         self._thread = Thread(target=self._process_queue, daemon=True)
         self._thread.start()
 
-    cpdef void log(self, int level, str message):
+    cpdef void log(self, LogMessage message):
         """
-        Log the given message with the given log level.
-        
-        :param level: The log level for the log message.
-        :param message: The message to log.
+        Log the given message.
+
+        :param message: The log message to log.
         """
-        self._queue.put(LogMessage(self.clock.time_now(), level, message))
+        self._queue.put(message)
 
     cpdef void _process_queue(self):
         # Process the queue one item at a time
         cdef LogMessage message
         while True:
             message = self._queue.get()
-
-            if message.level == logging.DEBUG:
-                self._debug(message.timestamp, message.text)
-            elif message.level == logging.INFO:
-                self._info(message.timestamp, message.text)
-            elif message.level == logging.WARNING:
-                self._warning(message.timestamp, message.text)
-            elif message.level == logging.ERROR:
-                self._error(message.timestamp, message.text)
-            elif message.level == logging.CRITICAL:
-                self._critical(message.timestamp, message.text)
-            else:
-                raise RuntimeError(f"Log level {message.level} not recognized.")
+            self._log(message)
 
             if self._store is not None and message.level >= self._log_level_store:
                 self._store.store(message)

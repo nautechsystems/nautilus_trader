@@ -6,9 +6,8 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import logging
-
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.common.logger cimport LogLevel
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.objects cimport Money
 
@@ -23,9 +22,9 @@ cdef class BacktestConfig:
                  Currency account_currency=Currency.USD,
                  float commission_rate_bp=0.20,
                  bint bypass_logging=False,
-                 int level_console=logging.INFO,
-                 int level_file=logging.DEBUG,
-                 int level_store=logging.WARNING,
+                 int level_console=LogLevel.INFO,
+                 int level_file=LogLevel.DEBUG,
+                 int level_store=LogLevel.WARNING,
                  bint console_prints=True,
                  bint log_thread=False,
                  bint log_to_file=False,

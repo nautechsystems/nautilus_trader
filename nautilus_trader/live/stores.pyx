@@ -13,7 +13,7 @@ from multiprocessing import Queue, Process
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.events cimport Event, OrderEvent, PositionEvent
-from nautilus_trader.live.logger cimport LogMessage
+from nautilus_trader.common.logger cimport LogMessage
 from nautilus_trader.serialization.serializers cimport EventSerializer, MsgPackEventSerializer
 
 
@@ -48,10 +48,11 @@ cdef class LogStore:
 
     cpdef void _process_queue(self):
         # Process the queue one item at a time
+
         cdef LogMessage message
         while True:
             message = self._queue.get()
-            self._redis.rpush(self._key, message.as_string())
+            self._redis.rpush(self._key + message.level_string(), message.as_string())
 
 
 cdef class EventStore:

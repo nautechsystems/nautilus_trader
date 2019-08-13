@@ -8,12 +8,12 @@
 # -------------------------------------------------------------------------------------------------
 
 import pandas as pd
-import logging
 
 from datetime import datetime
 
 from nautilus_trader.model.enums import Resolution, Currency
 from nautilus_trader.model.objects import Venue
+from nautilus_trader.common.logger import LogLevel
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.engine import BacktestEngine
@@ -40,8 +40,8 @@ if __name__ == "__main__":
         frozen_account=False,
         starting_capital=1000000,
         account_currency=Currency.USD,
-        level_console=logging.INFO,
-        level_store=logging.WARNING,
+        level_console=LogLevel.INFO,
+        level_store=LogLevel.WARNING,
         log_thread=False,
         log_to_file=False)
 

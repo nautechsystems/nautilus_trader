@@ -7,7 +7,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import json
-import logging
 import uuid
 import pymongo
 import redis
@@ -19,6 +18,7 @@ from nautilus_trader.core.types cimport GUID
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.guid cimport LiveGuidFactory
+from nautilus_trader.common.logger import LogLevel
 from nautilus_trader.common.logger cimport LoggerAdapter, nautilus_header
 from nautilus_trader.model.objects cimport Venue
 from nautilus_trader.model.identifiers cimport IdTag, TraderId
@@ -78,9 +78,9 @@ cdef class TradingNode:
         log_config = config['logging']
         self._logger = LiveLogger(
             name=log_config['log_name'],
-            level_console=getattr(logging, log_config['log_level_console']),
-            level_file=getattr(logging, log_config['log_level_file']),
-            level_store=getattr(logging, log_config['log_level_store']),
+            level_console=LogLevel[log_config['log_level_console']],
+            level_file=LogLevel[log_config['log_level_file']],
+            level_store=LogLevel[log_config['log_level_store']],
             log_thread=log_config['log_thread'],
             log_to_file=log_config['log_to_file'],
             log_file_path=log_config['log_file_path'],

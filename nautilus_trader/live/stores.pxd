@@ -6,8 +6,8 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.common.logger cimport LogMessage
 from nautilus_trader.model.events cimport Event, OrderEvent, PositionEvent
-from nautilus_trader.live.logger cimport LogMessage
 
 
 cdef class LogStore:
