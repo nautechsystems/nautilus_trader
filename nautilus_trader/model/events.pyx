@@ -725,7 +725,9 @@ cdef class TimeEvent(Event):
 
     def __hash__(self) -> int:
         """"
-        Override the default hash implementation.
+        Return the hash representation of this object.
+
+        :return: int.
         """
         return hash(self.id)
 

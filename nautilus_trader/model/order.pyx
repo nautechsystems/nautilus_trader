@@ -142,25 +142,33 @@ cdef class Order:
 
     def __eq__(self, other) -> bool:
         """
-        Override the default equality comparison.
+        Return a value indicating whether this object is equal to the given object.
+
+        :return: bool.
         """
         return self.equals(other)
 
     def __ne__(self, other) -> bool:
         """
-        Override the default not-equals comparison.
+        Return a value indicating whether this object is not equal to the given object.
+
+        :return: bool.
         """
         return not self.equals(other)
 
     def __hash__(self) -> int:
         """"
-        Override the default hash implementation.
+        Return the hash representation of this object.
+
+        :return: int.
         """
         return hash(self.id)
 
     def __str__(self) -> str:
         """
-        :return: The str() string representation of the order.
+        Return the str() string representation of this object.
+
+        :return: str.
         """
         cdef str quantity = '{:,}'.format(self.quantity.value)
         cdef str label = '' if self.label is None else f', label={self.label.value}'
@@ -172,13 +180,17 @@ cdef class Order:
 
     def __repr__(self) -> str:
         """
-        :return: The repr() string representation of the order.
+        Return the repr() string representation of this object.
+
+        :return: str.
         """
         return f"<{str(self)} object at {id(self)}>"
 
     cpdef str status_as_string(self):
         """
-        :return: The order status as a string.
+        Return the order status as a string.
+        
+        :return: str.
         """
         return order_status_string(self.status)
 
@@ -334,32 +346,42 @@ cdef class AtomicOrder:
 
     def __eq__(self, other) -> bool:
         """
-        Override the default equality comparison.
+        Return a value indicating whether this object is equal to the given object.
+
+        :return: bool.
         """
         return self.equals(other)
 
     def __ne__(self, other) -> bool:
         """
-        Override the default not-equals comparison.
+        Return a value indicating whether this object is not equal to the given object.
+
+        :return: bool.
         """
         return not self.equals(other)
 
     def __hash__(self) -> int:
         """"
-        Override the default hash implementation.
+        Return the hash representation of this object.
+
+        :return: int.
         """
         return hash(self.id)
 
     def __str__(self) -> str:
         """
-        :return: The str() string representation of the order.
+        Return the str() string representation of this object.
+
+        :return: str.
         """
         cdef str take_profit = 'NONE' if self.take_profit is None else str(self.take_profit)
         return f"AtomicOrder({self.id.value}, Entry{self.entry}, SL={self.stop_loss}, TP={take_profit})"
 
     def __repr__(self) -> str:
         """
-        :return: The repr() string representation of the order.
+        Return the repr() string representation of this object.
+
+        :return: str.
         """
         return f"<{str(self)} object at {id(self)}>"
 
