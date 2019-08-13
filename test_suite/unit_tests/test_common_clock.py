@@ -7,10 +7,10 @@
 # -------------------------------------------------------------------------------------------------
 
 import time
+import uuid
 import unittest
 
 from datetime import datetime, timezone, timedelta
-from uuid import uuid4
 
 from nautilus_trader.core.types import GUID
 from nautilus_trader.common.clock import Clock, LiveClock, TestClock, TestTimer
@@ -23,7 +23,7 @@ class TimeEventTests(unittest.TestCase):
 
     def test_can_hash_time_event(self):
         # Arrange
-        event = TimeEvent(Label('123'), GUID(uuid4()), UNIX_EPOCH)
+        event = TimeEvent(Label('123'), GUID(uuid.uuid4()), UNIX_EPOCH)
 
         # Act
         result = hash(event)

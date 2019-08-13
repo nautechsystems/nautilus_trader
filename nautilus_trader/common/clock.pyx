@@ -6,7 +6,8 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from uuid import uuid4
+import uuid
+
 from cpython.datetime cimport datetime, timedelta
 from datetime import timezone
 from threading import Timer
@@ -262,7 +263,7 @@ cdef class LiveClock(Clock):
 
     cpdef void _raise_time_event(self, Label label, datetime alert_time):
         # Create a new TimeEvent and pass it to the clocks event handler
-        self._event_handler(TimeEvent(label, GUID(uuid4()), alert_time))
+        self._event_handler(TimeEvent(label, GUID(uuid.uuid4()), alert_time))
 
         if label in self._timers:
             del self._timers[label]
@@ -275,7 +276,7 @@ cdef class LiveClock(Clock):
             datetime stop_time):
         # Create a new TimeEvent and pass it to the clocks event handler
         # Then start a timer for the next time event if applicable
-        self._event_handler(TimeEvent(label, GUID(uuid4()), alert_time))
+        self._event_handler(TimeEvent(label, GUID(uuid.uuid4()), alert_time))
 
         if stop_time is not None and alert_time + interval > stop_time:
             self._timers[label].cancel()
@@ -328,7 +329,7 @@ cdef class TestTimer:
         cdef list time_events = []  # type: List[TimeEvent]
 
         while time >= self.next_alert and self.expired is False:
-            time_events.append(TimeEvent(self.label, GUID(uuid4()), self.next_alert))
+            time_events.append(TimeEvent(self.label, GUID(uuid.uuid4()), self.next_alert))
             self.next_alert += self.interval
             if self.stop is not None and self.next_alert > self.stop:
                 self.expired = True
@@ -385,7 +386,7 @@ cdef class TestClock(Clock):
         cdef datetime alert_time
         for label, alert_time in self._time_alerts.copy().items():
             if to_time >= alert_time:
-                time_events[TimeEvent(label, GUID(uuid4()), alert_time)] = self._event_handler
+                time_events[TimeEvent(label, GUID(uuid.uuid4()), alert_time)] = self._event_handler
                 del self._time_alerts[label]  # Remove triggered time alert
 
         # Iterate timers

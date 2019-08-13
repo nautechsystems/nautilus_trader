@@ -6,13 +6,13 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+import uuid
 import zmq
 
 from cpython.datetime cimport datetime
 
 from threading import Thread
 from zmq import Context
-from uuid import uuid4
 
 from nautilus_trader.core.types cimport GUID
 from nautilus_trader.network.responses cimport MessageReceived
@@ -189,7 +189,7 @@ class MockCommandRouter(Thread):
             self._cycles += 1
             self._log(f"Received[{self._cycles}] {message}")
 
-            response = MessageReceived(str(message), message.id, GUID(uuid4()), UNIX_EPOCH)
+            response = MessageReceived(str(message), message.id, GUID(uuid.uuid4()), UNIX_EPOCH)
             self.responses_sent.append(response)
             self._socket.send(self._response_serializer.serialize(response))
 
