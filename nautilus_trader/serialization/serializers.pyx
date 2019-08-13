@@ -130,7 +130,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
 
         :param order_bytes: The bytes to deserialize.
         :return: Order.
-        :raises ValueError: If the event_bytes is empty.
+        :raises ConditionFailed: If the event_bytes is empty.
         """
         Condition.not_empty(order_bytes, 'order_bytes')
 
@@ -168,7 +168,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
 
         :param: command: The command to serialize.
         :return: bytes.
-        :raises: ValueError: If the command cannot be serialized.
+        :raises: RuntimeError: If the command cannot be serialized.
         """
         cdef dict package = {
             TYPE: command.__class__.__name__,
@@ -201,7 +201,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
             package[ORDER_ID] = command.order_id.value
             package[CANCEL_REASON] = command.cancel_reason.value
         else:
-            raise ValueError("Cannot serialize command (unrecognized command).")
+            raise RuntimeError("Cannot serialize command (unrecognized command).")
 
         return msgpack.packb(package)
 
@@ -211,8 +211,8 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
 
         :param command_bytes: The command to deserialize.
         :return: Command.
-        :raises ValueError: If the command_bytes is empty.
-        :raises ValueError: If the command cannot be deserialized.
+        :raises ConditionFailed: If the command_bytes is empty.
+        :raises RuntimeError: If the command cannot be deserialized.
         """
         Condition.not_empty(command_bytes, 'command_bytes')
 
@@ -272,7 +272,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
                 command_id,
                 command_timestamp)
         else:
-            raise ValueError("Cannot deserialize command (unrecognized bytes pattern).")
+            raise RuntimeError("Cannot deserialize command (unrecognized bytes pattern).")
 
 
 cdef class MsgPackEventSerializer(EventSerializer):
@@ -286,7 +286,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
 
         :param event: The event to serialize.
         :return: bytes.
-        :raises: ValueError: If the event cannot be serialized.
+        :raises: RuntimeError: If the event cannot be serialized.
         """
         cdef dict package = {
             TYPE: event.__class__.__name__,
@@ -374,7 +374,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[AVERAGE_PRICE] = str(event.average_price)
             package[EXECUTION_TIME] = convert_datetime_to_string(event.execution_time)
         else:
-            raise ValueError("Cannot serialize event (unrecognized event.")
+            raise RuntimeError("Cannot serialize event (unrecognized event.")
 
         return msgpack.packb(package)
 
@@ -384,8 +384,8 @@ cdef class MsgPackEventSerializer(EventSerializer):
 
         :param event_bytes: The bytes to deserialize.
         :return: Event.
-        :raises ValueError: If the event_bytes is empty.
-        :raises ValueError: If the event cannot be deserialized.
+        :raises ConditionFailed: If the event_bytes is empty.
+        :raises RuntimeError: If the event cannot be deserialized.
         """
         Condition.not_empty(event_bytes, 'event_bytes')
 
@@ -499,7 +499,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 event_id,
                 event_timestamp)
         else:
-            raise ValueError("Cannot deserialize event (unrecognized event).")
+            raise RuntimeError("Cannot deserialize event (unrecognized event).")
 
 
 cdef class MsgPackRequestSerializer(RequestSerializer):
@@ -519,6 +519,7 @@ cdef class MsgPackRequestSerializer(RequestSerializer):
 
         :param request: The request to serialize.
         :return: bytes.
+        :raises RuntimeError: If the request cannot be serialized.
         """
         cdef dict package = {
             TYPE: request.__class__.__name__,
@@ -529,7 +530,7 @@ cdef class MsgPackRequestSerializer(RequestSerializer):
         if isinstance(request, DataRequest):
             package[QUERY] = self.query_serializer.serialize(request.query)
         else:
-            raise ValueError("Cannot serialize request (unrecognized request.")
+            raise RuntimeError("Cannot serialize request (unrecognized request.")
 
         return msgpack.packb(package)
 
@@ -539,6 +540,7 @@ cdef class MsgPackRequestSerializer(RequestSerializer):
 
         :param request_bytes: The bytes to deserialize.
         :return: Request.
+        :raises RuntimeError: If the request cannot be deserialized.
         """
         Condition.not_empty(request_bytes, 'request_bytes')
 
@@ -565,7 +567,7 @@ cdef class MsgPackRequestSerializer(RequestSerializer):
                 request_id,
                 request_timestamp)
         else:
-            raise ValueError("Cannot deserialize request (unrecognized request).")
+            raise RuntimeError("Cannot deserialize request (unrecognized request).")
 
 
 cdef class MsgPackResponseSerializer(ResponseSerializer):
@@ -579,6 +581,7 @@ cdef class MsgPackResponseSerializer(ResponseSerializer):
 
         :param response: The response to serialize.
         :return: bytes.
+        :raises RuntimeError: If the response cannot be serialized.
         """
         cdef dict package = {
             TYPE: response.__class__.__name__,
@@ -595,7 +598,7 @@ cdef class MsgPackResponseSerializer(ResponseSerializer):
             package[DATA] = response.data
             package[DATA_ENCODING] = response.data_encoding
         else:
-            raise ValueError("Cannot serialize response (unrecognized response.")
+            raise RuntimeError("Cannot serialize response (unrecognized response.")
 
         return msgpack.packb(package)
 
@@ -605,6 +608,7 @@ cdef class MsgPackResponseSerializer(ResponseSerializer):
 
         :param response_bytes: The bytes to deserialize.
         :return: Response.
+        :raises RuntimeError: If the response cannot be deserialized.
         """
         Condition.not_empty(response_bytes, 'response_bytes')
 
@@ -652,4 +656,4 @@ cdef class MsgPackResponseSerializer(ResponseSerializer):
                 response_id,
                 response_timestamp)
         else:
-            raise ValueError("Cannot deserialize response (unrecognized response).")
+            raise RuntimeError("Cannot deserialize response (unrecognized response).")

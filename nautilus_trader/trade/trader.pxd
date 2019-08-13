@@ -6,7 +6,6 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.typed_collections cimport TypedList
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logger cimport LoggerAdapter
@@ -32,9 +31,9 @@ cdef class Trader:
     cdef readonly Account account
     cdef readonly Portfolio portfolio
     cdef readonly bint is_running
-    cdef readonly TypedList started_datetimes
-    cdef readonly TypedList stopped_datetimes
-    cdef readonly TypedList strategies
+    cdef readonly list started_datetimes
+    cdef readonly list stopped_datetimes
+    cdef readonly list strategies
 
     cpdef load_strategies(self, list strategies)
     cpdef start(self)

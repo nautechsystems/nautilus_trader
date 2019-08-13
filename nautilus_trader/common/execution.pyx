@@ -7,9 +7,9 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.datetime cimport datetime
+from typing import List, Dict, Callable
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.typed_collections cimport TypedDictionary, ConcurrentDictionary
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.commands cimport Command, AccountInquiry
 from nautilus_trader.model.commands cimport SubmitOrder, SubmitAtomicOrder, ModifyOrder, CancelOrder
@@ -50,11 +50,11 @@ cdef class ExecutionClient:
         self._log = LoggerAdapter(self.__class__.__name__, logger)
         self._account = account
         self._portfolio = portfolio
-        self._registered_strategies = ConcurrentDictionary(StrategyId, TradingStrategy)
-        self._order_book = ConcurrentDictionary(OrderId, Order)
-        self._order_strategy_index = ConcurrentDictionary(OrderId, StrategyId)
-        self._orders_active = ConcurrentDictionary(StrategyId, TypedDictionary)
-        self._orders_completed = ConcurrentDictionary(StrategyId, TypedDictionary)
+        self._registered_strategies = {}  # type: Dict[StrategyId, TradingStrategy]
+        self._order_book = {}             # type: Dict[OrderId, Order]
+        self._order_strategy_index = {}   # type: Dict[OrderId, StrategyId]
+        self._orders_active = {}          # type: Dict[StrategyId, Dict[OrderId, Order]]
+        self._orders_completed = {}       # type: Dict[StrategyId, Dict[OrderId, Order]]
 
         self.command_count = 0
         self.event_count = 0
@@ -118,15 +118,15 @@ cdef class ExecutionClient:
         Register the given strategy with the execution client.
 
         :param strategy: The strategy to register.
-        :raises ValueError: If the strategy is already registered with the execution client.
+        :raises ConditionFailed: If the strategy is already registered with the execution client.
         """
         Condition.true(strategy.id not in self._registered_strategies, 'strategy not in registered_strategies')
         Condition.true(strategy.id not in self._orders_active, 'strategy not in orders_active')
         Condition.true(strategy.id not in  self._orders_completed, 'strategy not in orders_completed')
 
         self._registered_strategies[strategy.id] = strategy
-        self._orders_active[strategy.id] = TypedDictionary(OrderId, Order)
-        self._orders_completed[strategy.id] = TypedDictionary(OrderId, Order)
+        self._orders_active[strategy.id] = {}     # type: Dict[OrderId, Order]
+        self._orders_completed[strategy.id] = {}  # type: Dict[OrderId, Order]
         self._portfolio.register_strategy(strategy)
         strategy.register_execution_client(self)
         strategy.change_logger(self._log.get_logger())
@@ -138,7 +138,7 @@ cdef class ExecutionClient:
         Deregister the given strategy with the execution client.
 
         :param strategy: The strategy to deregister.
-        :raises ValueError: If the strategy is not registered with the execution client.
+        :raises ConditionFailed: If the strategy is not registered with the execution client.
         """
         Condition.true(strategy.id in self._registered_strategies, 'strategy in registered_strategies')
         Condition.true(strategy.id in self._orders_active, 'strategy in orders_active')
@@ -190,7 +190,7 @@ cdef class ExecutionClient:
         
         :param strategy_id: The strategy identifier associated with the orders.
         :return: Dict[OrderId, Order].
-        :raises ValueError: If the strategy identifier is not registered with the execution client.
+        :raises ConditionFailed: If the strategy identifier is not registered with the execution client.
         """
         Condition.true(strategy_id in self._orders_active, 'strategy_id in orders_active')
         Condition.true(strategy_id in self._orders_completed, 'strategy_id in orders_completed')
@@ -203,7 +203,7 @@ cdef class ExecutionClient:
         
         :param strategy_id: The strategy identifier associated with the orders.
         :return: Dict[OrderId, Order].
-        :raises ValueError: If the strategy identifier is not registered with the execution client.
+        :raises ConditionFailed: If the strategy identifier is not registered with the execution client.
         """
         Condition.true(strategy_id in self._orders_active, 'strategy_id in orders_active')
 
@@ -215,7 +215,7 @@ cdef class ExecutionClient:
         
         :param strategy_id: The strategy identifier associated with the orders.
         :return: Dict[OrderId, Order].
-        :raises ValueError: If the strategy identifier is not registered with the execution client.
+        :raises ConditionFailed: If the strategy identifier is not registered with the execution client.
         """
         Condition.true(strategy_id in self._orders_completed, 'strategy_id in orders_completed')
 
@@ -380,14 +380,14 @@ cdef class ExecutionClient:
     cdef void _reset(self):
         # Reset the execution client by returning all stateful internal values to their initial value
         self._log.debug(f"Resetting...")
-        self._order_book = ConcurrentDictionary(OrderId, Order)
-        self._order_strategy_index = ConcurrentDictionary(OrderId, StrategyId)
+        self._order_book = {}                         # type: Dict[OrderId, Order]
+        self._order_strategy_index = {}               # type: Dict[OrderId, StrategyId]
         self.event_count = 0
 
         # Reset all active orders
         for strategy_id in self._orders_active.keys():
-            self._orders_active[strategy_id] = TypedDictionary(OrderId, Order)
+            self._orders_active[strategy_id] = {}     # type: Dict[OrderId, Order]
 
         # Reset all completed orders
         for strategy_id in self._orders_completed.keys():
-            self._orders_completed[strategy_id] = TypedDictionary(OrderId, Order)
+            self._orders_completed[strategy_id] = {}  # type: Dict[OrderId, Order]

@@ -29,8 +29,8 @@ cdef class FillModel:
         :param prob_fill_at_stop: The probability of stop orders filling if the market rests on their price.
         :param prob_slippage: The probability of order fill prices slipping by a tick.
         :param random_seed: The random seed (optional can be None - no random seed).
-        :raises ValueError: If any probability argument is not within range [0, 1].
-        :raises ValueError: If the random_seed is not None and not of type int.
+        :raises ConditionFailed: If any probability argument is not within range [0, 1].
+        :raises ConditionFailed: If the random_seed is not None and not of type int.
         """
         Condition.in_range(prob_fill_at_limit, 'prob_fill_at_limit', 0.0, 1.0)
         Condition.in_range(prob_fill_at_stop, 'prob_fill_at_stop', 0.0, 1.0)

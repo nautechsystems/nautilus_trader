@@ -37,7 +37,7 @@ cdef class ExchangeRateCalculator:
         :param bid_rates: The dictionary of currency pair bid rates (Dict[str, float]).
         :param ask_rates: The dictionary of currency pair ask rates (Dict[str, float]).
         :return: float.
-        :raises ValueError: If the bid rates length is not equal to the ask rates length.
+        :raises ConditionFailed: If the bid rates length is not equal to the ask rates length.
         """
         Condition.true(len(bid_rates) == len(ask_rates), 'len(bid_rates) == len(ask_rates)')
 

@@ -28,7 +28,7 @@ cdef class LogStore:
 
         :param trader_id: The trader identifier.
         :param redis_port: The redis port to connect to.
-        :raises ValueError: If the redis_port is not in range [0, 65535].
+        :raises ConditionFailed: If the redis_port is not in range [0, 65535].
         """
         Condition.in_range(redis_port, 'redis_port', 0, 65535)
 
@@ -69,7 +69,7 @@ cdef class EventStore:
         :param trader_id: The trader identifier.
         :param redis_port: The redis port to connect to.
         :param serializer: The event serializer.
-        :raises ValueError: If the redis_port is not in range [0, 65535].
+        :raises ConditionFailed: If the redis_port is not in range [0, 65535].
         """
         Condition.in_range(redis_port, 'redis_port', 0, 65535)
 

@@ -42,10 +42,10 @@ cdef class MQWorker:
         :param zmq_context: The ZeroMQ context.
         :param zmq_socket_type: The ZeroMQ socket type.
         :param logger: The logger for the component.
-        :raises ValueError: If the worker_name is not a valid string.
-        :raises ValueError: If the service_name is not a valid string.
-        :raises ValueError: If the service_address is not a valid string.
-        :raises ValueError: If the service_port is not in range [0, 65535].
+        :raises ConditionFailed: If the worker_name is not a valid string.
+        :raises ConditionFailed: If the service_name is not a valid string.
+        :raises ConditionFailed: If the service_address is not a valid string.
+        :raises ConditionFailed: If the service_port is not in range [0, 65535].
         """
         Condition.valid_string(worker_name, 'worker_name')
         Condition.valid_string(service_name, 'service_name')
@@ -108,10 +108,10 @@ cdef class RequestWorker(MQWorker):
         :param service_port: The service port.
         :param zmq_context: The ZeroMQ context.
         :param logger: The logger for the component.
-        :raises ValueError: If the worker_name is not a valid string.
-        :raises ValueError: If the service_name is not a valid string.
-        :raises ValueError: If the service_address is not a valid string.
-        :raises ValueError: If the service_port is not in range [0, 65535].
+        :raises ConditionFailed: If the worker_name is not a valid string.
+        :raises ConditionFailed: If the service_name is not a valid string.
+        :raises ConditionFailed: If the service_address is not a valid string.
+        :raises ConditionFailed: If the service_port is not in range [0, 65535].
         """
         Condition.valid_string(worker_name, 'worker_name')
         Condition.valid_string(service_name, 'service_name')
@@ -170,10 +170,10 @@ cdef class SubscriberWorker(MQWorker):
         :param zmq_context: The ZeroMQ context.
         :param handler: The message handler.
         :param logger: The logger for the component.
-        :raises ValueError: If the worker_name is not a valid string.
-        :raises ValueError: If the service_name is not a valid string.
-        :raises ValueError: If the port is not in range [0, 65535].
-        :raises ValueError: If the topic is not a valid string.
+        :raises ConditionFailed: If the worker_name is not a valid string.
+        :raises ConditionFailed: If the service_name is not a valid string.
+        :raises ConditionFailed: If the port is not in range [0, 65535].
+        :raises ConditionFailed: If the topic is not a valid string.
         """
         Condition.valid_string(worker_name, 'worker_name')
         Condition.valid_string(service_name, 'service_name')

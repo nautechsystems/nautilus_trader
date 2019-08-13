@@ -63,10 +63,10 @@ cdef class TradingStrategy:
         :param clock: The clock for the strategy.
         :param guid_factory: The GUID factory for the strategy.
         :param logger: The logger for the strategy (can be None).
-        :raises ValueError: If the id_tag_trader is not a valid string.
-        :raises ValueError: If the id_tag_strategy is not a valid string.
-        :raises ValueError: If the tick_capacity is not positive (> 0).
-        :raises ValueError: If the bar_capacity is not positive (> 0).
+        :raises ConditionFailed: If the id_tag_trader is not a valid string.
+        :raises ConditionFailed: If the id_tag_strategy is not a valid string.
+        :raises ConditionFailed: If the tick_capacity is not positive (> 0).
+        :raises ConditionFailed: If the bar_capacity is not positive (> 0).
         """
         Condition.valid_string(id_tag_strategy, 'id_tag_trader')
         Condition.valid_string(id_tag_strategy, 'id_tag_strategy')
@@ -243,7 +243,7 @@ cdef class TradingStrategy:
         Change the trader identifier for the strategy.
 
         :param id_tag_trader: The trader identifier tag to change to.
-        :raises ValueError: If the id_tag_trader is not a valid string.
+        :raises ConditionFailed: If the id_tag_trader is not a valid string.
         """
         self.trader_id = TraderId(f'Trader-{id_tag_trader}')
         self.id_tag_trader = IdTag(id_tag_trader)
@@ -280,7 +280,7 @@ cdef class TradingStrategy:
         :param symbol: The indicators symbol.
         :param indicator: The indicator to register.
         :param update_method: The update method for the indicator.
-        :raises ValueError: If the update_method is not of type Callable.
+        :raises ConditionFailed: If the update_method is not of type Callable.
         """
         Condition.type(update_method, Callable, 'update_method')
 
@@ -307,7 +307,7 @@ cdef class TradingStrategy:
         :param bar_type: The indicators bar type.
         :param indicator: The indicator to register.
         :param update_method: The update method for the indicator.
-        :raises ValueError: If the update_method is not of type Callable.
+        :raises ConditionFailed: If the update_method is not of type Callable.
         """
         Condition.type(update_method, Callable, 'update_method')
 
@@ -525,7 +525,7 @@ cdef class TradingStrategy:
         Return all instruments held by the data client.
         
         :return: List[Instrument].
-        :raises ValueError: If the strategy has not been registered with a data client.
+        :raises ConditionFailed: If the strategy has not been registered with a data client.
         """
         Condition.not_none(self._data_client, 'data_client')
 
@@ -537,8 +537,8 @@ cdef class TradingStrategy:
 
         :param symbol: The symbol of the instrument to return.
         :return: Instrument (if found) or None.
-        :raises ValueError: If strategy has not been registered with a data client.
-        :raises ValueError: If the instrument is not found.
+        :raises ConditionFailed: If strategy has not been registered with a data client.
+        :raises ConditionFailed: If the instrument is not found.
         """
         Condition.not_none(self._data_client, 'data_client')
 
@@ -561,7 +561,7 @@ cdef class TradingStrategy:
         :param bar_type: The historical bar type to download.
         :param from_datetime: The datetime from which the historical bars should be downloaded.
         :param to_datetime: The datetime to which the historical bars should be downloaded.
-        :raises ValueError: If the from_datetime is not None and not less than to_datetime.
+        :raises ConditionFailed: If the from_datetime is not None and not less than to_datetime.
         """
         if to_datetime is None:
             to_datetime = self.clock.time_now()
@@ -678,7 +678,7 @@ cdef class TradingStrategy:
         
         :param symbol: The tick symbol to count.
         :return: int.
-        :raises ValueError: If the strategies tick dictionary does not contain the symbol.
+        :raises ConditionFailed: If the strategies tick dictionary does not contain the symbol.
         """
         return len(self._ticks[symbol])
 
@@ -688,7 +688,7 @@ cdef class TradingStrategy:
         
         :param bar_type: The bar type to count.
         :return: int.
-        :raises ValueError: If the strategies bars dictionary does not contain the bar type.
+        :raises ConditionFailed: If the strategies bars dictionary does not contain the bar type.
         """
         return len(self._bars[bar_type])
 
@@ -698,7 +698,7 @@ cdef class TradingStrategy:
 
         :param symbol: The symbol for the ticks to get.
         :return: List[Tick].
-        :raises ValueError: If the strategies tick dictionary does not contain the symbol.
+        :raises ConditionFailed: If the strategies tick dictionary does not contain the symbol.
         """
         Condition.is_in(symbol, self._ticks, 'symbol', 'ticks')
 
@@ -710,7 +710,7 @@ cdef class TradingStrategy:
 
         :param bar_type: The bar type to get.
         :return: List[Bar].
-        :raises ValueError: If the strategies bars dictionary does not contain the bar type.
+        :raises ConditionFailed: If the strategies bars dictionary does not contain the bar type.
         """
         Condition.is_in(bar_type, self._bars, 'bar_type', 'bars')
 
@@ -723,7 +723,7 @@ cdef class TradingStrategy:
         :param symbol: The symbol for the tick to get.
         :param index: The index for the tick to get.
         :return: Tick.
-        :raises ValueError: If the strategies tick dictionary does not contain the symbol.
+        :raises ConditionFailed: If the strategies tick dictionary does not contain the symbol.
         :raises IndexError: If the tick index is out of range.
         """
         Condition.is_in(symbol, self._ticks, 'symbol', 'ticks')
@@ -737,7 +737,7 @@ cdef class TradingStrategy:
         :param bar_type: The bar type to get.
         :param index: The index for the bar to get.
         :return: Bar.
-        :raises ValueError: If the strategies bars dictionary does not contain the bar type.
+        :raises ConditionFailed: If the strategies bars dictionary does not contain the bar type.
         :raises IndexError: If the bar index is out of range.
         """
         Condition.is_in(bar_type, self._bars, 'bar_type', 'bars')
@@ -784,7 +784,7 @@ cdef class TradingStrategy:
 
         :param market_position: The market position to flatten.
         :return: OrderSide.
-        :raises ValueError: If the given market position is FLAT.
+        :raises ConditionFailed: If the given market position is FLAT.
         """
         if market_position is MarketPosition.LONG:
             return OrderSide.SELL
@@ -820,7 +820,7 @@ cdef class TradingStrategy:
 
         :param order_id: The order identifier.
         :return: Order.
-        :raises ValueError: If the execution client does not contain an order with the given identifier.
+        :raises ConditionFailed: If the execution client does not contain an order with the given identifier.
         """
         return self._exec_client.get_order(order_id)
 
@@ -904,7 +904,7 @@ cdef class TradingStrategy:
 
         :param order_id: The entry order identifier.
         :return: Order.
-        :raises ValueError. If the order identifier is not registered with an entry.
+        :raises ConditionFailed. If the order identifier is not registered with an entry.
         """
         Condition.is_in(order_id, self._entry_orders, 'order_id', 'pending_entry_orders')
 
@@ -916,7 +916,7 @@ cdef class TradingStrategy:
 
         :param order_id: The stop-loss order identifier.
         :return: Order.
-        :raises ValueError. If the order identifier is not registered with a stop-loss.
+        :raises ConditionFailed. If the order identifier is not registered with a stop-loss.
         """
         Condition.is_in(order_id, self._stop_loss_orders, 'order_id', 'stop_loss_orders')
 
@@ -928,7 +928,7 @@ cdef class TradingStrategy:
 
         :param order_id: The take-profit order identifier.
         :return: Order.
-        :raises ValueError. If the order identifier is not registered with a take-profit.
+        :raises ConditionFailed. If the order identifier is not registered with a take-profit.
         """
         Condition.is_in(order_id, self._take_profit_orders, 'order_id', 'take_profit_orders')
 
@@ -940,7 +940,7 @@ cdef class TradingStrategy:
 
         :param position_id: The positions identifier.
         :return: The position with the given identifier.
-        :raises ValueError: If the portfolio does not contain a position with the given identifier.
+        :raises ConditionFailed: If the portfolio does not contain a position with the given identifier.
         """
         return self._portfolio.get_position(position_id)
 
@@ -992,7 +992,7 @@ cdef class TradingStrategy:
          
         :param order_id: The order identifier.
         :return: True if the order exists and is active, else False.
-        :raises ValueError: If the order is not found.
+        :raises ConditionFailed: If the order is not found.
         """
         return self._exec_client.is_order_active(order_id)
 
@@ -1002,7 +1002,7 @@ cdef class TradingStrategy:
          
         :param order_id: The order identifier.
         :return: True if the order does not exist or is complete, else False.
-        :raises ValueError: If the order is not found.
+        :raises ConditionFailed: If the order is not found.
         """
         return self._exec_client.is_order_complete(order_id)
 
@@ -1275,7 +1275,7 @@ cdef class TradingStrategy:
 
         :param order: The order to cancel.
         :param cancel_reason: The reason for cancellation (will be logged).
-        :raises ValueError: If the strategy has not been registered with an execution client.
+        :raises ConditionFailed: If the strategy has not been registered with an execution client.
         """
         if self._exec_client is None:
             self.log.error("Cannot cancel order (execution client not registered).")
@@ -1299,7 +1299,7 @@ cdef class TradingStrategy:
         order book with the given cancel_reason - to the execution service.
 
         :param cancel_reason: The reason for cancellation (will be logged).
-        :raises ValueError: If the cancel_reason is not a valid string.
+        :raises ConditionFailed: If the cancel_reason is not a valid string.
         """
         if self._exec_client is None:
             self.log.error("Cannot cancel all orders (execution client not registered).")
@@ -1327,7 +1327,7 @@ cdef class TradingStrategy:
         If the position is None or already FLAT will log a warning.
 
         :param position_id: The position identifier to flatten.
-        :raises ValueError: If the position_id is not found in the position book.
+        :raises ConditionFailed: If the position_id is not found in the position book.
         """
         if self._exec_client is None:
             self.log.error("Cannot flatten position (execution client not registered).")

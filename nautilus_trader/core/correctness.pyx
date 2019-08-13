@@ -23,7 +23,7 @@ cdef class Condition:
 
         :param predicate: The predicate condition to check.
         :param description: The description of the predicate condition.
-        :raises ValueError: If the predicate is False.
+        :raises ConditionFailed: If the predicate is False.
         """
         if not predicate:
             raise ConditionFailed(f"The predicate {description} was False.")
@@ -36,7 +36,7 @@ cdef class Condition:
         :param argument: The argument to check.
         :param is_type: The expected argument type.
         :param param_name: The parameter name.
-        :raises ValueError: If the object is not of the expected type.
+        :raises ConditionFailed: If the object is not of the expected type.
         """
         if not isinstance(argument, is_type):
             raise ConditionFailed(f"The {param_name} argument was not of type {is_type}, type was {type(argument)}.")
@@ -49,7 +49,7 @@ cdef class Condition:
         :param argument: The argument to check.
         :param is_type: The expected argument type if not None.
         :param param_name: The parameter name.
-        :raises ValueError: If the object is not of the expected type, and is not None.
+        :raises ConditionFailed: If the object is not of the expected type, and is not None.
         """
         if argument is None:
             return
@@ -67,7 +67,7 @@ cdef class Condition:
         :param dictionary: The dictionary which should contain the key argument.
         :param param_name: The key parameter name.
         :param dict_name: The dictionary name.
-        :raises ValueError: If the key is not contained in the dictionary keys.
+        :raises ConditionFailed: If the key is not contained in the dictionary keys.
         """
         if key not in dictionary:
             raise ConditionFailed(f"The {param_name} {key} key was not contained within the {dict_name} dictionary.")
@@ -82,7 +82,7 @@ cdef class Condition:
         :param dictionary: The dictionary which should NOT contain the key argument.
         :param param_name: The key parameter name.
         :param dict_name: The dictionary name.
-        :raises ValueError: If the key is already contained in the dictionary keys.
+        :raises ConditionFailed: If the key is already contained in the dictionary keys.
         """
         if key in dictionary:
             raise ConditionFailed(f"The {param_name} {key} key was already contained within the {dict_name} dictionary.")
@@ -95,7 +95,7 @@ cdef class Condition:
         :param argument: The list argument to check.
         :param element_type: The expected element type if not empty.
         :param param_name: The parameter name.
-        :raises ValueError: If the list contains a type other than the given type to contain.
+        :raises ConditionFailed: If the list contains a type other than the given type to contain.
         """
         for element in argument:
             if not isinstance(element, element_type):
@@ -110,8 +110,8 @@ cdef class Condition:
         :param key_type: The expected type of the keys if not empty.
         :param value_type: The expected type of the values if not empty.
         :param param_name: The parameter name.
-        :raises ValueError: If the dictionary contains a key type other than the given key_type to contain.
-        :raises ValueError: If the dictionary contains a value type other than the given value_type to contain.
+        :raises ConditionFailed: If the dictionary contains a key type other than the given key_type to contain.
+        :raises ConditionFailed: If the dictionary contains a value type other than the given value_type to contain.
         """
         for key, value in argument.items():
             if not isinstance(key, key_type):
@@ -126,7 +126,7 @@ cdef class Condition:
 
         :param argument: The argument to check.
         :param param_name: The parameter name.
-        :raises ValueError: If the argument is not None.
+        :raises ConditionFailed: If the argument is not None.
         """
         if argument is not None:
             raise ConditionFailed(f"The {param_name} argument was not None.")
@@ -138,7 +138,7 @@ cdef class Condition:
 
         :param argument: The argument to check.
         :param param_name: The parameter name.
-        :raises ValueError: If the argument is None.
+        :raises ConditionFailed: If the argument is None.
         """
         if argument is None:
             raise ConditionFailed(f"The {param_name} argument was None.")
@@ -150,7 +150,7 @@ cdef class Condition:
 
         :param argument: The string argument to check.
         :param param_name: The parameter name.
-        :raises ValueError: If the string argument is None, empty or whitespace.
+        :raises ConditionFailed: If the string argument is None, empty or whitespace.
         """
         if argument is None:
             raise ConditionFailed(f"The {param_name} string argument was None.")
@@ -168,7 +168,7 @@ cdef class Condition:
 
         :param argument1: The first argument to check.
         :param argument2: The second argument to check.
-        :raises ValueError: If the arguments are not equal.
+        :raises ConditionFailed: If the arguments are not equal.
         """
         if not argument1.equals(argument2):
             raise ConditionFailed(f"The arguments were not equal, values = {argument1} and {argument2}.")
@@ -186,7 +186,7 @@ cdef class Condition:
         :param collection2: The second collection to check.
         :param collection1_name: The first collections name.
         :param collection2_name: The second collections name.
-        :raises ValueError: If the collections lengths are not equal.
+        :raises ConditionFailed: If the collections lengths are not equal.
         """
         if len(collection1) != len(collection2):
             raise ConditionFailed(
@@ -199,7 +199,7 @@ cdef class Condition:
 
         :param value: The value to check.
         :param param_name: The name of the value.
-        :raises ValueError: If the value is not positive (> 0).
+        :raises ConditionFailed: If the value is not positive (> 0).
         """
         if value <= 0:
             raise ConditionFailed(f"The {param_name} was not positive, value was {value}.")
@@ -211,7 +211,7 @@ cdef class Condition:
 
         :param value: The value to check.
         :param param_name: The values name.
-        :raises ValueError: If the value is negative (< 0).
+        :raises ConditionFailed: If the value is negative (< 0).
         """
         if value < 0:
             raise ConditionFailed(f"The {param_name} was negative, value was {value}.")
@@ -229,7 +229,7 @@ cdef class Condition:
         :param param_name: The values name.
         :param start: The start of the range.
         :param end: The end of the range.
-        :raises ValueError: If the value is not in the inclusive range.
+        :raises ConditionFailed: If the value is not in the inclusive range.
         """
         if value < start or value > end:
             raise ConditionFailed(f"The {param_name} was out of range [{start}-{end}], value was {value}.")
@@ -241,7 +241,7 @@ cdef class Condition:
 
         :param argument: The iterable to check.
         :param param_name: The iterables name.
-        :raises ValueError: If the iterable argument is empty.
+        :raises ConditionFailed: If the iterable argument is empty.
         """
         if len(argument) == 0:
             raise ConditionFailed(f"The {param_name} was an empty collection.")
@@ -253,7 +253,7 @@ cdef class Condition:
 
         :param argument: The iterable to check.
         :param param_name: The iterables name.
-        :raises ValueError: If the iterable argument is not empty.
+        :raises ConditionFailed: If the iterable argument is not empty.
         """
         if len(argument) > 0:
             raise ConditionFailed(f"The {param_name} was not an empty collection.")

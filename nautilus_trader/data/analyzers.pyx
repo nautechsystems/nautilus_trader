@@ -98,7 +98,7 @@ cdef class LiquidityAnalyzer:
 
         :param liquidity_threshold: The multiple of spread to average volatility
         which constitutes a liquid market (> 0) (default=2.0).
-        :raises ValueError: If the liquidity threshold is not positive (> 0).
+        :raises ConditionFailed: If the liquidity threshold is not positive (> 0).
         """
         Condition.positive(liquidity_threshold, 'liquidity_threshold')
 
@@ -116,7 +116,7 @@ cdef class LiquidityAnalyzer:
         Note: The suggested value for volatility is the current average true range (ATR).
         :param average_spread: The current average spread of the market.
         :param volatility: The current volatility of the market.
-        :raises ValueError: If the volatility is negative (< 0).
+        :raises ConditionFailed: If the volatility is negative (< 0).
         """
         Condition.not_negative(volatility, 'volatility')
 

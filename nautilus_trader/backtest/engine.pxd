@@ -8,7 +8,6 @@
 
 from cpython.datetime cimport datetime, timedelta
 
-from nautilus_trader.core.typed_collections cimport TypedList
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logger cimport Logger, LoggerAdapter
@@ -57,4 +56,4 @@ cdef class BacktestEngine:
 
     cdef void _backtest_header(self, datetime run_started, datetime start, datetime stop, timedelta time_step)
     cdef void _backtest_footer(self, datetime run_started, datetime start, datetime stop, timedelta time_step)
-    cdef void _change_clocks_and_loggers(self, TypedList strategies)
+    cdef void _change_clocks_and_loggers(self, list strategies)

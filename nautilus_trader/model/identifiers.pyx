@@ -183,9 +183,9 @@ cdef class IdentifierGenerator:
         :param id_tag_trader: The identifier tag for the trader.
         :param id_tag_strategy: The identifier tag for the strategy.
         :param clock: The internal clock.
-        :raises ValueError: If the prefix is not a valid string.
-        :raises ValueError: If the id_tag_trader is not a valid string.
-        :raises ValueError: If the id_tag_strategy is not a valid string.
+        :raises ConditionFailed: If the prefix is not a valid string.
+        :raises ConditionFailed: If the id_tag_trader is not a valid string.
+        :raises ConditionFailed: If the id_tag_strategy is not a valid string.
         """
         Condition.valid_string(prefix, 'prefix')
 

@@ -63,16 +63,16 @@ cdef class BacktestDataClient(DataClient):
         :param data_bars_ask: The historical ask bar data needed for the backtest.
         :param clock: The clock for the component.
         :param logger: The logger for the component.
-        :raises ValueError: If the instruments list contains a type other than Instrument.
-        :raises ValueError: If the data_ticks dict contains a key type other than Symbol.
-        :raises ValueError: If the data_ticks dict contains a value type other than DataFrame.
-        :raises ValueError: If the data_bars_bid dict contains a key type other than Symbol.
-        :raises ValueError: If the data_bars_bid dict contains a value type other than DataFrame.
-        :raises ValueError: If the data_bars_ask dict contains a key type other than Symbol.
-        :raises ValueError: If the data_bars_ask dict contains a value type other than DataFrame.
-        :raises ValueError: If the data_bars_bid keys does not equal the data_bars_ask keys.
-        :raises ValueError: If the clock is None.
-        :raises ValueError: If the logger is None.
+        :raises ConditionFailed: If the instruments list contains a type other than Instrument.
+        :raises ConditionFailed: If the data_ticks dict contains a key type other than Symbol.
+        :raises ConditionFailed: If the data_ticks dict contains a value type other than DataFrame.
+        :raises ConditionFailed: If the data_bars_bid dict contains a key type other than Symbol.
+        :raises ConditionFailed: If the data_bars_bid dict contains a value type other than DataFrame.
+        :raises ConditionFailed: If the data_bars_ask dict contains a key type other than Symbol.
+        :raises ConditionFailed: If the data_bars_ask dict contains a value type other than DataFrame.
+        :raises ConditionFailed: If the data_bars_bid keys does not equal the data_bars_ask keys.
+        :raises ConditionFailed: If the clock is None.
+        :raises ConditionFailed: If the logger is None.
         """
         Condition.list_type(instruments, Instrument, 'instruments')
         Condition.dict_types(data_ticks, Symbol, DataFrame, 'dataframes_ticks')
@@ -96,7 +96,8 @@ cdef class BacktestDataClient(DataClient):
         self._log.info("Preparing data...")
 
         # Update instruments dictionary
-        [self._handle_instrument(instrument) for instrument in instruments]
+        for instrument in instruments:
+            self._handle_instrument(instrument)
 
         # Create data symbols set
         cdef set tick_data_symbols = { symbol for symbol in self.data_ticks }    # type: Set[Symbol]
@@ -413,8 +414,8 @@ cdef class BacktestDataClient(DataClient):
 
         :param symbol: The tick symbol to subscribe to.
         :param handler: The callable handler for subscription.
-        :raises ValueError: If the symbol is not a key in data_providers.
-        :raises ValueError: If the handler is not of type Callable.
+        :raises ConditionFailed: If the symbol is not a key in data_providers.
+        :raises ConditionFailed: If the handler is not of type Callable.
         """
         Condition.is_in(symbol, self.data_providers, 'symbol', 'data_providers')
         Condition.type_or_none(handler, Callable, 'handler')
@@ -428,8 +429,8 @@ cdef class BacktestDataClient(DataClient):
 
         :param bar_type: The bar type to subscribe to.
         :param handler: The callable handler for subscription.
-        :raises ValueError: If the symbol is not a key in data_providers.
-        :raises ValueError: If the handler is not of type Callable.
+        :raises ConditionFailed: If the symbol is not a key in data_providers.
+        :raises ConditionFailed: If the handler is not of type Callable.
         """
         Condition.is_in(bar_type.symbol, self.data_providers, 'symbol', 'data_providers')
         Condition.type_or_none(handler, Callable, 'handler')
@@ -446,7 +447,7 @@ cdef class BacktestDataClient(DataClient):
 
         :param symbol: The instrument symbol to subscribe to.
         :param handler: The callable handler for subscription.
-        :raises ValueError: If the handler is not of type Callable.
+        :raises ConditionFailed: If the handler is not of type Callable.
         """
         Condition.type(handler, Callable, 'handler')
 
@@ -459,8 +460,8 @@ cdef class BacktestDataClient(DataClient):
 
         :param symbol: The tick symbol to unsubscribe from.
         :param handler: The callable handler which was subscribed.
-        :raises ValueError: If the symbol is not a key in data_providers.
-        :raises ValueError: If the handler is not of type Callable.
+        :raises ConditionFailed: If the symbol is not a key in data_providers.
+        :raises ConditionFailed: If the handler is not of type Callable.
         """
         Condition.is_in(symbol, self.data_providers, 'symbol', 'data_providers')
         Condition.type_or_none(handler, Callable, 'handler')
@@ -474,8 +475,8 @@ cdef class BacktestDataClient(DataClient):
 
         :param bar_type: The bar type to unsubscribe from.
         :param handler: The callable handler which was subscribed.
-        :raises ValueError: If the symbol is not a key in data_providers.
-        :raises ValueError: If the handler is not of type Callable.
+        :raises ConditionFailed: If the symbol is not a key in data_providers.
+        :raises ConditionFailed: If the handler is not of type Callable.
         """
         Condition.is_in(bar_type.symbol, self.data_providers, 'symbol', 'data_providers')
         Condition.type_or_none(handler, Callable, 'handler')
@@ -489,7 +490,7 @@ cdef class BacktestDataClient(DataClient):
 
         :param symbol: The instrument symbol to unsubscribe from.
         :param handler: The callable handler which was subscribed.
-        :raises ValueError: If the handler is not of type Callable.
+        :raises ConditionFailed: If the handler is not of type Callable.
         """
         Condition.type(handler, Callable, 'handler')
 
@@ -521,9 +522,9 @@ cdef class DataProvider:
         :param data_ticks: The tick data for the data provider.
         :param data_bars_bid: The bid bars data for the data provider (must contain MINUTE resolution).
         :param data_bars_ask: The ask bars data for the data provider (must contain MINUTE resolution).
-        :raises ValueError: If the data_ticks is a type other than None or DataFrame.
-        :raises ValueError: If the data_bars_bid is None.
-        :raises ValueError: If the data_bars_ask is None.
+        :raises ConditionFailed: If the data_ticks is a type other than None or DataFrame.
+        :raises ConditionFailed: If the data_bars_bid is None.
+        :raises ConditionFailed: If the data_bars_ask is None.
         """
         Condition.type_or_none(data_ticks, DataFrame, 'data_ticks')
         Condition.not_none(data_bars_bid, 'data_bars_bid')

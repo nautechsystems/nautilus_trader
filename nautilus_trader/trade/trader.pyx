@@ -40,10 +40,10 @@ cdef class Trader:
         :param id_tag_trader: The identifier tag for the trader (unique at fund level).
         :param strategies: The initial list of strategies to manage.
         :param logger: The logger for the trader.
-        :raises ValueError: If the id_tag_trader is an invalid string.
-        :raises ValueError: If the data client is None.
-        :raises ValueError: If the exec client is None.
-        :raises ValueError: If the clock is None.
+        :raises ConditionFailed: If the id_tag_trader is an invalid string.
+        :raises ConditionFailed: If the data client is None.
+        :raises ConditionFailed: If the exec client is None.
+        :raises ConditionFailed: If the clock is None.
         """
         Condition.valid_string(id_tag_trader, 'id_tag_trader')
         Condition.not_none(data_client, 'data_client')
@@ -62,8 +62,8 @@ cdef class Trader:
         self.portfolio = portfolio
         self.portfolio.register_execution_client(self._exec_client)
         self.is_running = False
-        self.started_datetimes = TypedList(datetime)
-        self.stopped_datetimes = TypedList(datetime)
+        self.started_datetimes = []  # type: List[datetime]
+        self.stopped_datetimes = []  # type: List[datetime]
         self.strategies = None
 
         self.load_strategies(strategies)
@@ -73,11 +73,11 @@ cdef class Trader:
         Change strategies with the given list of trading strategies.
         
         :param strategies: The list of strategies to load into the trader.
-        :raises ValueError: If the strategies list is empty.
-        :raises ValueError: If the strategies list contains a type other than TradingStrategy.
+        :raises ConditionFailed: If the strategies list is empty.
+        :raises ConditionFailed: If the strategies list contains a type other than TradingStrategy.
         """
         if self.strategies is None:
-            self.strategies = TypedList(TradingStrategy)
+            self.strategies = []  # type: List[TradingStrategy]
         else:
             Condition.not_empty(strategies, 'strategies')
             Condition.list_type(strategies, TradingStrategy, 'strategies')

@@ -57,7 +57,7 @@ cdef class TradingNode:
         Initializes a new instance of the TradingNode class.
 
         :param config_path: The path to the config file.
-        :raises ValueError: If the config_path is not a valid string.
+        :raises ConditionFailed: If the config_path is not a valid string.
         """
         Condition.valid_string(config_path, 'config_path')
 

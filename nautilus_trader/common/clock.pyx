@@ -148,8 +148,8 @@ cdef class LiveClock(Clock):
 
         :param label: The label for the alert (must be unique).
         :param alert_time: The time for the alert.
-        :raises ValueError: If the label is not unique for this clock.
-        :raises ValueError: If the alert_time is not > than the clocks current time.
+        :raises ConditionFailed: If the label is not unique for this clock.
+        :raises ConditionFailed: If the alert_time is not > than the clocks current time.
         """
         Condition.true(alert_time > self.time_now(), 'alert_time > time_now()')
         Condition.not_in(label, self._time_alerts, 'label', 'time_alerts')
@@ -184,11 +184,11 @@ cdef class LiveClock(Clock):
         :param interval: The time delta interval for the timer.
         :param start_time: The start time for the timer (optional can be None - then starts immediately).
         :param stop_time: The stop time for the timer (optional can be None - then repeats indefinitely).
-        :raises ValueError: If the label is not unique.
-        :raises ValueError: If the handler is not of type Callable.
-        :raises ValueError: If the start_time is not None and not >= the current time (UTC).
-        :raises ValueError: If the stop_time is not None and not > than the start_time.
-        :raises ValueError: If the stop_time is not None and start_time plus interval is greater
+        :raises ConditionFailed: If the label is not unique.
+        :raises ConditionFailed: If the handler is not of type Callable.
+        :raises ConditionFailed: If the start_time is not None and not >= the current time (UTC).
+        :raises ConditionFailed: If the stop_time is not None and not > than the start_time.
+        :raises ConditionFailed: If the stop_time is not None and start_time plus interval is greater
         than the stop_time.
         """
         Condition.not_in(label, self._timers, 'label', 'timers')
@@ -235,7 +235,7 @@ cdef class LiveClock(Clock):
         Cancel the time alert corresponding to the given label.
 
         :param label: The label for the alert to cancel.
-        :raises ValueError: If the label is not found in the internal time alerts.
+        :raises ConditionFailed: If the label is not found in the internal time alerts.
         """
         Condition.is_in(label, self._time_alerts, 'label', 'timers')
 
@@ -250,7 +250,7 @@ cdef class LiveClock(Clock):
         Cancel the timer corresponding to the given unique label.
 
         :param label: The label for the timer to cancel.
-        :raises ValueError: If the label is not found in the internal timers.
+        :raises ConditionFailed: If the label is not found in the internal timers.
         """
         Condition.is_in(label, self._timers, 'label', 'timers')
 
@@ -411,8 +411,8 @@ cdef class TestClock(Clock):
 
         :param label: The label for the alert (must be unique).
         :param alert_time: The datetime for the alert.
-        :raises ValueError: If the label is not unique for this strategy.
-        :raises ValueError: If the alert_time is not > than the clocks current time.
+        :raises ConditionFailed: If the label is not unique for this strategy.
+        :raises ConditionFailed: If the alert_time is not > than the clocks current time.
         """
         Condition.true(alert_time > self.time_now(), 'alert_time > time_now()')
         Condition.not_in(label, self._time_alerts, 'label', 'time_alerts')
@@ -440,10 +440,10 @@ cdef class TestClock(Clock):
         :param interval: The interval timedelta  for the timer.
         :param start_time: The start datetime for the timer (optional can be None - then starts immediately).
         :param stop_time: The stop datetime for the timer (optional can be None - then will run indefinitely).
-        :raises ValueError: If the label is not unique.
-        :raises ValueError: If the start_time is not None and not >= the current time (UTC).
-        :raises ValueError: If the stop_time is not None and not > than the start_time.
-        :raises ValueError: If the stop_time is not None and start_time plus interval is greater
+        :raises ConditionFailed: If the label is not unique.
+        :raises ConditionFailed: If the start_time is not None and not >= the current time (UTC).
+        :raises ConditionFailed: If the stop_time is not None and not > than the start_time.
+        :raises ConditionFailed: If the stop_time is not None and start_time plus interval is greater
         than the stop_time.
         """
         Condition.not_in(label, self._timers, 'label', 'timers')
@@ -481,7 +481,7 @@ cdef class TestClock(Clock):
         Cancel the time alert corresponding to the given label.
 
         :param label: The label for the alert to cancel.
-        :raises ValueError: If the label is not found in the internal timers.
+        :raises ConditionFailed: If the label is not found in the internal timers.
         """
         Condition.is_in(label, self._time_alerts, 'label', 'time_alerts')
 
@@ -495,7 +495,7 @@ cdef class TestClock(Clock):
         Cancel the timer corresponding to the given unique label.
 
         :param label: The label for the timer to cancel.
-        :raises ValueError: If the label is not found in the internal timers.
+        :raises ConditionFailed: If the label is not found in the internal timers.
         """
         Condition.is_in(label, self._timers, 'label', 'timers')
 

@@ -31,7 +31,7 @@ cdef class Quantity:
         Initializes a new instance of the Quantity class.
 
         :param value: The value of the quantity (>= 0).
-        :raises ValueError: If the value is negative (< 0).
+        :raises ConditionFailed: If the value is negative (< 0).
         """
         Condition.not_negative(value, 'value')
 
@@ -130,7 +130,7 @@ cdef class Brokerage(StringValue):
         Initializes a new instance of the Brokerage class.
 
         :param name: The brokerages name.
-        :raises ValueError: If the name is not a valid string.
+        :raises ConditionFailed: If the name is not a valid string.
         """
         super().__init__(name.upper())
 
@@ -145,7 +145,7 @@ cdef class Venue(StringValue):
         Initializes a new instance of the Venue class.
 
         :param name: The venues name.
-        :raises ValueError: If the name is not a valid string.
+        :raises ConditionFailed: If the name is not a valid string.
         """
         super().__init__(name.upper())
 
@@ -160,7 +160,7 @@ cdef class Exchange(Venue):
         Initializes a new instance of the Exchange class.
 
         :param name: The exchanges name.
-        :raises ValueError: If the name is not a valid string.
+        :raises ConditionFailed: If the name is not a valid string.
         """
         super().__init__(name.upper())
 
@@ -178,7 +178,7 @@ cdef class Symbol:
 
         :param code: The symbols code.
         :param venue: The symbols venue.
-        :raises ValueError: If the code is not a valid string.
+        :raises ConditionFailed: If the code is not a valid string.
         """
         Condition.valid_string(code, 'code')
 
@@ -252,8 +252,8 @@ cdef class Price:
         Note: Can be str, float, int or Decimal only.
         :raises TypeError: If the value is not a str, float, int or Decimal.
         :raises InvalidOperation: If the value str is malformed.
-        :raises ValueError: If the value is not positive (> 0).
-        :raises ValueError: If the value is int or float and the precision is not positive (> 0).
+        :raises ConditionFailed: If the value is not positive (> 0).
+        :raises ConditionFailed: If the value is int or float and the precision is not positive (> 0).
         """
         if isinstance(value, str):
             self.value = Decimal(value)
@@ -371,7 +371,7 @@ cdef class Price:
 
         :param price: The other price to add.
         :return: Price.
-        :raises ValueError: If the precision of the prices are not equal.
+        :raises ConditionFailed: If the precision of the prices are not equal.
         """
         Condition.true(self.precision == price.precision, 'self.precision == price.precision')
 
@@ -383,7 +383,7 @@ cdef class Price:
 
         :param price: The other price to subtract.
         :return: Price.
-        :raises ValueError: If the precision of the prices are not equal.
+        :raises ConditionFailed: If the precision of the prices are not equal.
         """
         Condition.true(self.precision == price.precision, 'self.precision == price.precision')
 
@@ -527,8 +527,8 @@ cdef class Tick:
         :param bid: The tick best bid price.
         :param ask: The tick best ask price.
         :param timestamp: The tick timestamp (UTC).
-        :raises ValueError: If the bid price is not positive (> 0).
-        :raises ValueError: If the ask price is not positive (> 0).
+        :raises ConditionFailed: If the bid price is not positive (> 0).
+        :raises ConditionFailed: If the ask price is not positive (> 0).
         """
         self.symbol = symbol
         self.bid = bid
@@ -597,7 +597,7 @@ cdef class BarSpecification:
         :param period: The bar period.
         :param resolution: The bar resolution.
         :param quote_type: The bar quote type.
-        :raises ValueError: If the period is not positive (> 0).
+        :raises ConditionFailed: If the period is not positive (> 0).
         """
         Condition.positive(period, 'period')
 
@@ -777,10 +777,10 @@ cdef class Bar:
         :param volume: The bars volume.
         :param timestamp: The bars timestamp (UTC).
         :param checked: A value indicating whether the bar was checked valid.
-        :raises ValueError: If checked is true and the volume is negative.
-        :raises ValueError: If checked is true and the high_price is not >= low_price.
-        :raises ValueError: If checked is true and the high_price is not >= close_price.
-        :raises ValueError: If checked is true and the low_price is not <= close_price.
+        :raises ConditionFailed: If checked is true and the volume is negative.
+        :raises ConditionFailed: If checked is true and the high_price is not >= low_price.
+        :raises ConditionFailed: If checked is true and the high_price is not >= close_price.
+        :raises ConditionFailed: If checked is true and the low_price is not <= close_price.
         """
         if checked:
             Condition.not_negative(volume, 'volume')
@@ -849,11 +849,11 @@ cdef class DataBar:
         :param close_price: The bars close price.
         :param volume: The bars volume.
         :param timestamp: The bars timestamp (UTC).
-        :raises ValueError: If the open_price is not positive (> 0).
-        :raises ValueError: If the high_price is not positive (> 0).
-        :raises ValueError: If the low_price is not positive (> 0).
-        :raises ValueError: If the close_price is not positive (> 0).
-        :raises ValueError: If the volume is negative.
+        :raises ConditionFailed: If the open_price is not positive (> 0).
+        :raises ConditionFailed: If the high_price is not positive (> 0).
+        :raises ConditionFailed: If the low_price is not positive (> 0).
+        :raises ConditionFailed: If the close_price is not positive (> 0).
+        :raises ConditionFailed: If the volume is negative.
         """
         self.open = open_price
         self.high = high_price
