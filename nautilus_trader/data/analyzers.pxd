@@ -40,7 +40,9 @@ cdef class LiquidityAnalyzer:
     cdef readonly float value
     cdef readonly bint initialized
     cdef readonly bint is_liquid
-    cdef readonly bint is_not_liquid
+    cdef readonly bint not_liquid
 
     cpdef void update(self, average_spread, float volatility)
     cpdef void reset(self)
+    cdef void _set_is_liquid(self)
+    cdef void _set_not_liquid(self)

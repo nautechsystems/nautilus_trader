@@ -106,7 +106,7 @@ cdef class LiquidityAnalyzer:
         self.value = 0.0
         self.initialized = False
         self.is_liquid = False
-        self.is_not_liquid = True
+        self.not_liquid = True
 
     cpdef void update(self, average_spread, float volatility):
         """
@@ -126,11 +126,9 @@ cdef class LiquidityAnalyzer:
         self.value = volatility / float(average_spread)
 
         if self.value >= self.liquidity_threshold:
-            self.is_liquid = True
-            self.is_not_liquid = False
+            self._set_is_liquid()
         else:
-            self.is_liquid = False
-            self.is_not_liquid = True
+            self._set_not_liquid()
 
         if not self.initialized:
             self.initialized = True
@@ -142,5 +140,12 @@ cdef class LiquidityAnalyzer:
         """
         self.value = 0.0
         self.initialized = False
+        self._set_not_liquid()
+
+    cdef void _set_is_liquid(self):
+        self.is_liquid = True
+        self.not_liquid = False
+
+    cdef void _set_not_liquid(self):
         self.is_liquid = False
-        self.is_not_liquid = True
+        self.not_liquid = True

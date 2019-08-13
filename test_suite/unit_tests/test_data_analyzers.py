@@ -108,7 +108,7 @@ class LiquidityAnalyzerTests(unittest.TestCase):
         self.assertEqual(0.0, analyzer.value)
         self.assertFalse(analyzer.initialized)
         self.assertFalse(analyzer.is_liquid)
-        self.assertTrue(analyzer.is_not_liquid)
+        self.assertTrue(analyzer.not_liquid)
 
     def test_updating_with_zero_average_spread_does_nothing(self):
         # Arrange
@@ -121,7 +121,7 @@ class LiquidityAnalyzerTests(unittest.TestCase):
         self.assertEqual(0.0, analyzer.value)
         self.assertFalse(analyzer.initialized)
         self.assertFalse(analyzer.is_liquid)
-        self.assertTrue(analyzer.is_not_liquid)
+        self.assertTrue(analyzer.not_liquid)
 
     def test_can_update_with_tick_and_volatility_when_illiquid(self):
         # Arrange
@@ -134,7 +134,7 @@ class LiquidityAnalyzerTests(unittest.TestCase):
         self.assertEqual(1.0, analyzer.value)
         self.assertTrue(analyzer.initialized)
         self.assertFalse(analyzer.is_liquid)
-        self.assertTrue(analyzer.is_not_liquid)
+        self.assertTrue(analyzer.not_liquid)
 
     def test_can_update_with_tick_and_volatility_when_liquid(self):
         # Arrange
@@ -147,7 +147,7 @@ class LiquidityAnalyzerTests(unittest.TestCase):
         self.assertEqual(2.0, analyzer.value)
         self.assertTrue(analyzer.initialized)
         self.assertTrue(analyzer.is_liquid)
-        self.assertFalse(analyzer.is_not_liquid)
+        self.assertFalse(analyzer.not_liquid)
 
     def test_can_reset(self):
         # Arrange
@@ -161,4 +161,4 @@ class LiquidityAnalyzerTests(unittest.TestCase):
         self.assertEqual(0.0, analyzer.value)
         self.assertFalse(analyzer.initialized)
         self.assertFalse(analyzer.is_liquid)
-        self.assertTrue(analyzer.is_not_liquid)
+        self.assertTrue(analyzer.not_liquid)
