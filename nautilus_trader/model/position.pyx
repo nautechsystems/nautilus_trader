@@ -74,13 +74,17 @@ cdef class Position:
 
     def __eq__(self, other) -> bool:
         """
-        Override the default equality comparison.
+        Return a value indicating whether this object is equal to the given object.
+
+        :return: bool.
         """
         return self.equals(other)
 
     def __ne__(self, other) -> bool:
         """
-        Override the default not-equals comparison.
+        Return a value indicating whether this object is not equal to the given object.
+
+        :return: bool.
         """
         return not self.equals(other)
 

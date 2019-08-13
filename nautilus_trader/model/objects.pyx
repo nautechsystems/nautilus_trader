@@ -57,19 +57,27 @@ cdef class Quantity:
 
     def __eq__(self, Quantity other) -> bool:
         """
-        Override the default equality comparison.
+        Return a value indicating whether this object is equal to the given object.
+
+        :return: bool.
+
+        :return: bool.
         """
         return self.equals(other)
 
     def __ne__(self, Quantity other) -> bool:
         """
-        Override the default not-equals comparison.
+        Return a value indicating whether this object is not equal to the given object.
+
+        :return: bool.
         """
         return not self.equals(other)
 
     def __hash__(self) -> int:
         """"
-        Override the default hash implementation.
+        Return the hash representation of this object.
+
+        :return: int.
         """
         return hash(self.value)
 
@@ -197,19 +205,25 @@ cdef class Symbol:
 
     def __eq__(self, Symbol other) -> bool:
         """
-        Override the default equality comparison.
+        Return a value indicating whether this object is equal to the given object.
+
+        :return: bool.
         """
         return self.equals(other)
 
     def __ne__(self, Symbol other) -> bool:
         """
-        Override the default not-equals comparison.
+        Return a value indicating whether this object is not equal to the given object.
+
+        :return: bool.
         """
         return not self.equals(other)
 
     def __hash__(self) -> int:
         """"
-        Override the default hash implementation.
+        Return the hash representation of this object.
+
+        :return: int.
         """
         return hash((self.code, self.venue))
 
@@ -277,13 +291,17 @@ cdef class Price:
 
     def __eq__(self, Price other) -> bool:
         """
-        Override the default equality comparison.
+        Return a value indicating whether this object is equal to the given object.
+
+        :return: bool.
         """
         return self.value == other.value and self.precision == other.precision
 
     def __ne__(self, Price other) -> bool:
         """
-        Override the default not-equals comparison.
+        Return a value indicating whether this object is not equal to the given object.
+
+        :return: bool.
         """
         return self.value != other.value or self.precision != other.precision
 
@@ -421,13 +439,17 @@ cdef class Money:
 
     def __eq__(self, Money other) -> bool:
         """
-        Override the default equality comparison.
+        Return a value indicating whether this object is equal to the given object.
+
+        :return: bool.
         """
         return self.value == other.value
 
     def __ne__(self, Money other) -> bool:
         """
-        Override the default not-equals comparison.
+        Return a value indicating whether this object is not equal to the given object.
+
+        :return: bool.
         """
         return self.value != other.value
 
@@ -566,7 +588,9 @@ cdef class Tick:
 
     def __hash__(self) -> int:
         """"
-        Override the default hash implementation.
+        Return the hash representation of this object.
+
+        :return: int.
         """
         return hash(self.timestamp)
 
@@ -652,19 +676,25 @@ cdef class BarSpecification:
 
     def __eq__(self, BarSpecification other) -> bool:
         """
-        Override the default equality comparison.
+        Return a value indicating whether this object is equal to the given object.
+
+        :return: bool.
         """
         return self.equals(other)
 
     def __ne__(self, BarSpecification other) -> bool:
         """
-        Override the default not-equals comparison.
+        Return a value indicating whether this object is not equal to the given object.
+
+        :return: bool.
         """
         return not self.equals(other)
 
     def __hash__(self) -> int:
         """"
-        Override the default hash implementation.
+        Return the hash representation of this object.
+
+        :return: int.
         """
         return hash((self.period, self.resolution, self.quote_type))
 
@@ -725,19 +755,25 @@ cdef class BarType:
 
     def __eq__(self, BarType other) -> bool:
         """
-        Override the default equality comparison.
+        Return a value indicating whether this object is equal to the given object.
+
+        :return: bool.
         """
         return self.equals(other)
 
     def __ne__(self, BarType other) -> bool:
         """
-        Override the default not-equals comparison.
+        Return a value indicating whether this object is not equal to the given object.
+
+        :return: bool.
         """
         return not self.equals(other)
 
     def __hash__(self) -> int:
         """"
-        Override the default hash implementation.
+        Return the hash representation of this object.
+
+        :return: int.
         """
         return hash((self.symbol, self.specification))
 
@@ -798,19 +834,25 @@ cdef class Bar:
 
     def __eq__(self, Bar other) -> bool:
         """
-        Override the default equality comparison.
+        Return a value indicating whether this object is equal to the given object.
+
+        :return: bool.
         """
         return self.timestamp == other.timestamp
 
     def __ne__(self, Bar other) -> bool:
         """
-        Override the default not-equals comparison.
+        Return a value indicating whether this object is not equal to the given object.
+
+        :return: bool.
         """
         return not self.__eq__(other)
 
     def __hash__(self) -> int:
         """"
-        Override the default hash implementation.
+        Return the hash representation of this object.
+
+        :return: int.
         """
         return hash(str(self.timestamp))
 
@@ -864,19 +906,21 @@ cdef class DataBar:
 
     def __eq__(self, DataBar other) -> bool:
         """
-        Override the default equality comparison.
+        Return a value indicating whether this object is equal to the given object.
         """
         return self.open == other.open
 
     def __ne__(self, DataBar other) -> bool:
         """
-        Override the default not-equals comparison.
+        Return a value indicating whether this object is not equal to the given object.:return: bool.
         """
         return not self.__eq__(other)
 
     def __hash__(self) -> int:
         """"
-        Override the default hash implementation.
+        Return the hash representation of this object.
+
+        :return: int.
         """
         return hash(str(self.timestamp))
 
@@ -969,19 +1013,21 @@ cdef class Instrument:
 
     def __eq__(self, Instrument other) -> bool:
         """
-        Override the default equality comparison.
+        Return a value indicating whether this object is equal to the given object.
         """
         return self.id == other.id
 
     def __ne__(self, Instrument other) -> bool:
         """
-        Override the default not-equals comparison.
+        Return a value indicating whether this object is not equal to the given object.:return: bool.
         """
         return not self.__eq__(other)
 
     def __hash__(self) -> int:
         """"
-        Override the default hash implementation.
+        Return the hash representation of this object.
+
+        :return: int.
         """
         return hash(str(self.symbol))
 

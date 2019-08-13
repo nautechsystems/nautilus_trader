@@ -137,31 +137,41 @@ cdef class TradingStrategy:
 
     def __eq__(self, other) -> bool:
         """
-        Override the default equality comparison.
+        Return a value indicating whether this object is equal to the given object.
+
+        :return: bool.
         """
         return self.equals(other)
 
     def __ne__(self, other) -> bool:
         """
-        Override the default not-equals comparison.
+        Return a value indicating whether this object is not equal to the given object.
+
+        :return: bool.
         """
         return not self.equals(other)
 
     def __hash__(self):
         """"
-        Override the default hash implementation.
+        Return the hash representation of this object.
+
+        :return: int.
         """
         return hash(self.id.value)
 
     def __str__(self) -> str:
         """
-        :return: The str() string representation of the strategy.
+        Return the str() string representation of this object.
+
+        :return: str.
         """
         return f"{self.__class__.__name__}({self.id.value})"
 
     def __repr__(self) -> str:
         """
-        :return: The repr() string representation of the strategy.
+        Return the repr() string representation of this object.
+
+        :return: str.
         """
         return f"<{str(self)} object at {id(self)}>"
 

@@ -27,19 +27,25 @@ cdef class Handler:
 
     def __eq__(self, Handler other) -> bool:
         """
-        Override the default equality comparison.
+        Return a value indicating whether this object is equal to the given object.
+
+        :return: bool.
         """
         return self.handle == other.handle
 
     def __ne__(self, Handler other) -> bool:
         """
-        Override the default not-equals comparison.
+        Return a value indicating whether this object is not equal to the given object.
+
+        :return: bool.
         """
         return not self.handle != other.handle
 
     def __hash__(self) -> int:
         """"
-        Override the default hash implementation.
+        Return the hash representation of this object.
+
+        :return: int.
         """
         return hash(self.handle)
 
