@@ -61,17 +61,18 @@ cdef class TradingNode:
         """
         Condition.valid_string(config_path, 'config_path')
 
-        # Load the configuration from the file specified in config_path
-        with open(config_path, 'r') as config_file:
-            config = json.load(config_file)
-
         self._clock = LiveClock()
         self._guid_factory = LiveGuidFactory()
         self._zmq_context = zmq.Context()
         self.id = GUID(uuid.uuid4())
 
+        # Load the configuration from the file specified in config_path
+        with open(config_path, 'r') as config_file:
+            config = json.load(config_file)
+
         trader_id = TraderId(config['trader']['trader_id'])
         database_config = config['database']
+
         self._log_store = LogStore(trader_id=trader_id, redis_port=database_config['log_store_port'])
 
         log_config = config['logging']
