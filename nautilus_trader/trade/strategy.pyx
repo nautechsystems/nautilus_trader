@@ -691,7 +691,7 @@ cdef class TradingStrategy:
 
     cpdef list ticks(self, Symbol symbol):
         """
-        Return the bars for the given bar type (returns a copy of the internal deque).
+        Return the ticks for the given symbol (returns a copy of the internal deque).
 
         :param symbol: The symbol for the ticks to get.
         :return: List[Tick].

@@ -122,16 +122,12 @@ class EMACrossPy(TradingStrategy):
         self.spread_analyzer.calculate_metrics()
         self.liquidity.update(self.spread_analyzer.average_spread, self.atr.value)
 
-        print(f"*** {self.has_ticks(self.symbol)} REACHED HERE ***")
-        print(self.ticks(self.symbol))
-
         if not self.has_ticks(self.symbol):
             return
 
-        if True is True:
+        # if self.liquidity.is_liquid
+        if self.entry_orders_count() == 0 and self.is_flat():
             atomic_order = None
-        # if self.liquidity.is_liquid and self.entry_orders_count() == 0 and self.is_flat():
-        #     atomic_order = None
 
             # BUY LOGIC
             if self.fast_ema.value >= self.slow_ema.value:
