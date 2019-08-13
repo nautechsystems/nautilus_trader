@@ -33,7 +33,9 @@ if __name__ == "__main__":
         20,
         20)
 
-    node = TradingNode(strategies=[strategy])
+    node = TradingNode(
+        config_path='config.json',
+        strategies=[strategy])
 
     node.connect()
     node.start()

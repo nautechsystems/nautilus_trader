@@ -80,7 +80,7 @@ cdef class TradingStrategy:
     cpdef on_dispose(self)
 
 # -- REGISTRATION METHODS ------------------------------------------------------------------------ #
-    cpdef void register_trader_id(self, str trader_id)
+    cpdef void register_trader(self, TraderId trader_id, IdTag id_tag_trader)
     cpdef void register_data_client(self, DataClient client)
     cpdef void register_execution_client(self, ExecutionClient client)
     cpdef void register_indicator_ticks(self, Symbol symbol, indicator, update_method)

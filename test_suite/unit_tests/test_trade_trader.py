@@ -70,7 +70,8 @@ class TraderTests(unittest.TestCase):
                       EmptyStrategy('002')]
 
         self.trader = Trader(
-            'BT',
+            trader_id=TraderId('Trader-001'),
+            id_tag_trader=IdTag('001'),
             strategies=strategies,
             data_client=data_client,
             exec_client=exec_client,
@@ -86,8 +87,8 @@ class TraderTests(unittest.TestCase):
         id_tag_trader = self.trader.id_tag_trader
 
         # Assert
-        self.assertEqual(TraderId('Trader-BT'), trader_id)
-        self.assertEqual(IdTag('BT'), id_tag_trader)
+        self.assertEqual(TraderId('Trader-001'), trader_id)
+        self.assertEqual(IdTag('001'), id_tag_trader)
         self.assertFalse(self.trader.is_running)
         self.assertEqual(0, len(self.trader.started_datetimes))
         self.assertEqual(0, len(self.trader.stopped_datetimes))

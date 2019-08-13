@@ -21,7 +21,7 @@ from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.guid cimport LiveGuidFactory
 from nautilus_trader.common.logger cimport LoggerAdapter, nautilus_header
 from nautilus_trader.model.objects cimport Venue
-from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.model.identifiers cimport IdTag, TraderId
 from nautilus_trader.trade.trader cimport Trader
 from nautilus_trader.trade.portfolio cimport Portfolio
 from nautilus_trader.live.logger cimport LiveLogger
@@ -61,7 +61,7 @@ cdef class TradingNode:
         """
         Condition.valid_string(config_path, 'config_path')
 
-        # Load the configuration from the config.json file
+        # Load the configuration from the file specified in config_path
         with open(config_path, 'r') as config_file:
             config = json.load(config_file)
 
@@ -70,7 +70,7 @@ cdef class TradingNode:
         self._zmq_context = zmq.Context()
         self.id = GUID(uuid.uuid4())
 
-        trader_id = TraderId(config['trader']['idTag'])
+        trader_id = TraderId(config['trader']['trader_id'])
         database_config = config['database']
         self._log_store = LogStore(trader_id=trader_id, redis_port=database_config['log_store_port'])
 
@@ -101,14 +101,14 @@ cdef class TradingNode:
         self._data_client = LiveDataClient(
             zmq_context=self._zmq_context,
             venue=Venue(data_config['venue']),
-            service_name=data_config['serviceName'],
-            service_address=data_config['serviceAddress'],
-            tick_req_port=data_config['tickReqPort'],
-            tick_sub_port=data_config['tickSubPort'],
-            bar_req_port=data_config['barReqPort'],
-            bar_sub_port=data_config['barSubPort'],
-            inst_req_port=data_config['instReqPort'],
-            inst_sub_port=data_config['instSubPort'],
+            service_name=data_config['service_name'],
+            service_address=data_config['service_address'],
+            tick_req_port=data_config['tick_req_port'],
+            tick_sub_port=data_config['tick_sub_port'],
+            bar_req_port=data_config['bar_req_port'],
+            bar_sub_port=data_config['bar_sub_port'],
+            inst_req_port=data_config['inst_req_port'],
+            inst_sub_port=data_config['inst_sub_port'],
             clock=self._clock,
             guid_factory=self._guid_factory,
             logger=self._logger)
@@ -116,11 +116,11 @@ cdef class TradingNode:
         exec_config = config['execClient']
         self._exec_client = LiveExecClient(
             zmq_context=self._zmq_context,
-            service_name=exec_config['serviceName'],
-            service_address=exec_config['serviceAddress'],
-            events_topic=exec_config['eventsTopic'],
-            commands_port=exec_config['commandsPort'],
-            events_port=exec_config['eventsPort'],
+            service_name=exec_config['service_name'],
+            service_address=exec_config['service_address'],
+            events_topic=exec_config['events_topic'],
+            commands_port=exec_config['commands_port'],
+            events_port=exec_config['events_port'],
             account=self.account,
             portfolio=self.portfolio,
             clock=self._clock,
@@ -128,8 +128,10 @@ cdef class TradingNode:
             logger=self._logger,
             store=self.event_store)
 
+        id_tag_trader= IdTag(config['trader']['id_tag_trader'])
         self.trader = Trader(
-            id_tag_trader=trader_id.value,
+            trader_id=trader_id,
+            id_tag_trader=id_tag_trader,
             strategies=strategies,
             data_client=self._data_client,
             exec_client=self._exec_client,
