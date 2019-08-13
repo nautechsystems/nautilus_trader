@@ -9,6 +9,6 @@ To run the tests, first manually compile the C extensions for the package;
 
 ![Alt text](documentation/assets/nautechsystems_logo_small.png?raw=true "logo")
 
-Nautech Systems Pty Ltd. All Rights Reserved.
+Copyright (C) 2015-2019 Nautech Systems Pty Ltd. All rights reserved.
 
 > https://nautechsystems.io

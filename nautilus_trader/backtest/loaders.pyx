@@ -29,8 +29,8 @@ cdef class InstrumentLoader:
         
         :param symbol: The currency pair symbol.
         :param tick_precision: The currency pair tick precision.
-        :raises ValueError: If the symbol.code length is not == 6.
-        :raises ValueError: If the tick_precision is not 3 or 5.
+        :raises ConditionFailed: If the symbol.code length is not == 6.
+        :raises ConditionFailed: If the tick_precision is not 3 or 5.
         """
         Condition.true(len(symbol.code) == 6, 'len(symbol) == 6')
         Condition.true(tick_precision == 3 or tick_precision == 5, 'tick_precision == 3 or 5')

@@ -11,7 +11,7 @@ from typing import Callable
 from zmq import Context, ZMQError
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.typed_collections cimport ObjectCache
+from nautilus_trader.core.cache cimport ObjectCache
 from nautilus_trader.core.message cimport Response
 from nautilus_trader.model.objects cimport Venue, Symbol, BarType, Instrument
 from nautilus_trader.common.clock cimport LiveClock
@@ -70,13 +70,13 @@ cdef class LiveDataClient(DataClient):
         :param data_serializer: The data serializer for the component.
         :param data_serializer: The instrument serializer for the component.
         :param logger: The logger for the component.
-        :raises ValueError: If the service_address is not a valid string.
-        :raises ValueError: If the tick_req_port is not in range [0, 65535].
-        :raises ValueError: If the tick_sub_port is not in range [0, 65535].
-        :raises ValueError: If the bar_req_port is not in range [0, 65535].
-        :raises ValueError: If the bar_sub_port is not in range [0, 65535].
-        :raises ValueError: If the inst_req_port is not in range [0, 65535].
-        :raises ValueError: If the inst_sub_port is not in range [0, 65535].
+        :raises ConditionFailed: If the service_address is not a valid string.
+        :raises ConditionFailed: If the tick_req_port is not in range [0, 65535].
+        :raises ConditionFailed: If the tick_sub_port is not in range [0, 65535].
+        :raises ConditionFailed: If the bar_req_port is not in range [0, 65535].
+        :raises ConditionFailed: If the bar_sub_port is not in range [0, 65535].
+        :raises ConditionFailed: If the inst_req_port is not in range [0, 65535].
+        :raises ConditionFailed: If the inst_sub_port is not in range [0, 65535].
         """
         Condition.valid_string(service_address, 'service_address')
         Condition.in_range(tick_req_port, 'tick_req_port', 0, 65535)
@@ -359,7 +359,7 @@ cdef class LiveDataClient(DataClient):
 
         :param symbol: The tick symbol to subscribe to.
         :param handler: The callable handler for subscription (if None will just call print).
-        :raises ValueError: If the handler is not of type Callable.
+        :raises ConditionFailed: If the handler is not of type Callable.
         """
         Condition.type(handler, Callable, 'handler')
 
@@ -372,7 +372,7 @@ cdef class LiveDataClient(DataClient):
 
         :param bar_type: The bar type to subscribe to.
         :param handler: The callable handler for subscription.
-        :raises ValueError: If the handler is not of type Callable.
+        :raises ConditionFailed: If the handler is not of type Callable.
         """
         Condition.type(handler, Callable, 'handler')
 
@@ -385,7 +385,7 @@ cdef class LiveDataClient(DataClient):
 
         :param symbol: The instrument symbol to subscribe to.
         :param handler: The callable handler for subscription.
-        :raises ValueError: If the handler is not of type Callable.
+        :raises ConditionFailed: If the handler is not of type Callable.
         """
         Condition.type(handler, Callable, 'handler')
 
@@ -398,7 +398,7 @@ cdef class LiveDataClient(DataClient):
 
         :param symbol: The tick symbol to unsubscribe from.
         :param handler: The callable handler which was subscribed.
-        :raises ValueError: If the handler is not of type Callable.
+        :raises ConditionFailed: If the handler is not of type Callable.
         """
         Condition.type(handler, Callable, 'handler')
 
@@ -411,7 +411,7 @@ cdef class LiveDataClient(DataClient):
 
         :param bar_type: The bar type to unsubscribe from.
         :param handler: The callable handler which was subscribed.
-        :raises ValueError: If the handler is not of type Callable.
+        :raises ConditionFailed: If the handler is not of type Callable.
         """
         Condition.type(handler, Callable, 'handler')
 
@@ -424,7 +424,7 @@ cdef class LiveDataClient(DataClient):
 
         :param symbol: The instrument symbol to unsubscribe from.
         :param handler: The callable handler which was subscribed.
-        :raises ValueError: If the handler is not of type Callable.
+        :raises ConditionFailed: If the handler is not of type Callable.
         """
         Condition.type(handler, Callable, 'handler')
 

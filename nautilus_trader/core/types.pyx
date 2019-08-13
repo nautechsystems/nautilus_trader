@@ -130,7 +130,7 @@ cdef class GUID(Identifier):
         Initializes a new instance of the GUID class.
 
         :param value: The value of the GUID (input must be of type UUID).
-        :raises ValueError: If the value is not of type UUID.
+        :raises ConditionFailed: If the value is not of type UUID.
         """
         Condition.type(value, UUID, 'value')
 

@@ -138,7 +138,7 @@ cdef class Portfolio:
         
         :param strategy_id: The strategy identifier associated with the positions.
         :return: Dict[PositionId, Position].
-        :raises ValueError: If the strategy identifier is not registered with the portfolio.
+        :raises ConditionFailed: If the strategy identifier is not registered with the portfolio.
         """
         Condition.is_in(strategy_id, self._positions_active, 'strategy_id', 'positions_active')
         Condition.is_in(strategy_id, self._positions_closed, 'strategy_id', 'positions_closed')
@@ -151,7 +151,7 @@ cdef class Portfolio:
         
         :param strategy_id: The strategy identifier associated with the positions.
         :return: Dict[PositionId, Position].
-        :raises ValueError: If the strategy identifier is not registered with the portfolio.
+        :raises ConditionFailed: If the strategy identifier is not registered with the portfolio.
         """
         Condition.is_in(strategy_id, self._positions_active, 'strategy_id', 'positions_active')
 
@@ -163,7 +163,7 @@ cdef class Portfolio:
         
         :param strategy_id: The strategy identifier associated with the positions.
         :return: Dict[PositionId, Position].
-        :raises ValueError: If the strategy identifier is not registered with the portfolio.
+        :raises ConditionFailed: If the strategy identifier is not registered with the portfolio.
         """
         Condition.is_in(strategy_id, self._positions_closed, 'strategy_id', 'positions_closed')
 
@@ -215,7 +215,7 @@ cdef class Portfolio:
         
         :param strategy_id: The strategy identifier.
         :return: True if the strategy is flat, else False.
-        :raises ValueError: If the strategy identifier is not registered with the portfolio.
+        :raises ConditionFailed: If the strategy identifier is not registered with the portfolio.
         """
         Condition.is_in(strategy_id, self._positions_active, 'strategy_id', 'positions_active')
 
@@ -276,7 +276,7 @@ cdef class Portfolio:
         Register the given execution client with the portfolio to receive position events.
         
         :param client: The client to register.
-        :raises ValueError: If the client is None.
+        :raises ConditionFailed: If the client is None.
         """
         Condition.not_none(client, 'client')
 
@@ -288,7 +288,7 @@ cdef class Portfolio:
         Register the given strategy identifier with the portfolio.
         
         :param strategy: The strategy to register.
-        :raises ValueError: If the strategy is already registered with the portfolio.
+        :raises ConditionFailed: If the strategy is already registered with the portfolio.
         """
         Condition.true(strategy.id not in self._registered_strategies, 'strategy_id not in self._registered_strategies')
         Condition.not_in(strategy.id, self._positions_active, 'strategy_id', 'active_positions')
@@ -304,7 +304,7 @@ cdef class Portfolio:
         Deregister the given strategy with the portfolio.
         
         :param strategy: The strategy to deregister.
-        :raises ValueError: If the strategy is not registered with the portfolio.
+        :raises ConditionFailed: If the strategy is not registered with the portfolio.
         """
         Condition.true(strategy.id in self._registered_strategies, 'strategy_id in self._registered_strategies')
         Condition.is_in(strategy.id, self._positions_active, 'strategy_id', 'active_positions')
@@ -321,7 +321,7 @@ cdef class Portfolio:
         
         :param order_id: The order identifier to register.
         :param position_id: The position identifier to register.
-        :raises ValueError: If the order is already registered with the portfolio.
+        :raises ConditionFailed: If the order is already registered with the portfolio.
         """
         Condition.not_in(order_id, self._order_p_index, 'order_id', 'order_position_index')
 
@@ -333,7 +333,7 @@ cdef class Portfolio:
         
         :param event: The event to handle.
         :param strategy_id: The strategy identifier.
-        :raises ValueError: If the strategy identifier is not registered with the portfolio.
+        :raises ConditionFailed: If the strategy identifier is not registered with the portfolio.
         """
         assert isinstance(event, (OrderFilled, OrderPartiallyFilled))
         Condition.true(strategy_id in self._registered_strategies, 'strategy_id in registered_strategies')

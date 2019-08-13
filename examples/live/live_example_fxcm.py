@@ -18,9 +18,11 @@ AUDUSD_FXCM = Symbol('AUDUSD', Venue('FXCM'))
 BAR_TYPE = BarType(AUDUSD_FXCM, BarSpecification(1, Resolution.SECOND, QuoteType.BID))
 
 
-# This example requires a Redis instance listening on the default port 6379
-# This example requires a NautilusData instance listening on the default ports
-# This example requires a NautilusExecutor instance listening on the default ports
+# Requirements to run;
+#   - A Redis instance listening on the default port 6379
+#   - A NautilusData instance listening on the default ports
+#   - A NautilusExecutor instance listening on the default ports
+
 
 if __name__ == "__main__":
     strategy = EMACrossPy(

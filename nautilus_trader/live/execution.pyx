@@ -73,10 +73,10 @@ cdef class LiveExecClient(ExecutionClient):
         :param clock: The clock for the component.
         :param guid_factory: The GUID factory for the component.
         :param logger: The logger for the component (can be None).
-        :raises ValueError: If the service_address is not a valid string.
-        :raises ValueError: If the events_topic is not a valid string.
-        :raises ValueError: If the commands_port is not in range [0, 65535].
-        :raises ValueError: If the events_port is not in range [0, 65535].
+        :raises ConditionFailed: If the service_address is not a valid string.
+        :raises ConditionFailed: If the events_topic is not a valid string.
+        :raises ConditionFailed: If the commands_port is not in range [0, 65535].
+        :raises ConditionFailed: If the events_port is not in range [0, 65535].
         """
         Condition.valid_string(service_address, 'service_address')
         Condition.valid_string(events_topic, 'events_topic')

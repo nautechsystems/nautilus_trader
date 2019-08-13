@@ -15,7 +15,6 @@ from pandas import DataFrame
 from typing import List, Dict, Callable
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.typed_collections cimport TypedList
 from nautilus_trader.core.functions cimport as_utc_timestamp, format_zulu_datetime, pad_string
 from nautilus_trader.model.c_enums.currency cimport currency_string
 from nautilus_trader.model.c_enums.resolution cimport Resolution, resolution_string
@@ -59,8 +58,8 @@ cdef class BacktestEngine:
         :param strategies: The initial strategies for the backtest engine.
         :param fill_model: The initial fill model for the backtest engine.
         :param config: The configuration for the backtest engine.
-        :raises ValueError: If the instruments list contains a type other than Instrument.
-        :raises ValueError: If the strategies list contains a type other than TradingStrategy.
+        :raises ConditionFailed: If the instruments list contains a type other than Instrument.
+        :raises ConditionFailed: If the strategies list contains a type other than TradingStrategy.
         """
         # Data checked in BacktestDataClient
         Condition.list_type(instruments, Instrument, 'instruments')
@@ -454,7 +453,7 @@ cdef class BacktestEngine:
         for statistic in self.portfolio.analyzer.get_performance_stats_formatted():
             self.log.info(statistic)
 
-    cdef void _change_clocks_and_loggers(self, TypedList strategies):
+    cdef void _change_clocks_and_loggers(self, list strategies):
         # Replace the clocks and loggers for every strategy in the given list
 
         for strategy in strategies:

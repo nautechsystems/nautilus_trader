@@ -7,10 +7,9 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.datetime cimport datetime
-from typing import Callable
+from typing import List, Dict, Callable
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.typed_collections cimport TypedList, ConcurrentDictionary
 from nautilus_trader.model.objects cimport Venue, Symbol, Tick, BarType, Bar, Instrument
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logger cimport Logger, LoggerAdapter
@@ -40,10 +39,10 @@ cdef class DataClient:
         self._clock = clock
         self._guid_factory = guid_factory
         self._log = LoggerAdapter(self.__class__.__name__, logger)
-        self._tick_handlers = ConcurrentDictionary(Symbol, TypedList)
-        self._bar_handlers = ConcurrentDictionary(BarType, TypedList)
-        self._instrument_handlers = ConcurrentDictionary(Symbol, TypedList)
-        self._instruments = ConcurrentDictionary(Symbol, Instrument)
+        self._tick_handlers = {}        # type: Dict[Symbol, List[TickHandler]]
+        self._bar_handlers = {}         # type: Dict[BarType, List[BarHandler]]
+        self._instrument_handlers = {}  # type: Dict[Symbol, List[InstrumentHandler]]
+        self._instruments = {}          # type: Dict[Symbol, Instrument]
 
         self._log.info("Initialized.")
 
@@ -173,7 +172,7 @@ cdef class DataClient:
 
         :param symbol: The symbol of the instrument to return.
         :return: Instrument (if found)
-        :raises ValueError: If the instrument is not found.
+        :raises ConditionFailed: If the instrument is not found.
         """
         Condition.true(symbol in self._instruments, 'symbol in instruments')
 
@@ -184,7 +183,7 @@ cdef class DataClient:
         Condition.type(handler, Callable, 'handler')
 
         if symbol not in self._tick_handlers:
-            self._tick_handlers[symbol] = TypedList(TickHandler)
+            self._tick_handlers[symbol] = []  # type: List[TickHandler]
 
         cdef TickHandler tick_handler = TickHandler(handler)
         if tick_handler not in self._tick_handlers[symbol]:
@@ -199,7 +198,7 @@ cdef class DataClient:
         Condition.type(handler, Callable, 'handler')
 
         if bar_type not in self._bar_handlers:
-            self._bar_handlers[bar_type] = TypedList(BarHandler)
+            self._bar_handlers[bar_type] = []  # type: List[BarHandler]
 
         cdef BarHandler bar_handler = BarHandler(handler)
         if bar_handler not in self._bar_handlers[bar_type]:
@@ -214,7 +213,7 @@ cdef class DataClient:
         Condition.type(handler, Callable, 'handler')
 
         if symbol not in self._instrument_handlers:
-            self._instrument_handlers[symbol] = TypedList(InstrumentHandler)
+            self._instrument_handlers[symbol] = []  # type: List[InstrumentHandler]
 
         cdef InstrumentHandler instrument_handler = InstrumentHandler(handler)
         if instrument_handler not in self._instrument_handlers[symbol]:
@@ -312,9 +311,9 @@ cdef class DataClient:
 
     cdef void _reset(self):
         # Reset the data client by returning all stateful internal values to their initial value
-        self._tick_handlers = ConcurrentDictionary(Symbol, TypedList)
-        self._bar_handlers = ConcurrentDictionary(BarType, TypedList)
-        self._instrument_handlers = ConcurrentDictionary(Symbol, TypedList)
-        self._instruments = ConcurrentDictionary(Symbol, Instrument)
+        self._tick_handlers.clear()
+        self._bar_handlers.clear()
+        self._instrument_handlers.clear()
+        self._instruments.clear()
 
         self._log.debug("Reset.")
