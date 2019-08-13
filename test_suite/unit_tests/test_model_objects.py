@@ -11,6 +11,7 @@ import unittest
 from decimal import Decimal, InvalidOperation
 from datetime import timedelta
 
+from nautilus_trader.core.correctness import ConditionFailed
 from nautilus_trader.core.types import ValidString
 from nautilus_trader.model.enums import Resolution, QuoteType
 from nautilus_trader.model.objects import Quantity, Venue, Symbol, Price, Money
@@ -76,7 +77,7 @@ class ObjectTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ValueError, Quantity, -1)
+        self.assertRaises(ConditionFailed, Quantity, -1)
 
     def test_quantity_initialized_with_valid_inputs(self):
         # Arrange
@@ -175,7 +176,7 @@ class ObjectTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ValueError, Price, 1.00000, -1)
+        self.assertRaises(ConditionFailed, Price, 1.00000, -1)
 
     def test_price_from_string_with_no_decimal(self):
         # Arrange
@@ -334,7 +335,7 @@ class ObjectTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(ValueError, price1.add, price2)
+        self.assertRaises(ConditionFailed, price1.add, price2)
 
     def test_price_add_returns_expected_price(self):
         # Arrange

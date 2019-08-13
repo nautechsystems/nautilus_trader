@@ -10,7 +10,7 @@
 
   "logging": {
     "log_name": "test",
-    "log_level_console": "INFO",
+    "log_level_console": "DEBUG",
     "log_level_file": "DEBUG",
     "log_level_store": "WARNING",
     "log_thread": true,

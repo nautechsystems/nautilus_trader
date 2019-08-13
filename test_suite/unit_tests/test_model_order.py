@@ -11,6 +11,7 @@ import uuid
 
 from decimal import Decimal
 
+from nautilus_trader.core.correctness import ConditionFailed
 from nautilus_trader.core.types import GUID, ValidString
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.model.enums import OrderSide, OrderType, OrderStatus, TimeInForce
@@ -40,7 +41,7 @@ class OrderTests(unittest.TestCase):
         # Arrange
         # Act
         self.assertRaises(
-            ValueError,
+            ConditionFailed,
             Order,
             OrderId('AUDUSD-FXCM-123456-1'),
             AUDUSD_FXCM,
@@ -53,7 +54,7 @@ class OrderTests(unittest.TestCase):
         # Arrange
         # Act
         self.assertRaises(
-            ValueError,
+            ConditionFailed,
             Order,
             OrderId('AUDUSD-FXCM-123456-1'),
             AUDUSD_FXCM,
@@ -66,7 +67,7 @@ class OrderTests(unittest.TestCase):
         # Arrange
         # Act
         self.assertRaises(
-            ValueError,
+            ConditionFailed,
             Order,
             OrderId('AUDUSD-FXCM-123456-1'),
             AUDUSD_FXCM,
@@ -82,7 +83,7 @@ class OrderTests(unittest.TestCase):
         # Arrange
         # Act
         self.assertRaises(
-            ValueError,
+            ConditionFailed,
             Order,
             OrderId('AUDUSD-FXCM-123456-1'),
             AUDUSD_FXCM,
@@ -96,7 +97,7 @@ class OrderTests(unittest.TestCase):
         # Arrange
         # Act
         self.assertRaises(
-            ValueError,
+            ConditionFailed,
             Order,
             OrderId('AUDUSD-FXCM-123456-1'),
             AUDUSD_FXCM,
@@ -109,7 +110,7 @@ class OrderTests(unittest.TestCase):
         # Arrange
         # Act
         self.assertRaises(
-            ValueError,
+            ConditionFailed,
             Order,
             OrderId('AUDUSD-FXCM-123456-1'),
             AUDUSD_FXCM,

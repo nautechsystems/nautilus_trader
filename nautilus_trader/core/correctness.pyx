@@ -6,7 +6,8 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-cdef str FAILED = "Condition Failed"
+class ConditionFailed(Exception):
+    pass
 
 
 cdef class Condition:
@@ -25,7 +26,7 @@ cdef class Condition:
         :raises ValueError: If the predicate is False.
         """
         if not predicate:
-            raise ValueError(f"{FAILED} (the predicate {description} was False).")
+            raise ConditionFailed(f"The predicate {description} was False.")
 
     @staticmethod
     cdef type(object argument, object is_type, str param_name):
@@ -38,7 +39,7 @@ cdef class Condition:
         :raises ValueError: If the object is not of the expected type.
         """
         if not isinstance(argument, is_type):
-            raise ValueError(f"{FAILED} (the {param_name} argument was not of type {is_type}, type was {type(argument)}).")
+            raise ConditionFailed(f"The {param_name} argument was not of type {is_type}, type was {type(argument)}.")
 
     @staticmethod
     cdef type_or_none(object argument, object is_type, str param_name):
@@ -54,7 +55,7 @@ cdef class Condition:
             return
 
         if not isinstance(argument, is_type):
-            raise ValueError(f"{FAILED} (the {param_name} argument was not of type {is_type} or None, type was {type(argument)}).")
+            raise ConditionFailed(f"The {param_name} argument was not of type {is_type} or None, type was {type(argument)}.")
 
     @staticmethod
     cdef is_in(object key, dict dictionary, str param_name, str dict_name):
@@ -69,8 +70,7 @@ cdef class Condition:
         :raises ValueError: If the key is not contained in the dictionary keys.
         """
         if key not in dictionary:
-            raise ValueError(f"{FAILED} (the {param_name} {key} key was not contained within the "
-                             f"{dict_name} dictionary).")
+            raise ConditionFailed(f"The {param_name} {key} key was not contained within the {dict_name} dictionary.")
 
     @staticmethod
     cdef not_in(object key, dict dictionary, str param_name, str dict_name):
@@ -85,8 +85,7 @@ cdef class Condition:
         :raises ValueError: If the key is already contained in the dictionary keys.
         """
         if key in dictionary:
-            raise ValueError(f"{FAILED} (the {param_name} {key} key was already contained within the "
-                             f"{dict_name} dictionary).")
+            raise ConditionFailed(f"The {param_name} {key} key was already contained within the {dict_name} dictionary.")
 
     @staticmethod
     cdef list_type(list argument, type element_type, str param_name):
@@ -100,7 +99,7 @@ cdef class Condition:
         """
         for element in argument:
             if not isinstance(element, element_type):
-                raise ValueError(f"{FAILED} (the {param_name} list contained an element with a type other than {element_type}, type was {type(element)}).")
+                raise ConditionFailed(f"The {param_name} list contained an element with a type other than {element_type}, type was {type(element)}.")
 
     @staticmethod
     cdef dict_types(dict argument, type key_type, type value_type, str param_name):
@@ -116,11 +115,9 @@ cdef class Condition:
         """
         for key, value in argument.items():
             if not isinstance(key, key_type):
-                raise ValueError(f"{FAILED} (the {param_name} dictionary contained a key type other than {key_type}). "
-                                f"type = {type(key)}")
+                raise ConditionFailed(f"The {param_name} dictionary contained a key type other than {key_type}. type = {type(key)}")
             if not isinstance(value, value_type):
-                raise ValueError(f"{FAILED} (the {param_name} dictionary contained a value type other than {value_type}). "
-                                f"type = {type(value)}")
+                raise ConditionFailed(f"The {param_name} dictionary contained a value type other than {value_type}. type = {type(value)}")
 
     @staticmethod
     cdef none(object argument, str param_name):
@@ -132,7 +129,7 @@ cdef class Condition:
         :raises ValueError: If the argument is not None.
         """
         if argument is not None:
-            raise ValueError(f"{FAILED} (the {param_name} argument was not None).")
+            raise ConditionFailed(f"The {param_name} argument was not None.")
 
     @staticmethod
     cdef not_none(object argument, str param_name):
@@ -144,7 +141,7 @@ cdef class Condition:
         :raises ValueError: If the argument is None.
         """
         if argument is None:
-            raise ValueError(f"{FAILED} (the {param_name} argument was None).")
+            raise ConditionFailed(f"The {param_name} argument was None.")
 
     @staticmethod
     cdef valid_string(str argument, str param_name):
@@ -156,13 +153,13 @@ cdef class Condition:
         :raises ValueError: If the string argument is None, empty or whitespace.
         """
         if argument is None:
-            raise ValueError(f"{FAILED} (the {param_name} string argument was None).")
+            raise ConditionFailed(f"The {param_name} string argument was None.")
         if argument is '':
-            raise ValueError(f"{FAILED} (the {param_name} string argument was empty).")
+            raise ConditionFailed(f"The {param_name} string argument was empty.")
         if argument.isspace():
-            raise ValueError(f"{FAILED} (the {param_name} string argument was whitespace).")
+            raise ConditionFailed(f"The {param_name} string argument was whitespace.")
         if len(argument) > 2048:
-            raise ValueError(f"{FAILED} (the {param_name} string argument exceeded 2048 chars).")
+            raise ConditionFailed(f"The {param_name} string argument exceeded 2048 chars.")
 
     @staticmethod
     cdef equal(object argument1, object argument2):
@@ -174,7 +171,7 @@ cdef class Condition:
         :raises ValueError: If the arguments are not equal.
         """
         if not argument1.equals(argument2):
-            raise ValueError(f"{FAILED} (the arguments were not equal, values = {argument1} and {argument2}).")
+            raise ConditionFailed(f"The arguments were not equal, values = {argument1} and {argument2}.")
 
     @staticmethod
     cdef equal_lengths(
@@ -192,9 +189,8 @@ cdef class Condition:
         :raises ValueError: If the collections lengths are not equal.
         """
         if len(collection1) != len(collection2):
-            raise ValueError(
-                f"{FAILED} "
-                f"(the lengths of {collection1_name} and {collection2_name} were not equal, lengths = {len(collection1)} and {len(collection2)}).")
+            raise ConditionFailed(
+                f"The lengths of {collection1_name} and {collection2_name} were not equal, lengths = {len(collection1)} and {len(collection2)}.")
 
     @staticmethod
     cdef positive(float value, str param_name):
@@ -206,7 +202,7 @@ cdef class Condition:
         :raises ValueError: If the value is not positive (> 0).
         """
         if value <= 0:
-            raise ValueError(f"{FAILED} (the {param_name} was not positive, value was {value}).")
+            raise ConditionFailed(f"The {param_name} was not positive, value was {value}.")
 
     @staticmethod
     cdef not_negative(float value, str param_name):
@@ -218,7 +214,7 @@ cdef class Condition:
         :raises ValueError: If the value is negative (< 0).
         """
         if value < 0:
-            raise ValueError(f"{FAILED} (the {param_name} was negative, value was {value}).")
+            raise ConditionFailed(f"The {param_name} was negative, value was {value}.")
 
     @staticmethod
     cdef in_range(
@@ -236,8 +232,7 @@ cdef class Condition:
         :raises ValueError: If the value is not in the inclusive range.
         """
         if value < start or value > end:
-            raise ValueError(
-                f"{FAILED} (the {param_name} was out of range [{start}-{end}], value was {value}).")
+            raise ConditionFailed(f"The {param_name} was out of range [{start}-{end}], value was {value}.")
 
     @staticmethod
     cdef not_empty(object argument, str param_name):
@@ -249,7 +244,7 @@ cdef class Condition:
         :raises ValueError: If the iterable argument is empty.
         """
         if len(argument) == 0:
-            raise ValueError(f"{FAILED} (the {param_name} was an empty collection).")
+            raise ConditionFailed(f"The {param_name} was an empty collection.")
 
     @staticmethod
     cdef empty(object argument, str param_name):
@@ -261,7 +256,7 @@ cdef class Condition:
         :raises ValueError: If the iterable argument is not empty.
         """
         if len(argument) > 0:
-            raise ValueError(f"{FAILED} (the {param_name} was not an empty collection).")
+            raise ConditionFailed(f"The {param_name} was not an empty collection.")
 
 
 class PyCondition:

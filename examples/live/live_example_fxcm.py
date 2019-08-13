@@ -38,7 +38,5 @@ if __name__ == "__main__":
 
     input()
     node.stop()
-
-    input()
     node.disconnect()
     node.dispose()

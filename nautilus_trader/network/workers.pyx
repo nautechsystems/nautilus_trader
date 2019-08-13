@@ -83,7 +83,6 @@ cdef class MQWorker:
         Dispose of the MQWorker which close the socket (call disconnect first).
         """
         self._zmq_socket.close()
-        self._log.debug(f"Socket closed.")
         self._log.debug(f"Disposed.")
 
 
