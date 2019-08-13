@@ -6,9 +6,10 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+import uuid
+
 from cpython.datetime cimport datetime
 from decimal import Decimal
-from uuid import uuid4
 from typing import List
 
 from nautilus_trader.core.correctness cimport Condition
@@ -107,7 +108,7 @@ cdef class Order:
         self.average_price = None           # Can be None
         self.slippage = Decimal(0.0)
         self.status = OrderStatus.INITIALIZED
-        self.init_id = GUID(uuid4()) if init_id is None else init_id
+        self.init_id = GUID(uuid.uuid4()) if init_id is None else init_id
         self.is_buy = self.side == OrderSide.BUY
         self.is_sell = self.side == OrderSide.SELL
         self.is_active = False

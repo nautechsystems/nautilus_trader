@@ -6,11 +6,10 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+import uuid
 import unittest
 import time
 import zmq
-
-from uuid import uuid4
 
 from nautilus_trader.core.types import GUID
 from nautilus_trader.live.logger import LiveLogger
@@ -219,7 +218,7 @@ class LiveDataClientTests(unittest.TestCase):
         tick_data = self.data_mapper.map_ticks(ticks)
 
         data = self.data_serializer.serialize(tick_data)
-        data_response = DataResponse(data, 'BSON', GUID(uuid4()), GUID(uuid4()), UNIX_EPOCH)
+        data_response = DataResponse(data, 'BSON', GUID(uuid.uuid4()), GUID(uuid.uuid4()), UNIX_EPOCH)
         response_bytes = self.response_serializer.serialize(data_response)
         server = MockServer(zmq_context=self.zmq_context, port=self.tick_req_port, responses=[response_bytes])
         server.start()
@@ -251,7 +250,7 @@ class LiveDataClientTests(unittest.TestCase):
         bar_data = self.data_mapper.map_bars(bars, bar_type)
 
         data = self.data_serializer.serialize(bar_data)
-        data_response = DataResponse(data, 'BSON', GUID(uuid4()), GUID(uuid4()), UNIX_EPOCH)
+        data_response = DataResponse(data, 'BSON', GUID(uuid.uuid4()), GUID(uuid.uuid4()), UNIX_EPOCH)
         response_bytes = self.response_serializer.serialize(data_response)
         server = MockServer(zmq_context=self.zmq_context, port=self.bar_req_port, responses=[response_bytes])
         server.start()
@@ -278,7 +277,7 @@ class LiveDataClientTests(unittest.TestCase):
         instrument_data = self.data_mapper.map_instruments(instruments)
 
         data = self.data_serializer.serialize(instrument_data)
-        data_response = DataResponse(data, 'BSON', GUID(uuid4()), GUID(uuid4()), UNIX_EPOCH)
+        data_response = DataResponse(data, 'BSON', GUID(uuid.uuid4()), GUID(uuid.uuid4()), UNIX_EPOCH)
         response_bytes = self.response_serializer.serialize(data_response)
         server = MockServer(zmq_context=self.zmq_context, port=self.inst_req_port, responses=[response_bytes])
         server.start()
@@ -303,7 +302,7 @@ class LiveDataClientTests(unittest.TestCase):
         instrument_data = self.data_mapper.map_instruments(instruments)
 
         data = self.data_serializer.serialize(instrument_data)
-        data_response = DataResponse(data, 'BSON', GUID(uuid4()), GUID(uuid4()), UNIX_EPOCH)
+        data_response = DataResponse(data, 'BSON', GUID(uuid.uuid4()), GUID(uuid.uuid4()), UNIX_EPOCH)
         response_bytes = self.response_serializer.serialize(data_response)
         server = MockServer(zmq_context=self.zmq_context, port=self.inst_req_port, responses=[response_bytes])
         server.start()

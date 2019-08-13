@@ -6,7 +6,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from uuid import uuid4
+import uuid
 
 from nautilus_trader.core.types cimport GUID
 
@@ -36,7 +36,7 @@ cdef class TestGuidFactory(GuidFactory):
         Initializes a new instance of the TestGuidFactory class.
         """
         super().__init__()
-        self._guid = GUID(uuid4())
+        self._guid = GUID(uuid.uuid4())
 
     cpdef GUID generate(self):
         """
@@ -64,4 +64,4 @@ cdef class LiveGuidFactory(GuidFactory):
 
         :return: GUID.
         """
-        return GUID(uuid4())
+        return GUID(uuid.uuid4())

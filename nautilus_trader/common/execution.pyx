@@ -7,7 +7,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.datetime cimport datetime
-from typing import List, Dict, Callable
+from typing import Dict
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.order cimport Order

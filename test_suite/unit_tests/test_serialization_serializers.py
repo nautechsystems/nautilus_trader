@@ -787,7 +787,7 @@ class MsgPackRequestSerializerTests(unittest.TestCase):
 
         request = DataRequest(
             query,
-            GUID(uuid4()),
+            GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
         # Act
@@ -810,7 +810,7 @@ class MsgPackRequestSerializerTests(unittest.TestCase):
 
         request = DataRequest(
             query,
-            GUID(uuid4()),
+            GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
         # Act
@@ -830,7 +830,7 @@ class MsgPackRequestSerializerTests(unittest.TestCase):
 
         request = DataRequest(
             query,
-            GUID(uuid4()),
+            GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
         # Act
@@ -850,7 +850,7 @@ class MsgPackRequestSerializerTests(unittest.TestCase):
 
         request = DataRequest(
             query,
-            GUID(uuid4()),
+            GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
         # Act
@@ -876,8 +876,8 @@ class MsgPackResponseSerializerTests(unittest.TestCase):
         response = DataResponse(
             data=data,
             data_encoding=data_encoding,
-            correlation_id=GUID(uuid4()),
-            response_id=GUID(uuid4()),
+            correlation_id=GUID(uuid.uuid4()),
+            response_id=GUID(uuid.uuid4()),
             response_timestamp=UNIX_EPOCH)
 
         # Act
