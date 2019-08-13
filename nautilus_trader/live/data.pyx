@@ -6,11 +6,9 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import zmq
-
 from cpython.datetime cimport datetime
 from typing import Callable
-from zmq import Context
+from zmq import Context, ZMQError
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.typed_collections cimport ObjectCache
@@ -165,12 +163,15 @@ cdef class LiveDataClient(DataClient):
         """
         Disconnect from the data service.
         """
-        self._tick_req_worker.disconnect()
-        self._tick_sub_worker.disconnect()
-        self._bar_req_worker.disconnect()
-        self._bar_sub_worker.disconnect()
-        self._inst_req_worker.disconnect()
-        self._inst_sub_worker.disconnect()
+        try:
+            self._tick_req_worker.disconnect()
+            self._tick_sub_worker.disconnect()
+            self._bar_req_worker.disconnect()
+            self._bar_sub_worker.disconnect()
+            self._inst_req_worker.disconnect()
+            self._inst_sub_worker.disconnect()
+        except ZMQError as ex:
+            self._log.exception(ex)
 
     cpdef void reset(self):
         """

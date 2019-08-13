@@ -14,8 +14,8 @@ from nautilus_trader.live.node import TradingNode
 from examples.strategies.ema_cross import EMACrossPy
 
 AUDUSD_FXCM = Symbol('AUDUSD', Venue('FXCM'))
-BAR_TYPE = BarType(AUDUSD_FXCM, BarSpecification(1, Resolution.MINUTE, QuoteType.BID))
-#BAR_TYPE = BarType(AUDUSD_FXCM, BarSpecification(1, Resolution.SECOND, QuoteType.BID))
+#BAR_TYPE = BarType(AUDUSD_FXCM, BarSpecification(1, Resolution.MINUTE, QuoteType.BID))
+BAR_TYPE = BarType(AUDUSD_FXCM, BarSpecification(1, Resolution.SECOND, QuoteType.BID))
 
 
 # This example requires a Redis instance listening on the default port 6379
@@ -33,14 +33,12 @@ if __name__ == "__main__":
 
     node = TradingNode()
     node.trader.load_strategies([strategy])
-
-    input()
     node.connect()
+    node.start()
 
     input()
-    node.trader.start()
+    node.stop()
 
     input()
-    node.trader.stop()
     node.disconnect()
     node.dispose()

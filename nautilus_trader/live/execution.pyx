@@ -205,6 +205,6 @@ cdef class LiveExecClient(ExecutionClient):
         cdef Response response =  self._response_serializer.deserialize(response_bytes)
         self._log.debug(f"Received response {response}")
 
-    cdef void _deserialize_event(self, str topic, bytes event_bytes):
+    cpdef void _deserialize_event(self, str topic, bytes event_bytes):
         cdef Event event = self._event_serializer.deserialize(event_bytes)
         self._handle_event(event)

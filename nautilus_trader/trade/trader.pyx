@@ -126,10 +126,6 @@ cdef class Trader:
         self.started_datetimes.append(self._clock.time_now())
 
         self._log.info("Starting...")
-        self._data_client.connect()
-        self._exec_client.connect()
-
-        self._data_client.update_instruments()
 
         for strategy in self.strategies:
             strategy.start()
@@ -172,8 +168,6 @@ cdef class Trader:
             strategy.reset()
 
         self.portfolio.reset()
-        self._data_client.reset()
-        self._exec_client.reset()
         self._log.info("Reset.")
 
     cpdef dispose(self):
@@ -184,10 +178,6 @@ cdef class Trader:
         for strategy in self.strategies:
             strategy.dispose()
 
-        self._data_client.disconnect()
-        self._exec_client.disconnect()
-        self._data_client.dispose()
-        self._exec_client.dispose()
         self._log.info("Disposed.")
 
     cpdef dict strategy_status(self):
