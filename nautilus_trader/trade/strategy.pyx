@@ -38,7 +38,6 @@ cdef class TradingStrategy:
     """
 
     def __init__(self,
-                 str id_tag_trader='000',
                  str id_tag_strategy='001',
                  bint flatten_on_sl_reject=True,
                  bint flatten_on_stop=True,
@@ -51,7 +50,6 @@ cdef class TradingStrategy:
         """
         Initializes a new instance of the TradingStrategy class.
 
-        :param id_tag_trader: The identifier tag for the trader (should be unique at fund level).
         :param id_tag_strategy: The identifier tag for the strategy (should be unique at trader level).
         :param flatten_on_sl_reject: The flag indicating whether the position with an
         associated stop order should be flattened if the order is rejected.
@@ -74,9 +72,9 @@ cdef class TradingStrategy:
         Condition.positive(bar_capacity, 'bar_capacity')
 
         # Identification
-        self.trader_id = TraderId(f'Trader-{id_tag_trader}')
+        self.trader_id = TraderId('000')
         self.id = StrategyId(self.__class__.__name__ + '-' + id_tag_strategy)
-        self.id_tag_trader = IdTag(id_tag_trader)
+        self.id_tag_trader = IdTag('000')
         self.id_tag_strategy = IdTag(id_tag_strategy)
 
         # Components
@@ -238,15 +236,15 @@ cdef class TradingStrategy:
 
 # -- REGISTRATION METHODS ------------------------------------------------------------------------ #
 
-    cpdef void register_trader_id(self, str id_tag_trader):
+    cpdef void register_trader(self, TraderId trader_id, IdTag id_tag_trader):
         """
-        Change the trader identifier for the strategy.
+        Change the trader for the strategy.
 
+        :param trader_id: The trader identifier to change to.
         :param id_tag_trader: The trader identifier tag to change to.
-        :raises ConditionFailed: If the id_tag_trader is not a valid string.
         """
-        self.trader_id = TraderId(f'Trader-{id_tag_trader}')
-        self.id_tag_trader = IdTag(id_tag_trader)
+        self.trader_id = trader_id
+        self.id_tag_trader = id_tag_trader
 
     cpdef void register_data_client(self, DataClient client):
         """

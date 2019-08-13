@@ -20,6 +20,7 @@ from nautilus_trader.model.c_enums.currency cimport currency_string
 from nautilus_trader.model.c_enums.resolution cimport Resolution, resolution_string
 from nautilus_trader.model.objects cimport Venue, Symbol, Instrument, Tick
 from nautilus_trader.model.events cimport TimeEvent
+from nautilus_trader.model.identifiers cimport TraderId, IdTag
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.brokerage import CommissionCalculator
 from nautilus_trader.common.clock cimport LiveClock, TestClock
@@ -132,7 +133,8 @@ cdef class BacktestEngine:
             strategy.change_clock(TestClock())
 
         self.trader = Trader(
-            '000',
+            TraderId('BACKTESTER-000'),
+            IdTag('000'),
             strategies,
             self.data_client,
             self.exec_client,

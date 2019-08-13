@@ -1,6 +1,7 @@
 {
   "trader": {
-    "idTag": "TEST-001"
+    "trader_id": "TEST-001",
+    "id_tag_trader": "001"
   },
 
   "database": {
@@ -19,22 +20,22 @@
   },
 
   "dataClient": {
-    "serviceName": "NautilusData",
-    "serviceAddress": "localhost",
+    "service_name": "NautilusData",
+    "service_address": "localhost",
     "venue": "FXCM",
-    "tickReqPort": 55501,
-    "tickSubPort": 55502,
-    "barReqPort": 55503,
-    "barSubPort": 55504,
-    "instReqPort": 55505,
-    "instSubPort": 55506
+    "tick_req_port": 55501,
+    "tick_sub_port": 55502,
+    "bar_req_port": 55503,
+    "bar_sub_port": 55504,
+    "inst_req_port": 55505,
+    "inst_sub_port": 55506
   },
 
   "execClient": {
-    "serviceName": "NautilusExecutor",
-    "serviceAddress": "localhost",
-    "eventsTopic": "NAUTILUS:EVENTS",
-    "commandsPort": 55555,
-    "eventsPort": 55556
+    "service_name": "NautilusExecutor",
+    "service_address": "localhost",
+    "events_topic": "NAUTILUS:EVENTS",
+    "commands_port": 55555,
+    "events_port": 55556
   }
 }

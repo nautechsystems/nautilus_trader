@@ -26,7 +26,8 @@ cdef class Trader:
     """
 
     def __init__(self,
-                 str id_tag_trader,
+                 TraderId trader_id,
+                 IdTag id_tag_trader,
                  list strategies,
                  DataClient data_client,
                  ExecutionClient exec_client,
@@ -37,22 +38,21 @@ cdef class Trader:
         """
         Initializes a new instance of the Trader class.
 
-        :param id_tag_trader: The identifier tag for the trader (unique at fund level).
+        :param trader_id: The trader identifier for the instance (unique at fund level).
+        :param id_tag_trader: The order identifier tag for the trader (unique at fund level).
         :param strategies: The initial list of strategies to manage.
         :param logger: The logger for the trader.
-        :raises ConditionFailed: If the id_tag_trader is an invalid string.
         :raises ConditionFailed: If the data client is None.
         :raises ConditionFailed: If the exec client is None.
         :raises ConditionFailed: If the clock is None.
         """
-        Condition.valid_string(id_tag_trader, 'id_tag_trader')
         Condition.not_none(data_client, 'data_client')
         Condition.not_none(exec_client, 'exec_client')
         Condition.not_none(clock, 'clock')
 
         self._clock = clock
-        self.id = TraderId(self.__class__.__name__ + '-' + id_tag_trader)
-        self.id_tag_trader = IdTag(id_tag_trader)
+        self.id = trader_id
+        self.id_tag_trader = id_tag_trader
         self._log = LoggerAdapter(self.id.value, logger)
         self._data_client = data_client
         self._exec_client = exec_client
@@ -110,7 +110,7 @@ cdef class Trader:
             self.strategies.append(strategy)
 
         for strategy in self.strategies:
-            strategy.register_trader_id(self.id_tag_trader.value)
+            strategy.register_trader(trader_id=self.id, id_tag_trader=self.id_tag_trader)
             self._data_client.register_strategy(strategy)
             self._exec_client.register_strategy(strategy)
             self._log.info(f"Initialized {strategy}.")
