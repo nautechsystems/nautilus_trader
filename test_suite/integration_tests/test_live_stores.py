@@ -9,6 +9,7 @@
 import uuid
 import unittest
 
+from nautilus_trader.common.logger import LogLevel
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.objects import Quantity, Venue, Symbol, Price
 from nautilus_trader.model.identifiers import TraderId
@@ -57,6 +58,7 @@ class EventStoreTests(unittest.TestCase):
 
     def test_can_store_order_event(self):
         # Arrange
+        print(LogLevel.CRITICAL)
         order_id = OrderId('O-201908160323-999-001')
 
         event = OrderFilled(

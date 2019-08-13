@@ -6,20 +6,8 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
-
 from nautilus_trader.common.logger cimport Logger
 from nautilus_trader.live.stores cimport LogStore
-
-
-cdef class LogMessage:
-    """
-    Represents a log message.
-    """
-    cdef readonly datetime timestamp
-    cdef readonly int level
-    cdef readonly str text
-    cdef str as_string(self)
 
 
 cdef class LiveLogger(Logger):
