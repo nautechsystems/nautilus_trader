@@ -45,17 +45,20 @@ cdef class LogMessage:
     def __init__(self,
                  datetime timestamp,
                  LogLevel level,
-                 str text):
+                 str text,
+                 int thread_id=0):
         """
         Initializes a new instance of the LogMessage class.
 
         :param timestamp: The log message timestamp.
         :param level: The log message level.
         :param text: The log message text.
+        :param thread_id: The thread the log message was created on (default=0).
         """
         self.timestamp = timestamp
         self.level = level
         self.text = text
+        self.thread_id = thread_id
 
     cdef str level_string(self):
         """
@@ -71,7 +74,7 @@ cdef class LogMessage:
 
         :return: str.
         """
-        return f"{format_zulu_datetime(self.timestamp)} [{level_str(self.level)}] {self.text}"
+        return f"{format_zulu_datetime(self.timestamp)} [{self.thread_id}][{level_str(self.level)}] {self.text}"
 
 
 cdef class Logger:
@@ -196,7 +199,7 @@ cdef class Logger:
     cdef str _format_console_output(self, LogMessage message):
         # Return the formatted log message from the given arguments
         cdef str time = format_zulu_datetime(message.timestamp)
-        cdef str thread = '' if self._log_thread is False else f'[{threading.current_thread().ident}]'
+        cdef str thread = '' if self._log_thread is False else f'[{message.thread_id}]'
         cdef str formatted_text
 
         if message.level == LogLevel.WARNING:
@@ -318,7 +321,8 @@ cdef class LoggerAdapter:
             self._logger.log(LogMessage(
                 self._logger.clock.time_now(),
                 LogLevel.DEBUG,
-                self._format_message(message)))
+                self._format_message(message),
+                thread_id=threading.current_thread().ident))
 
     cpdef void info(self, str message):
         """
@@ -330,7 +334,8 @@ cdef class LoggerAdapter:
             self._logger.log(LogMessage(
                 self._logger.clock.time_now(),
                 LogLevel.INFO,
-                self._format_message(message)))
+                self._format_message(message),
+                thread_id=threading.current_thread().ident))
 
     cpdef void warning(self, str message):
         """
@@ -342,7 +347,8 @@ cdef class LoggerAdapter:
             self._logger.log(LogMessage(
                 self._logger.clock.time_now(),
                 LogLevel.WARNING,
-                self._format_message(message)))
+                self._format_message(message),
+                thread_id=threading.current_thread().ident))
 
     cpdef void error(self, str message):
         """
@@ -354,7 +360,8 @@ cdef class LoggerAdapter:
             self._logger.log(LogMessage(
                 self._logger.clock.time_now(),
                 LogLevel.ERROR,
-                self._format_message(message)))
+                self._format_message(message),
+                thread_id=threading.current_thread().ident))
 
     cpdef void critical(self, str message):
         """
@@ -366,7 +373,8 @@ cdef class LoggerAdapter:
             self._logger.log(LogMessage(
                 self._logger.clock.time_now(),
                 LogLevel.CRITICAL,
-                self._format_message(message)))
+                self._format_message(message),
+                thread_id=threading.current_thread().ident))
 
     cpdef void exception(self, ex):
         """
