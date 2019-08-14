@@ -17,6 +17,9 @@ from nautilus_trader.common.logger cimport LogMessage
 from nautilus_trader.serialization.serializers cimport EventSerializer, MsgPackEventSerializer
 
 
+cdef str NAUTILUS_TRADER = 'NautilusTrader'
+
+
 cdef class LogStore:
     """
     Provides a process and thread safe log store.
@@ -32,7 +35,7 @@ cdef class LogStore:
         """
         Condition.in_range(redis_port, 'redis_port', 0, 65535)
 
-        self._key = f'Nautilus:Traders:{trader_id.value}:LogStore'
+        self._key = f'{NAUTILUS_TRADER}-{trader_id.value}:LogStore'
         self._redis = redis.StrictRedis(host='localhost', port=redis_port, db=0)
         self._queue = Queue()
         self._process = Process(target=self._process_queue, daemon=True)
@@ -74,8 +77,8 @@ cdef class EventStore:
         """
         Condition.in_range(redis_port, 'redis_port', 0, 65535)
 
-        self._key_order_event = f'Nautilus:Traders:{trader_id.value}:Orders:'
-        self._key_position_event = f'Nautilus:Traders:{trader_id.value}:Positions:'
+        self._key_order_event = f'{NAUTILUS_TRADER}-{trader_id.value}:Orders:'
+        self._key_position_event = f'{NAUTILUS_TRADER}-{trader_id.value}:Positions:'
         self._serializer = serializer
         self._redis = redis.StrictRedis(host='localhost', port=redis_port, db=0)
         self._queue = Queue()
