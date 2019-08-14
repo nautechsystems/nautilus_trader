@@ -41,7 +41,7 @@ cdef class LogMessage:
     cdef readonly datetime timestamp
     cdef readonly LogLevel level
     cdef readonly str text
-    cdef readonly int thread_id
+    cdef readonly long thread_id
     cdef str level_string(self)
     cdef str as_string(self)
 

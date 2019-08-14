@@ -46,7 +46,7 @@ cdef class LogMessage:
                  datetime timestamp,
                  LogLevel level,
                  str text,
-                 int thread_id=0):
+                 long thread_id=0):
         """
         Initializes a new instance of the LogMessage class.
 
