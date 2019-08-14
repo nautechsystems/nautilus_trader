@@ -16,7 +16,7 @@ from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.network.responses import MessageReceived
 from nautilus_trader.serialization.serializers import MsgPackCommandSerializer, MsgPackResponseSerializer
 from nautilus_trader.live.execution import LiveExecClient
-from nautilus_trader.live.stores import EventStore
+from nautilus_trader.live.stores import LogStore, EventStore
 from test_kit.stubs import TestStubs
 from test_kit.mocks import MockCommandRouter, MockPublisher
 from test_kit.strategies import TestStrategy1
@@ -28,6 +28,7 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.guid import TestGuidFactory
 from nautilus_trader.common.logger import TestLogger
 from nautilus_trader.core.types import GUID
+from nautilus_trader.common.logger import LogMessage, LogLevel
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.identifiers import IdTag, OrderId, PositionId, ExecutionId, \
@@ -45,6 +46,25 @@ GBPUSD_FXCM = Symbol('GBPUSD', Venue('FXCM'))
 UTF8 = 'utf8'
 LOCAL_HOST = "127.0.0.1"
 
+# Requirements:
+#    - A Redis instance listening on the default port 6379
+
+
+class LogStoreTests(unittest.TestCase):
+
+    def setUp(self):
+        # Fixture Setup
+
+        self.trader_id = TraderId('000')
+        self.store = LogStore(trader_id=self.trader_id)
+
+    def test_can_store_order_event(self):
+        # Arrange
+        message = LogMessage(UNIX_EPOCH, LogLevel.WARNING, 'This is a test message.')
+
+        # Act
+        self.store.store(message)
+
 
 class EventStoreTests(unittest.TestCase):
 
@@ -53,12 +73,11 @@ class EventStoreTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
 
-        self.trader_id = TraderId('999')
+        self.trader_id = TraderId('000')
         self.store = EventStore(trader_id=self.trader_id)
 
     def test_can_store_order_event(self):
         # Arrange
-        print(LogLevel.CRITICAL)
         order_id = OrderId('O-201908160323-999-001')
 
         event = OrderFilled(

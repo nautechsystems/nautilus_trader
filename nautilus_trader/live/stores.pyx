@@ -52,7 +52,7 @@ cdef class LogStore:
         cdef LogMessage message
         while True:
             message = self._queue.get()
-            self._redis.rpush(self._key + message.level_string(), message.as_string())
+            self._redis.rpush(f'{self._key}:{message.level_string()}', message.as_string())
 
 
 cdef class EventStore:
