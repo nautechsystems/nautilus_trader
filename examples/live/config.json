@@ -10,11 +10,9 @@
   },
 
   "logging": {
-    "log_name": "test",
     "log_level_console": "DEBUG",
     "log_level_file": "DEBUG",
     "log_level_store": "WARNING",
-    "log_thread": true,
     "log_to_file": true,
     "log_file_path": "logs/"
   },
