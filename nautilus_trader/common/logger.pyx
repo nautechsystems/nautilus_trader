@@ -128,7 +128,7 @@ cdef class Logger:
         self._log_file = f'{self._log_file_path}{self.name}.log'
         self._log_store = []
         self._logger = logging.getLogger(name)
-        self._logger.setLevel(level_file)
+        self._logger.setLevel(level_file)  # TODO: Correct enum conversion.
 
         # Setup log file handling
         if log_to_file:
