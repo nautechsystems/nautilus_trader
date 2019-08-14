@@ -172,7 +172,7 @@ cdef class Logger:
         self._log_store = []
 
     cpdef void _log(self, LogMessage message):
-        cdef str formatted_msg = self._format_message(message)
+        cdef str formatted_msg = self._format_console_output(message)
         self._log_store_handler(message.level, formatted_msg)
         self._console_print_handler(message.level, formatted_msg)
 
@@ -182,6 +182,8 @@ cdef class Logger:
                     self._logger.debug(formatted_msg)
                 elif message.level == LogLevel.INFO:
                     self._logger.info(formatted_msg)
+                elif message.level == LogLevel.WARNING:
+                    self._logger.error(formatted_msg)
                 elif message.level == LogLevel.ERROR:
                     self._logger.error(formatted_msg)
                 elif message.level == LogLevel.CRITICAL:
@@ -189,24 +191,35 @@ cdef class Logger:
                 else:
                     raise RuntimeError(f"The log level {message.level_string()} was not recognized.")
             except IOError as ex:
-                self._console_print_handler(logging.ERROR, f"IOError: {ex}.")
+                self._console_print_handler(LogLevel.ERROR, f"IOError: {ex}.")
 
-    cdef str _format_message(self, LogMessage message):
+    cdef str _format_console_output(self, LogMessage message):
         # Return the formatted log message from the given arguments
         cdef str time = format_zulu_datetime(message.timestamp)
         cdef str thread = '' if self._log_thread is False else f'[{threading.current_thread().ident}]'
-        return f"{BOLD}{format_zulu_datetime(message.timestamp)}{ENDC} {thread}[{message.level_string()}] {message.text}"
+        cdef str formatted_text
 
-    cdef void _log_store_handler(self, LogLevel level, str message):
+        if message.level == LogLevel.WARNING:
+            formatted_text = f'{WARN}[{message.level_string()}] {message.text}{ENDC}'
+        elif message.level == LogLevel.ERROR:
+            formatted_text = f'{FAIL}[{message.level_string()}] {message.text}{ENDC}'
+        elif message.level == LogLevel.CRITICAL:
+            formatted_text = f'{FAIL}[{message.level_string()}] {message.text}{ENDC}'
+        else:
+            formatted_text = f'[{message.level_string()}] {message.text}'
+
+        return f"{BOLD}{time}{ENDC} {thread}{formatted_text}"
+
+    cdef void _log_store_handler(self, LogLevel level, str text):
         # Store the given log message if the given log level is >= the log_level_store
         if level >= self._log_level_store:
-            self._log_store.append(message)
+            self._log_store.append(text)
 
-    cdef void _console_print_handler(self, LogLevel level, str message):
+    cdef void _console_print_handler(self, LogLevel level, str text):
         # Print the given log message to the console if the given log level if
         # >= the log_level_console level.
         if self._console_prints and level >= self._log_level_console:
-            print(message)
+            print(text)
 
 
 cdef class TestLogger(Logger):
