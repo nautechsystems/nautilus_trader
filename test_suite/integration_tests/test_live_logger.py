@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-# <copyright file="test_live_stores.py" company="Nautech Systems Pty Ltd">
+# <copyright file="test_live_logger.py" company="Nautech Systems Pty Ltd">
 #  Copyright (C) 2015-2019 Nautech Systems Pty Ltd. All rights reserved.
 #  The use of this source code is governed by the license as found in the LICENSE.md file.
 #  https://nautechsystems.io
@@ -16,7 +16,8 @@ from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.network.responses import MessageReceived
 from nautilus_trader.serialization.serializers import MsgPackCommandSerializer, MsgPackResponseSerializer
 from nautilus_trader.live.execution import LiveExecClient
-from nautilus_trader.live.stores import LogStore, EventStore
+from nautilus_trader.live.logger import LogStore
+from nautilus_trader.live.stores import EventStore
 from test_kit.stubs import TestStubs
 from test_kit.mocks import MockCommandRouter, MockPublisher
 from test_kit.strategies import TestStrategy1

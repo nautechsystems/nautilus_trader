@@ -12,25 +12,28 @@ from nautilus_trader.common.clock cimport Clock
 
 
 cpdef enum LogLevel:
-    DEBUG = 0
-    INFO = 1,
-    WARNING = 2,
-    ERROR = 3,
-    CRITICAL = 4,
-    FATAL = 5,
+    VERBOSE = 0,
+    DEBUG = 1,
+    INFO = 2,
+    WARNING = 3,
+    ERROR = 4,
+    CRITICAL = 5,
+    FATAL = 6,
 
 cdef inline str level_str(int value):
     if value == 0:
-        return 'DBG'
+        return 'VRB'
     elif value == 1:
-        return 'INF'
+        return 'DBG'
     elif value == 2:
-        return 'WRN'
+        return 'INF'
     elif value == 3:
-        return 'ERR'
+        return 'WRN'
     elif value == 4:
-        return 'CRT'
+        return 'ERR'
     elif value == 5:
+        return 'CRT'
+    elif value == 6:
         return 'FTL'
 
 
@@ -93,12 +96,14 @@ cdef class LoggerAdapter:
     cdef readonly str component_name
 
     cpdef Logger get_logger(self)
+    cpdef void verbose(self, str message)
     cpdef void debug(self, str message)
     cpdef void info(self, str message)
     cpdef void warning(self, str message)
     cpdef void error(self, str message)
     cpdef void critical(self, str message)
     cpdef void exception(self, ex)
+    cdef void _send_to_logger(self, LogLevel level, str message)
     cdef str _format_message(self, str message)
 
 

@@ -6,8 +6,11 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from queue import Queue
-from threading import Thread
+import queue
+import multiprocessing
+import threading
+import redis
+
 from zmq import Context
 
 from nautilus_trader.core.correctness cimport Condition
@@ -18,6 +21,8 @@ from nautilus_trader.model.commands cimport (
     SubmitAtomicOrder,
     CancelOrder,
     ModifyOrder)
+from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.model.events cimport OrderEvent, PositionEvent
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.guid cimport LiveGuidFactory
@@ -31,7 +36,60 @@ from nautilus_trader.serialization.serializers cimport (
     MsgPackEventSerializer
 )
 from nautilus_trader.live.logger cimport LiveLogger
-from nautilus_trader.live.stores cimport EventStore
+from nautilus_trader.serialization.serializers cimport EventSerializer, MsgPackEventSerializer
+
+
+cdef class ExecutionDatabase:
+    """
+    Provides a process and thread safe execution database utilizing Redis.
+    """
+
+    def __init__(self,
+                 TraderId trader_id,
+                 int port=6379,
+                 EventSerializer serializer=MsgPackEventSerializer()):
+        """
+        Initializes a new instance of the EventStore class.
+
+        :param trader_id: The trader identifier.
+        :param port: The redis port to connect to.
+        :param serializer: The event serializer.
+        :raises ConditionFailed: If the redis_port is not in range [0, 65535].
+        """
+        Condition.in_range(port, 'redis_port', 0, 65535)
+
+        self._key_order_event = f'Nautilus:Traders:{trader_id.value}:Orders:'
+        self._key_position_event = f'Nautilus:Traders:{trader_id.value}:Positions:'
+        self._serializer = serializer
+        self._redis = redis.StrictRedis(host='localhost', port=port, db=0)
+        self._queue = multiprocessing.Queue()
+        self._process = multiprocessing.Process(target=self._process_queue, daemon=True)
+        self._process.start()
+
+    cpdef void store(self, Event message):
+        """
+        Store the given event message.
+        
+        :param message: The event message to store.
+        """
+        self._queue.put(message)
+
+    cpdef void _process_queue(self):
+        # Process the queue one item at a time
+        cdef Event event
+        while True:
+            event = self._queue.get()
+
+            if isinstance(event, OrderEvent):
+                self._store_order_event(event)
+            elif isinstance(event, PositionEvent):
+                self._store_position_event(event)
+
+    cdef void _store_order_event(self, OrderEvent event):
+        self._redis.rpush(self._key_order_event + event.order_id.value, self._serializer.serialize(event))
+
+    cdef void _store_position_event(self, PositionEvent event):
+        self._redis.rpush(self._key_position_event + event.position.id.value, self._serializer.serialize(event.order_fill))
 
 
 cdef class LiveExecClient(ExecutionClient):
@@ -56,7 +114,7 @@ cdef class LiveExecClient(ExecutionClient):
             LiveClock clock=LiveClock(),
             LiveGuidFactory guid_factory=LiveGuidFactory(),
             LiveLogger logger=LiveLogger(),
-            EventStore store=None):
+            ExecutionDatabase database=None):
         """
         Initializes a new instance of the LiveExecClient class.
 
@@ -73,6 +131,7 @@ cdef class LiveExecClient(ExecutionClient):
         :param clock: The clock for the component.
         :param guid_factory: The GUID factory for the component.
         :param logger: The logger for the component (can be None).
+        :param logger: The execution database for the component (can be None).
         :raises ConditionFailed: If the service_address is not a valid string.
         :raises ConditionFailed: If the events_topic is not a valid string.
         :raises ConditionFailed: If the commands_port is not in range [0, 65535].
@@ -89,9 +148,9 @@ cdef class LiveExecClient(ExecutionClient):
                          guid_factory,
                          logger)
         self._zmq_context = zmq_context
-        self._store = store
-        self._queue = Queue()
-        self._thread = Thread(target=self._process_queue, daemon=True)
+        self._store = database
+        self._queue = queue.Queue()
+        self._thread = threading.Thread(target=self._process_queue, daemon=True)
 
         self._commands_worker = RequestWorker(
             f'{self.__class__.__name__}.CommandRequester',
@@ -107,7 +166,7 @@ cdef class LiveExecClient(ExecutionClient):
             service_address,
             events_port,
             self._zmq_context,
-            self._deserialize_event,
+            self._event_handler,
             logger)
 
         self._command_serializer = command_serializer
@@ -185,26 +244,26 @@ cdef class LiveExecClient(ExecutionClient):
                 raise RuntimeError(f"Invalid message type on bus ({repr(message)}).")
 
     cdef void _account_inquiry(self, AccountInquiry command):
-        self._send_command(command)
+        self._command_handler(command)
 
     cdef void _submit_order(self, SubmitOrder command):
-        self._send_command(command)
+        self._command_handler(command)
 
     cdef void _submit_atomic_order(self, SubmitAtomicOrder command):
-        self._send_command(command)
+        self._command_handler(command)
 
     cdef void _modify_order(self, ModifyOrder command):
-        self._send_command(command)
+        self._command_handler(command)
 
     cdef void _cancel_order(self, CancelOrder command):
-        self._send_command(command)
+        self._command_handler(command)
 
-    cdef void _send_command(self, Command command):
+    cdef void _command_handler(self, Command command):
         self._log.debug(f"Sending {command} ...")
         cdef bytes response_bytes = self._commands_worker.send(self._command_serializer.serialize(command))
         cdef Response response =  self._response_serializer.deserialize(response_bytes)
         self._log.debug(f"Received response {response}")
 
-    cpdef void _deserialize_event(self, str topic, bytes event_bytes):
+    cpdef void _event_handler(self, str topic, bytes event_bytes):
         cdef Event event = self._event_serializer.deserialize(event_bytes)
         self._handle_event(event)

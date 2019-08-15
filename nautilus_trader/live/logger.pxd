@@ -6,8 +6,20 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.common.logger cimport Logger
-from nautilus_trader.live.stores cimport LogStore
+from nautilus_trader.common.logger cimport LogMessage, Logger
+
+
+cdef class LogStore:
+    """
+    Provides a log store.
+    """
+    cdef str _key
+    cdef object _process
+    cdef object _queue
+    cdef object _redis
+
+    cpdef void store(self, LogMessage message)
+    cpdef void _process_queue(self)
 
 
 cdef class LiveLogger(Logger):

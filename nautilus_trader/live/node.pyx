@@ -24,10 +24,9 @@ from nautilus_trader.model.objects cimport Venue
 from nautilus_trader.model.identifiers cimport IdTag, TraderId
 from nautilus_trader.trade.trader cimport Trader
 from nautilus_trader.trade.portfolio cimport Portfolio
-from nautilus_trader.live.logger cimport LiveLogger
+from nautilus_trader.live.logger cimport LogStore, LiveLogger
 from nautilus_trader.live.data cimport LiveDataClient
-from nautilus_trader.live.execution cimport LiveExecClient
-from nautilus_trader.live.stores cimport LogStore, EventStore
+from nautilus_trader.live.execution cimport ExecutionDatabase, LiveExecClient
 
 
 cdef class TradingNode:
@@ -40,11 +39,11 @@ cdef class TradingNode:
     cdef LogStore _log_store
     cdef LoggerAdapter _log
     cdef object _zmq_context
+    cdef ExecutionDatabase _exec_database
     cdef LiveDataClient _data_client
     cdef LiveExecClient _exec_client
 
     cdef readonly GUID id
-    cdef readonly EventStore event_store
     cdef readonly Account account
     cdef readonly Portfolio portfolio
     cdef readonly Trader trader
@@ -71,11 +70,9 @@ cdef class TradingNode:
             config = json.load(config_file)
 
         trader_id = TraderId(config['trader']['trader_id'])
-        database_config = config['database']
-
-        self._log_store = LogStore(trader_id=trader_id, redis_port=database_config['log_store_port'])
 
         log_config = config['logging']
+        self._log_store = LogStore(trader_id=trader_id, port=log_config['redis_port'])
         self._logger = LiveLogger(
             name=log_config['log_name'],
             level_console=LogLevel[log_config['log_level_console']],
@@ -89,14 +86,6 @@ cdef class TradingNode:
         self._log = LoggerAdapter(component_name=self.__class__.__name__, logger=self._logger)
         self._log_header()
         self._log.info("Starting...")
-
-        self.account = Account()
-        self.portfolio = Portfolio(
-            clock=self._clock,
-            guid_factory=self._guid_factory,
-            logger=self._logger)
-
-        self.event_store = EventStore(trader_id=trader_id, redis_port=database_config['event_store_port'])
 
         data_config = config['dataClient']
         self._data_client = LiveDataClient(
@@ -114,7 +103,14 @@ cdef class TradingNode:
             guid_factory=self._guid_factory,
             logger=self._logger)
 
+        self.account = Account()
+        self.portfolio = Portfolio(
+            clock=self._clock,
+            guid_factory=self._guid_factory,
+            logger=self._logger)
+
         exec_config = config['execClient']
+        self._exec_database = ExecutionDatabase(trader_id=trader_id, port=exec_config['redis_port'])
         self._exec_client = LiveExecClient(
             zmq_context=self._zmq_context,
             service_name=exec_config['service_name'],
@@ -127,7 +123,7 @@ cdef class TradingNode:
             clock=self._clock,
             guid_factory=self._guid_factory,
             logger=self._logger,
-            store=self.event_store)
+            database=self._exec_database)
 
         id_tag_trader= IdTag(config['trader']['id_tag_trader'])
         self.trader = Trader(
