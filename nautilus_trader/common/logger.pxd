@@ -74,9 +74,9 @@ cdef class Logger:
     cpdef list get_log_store(self)
     cpdef void clear_log_store(self)
     cpdef void _log(self, LogMessage message)
-    cdef str _format_console_output(self, LogMessage message)
-    cdef void _log_store_handler(self, LogLevel level, str text)
-    cdef void _console_print_handler(self, LogLevel level, str text)
+    cdef str _format_output(self, LogMessage message)
+    cdef void _in_memory_log_store(self, LogLevel level, str text)
+    cdef void _print_to_console(self, LogLevel level, str text)
 
 
 cdef class TestLogger(Logger):

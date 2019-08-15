@@ -74,11 +74,11 @@ cdef class TradingNode:
         log_config = config['logging']
         self._log_store = LogStore(trader_id=trader_id, port=log_config['redis_port'])
         self._logger = LiveLogger(
-            name=log_config['log_name'],
+            name=trader_id.value,
             level_console=LogLevel[log_config['log_level_console']],
             level_file=LogLevel[log_config['log_level_file']],
             level_store=LogLevel[log_config['log_level_store']],
-            log_thread=log_config['log_thread'],
+            log_thread=True,
             log_to_file=log_config['log_to_file'],
             log_file_path=log_config['log_file_path'],
             clock=self._clock,
