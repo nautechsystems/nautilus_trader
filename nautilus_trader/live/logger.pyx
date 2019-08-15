@@ -32,7 +32,7 @@ cdef class LogStore:
         """
         Condition.in_range(port, 'redis_port', 0, 65535)
 
-        self._key = f'Nautilus:Traders:{trader_id.value}:LogStore'
+        self._key = f'Traders-{trader_id.value}:LogStore'
         self._redis = redis.StrictRedis(host='localhost', port=port, db=0)
         self._queue = multiprocessing.Queue()
         self._process = multiprocessing.Process(target=self._process_queue, daemon=True)
