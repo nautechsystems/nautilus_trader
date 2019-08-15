@@ -57,6 +57,7 @@ cdef class ExecutionEngine:
     cdef void _handle_event(self, Event event)
     cdef void _register_order(self, Order order, StrategyId strategy_id, PositionId position_id)
 
+
 cdef class ExecutionClient:
     """
     The base class for all execution clients.
