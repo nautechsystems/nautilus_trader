@@ -175,17 +175,17 @@ cdef class Logger:
         self._log_store = []
 
     cpdef void _log(self, LogMessage message):
-        cdef str formatted_msg = self._format_console_output(message)
-        self._log_store_handler(message.level, formatted_msg)
-        self._console_print_handler(message.level, formatted_msg)
+        cdef str formatted_msg = self._format_output(message)
+        self._in_memory_log_store(message.level, formatted_msg)
+        self._print_to_console(message.level, formatted_msg)
 
         if self._log_to_file and message.level >= self._log_level_file:
             try:
                 self._logger.debug(message.as_string())
             except IOError as ex:
-                self._console_print_handler(LogLevel.ERROR, f"IOError: {ex}.")
+                self._print_to_console(LogLevel.ERROR, f"IOError: {ex}.")
 
-    cdef str _format_console_output(self, LogMessage message):
+    cdef str _format_output(self, LogMessage message):
         # Return the formatted log message from the given arguments
         cdef str time = format_zulu_datetime(message.timestamp)
         cdef str thread = '' if self._log_thread is False else f'[{message.thread_id}]'
@@ -202,12 +202,12 @@ cdef class Logger:
 
         return f"{BOLD}{time}{ENDC} {thread}{formatted_text}"
 
-    cdef void _log_store_handler(self, LogLevel level, str text):
+    cdef void _in_memory_log_store(self, LogLevel level, str text):
         # Store the given log message if the given log level is >= the log_level_store
         if level >= self._log_level_store:
             self._log_store.append(text)
 
-    cdef void _console_print_handler(self, LogLevel level, str text):
+    cdef void _print_to_console(self, LogLevel level, str text):
         # Print the given log message to the console if the given log level if
         # >= the log_level_console level.
         if self._console_prints and level >= self._log_level_console:

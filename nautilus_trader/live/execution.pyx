@@ -58,8 +58,8 @@ cdef class ExecutionDatabase:
         """
         Condition.in_range(port, 'redis_port', 0, 65535)
 
-        self._key_order_event = f'Nautilus:Traders:{trader_id.value}:Orders:'
-        self._key_position_event = f'Nautilus:Traders:{trader_id.value}:Positions:'
+        self._key_order_event = f'Trader-{trader_id.value}:Orders:'
+        self._key_position_event = f'Trader-{trader_id.value}:Positions:'
         self._serializer = serializer
         self._redis = redis.StrictRedis(host='localhost', port=port, db=0)
         self._queue = multiprocessing.Queue()
