@@ -4,11 +4,6 @@
     "id_tag_trader": "001"
   },
 
-  "database": {
-    "log_store_port": 6379,
-    "event_store_port": 6379
-  },
-
   "logging": {
     "log_name": "test",
     "log_level_console": "DEBUG",
@@ -16,7 +11,8 @@
     "log_level_store": "WARNING",
     "log_thread": true,
     "log_to_file": true,
-    "log_file_path": "logs/"
+    "log_file_path": "logs/",
+    "redis_port": 6379
   },
 
   "dataClient": {
@@ -36,6 +32,7 @@
     "service_address": "localhost",
     "events_topic": "NAUTILUS:EVENTS",
     "commands_port": 55555,
-    "events_port": 55556
+    "events_port": 55556,
+    "redis_port": 6379
   }
 }

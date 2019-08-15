@@ -8,8 +8,26 @@
 
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.common.execution cimport ExecutionClient
+from nautilus_trader.model.events cimport Event, OrderEvent, PositionEvent
 from nautilus_trader.serialization.base cimport CommandSerializer, ResponseSerializer, EventSerializer
-from nautilus_trader.live.stores cimport EventStore
+
+
+cdef class ExecutionDatabase:
+    """
+    Provides a process and thread safe execution database utilizing Redis.
+    """
+    cdef str _key_order_event
+    cdef str _key_position_event
+    cdef object _process
+    cdef object _queue
+    cdef object _serializer
+    cdef object _redis
+
+    cpdef void store(self, Event event)
+    cpdef void _process_queue(self)
+
+    cdef void _store_order_event(self, OrderEvent event)
+    cdef void _store_position_event(self, PositionEvent event)
 
 
 cdef class LiveExecClient(ExecutionClient):
@@ -25,10 +43,10 @@ cdef class LiveExecClient(ExecutionClient):
     cdef CommandSerializer _command_serializer
     cdef ResponseSerializer _response_serializer
     cdef EventSerializer _event_serializer
-    cdef EventStore _store
+    cdef ExecutionDatabase _store
 
     cdef readonly str events_topic
 
     cpdef void _process_queue(self)
-    cdef void _send_command(self, Command command)
-    cpdef void _deserialize_event(self, str topic, bytes event_bytes)
+    cdef void _command_handler(self, Command command)
+    cpdef void _event_handler(self, str topic, bytes event_bytes)

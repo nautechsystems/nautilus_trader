@@ -6,14 +6,53 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-import logging
+import queue
+import multiprocessing
+import threading
+import redis
 
-from threading import Thread
-from queue import Queue
-
+from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logger cimport LogLevel, LogMessage
-from nautilus_trader.live.stores cimport LogStore
+
+
+cdef class LogStore:
+    """
+    Provides a process and thread safe log store.
+    """
+
+    def __init__(self, TraderId trader_id, int port=6379):
+        """
+        Initializes a new instance of the LogStore class.
+
+        :param trader_id: The trader identifier.
+        :param port: The redis port to connect to.
+        :raises ConditionFailed: If the redis_port is not in range [0, 65535].
+        """
+        Condition.in_range(port, 'redis_port', 0, 65535)
+
+        self._key = f'Nautilus:Traders:{trader_id.value}:LogStore'
+        self._redis = redis.StrictRedis(host='localhost', port=port, db=0)
+        self._queue = multiprocessing.Queue()
+        self._process = multiprocessing.Process(target=self._process_queue, daemon=True)
+        self._process.start()
+
+    cpdef void store(self, LogMessage message):
+        """
+        Store the given log message.
+        
+        :param message: The log message to store.
+        """
+        self._queue.put(message)
+
+    cpdef void _process_queue(self):
+        # Process the queue one item at a time
+
+        cdef LogMessage message
+        while True:
+            message = self._queue.get()
+            self._redis.rpush(f'{self._key}:{message.level_string()}', message.as_string())
 
 
 cdef class LiveLogger(Logger):
@@ -59,9 +98,9 @@ cdef class LiveLogger(Logger):
                          log_file_path,
                          clock)
 
-        self._queue = Queue()
+        self._queue = queue.Queue()
         self._store = store
-        self._thread = Thread(target=self._process_queue, daemon=True)
+        self._thread = threading.Thread(target=self._process_queue, daemon=True)
         self._thread.start()
 
     cpdef void log(self, LogMessage message):

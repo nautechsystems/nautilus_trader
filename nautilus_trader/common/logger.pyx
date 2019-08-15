@@ -128,7 +128,7 @@ cdef class Logger:
         self._log_file = f'{self._log_file_path}{self.name}.log'
         self._log_store = []
         self._logger = logging.getLogger(name)
-        self._logger.setLevel(level_file)
+        self._logger.setLevel(logging.DEBUG)
 
         # Setup log file handling
         if log_to_file:
@@ -179,20 +179,9 @@ cdef class Logger:
         self._log_store_handler(message.level, formatted_msg)
         self._console_print_handler(message.level, formatted_msg)
 
-        if self._log_to_file:
+        if self._log_to_file and message.level >= self._log_level_file:
             try:
-                if message.level == LogLevel.DEBUG:
-                    self._logger.debug(formatted_msg)
-                elif message.level == LogLevel.INFO:
-                    self._logger.info(formatted_msg)
-                elif message.level == LogLevel.WARNING:
-                    self._logger.error(formatted_msg)
-                elif message.level == LogLevel.ERROR:
-                    self._logger.error(formatted_msg)
-                elif message.level == LogLevel.CRITICAL:
-                    self._logger.critical(formatted_msg)
-                else:
-                    raise RuntimeError(f"The log level {message.level_string()} was not recognized.")
+                self._logger.debug(formatted_msg)
             except IOError as ex:
                 self._console_print_handler(LogLevel.ERROR, f"IOError: {ex}.")
 
@@ -311,70 +300,53 @@ cdef class LoggerAdapter:
         """
         return self._logger
 
+    cpdef void verbose(self, str message):
+        """
+        Log the given verbose message with the logger.
+        
+        :param message: The message to log.
+        """
+        self._send_to_logger(LogLevel.VERBOSE, message)
+
     cpdef void debug(self, str message):
         """
         Log the given debug message with the logger.
 
-        :param message: The debug message to log.
+        :param message: The message to log.
         """
-        if not self.bypassed:
-            self._logger.log(LogMessage(
-                self._logger.clock.time_now(),
-                LogLevel.DEBUG,
-                self._format_message(message),
-                thread_id=threading.current_thread().ident))
+        self._send_to_logger(LogLevel.DEBUG, message)
 
     cpdef void info(self, str message):
         """
         Log the given information message with the logger.
 
-        :param message: The information message to log.
+        :param message: The message to log.
         """
-        if not self.bypassed:
-            self._logger.log(LogMessage(
-                self._logger.clock.time_now(),
-                LogLevel.INFO,
-                self._format_message(message),
-                thread_id=threading.current_thread().ident))
+        self._send_to_logger(LogLevel.INFO, message)
 
     cpdef void warning(self, str message):
         """
         Log the given warning message with the logger.
 
-        :param message: The warning message to log.
+        :param message: The message to log.
         """
-        if not self.bypassed:
-            self._logger.log(LogMessage(
-                self._logger.clock.time_now(),
-                LogLevel.WARNING,
-                self._format_message(message),
-                thread_id=threading.current_thread().ident))
+        self._send_to_logger(LogLevel.WARNING, message)
 
     cpdef void error(self, str message):
         """
         Log the given error message with the logger.
 
-        :param message: The error message to log.
+        :param message: The message to log.
         """
-        if not self.bypassed:
-            self._logger.log(LogMessage(
-                self._logger.clock.time_now(),
-                LogLevel.ERROR,
-                self._format_message(message),
-                thread_id=threading.current_thread().ident))
+        self._send_to_logger(LogLevel.ERROR, message)
 
     cpdef void critical(self, str message):
         """
         Log the given critical message with the logger.
 
-        :param message: The critical message to log.
+        :param message: The message to log.
         """
-        if not self.bypassed:
-            self._logger.log(LogMessage(
-                self._logger.clock.time_now(),
-                LogLevel.CRITICAL,
-                self._format_message(message),
-                thread_id=threading.current_thread().ident))
+        self._send_to_logger(LogLevel.CRITICAL, message)
 
     cpdef void exception(self, ex):
         """
@@ -392,6 +364,14 @@ cdef class LoggerAdapter:
             stack_trace_lines += line
 
         self.error(ex_string + stack_trace_lines)
+
+    cdef void _send_to_logger(self, LogLevel level, str message):
+        if not self.bypassed:
+            self._logger.log(LogMessage(
+                self._logger.clock.time_now(),
+                level,
+                self._format_message(message),
+                thread_id=threading.current_thread().ident))
 
     cdef str _format_message(self, str message):
         # Add the components name to the front of the log message
