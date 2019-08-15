@@ -25,12 +25,67 @@ from nautilus_trader.trade.portfolio cimport Portfolio
 from nautilus_trader.trade.strategy cimport TradingStrategy
 
 
+cdef class ExecutionEngine:
+    """
+    The base class for all execution engines.
+    """
+
+    def __init__(self, Logger logger):
+        """
+        Initializes a new instance of the ExecutionEngine class.
+
+        :param logger: The logger for the component.
+        """
+        self._log = LoggerAdapter(self.__class__.__name__, logger)
+
+        self._registered_strategies = {}  # type: Dict[StrategyId, TradingStrategy]
+        self._order_book = {}             # type: Dict[OrderId, Order]
+        self._order_strategy_index = {}   # type: Dict[OrderId, StrategyId]
+        self._orders_active = {}          # type: Dict[StrategyId, Dict[OrderId, Order]]
+        self._orders_completed = {}       # type: Dict[StrategyId, Dict[OrderId, Order]]
+
+    cpdef void register_strategy(self, TradingStrategy strategy):
+        """
+        Register the given strategy with the execution client.
+
+        :param strategy: The strategy to register.
+        :raises ConditionFailed: If the strategy is already registered with the execution client.
+        """
+        Condition.true(strategy.id not in self._registered_strategies, 'strategy not in registered_strategies')
+        Condition.true(strategy.id not in self._orders_active, 'strategy not in orders_active')
+        Condition.true(strategy.id not in  self._orders_completed, 'strategy not in orders_completed')
+
+        self._registered_strategies[strategy.id] = strategy
+        self._orders_active[strategy.id] = {}     # type: Dict[OrderId, Order]
+        self._orders_completed[strategy.id] = {}  # type: Dict[OrderId, Order]
+
+        self._log.debug(f"Registered {strategy}.")
+
+    cpdef void deregister_strategy(self, TradingStrategy strategy):
+        """
+        Deregister the given strategy with the execution client.
+
+        :param strategy: The strategy to deregister.
+        :raises ConditionFailed: If the strategy is not registered with the execution client.
+        """
+        Condition.true(strategy.id in self._registered_strategies, 'strategy in registered_strategies')
+        Condition.true(strategy.id in self._orders_active, 'strategy in orders_active')
+        Condition.true(strategy.id in self._orders_completed, 'strategy in orders_completed')
+
+        del self._registered_strategies[strategy.id]
+        del self._orders_active[strategy.id]
+        del self._orders_completed[strategy.id]
+
+        self._log.debug(f"De-registered {strategy}.")
+
+
 cdef class ExecutionClient:
     """
     The base class for all execution clients.
     """
 
     def __init__(self,
+                 ExecutionEngine engine,
                  Account account,
                  Portfolio portfolio,
                  Clock clock,
@@ -39,22 +94,19 @@ cdef class ExecutionClient:
         """
         Initializes a new instance of the ExecutionClient class.
 
+        :param engine: The execution engine to connect to the client.
         :param account: The account for the execution client.
         :param portfolio: The portfolio for the execution client.
         :param clock: The clock for the component.
         :param guid_factory: The GUID factory for the component.
         :param logger: The logger for the component.
         """
+        self._engine = engine
         self._clock = clock
         self._guid_factory = guid_factory
         self._log = LoggerAdapter(self.__class__.__name__, logger)
         self._account = account
         self._portfolio = portfolio
-        self._registered_strategies = {}  # type: Dict[StrategyId, TradingStrategy]
-        self._order_book = {}             # type: Dict[OrderId, Order]
-        self._order_strategy_index = {}   # type: Dict[OrderId, StrategyId]
-        self._orders_active = {}          # type: Dict[StrategyId, Dict[OrderId, Order]]
-        self._orders_completed = {}       # type: Dict[StrategyId, Dict[OrderId, Order]]
 
         self.command_count = 0
         self.event_count = 0
@@ -118,15 +170,9 @@ cdef class ExecutionClient:
         Register the given strategy with the execution client.
 
         :param strategy: The strategy to register.
-        :raises ConditionFailed: If the strategy is already registered with the execution client.
+        :raises ConditionFailed: If the strategy is already registered with the execution database.
         """
-        Condition.true(strategy.id not in self._registered_strategies, 'strategy not in registered_strategies')
-        Condition.true(strategy.id not in self._orders_active, 'strategy not in orders_active')
-        Condition.true(strategy.id not in  self._orders_completed, 'strategy not in orders_completed')
-
-        self._registered_strategies[strategy.id] = strategy
-        self._orders_active[strategy.id] = {}     # type: Dict[OrderId, Order]
-        self._orders_completed[strategy.id] = {}  # type: Dict[OrderId, Order]
+        self._engine.register_strategy(strategy)
         self._portfolio.register_strategy(strategy)
         strategy.register_execution_client(self)
         strategy.change_logger(self._log.get_logger())
@@ -140,14 +186,7 @@ cdef class ExecutionClient:
         :param strategy: The strategy to deregister.
         :raises ConditionFailed: If the strategy is not registered with the execution client.
         """
-        Condition.true(strategy.id in self._registered_strategies, 'strategy in registered_strategies')
-        Condition.true(strategy.id in self._orders_active, 'strategy in orders_active')
-        Condition.true(strategy.id in self._orders_completed, 'strategy in orders_completed')
-
-        del self._registered_strategies[strategy.id]
-        del self._orders_active[strategy.id]
-        del self._orders_completed[strategy.id]
-
+        self._engine.deregister_strategy(strategy)
         self._portfolio.deregister_strategy(strategy)
 
         self._log.debug(f"De-registered {strategy}.")
@@ -382,6 +421,7 @@ cdef class ExecutionClient:
         self._log.debug(f"Resetting...")
         self._order_book = {}                         # type: Dict[OrderId, Order]
         self._order_strategy_index = {}               # type: Dict[OrderId, StrategyId]
+        self.command_count = 0
         self.event_count = 0
 
         # Reset all active orders

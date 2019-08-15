@@ -43,7 +43,7 @@ cdef class LiveExecClient(ExecutionClient):
     cdef CommandSerializer _command_serializer
     cdef ResponseSerializer _response_serializer
     cdef EventSerializer _event_serializer
-    cdef ExecutionDatabase _store
+    cdef ExecutionDatabase _database
 
     cdef readonly str events_topic
 

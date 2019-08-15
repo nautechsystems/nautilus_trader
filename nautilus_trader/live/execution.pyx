@@ -148,7 +148,7 @@ cdef class LiveExecClient(ExecutionClient):
                          guid_factory,
                          logger)
         self._zmq_context = zmq_context
-        self._store = database
+        self._database = database
         self._queue = queue.Queue()
         self._thread = threading.Thread(target=self._process_queue, daemon=True)
 
@@ -236,8 +236,8 @@ cdef class LiveExecClient(ExecutionClient):
 
             if message.message_type == MessageType.EVENT:
                 self._handle_event(message)
-                if self._store is not None:  # TODO: Change this to calling a delegate
-                    self._store.store(message)
+                if self._database is not None:  # TODO: Change this to calling a delegate
+                    self._database.store(message)
             elif message.message_type == MessageType.COMMAND:
                 self._execute_command(message)
             else:

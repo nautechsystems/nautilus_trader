@@ -27,6 +27,36 @@ from nautilus_trader.trade.portfolio cimport Portfolio
 from nautilus_trader.trade.strategy cimport TradingStrategy
 
 
+cdef class ExecutionEngine:
+    """
+    The base class for all execution engines.
+    """
+    cdef LoggerAdapter _log
+    cdef dict _registered_strategies
+    cdef dict _order_strategy_index
+    cdef dict _order_book
+    cdef dict _orders_active
+    cdef dict _orders_completed
+
+    cpdef void execute_command(self, Command command)
+    cpdef void handle_event(self, Event event)
+    cpdef void register_strategy(self, TradingStrategy strategy)
+    cpdef void deregister_strategy(self, TradingStrategy strategy)
+    cpdef Order get_order(self, OrderId order_id)
+    cpdef dict get_orders_all(self)
+    cpdef dict get_orders_active_all(self)
+    cpdef dict get_orders_completed_all(self)
+    cpdef dict get_orders(self, StrategyId strategy_id)
+    cpdef dict get_orders_active(self, StrategyId strategy_id)
+    cpdef dict get_orders_completed(self, StrategyId strategy_id)
+    cpdef bint does_order_exist(self, OrderId order_id)
+    cpdef bint is_order_active(self, OrderId order_id)
+    cpdef bint is_order_complete(self, OrderId order_id)
+
+    cdef void _execute_command(self, Command command)
+    cdef void _handle_event(self, Event event)
+    cdef void _register_order(self, Order order, StrategyId strategy_id, PositionId position_id)
+
 cdef class ExecutionClient:
     """
     The base class for all execution clients.
@@ -36,11 +66,8 @@ cdef class ExecutionClient:
     cdef LoggerAdapter _log
     cdef Account _account
     cdef Portfolio _portfolio
-    cdef dict _registered_strategies
-    cdef dict _order_strategy_index
-    cdef dict _order_book
-    cdef dict _orders_active
-    cdef dict _orders_completed
+    cdef ExecutionEngine _engine
+
 
     cdef readonly int command_count
     cdef readonly int event_count
