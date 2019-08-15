@@ -181,7 +181,7 @@ cdef class Logger:
 
         if self._log_to_file and message.level >= self._log_level_file:
             try:
-                self._logger.debug(formatted_msg)
+                self._logger.debug(message.as_string())
             except IOError as ex:
                 self._console_print_handler(LogLevel.ERROR, f"IOError: {ex}.")
 
