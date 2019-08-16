@@ -25,7 +25,7 @@ from nautilus_trader.model.order cimport Order, AtomicOrder, OrderFactory
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.common.clock cimport Clock, LiveClock
 from nautilus_trader.common.logger cimport Logger, LoggerAdapter
-from nautilus_trader.common.execution cimport ExecutionClient
+from nautilus_trader.common.execution cimport ExecutionEngine
 from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.common.guid cimport GuidFactory, LiveGuidFactory
 from nautilus_trader.model.commands cimport AccountInquiry, SubmitOrder, SubmitAtomicOrder, ModifyOrder, CancelOrder
@@ -120,7 +120,7 @@ cdef class TradingStrategy:
 
         # Registered modules
         self._data_client = None  # Initialized when registered with data client
-        self._exec_client = None  # Initialized when registered with execution client
+        self._engine = None  # Initialized when registered with execution client
         self._portfolio = None    # Initialized when registered with execution client
         self.account = None       # Initialized when registered with execution client
 
@@ -265,15 +265,15 @@ cdef class TradingStrategy:
         self._data_client = client
         self.log.debug("Registered data client.")
 
-    cpdef void register_execution_client(self, ExecutionClient client):
+    cpdef void register_execution_engine(self, ExecutionEngine engine):
         """
-        Register the strategy with the given execution client.
+        Register the strategy with the given execution engine.
 
-        :param client: The execution client to register.
+        :param engine: The execution engine to register.
         """
-        self._exec_client = client
-        self._portfolio = client.get_portfolio()
-        self.account = client.get_account()
+        self._engine = engine
+        self._portfolio = engine._portfolio
+        self.account = engine._account
         self.log.debug("Registered execution client, portfolio, and account.")
 
     cpdef void register_indicator_ticks(
@@ -514,7 +514,7 @@ cdef class TradingStrategy:
         cdef ModifyOrder buffered_command = self._modify_order_buffer[order_id]
         if buffered_command.modified_price != self.order(order_id).price:
             self.log.info(f"Modifying {buffered_command.order_id} with price {buffered_command.modified_price}")
-            self._exec_client.execute_command(buffered_command)
+            self._engine.execute_command(buffered_command)
         del self._modify_order_buffer[order_id]
 
 
@@ -830,7 +830,7 @@ cdef class TradingStrategy:
         :return: Order.
         :raises ConditionFailed: If the execution client does not contain an order with the given identifier.
         """
-        return self._exec_client.get_order(order_id)
+        return self._engine.get_order(order_id)
 
     cpdef dict orders_all(self):
         """
@@ -838,7 +838,7 @@ cdef class TradingStrategy:
         
         :return: Dict[OrderId, Order]
         """
-        return self._exec_client.get_orders(self.id)
+        return self._engine.get_orders(self.id)
 
     cpdef dict orders_active(self):
         """
@@ -846,7 +846,7 @@ cdef class TradingStrategy:
         
         :return: Dict[OrderId, Order]
         """
-        return self._exec_client.get_orders_active(self.id)
+        return self._engine.get_orders_active(self.id)
 
     cpdef dict orders_completed(self):
         """
@@ -854,7 +854,7 @@ cdef class TradingStrategy:
         
         :return: Dict[OrderId, Order]
         """
-        return self._exec_client.get_orders_completed(self.id)
+        return self._engine.get_orders_completed(self.id)
 
     cpdef dict entry_orders(self):
         """
@@ -992,7 +992,7 @@ cdef class TradingStrategy:
         :param order_id: The order identifier.
         :return: True if the order exists, else False.
         """
-        return self._exec_client.does_order_exist(order_id)
+        return self._engine.does_order_exist(order_id)
 
     cpdef bint is_order_active(self, OrderId order_id):
         """
@@ -1002,7 +1002,7 @@ cdef class TradingStrategy:
         :return: True if the order exists and is active, else False.
         :raises ConditionFailed: If the order is not found.
         """
-        return self._exec_client.is_order_active(order_id)
+        return self._engine.is_order_active(order_id)
 
     cpdef bint is_order_complete(self, OrderId order_id):
         """
@@ -1012,7 +1012,7 @@ cdef class TradingStrategy:
         :return: True if the order does not exist or is complete, else False.
         :raises ConditionFailed: If the order is not found.
         """
-        return self._exec_client.is_order_complete(order_id)
+        return self._engine.is_order_complete(order_id)
 
     cpdef bint is_flat(self):
         """
@@ -1160,7 +1160,7 @@ cdef class TradingStrategy:
             self._guid_factory.generate(),
             self.clock.time_now())
 
-        self._exec_client.execute_command(command)
+        self._engine.execute_command(command)
 
     cpdef void submit_order(self, Order order, PositionId position_id):
         """
@@ -1170,7 +1170,7 @@ cdef class TradingStrategy:
         :param order: The order to submit.
         :param position_id: The position identifier to associate with this order.
         """
-        if self._exec_client is None:
+        if self._engine is None:
             self.log.error("Cannot submit order (execution client not registered).")
             return
 
@@ -1184,7 +1184,7 @@ cdef class TradingStrategy:
             self._guid_factory.generate(),
             self.clock.time_now())
 
-        self._exec_client.execute_command(command)
+        self._engine.execute_command(command)
 
     cpdef void submit_entry_order(self, Order order, PositionId position_id):
         """
@@ -1218,7 +1218,7 @@ cdef class TradingStrategy:
         :param atomic_order: The atomic order to submit.
         :param position_id: The position identifier to associate with this order.
         """
-        if self._exec_client is None:
+        if self._engine is None:
             self.log.error("Cannot submit atomic order (execution client not registered).")
             return
 
@@ -1244,7 +1244,7 @@ cdef class TradingStrategy:
             self._guid_factory.generate(),
             self.clock.time_now())
 
-        self._exec_client.execute_command(command)
+        self._engine.execute_command(command)
 
     cpdef void modify_order(self, Order order, Price new_price):
         """
@@ -1254,7 +1254,7 @@ cdef class TradingStrategy:
         :param order: The order to modify.
         :param new_price: The new price for the given order.
         """
-        if self._exec_client is None:
+        if self._engine is None:
             self.log.error("Cannot modify order (execution client not registered).")
             return
 
@@ -1274,7 +1274,7 @@ cdef class TradingStrategy:
         self._modify_order_buffer[order.id] = command
         self.log.info(f"Modifying {order} with new price {new_price}")
 
-        self._exec_client.execute_command(command)
+        self._engine.execute_command(command)
 
     cpdef void cancel_order(self, Order order, str cancel_reason=None):
         """
@@ -1285,7 +1285,7 @@ cdef class TradingStrategy:
         :param cancel_reason: The reason for cancellation (will be logged).
         :raises ConditionFailed: If the strategy has not been registered with an execution client.
         """
-        if self._exec_client is None:
+        if self._engine is None:
             self.log.error("Cannot cancel order (execution client not registered).")
             return
 
@@ -1299,7 +1299,7 @@ cdef class TradingStrategy:
             self._guid_factory.generate(),
             self.clock.time_now())
 
-        self._exec_client.execute_command(command)
+        self._engine.execute_command(command)
 
     cpdef void cancel_all_orders(self, str cancel_reason=None):
         """
@@ -1309,11 +1309,11 @@ cdef class TradingStrategy:
         :param cancel_reason: The reason for cancellation (will be logged).
         :raises ConditionFailed: If the cancel_reason is not a valid string.
         """
-        if self._exec_client is None:
+        if self._engine is None:
             self.log.error("Cannot cancel all orders (execution client not registered).")
             return
 
-        cdef dict all_orders = self._exec_client.get_orders(self.id)
+        cdef dict all_orders = self._engine.get_orders(self.id)
         cdef CancelOrder command
 
         for order_id, order in all_orders.items():
@@ -1326,7 +1326,7 @@ cdef class TradingStrategy:
                     self._guid_factory.generate(),
                     self.clock.time_now())
 
-                self._exec_client.execute_command(command)
+                self._engine.execute_command(command)
 
     cpdef void flatten_position(self, PositionId position_id):
         """
@@ -1337,7 +1337,7 @@ cdef class TradingStrategy:
         :param position_id: The position identifier to flatten.
         :raises ConditionFailed: If the position_id is not found in the position book.
         """
-        if self._exec_client is None:
+        if self._engine is None:
             self.log.error("Cannot flatten position (execution client not registered).")
             return
 
@@ -1362,7 +1362,7 @@ cdef class TradingStrategy:
         them to the execution service. If no positions found or a position is None
         then will log a warning.
         """
-        if self._exec_client is None:
+        if self._engine is None:
             self.log.error("Cannot flatten all positions (execution client not registered).")
             return
 

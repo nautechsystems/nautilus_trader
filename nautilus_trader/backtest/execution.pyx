@@ -23,7 +23,6 @@ from nautilus_trader.model.objects cimport Brokerage, Symbol, Price, Tick, Bar, 
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.events cimport (
-    Event,
     OrderEvent,
     AccountEvent,
     OrderSubmitted,
@@ -38,7 +37,6 @@ from nautilus_trader.model.events cimport (
 )
 from nautilus_trader.model.identifiers cimport OrderId, ExecutionId, ExecutionTicket, AccountNumber
 from nautilus_trader.model.commands cimport (
-    Command,
     AccountInquiry,
     SubmitOrder,
     SubmitAtomicOrder,
@@ -50,8 +48,8 @@ from nautilus_trader.common.brokerage cimport CommissionCalculator
 from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.guid cimport TestGuidFactory
 from nautilus_trader.common.logger cimport Logger
-from nautilus_trader.common.execution cimport ExecutionClient
-from nautilus_trader.trade.portfolio cimport Portfolio
+from nautilus_trader.common.execution cimport ExecutionEngine, ExecutionClient
+from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.backtest.models cimport FillModel
 
 # Stop order types
@@ -67,6 +65,7 @@ cdef class BacktestExecClient(ExecutionClient):
     """
 
     def __init__(self,
+                 ExecutionEngine engine,
                  list instruments: List[Instrument],
                  bint frozen_account,
                  Money starting_capital,
@@ -91,11 +90,11 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         Condition.list_type(instruments, Instrument, 'instruments')
 
-        super().__init__(account,
-                         portfolio,
-                         clock,
-                         guid_factory,
-                         logger)
+        super().__init__(engine, logger)
+
+        self._clock = clock
+        self._guid_factory = guid_factory
+        self._account = account
 
         # Convert instruments list to dictionary indexed by symbol
         cdef dict instruments_dict = {}      # type: Dict[Symbol, Instrument]
@@ -123,6 +122,9 @@ cdef class BacktestExecClient(ExecutionClient):
 
         self._set_slippage_index()
         self.reset_account()
+
+    cpdef datetime time_now(self):
+        return self._clock.time_now()
 
     cpdef void connect(self):
         """
@@ -193,7 +195,7 @@ cdef class BacktestExecClient(ExecutionClient):
             command = AccountInquiry(
             self._guid_factory.generate(),
             self._clock.time_now())
-            self._account_inquiry(command)
+            self.account_inquiry(command)
 
         # Simulate market dynamics
         for order_id, order in self.working_orders.copy().items():  # Copies dict to avoid resize during loop
@@ -244,28 +246,26 @@ cdef class BacktestExecClient(ExecutionClient):
                     del self.working_orders[order.id]
                     self._expire_order(order)
 
-    cpdef void execute_command(self, Command command):
-        """
-        Execute the given command.
-        
-        :param command: The command to execute.
-        """
-        self._execute_command(command)
-
-    cpdef void handle_event(self, Event event):
-        """
-        Handle the given event.
-        
-        :param event: The event to handle
-        """
-        self._handle_event(event)
+    # cpdef void execute_command(self, Command command):
+    #     """
+    #     Execute the given command.
+    #
+    #     :param command: The command to execute.
+    #     """
+    #     self._engine.execute_command(command)
+    #
+    # cpdef void handle_event(self, Event event):
+    #     """
+    #     Handle the given event.
+    #
+    #     :param event: The event to handle
+    #     """
+    #     self._engine.handle_event(event)
 
     cpdef void check_residuals(self):
         """
         Check for any residual objects and log warnings if any are found.
         """
-        self._check_residuals()
-
         for order_list in self.atomic_child_orders.values():
             for order in order_list:
                 self._log.warning(f"Residual child-order {order}")
@@ -330,7 +330,7 @@ cdef class BacktestExecClient(ExecutionClient):
 
 # -- COMMAND EXECUTION --------------------------------------------------------------------------- #
 
-    cdef void _account_inquiry(self, AccountInquiry command):
+    cpdef void account_inquiry(self, AccountInquiry command):
         # Generate event
         cdef AccountEvent event = AccountEvent(
             self._account.id,
@@ -347,9 +347,9 @@ cdef class BacktestExecClient(ExecutionClient):
             self._guid_factory.generate(),
             self._clock.time_now())
 
-        self._handle_event(event)
+        self._engine.handle_event(event)
 
-    cdef void _submit_order(self, SubmitOrder command):
+    cpdef void submit_order(self, SubmitOrder command):
         # Generate event
         cdef OrderSubmitted submitted = OrderSubmitted(
             command.order.id,
@@ -357,10 +357,10 @@ cdef class BacktestExecClient(ExecutionClient):
             self._guid_factory.generate(),
             self._clock.time_now())
 
-        self._handle_event(submitted)
+        self._engine.handle_event(submitted)
         self._process_order(command.order)
 
-    cdef void _submit_atomic_order(self, SubmitAtomicOrder command):
+    cpdef void submit_atomic_order(self, SubmitAtomicOrder command):
         cdef list atomic_orders = [command.atomic_order.stop_loss]
         if command.atomic_order.has_take_profit:
             atomic_orders.append(command.atomic_order.take_profit)
@@ -378,9 +378,9 @@ cdef class BacktestExecClient(ExecutionClient):
             self._guid_factory.generate(),
             self._clock.time_now())
 
-        self._submit_order(submit_order)
+        self.submit_order(submit_order)
 
-    cdef void _cancel_order(self, CancelOrder command):
+    cpdef void cancel_order(self, CancelOrder command):
         if command.order_id not in self.working_orders:
             self._cancel_reject_order(command.order_id, 'cancel order', 'order not found')
             return  # Rejected the cancel order command
@@ -397,10 +397,10 @@ cdef class BacktestExecClient(ExecutionClient):
         # Remove from working orders (checked it was in dictionary above)
         del self.working_orders[command.order_id]
 
-        self._handle_event(cancelled)
+        self._engine.handle_event(cancelled)
         self._check_oco_order(command.order_id)
 
-    cdef void _modify_order(self, ModifyOrder command):
+    cpdef void modify_order(self, ModifyOrder command):
         if command.order_id not in self.working_orders:
             self._cancel_reject_order(command.order_id, 'modify order', 'order not found')
             return  # Rejected the modify order command
@@ -440,7 +440,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._guid_factory.generate(),
             self._clock.time_now())
 
-        self._handle_event(modified)
+        self._engine.handle_event(modified)
 
 
 # -- EVENT HANDLING ------------------------------------------------------------------------------ #
@@ -453,7 +453,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._guid_factory.generate(),
             self._clock.time_now())
 
-        self._handle_event(accepted)
+        self._engine.handle_event(accepted)
 
     cdef void _reject_order(self, Order order, str reason):
         # Generate event
@@ -464,7 +464,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._guid_factory.generate(),
             self._clock.time_now())
 
-        self._handle_event(rejected)
+        self._engine.handle_event(rejected)
         self._check_oco_order(order.id)
         self._clean_up_child_orders(order.id)
 
@@ -482,7 +482,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._guid_factory.generate(),
             self._clock.time_now())
 
-        self._handle_event(cancel_reject)
+        self._engine.handle_event(cancel_reject)
 
     cdef void _expire_order(self, Order order):
         # Generate event
@@ -492,7 +492,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._guid_factory.generate(),
             self._clock.time_now())
 
-        self._handle_event(expired)
+        self._engine.handle_event(expired)
 
         cdef OrderId first_child_order_id
         cdef OrderId other_oco_order_id
@@ -588,7 +588,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._clock.time_now(),
             order.expire_time)
 
-        self._handle_event(working)
+        self._engine.handle_event(working)
         self._log.debug(f"{order.id} WORKING at {order.price}.")
 
     cdef void _fill_order(self, Order order, Price fill_price):
@@ -606,10 +606,10 @@ cdef class BacktestExecClient(ExecutionClient):
             self._clock.time_now())
 
         # Adjust account if position exists
-        if self._portfolio.is_position_for_order(order.id):
+        if self._engine._portfolio.is_position_for_order(order.id):
             self._adjust_account(filled)
 
-        self._handle_event(filled)
+        self._engine.handle_event(filled)
         self._check_oco_order(order.id)
 
         # Work any atomic child orders
@@ -632,7 +632,7 @@ cdef class BacktestExecClient(ExecutionClient):
 
         if order_id in self.oco_orders:
             oco_order_id = self.oco_orders[order_id]
-            oco_order = self._order_book[oco_order_id]
+            oco_order = self._engine._order_book[oco_order_id]
             del self.oco_orders[order_id]
             del self.oco_orders[oco_order_id]
 
@@ -659,7 +659,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._guid_factory.generate(),
             self._clock.time_now())
 
-        self._handle_event(event)
+        self._engine.handle_event(event)
 
     cdef void _cancel_oco_order(self, Order order, OrderId oco_order_id):
         # order is the OCO order to cancel
@@ -673,11 +673,11 @@ cdef class BacktestExecClient(ExecutionClient):
             self._clock.time_now())
 
         self._log.debug(f"OCO order cancelled from {oco_order_id}.")
-        self._handle_event(event)
+        self._engine.handle_event(event)
 
     cdef void _adjust_account(self, OrderEvent event):
         # Adjust the positions based on the given order fill event
-        cdef Symbol symbol = self._order_book[event.order_id].symbol
+        cdef Symbol symbol = self._engine._order_book[event.order_id].symbol
         cdef Instrument instrument = self.instruments[symbol]
         cdef float exchange_rate = self.exchange_calculator.get_rate(
             quote_currency=instrument.quote_currency,
@@ -686,7 +686,7 @@ cdef class BacktestExecClient(ExecutionClient):
             bid_rates=self._build_current_bid_rates(),
             ask_rates=self._build_current_ask_rates())
 
-        cdef Position position = self._portfolio.get_position_for_order(event.order_id)
+        cdef Position position = self._engine._portfolio.get_position_for_order(event.order_id)
         cdef Money pnl = self._calculate_pnl(
             direction=position.market_position,
             entry_price=position.average_entry_price,
@@ -722,7 +722,7 @@ cdef class BacktestExecClient(ExecutionClient):
             event_id=self._guid_factory.generate(),
             event_timestamp=self._clock.time_now())
 
-        self._handle_event(account_event)
+        self._engine.handle_event(account_event)
 
     cdef dict _build_current_bid_rates(self):
         # Return the current currency bid rates in the markets

@@ -12,7 +12,8 @@ from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.guid cimport GuidFactory
 from nautilus_trader.common.logger cimport Logger, LoggerAdapter
-from nautilus_trader.common.execution cimport ExecutionClient
+from nautilus_trader.common.execution cimport ExecutionEngine
+from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
@@ -24,7 +25,6 @@ from nautilus_trader.model.identifiers cimport PositionIdGenerator
 from nautilus_trader.model.objects cimport Symbol, Price, Tick, BarType, Bar, Instrument
 from nautilus_trader.model.order cimport Order, AtomicOrder, OrderFactory
 from nautilus_trader.model.position cimport Position
-from nautilus_trader.trade.portfolio cimport Portfolio
 
 
 cdef class TradingStrategy:
@@ -62,7 +62,7 @@ cdef class TradingStrategy:
 
     cdef readonly Account account
     cdef DataClient _data_client
-    cdef ExecutionClient _exec_client
+    cdef ExecutionEngine _engine
     cdef Portfolio _portfolio
 
     cdef readonly bint is_running
@@ -82,7 +82,7 @@ cdef class TradingStrategy:
 # -- REGISTRATION METHODS ------------------------------------------------------------------------ #
     cpdef void register_trader(self, TraderId trader_id, IdTag id_tag_trader)
     cpdef void register_data_client(self, DataClient client)
-    cpdef void register_execution_client(self, ExecutionClient client)
+    cpdef void register_execution_engine(self, ExecutionEngine engine)
     cpdef void register_indicator_ticks(self, Symbol symbol, indicator, update_method)
     cpdef void register_indicator_bars(self, BarType bar_type, indicator, update_method)
     cpdef void register_entry_order(self, Order order, PositionId position_id)
