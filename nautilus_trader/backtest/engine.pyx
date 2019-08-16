@@ -26,7 +26,7 @@ from nautilus_trader.common.brokerage import CommissionCalculator
 from nautilus_trader.common.clock cimport LiveClock, TestClock
 from nautilus_trader.common.guid cimport TestGuidFactory
 from nautilus_trader.common.logger cimport TestLogger, nautilus_header
-from nautilus_trader.trade.portfolio cimport Portfolio
+from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.trade.strategy cimport TradingStrategy
 from nautilus_trader.backtest.config cimport BacktestConfig
 from nautilus_trader.backtest.data cimport BidAskBarPair, BacktestDataClient
@@ -116,7 +116,13 @@ cdef class BacktestEngine:
             clock=self.test_clock,
             logger=self.test_logger)
 
+        self.exec_engine = ExecutionEngine(
+            account=self.account,
+            portfolio=self.portfolio,
+            logger=self.test_logger)
+
         self.exec_client = BacktestExecClient(
+            engine=self.exec_engine,
             instruments=instruments,
             frozen_account=config.frozen_account,
             starting_capital=config.starting_capital,
@@ -128,6 +134,8 @@ cdef class BacktestEngine:
             guid_factory=TestGuidFactory(),
             logger=self.test_logger)
 
+        self.exec_engine.register_client(self.exec_client)
+
         for strategy in strategies:
             # Replace strategies clocks with separate test clocks for independent iteration
             strategy.change_clock(TestClock())
@@ -137,7 +145,7 @@ cdef class BacktestEngine:
             IdTag('000'),
             strategies,
             self.data_client,
-            self.exec_client,
+            self.exec_engine,
             self.account,
             self.portfolio,
             self.test_clock,

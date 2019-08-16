@@ -6,6 +6,11 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+from cpython.datetime cimport datetime
+
+from nautilus_trader.common.account cimport Account
+from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.guid cimport GuidFactory
 from nautilus_trader.common.brokerage cimport CommissionCalculator
 from nautilus_trader.common.execution cimport ExecutionClient
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition
@@ -20,8 +25,9 @@ cdef class BacktestExecClient(ExecutionClient):
     """
     Provides an execution client for the BacktestEngine.
     """
-    cdef object _message_bus
-
+    cdef readonly Clock _clock
+    cdef readonly GuidFactory _guid_factory
+    cdef readonly Account _account
     cdef readonly dict instruments
     cdef readonly dict data_ticks
     cdef readonly int day_number
@@ -41,6 +47,7 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef readonly dict atomic_child_orders
     cdef readonly dict oco_orders
 
+    cpdef datetime time_now(self)
     cpdef void change_fill_model(self, FillModel fill_model)
     cpdef void process_tick(self, Tick tick)
     cpdef void process_bars(self, Symbol symbol, Bar bid_bar, Bar ask_bar)

@@ -14,8 +14,8 @@ from nautilus_trader.model.identifiers cimport IdTag
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.logger cimport Logger, LoggerAdapter
 from nautilus_trader.common.data cimport DataClient
-from nautilus_trader.common.execution cimport ExecutionClient
-from nautilus_trader.trade.portfolio cimport Portfolio
+from nautilus_trader.common.execution cimport ExecutionEngine
+from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.trade.strategy cimport TradingStrategy
 from nautilus_trader.trade.reports cimport ReportProvider
 
@@ -30,7 +30,7 @@ cdef class Trader:
                  IdTag id_tag_trader,
                  list strategies,
                  DataClient data_client,
-                 ExecutionClient exec_client,
+                 ExecutionEngine exec_engine,
                  Account account,
                  Portfolio portfolio,
                  Clock clock,
@@ -39,28 +39,27 @@ cdef class Trader:
         Initializes a new instance of the Trader class.
 
         :param trader_id: The trader identifier for the instance (unique at fund level).
-        :param id_tag_trader: The order identifier tag for the trader (unique at fund level).
-        :param strategies: The initial list of strategies to manage.
+        :param id_tag_trader: The trader order identifier tag for the instance (unique at fund level).
+        :param id_tag_trader: The trader order identifier tag for the instance (unique at fund level).
+        :param strategies: The initial strategies for the trader.
+        :param data_client: The data client for the trader.
+        :param exec_engine: The execution engine for the trader.
+        :param account: The account for the trader.
+        :param portfolio: The portfolio for the trader.
+        :param clock: The clock for the trader.
         :param logger: The logger for the trader.
-        :raises ConditionFailed: If the data client is None.
-        :raises ConditionFailed: If the exec client is None.
-        :raises ConditionFailed: If the clock is None.
         """
-        Condition.not_none(data_client, 'data_client')
-        Condition.not_none(exec_client, 'exec_client')
-        Condition.not_none(clock, 'clock')
-
         self._clock = clock
         self.id = trader_id
         self.id_tag_trader = id_tag_trader
         self._log = LoggerAdapter(self.id.value, logger)
         self._data_client = data_client
-        self._exec_client = exec_client
+        self._exec_engine = exec_engine
         self._report_provider = ReportProvider()
 
         self.account = account
         self.portfolio = portfolio
-        self.portfolio.register_execution_client(self._exec_client)
+        self.portfolio.register_execution_engine(self._exec_engine)
         self.is_running = False
         self.started_datetimes = []  # type: List[datetime]
         self.stopped_datetimes = []  # type: List[datetime]
@@ -99,7 +98,7 @@ cdef class Trader:
 
         # Dispose of current strategies
         for strategy in self.strategies:
-            self._exec_client.deregister_strategy(strategy)
+            self._exec_engine.deregister_strategy(strategy)
             strategy.dispose()
 
         self.strategies.clear()
@@ -111,8 +110,8 @@ cdef class Trader:
 
         for strategy in self.strategies:
             strategy.register_trader(trader_id=self.id, id_tag_trader=self.id_tag_trader)
+            strategy.register_execution_engine(self._exec_engine)
             self._data_client.register_strategy(strategy)
-            self._exec_client.register_strategy(strategy)
             self._log.info(f"Initialized {strategy}.")
 
     cpdef start(self):
@@ -153,7 +152,7 @@ cdef class Trader:
 
         self.is_running = False
         self._log.info("Stopped.")
-        self._exec_client.check_residuals()
+        self._exec_engine.check_residuals()
         self.portfolio.check_residuals()
 
     cpdef reset(self):
@@ -219,7 +218,7 @@ cdef class Trader:
 
         :return: pd.DataFrame.
         """
-        return self._report_provider.get_orders_report(self._exec_client.get_orders_all())
+        return self._report_provider.get_orders_report(self._exec_engine.get_orders_all())
 
     cpdef object get_order_fills_report(self):
         """
@@ -227,7 +226,7 @@ cdef class Trader:
         
         :return: pd.DataFrame.
         """
-        return self._report_provider.get_order_fills_report(self._exec_client.get_orders_all())
+        return self._report_provider.get_order_fills_report(self._exec_engine.get_orders_all())
 
     cpdef object get_positions_report(self):
         """

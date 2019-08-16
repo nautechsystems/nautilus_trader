@@ -18,15 +18,16 @@ from nautilus_trader.core.types cimport GUID
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.guid cimport LiveGuidFactory
+from nautilus_trader.common.execution cimport ExecutionDatabase
 from nautilus_trader.common.logger import LogLevel
 from nautilus_trader.common.logger cimport LoggerAdapter, nautilus_header
 from nautilus_trader.model.objects cimport Venue
 from nautilus_trader.model.identifiers cimport IdTag, TraderId
 from nautilus_trader.trade.trader cimport Trader
-from nautilus_trader.trade.portfolio cimport Portfolio
+from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.live.logger cimport LogStore, LiveLogger
 from nautilus_trader.live.data cimport LiveDataClient
-from nautilus_trader.live.execution cimport ExecutionDatabase, LiveExecClient
+from nautilus_trader.live.execution cimport RedisExecutionDatabase, LiveExecutionEngine, LiveExecClient
 
 
 cdef class TradingNode:
@@ -39,7 +40,8 @@ cdef class TradingNode:
     cdef LogStore _log_store
     cdef LoggerAdapter _log
     cdef object _zmq_context
-    cdef ExecutionDatabase _exec_database
+    cdef ExecutionDatabase _exec_db
+    cdef LiveExecutionEngine _exec_engine
     cdef LiveDataClient _data_client
     cdef LiveExecClient _exec_client
 
@@ -110,7 +112,17 @@ cdef class TradingNode:
             logger=self._logger)
 
         exec_config = config['execClient']
-        self._exec_database = ExecutionDatabase(trader_id=trader_id, port=exec_config['redis_port'])
+
+        self._exec_db = RedisExecutionDatabase(trader_id=trader_id, port=exec_config['redis_port'])
+        self._exec_engine = LiveExecutionEngine(
+            trader_id=trader_id,
+            account=self.account,
+            portfolio=self.portfolio,
+            exec_db=self._exec_db,
+            clock=self._clock,
+            guid_factory=self._guid_factory,
+            logger=self._logger)
+
         self._exec_client = LiveExecClient(
             zmq_context=self._zmq_context,
             service_name=exec_config['service_name'],
@@ -118,12 +130,8 @@ cdef class TradingNode:
             events_topic=exec_config['events_topic'],
             commands_port=exec_config['commands_port'],
             events_port=exec_config['events_port'],
-            account=self.account,
-            portfolio=self.portfolio,
-            clock=self._clock,
-            guid_factory=self._guid_factory,
-            logger=self._logger,
-            database=self._exec_database)
+            engine=self._exec_engine,
+            logger=self._logger)
 
         id_tag_trader= IdTag(config['trader']['id_tag_trader'])
         self.trader = Trader(
