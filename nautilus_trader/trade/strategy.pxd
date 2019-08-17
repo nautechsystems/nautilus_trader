@@ -61,9 +61,9 @@ cdef class TradingStrategy:
     cdef ExchangeRateCalculator _exchange_calculator
 
     cdef readonly Account account
+    cdef readonly Portfolio portfolio
     cdef DataClient _data_client
-    cdef ExecutionEngine _engine
-    cdef Portfolio _portfolio
+    cdef ExecutionEngine _exec_engine
 
     cdef readonly bint is_running
 
@@ -147,8 +147,8 @@ cdef class TradingStrategy:
     cpdef dict positions_all(self)
     cpdef dict positions_active(self)
     cpdef dict positions_closed(self)
-    cpdef bint is_position_exists(self, PositionId position_id)
-    cpdef bint is_order_exists(self, OrderId order_id)
+    cpdef bint does_position_exist(self, PositionId position_id)
+    cpdef bint does_order_exist(self, OrderId order_id)
     cpdef bint is_order_active(self, OrderId order_id)
     cpdef bint is_order_complete(self, OrderId order_id)
     cpdef bint is_flat(self)
