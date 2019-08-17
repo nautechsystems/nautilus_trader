@@ -11,11 +11,9 @@ from typing import List
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.identifiers cimport IdTag
-from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.logger cimport Logger, LoggerAdapter
 from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.common.execution cimport ExecutionEngine
-from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.trade.strategy cimport TradingStrategy
 from nautilus_trader.trade.reports cimport ReportProvider
 
@@ -31,8 +29,6 @@ cdef class Trader:
                  list strategies,
                  DataClient data_client,
                  ExecutionEngine exec_engine,
-                 Account account,
-                 Portfolio portfolio,
                  Clock clock,
                  Logger logger):
         """
@@ -40,15 +36,15 @@ cdef class Trader:
 
         :param trader_id: The trader identifier for the instance (unique at fund level).
         :param id_tag_trader: The trader order identifier tag for the instance (unique at fund level).
-        :param id_tag_trader: The trader order identifier tag for the instance (unique at fund level).
         :param strategies: The initial strategies for the trader.
         :param data_client: The data client for the trader.
         :param exec_engine: The execution engine for the trader.
-        :param account: The account for the trader.
-        :param portfolio: The portfolio for the trader.
         :param clock: The clock for the trader.
         :param logger: The logger for the trader.
+        :raises ConditionFailed: If the trader_id is not equal to the exec_engine.trader_id.
         """
+        Condition.equal(trader_id, exec_engine.trader_id)
+
         self._clock = clock
         self.id = trader_id
         self.id_tag_trader = id_tag_trader
@@ -57,17 +53,16 @@ cdef class Trader:
         self._exec_engine = exec_engine
         self._report_provider = ReportProvider()
 
-        self.account = account
-        self.portfolio = portfolio
-        self.portfolio.register_execution_engine(self._exec_engine)
+        self.account = self._exec_engine.account
+        self.portfolio = self._exec_engine.portfolio
         self.is_running = False
         self.started_datetimes = []  # type: List[datetime]
         self.stopped_datetimes = []  # type: List[datetime]
         self.strategies = None
 
-        self.load_strategies(strategies)
+        self.initialize_strategies(strategies)
 
-    cpdef load_strategies(self, list strategies: List[TradingStrategy]):
+    cpdef initialize_strategies(self, list strategies: List[TradingStrategy]):
         """
         Change strategies with the given list of trading strategies.
         
@@ -153,7 +148,6 @@ cdef class Trader:
         self.is_running = False
         self._log.info("Stopped.")
         self._exec_engine.check_residuals()
-        self.portfolio.check_residuals()
 
     cpdef reset(self):
         """
@@ -218,7 +212,7 @@ cdef class Trader:
 
         :return: pd.DataFrame.
         """
-        return self._report_provider.get_orders_report(self._exec_engine.get_orders_all())
+        return self._report_provider.get_orders_report(self._exec_engine.database.get_orders_all())
 
     cpdef object get_order_fills_report(self):
         """
@@ -226,7 +220,7 @@ cdef class Trader:
         
         :return: pd.DataFrame.
         """
-        return self._report_provider.get_order_fills_report(self._exec_engine.get_orders_all())
+        return self._report_provider.get_order_fills_report(self._exec_engine.database.get_orders_all())
 
     cpdef object get_positions_report(self):
         """
@@ -234,4 +228,4 @@ cdef class Trader:
 
         :return: pd.DataFrame.
         """
-        return self._report_provider.get_positions_report(self.portfolio.get_positions_all())
+        return self._report_provider.get_positions_report(self._exec_engine.database.get_positions_all())

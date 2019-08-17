@@ -27,6 +27,7 @@ from nautilus_trader.common.clock cimport LiveClock, TestClock
 from nautilus_trader.common.guid cimport TestGuidFactory
 from nautilus_trader.common.logger cimport TestLogger, nautilus_header
 from nautilus_trader.common.portfolio cimport Portfolio
+from nautilus_trader.common.execution cimport ExecutionEngine, InMemoryExecutionDatabase
 from nautilus_trader.trade.strategy cimport TradingStrategy
 from nautilus_trader.backtest.config cimport BacktestConfig
 from nautilus_trader.backtest.data cimport BidAskBarPair, BacktestDataClient
@@ -72,7 +73,7 @@ cdef class BacktestEngine:
 
         self.test_clock = TestClock()
         self.test_clock.set_time(self.clock.time_now())
-        self.iteration = 0
+        self.guid_factory = TestGuidFactory()
 
         self.logger = TestLogger(
             name='backtest',
@@ -101,10 +102,12 @@ cdef class BacktestEngine:
         nautilus_header(self.log)
         self.log.info("Building engine...")
 
+        trader_id = TraderId('BACKTESTER-000')
+
         self.account = Account(currency=config.account_currency)
         self.portfolio = Portfolio(
             clock=self.test_clock,
-            guid_factory=TestGuidFactory(),
+            guid_factory=self.guid_factory,
             logger=self.test_logger)
         self.instruments = instruments
         self.data_client = BacktestDataClient(
@@ -116,13 +119,17 @@ cdef class BacktestEngine:
             clock=self.test_clock,
             logger=self.test_logger)
 
+        self.exec_db = InMemoryExecutionDatabase(trader_id=trader_id, logger=self.test_logger)
         self.exec_engine = ExecutionEngine(
+            database=self.exec_db,
             account=self.account,
             portfolio=self.portfolio,
+            clock=self.test_clock,
+            guid_factory=self.guid_factory,
             logger=self.test_logger)
 
         self.exec_client = BacktestExecClient(
-            engine=self.exec_engine,
+            exec_engine=self.exec_engine,
             instruments=instruments,
             frozen_account=config.frozen_account,
             starting_capital=config.starting_capital,
@@ -131,7 +138,7 @@ cdef class BacktestEngine:
             account=self.account,
             portfolio=self.portfolio,
             clock=self.test_clock,
-            guid_factory=TestGuidFactory(),
+            guid_factory=self.guid_factory,
             logger=self.test_logger)
 
         self.exec_engine.register_client(self.exec_client)
@@ -141,15 +148,15 @@ cdef class BacktestEngine:
             strategy.change_clock(TestClock())
 
         self.trader = Trader(
-            TraderId('BACKTESTER-000'),
+            trader_id,
             IdTag('000'),
             strategies,
             self.data_client,
             self.exec_engine,
-            self.account,
-            self.portfolio,
             self.test_clock,
             self.test_logger)
+
+        self.iteration = 0
 
         self.time_to_initialize = self.clock.get_delta(self.created_time)
         self.log.info(f'Initialized in {self.time_to_initialize}.')
@@ -238,7 +245,7 @@ cdef class BacktestEngine:
 
         # Setup new strategies
         if strategies is not None:
-            self.trader.load_strategies(strategies)
+            self.trader.initialize_strategies(strategies)
         self._change_clocks_and_loggers(self.trader.strategies)
 
         # -- RUN BACKTEST -----------------------------------------------------#

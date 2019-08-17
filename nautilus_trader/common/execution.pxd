@@ -31,25 +31,25 @@ cdef class ExecutionDatabase:
     Provides an execution database.
     """
     cdef LoggerAdapter _log
-    cdef dict _order_book
-    cdef dict _position_book
+    cdef dict _cached_orders
+    cdef dict _cached_positions
 
     cdef readonly TraderId trader_id
+
+    cpdef void add_strategy(self, TradingStrategy strategy)
+    cpdef void add_order(self, Order order, StrategyId strategy_id, PositionId position_id)
+    cpdef void add_position(self, Position position, StrategyId strategy_id)
+    cpdef void remove_strategy(self, TradingStrategy strategy)
+    cpdef void order_active(self, Order order_id, StrategyId strategy_id)
+    cpdef void order_completed(self, Order order_id, StrategyId strategy_id)
+    cpdef void position_active(self, Position position, StrategyId strategy_id)
+    cpdef void position_closed(self, Position position, StrategyId strategy_id)
 
     cpdef list get_strategy_ids(self)
     cpdef list get_order_ids(self)
     cpdef list get_position_ids(self)
-
-    cpdef void add_strategy(self, TradingStrategy strategy)
-    cpdef void add_order(self, Order order, StrategyId strategy_id, PositionId position_id)
-    cpdef void remove_strategy(self, TradingStrategy strategy)
-
-    cpdef void update_order_status(self, Order order)
-    cpdef void add_position(self, Position position, StrategyId strategy_id)
-
     cpdef StrategyId get_strategy_id(self, OrderId order_id)
 
-    cpdef Order load_order(self, OrderId order_id)
     cpdef Order get_order(self, OrderId order_id)
     cpdef dict get_orders_all(self)
     cpdef dict get_orders_active_all(self)
@@ -57,11 +57,10 @@ cdef class ExecutionDatabase:
     cpdef dict get_orders(self, StrategyId strategy_id)
     cpdef dict get_orders_active(self, StrategyId strategy_id)
     cpdef dict get_orders_completed(self, StrategyId strategy_id)
-    cpdef bint does_order_exist(self, OrderId order_id)
+    cpdef bint order_exists(self, OrderId order_id)
     cpdef bint is_order_active(self, OrderId order_id)
     cpdef bint is_order_complete(self, OrderId order_id)
 
-    cpdef Position load_position(self, PositionId position_id)
     cpdef Position get_position(self, PositionId position_id)
     cpdef Position get_position_for_order(self, OrderId order_id)
     cpdef PositionId get_position_id(self, OrderId order_id)
@@ -71,7 +70,7 @@ cdef class ExecutionDatabase:
     cpdef dict get_positions(self, StrategyId strategy_id)
     cpdef dict get_positions_active(self, StrategyId strategy_id)
     cpdef dict get_positions_closed(self, StrategyId strategy_id)
-    cpdef bint does_position_exist(self, PositionId position_id)
+    cpdef bint position_exists(self, PositionId position_id)
     cpdef bint is_position_active(self, PositionId position_id)
     cpdef bint is_position_closed(self, PositionId position_id)
     cpdef bint is_position_for_order(self, OrderId order_id)
@@ -105,23 +104,22 @@ cdef class ExecutionEngine:
     cdef Clock _clock
     cdef GuidFactory _guid_factory
     cdef LoggerAdapter _log
-
     cdef ExecutionClient _exec_client
-    cdef Account _account
-    cdef Portfolio _portfolio
-
     cdef dict _registered_strategies
 
     cdef readonly TraderId trader_id
+    cdef readonly ExecutionDatabase database
+    cdef readonly Account account
+    cdef readonly Portfolio portfolio
     cdef readonly int command_count
     cdef readonly int event_count
-    cdef readonly ExecutionDatabase database
 
     cpdef void register_client(self, ExecutionClient exec_client)
     cpdef void register_strategy(self, TradingStrategy strategy)
     cpdef void deregister_strategy(self, TradingStrategy strategy)
     cpdef void execute_command(self, Command command)
     cpdef void handle_event(self, Event event)
+    cpdef void check_residuals(self)
     cpdef void reset(self)
 
     cpdef list registered_strategies(self)
@@ -142,7 +140,7 @@ cdef class ExecutionClient:
     The base class for all execution clients.
     """
     cdef LoggerAdapter _log
-    cdef ExecutionEngine _engine
+    cdef ExecutionEngine _exec_engine
 
     cdef readonly int command_count
     cdef readonly int event_count
