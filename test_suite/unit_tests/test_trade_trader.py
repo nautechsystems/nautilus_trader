@@ -14,13 +14,14 @@ from nautilus_trader.common.brokerage import CommissionCalculator
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.guid import TestGuidFactory
 from nautilus_trader.common.logger import TestLogger
+from nautilus_trader.common.portfolio import Portfolio
+from nautilus_trader.common.execution import ExecutionEngine, InMemoryExecutionDatabase
 from nautilus_trader.model.enums import Resolution
 from nautilus_trader.model.objects import Venue, Money
 from nautilus_trader.model.identifiers import IdTag, TraderId, StrategyId
 from nautilus_trader.backtest.execution import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.data import BacktestDataClient
-from nautilus_trader.trade.portfolio import Portfolio
 from nautilus_trader.trade.trader import Trader
 
 from test_kit.strategies import EmptyStrategy
@@ -37,7 +38,11 @@ class TraderTests(unittest.TestCase):
         # Fixture Setup
         bid_data_1min = TestDataProvider.usdjpy_1min_bid().iloc[:2000]
         ask_data_1min = TestDataProvider.usdjpy_1min_ask().iloc[:2000]
-        test_clock = TestClock()
+
+        clock = TestClock()
+        guid_factory = TestGuidFactory()
+        logger = TestLogger()
+        trader_id = TraderId('000')
 
         data_client = BacktestDataClient(
             venue=Venue('FXCM'),
@@ -45,40 +50,48 @@ class TraderTests(unittest.TestCase):
             data_ticks={USDJPY_FXCM: pd.DataFrame()},
             data_bars_bid={USDJPY_FXCM: {Resolution.MINUTE: bid_data_1min}},
             data_bars_ask={USDJPY_FXCM: {Resolution.MINUTE: ask_data_1min}},
-            clock=test_clock,
-            logger=TestLogger())
+            clock=clock,
+            logger=logger)
 
-        account = Account()
-        portfolio = Portfolio(
-            clock=TestClock(),
-            guid_factory=TestGuidFactory(),
-            logger=TestLogger())
+        self.account = Account()
+        self.portfolio = Portfolio(
+            clock=clock,
+            guid_factory=guid_factory,
+            logger=logger)
 
-        exec_client = BacktestExecClient(
+        self.exec_db = InMemoryExecutionDatabase(trader_id=trader_id, logger=logger)
+        self.exec_engine = ExecutionEngine(
+            database=self.exec_db,
+            account=self.account,
+            portfolio=self.portfolio,
+            clock=clock,
+            guid_factory=guid_factory,
+            logger=logger)
+
+        self.exec_client = BacktestExecClient(
+            exec_engine=self.exec_engine,
             instruments=[TestStubs.instrument_usdjpy()],
             frozen_account=False,
             starting_capital=Money(1000000),
             fill_model=FillModel(),
             commission_calculator=CommissionCalculator(),
-            account=account,
-            portfolio=portfolio,
-            clock=TestClock(),
-            guid_factory=TestGuidFactory(),
-            logger=TestLogger())
+            account=self.account,
+            portfolio=self.portfolio,
+            clock=clock,
+            guid_factory=guid_factory,
+            logger=logger)
 
         strategies = [EmptyStrategy('001'),
                       EmptyStrategy('002')]
 
         self.trader = Trader(
-            trader_id=TraderId('Trader-001'),
-            id_tag_trader=IdTag('001'),
+            trader_id=trader_id,
+            id_tag_trader=IdTag('000'),
             strategies=strategies,
             data_client=data_client,
-            exec_client=exec_client,
-            account=account,
-            portfolio=portfolio,
-            clock=test_clock,
-            logger=TestLogger())
+            exec_engine=self.exec_engine,
+            clock=clock,
+            logger=logger)
 
     def test_can_initialize_trader(self):
         # Arrange
@@ -87,8 +100,8 @@ class TraderTests(unittest.TestCase):
         id_tag_trader = self.trader.id_tag_trader
 
         # Assert
-        self.assertEqual(TraderId('Trader-001'), trader_id)
-        self.assertEqual(IdTag('001'), id_tag_trader)
+        self.assertEqual(TraderId('000'), trader_id)
+        self.assertEqual(IdTag('000'), id_tag_trader)
         self.assertFalse(self.trader.is_running)
         self.assertEqual(0, len(self.trader.started_datetimes))
         self.assertEqual(0, len(self.trader.stopped_datetimes))
@@ -112,7 +125,7 @@ class TraderTests(unittest.TestCase):
                       EmptyStrategy('004')]
 
         # Act
-        self.trader.load_strategies(strategies)
+        self.trader.initialize_strategies(strategies)
 
         # Assert
         self.assertTrue(strategies[0].id in self.trader.strategy_status())
@@ -125,7 +138,7 @@ class TraderTests(unittest.TestCase):
                       EmptyStrategy('000')]
 
         # Act
-        self.assertRaises(RuntimeError, self.trader.load_strategies, strategies)
+        self.assertRaises(RuntimeError, self.trader.initialize_strategies, strategies)
 
     def test_can_start_a_trader(self):
         # Arrange

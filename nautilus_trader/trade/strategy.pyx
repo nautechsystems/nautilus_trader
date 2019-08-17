@@ -272,8 +272,8 @@ cdef class TradingStrategy:
         :param engine: The execution engine to register.
         """
         self._exec_engine = engine
-        self.portfolio = engine._portfolio
-        self.account = engine._account
+        self.portfolio = engine.portfolio
+        self.account = engine.account
         self.log.debug("Registered execution client, portfolio, and account.")
 
     cpdef void register_indicator_ticks(
@@ -983,7 +983,7 @@ cdef class TradingStrategy:
         :param position_id: The position identifier.
         :return: True if the position exists, else False.
         """
-        return self._exec_engine.database.does_position_exist(position_id)
+        return self._exec_engine.database.position_exists(position_id)
 
     cpdef bint does_order_exist(self, OrderId order_id):
         """
@@ -992,7 +992,7 @@ cdef class TradingStrategy:
         :param order_id: The order identifier.
         :return: True if the order exists, else False.
         """
-        return self._exec_engine.database.does_order_exist(order_id)
+        return self._exec_engine.database.order_exists(order_id)
 
     cpdef bint is_order_active(self, OrderId order_id):
         """

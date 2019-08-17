@@ -35,7 +35,7 @@ cdef class Trader:
     cdef readonly list stopped_datetimes
     cdef readonly list strategies
 
-    cpdef load_strategies(self, list strategies)
+    cpdef initialize_strategies(self, list strategies)
     cpdef start(self)
     cpdef stop(self)
     cpdef reset(self)

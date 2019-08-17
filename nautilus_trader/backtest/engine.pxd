@@ -10,8 +10,9 @@ from cpython.datetime cimport datetime, timedelta
 
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.guid cimport GuidFactory
 from nautilus_trader.common.logger cimport Logger, LoggerAdapter
-from nautilus_trader.common.execution cimport ExecutionEngine
+from nautilus_trader.common.execution cimport ExecutionDatabase, ExecutionEngine
 from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.trade.trader cimport Trader
 from nautilus_trader.backtest.config cimport BacktestConfig
@@ -26,9 +27,11 @@ cdef class BacktestEngine:
     """
     cdef readonly Clock clock
     cdef readonly Clock test_clock
+    cdef readonly GuidFactory guid_factory
     cdef readonly BacktestConfig config
     cdef readonly BacktestDataClient data_client
     cdef readonly BacktestExecClient exec_client
+    cdef readonly ExecutionDatabase exec_db
     cdef readonly ExecutionEngine exec_engine
     cdef readonly LoggerAdapter log
     cdef readonly Logger logger

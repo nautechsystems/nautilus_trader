@@ -278,4 +278,4 @@ cdef class LiveExecClient(ExecutionClient):
 
     cdef void _event_handler(self, str topic, bytes event_bytes):
         cdef Event event = self._event_serializer.deserialize(event_bytes)
-        self._engine.handle_event(event)
+        self._exec_engine.handle_event(event)
