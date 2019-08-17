@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-# <copyright file="test_trade_portfolio.py" company="Nautech Systems Pty Ltd">
+# <copyright file="test_common_portfolio.py" company="Nautech Systems Pty Ltd">
 #  Copyright (C) 2015-2019 Nautech Systems Pty Ltd. All rights reserved.
 #  The use of this source code is governed by the license as found in the LICENSE.md file.
 #  https://nautechsystems.io
@@ -16,11 +16,11 @@ from nautilus_trader.common.brokerage import CommissionCalculator
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.guid import TestGuidFactory
 from nautilus_trader.common.logger import TestLogger
+from nautilus_trader.common.execution import InMemoryExecutionEngine
 from nautilus_trader.core.types import GUID
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.events import OrderFilled
-from nautilus_trader.model.identifiers import IdTag, OrderId, PositionId, ExecutionId, \
-    ExecutionTicket
+from nautilus_trader.model.identifiers import IdTag, OrderId, PositionId, ExecutionId, ExecutionTicket
 from nautilus_trader.model.objects import Quantity, Venue, Symbol, Price, Money
 from nautilus_trader.model.order import OrderFactory
 from nautilus_trader.model.position import Position
@@ -52,6 +52,7 @@ class PortfolioTests(unittest.TestCase):
             guid_factory=TestGuidFactory(),
             logger=TestLogger())
 
+        self.exec_engine = InMemoryExecutionEngine()
         self.exec_client = BacktestExecClient(
             instruments=self.instruments,
             frozen_account=False,
@@ -135,7 +136,7 @@ class PortfolioTests(unittest.TestCase):
         order_id = OrderId('AUDUSD.FXCM-1-123456')
         position_id = PositionId('AUDUSD.FXCM-1-123456')
 
-        self.exec_client.register_strategy(strategy)  # Also registers with portfolio
+        self.exec_engine.register_strategy(strategy)  # Also registers with portfolio
         self.portfolio.register_order(order_id, position_id)
         event = OrderFilled(
             order_id,

@@ -17,7 +17,7 @@ from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_status cimport OrderStatus
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition, market_position_string
-from nautilus_trader.model.identifiers cimport AccountId
+from nautilus_trader.model.identifiers cimport AccountId, PositionId
 from nautilus_trader.model.currency cimport ExchangeRateCalculator
 from nautilus_trader.model.objects cimport Brokerage, Symbol, Price, Tick, Bar, Money, Instrument, Quantity
 from nautilus_trader.model.order cimport Order
@@ -245,22 +245,6 @@ cdef class BacktestExecClient(ExecutionClient):
                 if order.id in self.working_orders:  # Order may have been removed since loop started
                     del self.working_orders[order.id]
                     self._expire_order(order)
-
-    # cpdef void execute_command(self, Command command):
-    #     """
-    #     Execute the given command.
-    #
-    #     :param command: The command to execute.
-    #     """
-    #     self._engine.execute_command(command)
-    #
-    # cpdef void handle_event(self, Event event):
-    #     """
-    #     Handle the given event.
-    #
-    #     :param event: The event to handle
-    #     """
-    #     self._engine.handle_event(event)
 
     cpdef void check_residuals(self):
         """
@@ -606,7 +590,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._clock.time_now())
 
         # Adjust account if position exists
-        if self._engine._portfolio.is_position_for_order(order.id):
+        if self._engine.database.is_position_for_order(order.id):
             self._adjust_account(filled)
 
         self._engine.handle_event(filled)
@@ -632,7 +616,7 @@ cdef class BacktestExecClient(ExecutionClient):
 
         if order_id in self.oco_orders:
             oco_order_id = self.oco_orders[order_id]
-            oco_order = self._engine._order_book[oco_order_id]
+            oco_order = self._engine.database.get_order(oco_order_id)
             del self.oco_orders[order_id]
             del self.oco_orders[oco_order_id]
 
@@ -677,7 +661,7 @@ cdef class BacktestExecClient(ExecutionClient):
 
     cdef void _adjust_account(self, OrderEvent event):
         # Adjust the positions based on the given order fill event
-        cdef Symbol symbol = self._engine._order_book[event.order_id].symbol
+        cdef Symbol symbol = self._engine.database.get_order(event.order_id).symbol
         cdef Instrument instrument = self.instruments[symbol]
         cdef float exchange_rate = self.exchange_calculator.get_rate(
             quote_currency=instrument.quote_currency,
@@ -686,7 +670,8 @@ cdef class BacktestExecClient(ExecutionClient):
             bid_rates=self._build_current_bid_rates(),
             ask_rates=self._build_current_ask_rates())
 
-        cdef Position position = self._engine._portfolio.get_position_for_order(event.order_id)
+        cdef PositionId position_id = self._engine.database.get_position_id(event.order_id)
+        cdef Position position = self._engine.database.get_position(position_id)
         cdef Money pnl = self._calculate_pnl(
             direction=position.market_position,
             entry_price=position.average_entry_price,
