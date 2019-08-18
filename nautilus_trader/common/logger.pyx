@@ -418,3 +418,5 @@ cpdef void nautilus_header(LoggerAdapter logger):
         logger.info(f"numpy v{np.__version__}")
         logger.info(f"scipy v{scipy.__version__}")
         logger.info(f"pandas v{pd.__version__}")
+        logger.info("")
+        logger.info("#---------------------------------------------------------------#")
