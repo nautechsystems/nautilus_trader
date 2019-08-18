@@ -255,6 +255,7 @@ cdef class TradingStrategy:
         """
         self.trader_id = trader_id
         self.id_tag_trader = id_tag_trader
+        self.log.debug(f"Registered trader {trader_id.value} with order id tag {id_tag_trader.value}.")
 
     cpdef void register_data_client(self, DataClient client):
         """
@@ -274,7 +275,7 @@ cdef class TradingStrategy:
         self._exec_engine = engine
         self.portfolio = engine.portfolio
         self.account = engine.account
-        self.log.debug("Registered execution client, portfolio, and account.")
+        self.log.debug("Registered execution engine.")
 
     cpdef void register_indicator_ticks(
             self,

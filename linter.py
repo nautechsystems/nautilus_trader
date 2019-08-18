@@ -28,6 +28,8 @@ def check_file_headers(directories: List[str], ignore: List[str], author: str) -
                     source_code = (open_file.read())
                     expected_file_name = file.split('/')[-1]
                     result = re.findall(r'\"(.+?)\"', source_code)
+                    if len(result) == 0:
+                        raise ValueError(f"No file header found in {file}.")
                     file_name = result[0]
                     company = result[1]
                     if file_name != expected_file_name:

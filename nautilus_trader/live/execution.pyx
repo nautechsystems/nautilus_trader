@@ -165,6 +165,7 @@ cdef class LiveExecClient(ExecutionClient):
 
     def __init__(
             self,
+            ExecutionEngine exec_engine,
             zmq_context: Context,
             str service_name='NautilusExecutor',
             str service_address='localhost',
@@ -174,11 +175,12 @@ cdef class LiveExecClient(ExecutionClient):
             CommandSerializer command_serializer=MsgPackCommandSerializer(),
             ResponseSerializer response_serializer=MsgPackResponseSerializer(),
             EventSerializer event_serializer=MsgPackEventSerializer(),
-            ExecutionEngine engine=ExecutionEngine(),
+
             LiveLogger logger=LiveLogger()):
         """
         Initializes a new instance of the LiveExecClient class.
 
+        :param exec_engine: The execution engine for the component.
         :param zmq_context: The ZMQ context.
         :param service_name: The name of the service.
         :param service_address: The execution service host IP address (default='localhost').
@@ -188,7 +190,7 @@ cdef class LiveExecClient(ExecutionClient):
         :param command_serializer: The command serializer for the client.
         :param response_serializer: The response serializer for the client.
         :param event_serializer: The event serializer for the client.
-        :param engine: The execution engine for the component (can be None).
+
         :param logger: The logger for the component (can be None).
         :raises ConditionFailed: If the service_address is not a valid string.
         :raises ConditionFailed: If the events_topic is not a valid string.
@@ -200,7 +202,7 @@ cdef class LiveExecClient(ExecutionClient):
         Condition.in_range(commands_port, 'commands_port', 0, 65535)
         Condition.in_range(events_port, 'events_port', 0, 65535)
 
-        super().__init__(engine, logger)
+        super().__init__(exec_engine, logger)
         self._zmq_context = zmq_context
 
         self._commands_worker = RequestWorker(
