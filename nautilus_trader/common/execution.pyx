@@ -7,7 +7,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.datetime cimport datetime
-from typing import Dict
+from typing import List, Dict
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.order cimport Order
@@ -46,6 +46,9 @@ cdef class ExecutionDatabase:
         self._cached_orders = {}     # type: Dict[OrderId, Order]
         self._cached_positions = {}  # type: Dict[PositionId, Position]
 
+
+# -- COMMANDS -------------------------------------------------------------------------------------"
+
     cpdef void add_strategy(self, TradingStrategy strategy):
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
@@ -58,7 +61,7 @@ cdef class ExecutionDatabase:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void remove_strategy(self, TradingStrategy strategy):
+    cpdef void delete_strategy(self, TradingStrategy strategy):
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
@@ -77,6 +80,22 @@ cdef class ExecutionDatabase:
     cpdef void position_closed(self, Position position, StrategyId strategy_id):
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
+
+    cpdef void check_residuals(self):
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
+    cpdef void reset(self):
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
+    cdef void _reset(self):
+        self._cached_orders = {}     # type: Dict[OrderId, Order]
+        self._cached_positions = {}  # type: Dict[PositionId, Position]
+        self._log.debug(f"Reset.")
+
+
+# -- QUERIES -------------------------------------------------------------------------------------"
 
     cpdef list get_strategy_ids(self):
         # Raise exception if not overridden in implementation
@@ -182,7 +201,7 @@ cdef class ExecutionDatabase:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef bint is_position_for_order(self, OrderId order_id):
+    cpdef bint position_exists_for_order(self, OrderId order_id):
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
@@ -198,19 +217,11 @@ cdef class ExecutionDatabase:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void check_residuals(self):
-        # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
+    cdef void _log_cannot_find_order(self, OrderId order_id):
+        self._log.error(f"Cannot find {order_id} in the database.")
 
-    cpdef void reset(self):
-        # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
-
-    cdef void _reset(self):
-        self._cached_orders = {}     # type: Dict[OrderId, Order]
-        self._cached_positions = {}  # type: Dict[PositionId, Position]
-        self._log.debug(f"Reset.")
-
+    cdef void _log_cannot_find_position(self, PositionId position_id):
+        self._log.error(f"Cannot find {position_id} in the database.")
 
 cdef class InMemoryExecutionDatabase(ExecutionDatabase):
     """
@@ -228,12 +239,16 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         super().__init__(trader_id, logger)
 
         self._log = LoggerAdapter(self.__class__.__name__, logger)
+        self._strategies = []            # type: List[StrategyId]
         self._index_order_strategy = {}  # type: Dict[OrderId, StrategyId]
         self._index_order_position = {}  # type: Dict[OrderId, PositionId]
         self._orders_active = {}         # type: Dict[StrategyId, Dict[OrderId, Order]]
         self._orders_completed = {}      # type: Dict[StrategyId, Dict[OrderId, Order]]
         self._positions_active = {}      # type: Dict[StrategyId, Dict[PositionId, Position]]
         self._positions_closed = {}      # type: Dict[StrategyId, Dict[PositionId, Position]]
+
+
+# -- COMMANDS -------------------------------------------------------------------------------------"
 
     cpdef void add_strategy(self, TradingStrategy strategy):
         """
@@ -242,9 +257,11 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         :param strategy: The strategy to register.
         :raises ConditionFailed: If the strategy is already registered with the execution engine.
         """
-        Condition.true(strategy.id not in self._orders_active, 'strategy not in orders_active')
-        Condition.true(strategy.id not in  self._orders_completed, 'strategy not in orders_completed')
+        Condition.true(strategy.id not in self._strategies, 'strategy.id not in self._strategies')
+        Condition.true(strategy.id not in self._orders_active, 'strategy.id not in self._orders_active')
+        Condition.true(strategy.id not in  self._orders_completed, 'strategy.id not in  self._orders_completed')
 
+        self._strategies.append(strategy.id)
         self._orders_active[strategy.id] = {}         # type: Dict[OrderId, Order]
         self._orders_completed[strategy.id] = {}      # type: Dict[OrderId, Order]
         self._positions_active[strategy.id] = {}      # type: Dict[PositionId, Position]
@@ -260,35 +277,41 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         self._index_order_strategy[order.id] = strategy_id
         self._index_order_position[order.id] = position_id
 
-        self._log.debug(f"Added order strategy_id={strategy_id.value}, position_id={position_id.value} order_id={order.id.value}")
+        self._log.debug(f"Added order (order_id={order.id.value}, strategy_id={strategy_id.value}, position_id={position_id.value}).")
 
     cpdef void add_position(self, Position position, StrategyId strategy_id):
         """
         Add the given position associated with the given strategy identifier.
         
         :param position: The position to add.
-        :param strategy_id: The strategy identifier to associate.
+        :param strategy_id: The strategy identifier to associate with the position.
         """
+        Condition.true(position.id not in self._cached_positions, 'position.id not in self._cached_positions')
+        Condition.true(strategy_id in self._positions_active, 'strategy_id in self._positions_active')
+        Condition.true(position.id not in self._positions_active[strategy_id], 'position.id not in self._positions_active[strategy_id]')
+
         self._cached_positions[position.id] = position
         self._positions_active[strategy_id][position.id] = position
-        self._log.debug(f"Added {position} to active positions.")
+        self._log.debug(f"Added {position}.")
 
-    cpdef void remove_strategy(self, TradingStrategy strategy):
+    cpdef void delete_strategy(self, TradingStrategy strategy):
         """
         Deregister the given strategy with the execution client.
 
         :param strategy: The strategy to deregister.
         :raises ConditionFailed: If the strategy is not registered with the execution client.
         """
+        Condition.true(strategy.id in self._strategies, 'strategy in strategies')
         Condition.true(strategy.id in self._orders_active, 'strategy in orders_active')
         Condition.true(strategy.id in self._orders_completed, 'strategy in orders_completed')
 
+        self._strategies.remove(strategy.id)
         del self._orders_active[strategy.id]
         del self._orders_completed[strategy.id]
         del self._positions_active[strategy.id]
         del self._positions_closed[strategy.id]
 
-        self._log.debug(f"De-registered {strategy}.")
+        self._log.debug(f"Deleted {strategy}.")
 
     cpdef void order_active(self, Order order, StrategyId strategy_id):
         """
@@ -351,24 +374,66 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         if position.id in self._positions_active[strategy_id]:
             del self._positions_active[strategy_id][position.id]
 
+    cpdef void check_residuals(self):
+        # Check for any residual active orders and log warnings if any are found
+        for orders in self._orders_active.values():
+            for order in orders.values():
+                self._log.warning(f"Residual active {order}")
+
+        for positions in self._positions_active.values():
+            for position in positions.values():
+                self._log.warning(f"Residual position {position}")
+
+    cpdef void reset(self):
+        # Reset the execution database by returning all stateful internal values to their initial value
+        self._log.debug(f"Resetting...")
+        self._index_order_strategy = {}   # type: Dict[OrderId, StrategyId]
+        self._index_order_position = {}   # type: Dict[OrderId, PositionId]
+
+        # Reset all active orders
+        for strategy_id in self._orders_active.keys():
+            self._orders_active[strategy_id] = {}     # type: Dict[OrderId, Order]
+
+        # Reset all completed orders
+        for strategy_id in self._orders_completed.keys():
+            self._orders_completed[strategy_id] = {}  # type: Dict[OrderId, Order]
+
+        # Reset all active positions
+        for strategy_id in self._positions_active.keys():
+            self._positions_active[strategy_id] = {}  # type: Dict[PositionId, Position]
+
+        # Reset all closed positions
+        for strategy_id in self._positions_closed.keys():
+            self._positions_closed[strategy_id] = {}  # type: Dict[PositionId, Position]
+
+        self._reset()
+
+
+# -- QUERIES --------------------------------------------------------------------------------------"
+
     cpdef list get_strategy_ids(self):
-        return  set(self._index_order_strategy.values())
+        """
+        Return a list of all registered strategy identifiers.
+         
+        :return: List[StrategyId].
+        """
+        return  self._strategies.copy()
 
     cpdef list get_order_ids(self):
         """
-        Return a list of the cached order identifiers.
+        Return a list of all registered order identifiers.
         
-        :return: List[OrderId]
+        :return: List[OrderId].
         """
-        return [self._cached_orders.keys()]
+        return list(self._cached_orders.keys())
 
     cpdef list get_position_ids(self):
         """
         Return a list of the cached position identifiers.
         
-        :return: List[PositionId]
+        :return: List[PositionId].
         """
-        return [self._cached_positions.keys()]
+        return list(self._cached_positions.keys())
 
     cpdef StrategyId get_strategy_id(self, OrderId order_id):
         """
@@ -384,7 +449,10 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
         :return: Order or None.
         """
-        return self._cached_orders.get(order_id)
+        cdef Order order = self._cached_orders.get(order_id)
+        if order is None:
+            self._log_cannot_find_order(order_id)
+        return order
 
     cpdef dict get_orders_all(self):
         """
@@ -480,7 +548,10 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         :param position_id: The position identifier.
         :return: Position or None.
         """
-        return self._cached_positions.get(position_id)
+        cdef Position position = self._cached_positions.get(position_id)
+        if position is None:
+            self._log_cannot_find_position(position_id)
+        return position
 
     cpdef Position get_position_for_order(self, OrderId order_id):
         """
@@ -492,8 +563,8 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         cdef PositionId position_id = self.get_position_id(order_id)
 
         if position_id is None:
-            self._log.error("BOOM") # TODO
-            return
+            self._log.error(f"Cannot get position for {order_id} (no matching position id found).")
+            return None
 
         return self._cached_positions.get(position_id)
 
@@ -504,7 +575,11 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         :param order_id: The order identifier associated with the position.
         :return: PositionId or None.
         """
-        return self._index_order_position.get(order_id)
+        cdef Position position_id = self._index_order_position.get(order_id)
+        if position_id is None:
+            self._log.error(f"Cannot get position id for {order_id} (no matching position id found).")
+
+        return position_id
 
     cpdef dict get_positions_all(self):
         """
@@ -575,6 +650,16 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         return position_id in self._cached_positions
 
+    cpdef bint position_exists_for_order(self, OrderId order_id):
+        """
+        Return a value indicating whether there is a position associated with the given
+        order identifier.
+        
+        :param order_id: The order identifier.
+        :return: True if an associated position exists, else False.
+        """
+        return order_id in self._index_order_position and self._index_order_position[order_id] in self._cached_positions
+
     cpdef bint is_position_active(self, PositionId position_id):
         """
         Return a value indicating whether a position with the given identifier exists
@@ -594,16 +679,6 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         :return: True if the position does not exist or is closed, else False.
         """
         return position_id in self._cached_positions and self._cached_positions[position_id].is_exited
-
-    cpdef bint is_position_for_order(self, OrderId order_id):
-        """
-        Return a value indicating whether there is a position associated with the given
-        order identifier.
-        
-        :param order_id: The order identifier.
-        :return: True if an associated position exists, else False.
-        """
-        return order_id in self._index_order_position and self._index_order_position[order_id] in self._cached_positions
 
     cpdef int positions_count(self):
         """
@@ -644,40 +719,6 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
         return closed_count
 
-    cpdef void check_residuals(self):
-        # Check for any residual active orders and log warnings if any are found
-        for orders in self._orders_active.values():
-            for order in orders.values():
-                self._log.warning(f"Residual active {order}")
-
-        for positions in self._positions_active.values():
-            for position in positions.values():
-                self._log.warning(f"Residual position {position}")
-
-    cpdef void reset(self):
-        # Reset the execution database by returning all stateful internal values to their initial value
-        self._log.debug(f"Resetting...")
-        self._index_order_strategy = {}   # type: Dict[OrderId, StrategyId]
-        self._index_order_position = {}   # type: Dict[OrderId, PositionId]
-
-        # Reset all active orders
-        for strategy_id in self._orders_active.keys():
-            self._orders_active[strategy_id] = {}     # type: Dict[OrderId, Order]
-
-        # Reset all completed orders
-        for strategy_id in self._orders_completed.keys():
-            self._orders_completed[strategy_id] = {}  # type: Dict[OrderId, Order]
-
-        # Reset all active positions
-        for strategy_id in self._positions_active.keys():
-            self._positions_active[strategy_id] = {}  # type: Dict[PositionId, Position]
-
-        # Reset all closed positions
-        for strategy_id in self._positions_closed.keys():
-            self._positions_closed[strategy_id] = {}  # type: Dict[PositionId, Position]
-
-        self._reset()
-
 
 cdef class ExecutionEngine:
     """
@@ -717,7 +758,7 @@ cdef class ExecutionEngine:
         
         :return: List[StrategyId]
         """
-        return [self._registered_strategies.keys()]
+        return list(self._registered_strategies.keys())
 
 # -- COMMANDS -----------------------------------------------------------------#
     cpdef void register_client(self, ExecutionClient exec_client):
@@ -734,7 +775,7 @@ cdef class ExecutionEngine:
         :param strategy: The strategy to register.
         :raises ConditionFailed: If the strategy is already registered with the execution engine.
         """
-        Condition.true(strategy.id not in self._registered_strategies, 'strategy in registered_strategies')
+        Condition.true(strategy.id not in self._registered_strategies, 'strategy not in registered_strategies')
 
         self._registered_strategies[strategy.id] = strategy
         self.database.add_strategy(strategy)
@@ -747,7 +788,9 @@ cdef class ExecutionEngine:
         :param strategy: The strategy to deregister.
         :raises ConditionFailed: If the strategy is not registered with the execution client.
         """
-        self.database.remove_strategy(strategy)
+        Condition.true(strategy.id in self._registered_strategies, 'strategy in registered_strategies')
+
+        del self._registered_strategies[strategy.id]
 
     cpdef void execute_command(self, Command command):
         """
@@ -823,18 +866,17 @@ cdef class ExecutionEngine:
             if order is not None:
                 order.apply(event)
             else:
-                self._log.error(f"Order for {event.order_id} not found.")
+                self._log.error(f"Cannot process {event} ({event.order_id} not found).")
                 return # Cannot apply event to any order
 
             strategy_id = self.database.get_strategy_id(event.order_id)
             if strategy_id is None:
-                self._log.error(f"Cannot update order status *************")
+                self._log.error(f"Cannot process {event} ({strategy_id} not found)")
             else:
                 if order.is_active:
                     self.database.order_active(order, strategy_id)
                 elif order.is_complete:
                     self.database.order_completed(order, strategy_id)
-
 
             if isinstance(event, (OrderFilled, OrderPartiallyFilled)):
                 self._log.debug(f'{event}')
@@ -861,7 +903,7 @@ cdef class ExecutionEngine:
                 self.account.apply(event)
                 self.portfolio.handle_transaction(event)
             else:
-                self._log.warning(f"{event} ignored (event not for this account).")
+                self._log.warning(f"Cannot process {event} (event not for this account).")
 
     cdef void _handle_order_fill(self, OrderEvent event, StrategyId strategy_id):
         """
@@ -874,7 +916,7 @@ cdef class ExecutionEngine:
 
         cdef PositionId position_id = self.database.get_position_id(event.order_id)
         if position_id is None:
-            self._log.error(f"Cannot handle {event} (position id for {event.order_id} not found).")
+            self._log.error(f"Cannot process {event} (position id for {event.order_id} not found).")
             # Cannot proceed with event processing
             return
 

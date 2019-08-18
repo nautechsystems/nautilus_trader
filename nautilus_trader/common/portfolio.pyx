@@ -6,24 +6,9 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from typing import List, Dict
-from cpython.datetime cimport datetime
-
-from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.events cimport (
-    AccountEvent,
-    OrderEvent,
-    OrderFilled,
-    OrderPartiallyFilled,
-    PositionOpened,
-    PositionModified,
-    PositionClosed)
+from nautilus_trader.model.events cimport AccountEvent
 from nautilus_trader.model.objects cimport Money
-from nautilus_trader.model.identifiers cimport StrategyId, OrderId, PositionId
-from nautilus_trader.model.position cimport Position
 from nautilus_trader.common.logger cimport Logger, LoggerAdapter
-from nautilus_trader.common.clock cimport LiveClock
-from nautilus_trader.common.guid cimport LiveGuidFactory
 from nautilus_trader.trade.performance cimport PerformanceAnalyzer
 
 
@@ -33,8 +18,8 @@ cdef class Portfolio:
     """
 
     def __init__(self,
-                 Clock clock=LiveClock(),
-                 GuidFactory guid_factory=LiveGuidFactory(),
+                 Clock clock,
+                 GuidFactory guid_factory,
                  Logger logger=None):
         """
         Initializes a new instance of the Portfolio class.
@@ -46,7 +31,6 @@ cdef class Portfolio:
         self._clock = clock
         self._guid_factory = guid_factory
         self._log = LoggerAdapter(self.__class__.__name__, logger)
-        self._exec_engine = None          # Initialized when registered with execution engine
 
         self._account_capital = Money.zero()
         self._account_initialized = False

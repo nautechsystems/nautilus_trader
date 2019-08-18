@@ -46,7 +46,7 @@ if __name__ == "__main__":
         starting_capital=1000000,
         account_currency=Currency.USD,
         bypass_logging=False,
-        level_console=LogLevel.INFO,
+        level_console=LogLevel.DEBUG,
         level_store=LogLevel.WARNING,
         log_thread=False,
         log_to_file=False)
@@ -70,7 +70,7 @@ if __name__ == "__main__":
     input("Press Enter to continue...")
 
     start = datetime(2013, 2, 1, 0, 0, 0, 0)
-    stop = datetime(2013, 3, 1, 0, 0, 0, 0)
+    stop = datetime(2013, 2, 1, 1, 0, 0, 0)
 
     engine.run(start, stop)
     print(engine.get_order_fills_report())

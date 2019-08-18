@@ -9,7 +9,6 @@
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.guid cimport GuidFactory
 from nautilus_trader.common.logger cimport LoggerAdapter
-from nautilus_trader.common.execution cimport ExecutionEngine
 from nautilus_trader.model.events cimport AccountEvent
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.trade.performance cimport PerformanceAnalyzer
@@ -22,7 +21,6 @@ cdef class Portfolio:
     cdef LoggerAdapter _log
     cdef Clock _clock
     cdef GuidFactory _guid_factory
-    cdef ExecutionEngine _exec_engine
     cdef Money _account_capital
     cdef bint _account_initialized
 

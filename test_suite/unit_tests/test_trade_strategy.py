@@ -65,7 +65,7 @@ class TradeStrategyTests(unittest.TestCase):
             logger=self.logger)
 
         self.exec_client = BacktestExecClient(
-            self.exec_engine,
+            exec_engine=self.exec_engine,
             instruments=[TestStubs.instrument_usdjpy()],
             frozen_account=False,
             starting_capital=Money(1000000),

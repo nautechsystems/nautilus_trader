@@ -591,7 +591,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._clock.time_now())
 
         # Adjust account if position exists
-        if self._exec_engine.database.is_position_for_order(order.id):
+        if self._exec_engine.database.position_exists_for_order(order.id):
             self._adjust_account(filled)
 
         self._exec_engine.handle_event(filled)
