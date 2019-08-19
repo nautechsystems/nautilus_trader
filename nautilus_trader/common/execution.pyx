@@ -223,6 +223,7 @@ cdef class ExecutionDatabase:
     cdef void _log_cannot_find_position(self, PositionId position_id):
         self._log.error(f"Cannot find {position_id} in the database.")
 
+
 cdef class InMemoryExecutionDatabase(ExecutionDatabase):
     """
     Provides an in-memory execution database.
@@ -561,7 +562,6 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         :return: Position or None.
         """
         cdef PositionId position_id = self.get_position_id(order_id)
-
         if position_id is None:
             self._log.error(f"Cannot get position for {order_id} (no matching position id found).")
             return None
@@ -575,7 +575,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         :param order_id: The order identifier associated with the position.
         :return: PositionId or None.
         """
-        cdef Position position_id = self._index_order_position.get(order_id)
+        cdef PositionId position_id = self._index_order_position.get(order_id)
         if position_id is None:
             self._log.error(f"Cannot get position id for {order_id} (no matching position id found).")
 

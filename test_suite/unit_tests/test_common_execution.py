@@ -12,22 +12,26 @@ import uuid
 from nautilus_trader.core.types import GUID
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.events import OrderFilled
-from nautilus_trader.model.identifiers import TraderId, StrategyId, IdTag, OrderId, PositionId, ExecutionId, ExecutionTicket
+from nautilus_trader.model.identifiers import (
+    TraderId,
+    StrategyId,
+    IdTag,
+    OrderId,
+    PositionId,
+    ExecutionId,
+    ExecutionTicket)
 from nautilus_trader.model.objects import Quantity, Venue, Symbol, Price, Money
 from nautilus_trader.model.order import OrderFactory
 from nautilus_trader.model.position import Position
+from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.common.account import Account
-from nautilus_trader.common.brokerage import CommissionCalculator
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.guid import TestGuidFactory
 from nautilus_trader.common.logger import TestLogger
 from nautilus_trader.common.portfolio import Portfolio
 from nautilus_trader.common.execution import InMemoryExecutionDatabase, ExecutionEngine
 from nautilus_trader.trade.strategy import TradingStrategy
-from nautilus_trader.backtest.execution import BacktestExecClient
-from nautilus_trader.backtest.models import FillModel
-
-
+from test_kit.dummies import DummyExecutionClient
 from test_kit.stubs import TestStubs
 
 UNIX_EPOCH = TestStubs.unix_epoch()
@@ -258,47 +262,35 @@ class ExecutionEngineTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
-        clock = TestClock()
-        guid_factory = TestGuidFactory()
+        self.clock = TestClock()
+        self.guid_factory = TestGuidFactory()
         logger = TestLogger()
 
-        trader_id = TraderId('000')
+        self.trader_id = TraderId('000')
         id_tag_trader = IdTag('000')
         id_tag_strategy = IdTag('001')
 
         self.order_factory = OrderFactory(
             id_tag_trader=id_tag_trader,
             id_tag_strategy=id_tag_strategy,
-            clock=clock)
+            clock=self.clock)
 
         self.account = Account()
         self.portfolio = Portfolio(
-            clock=clock,
-            guid_factory=guid_factory,
+            clock=self.clock,
+            guid_factory=self.guid_factory,
             logger=logger)
 
-        self.exec_db = InMemoryExecutionDatabase(trader_id=trader_id, logger=logger)
+        self.exec_db = InMemoryExecutionDatabase(trader_id=self.trader_id, logger=logger)
         self.exec_engine = ExecutionEngine(
             database=self.exec_db,
             account=self.account,
             portfolio=self.portfolio,
-            clock=clock,
-            guid_factory=guid_factory,
+            clock=self.clock,
+            guid_factory=self.guid_factory,
             logger=logger)
 
-        self.exec_client = BacktestExecClient(
-            exec_engine=self.exec_engine,
-            instruments=[TestStubs.instrument_usdjpy()],
-            frozen_account=False,
-            starting_capital=Money(1000000),
-            fill_model=FillModel(),
-            commission_calculator=CommissionCalculator(),
-            account=self.account,
-            portfolio=self.portfolio,
-            clock=clock,
-            guid_factory=guid_factory,
-            logger=logger)
-
+        self.exec_client = DummyExecutionClient(self.exec_engine, logger)
         self.exec_engine.register_client(self.exec_client)
 
     def test_can_register_strategy(self):
@@ -596,20 +588,53 @@ class ExecutionEngineTests(unittest.TestCase):
         # Arrange
         strategy1 = TradingStrategy(id_tag_strategy='001')
         strategy2 = TradingStrategy(id_tag_strategy='002')
-        order_id1 = OrderId('AUDUSD.FXCM-1-1')
-        order_id2 = OrderId('AUDUSD.FXCM-1-2')
-        order_id3 = OrderId('AUDUSD.FXCM-1-3')
-        position_id1 = PositionId('AUDUSD.FXCM-1-1')
-        position_id2 = PositionId('AUDUSD.FXCM-1-2')
+        position_id1 = strategy1.position_id_generator.generate()
+        position_id2 = strategy2.position_id_generator.generate()
 
-        self.exec_engine.register_strategy(strategy1)  # Also registers with portfolio
-        self.exec_engine.register_strategy(strategy2)  # Also registers with portfolio
-        # self.exec_db.add_order(order_id1, position_id1)
-        # self.exec_db.add_order(order_id2, position_id2)
-        # self.exec_db.add_order(order_id3, position_id1)
+        self.exec_engine.register_strategy(strategy1)
+        self.exec_engine.register_strategy(strategy2)
+
+        order1 = strategy1.order_factory.market(
+            AUDUSD_FXCM,
+            OrderSide.BUY,
+            Quantity(100000))
+
+        order2 = strategy1.order_factory.market(
+            AUDUSD_FXCM,
+            OrderSide.SELL,
+            Quantity(100000))
+
+        order3 = strategy2.order_factory.market(
+            AUDUSD_FXCM,
+            OrderSide.BUY,
+            Quantity(100000))
+
+        submit_order1 = SubmitOrder(
+            self.trader_id,
+            strategy1.id,
+            position_id1,
+            order1,
+            self.guid_factory.generate(),
+            self.clock.time_now())
+
+        submit_order2 = SubmitOrder(
+            self.trader_id,
+            strategy1.id,
+            position_id1,
+            order2,
+            self.guid_factory.generate(),
+            self.clock.time_now())
+
+        submit_order3 = SubmitOrder(
+            self.trader_id,
+            strategy2.id,
+            position_id2,
+            order3,
+            self.guid_factory.generate(),
+            self.clock.time_now())
 
         buy1 = OrderFilled(
-            order_id1,
+            order1.id,
             ExecutionId('E1'),
             ExecutionTicket('T1'),
             AUDUSD_FXCM,
@@ -621,21 +646,9 @@ class ExecutionEngineTests(unittest.TestCase):
             UNIX_EPOCH)
 
         buy2 = OrderFilled(
-            order_id2,
+            order2.id,
             ExecutionId('E2'),
             ExecutionTicket('T2'),
-            AUDUSD_FXCM,
-            OrderSide.BUY,
-            Quantity(100000),
-            Price('1.00000'),
-            UNIX_EPOCH,
-            GUID(uuid.uuid4()),
-            UNIX_EPOCH)
-
-        sell1 = OrderFilled(
-            order_id3,
-            ExecutionId('E3'),
-            ExecutionTicket('T3'),
             AUDUSD_FXCM,
             OrderSide.SELL,
             Quantity(100000),
@@ -644,36 +657,49 @@ class ExecutionEngineTests(unittest.TestCase):
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
+        sell1 = OrderFilled(
+            order3.id,
+            ExecutionId('E3'),
+            ExecutionTicket('T3'),
+            AUDUSD_FXCM,
+            OrderSide.BUY,
+            Quantity(100000),
+            Price('1.00000'),
+            UNIX_EPOCH,
+            GUID(uuid.uuid4()),
+            UNIX_EPOCH)
+
         # Act
+        self.exec_engine.execute_command(submit_order1)
+        self.exec_engine.execute_command(submit_order2)
+        self.exec_engine.execute_command(submit_order3)
         self.exec_engine.handle_event(buy1)
         self.exec_engine.handle_event(buy2)
         self.exec_engine.handle_event(sell1)
 
         # Assert
         # Already tested .is_position_active and .is_position_closed above
-        # self.assertTrue(self.portfolio.is_position_exists(position_id1))
-        # self.assertTrue(self.portfolio.is_position_exists(position_id2))
-        # self.assertTrue(self.portfolio.is_strategy_flat(strategy1.id))
-        # self.assertFalse(self.portfolio.is_strategy_flat(strategy2.id))
-        # self.assertFalse(self.portfolio.is_flat())
-        # self.assertTrue(position_id1 in self.portfolio.get_positions(strategy1.id))
-        # self.assertTrue(position_id2 in self.portfolio.get_positions(strategy2.id))
-        # self.assertTrue(position_id1 in self.portfolio.get_positions_all())
-        # self.assertTrue(position_id2 in self.portfolio.get_positions_all())
-        # self.assertEqual(0, len(self.portfolio.get_positions_active(strategy1.id)))
-        # self.assertEqual(1, len(self.portfolio.get_positions_active(strategy2.id)))
-        # self.assertEqual(0, len(self.portfolio.get_positions_active_all()[strategy1.id]))
-        # self.assertEqual(1, len(self.portfolio.get_positions_active_all()[strategy2.id]))
-        # self.assertTrue(position_id1 not in self.portfolio.get_positions_active(strategy1.id))
-        # self.assertTrue(position_id2 in self.portfolio.get_positions_active(strategy2.id))
-        # self.assertTrue(position_id1 not in self.portfolio.get_positions_active_all()[strategy1.id])
-        # self.assertTrue(position_id2 in self.portfolio.get_positions_active_all()[strategy2.id])
-        # self.assertTrue(position_id1 in self.portfolio.get_positions_closed(strategy1.id))
-        # self.assertTrue(position_id2 not in self.portfolio.get_positions_closed(strategy2.id))
-        # self.assertTrue(position_id1 in self.portfolio.get_positions_closed_all()[strategy1.id])
-        # self.assertTrue(position_id2 not in self.portfolio.get_positions_closed_all()[strategy2.id])
-        # self.assertEqual(2, self.portfolio.positions_count())
-        # self.assertEqual(1, self.portfolio.positions_active_count())
-        # self.assertEqual(1, self.portfolio.positions_closed_count())
-        # self.assertEqual(2, len(self.portfolio.position_opened_events))
-        # self.assertEqual(1, len(self.portfolio.position_closed_events))
+        self.assertTrue(self.exec_db.position_exists(position_id1))
+        self.assertTrue(self.exec_db.position_exists(position_id2))
+        self.assertTrue(self.exec_engine.is_strategy_flat(strategy1.id))
+        self.assertFalse(self.exec_engine.is_strategy_flat(strategy2.id))
+        self.assertFalse(self.exec_engine.is_flat())
+        self.assertTrue(position_id1 in self.exec_db.get_positions(strategy1.id))
+        self.assertTrue(position_id2 in self.exec_db.get_positions(strategy2.id))
+        self.assertTrue(position_id1 in self.exec_db.get_positions_all())
+        self.assertTrue(position_id2 in self.exec_db.get_positions_all())
+        self.assertEqual(0, len(self.exec_db.get_positions_active(strategy1.id)))
+        self.assertEqual(1, len(self.exec_db.get_positions_active(strategy2.id)))
+        self.assertEqual(0, len(self.exec_db.get_positions_active_all()[strategy1.id]))
+        self.assertEqual(1, len(self.exec_db.get_positions_active_all()[strategy2.id]))
+        self.assertTrue(position_id1 not in self.exec_db.get_positions_active(strategy1.id))
+        self.assertTrue(position_id2 in self.exec_db.get_positions_active(strategy2.id))
+        self.assertTrue(position_id1 not in self.exec_db.get_positions_active_all()[strategy1.id])
+        self.assertTrue(position_id2 in self.exec_db.get_positions_active_all()[strategy2.id])
+        self.assertTrue(position_id1 in self.exec_db.get_positions_closed(strategy1.id))
+        self.assertTrue(position_id2 not in self.exec_db.get_positions_closed(strategy2.id))
+        self.assertTrue(position_id1 in self.exec_db.get_positions_closed_all()[strategy1.id])
+        self.assertTrue(position_id2 not in self.exec_db.get_positions_closed_all()[strategy2.id])
+        self.assertEqual(2, self.exec_db.positions_count())
+        self.assertEqual(1, self.exec_db.positions_active_count())
+        self.assertEqual(1, self.exec_db.positions_closed_count())
