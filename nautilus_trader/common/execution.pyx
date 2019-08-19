@@ -235,6 +235,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Initializes a new instance of the ExecutionEngine class.
 
+        :param trader_id: The trader identifier for the component.
         :param logger: The logger for the component.
         """
         super().__init__(trader_id, logger)
@@ -253,10 +254,9 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
     cpdef void add_strategy(self, TradingStrategy strategy):
         """
-        Register the given strategy with the execution engine.
+        Add the given strategy to the execution database.
 
-        :param strategy: The strategy to register.
-        :raises ConditionFailed: If the strategy is already registered with the execution engine.
+        :param strategy: The strategy to add.
         """
         Condition.true(strategy.id not in self._strategies, 'strategy.id not in self._strategies')
         Condition.true(strategy.id not in self._orders_active, 'strategy.id not in self._orders_active')
@@ -271,6 +271,13 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         self._log.debug(f"Added strategy (id={strategy.id.value}).")
 
     cpdef void add_order(self, Order order, StrategyId strategy_id, PositionId position_id):
+        """
+        Add the given order to the execution database.
+
+        :param order: The order to add.
+        :param strategy_id: The strategy identifier to associate with the order.
+        :param position_id: The position identifier to associate with the order.
+        """
         Condition.true(order.id not in self._cached_orders, 'order.id not in order_book')
         Condition.true(order.id not in self._index_order_strategy, 'order.id not in order_index')
 
