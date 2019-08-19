@@ -65,15 +65,6 @@ class BacktestExecClientTests(unittest.TestCase):
             guid_factory=self.guid_factory,
             logger=self.logger)
 
-        self.exec_db = InMemoryExecutionDatabase(trader_id=TraderId('000'), logger=self.logger)
-        self.exec_engine = ExecutionEngine(
-            database=self.exec_db,
-            account=self.account,
-            portfolio=self.portfolio,
-            clock=self.clock,
-            guid_factory=self.guid_factory,
-            logger=self.logger)
-
         self.exec_client = BacktestExecClient(
             self.exec_engine,
             instruments=self.instruments,
@@ -86,6 +77,8 @@ class BacktestExecClientTests(unittest.TestCase):
             clock=TestClock(),
             guid_factory=TestGuidFactory(),
             logger=TestLogger())
+
+        self.exec_engine.register_client(self.exec_client)
 
     def test_can_send_collateral_inquiry(self):
         # Arrange
@@ -195,7 +188,7 @@ class BacktestExecClientTests(unittest.TestCase):
     def test_can_modify_stop_order(self):
         # Arrange
         strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
-        self.exec_client.register_strategy(strategy)
+        self.exec_engine.register_strategy(strategy)
         strategy.start()
 
         bar = TestStubs.bar_3decimal()
@@ -222,23 +215,23 @@ class BacktestExecClientTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 
-        # bar = TestStubs.bar_3decimal()
-        # self.exec_client.process_bars(self.usdjpy.symbol, bar, bar)  # Prepare market
-        # atomic_order = strategy.order_factory.atomic_market(
-        #     USDJPY_FXCM,
-        #     OrderSide.BUY,
-        #     Quantity(100000),
-        #     Price('85.000'))
-        #
-        # strategy.submit_atomic_order(atomic_order, strategy.position_id_generator.generate())
-        #
-        # # Act
-        # strategy.modify_order(atomic_order.stop_loss, Price('85.100'))
-        #
-        # # Assert
-        # self.assertEqual(Price('85.100'), strategy.order(atomic_order.stop_loss.id).price)
-        # self.assertEqual(8, strategy.object_storer.count)
-        # self.assertTrue(isinstance(strategy.object_storer.get_store()[7], OrderModified))
+        bar = TestStubs.bar_3decimal()
+        self.exec_client.process_bars(self.usdjpy.symbol, bar, bar)  # Prepare market
+        atomic_order = strategy.order_factory.atomic_market(
+            USDJPY_FXCM,
+            OrderSide.BUY,
+            Quantity(100000),
+            Price('85.000'))
+
+        strategy.submit_atomic_order(atomic_order, strategy.position_id_generator.generate())
+
+        # Act
+        strategy.modify_order(atomic_order.stop_loss, Price('85.100'))
+
+        # Assert
+        self.assertEqual(Price('85.100'), strategy.order(atomic_order.stop_loss.id).price)
+        self.assertEqual(8, strategy.object_storer.count)
+        self.assertTrue(isinstance(strategy.object_storer.get_store()[7], OrderModified))
 
     def test_submit_market_order_with_slippage_fill_model_slips_order(self):
         # Arrange
@@ -248,7 +241,8 @@ class BacktestExecClientTests(unittest.TestCase):
             prob_slippage=1.0,
             random_seed=None)
 
-        self.exec_client = BacktestExecClient(
+        exec_client = BacktestExecClient(
+            exec_engine=self.exec_engine,
             instruments=self.instruments,
             frozen_account=False,
             starting_capital=Money(1000000),
@@ -260,8 +254,9 @@ class BacktestExecClientTests(unittest.TestCase):
             guid_factory=TestGuidFactory(),
             logger=TestLogger())
 
+        self.exec_engine.register_client(exec_client)
         strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
-        self.exec_client.register_strategy(strategy)
+        self.exec_engine.register_strategy(strategy)
         strategy.start()
 
         bar = TestStubs.bar_3decimal()
@@ -282,7 +277,7 @@ class BacktestExecClientTests(unittest.TestCase):
     def test_submit_order_with_no_market_rejects_order(self):
         # Arrange
         strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
-        self.exec_client.register_strategy(strategy)
+        self.exec_engine.register_strategy(strategy)
         strategy.start()
 
         order = strategy.order_factory.stop_market(

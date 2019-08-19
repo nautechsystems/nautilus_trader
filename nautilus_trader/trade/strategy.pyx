@@ -445,7 +445,7 @@ cdef class TradingStrategy:
         if isinstance(event, OrderRejected):
             self.log.warning(f"{event}")
             if event.order_id in self._stop_loss_orders and self.flatten_on_sl_reject:
-                position = self.portfolio.get_position_for_order(event.order_id)
+                position = self._exec_engine.database.get_position_for_order(event.order_id)
                 if position.is_entered:
                     self.log.critical(f"Rejected order {event.order_id} was a registered stop-loss. Flattening entered position {position.id}.")
                     self.flatten_position(position.id)
