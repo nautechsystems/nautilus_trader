@@ -611,7 +611,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
         order2 = strategy2.order_factory.stop_market(
             AUDUSD_FXCM,
-            OrderSide.SELL,
+            OrderSide.BUY,
             Quantity(100000),
             Price('1.00000'))
 

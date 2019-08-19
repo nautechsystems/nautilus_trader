@@ -176,7 +176,7 @@ cdef class TradingStrategy:
         return f"<{str(self)} object at {id(self)}>"
 
 
-# -- ABSTRACT METHODS ---------------------------------------------------------------------------- #
+#-- ABSTRACT METHODS -----------------------------------------------------------------------------#
 
     cpdef on_start(self):
         """
@@ -244,7 +244,7 @@ cdef class TradingStrategy:
         raise NotImplementedError("Method on_dispose() must be implemented in the strategy (or just add pass).")
 
 
-# -- REGISTRATION METHODS ------------------------------------------------------------------------ #
+#-- REGISTRATION METHODS --------------------------------------------------------------------------#
 
     cpdef void register_trader(self, TraderId trader_id, IdTag id_tag_trader):
         """
@@ -359,7 +359,7 @@ cdef class TradingStrategy:
         self._take_profit_orders[order.id] = order
 
 
-# -- HANDLER METHODS ----------------------------------------------------------------------------- #
+#-- HANDLER METHODS -------------------------------------------------------------------------------#
 
     cpdef void handle_tick(self, Tick tick):
         """"
@@ -519,7 +519,7 @@ cdef class TradingStrategy:
         del self._modify_order_buffer[order_id]
 
 
-# -- DATA METHODS -------------------------------------------------------------------------------- #
+#-- DATA METHODS ----------------------------------------------------------------------------------#
 
     cpdef datetime time_now(self):
         """
@@ -754,7 +754,7 @@ cdef class TradingStrategy:
         return self._bars[bar_type][index]
 
 
-# -- INDICATOR METHODS --------------------------------------------------------------------------- #
+#-- INDICATOR METHODS -----------------------------------------------------------------------------#
 
     cpdef list registered_indicators(self):
         """
@@ -776,7 +776,7 @@ cdef class TradingStrategy:
         return True
 
 
-# -- MANAGEMENT METHODS -------------------------------------------------------------------------- #
+#-- MANAGEMENT METHODS ----------------------------------------------------------------------------#
 
     cpdef OrderSide get_opposite_side(self, OrderSide side):
         """
@@ -1049,7 +1049,7 @@ cdef class TradingStrategy:
         return len(self._take_profit_orders)
 
 
-# -- COMMAND METHODS ----------------------------------------------------------------------------- #
+#-- COMMANDS --------------------------------------------------------------------------------------#
 
     cpdef void start(self):
         """
@@ -1391,7 +1391,7 @@ cdef class TradingStrategy:
             self.submit_order(order, position_id)
 
 
-# -- BACKTEST METHODS ---------------------------------------------------------------------------- #
+#-- BACKTEST METHODS ------------------------------------------------------------------------------#
 
     cpdef void change_clock(self, Clock clock):
         """
