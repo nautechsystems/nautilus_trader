@@ -10,10 +10,17 @@ import uuid
 import zmq
 
 from cpython.datetime cimport datetime
-
 from threading import Thread
 from zmq import Context
 
+from nautilus_trader.model.commands cimport (
+    AccountInquiry,
+    SubmitOrder,
+    SubmitAtomicOrder,
+    ModifyOrder,
+    CancelOrder)
+from nautilus_trader.common.execution cimport ExecutionEngine, ExecutionClient
+from nautilus_trader.common.logger cimport Logger
 from nautilus_trader.core.types cimport GUID
 from nautilus_trader.network.responses cimport MessageReceived
 from nautilus_trader.serialization.base cimport CommandSerializer, ResponseSerializer
@@ -21,6 +28,86 @@ from test_kit.stubs import TestStubs
 
 cdef datetime UNIX_EPOCH = TestStubs.unix_epoch()
 cdef str UTF8 = 'utf-8'
+
+
+cdef class ObjectStorer:
+    """"
+    A test class which stores the given objects.
+    """
+
+    def __init__(self):
+        """
+        Initializes a new instance of the ObjectStorer class.
+        """
+        self._store = []
+
+    cpdef list get_store(self):
+        """"
+        Return the list or stored objects.
+        
+        return: List[Object].
+        """
+        return self._store
+
+    cpdef void store(self, object obj):
+        """"
+        Store the given object.
+        """
+        self.count += 1
+        self._store.append(obj)
+
+    cpdef void store_2(self, object obj1, object obj2):
+        """"
+        Store the given objects as a tuple.
+        """
+        self.store((obj1, obj2))
+
+
+cdef class MockExecutionClient(ExecutionClient):
+    """
+    Provides a mock execution client for testing. The mock will store all
+    received commands in a list.
+    """
+    cdef readonly list received_commands
+
+    def __init__(self,
+                 ExecutionEngine exec_engine,
+                 Logger logger):
+        """
+        Initializes a new instance of the MockExecutionClient class.
+
+        :param exec_engine: The execution engine for the component.
+        :param logger: The logger for the component.
+        """
+        super().__init__(exec_engine, logger)
+        self.received_commands = []
+
+    cpdef void connect(self):
+        pass
+
+    cpdef void disconnect(self):
+        pass
+
+    cpdef void dispose(self):
+        pass
+
+    cpdef void account_inquiry(self, AccountInquiry command):
+        self.received_commands.append(command)
+
+    cpdef void submit_order(self, SubmitOrder command):
+        self.received_commands.append(command)
+
+    cpdef void submit_atomic_order(self, SubmitAtomicOrder command):
+        self.received_commands.append(command)
+
+    cpdef void modify_order(self, ModifyOrder command):
+        self.received_commands.append(command)
+
+    cpdef void cancel_order(self, CancelOrder command):
+        self.received_commands.append(command)
+
+    cpdef void reset(self):
+        self.received_commands = []
 
 
 class MockServer(Thread):

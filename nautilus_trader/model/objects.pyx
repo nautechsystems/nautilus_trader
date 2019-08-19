@@ -295,7 +295,7 @@ cdef class Price:
 
         :return: bool.
         """
-        return self.value == other.value and self.precision == other.precision
+        return self.equals(other)
 
     def __ne__(self, Price other) -> bool:
         """
@@ -303,7 +303,7 @@ cdef class Price:
 
         :return: bool.
         """
-        return self.value != other.value or self.precision != other.precision
+        return not self.equals(other)
 
     def __str__(self) -> str:
         """
@@ -375,13 +375,14 @@ cdef class Price:
         else:
             raise NotImplementedError(f"Cannot multiply price with {type(other)}.")
 
-    cpdef float as_float(self):
+    cdef bint equals(self, Price other):
         """
-        Return a float representation of the price.
+        Return a value indicating whether the object equals the given object.
         
-        :return: float.
+        :param other: The other string to compare
+        :return: True if the objects are equal, otherwise False.
         """
-        return float(self.value)
+        return self.value == other.value and self.precision == other.precision
 
     cpdef Price add(self, Price price):
         """
@@ -406,6 +407,14 @@ cdef class Price:
         Condition.true(self.precision == price.precision, 'self.precision == price.precision')
 
         return Price(self.value - price.value)
+
+    cpdef float as_float(self):
+        """
+        Return a float representation of the price.
+        
+        :return: float.
+        """
+        return float(self.value)
 
 
 cdef Money ZERO_MONEY = Money(Decimal('0.00'))
@@ -443,7 +452,7 @@ cdef class Money:
 
         :return: bool.
         """
-        return self.value == other.value
+        return self.equals(other)
 
     def __ne__(self, Money other) -> bool:
         """
@@ -451,7 +460,7 @@ cdef class Money:
 
         :return: bool.
         """
-        return self.value != other.value
+        return not self.equals(other)
 
     def __str__(self) -> str:
         """
@@ -522,6 +531,15 @@ cdef class Money:
             return self * Money(other)
         else:
             raise NotImplementedError(f"Cannot multiply money with {type(other)}.")
+
+    cdef bint equals(self, Money other):
+        """
+        Return a value indicating whether the object equals the given object.
+        
+        :param other: The other string to compare
+        :return: True if the objects are equal, otherwise False.
+        """
+        return self.value == other.value
 
     cpdef float as_float(self):
         """

@@ -42,6 +42,18 @@ class TestStubs:
         return UNIX_EPOCH + timedelta(minutes=offset_mins)
 
     @staticmethod
+    def symbol_audusd_fxcm():
+        return Symbol('AUDUSD', Venue('FXCM'))
+
+    @staticmethod
+    def symbol_gbpusd_fxcm():
+        return Symbol('GBPUSD', Venue('FXCM'))
+
+    @staticmethod
+    def symbol_usdjpy_fxcm():
+        return Symbol('USDJPY', Venue('FXCM'))
+
+    @staticmethod
     def instrument_gbpusd():
         return Instrument(
             InstrumentId('GBPUSD.FXCM'),
