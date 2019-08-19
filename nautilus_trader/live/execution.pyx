@@ -97,29 +97,26 @@ cdef class LiveExecutionEngine(ExecutionEngine):
     """
 
     def __init__(self,
-                 TraderId trader_id,
+                 ExecutionDatabase database,
                  Account account,
                  Portfolio portfolio,
-                 ExecutionDatabase exec_db,
                  LiveClock clock,
                  LiveGuidFactory guid_factory,
                  LiveLogger logger):
         """
         Initializes a new instance of the RedisExecutionEngine class.
 
-        :param trader_id: The trader identifier for the engine.
+        :param database: The execution database for the engine.
         :param account: The account for the engine.
         :param portfolio: The portfolio for the engine.
-        :param exec_db: The execution database for the engine.
         :param clock: The clock for the engine.
         :param guid_factory: The guid factory for the engine.
         :param logger: The logger for the engine.
         """
         super().__init__(
-            trader_id=trader_id,
+            database=database,
             account=account,
             portfolio=portfolio,
-            exec_db=exec_db,
             clock=clock,
             guid_factory=guid_factory,
             logger=logger)
@@ -175,7 +172,6 @@ cdef class LiveExecClient(ExecutionClient):
             CommandSerializer command_serializer=MsgPackCommandSerializer(),
             ResponseSerializer response_serializer=MsgPackResponseSerializer(),
             EventSerializer event_serializer=MsgPackEventSerializer(),
-
             LiveLogger logger=LiveLogger()):
         """
         Initializes a new instance of the LiveExecClient class.

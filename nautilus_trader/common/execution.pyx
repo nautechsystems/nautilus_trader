@@ -766,6 +766,7 @@ cdef class ExecutionEngine:
         :param exec_client: The execution client to register.
         """
         self._exec_client = exec_client
+        self._log.info("Registered execution client.")
 
     cpdef void register_strategy(self, TradingStrategy strategy):
         """
@@ -779,6 +780,7 @@ cdef class ExecutionEngine:
         self._registered_strategies[strategy.id] = strategy
         self.database.add_strategy(strategy)
         strategy.register_execution_engine(self)
+        self._log.info(f"Registered strategy {strategy}.")
 
     cpdef void deregister_strategy(self, TradingStrategy strategy):
         """
@@ -790,6 +792,7 @@ cdef class ExecutionEngine:
         Condition.true(strategy.id in self._registered_strategies, 'strategy in registered_strategies')
 
         del self._registered_strategies[strategy.id]
+        self._log.info(f"De-registered strategy {strategy}.")
 
     cpdef void execute_command(self, Command command):
         """

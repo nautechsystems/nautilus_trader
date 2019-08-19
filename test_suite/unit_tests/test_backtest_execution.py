@@ -28,7 +28,7 @@ from test_kit.data import TestDataProvider
 from test_kit.stubs import TestStubs
 
 UNIX_EPOCH = TestStubs.unix_epoch()
-USDJPY_FXCM = Symbol('USDJPY', Venue('FXCM'))
+USDJPY_FXCM = TestStubs.symbol_usdjpy_fxcm()
 
 
 class BacktestExecClientTests(unittest.TestCase):
@@ -260,7 +260,7 @@ class BacktestExecClientTests(unittest.TestCase):
         strategy.start()
 
         bar = TestStubs.bar_3decimal()
-        self.exec_client.process_bars(self.usdjpy.symbol, bar, bar)  # Prepare market
+        exec_client.process_bars(self.usdjpy.symbol, bar, bar)  # Prepare market
         order = strategy.order_factory.market(
             USDJPY_FXCM,
             OrderSide.BUY,
