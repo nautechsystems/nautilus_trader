@@ -25,7 +25,7 @@ cdef class DummyExecutionClient(ExecutionClient):
                  ExecutionEngine exec_engine,
                  Logger logger):
         """
-        Initializes a new instance of the ExecutionClient class.
+        Initializes a new instance of the DummyExecutionClient class.
 
         :param exec_engine: The execution engine to connect to the client.
         :param logger: The logger for the component.
