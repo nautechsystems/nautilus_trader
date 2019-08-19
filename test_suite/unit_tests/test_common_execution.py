@@ -746,7 +746,7 @@ class ExecutionEngineTests(unittest.TestCase):
             self.guid_factory.generate(),
             self.clock.time_now())
 
-        buy1 = OrderFilled(
+        order1_filled = OrderFilled(
             order1.id,
             ExecutionId('E1'),
             ExecutionTicket('T1'),
@@ -758,7 +758,7 @@ class ExecutionEngineTests(unittest.TestCase):
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
-        buy2 = OrderFilled(
+        order2_filled = OrderFilled(
             order2.id,
             ExecutionId('E2'),
             ExecutionTicket('T2'),
@@ -770,7 +770,7 @@ class ExecutionEngineTests(unittest.TestCase):
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
-        sell1 = OrderFilled(
+        order3_filled = OrderFilled(
             order3.id,
             ExecutionId('E3'),
             ExecutionTicket('T3'),
@@ -786,9 +786,9 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.execute_command(submit_order1)
         self.exec_engine.execute_command(submit_order2)
         self.exec_engine.execute_command(submit_order3)
-        self.exec_engine.handle_event(buy1)
-        self.exec_engine.handle_event(buy2)
-        self.exec_engine.handle_event(sell1)
+        self.exec_engine.handle_event(order1_filled)
+        self.exec_engine.handle_event(order2_filled)
+        self.exec_engine.handle_event(order3_filled)
 
         # Assert
         # Already tested .is_position_active and .is_position_closed above

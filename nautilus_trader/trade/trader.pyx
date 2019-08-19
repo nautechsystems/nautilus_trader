@@ -105,8 +105,8 @@ cdef class Trader:
 
         for strategy in self.strategies:
             strategy.register_trader(trader_id=self.id, id_tag_trader=self.id_tag_trader)
-            strategy.register_execution_engine(self._exec_engine)
             self._data_client.register_strategy(strategy)
+            self._exec_engine.register_strategy(strategy)
             self._log.info(f"Initialized {strategy}.")
 
     cpdef start(self):

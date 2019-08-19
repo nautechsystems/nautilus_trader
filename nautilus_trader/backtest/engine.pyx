@@ -454,8 +454,8 @@ cdef class BacktestEngine:
         self.log.info(f"Time-step iterations: {self.iteration} of {time_step}")
         self.log.info(f"Execution resolution: {resolution_string(self.data_client.execution_resolution)}")
         self.log.info(f"Total events: {self.exec_client.event_count}")
-        self.log.info(f"Total orders: {len(self.exec_client.get_orders_all())}")
-        self.log.info(f"Total positions: {len(self.portfolio.get_positions_all())}")
+        self.log.info(f"Total orders: {len(self.exec_engine.database.get_orders_all())}")
+        self.log.info(f"Total positions: {len(self.exec_engine.database.get_positions_all())}")
         if self.exec_client.frozen_account:
             self.log.warning(f"ACCOUNT FROZEN")
         self.log.info(f"Account balance (starting): {self.config.starting_capital} {account_currency}")
