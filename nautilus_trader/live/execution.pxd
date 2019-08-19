@@ -50,6 +50,7 @@ cdef class LiveExecClient(ExecutionClient):
     cdef object _events_worker
     cdef CommandSerializer _command_serializer
     cdef ResponseSerializer _response_serializer
+    cdef EventSerializer _event_serializer
 
     cdef readonly str events_topic
 

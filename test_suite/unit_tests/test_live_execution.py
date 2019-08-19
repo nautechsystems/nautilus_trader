@@ -12,9 +12,16 @@ import zmq
 
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.objects import Quantity, Venue, Symbol, Price
+from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.common.account import Account
+from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.guid import LiveGuidFactory
+from nautilus_trader.common.portfolio import Portfolio
+from nautilus_trader.common.execution import InMemoryExecutionDatabase
 from nautilus_trader.network.responses import MessageReceived
 from nautilus_trader.serialization.serializers import MsgPackCommandSerializer, MsgPackResponseSerializer
-from nautilus_trader.live.execution import LiveExecClient
+from nautilus_trader.live.execution import LiveExecutionEngine, LiveExecClient
+from nautilus_trader.live.logger import LiveLogger
 from test_kit.stubs import TestStubs
 from test_kit.mocks import MockCommandRouter, MockPublisher
 from test_kit.strategies import TestStrategy1
@@ -35,11 +42,35 @@ class LiveExecClientTests(unittest.TestCase):
         commands_port = 56555
         events_port = 56556
 
+        trader_id = TraderId('000')
         self.bar_type = TestStubs.bartype_audusd_1min_bid()
+
+        self.clock = LiveClock()
+        self.guid_factory = LiveGuidFactory()
+        self.logger = LiveLogger()
+        self.account = Account()
+
+        self.portfolio = Portfolio(
+            clock=self.clock,
+            guid_factory=self.guid_factory,
+            logger=self.logger)
+
+        self.exec_db = InMemoryExecutionDatabase(trader_id=trader_id, logger=self.logger)
+        self.exec_engine = LiveExecutionEngine(
+            database=self.exec_db,
+            account=self.account,
+            portfolio=self.portfolio,
+            clock=self.clock,
+            guid_factory=self.guid_factory,
+            logger=self.logger)
+
         self.exec_client = LiveExecClient(
+            exec_engine=self.exec_engine,
             zmq_context=zmq_context,
             commands_port=commands_port,
             events_port=events_port)
+
+        self.exec_engine.register_client(self.exec_client)
 
         self.response_list = []
         self.response_handler = self.response_list.append
@@ -63,7 +94,7 @@ class LiveExecClientTests(unittest.TestCase):
     def test_can_send_submit_order_command(self):
         # Arrange
         strategy = TestStrategy1(self.bar_type, id_tag_strategy='001')
-        self.exec_client.register_strategy(strategy)
+        self.exec_engine.register_strategy(strategy)
         order = strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
@@ -81,7 +112,7 @@ class LiveExecClientTests(unittest.TestCase):
     def test_can_send_submit_atomic_order_no_take_profit_command(self):
         # Arrange
         strategy = TestStrategy1(self.bar_type, id_tag_strategy='002')
-        self.exec_client.register_strategy(strategy)
+        self.exec_engine.register_strategy(strategy)
         atomic_order = strategy.order_factory.atomic_market(
             AUDUSD_FXCM,
             OrderSide.BUY,
@@ -101,7 +132,7 @@ class LiveExecClientTests(unittest.TestCase):
     def test_can_send_submit_atomic_order_with_take_profit_command(self):
         # Arrange
         strategy = TestStrategy1(self.bar_type, id_tag_strategy='003')
-        self.exec_client.register_strategy(strategy)
+        self.exec_engine.register_strategy(strategy)
         atomic_order = strategy.order_factory.atomic_limit(
             AUDUSD_FXCM,
             OrderSide.BUY,
@@ -124,7 +155,7 @@ class LiveExecClientTests(unittest.TestCase):
     def test_can_send_cancel_order_command(self):
         # Arrange
         strategy = TestStrategy1(self.bar_type, id_tag_strategy='004')
-        self.exec_client.register_strategy(strategy)
+        self.exec_engine.register_strategy(strategy)
         order = strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
@@ -145,7 +176,7 @@ class LiveExecClientTests(unittest.TestCase):
     def test_can_send_modify_order_command(self):
         # Arrange
         strategy = TestStrategy1(self.bar_type, id_tag_strategy='005')
-        self.exec_client.register_strategy(strategy)
+        self.exec_engine.register_strategy(strategy)
         order = strategy.order_factory.limit(
             AUDUSD_FXCM,
             OrderSide.BUY,
@@ -167,7 +198,7 @@ class LiveExecClientTests(unittest.TestCase):
     def test_can_send_account_inquiry_command(self):
         # Arrange
         strategy = TestStrategy1(self.bar_type, id_tag_strategy='006')
-        self.exec_client.register_strategy(strategy)
+        self.exec_engine.register_strategy(strategy)
 
         # Act
         strategy.account_inquiry()

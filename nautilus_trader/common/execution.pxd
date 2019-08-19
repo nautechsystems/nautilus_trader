@@ -131,7 +131,6 @@ cdef class ExecutionEngine:
     cpdef bint is_flat(self)
 
 # -------------------------------------------------------------------------------------------------"
-
     cdef void _execute_command(self, Command command)
     cdef void _handle_event(self, Event event)
     cdef void _handle_order_event(self, OrderEvent event)
@@ -143,6 +142,7 @@ cdef class ExecutionEngine:
     cdef void _position_closed(self, Position position, StrategyId strategy_id, OrderEvent order_fill)
     cdef void _send_to_strategy(self, Event event, StrategyId strategy_id)
     cdef void _reset(self)
+
 
 cdef class ExecutionClient:
     """
