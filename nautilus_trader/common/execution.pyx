@@ -268,7 +268,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         self._positions_active[strategy.id] = {}      # type: Dict[PositionId, Position]
         self._positions_closed[strategy.id] = {}      # type: Dict[PositionId, Position]
 
-        self._log.debug(f"Added {strategy}.")
+        self._log.debug(f"Added strategy (id={strategy.id.value}).")
 
     cpdef void add_order(self, Order order, StrategyId strategy_id, PositionId position_id):
         Condition.true(order.id not in self._cached_orders, 'order.id not in order_book')
@@ -278,7 +278,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         self._index_order_strategy[order.id] = strategy_id
         self._index_order_position[order.id] = position_id
 
-        self._log.debug(f"Added order (order_id={order.id.value}, strategy_id={strategy_id.value}, position_id={position_id.value}).")
+        self._log.debug(f"Added order (id={order.id.value}, strategy_id={strategy_id.value}, position_id={position_id.value}).")
 
     cpdef void add_position(self, Position position, StrategyId strategy_id):
         """
@@ -293,7 +293,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
         self._cached_positions[position.id] = position
         self._positions_active[strategy_id][position.id] = position
-        self._log.debug(f"Added {position}.")
+        self._log.debug(f"Added position (id={position.id.value}).")
 
     cpdef void delete_strategy(self, TradingStrategy strategy):
         """
@@ -312,14 +312,14 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         del self._positions_active[strategy.id]
         del self._positions_closed[strategy.id]
 
-        self._log.debug(f"Deleted {strategy}.")
+        self._log.debug(f"Deleted strategy (id={strategy.id.value}).")
 
     cpdef void order_active(self, Order order, StrategyId strategy_id):
         """
+        Update the state of the order within the database to active.
         
-        :param order: 
-        :param strategy_id: 
-        :return: 
+        :param order: The order to update.
+        :param strategy_id: The strategy identifier associated with the order.
         """
         assert strategy_id in self._orders_active
         assert strategy_id in self._orders_completed
@@ -332,9 +332,10 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
     cpdef void order_completed(self, Order order, StrategyId strategy_id):
         """
+        Update the state of the order within the database to completed.
         
-        :param order: 
-        :param strategy_id: 
+        :param order: The order to update.
+        :param strategy_id: The strategy identifier associated with the order.
         """
         assert strategy_id in self._orders_active
         assert strategy_id in self._orders_completed
@@ -347,9 +348,10 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
     cpdef void position_active(self, Position position, StrategyId strategy_id):
         """
-        
-        :param position: 
-        :param strategy_id: 
+        Update the state of the position within the database to active.
+
+        :param position: The position to update.
+        :param strategy_id: The strategy identifier associated with the position.
         """
         assert strategy_id in self._positions_active
         assert strategy_id in self._positions_closed
@@ -362,9 +364,10 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
     cpdef void position_closed(self, Position position, StrategyId strategy_id):
         """
-        
-        :param position: 
-        :param strategy_id: 
+        Update the state of the position within the database to closed.
+
+        :param position: The position to update.
+        :param strategy_id: The strategy identifier associated with the position.
         """
         assert strategy_id in self._positions_active
         assert strategy_id in self._positions_closed
@@ -438,8 +441,9 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
     cpdef StrategyId get_strategy_id(self, OrderId order_id):
         """
+        Return the strategy identifier associated with the given order identifier.
         
-        :param order_id: 
+        :param order_id: The order identifier associated with the strategy.
         :return StrategyId or None: 
         """
         return self._index_order_strategy.get(order_id)
@@ -457,14 +461,15 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
     cpdef dict get_orders_all(self):
         """
-        Return all orders in the execution clients order book.
+        Return all orders in the execution engines order book.
+
         :return: Dict[OrderId, Order].
         """
         return self._cached_orders.copy()
 
     cpdef dict get_orders_active_all(self):
         """
-        Return all active orders in the execution clients order book.
+        Return all active orders in the execution engines order book.
         
         :return: Dict[OrderId, Order].
         """
@@ -472,7 +477,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
     cpdef dict get_orders_completed_all(self):
         """
-        Return all completed orders in the execution clients order book.
+        Return all completed orders in the execution engines order book.
         
         :return: Dict[OrderId, Order].
         """
@@ -752,15 +757,9 @@ cdef class ExecutionEngine:
         self.command_count = 0
         self.event_count = 0
 
-    cpdef list registered_strategies(self):
-        """
-        Return a list of strategy identifiers registered with the execution engine.
-        
-        :return: List[StrategyId]
-        """
-        return list(self._registered_strategies.keys())
 
-# -- COMMANDS -----------------------------------------------------------------#
+#-- COMMANDS --------------------------------------------------------------------------------------#
+
     cpdef void register_client(self, ExecutionClient exec_client):
         """
         Register the given execution client with the execution engine.
@@ -814,6 +813,16 @@ cdef class ExecutionEngine:
     cpdef void reset(self):
         self.database.reset()
 
+#-- QUERIES ---------------------------------------------------------------------------------------"
+
+    cpdef list registered_strategies(self):
+        """
+        Return a list of strategy identifiers registered with the execution engine.
+        
+        :return: List[StrategyId]
+        """
+        return list(self._registered_strategies.keys())
+
     cpdef bint is_strategy_flat(self, StrategyId strategy_id):
         """
         Return a value indicating whether the strategy given identifier is flat 
@@ -834,6 +843,9 @@ cdef class ExecutionEngine:
             if not self.is_strategy_flat(strategy_id):
                 return False  # Therefore the portfolio is not flat
         return True
+
+
+#--------------------------------------------------------------------------------------------------"
 
     cdef void _execute_command(self, Command command):
         self.command_count += 1
@@ -857,68 +869,62 @@ cdef class ExecutionEngine:
     cdef void _handle_event(self, Event event):
         self.event_count += 1
 
+        # Order Event
+        if isinstance(event, OrderEvent):
+            self._handle_order_event(event)
+        # Position Event
+        elif isinstance(event, PositionEvent):
+            self._handle_position_event(event)
+        # Account Event
+        elif isinstance(event, AccountEvent):
+            self._handle_account_event(event)
+
+    cdef void _handle_order_event(self, OrderEvent event):
         cdef Order order
         cdef StrategyId strategy_id
 
-        # Order events
-        if isinstance(event, OrderEvent):
-            order = self.database.get_order(event.order_id)
-            if order is not None:
-                order.apply(event)
-            else:
-                self._log.error(f"Cannot process {event} ({event.order_id} not found).")
-                return # Cannot apply event to any order
+        order = self.database.get_order(event.order_id)
+        if order is None:
+            self._log.error(f"Cannot process {event} ({event.order_id} not found).")
+            return  # Cannot process event further
 
-            strategy_id = self.database.get_strategy_id(event.order_id)
-            if strategy_id is None:
-                self._log.error(f"Cannot process {event} ({strategy_id} not found)")
-            else:
-                if order.is_active:
-                    self.database.order_active(order, strategy_id)
-                elif order.is_complete:
-                    self.database.order_completed(order, strategy_id)
+        order.apply(event)
 
-            if isinstance(event, (OrderFilled, OrderPartiallyFilled)):
-                self._log.debug(f'{event}')
-                if strategy_id is not None:
-                    self._handle_order_fill(event, strategy_id)
-            elif isinstance(event, OrderModified):
-                self._log.debug(f"{event} price to {event.modified_price}")
-            elif isinstance(event, OrderCancelled):
-                self._log.debug(str(event))
-            # Warning Events
-            elif isinstance(event, (OrderRejected, OrderCancelReject)):
-                self._log.debug(f'{event}')  # Also logged as warning by strategy
-            else:
-                self._log.debug(f'{event}')
+        strategy_id = self.database.get_strategy_id(event.order_id)
+        if strategy_id is None:
+            self._log.error(f"Cannot process {event} ({strategy_id} not found)")
+            return  # Cannot process event further
 
-            # Send event to strategy
-            if strategy_id is not None:
-                self._send_to_strategy(event, strategy_id)
+        # Update order state
+        if order.is_active:
+            self.database.order_active(order, strategy_id)
+        elif order.is_complete:
+            self.database.order_completed(order, strategy_id)
 
-        # Account event
-        elif isinstance(event, AccountEvent):
+        if isinstance(event, (OrderFilled, OrderPartiallyFilled)):
             self._log.debug(f'{event}')
-            if not self.account.initialized or self.account.id == event.account_id:
-                self.account.apply(event)
-                self.portfolio.handle_transaction(event)
-            else:
-                self._log.warning(f"Cannot process {event} (event not for this account).")
+            self._handle_order_fill(event, strategy_id)
+        elif isinstance(event, OrderModified):
+            self._log.debug(f"{event} price to {event.modified_price}")
+            self._send_to_strategy(event, strategy_id)
+        elif isinstance(event, OrderCancelled):
+            self._log.debug(str(event))
+            self._send_to_strategy(event, strategy_id)
+        # Warning Events
+        elif isinstance(event, (OrderRejected, OrderCancelReject)):
+            self._log.debug(f'{event}')  # Also logged as warning by strategy
+            self._send_to_strategy(event, strategy_id)
+        else:
+            self._log.debug(f'{event}')
+            self._send_to_strategy(event, strategy_id)
 
     cdef void _handle_order_fill(self, OrderEvent event, StrategyId strategy_id):
-        """
-        Handle the order fill event associated with the given strategy identifier.
-        
-        :param event: The event to handle.
-        :raises ConditionFailed: If the strategy identifier is not registered with the portfolio.
-        """
         assert isinstance(event, (OrderFilled, OrderPartiallyFilled))
 
         cdef PositionId position_id = self.database.get_position_id(event.order_id)
         if position_id is None:
             self._log.error(f"Cannot process {event} (position id for {event.order_id} not found).")
-            # Cannot proceed with event processing
-            return
+            return  # Cannot process event further
 
         cdef Position position = self.database.get_position_for_order(event.order_id)
 
@@ -941,43 +947,61 @@ cdef class ExecutionEngine:
             else:
                 self._position_modified(position, strategy_id, event)
 
+    cdef void _handle_position_event(self, PositionEvent event):
+        self._log.debug(f'{event}')
+
+        if isinstance(event, PositionClosed):
+            self.portfolio.analyzer.add_return(event.timestamp, event.position.return_realized)
+
+        self._send_to_strategy(event, event.strategy_id)
+
+    cdef void _handle_account_event(self, AccountEvent event):
+        self._log.debug(f'{event}')
+        if not self.account.initialized or self.account.id == event.account_id:
+            self.account.apply(event)
+            self.portfolio.handle_transaction(event)
+        else:
+            self._log.warning(f"Cannot process {event} (event not for this account).")
+
     cdef void _position_opened(self, Position position, StrategyId strategy_id, OrderEvent order_fill):
-        cdef PositionOpened event = PositionOpened(
+        cdef PositionOpened position_opened = PositionOpened(
             position,
             strategy_id,
             order_fill,
             self._guid_factory.generate(),
-            self._clock.time_now())
+            order_fill.timestamp)
 
-        self._send_to_strategy(event, strategy_id)
+        self._send_to_strategy(order_fill, strategy_id)
+        self.handle_event(position_opened)
 
     cdef void _position_modified(self, Position position, StrategyId strategy_id, OrderEvent order_fill):
-        cdef PositionModified event = PositionModified(
+        cdef PositionModified position_modified = PositionModified(
             position,
             strategy_id,
             order_fill,
             self._guid_factory.generate(),
-            self._clock.time_now())
+            order_fill.timestamp)
 
-        self._send_to_strategy(event, strategy_id)
+        self._send_to_strategy(order_fill, strategy_id)
+        self.handle_event(position_modified)
 
     cdef void _position_closed(self, Position position, StrategyId strategy_id, OrderEvent order_fill):
         cdef datetime time_now = self._clock.time_now()
-        cdef PositionClosed event = PositionClosed(
+        cdef PositionClosed position_closed = PositionClosed(
             position,
             strategy_id,
             order_fill,
             self._guid_factory.generate(),
-            time_now)
+            order_fill.timestamp)
 
-        self.portfolio.analyzer.add_return(time_now, position.return_realized)
-        self._send_to_strategy(event, strategy_id)
+        self._send_to_strategy(order_fill, strategy_id)
+        self.handle_event(position_closed)
 
     cdef void _send_to_strategy(self, Event event, StrategyId strategy_id):
         if strategy_id in self._registered_strategies:
             self._registered_strategies[strategy_id].handle_event(event)
         else:
-            self._log.error(f"{strategy_id} not found in registered strategies.")
+            self._log.error(f"Cannot send event to strategy ({strategy_id} not found in registered strategies).")
 
     cdef void _reset(self):
         """

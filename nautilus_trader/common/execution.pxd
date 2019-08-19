@@ -10,7 +10,7 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.guid cimport GuidFactory
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.logger cimport LoggerAdapter
-from nautilus_trader.model.events cimport Event, OrderEvent, PositionEvent
+from nautilus_trader.model.events cimport Event, OrderEvent, AccountEvent, PositionEvent
 from nautilus_trader.model.identifiers cimport TraderId, StrategyId, OrderId, PositionId
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.order cimport Order
@@ -116,6 +116,7 @@ cdef class ExecutionEngine:
     cdef readonly int command_count
     cdef readonly int event_count
 
+# -- COMMANDS -------------------------------------------------------------------------------------#
     cpdef void register_client(self, ExecutionClient exec_client)
     cpdef void register_strategy(self, TradingStrategy strategy)
     cpdef void deregister_strategy(self, TradingStrategy strategy)
@@ -124,13 +125,19 @@ cdef class ExecutionEngine:
     cpdef void check_residuals(self)
     cpdef void reset(self)
 
+# -- QUERIES --------------------------------------------------------------------------------------"
     cpdef list registered_strategies(self)
     cpdef bint is_strategy_flat(self, StrategyId strategy_id)
     cpdef bint is_flat(self)
 
+# -------------------------------------------------------------------------------------------------"
+
     cdef void _execute_command(self, Command command)
     cdef void _handle_event(self, Event event)
+    cdef void _handle_order_event(self, OrderEvent event)
     cdef void _handle_order_fill(self, OrderEvent event, StrategyId strategy_id)
+    cdef void _handle_position_event(self, PositionEvent event)
+    cdef void _handle_account_event(self, AccountEvent event)
     cdef void _position_opened(self, Position position, StrategyId strategy_id, OrderEvent order_fill)
     cdef void _position_modified(self, Position position, StrategyId strategy_id, OrderEvent order_fill)
     cdef void _position_closed(self, Position position, StrategyId strategy_id, OrderEvent order_fill)

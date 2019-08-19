@@ -69,7 +69,7 @@ cdef class TradingStrategy:
 
     cdef bint equals(self, TradingStrategy other)
 
-# -- ABSTRACT METHODS ---------------------------------------------------------------------------- #
+#-- ABSTRACT METHODS ------------------------------------------------------------------------------#
     cpdef on_start(self)
     cpdef on_tick(self, Tick tick)
     cpdef on_bar(self, BarType bar_type, Bar bar)
@@ -79,7 +79,7 @@ cdef class TradingStrategy:
     cpdef on_reset(self)
     cpdef on_dispose(self)
 
-# -- REGISTRATION METHODS ------------------------------------------------------------------------ #
+#-- REGISTRATION METHODS --------------------------------------------------------------------------#
     cpdef void register_trader(self, TraderId trader_id, IdTag id_tag_trader)
     cpdef void register_data_client(self, DataClient client)
     cpdef void register_execution_engine(self, ExecutionEngine engine)
@@ -89,7 +89,7 @@ cdef class TradingStrategy:
     cpdef void register_stop_loss_order(self, Order order, PositionId position_id)
     cpdef void register_take_profit_order(self, Order order, PositionId position_id)
 
-# -- HANDLER METHODS ----------------------------------------------------------------------------- #
+#-- HANDLER METHODS -------------------------------------------------------------------------------#
     cpdef void handle_tick(self, Tick tick)
     cpdef void handle_ticks(self, list ticks)
     cpdef void handle_bar(self, BarType bar_type, Bar bar)
@@ -101,7 +101,7 @@ cdef class TradingStrategy:
     cdef void _remove_from_registered_orders(self, OrderId order_id)
     cdef void _process_modify_order_buffer(self, OrderId order_id)
 
-# -- DATA METHODS -------------------------------------------------------------------------------- #
+#-- DATA METHODS ----------------------------------------------------------------------------------#
     cpdef datetime time_now(self)
     cpdef list instrument_symbols(self)
     cpdef Instrument get_instrument(self, Symbol symbol)
@@ -122,11 +122,11 @@ cdef class TradingStrategy:
     cpdef Tick tick(self, Symbol symbol, int index)
     cpdef Bar bar(self, BarType bar_type, int index)
 
-# -- INDICATOR METHODS --------------------------------------------------------------------------- #
+#-- INDICATOR METHODS -----------------------------------------------------------------------------#
     cpdef readonly list registered_indicators(self)
     cpdef readonly bint indicators_initialized(self)
 
-# -- MANAGEMENT METHODS -------------------------------------------------------------------------- #
+#-- MANAGEMENT METHODS ----------------------------------------------------------------------------#
     cpdef OrderSide get_opposite_side(self, OrderSide side)
     cpdef OrderSide get_flatten_side(self, MarketPosition market_position)
     cpdef float get_exchange_rate(self, Currency quote_currency)
@@ -156,7 +156,7 @@ cdef class TradingStrategy:
     cpdef int stop_loss_orders_count(self)
     cpdef int take_profit_orders_count(self)
 
-# -- COMMAND METHODS ----------------------------------------------------------------------------- #
+#-- COMMANDS --------------------------------------------------------------------------------------#
     cpdef void start(self)
     cpdef void stop(self)
     cpdef void reset(self)
@@ -173,7 +173,7 @@ cdef class TradingStrategy:
     cpdef void flatten_position(self, PositionId position_id)
     cpdef void flatten_all_positions(self)
 
-# -- BACKTEST METHODS ---------------------------------------------------------------------------- #
+#-- BACKTEST METHODS ------------------------------------------------------------------------------#
     cpdef void change_clock(self, Clock clock)
     cpdef void change_guid_factory(self, GuidFactory guid_factory)
     cpdef void change_logger(self, Logger logger)
