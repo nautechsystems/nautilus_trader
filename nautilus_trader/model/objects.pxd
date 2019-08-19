@@ -58,9 +58,10 @@ cdef class Price:
     """
     cdef readonly object value
     cdef readonly int precision
-    cpdef float as_float(self)
+    cdef bint equals(self, Price other)
     cpdef Price add(self, Price price)
     cpdef Price subtract(self, Price price)
+    cpdef float as_float(self)
 
 
 cdef class Money:
@@ -68,6 +69,7 @@ cdef class Money:
     Represents money.
     """
     cdef readonly object value
+    cdef bint equals(self, Money other)
     cpdef float as_float(self)
 
 

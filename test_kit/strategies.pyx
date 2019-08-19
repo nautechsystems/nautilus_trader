@@ -18,7 +18,7 @@ from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.common.clock cimport Clock, TestClock
 from nautilus_trader.trade.sizing cimport PositionSizer, FixedRiskSizer
-from test_kit.objects cimport ObjectStorer
+from test_kit.mocks cimport ObjectStorer
 
 from nautilus_indicators.atr import AverageTrueRange
 from nautilus_indicators.average.ema import ExponentialMovingAverage

@@ -373,3 +373,70 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Decimal(0), position.points_unrealized(Price('1.00050')))  # No more quantity in market
         self.assertEqual(-1.0013580322265625e-05, position.return_realized)
         self.assertEqual(0.0, position.return_unrealized(Price('1.00050')))  # No more quantity in market
+
+    def test_position_filled_with_no_pnl_returns_expected_attributes(self):
+        # Arrange
+        order1 = self.order_factory.market(
+            AUDUSD_FXCM,
+            OrderSide.BUY,
+            Quantity(100000))
+
+        order2 = self.order_factory.market(
+            AUDUSD_FXCM,
+            OrderSide.SELL,
+            Quantity(100000))
+
+        position = Position(
+            AUDUSD_FXCM,
+            PositionId('P123456'),
+            UNIX_EPOCH)
+
+        order1_filled = OrderFilled(
+            order1.id,
+            ExecutionId('E123456'),
+            ExecutionTicket('T123456'),
+            order1.symbol,
+            order1.side,
+            order1.quantity,
+            Price('1.00000'),
+            UNIX_EPOCH,
+            GUID(uuid.uuid4()),
+            UNIX_EPOCH)
+
+        order2_filled = OrderFilled(
+            order2.id,
+            ExecutionId('E123456'),
+            ExecutionTicket('T123456'),
+            order2.symbol,
+            order2.side,
+            order2.quantity,
+            Price('1.00000'),
+            UNIX_EPOCH,
+            GUID(uuid.uuid4()),
+            UNIX_EPOCH)
+
+        # Act
+        position.apply(order1_filled)
+        position.apply(order2_filled)
+
+        # Assert
+        self.assertEqual(Quantity.zero(), position.quantity)
+        self.assertEqual(MarketPosition.FLAT, position.market_position)
+        self.assertEqual(UNIX_EPOCH, position.entry_time)
+        self.assertEqual(OrderSide.BUY, position.entry_direction)
+        self.assertEqual(Price('1.00000'), position.average_entry_price)
+        self.assertEqual(2, position.event_count())
+        self.assertEqual([order1.id, order2.id], position.get_order_ids())
+        self.assertEqual(ExecutionId('E123456'), position.last_execution_id)
+        self.assertEqual(ExecutionTicket('T123456'), position.last_execution_ticket)
+        self.assertEqual(UNIX_EPOCH, position.exit_time)
+        self.assertEqual(Price('1.00000'), position.average_exit_price)
+        self.assertTrue(position.is_flat)
+        self.assertFalse(position.is_long)
+        self.assertFalse(position.is_short)
+        self.assertTrue(position.is_entered)
+        self.assertTrue(position.is_exited)
+        self.assertEqual(Decimal('0'), position.points_realized)
+        self.assertEqual(Decimal(0), position.points_unrealized(Price('1.00050')))  # No more quantity in market
+        self.assertEqual(0, position.return_realized)
+        self.assertEqual(0.0, position.return_unrealized(Price('1.00050')))  # No more quantity in market
