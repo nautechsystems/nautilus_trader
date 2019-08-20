@@ -118,6 +118,56 @@ cdef class OrderEvent(Event):
         return f"<{str(self)} object at {id(self)}>"
 
 
+cdef class OrderFillEvent(OrderEvent):
+    """
+    The base class for all order fill events.
+    """
+
+    def __init__(self,
+                 OrderId order_id,
+                 ExecutionId execution_id,
+                 ExecutionTicket execution_ticket,
+                 Symbol symbol,
+                 OrderSide order_side,
+                 Quantity filled_quantity,
+                 Price average_price,
+                 datetime execution_time,
+                 GUID event_id,
+                 datetime event_timestamp):
+        """
+        Initializes a new instance of the OrderFillEvent class.
+
+        :param order_id: The event order identifier.
+        :param execution_id: The event order execution identifier.
+        :param execution_ticket: The event order execution ticket.
+        :param symbol: The event order symbol.
+        :param order_side: The event execution order side.
+        :param filled_quantity: The event execution filled quantity.
+        :param average_price: The event execution average price.
+        :param execution_time: The event execution time.
+        :param event_id: The event identifier.
+        :param event_timestamp: The event timestamp.
+        """
+        super().__init__(order_id,
+                         event_id,
+                         event_timestamp)
+        self.execution_id = execution_id
+        self.execution_ticket = execution_ticket
+        self.symbol = symbol
+        self.order_side = order_side
+        self.filled_quantity = filled_quantity
+        self.average_price = average_price
+        self.execution_time = execution_time
+
+    def __str__(self) -> str:
+        """
+        :return: The str() string representation of the event.
+        """
+        return (f"{self.__class__.__name__}"
+                f"({self.order_id.value}, "
+                f"avg_filled_price={self.average_price})")
+
+
 cdef class OrderInitialized(OrderEvent):
     """
     Represents an event where an order has been initialized.
@@ -425,7 +475,7 @@ cdef class OrderExpired(OrderEvent):
         self.expired_time = expired_time
 
 
-cdef class OrderPartiallyFilled(OrderEvent):
+cdef class OrderPartiallyFilled(OrderFillEvent):
     """
     Represents an event where an order has been partially filled with the broker.
     """
@@ -458,16 +508,17 @@ cdef class OrderPartiallyFilled(OrderEvent):
         :param event_timestamp: The event timestamp.
         """
         super().__init__(order_id,
+                         execution_id,
+                         execution_ticket,
+                         symbol,
+                         order_side,
+                         filled_quantity,
+                         average_price,
+                         execution_time,
                          event_id,
                          event_timestamp)
-        self.execution_id = execution_id
-        self.execution_ticket = execution_ticket
-        self.symbol = symbol
-        self.order_side = order_side
-        self.filled_quantity = filled_quantity
         self.leaves_quantity = leaves_quantity
-        self.average_price = average_price
-        self.execution_time = execution_time
+
 
     def __str__(self) -> str:
         """
@@ -480,7 +531,7 @@ cdef class OrderPartiallyFilled(OrderEvent):
                 f"av_filled_price={self.average_price})")
 
 
-cdef class OrderFilled(OrderEvent):
+cdef class OrderFilled(OrderFillEvent):
     """
     Represents an event where an order has been completely filled with the broker.
     """
@@ -511,22 +562,23 @@ cdef class OrderFilled(OrderEvent):
         :param event_timestamp: The event timestamp.
         """
         super().__init__(order_id,
+                         execution_id,
+                         execution_ticket,
+                         symbol,
+                         order_side,
+                         filled_quantity,
+                         average_price,
+                         execution_time,
                          event_id,
                          event_timestamp)
-        self.execution_id = execution_id
-        self.execution_ticket = execution_ticket
-        self.symbol = symbol
-        self.order_side = order_side
-        self.filled_quantity = filled_quantity
-        self.average_price = average_price
-        self.execution_time = execution_time
 
     def __str__(self) -> str:
         """
         :return: The str() string representation of the event.
         """
         return (f"{self.__class__.__name__}"
-                f"({self.order_id.value}, "
+                f"(order_id={self.order_id.value}, "
+                f"filled_quantity={self.filled_quantity}, "
                 f"avg_filled_price={self.average_price})")
 
 

@@ -44,6 +44,19 @@ cdef class OrderEvent(Event):
     cdef readonly OrderId order_id
 
 
+cdef class OrderFillEvent(OrderEvent):
+    """
+    The base class for all order fill events.
+    """
+    cdef readonly ExecutionId execution_id
+    cdef readonly ExecutionTicket execution_ticket
+    cdef readonly Symbol symbol
+    cdef readonly OrderSide order_side
+    cdef readonly Quantity filled_quantity
+    cdef readonly Price average_price
+    cdef readonly datetime execution_time
+
+
 cdef class OrderInitialized(OrderEvent):
     """
     Represents an event where an order has been initialized.
@@ -128,31 +141,17 @@ cdef class OrderModified(OrderEvent):
     cdef readonly datetime modified_time
 
 
-cdef class OrderFilled(OrderEvent):
+cdef class OrderFilled(OrderFillEvent):
     """
     Represents an event where an order has been completely filled with the broker.
     """
-    cdef readonly ExecutionId execution_id
-    cdef readonly ExecutionTicket execution_ticket
-    cdef readonly Symbol symbol
-    cdef readonly OrderSide order_side
-    cdef readonly Quantity filled_quantity
-    cdef readonly Price average_price
-    cdef readonly datetime execution_time
 
 
-cdef class OrderPartiallyFilled(OrderEvent):
+cdef class OrderPartiallyFilled(OrderFillEvent):
     """
     Represents an event where an order has been partially filled with the broker.
     """
-    cdef readonly ExecutionId execution_id
-    cdef readonly ExecutionTicket execution_ticket
-    cdef readonly Symbol symbol
-    cdef readonly OrderSide order_side
-    cdef readonly Quantity filled_quantity
     cdef readonly Quantity leaves_quantity
-    cdef readonly Price average_price
-    cdef readonly datetime execution_time
 
 
 cdef class PositionEvent(Event):

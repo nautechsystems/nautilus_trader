@@ -7,13 +7,12 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from cpython.datetime cimport datetime
 from typing import List
 
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition, market_position_string
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.objects cimport Symbol, Price
-from nautilus_trader.model.events cimport OrderEvent
+from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.events cimport OrderFillEvent
 from nautilus_trader.model.identifiers cimport PositionId, ExecutionId, ExecutionTicket
 
 
@@ -23,45 +22,38 @@ cdef class Position:
     """
 
     def __init__(self,
-                 Symbol symbol,
                  PositionId position_id,
-                 datetime timestamp):
+                 OrderFillEvent fill_event):
         """
         Initializes a new instance of the Position class.
 
-        :param symbol: The positions symbol.
         :param position_id: The positions identifier.
-        :param timestamp: The positions initialization timestamp.
+        :param fill_event: The order fill event which created the position.
         """
-        self._order_ids = []          # type: List[OrderId]
-        self._execution_ids = []      # type: List[ExecutionId]
-        self._execution_tickets = []  # type: List[ExecutionTicket]
-        self._events = []             # type: List[OrderEvent]
+        self._order_ids = [fill_event.order_id]                  # type: List[OrderId]
+        self._execution_ids = [fill_event.execution_id]          # type: List[ExecutionId]
+        self._execution_tickets = [fill_event.execution_ticket]  # type: List[ExecutionTicket]
+        self._events = [fill_event]                              # type: List[OrderFillEvent]
 
-        self.symbol = symbol
+        self.symbol = fill_event.symbol
         self.id = position_id
-        self.from_order_id = None
-        self.last_order_id = None
-        self.last_execution_id = None
-        self.last_execution_ticket = None
-        self.relative_quantity = 0
-        self.quantity = Quantity(0)
-        self.peak_quantity = Quantity(0)
-        self.market_position = MarketPosition.FLAT
-        self.timestamp = timestamp
-        self.entry_direction = OrderSide.UNKNOWN
-        self.entry_time = None
+        self.from_order_id = fill_event.order_id
+        self.last_order_id = fill_event.order_id
+        self.last_execution_id = fill_event.execution_id
+        self.last_execution_ticket = fill_event.execution_ticket
+        self.timestamp = fill_event.execution_time
+        self.entry_direction = fill_event.order_side
+        self.entry_time = fill_event.execution_time
         self.exit_time = None
-        self.average_entry_price = None
+        self.average_entry_price = fill_event.average_price
         self.average_exit_price = None
         self.points_realized = Decimal(0)
         self.return_realized = 0.0
-        self.is_flat = True
-        self.is_long = False
-        self.is_short = False
-        self.is_entered = False
+        self.is_entered = True
         self.is_exited = False
-        self.last_event = None
+        self.last_event = fill_event
+
+        self._fill_logic(fill_event)
 
     cdef bint equals(self, Position other):
         """
@@ -149,7 +141,7 @@ cdef class Position:
         """
         return len(self._events)
 
-    cpdef void apply(self, OrderEvent event):
+    cpdef void apply(self, OrderFillEvent event):
         """
         Applies the given order event to the position. The given event type must
         be either OrderFilled or OrderPartiallyFilled.
@@ -169,41 +161,47 @@ cdef class Position:
         self.last_execution_id = event.execution_id
         self.last_execution_ticket = event.execution_ticket
 
-        # Entry logic
-        if not self.is_entered:
-            self.from_order_id = event.order_id
-            self.entry_direction = event.order_side
-            self.entry_time = event.timestamp
-            self.average_entry_price = event.average_price
-            self.is_entered = True
+        # Apply event
+        self._increment_returns(event)
+        self._fill_logic(event)
 
-        # Fill logic
-        if event.order_side is OrderSide.BUY:
-            if self.market_position == MarketPosition.SHORT:
-                # Increment realized points and return of a short position
-                self.points_realized += self._calculate_points(self.average_entry_price, event.average_price)
-                self.return_realized += self._calculate_return(self.average_entry_price, event.average_price)
-            self.relative_quantity += event.filled_quantity.value
-        elif event.order_side is OrderSide.SELL:
-            if self.market_position == MarketPosition.LONG:
-                # Increment realized points and return of a long position
-                self.points_realized += self._calculate_points(self.average_entry_price, event.average_price)
-                self.return_realized += self._calculate_return(self.average_entry_price, event.average_price)
-            self.relative_quantity -= event.filled_quantity.value
+    cpdef object points_unrealized(self, Price current_price):
+        """
+        Return the calculated unrealized points from the given current price.
+         
+        :param current_price: The current price of the position instrument.
+        :return: Decimal.
+        """
+        if self.is_exited:
+            return Decimal(0)
+        return self._calculate_points(self.average_entry_price, current_price)
 
+    cpdef float return_unrealized(self, Price current_price):
+        """
+        Return the calculated unrealized return from the given current price.
+         
+        :param current_price: The current price of the position instrument.
+        :return: float.
+        """
+        if self.is_exited:
+            return 0.0
+        return self._calculate_return(self.average_entry_price, current_price)
+
+    cdef void _fill_logic(self, OrderFillEvent fill_event):
+        # Update relative quantity
+        if fill_event.order_side is OrderSide.BUY:
+            self.relative_quantity += fill_event.filled_quantity.value
+        elif fill_event.order_side is OrderSide.SELL:
+            self.relative_quantity -= fill_event.filled_quantity.value
+
+        # Update quantity
         self.quantity = Quantity(abs(self.relative_quantity))
 
         # Update peak quantity
         if self.quantity > self.peak_quantity:
             self.peak_quantity = self.quantity
 
-        # Exit logic
-        if self.relative_quantity == 0:
-            self.exit_time = event.timestamp
-            self.average_exit_price = event.average_price
-            self.is_exited = True
-
-        # Market position logic
+        # Update market position
         if self.relative_quantity > 0:
             self.market_position = MarketPosition.LONG
             self.is_long = True
@@ -220,30 +218,29 @@ cdef class Position:
             self.is_long = False
             self.is_short = False
 
+        # Exit logic
+        if self.relative_quantity == 0:
+            self._exit_logic(fill_event)
+
         if self.is_exited and self.relative_quantity != 0:
             self.is_exited = False
 
-    cpdef object points_unrealized(self, Price current_price):
-        """
-        Return the calculated unrealized points from the given current price.
-         
-        :param current_price: The current price of the position instrument.
-        :return: Decimal.
-        """
-        if not self.is_entered or self.is_exited or self.entry_direction == OrderSide.UNKNOWN:
-            return Decimal(0)
-        return self._calculate_points(self.average_entry_price, current_price)
+    cdef void _exit_logic(self, OrderFillEvent fill_event):
+            self.exit_time = fill_event.timestamp
+            self.average_exit_price = fill_event.average_price
+            self.is_exited = True
 
-    cpdef float return_unrealized(self, Price current_price):
-        """
-        Return the calculated unrealized return from the given current price.
-         
-        :param current_price: The current price of the position instrument.
-        :return: float.
-        """
-        if not self.is_entered or self.is_exited or self.market_position == MarketPosition.FLAT:
-            return 0.0
-        return self._calculate_return(self.average_entry_price, current_price)
+    cdef void _increment_returns(self, OrderFillEvent fill_event):
+        if fill_event.order_side is OrderSide.BUY:
+            if self.market_position == MarketPosition.SHORT:
+                # Increment realized points and return of a short position
+                self.points_realized += self._calculate_points(self.average_entry_price, fill_event.average_price)
+                self.return_realized += self._calculate_return(self.average_entry_price, fill_event.average_price)
+        elif fill_event.order_side is OrderSide.SELL:
+            if self.market_position == MarketPosition.LONG:
+                # Increment realized points and return of a long position
+                self.points_realized += self._calculate_points(self.average_entry_price, fill_event.average_price)
+                self.return_realized += self._calculate_return(self.average_entry_price, fill_event.average_price)
 
     cdef object _calculate_points(self, Price entry_price, Price exit_price):
         """

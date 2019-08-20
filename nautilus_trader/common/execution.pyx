@@ -13,7 +13,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.commands cimport Command, AccountInquiry
 from nautilus_trader.model.commands cimport SubmitOrder, SubmitAtomicOrder, ModifyOrder, CancelOrder
-from nautilus_trader.model.events cimport Event, OrderEvent, PositionEvent, AccountEvent
+from nautilus_trader.model.events cimport Event, OrderEvent, OrderFillEvent, PositionEvent, AccountEvent
 from nautilus_trader.model.events cimport OrderModified, OrderRejected, OrderCancelled, OrderCancelReject
 from nautilus_trader.model.events cimport OrderFilled, OrderPartiallyFilled
 from nautilus_trader.model.events cimport PositionOpened, PositionModified, PositionClosed
@@ -928,34 +928,28 @@ cdef class ExecutionEngine:
             self._log.debug(f'{event}')
             self._send_to_strategy(event, strategy_id)
 
-    cdef void _handle_order_fill(self, OrderEvent event, StrategyId strategy_id):
-        assert isinstance(event, (OrderFilled, OrderPartiallyFilled))
-
-        cdef PositionId position_id = self.database.get_position_id(event.order_id)
+    cdef void _handle_order_fill(self, OrderFillEvent fill_event, StrategyId strategy_id):
+        cdef PositionId position_id = self.database.get_position_id(fill_event.order_id)
         if position_id is None:
-            self._log.error(f"Cannot process {event} (position id for {event.order_id} not found).")
+            self._log.error(f"Cannot process {fill_event} (position id for {fill_event.order_id} not found).")
             return  # Cannot process event further
 
-        cdef Position position = self.database.get_position_for_order(event.order_id)
+        cdef Position position = self.database.get_position_for_order(fill_event.order_id)
 
         if position is None:
             # Position does not exist yet - create position
-            position = Position(
-                event.symbol,
-                position_id,
-                event.execution_time)
-            position.apply(event)
-            assert position.is_entered
+            position = Position(position_id, fill_event)
             self.database.add_position(position, strategy_id)
             self.database.position_active(position, strategy_id)
-            self._position_opened(position, strategy_id, event)
+            self._position_opened(position, strategy_id, fill_event)
         else:
-            position.apply(event)
+            position.apply(fill_event)
             if position.is_exited:
                 self.database.position_closed(position, strategy_id)
-                self._position_closed(position, strategy_id, event)
+                self._position_closed(position, strategy_id, fill_event)
             else:
-                self._position_modified(position, strategy_id, event)
+                self.database.position_active(position, strategy_id)
+                self._position_modified(position, strategy_id, fill_event)
 
     cdef void _handle_position_event(self, PositionEvent event):
         self._log.debug(f'{event}')

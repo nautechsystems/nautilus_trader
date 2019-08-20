@@ -9,7 +9,7 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.model.objects cimport Quantity, Symbol, Price
-from nautilus_trader.model.events cimport OrderEvent
+from nautilus_trader.model.events cimport OrderFillEvent
 from nautilus_trader.model.identifiers cimport PositionId, OrderId, ExecutionId, ExecutionTicket
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
@@ -47,7 +47,7 @@ cdef class Position:
     cdef readonly bint is_short
     cdef readonly bint is_entered
     cdef readonly bint is_exited
-    cdef readonly OrderEvent last_event
+    cdef readonly OrderFillEvent last_event
 
     cdef bint equals(self, Position other)
     cdef str status_string(self)
@@ -56,9 +56,12 @@ cdef class Position:
     cpdef list get_execution_tickets(self)
     cpdef list get_events(self)
     cpdef int event_count(self)
-    cpdef void apply(self, OrderEvent event)
+    cpdef void apply(self, OrderFillEvent event)
     cpdef object points_unrealized(self, Price current_price)
     cpdef float return_unrealized(self, Price current_price)
 
+    cdef void _fill_logic(self, OrderFillEvent fill_event)
+    cdef void _exit_logic(self, OrderFillEvent fill_event)
+    cdef void _increment_returns(self, OrderFillEvent fill_event)
     cdef object _calculate_points(self, Price entry_price, Price exit_price)
     cdef float _calculate_return(self, Price entry_price, Price exit_price)
