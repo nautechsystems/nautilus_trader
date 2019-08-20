@@ -40,12 +40,12 @@ cdef class LiveDataClient(DataClient):
                  Venue venue,
                  str service_name='NautilusData',
                  str service_address='localhost',
-                 int tick_req_port=55501,
-                 int tick_sub_port=55502,
-                 int bar_req_port=55503,
-                 int bar_sub_port=55504,
-                 int inst_req_port=55505,
-                 int inst_sub_port=55506,
+                 int tick_rep_port=55501,
+                 int tick_pub_port=55502,
+                 int bar_rep_port=55503,
+                 int bar_pub_port=55504,
+                 int inst_rep_port=55505,
+                 int inst_pub_port=55506,
                  RequestSerializer request_serializer=MsgPackRequestSerializer(),
                  ResponseSerializer response_serializer=MsgPackResponseSerializer(),
                  DataSerializer data_serializer=BsonDataSerializer(),
@@ -59,12 +59,12 @@ cdef class LiveDataClient(DataClient):
         :param zmq_context: The ZMQ context.
         :param service_name: The name of the service.
         :param service_address: The data service host IP address (default=127.0.0.1).
-        :param tick_req_port: The data service port for tick requests (default=55501).
-        :param tick_sub_port: The data service port for tick subscriptions (default=55502).
-        :param bar_req_port: The data service port for bar requests (default=55503).
-        :param bar_sub_port: The data service port for bar subscriptions (default=55504).
-        :param inst_req_port: The data service port for instrument requests (default=55505).
-        :param inst_sub_port: The data service port for instrument subscriptions (default=55506).
+        :param tick_rep_port: The data service port for tick responses (default=55501).
+        :param tick_pub_port: The data service port for tick publications (default=55502).
+        :param bar_rep_port: The data service port for bar responses (default=55503).
+        :param bar_pub_port: The data service port for bar publications (default=55504).
+        :param inst_rep_port: The data service port for instrument responses (default=55505).
+        :param inst_pub_port: The data service port for instrument publications (default=55506).
         :param request_serializer: The request serializer for the component.
         :param response_serializer: The response serializer for the component.
         :param data_serializer: The data serializer for the component.
@@ -79,12 +79,12 @@ cdef class LiveDataClient(DataClient):
         :raises ConditionFailed: If the inst_sub_port is not in range [0, 65535].
         """
         Condition.valid_string(service_address, 'service_address')
-        Condition.in_range(tick_req_port, 'tick_req_port', 0, 65535)
-        Condition.in_range(tick_sub_port, 'tick_sub_port', 0, 65535)
-        Condition.in_range(bar_req_port, 'bar_req_port', 0, 65535)
-        Condition.in_range(bar_sub_port, 'bar_sub_port', 0, 65535)
-        Condition.in_range(inst_req_port, 'inst_req_port', 0, 65535)
-        Condition.in_range(inst_sub_port, 'inst_sub_port', 0, 65535)
+        Condition.in_range(tick_rep_port, 'tick_rep_port', 0, 65535)
+        Condition.in_range(tick_pub_port, 'tick_pub_port', 0, 65535)
+        Condition.in_range(bar_rep_port, 'bar_rep_port', 0, 65535)
+        Condition.in_range(bar_pub_port, 'bar_pub_port', 0, 65535)
+        Condition.in_range(inst_rep_port, 'inst_rep_port', 0, 65535)
+        Condition.in_range(inst_pub_port, 'inst_pub_port', 0, 65535)
 
         super().__init__(venue, clock, guid_factory, logger)
         self._zmq_context = zmq_context
@@ -93,7 +93,7 @@ cdef class LiveDataClient(DataClient):
             f'{self.__class__.__name__}.TickReqWorker',
             f'{service_name}.TickProvider',
             service_address,
-            tick_req_port,
+            tick_rep_port,
             self._zmq_context,
             logger)
 
@@ -101,7 +101,7 @@ cdef class LiveDataClient(DataClient):
             f'{self.__class__.__name__}.BarReqWorker',
             f'{service_name}.BarProvider',
             service_address,
-            bar_req_port,
+            bar_rep_port,
             self._zmq_context,
             logger)
 
@@ -109,7 +109,7 @@ cdef class LiveDataClient(DataClient):
             f'{self.__class__.__name__}.InstReqWorker',
             f'{service_name}.InstrumentProvider',
             service_address,
-            inst_req_port,
+            inst_rep_port,
             self._zmq_context,
             logger)
 
@@ -117,7 +117,7 @@ cdef class LiveDataClient(DataClient):
             f'{self.__class__.__name__}.TickSubWorker',
             f'{service_name}.TickPublisher',
             service_address,
-            tick_sub_port,
+            tick_pub_port,
             self._zmq_context,
             self._handle_tick_sub,
             logger)
@@ -126,7 +126,7 @@ cdef class LiveDataClient(DataClient):
             f'{self.__class__.__name__}.BarSubWorker',
             f'{service_name}.BarPublisher',
             service_address,
-            bar_sub_port,
+            bar_pub_port,
             self._zmq_context,
             self._handle_bar_sub,
             logger)
@@ -135,7 +135,7 @@ cdef class LiveDataClient(DataClient):
             f'{self.__class__.__name__}.InstSubWorker',
             f'{service_name}.InstrumentPublisher',
             service_address,
-            inst_sub_port,
+            inst_pub_port,
             self._zmq_context,
             self._handle_inst_sub,
             logger)
