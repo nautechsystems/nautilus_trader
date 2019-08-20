@@ -13,6 +13,7 @@ from datetime import datetime
 from nautilus_trader.model.objects import Venue, Symbol, Money
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.position import Position
+from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.trade.performance import PerformanceAnalyzer
 from test_kit.stubs import TestStubs
 
@@ -99,15 +100,8 @@ class AnalyzerTests(unittest.TestCase):
 
     def test_can_add_positions(self):
         # Arrange
-        position1 = Position(
-            AUDUSD_FXCM,
-            PositionId('1'),
-            UNIX_EPOCH)
-
-        position2 = Position(
-            GBPUSD_FXCM,
-            PositionId('1'),
-            UNIX_EPOCH)
+        position1 = TestStubs.position()
+        position2 = TestStubs.position()
 
         positions = [position1, position2]
 

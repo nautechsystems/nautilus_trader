@@ -42,6 +42,8 @@ cdef class Position:
         self.last_execution_id = fill_event.execution_id
         self.last_execution_ticket = fill_event.execution_ticket
         self.timestamp = fill_event.execution_time
+        self.quantity = fill_event.filled_quantity
+        self.peak_quantity = fill_event.filled_quantity
         self.entry_direction = fill_event.order_side
         self.entry_time = fill_event.execution_time
         self.exit_time = None

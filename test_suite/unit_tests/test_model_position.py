@@ -61,6 +61,7 @@ class PositionTests(unittest.TestCase):
         # Assert
         self.assertEqual(OrderId('O-19700101-000000-001-001-1'), position.from_order_id)
         self.assertEqual(Quantity(100000), position.quantity)
+        self.assertEqual(Quantity(100000), position.peak_quantity)
         self.assertEqual(MarketPosition.LONG, position.market_position)
         self.assertEqual(UNIX_EPOCH, position.entry_time)
         self.assertEqual(OrderSide.BUY, position.entry_direction)

@@ -6,12 +6,34 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+import uuid
+
 from decimal import Decimal
 from datetime import datetime, timedelta, timezone
 
 from nautilus_trader.model.enums import Resolution, QuoteType, Currency, SecurityType
-from nautilus_trader.model.objects import Quantity, Venue, Symbol, Price, BarSpecification, BarType, Bar, Instrument
+from nautilus_trader.model.objects import (
+    Quantity,
+    Venue,
+    Symbol,
+    Price,
+    BarSpecification,
+    BarType,
+    Bar,
+    Instrument)
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.events import OrderFilled
+from nautilus_trader.core.correctness import ConditionFailed
+from nautilus_trader.core.types import GUID, ValidString
+from nautilus_trader.common.clock import TestClock
+from nautilus_trader.model.enums import OrderSide, OrderType, OrderStatus, TimeInForce
+from nautilus_trader.model.objects import Quantity, Venue, Symbol, Price
+from nautilus_trader.model.identifiers import Label, IdTag, OrderId, ExecutionId, ExecutionTicket, PositionIdGenerator
+from nautilus_trader.model.order import Order, OrderFactory
+from nautilus_trader.model.position import Position
+from nautilus_trader.model.events import OrderInitialized, OrderSubmitted, OrderAccepted, OrderRejected
+from nautilus_trader.model.events import OrderWorking, OrderExpired, OrderModified, OrderCancelled
+from nautilus_trader.model.events import OrderCancelReject, OrderPartiallyFilled, OrderFilled
 
 # Unix epoch is the UTC time at 00:00:00 on 1/1/1970
 UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc)
@@ -140,3 +162,74 @@ class TestStubs:
                    Price('90.003'),
                    100000,
                    UNIX_EPOCH)
+
+    @staticmethod
+    def position(number=1, price=Price('1.00000')):
+        clock = TestClock()
+
+        generator = PositionIdGenerator(
+            id_tag_trader=IdTag('001'),
+            id_tag_strategy=IdTag('001'),
+            clock=clock)
+
+        for i in range(number - 1):
+            generator.generate()
+
+        order_factory = OrderFactory(
+            id_tag_trader=IdTag('001'),
+            id_tag_strategy=IdTag('001'),
+            clock=clock)
+
+        order = order_factory.market(
+            AUDUSD_FXCM,
+            OrderSide.BUY,
+            Quantity(100000))
+
+        order_filled = OrderFilled(
+            order.id,
+            ExecutionId('E123456'),
+            ExecutionTicket('T123456'),
+            order.symbol,
+            order.side,
+            order.quantity,
+            price,
+            UNIX_EPOCH,
+            GUID(uuid.uuid4()),
+            UNIX_EPOCH)
+
+        position_id = generator.generate()
+        position = Position(position_id=position_id, fill_event=order_filled)
+
+        return position
+
+    @staticmethod
+    def position_which_is_closed(number=1, close_price=Price('1.00010')):
+        clock = TestClock()
+
+        position = TestStubs.position(number=number)
+
+        order_factory = OrderFactory(
+            id_tag_trader=IdTag('001'),
+            id_tag_strategy=IdTag('001'),
+            clock=clock)
+
+        order = order_factory.market(
+            AUDUSD_FXCM,
+            OrderSide.SELL,
+            Quantity(100000))
+
+        order_filled = OrderFilled(
+            order.id,
+            ExecutionId('E123456'),
+            ExecutionTicket('T123456'),
+            order.symbol,
+            order.side,
+            order.quantity,
+            close_price,
+            UNIX_EPOCH + timedelta(minutes=5),
+            GUID(uuid.uuid4()),
+            UNIX_EPOCH + timedelta(minutes=5))
+
+        position.apply(order_filled)
+
+        return position
