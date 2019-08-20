@@ -10,6 +10,7 @@ import unittest
 import time
 import zmq
 
+from nautilus_trader.live.logger import LiveLogger
 from nautilus_trader.network.workers import RequestWorker, SubscriberWorker
 from test_kit.mocks import MockServer, MockPublisher
 from test_kit.objects import ObjectStorer
@@ -25,6 +26,7 @@ class RequestWorkerTests(unittest.TestCase):
         # Fixture Setup
         print("\n")
 
+        logger = LiveLogger()
         self.context = zmq.Context()
         self.response_handler = ObjectStorer()
 
@@ -35,8 +37,7 @@ class RequestWorkerTests(unittest.TestCase):
             TEST_PORT,
             self.context)
 
-        self.server = MockServer(self.context, TEST_PORT)
-        self.server.start()
+        self.server = MockServer(self.context, TEST_PORT, logger)
 
     def tearDown(self):
         # Tear Down
@@ -74,6 +75,7 @@ class SubscriberWorkerTests(unittest.TestCase):
         # Fixture Setup
         print("\n")
 
+        logger = LiveLogger()
         self.zmq_context = zmq.Context()
         self.response_handler = ObjectStorer()
 
@@ -83,9 +85,10 @@ class SubscriberWorkerTests(unittest.TestCase):
             LOCAL_HOST,
             TEST_PORT,
             self.zmq_context,
-            self.response_handler.store_2)
+            self.response_handler.store_2,
+            logger)
 
-        self.publisher = MockPublisher(self.zmq_context, TEST_PORT)
+        self.publisher = MockPublisher(self.zmq_context, TEST_PORT, logger)
 
     def tearDown(self):
         # Tear Down

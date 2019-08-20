@@ -211,7 +211,7 @@ cdef class LiveExecClient(ExecutionClient):
 
         self._events_worker = SubscriberWorker(
             f'{self.__class__.__name__}.EventSubscriber',
-            f'{service_name}.EventsPublisher',
+            f'{service_name}.EventPublisher',
             service_address,
             events_port,
             self._zmq_context,

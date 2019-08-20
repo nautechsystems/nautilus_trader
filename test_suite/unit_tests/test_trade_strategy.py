@@ -298,7 +298,7 @@ class TradeStrategyTests(unittest.TestCase):
         result = strategy.order(order.id)
 
         # Assert
-        self.assertTrue(strategy.does_order_exist(order.id))
+        self.assertTrue(strategy.order_exists(order.id))
         self.assertEqual(order, result)
 
     def test_getting_position_which_does_not_exist_returns_none(self):
@@ -329,7 +329,7 @@ class TradeStrategyTests(unittest.TestCase):
         result = strategy.position(position_id)
 
         # Assert
-        self.assertTrue(strategy.does_position_exist(position_id))
+        self.assertTrue(strategy.position_exists(position_id))
         self.assertTrue(type(result) == Position)
 
     def test_can_start_strategy(self):
@@ -687,7 +687,7 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertEqual(OrderStatus.FILLED, strategy.orders_all()[order.id].status)
         self.assertTrue(order.id not in strategy.orders_active())
         self.assertTrue(order.id in strategy.orders_completed())
-        self.assertTrue(strategy.does_order_exist(order.id))
+        self.assertTrue(strategy.order_exists(order.id))
         self.assertFalse(strategy.is_order_active(order.id))
         self.assertTrue(strategy.is_order_complete(order.id))
 
@@ -712,7 +712,7 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertEqual(OrderStatus.CANCELLED, strategy.orders_all()[order.id].status)
         self.assertTrue(order.id in strategy.orders_completed())
         self.assertTrue(order.id not in strategy.orders_active())
-        self.assertTrue(strategy.does_order_exist(order.id))
+        self.assertTrue(strategy.order_exists(order.id))
         self.assertFalse(strategy.is_order_active(order.id))
         self.assertTrue(strategy.is_order_complete(order.id))
 
@@ -737,7 +737,7 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertEqual(OrderStatus.WORKING, strategy.orders_all()[order.id].status)
         self.assertEqual(Price(90.005, 3), strategy.orders_all()[order.id].price)
         self.assertTrue(strategy.is_flat())
-        self.assertTrue(strategy.does_order_exist(order.id))
+        self.assertTrue(strategy.order_exists(order.id))
         self.assertTrue(strategy.is_order_active(order.id))
         self.assertFalse(strategy.is_order_complete(order.id))
 

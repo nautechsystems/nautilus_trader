@@ -34,7 +34,7 @@ UTF8 = 'utf8'
 LOCAL_HOST = "127.0.0.1"
 
 
-class LiveExecClientTests(unittest.TestCase):
+class LiveExecutionTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
@@ -43,32 +43,33 @@ class LiveExecClientTests(unittest.TestCase):
         events_port = 56556
 
         trader_id = TraderId('000')
-        self.bar_type = TestStubs.bartype_audusd_1min_bid()
 
-        self.clock = LiveClock()
-        self.guid_factory = LiveGuidFactory()
+        clock = LiveClock()
+        guid_factory = LiveGuidFactory()
         self.logger = LiveLogger()
-        self.account = Account()
+
+        account = Account()
 
         self.portfolio = Portfolio(
-            clock=self.clock,
-            guid_factory=self.guid_factory,
+            clock=clock,
+            guid_factory=guid_factory,
             logger=self.logger)
 
         self.exec_db = InMemoryExecutionDatabase(trader_id=trader_id, logger=self.logger)
         self.exec_engine = LiveExecutionEngine(
             database=self.exec_db,
-            account=self.account,
+            account=account,
             portfolio=self.portfolio,
-            clock=self.clock,
-            guid_factory=self.guid_factory,
+            clock=clock,
+            guid_factory=guid_factory,
             logger=self.logger)
 
         self.exec_client = LiveExecClient(
             exec_engine=self.exec_engine,
             zmq_context=zmq_context,
             commands_port=commands_port,
-            events_port=events_port)
+            events_port=events_port,
+            logger=self.logger)
 
         self.exec_engine.register_client(self.exec_client)
 
@@ -79,11 +80,14 @@ class LiveExecClientTests(unittest.TestCase):
             zmq_context,
             commands_port,
             MsgPackCommandSerializer(),
-            MsgPackResponseSerializer())
-        self.command_router.start()
-        self.event_publisher = MockPublisher(zmq_context, events_port)
+            MsgPackResponseSerializer(),
+            self.logger)
+
+        self.event_publisher = MockPublisher(zmq_context, events_port, self.logger)
 
         self.exec_client.connect()
+
+        self.bar_type = TestStubs.bartype_audusd_1min_bid()
 
     def tearDown(self):
         # Tear Down
@@ -94,6 +98,7 @@ class LiveExecClientTests(unittest.TestCase):
     def test_can_send_submit_order_command(self):
         # Arrange
         strategy = TestStrategy1(self.bar_type, id_tag_strategy='001')
+        strategy.change_logger(self.logger)
         self.exec_engine.register_strategy(strategy)
         order = strategy.order_factory.market(
             AUDUSD_FXCM,
