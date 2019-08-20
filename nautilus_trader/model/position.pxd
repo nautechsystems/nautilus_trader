@@ -45,8 +45,7 @@ cdef class Position:
     cdef readonly bint is_flat
     cdef readonly bint is_long
     cdef readonly bint is_short
-    cdef readonly bint is_entered
-    cdef readonly bint is_exited
+    cdef readonly bint is_closed
     cdef readonly OrderFillEvent last_event
 
     cdef bint equals(self, Position other)

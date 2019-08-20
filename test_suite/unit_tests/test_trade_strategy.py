@@ -685,10 +685,10 @@ class TradeStrategyTests(unittest.TestCase):
         # Assert
         self.assertEqual(order, strategy.orders_all()[order.id])
         self.assertEqual(OrderStatus.FILLED, strategy.orders_all()[order.id].status)
-        self.assertTrue(order.id not in strategy.orders_active())
+        self.assertTrue(order.id not in strategy.orders_working())
         self.assertTrue(order.id in strategy.orders_completed())
         self.assertTrue(strategy.order_exists(order.id))
-        self.assertFalse(strategy.is_order_active(order.id))
+        self.assertFalse(strategy.is_order_working(order.id))
         self.assertTrue(strategy.is_order_complete(order.id))
 
     def test_can_cancel_order(self):
@@ -711,9 +711,9 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertEqual(order, strategy.orders_all()[order.id])
         self.assertEqual(OrderStatus.CANCELLED, strategy.orders_all()[order.id].status)
         self.assertTrue(order.id in strategy.orders_completed())
-        self.assertTrue(order.id not in strategy.orders_active())
+        self.assertTrue(order.id not in strategy.orders_working())
         self.assertTrue(strategy.order_exists(order.id))
-        self.assertFalse(strategy.is_order_active(order.id))
+        self.assertFalse(strategy.is_order_working(order.id))
         self.assertTrue(strategy.is_order_complete(order.id))
 
     def test_can_modify_order(self):
@@ -738,7 +738,7 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertEqual(Price(90.005, 3), strategy.orders_all()[order.id].price)
         self.assertTrue(strategy.is_flat())
         self.assertTrue(strategy.order_exists(order.id))
-        self.assertTrue(strategy.is_order_active(order.id))
+        self.assertTrue(strategy.is_order_working(order.id))
         self.assertFalse(strategy.is_order_complete(order.id))
 
     def test_can_cancel_all_orders(self):
@@ -795,7 +795,7 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertEqual(order, strategy.orders_all()[order.id])
         self.assertEqual(OrderStatus.FILLED, strategy.orders_all()[order.id].status)
         self.assertEqual(MarketPosition.FLAT, strategy.positions_all()[position_id].market_position)
-        self.assertTrue(strategy.positions_all()[position_id].is_exited)
+        self.assertTrue(strategy.positions_all()[position_id].is_closed)
         self.assertTrue(position_id in strategy.positions_closed())
         self.assertTrue(strategy.is_flat())
 
@@ -830,8 +830,8 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertEqual(OrderStatus.FILLED, strategy.orders_all()[order2.id].status)
         self.assertEqual(MarketPosition.FLAT, strategy.positions_all()[position_id1].market_position)
         self.assertEqual(MarketPosition.FLAT, strategy.positions_all()[position_id2].market_position)
-        self.assertTrue(strategy.positions_all()[position_id1].is_exited)
-        self.assertTrue(strategy.positions_all()[position_id2].is_exited)
+        self.assertTrue(strategy.positions_all()[position_id1].is_closed)
+        self.assertTrue(strategy.positions_all()[position_id2].is_closed)
         self.assertTrue(position_id1 in strategy.positions_closed())
         self.assertTrue(position_id2 in strategy.positions_closed())
         self.assertTrue(strategy.is_flat())
@@ -873,11 +873,11 @@ class TradeStrategyTests(unittest.TestCase):
         # Assert
         self.assertTrue(OrderId('O-19700101-000000-000-001-1') in strategy.orders_all())
         self.assertTrue(PositionId('P-19700101-000000-000-001-1') in strategy.positions_all())
-        self.assertEqual(0, len(strategy.orders_active()))
+        self.assertEqual(0, len(strategy.orders_working()))
         self.assertEqual(order, strategy.orders_completed()[order.id])
         self.assertEqual(0, len(strategy.positions_closed()))
         self.assertTrue(OrderId('O-19700101-000000-000-001-1') in strategy.orders_completed())
-        self.assertTrue(PositionId('P-19700101-000000-000-001-1') in strategy.positions_active())
+        self.assertTrue(PositionId('P-19700101-000000-000-001-1') in strategy.positions_open())
         self.assertFalse(strategy.is_flat())
 
     def test_can_track_orders_for_a_closing_position(self):
@@ -902,10 +902,10 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(0, len(strategy.orders_active()))
+        self.assertEqual(0, len(strategy.orders_working()))
         self.assertEqual(order1, strategy.orders_completed()[order1.id])
         self.assertEqual(order2, strategy.orders_completed()[order2.id])
         self.assertEqual(1, len(strategy.positions_closed()))
-        self.assertFalse(PositionId('position1') in strategy.positions_active())
+        self.assertFalse(PositionId('position1') in strategy.positions_open())
         self.assertTrue(PositionId('position1') in strategy.positions_closed())
         self.assertTrue(strategy.is_flat())

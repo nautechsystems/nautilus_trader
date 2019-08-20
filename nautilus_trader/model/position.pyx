@@ -49,8 +49,7 @@ cdef class Position:
         self.average_exit_price = None
         self.points_realized = Decimal(0)
         self.return_realized = 0.0
-        self.is_entered = True
-        self.is_exited = False
+        self.is_closed = False
         self.last_event = fill_event
 
         self._fill_logic(fill_event)
@@ -171,7 +170,7 @@ cdef class Position:
         :param current_price: The current price of the position instrument.
         :return: Decimal.
         """
-        if self.is_exited:
+        if self.is_closed:
             return Decimal(0)
         return self._calculate_points(self.average_entry_price, current_price)
 
@@ -182,7 +181,7 @@ cdef class Position:
         :param current_price: The current price of the position instrument.
         :return: float.
         """
-        if self.is_exited:
+        if self.is_closed:
             return 0.0
         return self._calculate_return(self.average_entry_price, current_price)
 
@@ -221,13 +220,13 @@ cdef class Position:
         if self.relative_quantity == 0:
             self._exit_logic(fill_event)
 
-        if self.is_exited and self.relative_quantity != 0:
-            self.is_exited = False
+        if self.is_closed and self.relative_quantity != 0:
+            self.is_closed = False
 
     cdef void _exit_logic(self, OrderFillEvent fill_event):
             self.exit_time = fill_event.timestamp
             self.average_exit_price = fill_event.average_price
-            self.is_exited = True
+            self.is_closed = True
 
     cdef void _increment_returns(self, OrderFillEvent fill_event):
         if fill_event.order_side is OrderSide.BUY:

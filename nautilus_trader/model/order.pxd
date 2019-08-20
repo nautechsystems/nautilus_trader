@@ -52,7 +52,7 @@ cdef class Order:
     cdef readonly OrderEvent last_event
     cdef readonly bint is_buy
     cdef readonly bint is_sell
-    cdef readonly bint is_active
+    cdef readonly bint is_working
     cdef readonly bint is_complete
 
     cdef bint equals(self, Order other)
