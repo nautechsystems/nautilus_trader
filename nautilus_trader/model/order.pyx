@@ -82,7 +82,7 @@ cdef class Order:
         else:
             Condition.none(price, 'price')
 
-        if time_in_force is TimeInForce.GTD:
+        if time_in_force == TimeInForce.GTD:
             Condition.not_none(expire_time, 'expire_time')
 
         self._order_ids_broker = []         # type: List[OrderId]
@@ -295,7 +295,7 @@ cdef class Order:
 
         if self.side == OrderSide.BUY:
             self.slippage = self.average_price - self.price
-        else:  # self.side is OrderSide.SELL:
+        else:  # self.side == OrderSide.SELL:
             self.slippage = self.price - self.average_price
 
         # Avoids negative zero (-0.00000)
@@ -778,7 +778,7 @@ cdef class OrderFactory:
         Price price_stop_loss,
         Price price_take_profit,
         Label original_label):
-        cdef OrderSide child_order_side = OrderSide.BUY if entry.side is OrderSide.SELL else OrderSide.SELL
+        cdef OrderSide child_order_side = OrderSide.BUY if entry.side == OrderSide.SELL else OrderSide.SELL
 
         cdef Label label_stop_loss = None
         cdef Label label_take_profit = None
