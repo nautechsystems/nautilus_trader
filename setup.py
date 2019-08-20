@@ -16,8 +16,8 @@ from Cython.Build import cythonize, build_ext
 from Cython.Compiler import Options
 
 from nautilus_trader.version import __version__
-from setup_tools import find_files, get_directories
-from linter import check_file_headers
+from tools.setup_tools import find_files, get_directories
+from tools.linter import check_file_headers
 
 
 PACKAGE_NAME = 'nautilus_trader'
