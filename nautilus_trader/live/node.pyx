@@ -15,16 +15,17 @@ import zmq
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport GUID
+from nautilus_trader.model.objects cimport Venue
+from nautilus_trader.model.identifiers cimport IdTag, TraderId
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.guid cimport LiveGuidFactory
 from nautilus_trader.common.execution cimport ExecutionDatabase
 from nautilus_trader.common.logger import LogLevel
 from nautilus_trader.common.logger cimport LoggerAdapter, nautilus_header
-from nautilus_trader.model.objects cimport Venue
-from nautilus_trader.model.identifiers cimport IdTag, TraderId
-from nautilus_trader.trade.trader cimport Trader
 from nautilus_trader.common.portfolio cimport Portfolio
+from nautilus_trader.trade.trader cimport Trader
+from nautilus_trader.serialization.serializers cimport EventSerializer, MsgPackEventSerializer
 from nautilus_trader.live.logger cimport LogStore, LiveLogger
 from nautilus_trader.live.data cimport LiveDataClient
 from nautilus_trader.live.execution cimport RedisExecutionDatabase, LiveExecutionEngine, LiveExecClient
@@ -72,6 +73,7 @@ cdef class TradingNode:
             config = json.load(config_file)
 
         trader_id = TraderId(config['trader']['trader_id'])
+        id_tag_trader= IdTag(config['trader']['id_tag_trader'])
 
         log_config = config['logging']
         self._log_store = LogStore(trader_id=trader_id, port=log_config['redis_port'])
@@ -95,12 +97,12 @@ cdef class TradingNode:
             venue=Venue(data_config['venue']),
             service_name=data_config['service_name'],
             service_address=data_config['service_address'],
-            tick_req_port=data_config['tick_rep_port'],
-            tick_sub_port=data_config['tick_pub_port'],
-            bar_req_port=data_config['bar_rep_port'],
-            bar_sub_port=data_config['bar_pub_port'],
-            inst_req_port=data_config['inst_rep_port'],
-            inst_sub_port=data_config['inst_pub_port'],
+            tick_rep_port=data_config['tick_rep_port'],
+            tick_pub_port=data_config['tick_pub_port'],
+            bar_rep_port=data_config['bar_rep_port'],
+            bar_pub_port=data_config['bar_pub_port'],
+            inst_rep_port=data_config['inst_rep_port'],
+            inst_pub_port=data_config['inst_pub_port'],
             clock=self._clock,
             guid_factory=self._guid_factory,
             logger=self._logger)
@@ -113,35 +115,38 @@ cdef class TradingNode:
 
         exec_config = config['execClient']
 
-        self._exec_db = RedisExecutionDatabase(trader_id=trader_id, port=exec_config['redis_port'])
-        self._exec_engine = LiveExecutionEngine(
+        self._exec_db = RedisExecutionDatabase(
             trader_id=trader_id,
+            port=exec_config['redis_port'],
+            serializer=MsgPackEventSerializer(),
+            logger=self._logger)
+
+        self._exec_engine = LiveExecutionEngine(
+            database=self._exec_db,
             account=self.account,
             portfolio=self.portfolio,
-            exec_db=self._exec_db,
             clock=self._clock,
             guid_factory=self._guid_factory,
             logger=self._logger)
 
         self._exec_client = LiveExecClient(
+            exec_engine=self._exec_engine,
             zmq_context=self._zmq_context,
             service_name=exec_config['service_name'],
             service_address=exec_config['service_address'],
             events_topic=exec_config['events_topic'],
             commands_port=exec_config['commands_port'],
             events_port=exec_config['events_port'],
-            engine=self._exec_engine,
             logger=self._logger)
 
-        id_tag_trader= IdTag(config['trader']['id_tag_trader'])
+        self._exec_engine.register_client(self._exec_client)
+
         self.trader = Trader(
             trader_id=trader_id,
             id_tag_trader=id_tag_trader,
             strategies=strategies,
             data_client=self._data_client,
-            exec_client=self._exec_client,
-            account=self.account,
-            portfolio=self.portfolio,
+            exec_engine=self._exec_engine,
             clock=self._clock,
             logger=self._logger)
 
