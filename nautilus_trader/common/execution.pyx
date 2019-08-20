@@ -254,9 +254,9 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         self._strategies = []            # type: List[StrategyId]
         self._index_order_strategy = {}  # type: Dict[OrderId, StrategyId]
         self._index_order_position = {}  # type: Dict[OrderId, PositionId]
-        self._orders_active = {}         # type: Dict[StrategyId, Dict[OrderId, Order]]
+        self._orders_working = {}         # type: Dict[StrategyId, Dict[OrderId, Order]]
         self._orders_completed = {}      # type: Dict[StrategyId, Dict[OrderId, Order]]
-        self._positions_active = {}      # type: Dict[StrategyId, Dict[PositionId, Position]]
+        self._positions_open = {}      # type: Dict[StrategyId, Dict[PositionId, Position]]
         self._positions_closed = {}      # type: Dict[StrategyId, Dict[PositionId, Position]]
 
 
@@ -269,13 +269,13 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         :param strategy: The strategy to add.
         """
         Condition.true(strategy.id not in self._strategies, 'strategy.id not in self._strategies')
-        Condition.true(strategy.id not in self._orders_active, 'strategy.id not in self._orders_active')
+        Condition.true(strategy.id not in self._orders_working, 'strategy.id not in self._orders_active')
         Condition.true(strategy.id not in  self._orders_completed, 'strategy.id not in  self._orders_completed')
 
         self._strategies.append(strategy.id)
-        self._orders_active[strategy.id] = {}         # type: Dict[OrderId, Order]
+        self._orders_working[strategy.id] = {}         # type: Dict[OrderId, Order]
         self._orders_completed[strategy.id] = {}      # type: Dict[OrderId, Order]
-        self._positions_active[strategy.id] = {}      # type: Dict[PositionId, Position]
+        self._positions_open[strategy.id] = {}      # type: Dict[PositionId, Position]
         self._positions_closed[strategy.id] = {}      # type: Dict[PositionId, Position]
 
         self._log.debug(f"Added strategy (id={strategy.id.value}).")
@@ -305,11 +305,11 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         :param strategy_id: The strategy identifier to associate with the position.
         """
         Condition.true(position.id not in self._cached_positions, 'position.id not in self._cached_positions')
-        Condition.true(strategy_id in self._positions_active, 'strategy_id in self._positions_active')
-        Condition.true(position.id not in self._positions_active[strategy_id], 'position.id not in self._positions_active[strategy_id]')
+        Condition.true(strategy_id in self._positions_open, 'strategy_id in self._positions_active')
+        Condition.true(position.id not in self._positions_open[strategy_id], 'position.id not in self._positions_active[strategy_id]')
 
         self._cached_positions[position.id] = position
-        self._positions_active[strategy_id][position.id] = position
+        self._positions_open[strategy_id][position.id] = position
         self._log.debug(f"Added position (id={position.id.value}).")
 
     cpdef void add_order_event(
@@ -329,16 +329,16 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         cdef OrderId order_id = event.order_id
 
         if is_working:
-            if order_id not in self._orders_active[strategy_id]:
-                self._orders_active[strategy_id][order_id] = self._cached_orders[order_id]
+            if order_id not in self._orders_working[strategy_id]:
+                self._orders_working[strategy_id][order_id] = self._cached_orders[order_id]
             if order_id in self._orders_completed[strategy_id]:
                 del self._orders_completed[strategy_id][order_id]
 
         if is_completed:
             if order_id not in self._orders_completed[strategy_id]:
                 self._orders_completed[strategy_id][order_id] = self._cached_orders[order_id]
-            if order_id in self._orders_active[strategy_id]:
-                del self._orders_active[strategy_id][order_id]
+            if order_id in self._orders_working[strategy_id]:
+                del self._orders_working[strategy_id][order_id]
 
     cpdef void add_position_event(
             self,
@@ -355,15 +355,15 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         :param is_closed: The flag indicating whether the position is closed.
         """
         if not is_closed:
-            if position_id not in self._positions_active[strategy_id]:
-                self._positions_active[strategy_id][position_id] = self._cached_positions[position_id]
+            if position_id not in self._positions_open[strategy_id]:
+                self._positions_open[strategy_id][position_id] = self._cached_positions[position_id]
             if position_id in self._positions_closed[strategy_id]:
                 del self._positions_closed[strategy_id][position_id]
         else:
             if position_id not in self._positions_closed[strategy_id]:
                 self._positions_closed[strategy_id][position_id] = self._cached_positions[position_id]
-            if position_id in self._positions_active[strategy_id]:
-                del self._positions_active[strategy_id][position_id]
+            if position_id in self._positions_open[strategy_id]:
+                del self._positions_open[strategy_id][position_id]
 
     cpdef void add_account_event(self, AccountEvent event):
         """
@@ -382,24 +382,24 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         :raises ConditionFailed: If the strategy is not registered with the execution client.
         """
         Condition.true(strategy.id in self._strategies, 'strategy in strategies')
-        Condition.true(strategy.id in self._orders_active, 'strategy in orders_active')
+        Condition.true(strategy.id in self._orders_working, 'strategy in orders_active')
         Condition.true(strategy.id in self._orders_completed, 'strategy in orders_completed')
 
         self._strategies.remove(strategy.id)
-        del self._orders_active[strategy.id]
+        del self._orders_working[strategy.id]
         del self._orders_completed[strategy.id]
-        del self._positions_active[strategy.id]
+        del self._positions_open[strategy.id]
         del self._positions_closed[strategy.id]
 
         self._log.debug(f"Deleted strategy (id={strategy.id.value}).")
 
     cpdef void check_residuals(self):
         # Check for any residual active orders and log warnings if any are found
-        for orders in self._orders_active.values():
+        for orders in self._orders_working.values():
             for order in orders.values():
                 self._log.warning(f"Residual active {order}")
 
-        for positions in self._positions_active.values():
+        for positions in self._positions_open.values():
             for position in positions.values():
                 self._log.warning(f"Residual position {position}")
 
@@ -410,16 +410,16 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         self._index_order_position = {}   # type: Dict[OrderId, PositionId]
 
         # Reset all active orders
-        for strategy_id in self._orders_active.keys():
-            self._orders_active[strategy_id] = {}     # type: Dict[OrderId, Order]
+        for strategy_id in self._orders_working.keys():
+            self._orders_working[strategy_id] = {}     # type: Dict[OrderId, Order]
 
         # Reset all completed orders
         for strategy_id in self._orders_completed.keys():
             self._orders_completed[strategy_id] = {}  # type: Dict[OrderId, Order]
 
         # Reset all active positions
-        for strategy_id in self._positions_active.keys():
-            self._positions_active[strategy_id] = {}  # type: Dict[PositionId, Position]
+        for strategy_id in self._positions_open.keys():
+            self._positions_open[strategy_id] = {}  # type: Dict[PositionId, Position]
 
         # Reset all closed positions
         for strategy_id in self._positions_closed.keys():
@@ -488,7 +488,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         
         :return: Dict[OrderId, Order].
         """
-        return self._orders_active.copy()
+        return self._orders_working.copy()
 
     cpdef dict get_orders_completed_all(self):
         """
@@ -509,7 +509,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         # Condition.true(strategy_id in self._orders_active, 'strategy_id in orders_active')
         # Condition.true(strategy_id in self._orders_completed, 'strategy_id in orders_completed')
 
-        return {**self._orders_active[strategy_id], **self._orders_completed[strategy_id]}
+        return {**self._orders_working[strategy_id], **self._orders_completed[strategy_id]}
 
     cpdef dict get_orders_working(self, StrategyId strategy_id):
         """
@@ -521,7 +521,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         # Condition.true(strategy_id in self._orders_active, 'strategy_id in orders_active')
 
-        return self._orders_active[strategy_id].copy()
+        return self._orders_working[strategy_id].copy()
 
     cpdef dict get_orders_completed(self, StrategyId strategy_id):
         """
@@ -615,7 +615,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         
         :return: Dict[PositionId, Position].
         """
-        return self._positions_active.copy()
+        return self._positions_open.copy()
 
     cpdef dict get_positions_closed_all(self):
         """
@@ -633,10 +633,10 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         :return: Dict[PositionId, Position].
         :raises ConditionFailed: If the strategy identifier is not registered with the portfolio.
         """
-        Condition.is_in(strategy_id, self._positions_active, 'strategy_id', 'positions_active')
+        Condition.is_in(strategy_id, self._positions_open, 'strategy_id', 'positions_active')
         Condition.is_in(strategy_id, self._positions_closed, 'strategy_id', 'positions_closed')
 
-        return {**self._positions_active[strategy_id], **self._positions_closed[strategy_id]}  # type: Dict[PositionId, Position]
+        return {**self._positions_open[strategy_id], **self._positions_closed[strategy_id]}  # type: Dict[PositionId, Position]
 
     cpdef dict get_positions_open(self, StrategyId strategy_id):
         """
@@ -646,9 +646,9 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         :return: Dict[PositionId, Position].
         :raises ConditionFailed: If the strategy identifier is not registered with the portfolio.
         """
-        Condition.is_in(strategy_id, self._positions_active, 'strategy_id', 'positions_active')
+        Condition.is_in(strategy_id, self._positions_open, 'strategy_id', 'positions_active')
 
-        return self._positions_active[strategy_id].copy()
+        return self._positions_open[strategy_id].copy()
 
     cpdef dict get_positions_closed(self, StrategyId strategy_id):
         """
@@ -721,7 +721,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         cdef int active_positions = 0
 
-        for positions_list in self._positions_active.values():
+        for positions_list in self._positions_open.values():
             active_positions += len(positions_list)
 
         return active_positions

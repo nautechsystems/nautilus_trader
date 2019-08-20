@@ -92,9 +92,9 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
     cdef list _strategies
     cdef dict _index_order_strategy
     cdef dict _index_order_position
-    cdef dict _orders_active
+    cdef dict _orders_working
     cdef dict _orders_completed
-    cdef dict _positions_active
+    cdef dict _positions_open
     cdef dict _positions_closed
 
 
