@@ -127,7 +127,7 @@ cdef class Position:
 
     cpdef list get_events(self):
         """
-        Return a list of all order events.
+        Return a list of all order fill events.
         
         :return: List[Event].
         """
@@ -141,29 +141,28 @@ cdef class Position:
         """
         return len(self._events)
 
-    cpdef void apply(self, OrderFillEvent event):
+    cpdef void apply(self, OrderFillEvent fill_event):
         """
-        Applies the given order event to the position. The given event type must
-        be either OrderFilled or OrderPartiallyFilled.
+        Applies the given order fill event to the position.
 
-        :param event: The order event to apply.
+        :param fill_event: The order fill event to apply.
         """
         # Update events
-        self._events.append(event)
-        self.last_event = event
+        self._events.append(fill_event)
+        self.last_event = fill_event
 
         # Update identifiers
-        if event.order_id not in self._order_ids:
-            self._order_ids.append(event.order_id)
-        self._execution_ids.append(event.execution_id)
-        self._execution_tickets.append(event.execution_ticket)
-        self.last_order_id = event.order_id
-        self.last_execution_id = event.execution_id
-        self.last_execution_ticket = event.execution_ticket
+        if fill_event.order_id not in self._order_ids:
+            self._order_ids.append(fill_event.order_id)
+        self._execution_ids.append(fill_event.execution_id)
+        self._execution_tickets.append(fill_event.execution_ticket)
+        self.last_order_id = fill_event.order_id
+        self.last_execution_id = fill_event.execution_id
+        self.last_execution_ticket = fill_event.execution_ticket
 
         # Apply event
-        self._increment_returns(event)
-        self._fill_logic(event)
+        self._increment_returns(fill_event)
+        self._fill_logic(fill_event)
 
     cpdef object points_unrealized(self, Price current_price):
         """
@@ -243,11 +242,6 @@ cdef class Position:
                 self.return_realized += self._calculate_return(self.average_entry_price, fill_event.average_price)
 
     cdef object _calculate_points(self, Price entry_price, Price exit_price):
-        """
-        Return the calculated points from the given parameters.
-        
-        :return: Decimal.
-        """
         if self.entry_direction == OrderSide.BUY:
             return exit_price.value - entry_price.value
         elif self.entry_direction == OrderSide.SELL:
@@ -256,11 +250,6 @@ cdef class Position:
             raise ValueError(f'Cannot calculate the points of a {self.entry_direction} entry direction.')
 
     cdef float _calculate_return(self, Price entry_price, Price exit_price):
-        """
-        Return the calculated return from the given parameters.
-        
-        :return: float.
-        """
         if self.market_position == MarketPosition.LONG:
             return (exit_price.as_float() - entry_price.as_float()) / entry_price.as_float()
         elif self.market_position == MarketPosition.SHORT:
