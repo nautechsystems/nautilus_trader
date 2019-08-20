@@ -25,7 +25,7 @@ from nautilus_trader.common.logger import LogLevel
 from nautilus_trader.common.logger cimport LoggerAdapter, nautilus_header
 from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.trade.trader cimport Trader
-from nautilus_trader.serialization.serializers cimport EventSerializer, MsgPackEventSerializer
+from nautilus_trader.serialization.serializers cimport MsgPackEventSerializer
 from nautilus_trader.live.logger cimport LogStore, LiveLogger
 from nautilus_trader.live.data cimport LiveDataClient
 from nautilus_trader.live.execution cimport RedisExecutionDatabase, LiveExecutionEngine, LiveExecClient

@@ -71,6 +71,7 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 27/03/19 2255252 function calls (2255070 primitive calls) in 2.738 seconds (performance check)
         # 09/07/19   78020 function calls   (77838 primitive calls) in 2.179 seconds (performance check)
         # 31/07/19   13792 function calls   (13610 primitive calls) in 2.037 seconds (performance check)
+        # 21/08/19   15311 function calls   (15117 primitive calls) in 2.156 seconds (performance check)
 
     def test_run_with_ema_cross_strategy(self):
         # Arrange
@@ -178,3 +179,4 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 31/07/19 15324690 function calls (15096346 primitive calls) in 15.134 seconds (add typed collections to data client base)
         # 06/08/19 15274063 function calls (15045703 primitive calls) in 14.749 seconds (add typed collections to exec client base)
         # 13/08/19 15402949 function calls (15045703 primitive calls) in 15.589 seconds (add typed collections to trader)
+        # 21/08/19 15403153 function calls (15175335 primitive calls) in 15.264 seconds (remove typed collections, add new execution engine)
