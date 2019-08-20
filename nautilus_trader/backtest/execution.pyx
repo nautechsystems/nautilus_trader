@@ -206,7 +206,7 @@ cdef class BacktestExecClient(ExecutionClient):
                 continue  # Orders status has changed since the loop commenced
 
             # Check for order fill
-            if order.side is OrderSide.BUY:
+            if order.side == OrderSide.BUY:
                 if order.type in STOP_ORDER_TYPES:
                     if highest_ask > order.price or (highest_ask == order.price and self.fill_model.is_stop_filled()):
                         del self.working_orders[order.id]  # Remove order from working orders
@@ -215,7 +215,7 @@ cdef class BacktestExecClient(ExecutionClient):
                         else:
                             self._fill_order(order, order.price)
                         continue  # Continue loop to next order
-                elif order.type is OrderType.LIMIT:
+                elif order.type == OrderType.LIMIT:
                     if highest_ask < order.price or (highest_ask == order.price and self.fill_model.is_limit_filled()):
                         del self.working_orders[order.id]  # Remove order from working orders
                         if self.fill_model.is_slipped():
@@ -223,7 +223,7 @@ cdef class BacktestExecClient(ExecutionClient):
                         else:
                             self._fill_order(order, order.price)
                         continue  # Continue loop to next order
-            elif order.side is OrderSide.SELL:
+            elif order.side == OrderSide.SELL:
                 if order.type in STOP_ORDER_TYPES:
                     if lowest_bid < order.price or (lowest_bid == order.price and self.fill_model.is_stop_filled()):
                         del self.working_orders[order.id]  # Remove order from working orders
@@ -232,7 +232,7 @@ cdef class BacktestExecClient(ExecutionClient):
                         else:
                             self._fill_order(order, order.price)
                         continue  # Continue loop to next order
-                elif order.type is OrderType.LIMIT:
+                elif order.type == OrderType.LIMIT:
                     if lowest_bid > order.price or (lowest_bid == order.price and self.fill_model.is_limit_filled()):
                         del self.working_orders[order.id]  # Remove order from working orders
                         if self.fill_model.is_slipped():
@@ -395,23 +395,23 @@ cdef class BacktestExecClient(ExecutionClient):
         cdef Price current_ask
         cdef Price current_bid
 
-        if order.side is OrderSide.BUY:
+        if order.side == OrderSide.BUY:
             current_ask = self.current_asks[order.symbol]
             if order.type in STOP_ORDER_TYPES:
                 if order.price.value < current_ask + (instrument.min_stop_distance * instrument.tick_size):
                     self._cancel_reject_order(order, 'modify order', f'BUY STOP order price of {order.price} is too far from the market, ask={current_ask}')
                     return  # Cannot modify order
-            elif order.type is OrderType.LIMIT:
+            elif order.type == OrderType.LIMIT:
                 if order.price.value > current_ask + (instrument.min_limit_distance * instrument.tick_size):
                     self._cancel_reject_order(order, 'modify order', f'BUY LIMIT order price of {order.price} is too far from the market, ask={current_ask}')
                     return  # Cannot modify order
-        elif order.side is OrderSide.SELL:
+        elif order.side == OrderSide.SELL:
             current_bid = self.current_bids[order.symbol]
             if order.type in STOP_ORDER_TYPES:
                 if order.price.value > current_bid - (instrument.min_stop_distance * instrument.tick_size):
                     self._cancel_reject_order(order, 'modify order', f'SELL STOP order price of {order.price} is too far from the market, bid={current_bid}')
                     return  # Cannot modify order
-            elif order.type is OrderType.LIMIT:
+            elif order.type == OrderType.LIMIT:
                 if order.price.value < current_bid - (instrument.min_limit_distance * instrument.tick_size):
                     self._cancel_reject_order(order, 'modify order', f'SELL LIMIT order price of {order.price} is too far from the market, bid={current_bid}')
                     return  # Cannot modify order
@@ -516,8 +516,8 @@ cdef class BacktestExecClient(ExecutionClient):
         cdef Price current_ask = self.current_asks[order.symbol]
 
         # Check order price is valid or reject
-        if order.side is OrderSide.BUY:
-            if order.type is OrderType.MARKET:
+        if order.side == OrderSide.BUY:
+            if order.type == OrderType.MARKET:
                 # Accept and fill market orders immediately
                 self._accept_order(order)
                 if self.fill_model.is_slipped():
@@ -529,12 +529,12 @@ cdef class BacktestExecClient(ExecutionClient):
                 if order.price.value < current_ask + (instrument.min_stop_distance_entry * instrument.tick_size):
                     self._reject_order(order,  f'BUY STOP order price of {order.price} is too far from the market, ask={current_ask}')
                     return  # Cannot accept order
-            elif order.type is OrderType.LIMIT:
+            elif order.type == OrderType.LIMIT:
                 if order.price.value > current_ask + (instrument.min_limit_distance_entry * instrument.tick_size):
                     self._reject_order(order,  f'BUY LIMIT order price of {order.price} is too far from the market, ask={current_ask}')
                     return  # Cannot accept order
-        elif order.side is OrderSide.SELL:
-            if order.type is OrderType.MARKET:
+        elif order.side == OrderSide.SELL:
+            if order.type == OrderType.MARKET:
                 # Accept and fill market orders immediately
                 self._accept_order(order)
                 if self.fill_model.is_slipped():
@@ -546,7 +546,7 @@ cdef class BacktestExecClient(ExecutionClient):
                 if order.price.value > current_bid - (instrument.min_stop_distance_entry * instrument.tick_size):
                     self._reject_order(order,  f'SELL STOP order price of {order.price} is too far from the market, bid={current_bid}')
                     return  # Cannot accept order
-            elif order.type is OrderType.LIMIT:
+            elif order.type == OrderType.LIMIT:
                 if order.price.value < current_bid - (instrument.min_limit_distance_entry * instrument.tick_size):
                     self._reject_order(order,  f'SELL LIMIT order price of {order.price} is too far from the market, bid={current_bid}')
                     return  # Cannot accept order
@@ -732,9 +732,9 @@ cdef class BacktestExecClient(ExecutionClient):
             Quantity quantity,
             float exchange_rate):
         cdef object difference
-        if direction is MarketPosition.LONG:
+        if direction == MarketPosition.LONG:
             difference = exit_price - entry_price
-        elif direction is MarketPosition.SHORT:
+        elif direction == MarketPosition.SHORT:
             difference = entry_price - exit_price
         else:
             raise ValueError(f'Cannot calculate the pnl of a {market_position_string(direction)} direction.')
