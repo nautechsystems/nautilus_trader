@@ -189,9 +189,8 @@ cdef class SubscriberWorker(MQWorker):
             zmq_context,
             zmq.SUB,
             logger)
-        self._thread = Thread(target=self._consume_messages, daemon=True)
         self._handler = handler
-
+        self._thread = Thread(target=self._consume_messages, daemon=True)
         self._thread.start()
 
     cpdef void subscribe(self, str topic):
@@ -213,7 +212,7 @@ cdef class SubscriberWorker(MQWorker):
         self._log.debug(f"Unsubscribed from topic {topic}.")
 
     cpdef void _consume_messages(self):
-        self._log.debug("Running...")
+        self._log.info("Running...")
 
         cdef str topic
         cdef bytes body
