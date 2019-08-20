@@ -551,7 +551,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         :param order_id: The order identifier to check.
         :return: True if the order is found and active, else False.
         """
-        return order_id in self._cached_orders and self._cached_orders[order_id].is_active
+        return order_id in self._cached_orders and self._cached_orders[order_id].is_working
 
     cpdef bint is_order_complete(self, OrderId order_id):
         """
