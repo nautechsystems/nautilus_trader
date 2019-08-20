@@ -94,11 +94,26 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
     def test_can_add_position(self):
         # Arrange
         strategy = TradingStrategy(id_tag_strategy='001')
-        position_id = PositionId('AUDUSD-1-123456')
-        position = Position(
-            symbol=AUDUSD_FXCM,
-            position_id=position_id,
-            timestamp=UNIX_EPOCH)
+        order = strategy.order_factory.market(
+            AUDUSD_FXCM,
+            OrderSide.BUY,
+            Quantity(100000))
+
+        position_id = strategy.position_id_generator.generate()
+
+        order_filled = OrderFilled(
+            order.id,
+            ExecutionId('E123456'),
+            ExecutionTicket('T123456'),
+            order.symbol,
+            order.side,
+            order.quantity,
+            Price('1.00001'),
+            UNIX_EPOCH,
+            GUID(uuid.uuid4()),
+            UNIX_EPOCH)
+
+        position = Position(position_id, order_filled)
 
         self.exec_db.add_strategy(strategy)
 
@@ -175,11 +190,26 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
     def test_can_make_position_active(self):
         # Arrange
         strategy = TradingStrategy(id_tag_strategy='001')
-        position_id = PositionId('AUDUSD-1-123456')
-        position = Position(
-            symbol=AUDUSD_FXCM,
-            position_id=position_id,
-            timestamp=UNIX_EPOCH)
+        order = strategy.order_factory.market(
+            AUDUSD_FXCM,
+            OrderSide.BUY,
+            Quantity(100000))
+
+        position_id = strategy.position_id_generator.generate()
+
+        order_filled = OrderFilled(
+            order.id,
+            ExecutionId('E123456'),
+            ExecutionTicket('T123456'),
+            order.symbol,
+            order.side,
+            order.quantity,
+            Price('1.00001'),
+            UNIX_EPOCH,
+            GUID(uuid.uuid4()),
+            UNIX_EPOCH)
+
+        position = Position(position_id, order_filled)
 
         self.exec_db.add_strategy(strategy)
 
@@ -198,11 +228,26 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
     def test_can_make_position_closed(self):
         # Arrange
         strategy = TradingStrategy(id_tag_strategy='001')
-        position_id = PositionId('AUDUSD-1-123456')
-        position = Position(
-            symbol=AUDUSD_FXCM,
-            position_id=position_id,
-            timestamp=UNIX_EPOCH)
+        order = strategy.order_factory.market(
+            AUDUSD_FXCM,
+            OrderSide.BUY,
+            Quantity(100000))
+
+        position_id = strategy.position_id_generator.generate()
+
+        order_filled = OrderFilled(
+            order.id,
+            ExecutionId('E123456'),
+            ExecutionTicket('T123456'),
+            order.symbol,
+            order.side,
+            order.quantity,
+            Price('1.00001'),
+            UNIX_EPOCH,
+            GUID(uuid.uuid4()),
+            UNIX_EPOCH)
+
+        position = Position(position_id, order_filled)
 
         self.exec_db.add_strategy(strategy)
         self.exec_db.add_position(position, strategy.id)
