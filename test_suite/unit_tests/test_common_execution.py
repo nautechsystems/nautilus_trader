@@ -11,7 +11,7 @@ import uuid
 
 from nautilus_trader.core.types import GUID
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.events import OrderFilled
+from nautilus_trader.model.events import OrderFilled, OrderWorking
 from nautilus_trader.model.identifiers import (
     TraderId,
     StrategyId,
@@ -136,7 +136,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         # Assert
         self.assertTrue(strategy.id not in self.exec_db.get_strategy_ids())
 
-    def test_can_make_order_active(self):
+    def test_can_add_order_event_with_working_order(self):
         # Arrange
         strategy = TradingStrategy(id_tag_strategy='001')
         order = self.order_factory.market(
@@ -146,11 +146,28 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
 
         position_id = PositionId('AUDUSD-1-123456')
 
+        order_working = OrderWorking(
+            order.id,
+            OrderId('SOME_BROKER_ID_1'),
+            order.symbol,
+            order.label,
+            order.side,
+            order.type,
+            order.quantity,
+            Price('1.00000'),
+            order.time_in_force,
+            UNIX_EPOCH,
+            GUID(uuid.uuid4()),
+            UNIX_EPOCH,
+            order.expire_time)
+
+        order.apply(order_working)
+
         self.exec_db.add_strategy(strategy)
         self.exec_db.add_order(order, strategy.id, position_id)
 
         # Act
-        self.exec_db.order_active(order, strategy.id)
+        self.exec_db.add_order_event(order_working, strategy.id, order.is_working, order.is_complete)
 
         # Assert
         self.assertTrue(self.exec_db.order_exists(order.id))
@@ -161,7 +178,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         self.assertTrue(order.id not in self.exec_db.get_orders_completed(strategy.id))
         self.assertTrue(order.id not in self.exec_db.get_orders_completed_all()[strategy.id])
 
-    def test_can_make_order_completed(self):
+    def test_can_add_order_event_with_completed_order(self):
         # Arrange
         strategy = TradingStrategy(id_tag_strategy='001')
         order = self.order_factory.market(
@@ -171,12 +188,25 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
 
         position_id = PositionId('AUDUSD-1-123456')
 
+        order_filled = OrderFilled(
+            order.id,
+            ExecutionId('E123456'),
+            ExecutionTicket('T123456'),
+            order.symbol,
+            order.side,
+            order.quantity,
+            Price('1.00001'),
+            UNIX_EPOCH,
+            GUID(uuid.uuid4()),
+            UNIX_EPOCH)
+
+        order.apply(order_filled)
+
         self.exec_db.add_strategy(strategy)
         self.exec_db.add_order(order, strategy.id, position_id)
-        self.exec_db.order_active(order, strategy.id)
 
         # Act
-        self.exec_db.order_completed(order, strategy.id)
+        self.exec_db.add_order_event(order_filled, strategy.id, order.is_working, order.is_complete)
 
         # Assert
         self.assertTrue(self.exec_db.order_exists(order.id))
@@ -187,37 +217,18 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         self.assertTrue(order.id not in self.exec_db.get_orders_working(strategy.id))
         self.assertTrue(order.id not in self.exec_db.get_orders_working_all()[strategy.id])
 
-    def test_can_make_position_active(self):
+    def test_can_add_position_event_with_open_position(self):
         # Arrange
         strategy = TradingStrategy(id_tag_strategy='001')
-        order = strategy.order_factory.market(
-            AUDUSD_FXCM,
-            OrderSide.BUY,
-            Quantity(100000))
-
-        position_id = strategy.position_id_generator.generate()
-
-        order_filled = OrderFilled(
-            order.id,
-            ExecutionId('E123456'),
-            ExecutionTicket('T123456'),
-            order.symbol,
-            order.side,
-            order.quantity,
-            Price('1.00001'),
-            UNIX_EPOCH,
-            GUID(uuid.uuid4()),
-            UNIX_EPOCH)
-
-        position = Position(position_id, order_filled)
-
         self.exec_db.add_strategy(strategy)
+
+        position = TestStubs.position()
 
         # Act
         self.exec_db.add_position(position, strategy.id)
 
         # Assert
-        self.assertTrue(self.exec_db.position_exists(position_id))
+        self.assertTrue(self.exec_db.position_exists(position.id))
         self.assertTrue(position.id in self.exec_db.get_position_ids())
         self.assertTrue(position.id in self.exec_db.get_positions_all())
         self.assertTrue(position.id in self.exec_db.get_positions_open(strategy.id))
@@ -225,15 +236,17 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         self.assertTrue(position.id not in self.exec_db.get_positions_closed(strategy.id))
         self.assertTrue(position.id not in self.exec_db.get_positions_closed_all()[strategy.id])
 
-    def test_can_make_position_closed(self):
+    def test_can_add_position_event_with_closed_position(self):
         # Arrange
         strategy = TradingStrategy(id_tag_strategy='001')
-        order = strategy.order_factory.market(
-            AUDUSD_FXCM,
-            OrderSide.BUY,
-            Quantity(100000))
+        self.exec_db.add_strategy(strategy)
 
-        position_id = strategy.position_id_generator.generate()
+        position = TestStubs.position()
+
+        order = self.order_factory.market(
+            AUDUSD_FXCM,
+            OrderSide.SELL,
+            Quantity(100000))
 
         order_filled = OrderFilled(
             order.id,
@@ -247,16 +260,15 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
-        position = Position(position_id, order_filled)
+        position.apply(order_filled)
 
-        self.exec_db.add_strategy(strategy)
         self.exec_db.add_position(position, strategy.id)
 
         # Act
-        self.exec_db.position_closed(position, strategy.id)
+        self.exec_db.add_position_event(order_filled, position.id, strategy.id, position.is_closed)
 
         # Assert
-        self.assertTrue(self.exec_db.position_exists(position_id))
+        self.assertTrue(self.exec_db.position_exists(position.id))
         self.assertTrue(position.id in self.exec_db.get_position_ids())
         self.assertTrue(position.id in self.exec_db.get_positions_all())
         self.assertTrue(position.id in self.exec_db.get_positions_closed(strategy.id))
