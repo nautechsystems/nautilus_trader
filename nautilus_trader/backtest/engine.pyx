@@ -148,13 +148,13 @@ cdef class BacktestEngine:
             strategy.change_clock(TestClock())
 
         self.trader = Trader(
-            trader_id,
-            IdTag('000'),
-            strategies,
-            self.data_client,
-            self.exec_engine,
-            self.test_clock,
-            self.test_logger)
+            trader_id=trader_id,
+            id_tag_trader=IdTag('000'),
+            strategies=strategies,
+            data_client=self.data_client,
+            exec_engine=self.exec_engine,
+            clock=self.test_clock,
+            logger=self.test_logger)
 
         self.iteration = 0
 

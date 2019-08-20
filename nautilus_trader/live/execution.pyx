@@ -45,8 +45,9 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
     def __init__(self,
                  TraderId trader_id,
-                 int port=6379,
-                 EventSerializer serializer=MsgPackEventSerializer()):
+                 int port,
+                 EventSerializer serializer,
+                 LiveLogger logger):
         """
         Initializes a new instance of the RedisExecutionEngine class.
 
@@ -57,6 +58,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         Condition.in_range(port, 'redis_port', 0, 65535)
 
+        super().__init__(trader_id, logger)
         self._key_order_event = f'Trader-{trader_id.value}:Orders:'
         self._key_position_event = f'Trader-{trader_id.value}:Positions:'
         self._serializer = serializer
