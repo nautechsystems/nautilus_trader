@@ -79,7 +79,7 @@ cdef class ExecutionDatabase:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void add_position_event(self, PositionId position_id, OrderFillEvent fill_event, StrategyId strategy_id, bint is_closed):
+    cpdef void add_position_event(self, OrderFillEvent fill_event, PositionId position_id, StrategyId strategy_id, bint is_closed):
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
@@ -326,10 +326,6 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         :param is_working: The flag indicating whether the order is working.
         :param is_completed: The flag indicating whether the order is complete.
         """
-        assert is_working != is_completed
-        assert strategy_id in self._orders_active
-        assert strategy_id in self._orders_completed
-
         cdef OrderId order_id = event.order_id
 
         if is_working:
@@ -346,15 +342,15 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
     cpdef void add_position_event(
             self,
+            OrderFillEvent fill_event,
             PositionId position_id,
-            OrderFillEvent event,
             StrategyId strategy_id,
             bint is_closed):
         """
         Add the given position event to the execution database.
 
+        :param fill_event: The order fill position event to add.
         :param position_id: The position identifier associated with the event.
-        :param event: The position event to add.
         :param strategy_id: The strategy identifier associated with the event.
         :param is_closed: The flag indicating whether the position is closed.
         """
@@ -957,8 +953,8 @@ cdef class ExecutionEngine:
         else:
             position.apply(fill_event)
             self.database.add_position_event(
-                position_id=position_id,
                 fill_event=fill_event,
+                position_id=position_id,
                 strategy_id=strategy_id,
                 is_closed=position.is_closed)
             if position.is_closed:
