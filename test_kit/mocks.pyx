@@ -274,7 +274,7 @@ cdef class MockCommandRouter:
         """
         Start the consumption loop to receive published messages.
         """
-        self._log.info("Starting message consumption loop...")
+        self._log.info("Running...")
 
         while True:
             message = self._command_serializer.deserialize(self._socket.recv())

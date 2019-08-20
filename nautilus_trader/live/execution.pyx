@@ -123,6 +123,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         self._queue = queue.Queue()
         self._thread = threading.Thread(target=self._process_queue, daemon=True)
+        self._thread.start()
 
     cpdef void execute_command(self, Command command):
         """
@@ -141,6 +142,8 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         self._queue.put(event)
 
     cpdef void _process_queue(self):
+        self._log.info("Running...")
+
         # Process the queue one item at a time
         cdef Message message
         while True:

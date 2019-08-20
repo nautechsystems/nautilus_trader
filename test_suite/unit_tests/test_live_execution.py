@@ -46,99 +46,92 @@ class LiveExecutionTests(unittest.TestCase):
 
         clock = LiveClock()
         guid_factory = LiveGuidFactory()
-        self.logger = LiveLogger()
+        logger = LiveLogger()
 
         account = Account()
 
         self.portfolio = Portfolio(
             clock=clock,
             guid_factory=guid_factory,
-            logger=self.logger)
+            logger=logger)
 
-        self.exec_db = InMemoryExecutionDatabase(trader_id=trader_id, logger=self.logger)
+        self.exec_db = InMemoryExecutionDatabase(trader_id=trader_id, logger=logger)
         self.exec_engine = LiveExecutionEngine(
             database=self.exec_db,
             account=account,
             portfolio=self.portfolio,
             clock=clock,
             guid_factory=guid_factory,
-            logger=self.logger)
+            logger=logger)
 
         self.exec_client = LiveExecClient(
             exec_engine=self.exec_engine,
             zmq_context=zmq_context,
             commands_port=commands_port,
             events_port=events_port,
-            logger=self.logger)
+            logger=logger)
 
         self.exec_engine.register_client(self.exec_client)
-
-        self.response_list = []
-        self.response_handler = self.response_list.append
+        self.exec_client.connect()
 
         self.command_router = MockCommandRouter(
             zmq_context,
             commands_port,
             MsgPackCommandSerializer(),
             MsgPackResponseSerializer(),
-            self.logger)
+            logger)
 
-        self.event_publisher = MockPublisher(zmq_context, events_port, self.logger)
-
-        self.exec_client.connect()
+        self.event_publisher = MockPublisher(zmq_context, events_port, logger)
 
         self.bar_type = TestStubs.bartype_audusd_1min_bid()
+        self.strategy = TestStrategy1(self.bar_type, id_tag_strategy='001')
+        self.strategy.change_logger(logger)
+        self.exec_engine.register_strategy(self.strategy)
 
     def tearDown(self):
         # Tear Down
+        time.sleep(0.3)
         self.exec_client.disconnect()
         self.command_router.stop()
         self.event_publisher.stop()
 
     def test_can_send_submit_order_command(self):
         # Arrange
-        strategy = TestStrategy1(self.bar_type, id_tag_strategy='001')
-        strategy.change_logger(self.logger)
-        self.exec_engine.register_strategy(strategy)
-        order = strategy.order_factory.market(
+        order = self.strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000))
 
         # Act
-        strategy.submit_order(order, strategy.position_id_generator.generate())
+        self.strategy.submit_order(order, self.strategy.position_id_generator.generate())
 
-        time.sleep(0.1)
+        time.sleep(0.3)
         # Assert
-        self.assertEqual(order, strategy.order(order.id))
+        self.assertEqual(order, self.strategy.order(order.id))
         self.assertEqual(1, len(self.command_router.responses_sent))
         self.assertEqual(MessageReceived, type(self.command_router.responses_sent[0]))
 
     def test_can_send_submit_atomic_order_no_take_profit_command(self):
         # Arrange
-        strategy = TestStrategy1(self.bar_type, id_tag_strategy='002')
-        self.exec_engine.register_strategy(strategy)
-        atomic_order = strategy.order_factory.atomic_market(
+        atomic_order = self.strategy.order_factory.atomic_market(
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
             Price('0.99900'))
 
         # Act
-        strategy.submit_atomic_order(atomic_order, strategy.position_id_generator.generate())
+        self.strategy.submit_atomic_order(atomic_order, self.strategy.position_id_generator.generate())
 
-        time.sleep(0.1)
+        time.sleep(0.3)
         # Assert
-        self.assertEqual(atomic_order.entry, strategy.order(atomic_order.entry.id))
-        self.assertEqual(atomic_order.stop_loss, strategy.order(atomic_order.stop_loss.id))
+        self.assertEqual(atomic_order.entry, self.strategy.order(atomic_order.entry.id))
+        self.assertEqual(atomic_order.stop_loss, self.strategy.order(atomic_order.stop_loss.id))
         self.assertEqual(1, len(self.command_router.responses_sent))
         self.assertEqual(MessageReceived, type(self.command_router.responses_sent[0]))
 
     def test_can_send_submit_atomic_order_with_take_profit_command(self):
         # Arrange
-        strategy = TestStrategy1(self.bar_type, id_tag_strategy='003')
-        self.exec_engine.register_strategy(strategy)
-        atomic_order = strategy.order_factory.atomic_limit(
+        atomic_order = self.strategy.order_factory.atomic_limit(
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
@@ -147,68 +140,59 @@ class LiveExecutionTests(unittest.TestCase):
             Price('0.99900'))
 
         # Act
-        strategy.submit_atomic_order(atomic_order, strategy.position_id_generator.generate())
+        self.strategy.submit_atomic_order(atomic_order, self.strategy.position_id_generator.generate())
 
-        time.sleep(0.1)
+        time.sleep(0.3)
         # Assert
-        self.assertEqual(atomic_order.entry, strategy.order(atomic_order.entry.id))
-        self.assertEqual(atomic_order.stop_loss, strategy.order(atomic_order.stop_loss.id))
-        self.assertEqual(atomic_order.take_profit, strategy.order(atomic_order.take_profit.id))
+        self.assertEqual(atomic_order.entry, self.strategy.order(atomic_order.entry.id))
+        self.assertEqual(atomic_order.stop_loss, self.strategy.order(atomic_order.stop_loss.id))
+        self.assertEqual(atomic_order.take_profit, self.strategy.order(atomic_order.take_profit.id))
         self.assertEqual(1, len(self.command_router.responses_sent))
         self.assertEqual(MessageReceived, type(self.command_router.responses_sent[0]))
 
     def test_can_send_cancel_order_command(self):
         # Arrange
-        strategy = TestStrategy1(self.bar_type, id_tag_strategy='004')
-        self.exec_engine.register_strategy(strategy)
-        order = strategy.order_factory.market(
+        order = self.strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000))
 
         # Act
-        strategy.submit_order(order, strategy.position_id_generator.generate())
-        time.sleep(0.1)
-        strategy.cancel_order(order, 'ORDER_EXPIRED')
+        self.strategy.submit_order(order, self.strategy.position_id_generator.generate())
+        self.strategy.cancel_order(order, 'ORDER_EXPIRED')
 
         # Assert
-        time.sleep(0.1)
-        self.assertEqual(order, strategy.order(order.id))
+        time.sleep(0.3)
+        self.assertEqual(order, self.strategy.order(order.id))
         self.assertEqual(2, len(self.command_router.responses_sent))
         self.assertEqual(MessageReceived, type(self.command_router.responses_sent[0]))
         self.assertEqual(MessageReceived, type(self.command_router.responses_sent[1]))
 
     def test_can_send_modify_order_command(self):
         # Arrange
-        strategy = TestStrategy1(self.bar_type, id_tag_strategy='005')
-        self.exec_engine.register_strategy(strategy)
-        order = strategy.order_factory.limit(
+        order = self.strategy.order_factory.limit(
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
             Price('1.00000'))
 
         # Act
-        strategy.submit_order(order, strategy.position_id_generator.generate())
-        time.sleep(0.1)
-        strategy.modify_order(order, Price('1.00001'))
+        self.strategy.submit_order(order, self.strategy.position_id_generator.generate())
+        self.strategy.modify_order(order, Price('1.00001'))
 
         # Assert
-        time.sleep(0.1)
-        self.assertEqual(order, strategy.order(order.id))
+        time.sleep(0.3)
+        self.assertEqual(order, self.strategy.order(order.id))
         self.assertEqual(2, len(self.command_router.responses_sent))
         self.assertEqual(MessageReceived, type(self.command_router.responses_sent[0]))
         self.assertEqual(MessageReceived, type(self.command_router.responses_sent[1]))
 
     def test_can_send_account_inquiry_command(self):
         # Arrange
-        strategy = TestStrategy1(self.bar_type, id_tag_strategy='006')
-        self.exec_engine.register_strategy(strategy)
-
         # Act
-        strategy.account_inquiry()
+        self.strategy.account_inquiry()
 
         # Assert
-        time.sleep(0.1)
+        time.sleep(0.3)
         self.assertEqual(1, len(self.command_router.responses_sent))
         self.assertEqual(MessageReceived, type(self.command_router.responses_sent[0]))
