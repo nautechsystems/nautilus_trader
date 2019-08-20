@@ -35,7 +35,8 @@ class RequestWorkerTests(unittest.TestCase):
             "TestResponder",
             LOCAL_HOST,
             TEST_PORT,
-            self.context)
+            self.context,
+            logger)
 
         self.server = MockServer(self.context, TEST_PORT, logger)
 
