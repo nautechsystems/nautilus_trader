@@ -185,7 +185,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(OrderStatus.INITIALIZED, order.status)
         self.assertEqual(1, order.event_count())
         self.assertTrue(isinstance(order.last_event, OrderInitialized))
-        self.assertFalse(order.is_active)
+        self.assertFalse(order.is_working)
         self.assertFalse(order.is_complete)
         self.assertTrue(order.is_buy)
         self.assertFalse(order.is_sell)
@@ -204,7 +204,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(OrderStatus.INITIALIZED, order.status)
         self.assertEqual(1, order.event_count())
         self.assertTrue(isinstance(order.last_event, OrderInitialized))
-        self.assertFalse(order.is_active)
+        self.assertFalse(order.is_working)
         self.assertFalse(order.is_complete)
         self.assertFalse(order.is_buy)
         self.assertTrue(order.is_sell)
@@ -498,7 +498,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(OrderStatus.WORKING, order.status)
         self.assertEqual(OrderId('SOME_BROKER_ID'), order.id_broker)
         self.assertFalse(order.is_complete)
-        self.assertTrue(order.is_active)
+        self.assertTrue(order.is_working)
         self.assertEqual(None, order.filled_timestamp)
 
     def test_can_apply_order_expired_event_to_order(self):
@@ -601,7 +601,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(OrderStatus.WORKING, order.status)
         self.assertEqual(OrderId('SOME_BROKER_ID_2'), order.id_broker)
         self.assertEqual(Price('1.00001'), order.price)
-        self.assertTrue(order.is_active)
+        self.assertTrue(order.is_working)
         self.assertFalse(order.is_complete)
         self.assertEqual(3, order.event_count())
 

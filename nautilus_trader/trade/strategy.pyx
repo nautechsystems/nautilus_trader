@@ -446,7 +446,7 @@ cdef class TradingStrategy:
             self.log.warning(f"{event}")
             if event.order_id in self._stop_loss_orders and self.flatten_on_sl_reject:
                 position = self._exec_engine.database.get_position_for_order(event.order_id)
-                if position.is_entered:
+                if position is not None:
                     self.log.critical(f"Rejected order {event.order_id} was a registered stop-loss. Flattening entered position {position.id}.")
                     self.flatten_position(position.id)
                 else:
@@ -844,13 +844,13 @@ cdef class TradingStrategy:
         """
         return self._exec_engine.database.get_orders(self.id)
 
-    cpdef dict orders_active(self):
+    cpdef dict orders_working(self):
         """
         Return a dictionary of all active orders associated with this strategy.
         
         :return: Dict[OrderId, Order].
         """
-        return self._exec_engine.database.get_orders_active(self.id)
+        return self._exec_engine.database.get_orders_working(self.id)
 
     cpdef dict orders_completed(self):
         """
@@ -964,13 +964,13 @@ cdef class TradingStrategy:
         """
         return self._exec_engine.database.get_positions(self.id)
 
-    cpdef dict positions_active(self):
+    cpdef dict positions_open(self):
         """
         Return a dictionary of all active positions associated with this strategy.
         
         :return: Dict[PositionId, Position]
         """
-        return self._exec_engine.database.get_positions_active(self.id)
+        return self._exec_engine.database.get_positions_open(self.id)
 
     cpdef dict positions_closed(self):
         """
@@ -998,15 +998,15 @@ cdef class TradingStrategy:
         """
         return self._exec_engine.database.order_exists(order_id)
 
-    cpdef bint is_order_active(self, OrderId order_id):
+    cpdef bint is_order_working(self, OrderId order_id):
         """
-        Return a value indicating whether an order with the given identifier is active.
+        Return a value indicating whether an order with the given identifier is working.
          
         :param order_id: The order identifier.
         :return: True if the order exists and is active, else False.
         :raises ConditionFailed: If the order is not found.
         """
-        return self._exec_engine.database.is_order_active(order_id)
+        return self._exec_engine.database.is_order_working(order_id)
 
     cpdef bint is_order_complete(self, OrderId order_id):
         """
@@ -1321,7 +1321,7 @@ cdef class TradingStrategy:
         cdef CancelOrder command
 
         for order_id, order in all_orders.items():
-            if order.is_active:
+            if order.is_working:
                 command = CancelOrder(
                     self.trader_id,
                     self.id,
@@ -1370,7 +1370,7 @@ cdef class TradingStrategy:
             self.log.error("Cannot flatten all positions (execution client not registered).")
             return
 
-        cdef dict positions = self._exec_engine.database.get_positions_active(self.id)
+        cdef dict positions = self._exec_engine.database.get_positions_open(self.id)
 
         if len(positions) == 0:
             self.log.warning("Did not flatten all positions (no active positions to flatten).")

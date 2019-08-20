@@ -111,7 +111,7 @@ cdef class Order:
         self.init_id = GUID(uuid.uuid4()) if init_id is None else init_id
         self.is_buy = self.side == OrderSide.BUY
         self.is_sell = self.side == OrderSide.SELL
-        self.is_active = False
+        self.is_working = False
         self.is_complete = False
 
         cdef OrderInitialized initialized = OrderInitialized(
@@ -259,16 +259,16 @@ cdef class Order:
             self.status = OrderStatus.WORKING
             self._order_ids_broker.append(event.order_id_broker)
             self.id_broker = event.order_id_broker
-            self.is_active = True
+            self.is_working = True
         elif isinstance(event, OrderCancelReject):
             pass
         elif isinstance(event, OrderCancelled):
             self.status = OrderStatus.CANCELLED
-            self.is_active = False
+            self.is_working = False
             self.is_complete = True
         elif isinstance(event, OrderExpired):
             self.status = OrderStatus.EXPIRED
-            self.is_active = False
+            self.is_working = False
             self.is_complete = True
         elif isinstance(event, OrderModified):
             self._order_ids_broker.append(event.order_id_broker)
@@ -285,7 +285,7 @@ cdef class Order:
             self._set_slippage()
             self._set_fill_status()
             if self.status == OrderStatus.FILLED:
-                self.is_active = False
+                self.is_working = False
                 self.is_complete = True
 
     cdef void _set_slippage(self):
