@@ -41,7 +41,7 @@ cdef class ExecutionDatabase:
     cpdef void add_order(self, Order order, StrategyId strategy_id, PositionId position_id)
     cpdef void add_position(self, Position position, StrategyId strategy_id)
     cpdef void add_order_event(self, OrderEvent event, StrategyId strategy_id, bint is_working, bint is_complete)
-    cpdef void add_position_event(self, PositionId position_id, OrderFillEvent fill_event, StrategyId strategy_id, bint is_closed)
+    cpdef void add_position_event(self,OrderFillEvent fill_event, PositionId position_id, StrategyId strategy_id, bint is_closed)
     cpdef void add_account_event(self, AccountEvent event)
     cpdef void delete_strategy(self, TradingStrategy strategy)
     cpdef void check_residuals(self)
