@@ -31,7 +31,7 @@ cdef class MQWorker:
             int service_port,
             zmq_context: Context,
             int zmq_socket_type,
-            Logger logger=None):
+            Logger logger):
         """
         Initializes a new instance of the MQWorker class.
 
@@ -98,7 +98,7 @@ cdef class RequestWorker(MQWorker):
             str service_address,
             int service_port,
             zmq_context: Context,
-            Logger logger=None):
+            Logger logger):
         """
         Initializes a new instance of the RequestWorker class.
 
@@ -159,7 +159,7 @@ cdef class SubscriberWorker(MQWorker):
             int service_port,
             zmq_context: Context,
             handler: Callable,
-            Logger logger=None):
+            Logger logger):
         """
         Initializes a new instance of the SubscriberWorker class.
 

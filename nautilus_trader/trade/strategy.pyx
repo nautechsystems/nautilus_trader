@@ -689,6 +689,8 @@ cdef class TradingStrategy:
         :return: int.
         :raises ConditionFailed: If the strategies tick dictionary does not contain the symbol.
         """
+        Condition.is_in(symbol, self._ticks, 'symbol', 'ticks')
+
         return len(self._ticks[symbol])
 
     cpdef int bar_count(self, BarType bar_type):
@@ -699,6 +701,8 @@ cdef class TradingStrategy:
         :return: int.
         :raises ConditionFailed: If the strategies bars dictionary does not contain the bar type.
         """
+        Condition.is_in(bar_type, self._bars, 'bar_type', 'bars')
+
         return len(self._bars[bar_type])
 
     cpdef list ticks(self, Symbol symbol):
@@ -828,8 +832,7 @@ cdef class TradingStrategy:
         Return the order with the given identifier.
 
         :param order_id: The order identifier.
-        :return: Order.
-        :raises ConditionFailed: If the execution client does not contain an order with the given identifier.
+        :return: Order or None.
         """
         return self._exec_engine.database.get_order(order_id)
 
@@ -837,7 +840,7 @@ cdef class TradingStrategy:
         """
         Return a dictionary of all orders associated with this strategy.
         
-        :return: Dict[OrderId, Order]
+        :return: Dict[OrderId, Order].
         """
         return self._exec_engine.database.get_orders(self.id)
 
@@ -845,7 +848,7 @@ cdef class TradingStrategy:
         """
         Return a dictionary of all active orders associated with this strategy.
         
-        :return: Dict[OrderId, Order]
+        :return: Dict[OrderId, Order].
         """
         return self._exec_engine.database.get_orders_active(self.id)
 
@@ -853,7 +856,7 @@ cdef class TradingStrategy:
         """
         Return a dictionary of all completed orders associated with this strategy.
         
-        :return: Dict[OrderId, Order]
+        :return: Dict[OrderId, Order].
         """
         return self._exec_engine.database.get_orders_completed(self.id)
 
@@ -977,7 +980,7 @@ cdef class TradingStrategy:
         """
         return self._exec_engine.database.get_positions_closed(self.id)
 
-    cpdef bint does_position_exist(self, PositionId position_id):
+    cpdef bint position_exists(self, PositionId position_id):
         """
         Return a value indicating whether a position with the given identifier exists.
         
@@ -986,7 +989,7 @@ cdef class TradingStrategy:
         """
         return self._exec_engine.database.position_exists(position_id)
 
-    cpdef bint does_order_exist(self, OrderId order_id):
+    cpdef bint order_exists(self, OrderId order_id):
         """
         Return a value indicating whether an order with the given identifier exists.
         

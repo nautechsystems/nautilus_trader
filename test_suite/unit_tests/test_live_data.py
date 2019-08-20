@@ -31,6 +31,7 @@ class LiveDataClientTests(unittest.TestCase):
     # Fixture Setup
     def setUp(self):
         # Arrange
+        self.logger = LiveLogger()
         self.zmq_context = zmq.Context()
         self.data_mapper = DataMapper()
         self.data_serializer = BsonDataSerializer()
@@ -38,11 +39,11 @@ class LiveDataClientTests(unittest.TestCase):
         self.tick_req_port = 55501
         self.bar_req_port = 55503
         self.inst_req_port = 55505
-        self.tick_publisher = MockPublisher(zmq_context=self.zmq_context, port=55502)
-        self.bar_publisher = MockPublisher(zmq_context=self.zmq_context, port=55504)
-        self.inst_publisher = MockPublisher(zmq_context=self.zmq_context, port=55506)
+        self.tick_publisher = MockPublisher(zmq_context=self.zmq_context, port=55502, logger=self.logger)
+        self.bar_publisher = MockPublisher(zmq_context=self.zmq_context, port=55504, logger=self.logger)
+        self.inst_publisher = MockPublisher(zmq_context=self.zmq_context, port=55506, logger=self.logger)
 
-        self.data_client = LiveDataClient(venue=Venue('FXCM'), zmq_context=zmq.Context(), logger=LiveLogger())
+        self.data_client = LiveDataClient(venue=Venue('FXCM'), zmq_context=zmq.Context(), logger=self.logger)
 
     # Fixture Tear Down
     def tearDown(self):
@@ -220,8 +221,11 @@ class LiveDataClientTests(unittest.TestCase):
         data = self.data_serializer.serialize(tick_data)
         data_response = DataResponse(data, 'BSON', GUID(uuid.uuid4()), GUID(uuid.uuid4()), UNIX_EPOCH)
         response_bytes = self.response_serializer.serialize(data_response)
-        server = MockServer(zmq_context=self.zmq_context, port=self.tick_req_port, responses=[response_bytes])
-        server.start()
+        server = MockServer(
+            zmq_context=self.zmq_context,
+            port=self.tick_req_port,
+            logger=self.logger,
+            responses=[response_bytes])
 
         self.data_client.connect()
 
@@ -252,8 +256,11 @@ class LiveDataClientTests(unittest.TestCase):
         data = self.data_serializer.serialize(bar_data)
         data_response = DataResponse(data, 'BSON', GUID(uuid.uuid4()), GUID(uuid.uuid4()), UNIX_EPOCH)
         response_bytes = self.response_serializer.serialize(data_response)
-        server = MockServer(zmq_context=self.zmq_context, port=self.bar_req_port, responses=[response_bytes])
-        server.start()
+        server = MockServer(
+            zmq_context=self.zmq_context,
+            port=self.bar_req_port,
+            logger=self.logger,
+            responses=[response_bytes])
 
         self.data_client.connect()
 
@@ -279,8 +286,11 @@ class LiveDataClientTests(unittest.TestCase):
         data = self.data_serializer.serialize(instrument_data)
         data_response = DataResponse(data, 'BSON', GUID(uuid.uuid4()), GUID(uuid.uuid4()), UNIX_EPOCH)
         response_bytes = self.response_serializer.serialize(data_response)
-        server = MockServer(zmq_context=self.zmq_context, port=self.inst_req_port, responses=[response_bytes])
-        server.start()
+        server = MockServer(
+            zmq_context=self.zmq_context,
+            port=self.inst_req_port,
+            logger=self.logger,
+            responses=[response_bytes])
 
         self.data_client.connect()
 
@@ -304,8 +314,11 @@ class LiveDataClientTests(unittest.TestCase):
         data = self.data_serializer.serialize(instrument_data)
         data_response = DataResponse(data, 'BSON', GUID(uuid.uuid4()), GUID(uuid.uuid4()), UNIX_EPOCH)
         response_bytes = self.response_serializer.serialize(data_response)
-        server = MockServer(zmq_context=self.zmq_context, port=self.inst_req_port, responses=[response_bytes])
-        server.start()
+        server = MockServer(
+            zmq_context=self.zmq_context,
+            port=self.inst_req_port,
+            logger=self.logger,
+            responses=[response_bytes])
 
         self.data_client.connect()
 

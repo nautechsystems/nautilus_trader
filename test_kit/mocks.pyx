@@ -20,7 +20,7 @@ from nautilus_trader.model.commands cimport (
     ModifyOrder,
     CancelOrder)
 from nautilus_trader.common.execution cimport ExecutionEngine, ExecutionClient
-from nautilus_trader.common.logger cimport Logger
+from nautilus_trader.common.logger cimport Logger, LoggerAdapter
 from nautilus_trader.core.types cimport GUID
 from nautilus_trader.network.responses cimport MessageReceived
 from nautilus_trader.serialization.base cimport CommandSerializer, ResponseSerializer
@@ -110,50 +110,56 @@ cdef class MockExecutionClient(ExecutionClient):
         self.received_commands = []
 
 
-class MockServer(Thread):
+cdef class MockServer:
     """
     Provides a mock server.
     """
+    cdef LoggerAdapter _log
+    cdef str _service_address
+    cdef object _zmq_context
+    cdef object _socket
+    cdef object _thread
+    cdef int _cycles
+    cdef list _responses
 
     def __init__(
             self,
             zmq_context: Context,
             int port,
+            Logger logger,
             list responses=[]):
         """
         Initializes a new instance of the MockServer class.
 
         :param zmq_context: The ZeroMQ context.
         :param port: The service port.
+        :param logger: The logger for the component.
+        :param responses: The responses to send.
         """
         super().__init__()
-        self.daemon = True
-        self._responses = responses
+        self._log = LoggerAdapter(self.__class__.__name__, logger)
         self._service_address = f'tcp://127.0.0.1:{port}'
         self._zmq_context = zmq_context
         self._socket = self._zmq_context.socket(zmq.REP)
         self._socket.bind(self._service_address)
+        self._thread = Thread(target=self._consume_messages, daemon=True)
         self._cycles = 0
+        self._responses = responses
 
-    def run(self):
-        """
-        Overrides the threads run method (call .start() to run in a separate thread).
-        Starts the worker and opens a connection.
-        """
-        self._consume_messages()
+        self._thread.start()
 
     def stop(self):
         """
         Close the connection and stop the mock server.
         """
-        self._log(f"Unbinding from {self._service_address}...")
+        self._log.info(f"Unbinding from {self._service_address}...")
         self._socket.unbind(self._service_address)
 
     def _consume_messages(self):
         """
         Start the consumption loop to receive published messages.
         """
-        self._log("Starting message consumption loop...")
+        self._log.info("Starting message consumption loop...")
 
         cdef bytes response
         if len(self._responses) > self._cycles:
@@ -164,38 +170,39 @@ class MockServer(Thread):
         while True:
             message = self._socket.recv()
             self._cycles += 1
-            self._log(f"Received[{self._cycles}] {message}")
+            self._log.debug(f"Received[{self._cycles}] {message}")
             self._socket.send(response)
 
-    def _log(self, message: str):
-        """
-        Print the given message to the console.
 
-        :param message: The message to log/print.
-        """
-        print(f"{self.__class__.__name__}: {message}")
-
-
-class MockPublisher:
+cdef class MockPublisher:
     """
     Provides a mock publisher.
     """
+    cdef LoggerAdapter _log
+    cdef str _service_address
+    cdef object _zmq_context
+    cdef object _socket
+    cdef int _cycles
 
-    def __init__(self, zmq_context: Context, int port):
+    def __init__(self,
+                 zmq_context: Context,
+                 int port,
+                 Logger logger):
         """
         Initializes a new instance of the MockPublisher class.
 
         :param zmq_context: The ZeroMQ context.
         :param port: The service port.
+        :param logger: The logger for the component.
         """
-        super().__init__()
+        self._log = LoggerAdapter(self.__class__.__name__, logger)
         self._service_address = f'tcp://127.0.0.1:{port}'
         self._zmq_context = zmq_context
         self._socket = self._zmq_context.socket(zmq.PUB)
         self._socket.bind(self._service_address)
         self._cycles = 0
 
-        self._log(f"Bound to {self._service_address}...")
+        self._log.info(f"Bound to {self._service_address}...")
 
     def publish(self, str topic, bytes message):
         """
@@ -206,35 +213,39 @@ class MockPublisher:
         """
         self._socket.send_multipart([topic.encode(UTF8), message])
         self._cycles += 1
-        self._log(f"Publishing[{self._cycles}] topic={topic}, message={message}")
+        self._log.debug(f"Publishing[{self._cycles}] topic={topic}, message={message}")
 
     def stop(self):
         """
         Stop the mock which unbinds then closes socket.
         """
-        self._log(f"Unbinding from {self._service_address}...")
+        self._log.info(f"Unbinding from {self._service_address}...")
         self._socket.unbind(self._service_address)
 
-    def _log(self, str message):
-        """
-        Print the given message to the console.
 
-        :param message: The message to log/print.
-        """
-        print(f"{self.__class__.__name__}: {message}")
-
-
-class MockCommandRouter(Thread):
+cdef class MockCommandRouter:
     """
     Provides a mock command router.
     """
+    cdef LoggerAdapter _log
+    cdef str _service_address
+    cdef CommandSerializer _command_serializer
+    cdef ResponseSerializer _response_serializer
+    cdef object _zmq_context
+    cdef object _socket
+    cdef object _thread
+    cdef int _cycles
+
+    cdef readonly list commands_received
+    cdef readonly list responses_sent
 
     def __init__(
             self,
             zmq_context: Context,
             int port,
             CommandSerializer command_serializer,
-            ResponseSerializer response_serializer):
+            ResponseSerializer response_serializer,
+            Logger logger):
         """
         Initializes a new instance of the MockCommandRouter class.
 
@@ -242,39 +253,34 @@ class MockCommandRouter(Thread):
         :param port: The service port.
         :param command_serializer: The command serializer.
         :param response_serializer: The response serializer.
+        :param logger: The logger for the component.
         """
-        super().__init__()
-        self.daemon = True  # For the inherited thread
+        self._log = LoggerAdapter(self.__class__.__name__, logger)
         self._service_address = f'tcp://127.0.0.1:{port}'
         self._command_serializer = command_serializer
         self._response_serializer = response_serializer
         self._zmq_context = zmq_context
         self._socket = self._zmq_context.socket(zmq.REP)
         self._socket.bind(self._service_address)
+        self._log.info(f"Bound to {self._service_address}...")
         self._cycles = 0
 
-        self.commands_received = []  # List[Command]
-        self.responses_sent = []     # List[Response]
-
-        self._log(f"Bound to {self._service_address}...")
-
-    def run(self):
-        """
-        Overrides the threads run method (use the start method).
-        """
-        self._consume_messages()
+        self.commands_received = []
+        self.responses_sent = []
+        self._thread = Thread(target=self._consume_messages, daemon=True)
+        self._thread.start()
 
     def _consume_messages(self):
         """
         Start the consumption loop to receive published messages.
         """
-        self._log("Starting message consumption loop...")
+        self._log.info("Starting message consumption loop...")
 
         while True:
             message = self._command_serializer.deserialize(self._socket.recv())
             self.commands_received.append(message)
             self._cycles += 1
-            self._log(f"Received[{self._cycles}] {message}")
+            self._log.debug(f"Received[{self._cycles}] {message}")
 
             response = MessageReceived(str(message), message.id, GUID(uuid.uuid4()), UNIX_EPOCH)
             self.responses_sent.append(response)
@@ -284,13 +290,5 @@ class MockCommandRouter(Thread):
         """
         Stop the router which unbinds then closes the socket.
         """
-        self._log(f"Unbinding from {self._service_address}...")
+        self._log.debug(f"Unbinding from {self._service_address}...")
         self._socket.unbind(self._service_address)
-
-    def _log(self, message: str):
-        """
-        Print the given message to the console.
-
-        :param message: The message to log/print.
-        """
-        print(f"{self.__class__.__name__}: {message}")
