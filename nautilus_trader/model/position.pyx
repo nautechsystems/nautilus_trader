@@ -42,6 +42,7 @@ cdef class Position:
         self.last_execution_id = fill_event.execution_id
         self.last_execution_ticket = fill_event.execution_ticket
         self.timestamp = fill_event.execution_time
+        self.relative_quantity = self._calculate_relative_quantity(fill_event)
         self.quantity = fill_event.filled_quantity
         self.peak_quantity = fill_event.filled_quantity
         self.entry_direction = fill_event.order_side
@@ -162,6 +163,7 @@ cdef class Position:
         self.last_execution_ticket = fill_event.execution_ticket
 
         # Apply event
+        self._set_quantities(fill_event)
         self._increment_returns(fill_event)
         self._fill_logic(fill_event)
 
@@ -187,21 +189,25 @@ cdef class Position:
             return 0.0
         return self._calculate_return(self.average_entry_price, current_price)
 
-    cdef void _fill_logic(self, OrderFillEvent fill_event):
-        # Update relative quantity
-        if fill_event.order_side is OrderSide.BUY:
-            self.relative_quantity += fill_event.filled_quantity.value
-        elif fill_event.order_side is OrderSide.SELL:
-            self.relative_quantity -= fill_event.filled_quantity.value
+    cdef int _calculate_relative_quantity(self, OrderFillEvent fill_event):
+        if fill_event.order_side == OrderSide.BUY:
+            return fill_event.filled_quantity.value
+        elif fill_event.order_side == OrderSide.SELL:
+            return - fill_event.filled_quantity.value
 
-        # Update quantity
+    cdef void _set_quantities(self, OrderFillEvent fill_event):
+        # Set relative quantity
+        self.relative_quantity += self._calculate_relative_quantity(fill_event)
+
+        # Set quantity
         self.quantity = Quantity(abs(self.relative_quantity))
 
-        # Update peak quantity
+        # Set peak quantity
         if self.quantity > self.peak_quantity:
             self.peak_quantity = self.quantity
 
-        # Update market position
+    cdef void _fill_logic(self, OrderFillEvent fill_event):
+        # Set market position
         if self.relative_quantity > 0:
             self.market_position = MarketPosition.LONG
             self.is_long = True
@@ -231,12 +237,12 @@ cdef class Position:
             self.is_closed = True
 
     cdef void _increment_returns(self, OrderFillEvent fill_event):
-        if fill_event.order_side is OrderSide.BUY:
+        if fill_event.order_side == OrderSide.BUY:
             if self.market_position == MarketPosition.SHORT:
                 # Increment realized points and return of a short position
                 self.points_realized += self._calculate_points(self.average_entry_price, fill_event.average_price)
                 self.return_realized += self._calculate_return(self.average_entry_price, fill_event.average_price)
-        elif fill_event.order_side is OrderSide.SELL:
+        elif fill_event.order_side == OrderSide.SELL:
             if self.market_position == MarketPosition.LONG:
                 # Increment realized points and return of a long position
                 self.points_realized += self._calculate_points(self.average_entry_price, fill_event.average_price)
