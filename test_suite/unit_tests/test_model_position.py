@@ -36,42 +36,12 @@ class PositionTests(unittest.TestCase):
             clock=TestClock())
         print('\n')
 
-    def test_initialized_position_returns_expected_attributes(self):
-        # Arrange
-        # Act
-        position = Position(
-            AUDUSD_FXCM,
-            PositionId('P123456'),
-            UNIX_EPOCH)
-
-        # Assert
-        self.assertEqual(Quantity.zero(), position.quantity)
-        self.assertEqual(MarketPosition.FLAT, position.market_position)
-        self.assertEqual(0, position.event_count())
-        self.assertEqual(None, position.last_execution_id)
-        self.assertEqual(None, position.last_execution_ticket)
-        self.assertTrue(position.is_flat)
-        self.assertFalse(position.is_long)
-        self.assertFalse(position.is_short)
-        self.assertFalse(position.is_entered)
-        self.assertFalse(position.is_exited)
-        self.assertEqual(OrderSide.UNKNOWN, position.entry_direction)
-        self.assertEqual(Decimal(0), position.points_realized)
-        self.assertEqual(0.0, position.return_realized)
-        self.assertEqual('Position(id=P123456) AUDUSD.FXCM FLAT', str(position))
-        self.assertTrue(repr(position).startswith('<Position(id=P123456) AUDUSD.FXCM FLAT object at'))
-
     def test_position_filled_with_buy_order_returns_expected_attributes(self):
         # Arrange
         order = self.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000))
-
-        position = Position(
-            order.symbol,
-            PositionId('P123456'),
-            UNIX_EPOCH)
 
         order_filled = OrderFilled(
             order.id,
@@ -86,7 +56,7 @@ class PositionTests(unittest.TestCase):
             UNIX_EPOCH)
 
         # Act
-        position.apply(order_filled)
+        position = Position(PositionId('P123456'), order_filled)
 
         # Assert
         self.assertEqual(OrderId('O-19700101-000000-001-001-1'), position.from_order_id)
@@ -117,11 +87,6 @@ class PositionTests(unittest.TestCase):
             OrderSide.SELL,
             Quantity(100000))
 
-        position = Position(
-            order.symbol,
-            PositionId('P123456'),
-            UNIX_EPOCH)
-
         order_filled = OrderFilled(
             order.id,
             ExecutionId('E123456'),
@@ -134,8 +99,7 @@ class PositionTests(unittest.TestCase):
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
-        # Act
-        position.apply(order_filled)
+        position = Position(PositionId('P123456'), order_filled)
 
         # Assert
         self.assertEqual(Quantity(100000), position.quantity)
@@ -162,11 +126,6 @@ class PositionTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000))
 
-        position = Position(
-            order.symbol,
-            PositionId('P123456'),
-            UNIX_EPOCH)
-
         order_partially_filled = OrderPartiallyFilled(
             order.id,
             ExecutionId('E123456'),
@@ -180,8 +139,9 @@ class PositionTests(unittest.TestCase):
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
+        position = Position(PositionId('P123456'), order_partially_filled)
+
         # Act
-        position.apply(order_partially_filled)
         position.apply(order_partially_filled)
 
         # Assert
@@ -210,11 +170,6 @@ class PositionTests(unittest.TestCase):
             OrderSide.SELL,
             Quantity(100000))
 
-        position = Position(
-            order.symbol,
-            PositionId('P123456'),
-            UNIX_EPOCH)
-
         order_partially_filled = OrderPartiallyFilled(
             order.id,
             ExecutionId('E123456'),
@@ -228,8 +183,9 @@ class PositionTests(unittest.TestCase):
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
+        position = Position(PositionId('P123456'), order_partially_filled)
+
         # Act
-        position.apply(order_partially_filled)
         position.apply(order_partially_filled)
 
         # Assert
@@ -258,11 +214,6 @@ class PositionTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000))
 
-        position = Position(
-            order.symbol,
-            PositionId('P123456'),
-            UNIX_EPOCH)
-
         order_filled1 = OrderFilled(
             order.id,
             ExecutionId('E123456'),
@@ -274,6 +225,8 @@ class PositionTests(unittest.TestCase):
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
+
+        position = Position(PositionId('P123456'), order_filled1)
 
         order_filled2 = OrderFilled(
             order.id,
@@ -288,7 +241,6 @@ class PositionTests(unittest.TestCase):
             UNIX_EPOCH)
 
         # Act
-        position.apply(order_filled1)
         position.apply(order_filled2)
 
         # Assert
@@ -319,11 +271,6 @@ class PositionTests(unittest.TestCase):
             OrderSide.SELL,
             Quantity(100000))
 
-        position = Position(
-            order.symbol,
-            PositionId('P123456'),
-            UNIX_EPOCH)
-
         order_filled1 = OrderFilled(
             order.id,
             ExecutionId('E123456'),
@@ -335,6 +282,8 @@ class PositionTests(unittest.TestCase):
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
+
+        position = Position(PositionId('P123456'), order_filled1)
 
         order_filled2 = OrderFilled(
             order.id,
@@ -349,7 +298,6 @@ class PositionTests(unittest.TestCase):
             UNIX_EPOCH)
 
         # Act
-        position.apply(order_filled1)
         position.apply(order_filled2)
 
         # Assert
@@ -386,11 +334,6 @@ class PositionTests(unittest.TestCase):
             OrderSide.SELL,
             Quantity(100000))
 
-        position = Position(
-            AUDUSD_FXCM,
-            PositionId('P123456'),
-            UNIX_EPOCH)
-
         order1_filled = OrderFilled(
             order1.id,
             ExecutionId('E123456'),
@@ -402,6 +345,8 @@ class PositionTests(unittest.TestCase):
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
+
+        position = Position(PositionId('P123456'), order1_filled)
 
         order2_filled = OrderFilled(
             order2.id,
@@ -416,7 +361,6 @@ class PositionTests(unittest.TestCase):
             UNIX_EPOCH)
 
         # Act
-        position.apply(order1_filled)
         position.apply(order2_filled)
 
         # Assert

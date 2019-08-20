@@ -10,7 +10,7 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.guid cimport GuidFactory
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.logger cimport LoggerAdapter
-from nautilus_trader.model.events cimport Event, OrderEvent, AccountEvent, PositionEvent
+from nautilus_trader.model.events cimport Event, OrderEvent, OrderFillEvent, AccountEvent, PositionEvent
 from nautilus_trader.model.identifiers cimport TraderId, StrategyId, OrderId, PositionId
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.order cimport Order
@@ -41,8 +41,8 @@ cdef class ExecutionDatabase:
     cpdef void add_order(self, Order order, StrategyId strategy_id, PositionId position_id)
     cpdef void add_position(self, Position position, StrategyId strategy_id)
     cpdef void delete_strategy(self, TradingStrategy strategy)
-    cpdef void order_active(self, Order order_id, StrategyId strategy_id)
-    cpdef void order_completed(self, Order order_id, StrategyId strategy_id)
+    cpdef void order_active(self, Order order, StrategyId strategy_id)
+    cpdef void order_completed(self, Order order, StrategyId strategy_id)
     cpdef void position_active(self, Position position, StrategyId strategy_id)
     cpdef void position_closed(self, Position position, StrategyId strategy_id)
     cpdef void check_residuals(self)
@@ -134,7 +134,7 @@ cdef class ExecutionEngine:
     cdef void _execute_command(self, Command command)
     cdef void _handle_event(self, Event event)
     cdef void _handle_order_event(self, OrderEvent event)
-    cdef void _handle_order_fill(self, OrderEvent event, StrategyId strategy_id)
+    cdef void _handle_order_fill(self, OrderFillEvent fill_event, StrategyId strategy_id)
     cdef void _handle_position_event(self, PositionEvent event)
     cdef void _handle_account_event(self, AccountEvent event)
     cdef void _position_opened(self, Position position, StrategyId strategy_id, OrderEvent order_fill)
