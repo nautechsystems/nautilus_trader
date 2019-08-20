@@ -86,7 +86,9 @@ cdef class BacktestEngine:
             log_to_file=config.log_to_file,
             log_file_path=config.log_file_path,
             clock=LiveClock())
+
         self.log = LoggerAdapter(component_name=self.__class__.__name__, logger=self.logger)
+
         self.test_logger = TestLogger(
             name='backtest',
             bypass_logging=config.bypass_logging,
@@ -102,13 +104,6 @@ cdef class BacktestEngine:
         nautilus_header(self.log)
         self.log.info("Building engine...")
 
-        trader_id = TraderId('BACKTESTER-000')
-
-        self.account = Account(currency=config.account_currency)
-        self.portfolio = Portfolio(
-            clock=self.test_clock,
-            guid_factory=self.guid_factory,
-            logger=self.test_logger)
         self.instruments = instruments
         self.data_client = BacktestDataClient(
             venue=venue,
@@ -119,7 +114,16 @@ cdef class BacktestEngine:
             clock=self.test_clock,
             logger=self.test_logger)
 
+        self.account = Account(currency=config.account_currency)
+
+        self.portfolio = Portfolio(
+            clock=self.test_clock,
+            guid_factory=self.guid_factory,
+            logger=self.test_logger)
+
+        trader_id = TraderId('BACKTESTER-000')
         self.exec_db = InMemoryExecutionDatabase(trader_id=trader_id, logger=self.test_logger)
+
         self.exec_engine = ExecutionEngine(
             database=self.exec_db,
             account=self.account,
