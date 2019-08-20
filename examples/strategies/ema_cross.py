@@ -64,7 +64,6 @@ class EMACrossPy(TradingStrategy):
         self.liquidity = LiquidityAnalyzer()
 
         # Create the indicators for the strategy
-        self.warmed_up = False
         self.fast_ema = ExponentialMovingAverage(fast_ema)
         self.slow_ema = ExponentialMovingAverage(slow_ema)
         self.atr = AverageTrueRange(atr_period)
@@ -113,17 +112,14 @@ class EMACrossPy(TradingStrategy):
         """
         self.log.info(f"Received {bar_type} Bar({bar})")  # For demonstration purposes
 
-        if not self.warmed_up:
-            if self.indicators_initialized():
-                self.warmed_up = True
-            else:
-                return  # Wait for indicators to warm up...
+        if not self.indicators_initialized():
+            return  # Wait for indicators to warm up...
+
+        if not self.has_ticks(self.symbol):
+            return  # Wait for ticks...
 
         self.spread_analyzer.calculate_metrics()
         self.liquidity.update(self.spread_analyzer.average_spread, self.atr.value)
-
-        if not self.has_ticks(self.symbol):
-            return
 
         # if self.liquidity.is_liquid
         if self.entry_orders_count() == 0 and self.is_flat():
@@ -248,7 +244,6 @@ class EMACrossPy(TradingStrategy):
         all indicators.
         """
         # Put custom code to be run on a strategy reset here (or pass)
-        self.warmed_up = False
         self.spread_analyzer.reset()
         self.liquidity.reset()
 

@@ -244,7 +244,6 @@ cdef class EMACross(TradingStrategy):
     the slow EMA then a STOP_MARKET atomic order is placed for that direction
     with a trailing stop and profit target at 1R risk.
     """
-    cdef readonly bint warmed_up
     cdef readonly Instrument instrument
     cdef readonly Symbol symbol
     cdef readonly BarType bar_type
@@ -284,7 +283,6 @@ cdef class EMACross(TradingStrategy):
         super().__init__(id_tag_strategy=instrument.symbol.code + extra_id_tag)
 
         # Custom strategy variables
-        self.warmed_up = False
         self.instrument = instrument
         self.symbol = instrument.symbol
         self.bar_type = bar_type
@@ -337,16 +335,16 @@ cdef class EMACross(TradingStrategy):
         :param bar_type: The received bar type.
         :param bar: The received bar.
         """
-        if not self.warmed_up:
-            if self.fast_ema.initialized and self.slow_ema.initialized and self.atr.initialized:
-                self.warmed_up = True
-            else:
-                return  # Wait for indicators to warm up...
+        if not self.indicators_initialized():
+            return  # Wait for indicators to warm up...
 
-        cdef AtomicOrder atomic_order
+        if not self.has_ticks(self.symbol):
+            return  # Wait for ticks...
 
         self.spread_analyzer.calculate_metrics()
         self.liquidity.update(self.spread_analyzer.average_spread, self.atr.value)
+
+        cdef AtomicOrder atomic_order
 
         if self.liquidity.is_liquid and self.entry_orders_count() == 0 and self.is_flat():
             # BUY LOGIC
@@ -467,7 +465,6 @@ cdef class EMACross(TradingStrategy):
         all indicators.
         """
         # Put custom code to be run on a strategy reset here (or pass)
-        self.warmed_up = False
         self.spread_analyzer.reset()
         self.liquidity.reset()
 
