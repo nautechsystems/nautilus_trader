@@ -59,6 +59,8 @@ cdef class Position:
     cpdef object points_unrealized(self, Price current_price)
     cpdef float return_unrealized(self, Price current_price)
 
+    cdef int _calculate_relative_quantity(self, OrderFillEvent fill_event)
+    cdef void _set_quantities(self, OrderFillEvent fill_event)
     cdef void _fill_logic(self, OrderFillEvent fill_event)
     cdef void _exit_logic(self, OrderFillEvent fill_event)
     cdef void _increment_returns(self, OrderFillEvent fill_event)
