@@ -57,6 +57,7 @@ cdef class OrderFillEvent(OrderEvent):
     """
     The base class for all order fill events.
     """
+    cdef readonly AccountId account_id
     cdef readonly ExecutionId execution_id
     cdef readonly ExecutionTicket execution_ticket
     cdef readonly Symbol symbol
@@ -84,6 +85,7 @@ cdef class OrderSubmitted(OrderEvent):
     """
     Represents an event where an order has been submitted by the execution system.
     """
+    cdef readonly AccountId account_id
     cdef readonly datetime submitted_time
 
 
@@ -91,6 +93,7 @@ cdef class OrderRejected(OrderEvent):
     """
     Represents an event where an order has been rejected by the broker.
     """
+    cdef readonly AccountId account_id
     cdef readonly datetime rejected_time
     cdef readonly ValidString rejected_reason
 
@@ -99,6 +102,7 @@ cdef class OrderAccepted(OrderEvent):
     """
     Represents an event where an order has been accepted by the broker.
     """
+    cdef readonly AccountId account_id
     cdef readonly datetime accepted_time
 
 
@@ -106,6 +110,7 @@ cdef class OrderWorking(OrderEvent):
     """
     Represents an event where an order is working with the broker.
     """
+    cdef readonly AccountId account_id
     cdef readonly OrderId order_id_broker
     cdef readonly Symbol symbol
     cdef readonly Label label
@@ -122,6 +127,7 @@ cdef class OrderCancelReject(OrderEvent):
     """
     Represents an event where an order cancel request has been rejected by the broker.
     """
+    cdef readonly AccountId account_id
     cdef readonly datetime rejected_time
     cdef readonly ValidString rejected_response_to
     cdef readonly ValidString rejected_reason
@@ -131,6 +137,7 @@ cdef class OrderCancelled(OrderEvent):
     """
     Represents an event where an order has been cancelled with the broker.
     """
+    cdef readonly AccountId account_id
     cdef readonly datetime cancelled_time
 
 
@@ -138,6 +145,7 @@ cdef class OrderExpired(OrderEvent):
     """
     Represents an event where an order has expired with the broker.
     """
+    cdef readonly AccountId account_id
     cdef readonly datetime expired_time
 
 
@@ -145,6 +153,7 @@ cdef class OrderModified(OrderEvent):
     """
     Represents an event where an order has been modified with the broker.
     """
+    cdef readonly AccountId account_id
     cdef readonly OrderId order_id_broker
     cdef readonly Price modified_price
     cdef readonly datetime modified_time

@@ -16,7 +16,7 @@ from nautilus_trader.core.types import GUID, ValidString
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.model.enums import OrderSide, OrderType, OrderStatus, TimeInForce
 from nautilus_trader.model.objects import Quantity, Price
-from nautilus_trader.model.identifiers import Symbol, Venue, Label, IdTag, OrderId, ExecutionId, ExecutionTicket
+from nautilus_trader.model.identifiers import Symbol, Venue, Label, IdTag, OrderId, AccountId, ExecutionId, ExecutionTicket
 from nautilus_trader.model.order import Order, OrderFactory
 from nautilus_trader.model.events import OrderInitialized, OrderSubmitted, OrderAccepted, OrderRejected
 from nautilus_trader.model.events import OrderWorking, OrderExpired, OrderModified, OrderCancelled
@@ -32,6 +32,7 @@ class OrderTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
+        self.account_id = AccountId('FXCM', '09999999')
         self.order_factory = OrderFactory(
             id_tag_trader=IdTag('001'),
             id_tag_strategy=IdTag('001'),
@@ -414,6 +415,7 @@ class OrderTests(unittest.TestCase):
 
         event = OrderSubmitted(
             order.id,
+            self.account_id,
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -436,6 +438,7 @@ class OrderTests(unittest.TestCase):
 
         event = OrderAccepted(
             order.id,
+            self.account_id,
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -456,6 +459,7 @@ class OrderTests(unittest.TestCase):
 
         event = OrderRejected(
             order.id,
+            self.account_id,
             UNIX_EPOCH,
             ValidString('ORDER ID INVALID'),
             GUID(uuid.uuid4()),
@@ -478,6 +482,7 @@ class OrderTests(unittest.TestCase):
         event = OrderWorking(
             order.id,
             OrderId('SOME_BROKER_ID'),
+            self.account_id,
             order.symbol,
             order.label,
             order.side,
@@ -510,6 +515,7 @@ class OrderTests(unittest.TestCase):
 
         event = OrderExpired(
             order.id,
+            self.account_id,
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -530,6 +536,7 @@ class OrderTests(unittest.TestCase):
 
         event = OrderCancelled(
             order.id,
+            self.account_id,
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -550,6 +557,7 @@ class OrderTests(unittest.TestCase):
 
         event = OrderCancelReject(
             order.id,
+            self.account_id,
             UNIX_EPOCH,
             ValidString('REJECT_RESPONSE'),
             ValidString('ORDER DOES NOT EXIST'),
@@ -572,6 +580,7 @@ class OrderTests(unittest.TestCase):
         order_working = OrderWorking(
             order.id,
             OrderId('SOME_BROKER_ID_1'),
+            self.account_id,
             order.symbol,
             order.label,
             order.side,
@@ -587,6 +596,7 @@ class OrderTests(unittest.TestCase):
         order_modified = OrderModified(
             order.id,
             OrderId('SOME_BROKER_ID_2'),
+            self.account_id,
             Price('1.00001'),
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
@@ -614,6 +624,7 @@ class OrderTests(unittest.TestCase):
 
         event = OrderFilled(
             order.id,
+            self.account_id,
             ExecutionId('SOME_EXEC_ID_1'),
             ExecutionTicket('SOME_EXEC_TICKET_1'),
             order.symbol,
@@ -644,6 +655,7 @@ class OrderTests(unittest.TestCase):
 
         event = OrderFilled(
             order.id,
+            self.account_id,
             ExecutionId('SOME_EXEC_ID_1'),
             ExecutionTicket('SOME_EXEC_TICKET_1'),
             order.symbol,
@@ -676,6 +688,7 @@ class OrderTests(unittest.TestCase):
 
         event = OrderPartiallyFilled(
             order.id,
+            self.account_id,
             ExecutionId('SOME_EXEC_ID_1'),
             ExecutionTicket('SOME_EXEC_TICKET_1'),
             order.symbol,
@@ -709,6 +722,7 @@ class OrderTests(unittest.TestCase):
 
         event = OrderFilled(
             order.id,
+            self.account_id,
             ExecutionId('SOME_EXEC_ID_1'),
             ExecutionTicket('SOME_EXEC_TICKET_1'),
             order.symbol,

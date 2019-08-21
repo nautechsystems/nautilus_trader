@@ -30,9 +30,7 @@ from nautilus_trader.model.events cimport (
     OrderExpired,
     OrderModified,
     OrderCancelled,
-    OrderCancelReject,
-    OrderPartiallyFilled,
-    OrderFilled)
+    OrderCancelReject)
 from nautilus_trader.model.identifiers cimport Label, IdTag, OrderId, ExecutionId, ExecutionTicket
 from nautilus_trader.model.generators cimport OrderIdGenerator
 from nautilus_trader.common.clock cimport Clock, LiveClock
@@ -103,6 +101,7 @@ cdef class Order:
 
         self.id = order_id
         self.id_broker = None               # Can be None
+        self.account_id = None              # Can be None
         self.execution_id = None            # Can be None
         self.execution_ticket = None        # Can be None
         self.symbol = symbol
@@ -251,8 +250,11 @@ cdef class Order:
 
         :param event: The order event to apply.
         :raises ConditionFailed: If the order_events order_id is not equal to the order identifier.
+        :raises ConditionFailed: If the order account_id is not None and the order_events account_id is not equal to the order account_id.
         """
         Condition.equal(event.order_id, self.id)
+        if self.account_id is not None:
+            Condition.equal(event.account_id, self.account_id)
 
         # Update events
         self._events.append(event)
@@ -261,6 +263,7 @@ cdef class Order:
         # Handle event
         if isinstance(event, OrderSubmitted):
             self.status = OrderStatus.SUBMITTED
+            self.account_id = event.account_id
         elif isinstance(event, OrderRejected):
             self.status = OrderStatus.REJECTED
             self.is_complete = True

@@ -15,7 +15,7 @@ from nautilus_trader.core.types import GUID
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.model.enums import OrderSide, MarketPosition
 from nautilus_trader.model.objects import Quantity, Price
-from nautilus_trader.model.identifiers import Symbol, Venue, IdTag, OrderId, PositionId, ExecutionId, ExecutionTicket
+from nautilus_trader.model.identifiers import Symbol, Venue, IdTag, OrderId, PositionId, AccountId, ExecutionId, ExecutionTicket
 from nautilus_trader.model.order import OrderFactory
 from nautilus_trader.model.position import Position
 from nautilus_trader.model.events import OrderPartiallyFilled, OrderFilled
@@ -30,6 +30,7 @@ class PositionTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
+        self.account_id = AccountId('FXCM', '0999999')
         self.order_factory = OrderFactory(
             id_tag_trader=IdTag('001'),
             id_tag_strategy=IdTag('001'),
@@ -45,6 +46,7 @@ class PositionTests(unittest.TestCase):
 
         order_filled = OrderFilled(
             order.id,
+            self.account_id,
             ExecutionId('E123456'),
             ExecutionTicket('T123456'),
             order.symbol,
@@ -89,6 +91,7 @@ class PositionTests(unittest.TestCase):
 
         order_filled = OrderFilled(
             order.id,
+            self.account_id,
             ExecutionId('E123456'),
             ExecutionTicket('T123456'),
             order.symbol,
@@ -127,6 +130,7 @@ class PositionTests(unittest.TestCase):
 
         order_partially_filled = OrderPartiallyFilled(
             order.id,
+            self.account_id,
             ExecutionId('E123456'),
             ExecutionTicket('T123456'),
             order.symbol,
@@ -170,6 +174,7 @@ class PositionTests(unittest.TestCase):
 
         order_partially_filled = OrderPartiallyFilled(
             order.id,
+            self.account_id,
             ExecutionId('E123456'),
             ExecutionTicket('T123456'),
             order.symbol,
@@ -213,6 +218,7 @@ class PositionTests(unittest.TestCase):
 
         order_filled1 = OrderFilled(
             order.id,
+            self.account_id,
             ExecutionId('E123456'),
             ExecutionTicket('T123456'),
             order.symbol,
@@ -227,6 +233,7 @@ class PositionTests(unittest.TestCase):
 
         order_filled2 = OrderFilled(
             order.id,
+            self.account_id,
             ExecutionId('E123456'),
             ExecutionTicket('T123456'),
             order.symbol,
@@ -269,6 +276,7 @@ class PositionTests(unittest.TestCase):
 
         order_filled1 = OrderFilled(
             order.id,
+            self.account_id,
             ExecutionId('E123456'),
             ExecutionTicket('T123456'),
             order.symbol,
@@ -283,6 +291,7 @@ class PositionTests(unittest.TestCase):
 
         order_filled2 = OrderFilled(
             order.id,
+            self.account_id,
             ExecutionId('E123456'),
             ExecutionTicket('T123456'),
             order.symbol,
@@ -331,6 +340,7 @@ class PositionTests(unittest.TestCase):
 
         order1_filled = OrderFilled(
             order1.id,
+            self.account_id,
             ExecutionId('E123456'),
             ExecutionTicket('T123456'),
             order1.symbol,
@@ -345,6 +355,7 @@ class PositionTests(unittest.TestCase):
 
         order2_filled = OrderFilled(
             order2.id,
+            self.account_id,
             ExecutionId('E123456'),
             ExecutionTicket('T123456'),
             order2.symbol,

@@ -37,6 +37,7 @@ cdef class Position:
 
         self.symbol = fill_event.symbol
         self.id = position_id
+        self.account_id = fill_event.account_id
         self.from_order_id = fill_event.order_id
         self.last_order_id = fill_event.order_id
         self.last_execution_id = fill_event.execution_id
