@@ -14,7 +14,7 @@ import unittest
 from datetime import datetime, timezone
 
 from nautilus_trader.model.enums import Resolution
-from nautilus_trader.model.identifiers import Symbol, Venue
+from nautilus_trader.model.identifiers import Symbol, Venue, TraderId
 from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.models import FillModel
@@ -42,14 +42,16 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         strategies = [EmptyStrategy('001')]
 
         config = BacktestConfig()
-        engine = BacktestEngine(venue=Venue('FXCM'),
-                                instruments=instruments,
-                                data_ticks=tick_data,
-                                data_bars_bid=bid_data,
-                                data_bars_ask=ask_data,
-                                strategies=strategies,
-                                fill_model=FillModel(),
-                                config=config)
+        engine = BacktestEngine(
+            trader_id=None,
+            venue=Venue('FXCM'),
+            instruments=instruments,
+            data_ticks=tick_data,
+            data_bars_bid=bid_data,
+            data_bars_ask=ask_data,
+            strategies=strategies,
+            fill_model=FillModel(),
+            config=config)
 
         start = datetime(2013, 1, 1, 22, 0, 0, 0, tzinfo=timezone.utc)
         stop = datetime(2013, 8, 10, 0, 0, 0, 0, tzinfo=timezone.utc)
@@ -103,6 +105,7 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
             console_prints=False)
 
         engine = BacktestEngine(
+            trader_id=None,
             venue=Venue('FXCM'),
             instruments=instruments,
             data_ticks=tick_data,
