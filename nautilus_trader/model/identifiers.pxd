@@ -19,12 +19,14 @@ cdef class IdTag(Identifier):
 
 
 cdef class TraderId(Identifier):
+    cdef readonly str name
     cdef readonly IdTag order_id_tag
     @staticmethod
     cdef from_string(str value)
 
 
 cdef class StrategyId(Identifier):
+    cdef readonly str name
     cdef readonly IdTag order_id_tag
     @staticmethod
     cdef from_string(str value)

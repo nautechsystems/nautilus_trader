@@ -60,6 +60,7 @@ cdef class TraderId(Identifier):
         Condition.valid_string(name, 'name')
 
         super().__init__(f'{name}-{order_id_tag}')
+        self.name = name
         self.order_id_tag = IdTag(order_id_tag)
 
     @staticmethod
@@ -96,6 +97,7 @@ cdef class StrategyId(Identifier):
         Condition.valid_string(name, 'name')
 
         super().__init__(f'{name}-{order_id_tag}')
+        self.name = name
         self.order_id_tag = IdTag(order_id_tag)
 
     @staticmethod
