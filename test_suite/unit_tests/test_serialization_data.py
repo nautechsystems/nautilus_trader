@@ -11,14 +11,13 @@ from base64 import b64encode, b64decode
 
 from nautilus_trader.common.clock import *
 from nautilus_trader.model.objects import *
-from nautilus_trader.model.identifiers import *
 from nautilus_trader.serialization.data import *
 
 from test_kit.stubs import TestStubs
 from test_kit.data import TestDataProvider
 
 UNIX_EPOCH = TestStubs.unix_epoch()
-AUDUSD_FXCM = Symbol('AUDUSD', Venue('FXCM'))
+AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 
 
 class DataSerializerTests(unittest.TestCase):
@@ -28,6 +27,27 @@ class DataSerializerTests(unittest.TestCase):
         self.mapper = DataMapper()
         self.serializer = BsonDataSerializer()
         self.test_ticks = TestDataProvider.usdjpy_test_ticks()
+
+    def test_data_serializer_serialize_with_empty_dict_returns_empty_bson_doc(self):
+        # Arrange
+        serializer = BsonDataSerializer()
+
+        # Act
+        result = serializer.serialize({})
+
+        # Assert
+        self.assertEqual(b'\x05\x00\x00\x00\x00', result)
+
+    def test_data_serializer_deserialize_with_empty_bson_doc_returns_empty_dict(self):
+        # Arrange
+        serializer = BsonDataSerializer()
+        empty = serializer.serialize({})
+
+        # Act
+        result = serializer.deserialize(empty)
+
+        # Assert
+        self.assertEqual({}, result)
 
     def test_can_serialize_and_deserialize_ticks(self):
         # Arrange

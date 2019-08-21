@@ -268,7 +268,7 @@ cdef class Price:
         :param other: The other string to compare
         :return: True if the objects are equal, otherwise False.
         """
-        return self.value == other.value and self.precision == other.precision
+        return self.value == other.value
 
     cpdef Price add(self, Price price):
         """

@@ -9,14 +9,11 @@
 from nautilus_trader.core.types cimport Identifier
 
 
-cdef class Symbol:
-    """
-    Represents the symbol for a financial market tradeable instrument.
-    """
-    cdef readonly str value
+cdef class Symbol(Identifier):
     cdef readonly str code
     cdef readonly Venue venue
-    cdef bint equals(self, Symbol other)
+    @staticmethod
+    cdef Symbol from_string(str value)
 
 
 cdef class Venue(Identifier):
@@ -29,6 +26,7 @@ cdef class Exchange(Venue):
 
 cdef class Brokerage(Identifier):
     pass
+
 
 cdef class Label(Identifier):
     pass

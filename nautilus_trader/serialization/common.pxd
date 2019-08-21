@@ -18,7 +18,7 @@ cpdef str convert_label_to_string(Label label)
 cpdef Label convert_string_to_label(str label)
 cpdef str convert_datetime_to_string(datetime time)
 cpdef datetime convert_string_to_datetime(str time_string)
-cpdef Symbol parse_symbol(str symbol_string)
+
 cpdef Tick parse_tick(Symbol symbol, str tick_string)
 cpdef BarSpecification parse_bar_spec(str bar_spec_string)
 cpdef BarType parse_bar_type(str bar_type_string)

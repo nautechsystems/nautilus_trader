@@ -10,7 +10,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport Identifier
 
 
-cdef class Symbol:
+cdef class Symbol(Identifier):
     """
     Represents the symbol for a financial market tradeable instrument.
     """
@@ -29,52 +29,45 @@ cdef class Symbol:
 
         self.code = code.upper()
         self.venue = venue
-        self.value = f'{self.code}.{self.venue.value}'
-
-    cdef bint equals(self, Symbol other):
-        """
-        Return a value indicating whether the object equals the given object.
-        
-        :param other: The other object to compare
-        :return: True if the objects are equal, otherwise False.
-        """
-        return self.value == other.value
-
-    def __eq__(self, Symbol other) -> bool:
-        """
-        Return a value indicating whether this object is equal to the given object.
-
-        :return: bool.
-        """
-        return self.equals(other)
-
-    def __ne__(self, Symbol other) -> bool:
-        """
-        Return a value indicating whether this object is not equal to the given object.
-
-        :return: bool.
-        """
-        return not self.equals(other)
-
-    def __hash__(self) -> int:
-        """"
-        Return the hash representation of this object.
-
-        :return: int.
-        """
-        return hash((self.code, self.venue))
+        # Super class initialization last because of .upper()
+        super().__init__(f'{self.code}.{self.venue.value}')
 
     def __str__(self) -> str:
         """
-        :return: The str() string representation of the symbol.
+        Return the str() representation of the symbol.
+
+        :return: str.
         """
         return self.value
 
-    def __repr__(self) -> str:
+    @staticmethod
+    cdef Symbol from_string(str value):
         """
-        :return: The repr() string representation of the symbol.
+        Return a symbol parsed from the given string value. Must be correctly 
+        formatted with two valid strings either side of a period '.'.
+        
+        Example: 'AUDUSD.FXCM'.
+        
+        :param value: The symbol string value to parse.
+        :return: Symbol.
         """
-        return f"<{self.__class__.__name__}({str(self)}) object at {id(self)}>"
+        cdef tuple partitioned = value.partition('.')
+        return Symbol(partitioned[0], Venue(partitioned[2]))
+
+    @staticmethod
+    def py_from_string(value: str) -> Symbol:
+        """
+        Python wrapper for the from_string method.
+
+        Return a symbol parsed from the given string value. Must be correctly
+        formatted with two valid strings either side of a period '.'.
+
+        Example: 'AUDUSD.FXCM'.
+
+        :param value: The symbol string value to parse.
+        :return: Symbol.
+        """
+        return Symbol.from_string(value)
 
 
 cdef class Venue(Identifier):
@@ -176,8 +169,11 @@ cdef class TraderId(Identifier):
     @staticmethod
     cdef TraderId from_string(str value):
         """
-        Return a trader identifier from the given string value. Must be correctly
-        formatted with two valid strings either side of a hyphen '-'.
+        Return a trader identifier parsed from the given string value. Must be 
+        correctly formatted with two valid strings either side of a hyphen '-'.
+        
+        Normally a trader identifier is the abbreviated name of the trader and
+        an order identifier tag number separated by a hyphen '-'.
         
         Example: 'Trader1-001'.
 
@@ -193,8 +189,11 @@ cdef class TraderId(Identifier):
         """
         Python wrapper for the from_string method.
 
-        Return a trader identifier from the given string value. Must be correctly
-        formatted with two valid strings either side of a hyphen '-'.
+        Return a trader identifier parsed from the given string value. Must be
+        correctly formatted with two valid strings either side of a hyphen '-'.
+
+        Normally a trader identifier is the abbreviated name of the trader and
+        an order identifier tag number separated by a hyphen '-'.
 
         Example: 'Trader1-001'.
 
@@ -228,16 +227,18 @@ cdef class StrategyId(Identifier):
     @staticmethod
     cdef StrategyId from_string(str value):
         """
-        Return a strategy identifier from the given string value. Must be correctly
-        formatted with two valid strings either side of a hyphen '-'.
+        Return a strategy identifier parsed from the given string value. Must be 
+        correctly formatted with two valid strings either side of a hyphen '-'.
         
-        Example: 'Strategy1-001'.
+        Normally a strategy identifier is the class name of the strategy and
+        an order identifier tag number separated by a hyphen '-'.
+        
+        Example: 'MyStrategy-001'.
 
         :param value: The value for the strategy identifier.
         :return: StrategyId.
         """
         cdef tuple partitioned = value.partition('-')
-
         return StrategyId(name=partitioned[0], order_id_tag=partitioned[2])
 
     @staticmethod
@@ -245,10 +246,13 @@ cdef class StrategyId(Identifier):
         """
         Python wrapper for the from_string method.
 
-        Return a strategy identifier from the given string value. Must be correctly
-        formatted with two valid strings either side of a hyphen '-'.
+        Return a strategy identifier parsed from the given string value. Must be
+        correctly formatted with two valid strings either side of a hyphen '-'.
 
-        Example: 'Strategy1-001'.
+        Normally a strategy identifier is the class name of the strategy and
+        an order identifier tag number separated by a hyphen '-'.
+
+        Example: 'MyStrategy-001'.
 
         :param value: The value for the strategy identifier.
         :return: StrategyId.
@@ -287,7 +291,6 @@ cdef class AccountId(Identifier):
         :return: AccountId.
         """
         cdef tuple partitioned = value.partition('-')
-
         return AccountId(broker=partitioned[0], account_number=partitioned[2])
 
     @staticmethod

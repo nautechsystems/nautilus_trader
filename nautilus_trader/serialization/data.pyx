@@ -13,14 +13,15 @@ from bson.raw_bson import RawBSONDocument
 from decimal import Decimal
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.objects cimport Instrument, Quantity
+from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.objects cimport Quantity, Price, Tick, Bar, Instrument
 from nautilus_trader.model.enums import Currency, SecurityType
 from nautilus_trader.model.c_enums.currency cimport Currency, currency_string
 from nautilus_trader.model.c_enums.security_type cimport SecurityType, security_type_string
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.serialization.constants cimport *
 from nautilus_trader.serialization.base cimport DataSerializer, InstrumentSerializer
-from nautilus_trader.serialization.common cimport *
+from nautilus_trader.serialization.common cimport convert_datetime_to_string, convert_string_to_datetime
 
 
 cpdef Tick deserialize_tick(Symbol symbol, bytes tick_bytes):
@@ -115,7 +116,7 @@ cdef class BsonInstrumentSerializer(InstrumentSerializer):
 
         return Instrument(
             instrument_id=InstrumentId(deserialized[ID]),
-            symbol=parse_symbol(deserialized[SYMBOL]),
+            symbol=Symbol.from_string(deserialized[SYMBOL]),
             broker_symbol=deserialized[BROKER_SYMBOL],
             quote_currency=Currency[(deserialized[QUOTE_CURRENCY])],
             security_type=SecurityType[(deserialized[SECURITY_TYPE])],
@@ -186,10 +187,7 @@ cdef class BsonDataSerializer(DataSerializer):
 
         :param: data: The data to serialize.
         :return: bytes.
-        :raises: ValueError: If the data is empty.
         """
-        Condition.not_empty(data, 'data')
-
         return bytes(RawBSONDocument(BSON.encode(data)).raw)
 
     cpdef dict deserialize(self, bytes data_bytes):

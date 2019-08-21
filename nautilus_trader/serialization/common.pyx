@@ -73,17 +73,6 @@ cpdef datetime convert_string_to_datetime(str time_string):
     """
     return None if time_string == NONE else iso8601.parse_date(time_string)
 
-cpdef Symbol parse_symbol(str symbol_string):
-    """
-    Return the parsed symbol from the given string.
-
-    Note: String format example is 'AUDUSD.FXCM'.
-    :param symbol_string: The symbol string to parse.
-    :return: Symbol.
-    """
-    cdef tuple split_symbol = symbol_string.partition('.')
-    return Symbol(split_symbol[0], Venue(split_symbol[2]))
-
 cpdef Tick parse_tick(Symbol symbol, str tick_string):
     """
     Return a parsed a tick from the given UTF-8 string.

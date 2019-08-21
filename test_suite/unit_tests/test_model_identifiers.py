@@ -91,6 +91,16 @@ class IdentifierTests(unittest.TestCase):
         self.assertEqual("AUDUSD.FXCM", str(symbol))
         self.assertTrue(repr(symbol).startswith("<Symbol(AUDUSD.FXCM) object at"))
 
+    def test_can_parse_symbol_from_string(self):
+        # Arrange
+        symbol = Symbol('AUDUSD', Venue('FXCM'))
+
+        # Act
+        result = Symbol.py_from_string(symbol.value)
+
+        # Assert
+        self.assertEqual(symbol, result)
+
     def test_trader_identifier(self):
         # Arrange
         # Act
