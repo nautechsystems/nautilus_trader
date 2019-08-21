@@ -6,7 +6,8 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.objects cimport Symbol, Money, Quantity, Price
+from nautilus_trader.model.objects cimport Money, Quantity, Price
+from nautilus_trader.model.identifiers cimport Symbol
 
 
 cdef class CommissionCalculator:

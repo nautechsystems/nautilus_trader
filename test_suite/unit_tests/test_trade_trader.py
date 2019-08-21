@@ -17,8 +17,8 @@ from nautilus_trader.common.logger import TestLogger
 from nautilus_trader.common.portfolio import Portfolio
 from nautilus_trader.common.execution import ExecutionEngine, InMemoryExecutionDatabase
 from nautilus_trader.model.enums import Resolution
-from nautilus_trader.model.objects import Venue, Money
-from nautilus_trader.model.identifiers import IdTag, TraderId, StrategyId
+from nautilus_trader.model.objects import Money
+from nautilus_trader.model.identifiers import Venue, IdTag, TraderId, StrategyId
 from nautilus_trader.backtest.execution import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.data import BacktestDataClient

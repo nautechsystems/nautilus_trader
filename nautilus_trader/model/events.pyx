@@ -15,9 +15,15 @@ from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.order_side cimport OrderSide, order_side_string
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
-from nautilus_trader.model.identifiers cimport Label, AccountId
-from nautilus_trader.model.identifiers cimport StrategyId, OrderId, ExecutionId, ExecutionTicket
-from nautilus_trader.model.objects cimport Quantity, Symbol, Price
+from nautilus_trader.model.identifiers cimport (
+    Symbol,
+    Label,
+    AccountId,
+    StrategyId,
+    OrderId,
+    ExecutionId,
+    ExecutionTicket)
+from nautilus_trader.model.objects cimport Quantity, Price
 from nautilus_trader.model.position cimport Position
 
 
@@ -28,8 +34,6 @@ cdef class AccountEvent(Event):
 
     def __init__(self,
                  AccountId account_id,
-                 Brokerage brokerage,
-                 AccountNumber account_number,
                  Currency currency,
                  Money cash_balance,
                  Money cash_start_day,
@@ -59,8 +63,8 @@ cdef class AccountEvent(Event):
 
         super().__init__(event_id, event_timestamp)
         self.account_id = account_id
-        self.brokerage = brokerage
-        self.account_number = account_number
+        self.broker = self.account_id.broker
+        self.number = self.account_id.number
         self.currency = currency
         self.cash_balance = cash_balance
         self.cash_start_day = cash_start_day

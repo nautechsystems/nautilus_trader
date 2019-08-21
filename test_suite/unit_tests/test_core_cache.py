@@ -9,7 +9,7 @@
 import unittest
 
 from nautilus_trader.core.cache import ObjectCache
-from nautilus_trader.model.objects import Symbol
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.serialization.common import parse_symbol
 
 

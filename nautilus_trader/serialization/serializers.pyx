@@ -20,9 +20,16 @@ from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce, time_in_fo
 from nautilus_trader.model.c_enums.order_side cimport  order_side_string
 from nautilus_trader.model.c_enums.order_type cimport OrderType, order_type_string
 from nautilus_trader.model.c_enums.currency cimport Currency, currency_string
-from nautilus_trader.model.identifiers cimport TraderId, StrategyId, OrderId, ExecutionId, AccountId
-from nautilus_trader.model.identifiers cimport ExecutionTicket, AccountNumber, PositionId, Label
-from nautilus_trader.model.objects cimport Brokerage, Quantity, Money, Price
+from nautilus_trader.model.identifiers cimport (
+    TraderId,
+    StrategyId,
+    OrderId,
+    PositionId,
+    AccountId,
+    ExecutionId,
+    ExecutionTicket,
+    Label)
+from nautilus_trader.model.objects cimport Quantity, Money, Price
 from nautilus_trader.model.order cimport Order, AtomicOrder
 from nautilus_trader.serialization.constants cimport *
 from nautilus_trader.serialization.base cimport (
@@ -296,8 +303,6 @@ cdef class MsgPackEventSerializer(EventSerializer):
 
         if isinstance(event, AccountEvent):
             package[ACCOUNT_ID] = event.account_id.value
-            package[BROKERAGE] = event.brokerage.value
-            package[ACCOUNT_NUMBER] = event.account_number.value
             package[CURRENCY] = currency_string(event.currency)
             package[CASH_BALANCE] = str(event.cash_balance)
             package[CASH_START_DAY] = str(event.cash_start_day)
@@ -397,9 +402,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
 
         if event_type == AccountEvent.__name__:
             return AccountEvent(
-                AccountId(unpacked[ACCOUNT_ID]),
-                Brokerage(unpacked[BROKERAGE]),
-                AccountNumber(unpacked[ACCOUNT_NUMBER]),
+                AccountId.from_string(unpacked[ACCOUNT_ID]),
                 Currency[unpacked[CURRENCY]],
                 Money(unpacked[CASH_BALANCE]),
                 Money(unpacked[CASH_START_DAY]),

@@ -17,9 +17,9 @@ from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_status cimport OrderStatus
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition, market_position_string
-from nautilus_trader.model.identifiers cimport AccountId, PositionId
+from nautilus_trader.model.identifiers cimport Symbol, AccountId, PositionId
 from nautilus_trader.model.currency cimport ExchangeRateCalculator
-from nautilus_trader.model.objects cimport Brokerage, Symbol, Price, Tick, Bar, Money, Instrument, Quantity
+from nautilus_trader.model.objects cimport Price, Tick, Bar, Money, Instrument, Quantity
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.events cimport (
@@ -263,9 +263,7 @@ cdef class BacktestExecClient(ExecutionClient):
         Resets the account.
         """
         cdef AccountEvent initial_starting = AccountEvent(
-            AccountId('SIMULATED-123456'),
-            Brokerage('SIMULATED'),
-            AccountNumber('123456'),
+            AccountId('SIMULATED', '123456'),
             self._account.currency,
             self.starting_capital,
             self.starting_capital,
@@ -319,8 +317,6 @@ cdef class BacktestExecClient(ExecutionClient):
         # Generate event
         cdef AccountEvent event = AccountEvent(
             self._account.id,
-            self._account.brokerage,
-            self._account.account_number,
             self._account.currency,
             self._account.cash_balance,
             self.account_cash_start_day,
@@ -695,8 +691,6 @@ cdef class BacktestExecClient(ExecutionClient):
 
         cdef AccountEvent account_event = AccountEvent(
             self._account.id,
-            self._account.brokerage,
-            self._account.account_number,
             self._account.currency,
             self.account_capital,
             self.account_cash_start_day,

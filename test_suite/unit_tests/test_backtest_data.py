@@ -15,7 +15,7 @@ from pandas import Timestamp
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logger import TestLogger
 from nautilus_trader.model.enums import Resolution
-from nautilus_trader.model.objects import Venue
+from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.backtest.data import BacktestDataClient
 
 from test_kit.objects import ObjectStorer

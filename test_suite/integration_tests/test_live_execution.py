@@ -13,8 +13,8 @@ from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.core.types import GUID
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.events import OrderFilled
-from nautilus_trader.model.identifiers import OrderId, ExecutionId, ExecutionTicket
-from nautilus_trader.model.objects import Quantity, Venue, Symbol, Price
+from nautilus_trader.model.identifiers import Symbol, Venue, OrderId, ExecutionId, ExecutionTicket
+from nautilus_trader.model.objects import Quantity, Price
 from nautilus_trader.live.execution import ExecutionDatabase
 from test_kit.stubs import TestStubs
 

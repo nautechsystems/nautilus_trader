@@ -11,7 +11,8 @@ from cpython.datetime cimport datetime
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.guid cimport GuidFactory
 from nautilus_trader.common.logger cimport LoggerAdapter
-from nautilus_trader.model.objects cimport Venue, Symbol, Tick, BarType, Bar, Instrument
+from nautilus_trader.model.identifiers cimport Symbol, Venue
+from nautilus_trader.model.objects cimport Tick, BarType, Bar, Instrument
 from nautilus_trader.trade.strategy cimport TradingStrategy
 
 

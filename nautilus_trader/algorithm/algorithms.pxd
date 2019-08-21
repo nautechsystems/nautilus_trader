@@ -6,7 +6,8 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.objects cimport Price, Symbol, Tick, BarType, Bar
+from nautilus_trader.model.objects cimport Price, Tick, BarType, Bar
+from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.order cimport Order
 
 

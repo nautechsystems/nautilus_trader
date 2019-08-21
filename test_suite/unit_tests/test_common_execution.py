@@ -20,7 +20,7 @@ from nautilus_trader.model.identifiers import (
     PositionId,
     ExecutionId,
     ExecutionTicket)
-from nautilus_trader.model.objects import Quantity, Venue, Symbol, Price, Money
+from nautilus_trader.model.objects import Quantity, Price
 from nautilus_trader.model.order import OrderFactory
 from nautilus_trader.model.position import Position
 from nautilus_trader.model.commands import SubmitOrder

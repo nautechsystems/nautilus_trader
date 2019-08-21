@@ -17,7 +17,7 @@ from nautilus_trader.common.portfolio import Portfolio
 from nautilus_trader.common.logger import TestLogger
 from nautilus_trader.common.execution import InMemoryExecutionDatabase, ExecutionEngine
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.objects import Quantity, Venue, Symbol, Price, Money
+from nautilus_trader.model.objects import Quantity, Price, Money
 from nautilus_trader.model.events import OrderRejected, OrderCancelled, OrderWorking, OrderModified, OrderFilled
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.trade.strategy import TradingStrategy

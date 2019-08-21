@@ -15,9 +15,9 @@ from nautilus_trader.common.brokerage cimport CommissionCalculator
 from nautilus_trader.common.execution cimport ExecutionClient
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition
 from nautilus_trader.model.currency cimport ExchangeRateCalculator
-from nautilus_trader.model.objects cimport Symbol, Price, Tick, Bar, Money, Quantity
+from nautilus_trader.model.objects cimport Price, Tick, Bar, Money, Quantity
 from nautilus_trader.model.order cimport Order, OrderEvent
-from nautilus_trader.model.identifiers cimport OrderId
+from nautilus_trader.model.identifiers cimport Symbol, OrderId
 from nautilus_trader.backtest.models cimport FillModel
 
 

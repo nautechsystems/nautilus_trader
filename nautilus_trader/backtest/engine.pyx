@@ -18,9 +18,9 @@ from nautilus_trader.core.functions cimport as_utc_timestamp, format_zulu_dateti
 from nautilus_trader.common.logger cimport LogLevel
 from nautilus_trader.model.c_enums.currency cimport currency_string
 from nautilus_trader.model.c_enums.resolution cimport Resolution, resolution_string
-from nautilus_trader.model.objects cimport Venue, Symbol, Instrument, Tick
+from nautilus_trader.model.objects cimport Instrument, Tick
 from nautilus_trader.model.events cimport TimeEvent
-from nautilus_trader.model.identifiers cimport TraderId, IdTag
+from nautilus_trader.model.identifiers cimport Symbol, Venue, TraderId
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.brokerage import CommissionCalculator
 from nautilus_trader.common.clock cimport LiveClock, TestClock

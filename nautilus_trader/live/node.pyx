@@ -15,8 +15,7 @@ import zmq
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport GUID
-from nautilus_trader.model.objects cimport Venue
-from nautilus_trader.model.identifiers cimport IdTag, TraderId
+from nautilus_trader.model.identifiers cimport Venue, TraderId
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.guid cimport LiveGuidFactory

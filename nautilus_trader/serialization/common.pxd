@@ -8,8 +8,8 @@
 
 from cpython.datetime cimport datetime
 
-from nautilus_trader.model.objects cimport Symbol, Price, BarSpecification, BarType, Tick, Bar
-from nautilus_trader.model.identifiers cimport Label
+from nautilus_trader.model.identifiers cimport Symbol, Label
+from nautilus_trader.model.objects cimport Price, BarSpecification, BarType, Tick, Bar
 
 
 cpdef str convert_price_to_string(Price price)

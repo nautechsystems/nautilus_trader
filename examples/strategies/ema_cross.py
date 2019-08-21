@@ -11,8 +11,8 @@ from datetime import timedelta
 from nautilus_trader.core.message import Event
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
-from nautilus_trader.model.objects import Price, Symbol, Tick, BarType, Bar, Instrument
-from nautilus_trader.model.identifiers import Label
+from nautilus_trader.model.objects import Price, Tick, BarType, Bar, Instrument
+from nautilus_trader.model.identifiers import Symbol, Label
 from nautilus_trader.data.analyzers import SpreadAnalyzer, LiquidityAnalyzer
 from nautilus_trader.trade.strategy import TradingStrategy
 from nautilus_trader.trade.sizing import FixedRiskSizer

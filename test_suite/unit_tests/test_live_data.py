@@ -12,8 +12,9 @@ import time
 import zmq
 
 from nautilus_trader.core.types import GUID
+from nautilus_trader.model.objects import Price, Tick, Bar
+from nautilus_trader.model.identifiers import Symbol, Venue
 from nautilus_trader.live.logger import LiveLogger
-from nautilus_trader.model.objects import Venue, Symbol, Price, Tick, Bar
 from nautilus_trader.live.data import LiveDataClient
 from nautilus_trader.network.responses import DataResponse
 from nautilus_trader.serialization.data import DataMapper, BsonDataSerializer, BsonInstrumentSerializer

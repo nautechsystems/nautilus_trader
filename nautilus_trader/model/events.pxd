@@ -14,9 +14,18 @@ from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
-from nautilus_trader.model.objects cimport Quantity, Brokerage, Symbol, Price, Money
-from nautilus_trader.model.identifiers cimport Label, AccountId, AccountNumber
-from nautilus_trader.model.identifiers cimport StrategyId, OrderId, ExecutionId, ExecutionTicket
+from nautilus_trader.model.objects cimport Quantity, Price, Money
+from nautilus_trader.model.identifiers cimport (
+    Symbol,
+    Label,
+    Brokerage,
+    AccountNumber,
+    AccountId,
+    ExecutionId,
+    ExecutionTicket,
+    StrategyId,
+    OrderId,
+)
 from nautilus_trader.model.position cimport Position
 
 
@@ -25,8 +34,8 @@ cdef class AccountEvent(Event):
     Represents an account event produced from a collateral report.
     """
     cdef readonly AccountId account_id
-    cdef readonly Brokerage brokerage
-    cdef readonly AccountNumber account_number
+    cdef readonly Brokerage broker
+    cdef readonly AccountNumber number
     cdef readonly Currency currency
     cdef readonly Money cash_balance
     cdef readonly Money cash_start_day

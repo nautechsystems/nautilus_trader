@@ -10,7 +10,7 @@ import unittest
 
 from decimal import Decimal
 
-from nautilus_trader.model.objects import Venue, Symbol
+from nautilus_trader.model.identifiers import Symbol, Venue
 from nautilus_trader.backtest.loaders import InstrumentLoader
 
 
