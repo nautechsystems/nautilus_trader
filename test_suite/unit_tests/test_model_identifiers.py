@@ -8,22 +8,23 @@
 
 import unittest
 
+from nautilus_trader.core.types import Identifier
 from nautilus_trader.common.clock import TestClock
-from nautilus_trader.model.identifiers import Label, IdTag, OrderId, PositionId, OrderIdGenerator, PositionIdGenerator
+from nautilus_trader.model.identifiers import Label, TraderId, StrategyId, IdTag, OrderId, PositionId, OrderIdGenerator, PositionIdGenerator
 
 
 class IdentifierTests(unittest.TestCase):
 
-    def test_label_equality(self):
+    def test_identifier_equality(self):
         # Arrange
-        label1 = Label('some-label-1')
-        label2 = Label('some-label-2')
+        id1 = Identifier('some-id-1')
+        id2 = Identifier('some-id-2')
 
         # Act
-        result1 = label1 == label1
-        result2 = label1 != label1
-        result3 = label1 == label2
-        result4 = label1 != label2
+        result1 = id1 == id1
+        result2 = id1 != id1
+        result3 = id1 == id2
+        result4 = id1 != id2
 
         # Assert
         self.assertTrue(result1)
@@ -31,42 +32,25 @@ class IdentifierTests(unittest.TestCase):
         self.assertFalse(result3)
         self.assertTrue(result4)
 
-    def test_label_to_string(self):
+    def test_identifier_to_string(self):
         # Arrange
-        label = Label('some-label')
+        identifier = Identifier('some-id')
 
         # Act
-        result = str(label)
+        result = str(identifier)
 
         # Assert
-        self.assertEqual('Label(some-label)', result)
+        self.assertEqual('Identifier(some-id)', result)
 
-    def test_label_repr(self):
+    def test_identifier_repr(self):
         # Arrange
-        label = Label('some-label')
+        identifier = Identifier('some-id')
 
         # Act
-        result = repr(label)
+        result = repr(identifier)
 
         # Assert
-        self.assertTrue(result.startswith('<Label(some-label) object at'))
-
-    def test_order_id_equality(self):
-        # Arrange
-        order_id1 = OrderId('some-order_id-1')
-        order_id2 = OrderId('some-order_id-2')
-
-        # Act
-        result1 = order_id1 == order_id1
-        result2 = order_id1 != order_id1
-        result3 = order_id1 == order_id2
-        result4 = order_id1 != order_id2
-
-        # Assert
-        self.assertTrue(result1)
-        self.assertFalse(result2)
-        self.assertFalse(result3)
-        self.assertTrue(result4)
+        self.assertTrue(result.startswith('<Identifier(some-id) object at'))
 
     def test_mixed_identifier_equality(self):
         # Arrange
@@ -78,6 +62,30 @@ class IdentifierTests(unittest.TestCase):
         # Assert
         self.assertTrue(id1 == id1)
         self.assertFalse(id1 == id2)
+
+    def test_trader_identifier(self):
+        # Arrange
+        # Act
+        trader_id1 = TraderId('TESTER', '000')
+        trader_id2 = TraderId('TESTER', '001')
+
+        # Assert
+        self.assertEqual(trader_id1, trader_id1)
+        self.assertNotEqual(trader_id1, trader_id2)
+        self.assertEqual('TESTER-000', trader_id1.value)
+        self.assertEqual('TESTER', trader_id1.name)
+
+    def test_strategy_identifier(self):
+        # Arrange
+        # Act
+        strategy_id1 = StrategyId('SCALPER', '00')
+        strategy_id2 = StrategyId('SCALPER', '01')
+
+        # Assert
+        self.assertEqual(strategy_id1, strategy_id1)
+        self.assertNotEqual(strategy_id1, strategy_id2)
+        self.assertEqual('SCALPER-00', strategy_id1.value)
+        self.assertEqual('SCALPER', strategy_id1.name)
 
 
 class OrderIdGeneratorTests(unittest.TestCase):
