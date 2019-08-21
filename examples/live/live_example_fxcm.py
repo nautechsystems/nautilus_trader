@@ -8,7 +8,8 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.model.enums import Resolution, QuoteType
-from nautilus_trader.model.objects import Venue, Symbol, BarType, BarSpecification
+from nautilus_trader.model.identifiers import Symbol, Venue
+from nautilus_trader.model.objects import BarType, BarSpecification
 from nautilus_trader.live.node import TradingNode
 
 from examples.strategies.ema_cross import EMACrossPy
