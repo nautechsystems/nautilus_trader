@@ -416,6 +416,7 @@ class ExecutionEngineTests(unittest.TestCase):
             self.trader_id,
             strategy.id,
             position_id,
+            self.account.id,
             order,
             self.guid_factory.generate(),
             self.clock.time_now())
@@ -445,6 +446,7 @@ class ExecutionEngineTests(unittest.TestCase):
             self.trader_id,
             strategy.id,
             position_id,
+            self.account.id,
             order,
             self.guid_factory.generate(),
             self.clock.time_now())
@@ -453,6 +455,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
         order_filled = OrderFilled(
             order.id,
+            self.account.id,
             ExecutionId('E-' + order.id.value),
             ExecutionTicket('ET-' + order.id.value),
             order.symbol,
