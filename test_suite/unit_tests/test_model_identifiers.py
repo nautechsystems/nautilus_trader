@@ -9,16 +9,15 @@
 import unittest
 
 from nautilus_trader.core.types import Identifier
-from nautilus_trader.common.clock import TestClock
 from nautilus_trader.model.identifiers import (
+    Symbol,
+    Venue,
     Brokerage,
     AccountId,
     TraderId,
     StrategyId,
-    IdTag,
     OrderId,
     PositionId)
-from nautilus_trader.model.generators import OrderIdGenerator, PositionIdGenerator
 
 
 class IdentifierTests(unittest.TestCase):
@@ -71,6 +70,27 @@ class IdentifierTests(unittest.TestCase):
         self.assertTrue(id1 == id1)
         self.assertFalse(id1 == id2)
 
+    def test_symbol_equality(self):
+        # Arrange
+        symbol1 = Symbol("AUDUSD", Venue('FXCM'))
+        symbol2 = Symbol("AUDUSD", Venue('IDEAL_PRO'))
+        symbol3 = Symbol("GBPUSD", Venue('FXCM'))
+
+        # Act
+        # Assert
+        self.assertTrue(symbol1 == symbol1)
+        self.assertTrue(symbol1 != symbol2)
+        self.assertTrue(symbol1 != symbol3)
+
+    def test_symbol_str_and_repr(self):
+        # Arrange
+        symbol = Symbol("AUDUSD", Venue('FXCM'))
+
+        # Act
+        # Assert
+        self.assertEqual("AUDUSD.FXCM", str(symbol))
+        self.assertTrue(repr(symbol).startswith("<Symbol(AUDUSD.FXCM) object at"))
+
     def test_trader_identifier(self):
         # Arrange
         # Act
@@ -82,7 +102,7 @@ class IdentifierTests(unittest.TestCase):
         self.assertNotEqual(trader_id1, trader_id2)
         self.assertEqual('TESTER-000', trader_id1.value)
         self.assertEqual('TESTER', trader_id1.name)
-        self.assertEqual(trader_id1, StrategyId.py_from_string('TESTER-000'))
+        self.assertEqual(trader_id1, TraderId.py_from_string('TESTER-000'))
 
     def test_strategy_identifier(self):
         # Arrange
@@ -109,73 +129,3 @@ class IdentifierTests(unittest.TestCase):
         self.assertEqual('FXCM-02851908', account_id1.value)
         self.assertEqual(Brokerage('FXCM'), account_id1.broker)
         self.assertEqual(account_id1, AccountId.py_from_string('FXCM-02851908'))
-
-
-class OrderIdGeneratorTests(unittest.TestCase):
-
-    def setUp(self):
-        # Fixture Setup
-        self.order_id_generator = OrderIdGenerator(
-            id_tag_trader=IdTag('001'),
-            id_tag_strategy=IdTag('001'),
-            clock=TestClock())
-
-    def test_generate_order_id(self):
-        # Arrange
-        # Act
-        result1 = self.order_id_generator.generate()
-        result2 = self.order_id_generator.generate()
-        result3 = self.order_id_generator.generate()
-
-        # Assert
-        self.assertEqual(OrderId('O-19700101-000000-001-001-1'), result1)
-        self.assertEqual(OrderId('O-19700101-000000-001-001-2'), result2)
-        self.assertEqual(OrderId('O-19700101-000000-001-001-3'), result3)
-
-    def test_can_reset_id_generator(self):
-        # Arrange
-        self.order_id_generator.generate()
-        self.order_id_generator.generate()
-        self.order_id_generator.generate()
-
-        # Act
-        self.order_id_generator.reset()
-        result1 = self.order_id_generator.generate()
-
-        # Assert
-        self.assertEqual(OrderId('O-19700101-000000-001-001-1'), result1)
-
-
-class PositionIdGeneratorTests(unittest.TestCase):
-
-    def setUp(self):
-        # Fixture Setup
-        self.position_id_generator = PositionIdGenerator(
-            id_tag_trader=IdTag('001'),
-            id_tag_strategy=IdTag('001'),
-            clock=TestClock())
-
-    def test_generate_position_id(self):
-        # Arrange
-        # Act
-        result1 = self.position_id_generator.generate()
-        result2 = self.position_id_generator.generate()
-        result3 = self.position_id_generator.generate()
-
-        # Assert
-        self.assertEqual(PositionId('P-19700101-000000-001-001-1'), result1)
-        self.assertEqual(PositionId('P-19700101-000000-001-001-2'), result2)
-        self.assertEqual(PositionId('P-19700101-000000-001-001-3'), result3)
-
-    def test_can_reset_id_generator(self):
-        # Arrange
-        self.position_id_generator.generate()
-        self.position_id_generator.generate()
-        self.position_id_generator.generate()
-
-        # Act
-        self.position_id_generator.reset()
-        result1 = self.position_id_generator.generate()
-
-        # Assert
-        self.assertEqual(PositionId('P-19700101-000000-001-001-1'), result1)
