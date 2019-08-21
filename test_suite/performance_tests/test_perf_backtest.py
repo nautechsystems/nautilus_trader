@@ -14,7 +14,7 @@ import unittest
 from datetime import datetime, timezone
 
 from nautilus_trader.model.enums import Resolution
-from nautilus_trader.model.objects import Venue, Symbol
+from nautilus_trader.model.identifiers import Symbol, Venue
 from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.models import FillModel
