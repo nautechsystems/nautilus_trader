@@ -13,6 +13,7 @@ from decimal import Decimal
 from datetime import timedelta
 
 from nautilus_trader.core.types import GUID
+from nautilus_trader.common.account import Account
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.objects import Quantity, Price
@@ -31,6 +32,7 @@ class ReportProviderTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
+        self.account = Account()
         self.order_factory = OrderFactory(
             id_tag_trader=IdTag('001'),
             id_tag_strategy=IdTag('001'),
@@ -53,6 +55,7 @@ class ReportProviderTests(unittest.TestCase):
 
         event = OrderFilled(
             order1.id,
+            self.account.id,
             ExecutionId('SOME_EXEC_ID_1'),
             ExecutionTicket('SOME_EXEC_TICKET_1'),
             order1.symbol,
@@ -98,6 +101,7 @@ class ReportProviderTests(unittest.TestCase):
 
         event = OrderFilled(
             order1.id,
+            self.account.id,
             ExecutionId('SOME_EXEC_ID_1'),
             ExecutionTicket('SOME_EXEC_TICKET_1'),
             order1.symbol,
