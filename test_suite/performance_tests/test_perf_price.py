@@ -14,7 +14,6 @@ from time import time
 
 from nautilus_trader.model.objects import Price
 
-
 MILLISECONDS_IN_SECOND = 1000
 
 

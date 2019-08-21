@@ -18,16 +18,6 @@ UNIX_EPOCH = TestStubs.unix_epoch()
 
 class SerializationFunctionTests(unittest.TestCase):
 
-    def test_can_parse_symbol_from_string(self):
-        # Arrange
-        symbol = Symbol('AUDUSD', Venue('FXCM'))
-
-        # Act
-        result = parse_symbol(symbol.value)
-
-        # Assert
-        self.assertEqual(symbol, result)
-
     def test_can_parse_bar_spec_from_string(self):
         # Arrange
         bar_spec = BarSpecification(1, Resolution.MINUTE, QuoteType.MID)

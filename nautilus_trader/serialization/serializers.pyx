@@ -21,6 +21,7 @@ from nautilus_trader.model.c_enums.order_side cimport  order_side_string
 from nautilus_trader.model.c_enums.order_type cimport OrderType, order_type_string
 from nautilus_trader.model.c_enums.currency cimport Currency, currency_string
 from nautilus_trader.model.identifiers cimport (
+    Symbol,
     TraderId,
     StrategyId,
     OrderId,
@@ -45,9 +46,7 @@ from nautilus_trader.serialization.common cimport (
     convert_datetime_to_string,
     convert_string_to_datetime,
     convert_string_to_price,
-    convert_string_to_label,
-    parse_symbol,
-    parse_bar_spec
+    convert_string_to_label
 )
 from nautilus_trader.model.commands cimport (
     AccountInquiry,
@@ -147,7 +146,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
             return None  # Null order
 
         return Order(order_id=OrderId(unpacked[ID]),
-                     symbol=parse_symbol(unpacked[SYMBOL]),
+                     symbol=Symbol.from_string(unpacked[SYMBOL]),
                      order_side=OrderSide[unpacked[ORDER_SIDE]],
                      order_type=OrderType[unpacked[ORDER_TYPE]],
                      quantity=Quantity(unpacked[QUANTITY]),
@@ -460,7 +459,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 OrderId(unpacked[ORDER_ID]),
                 OrderId(unpacked[ORDER_ID_BROKER]),
                 AccountId.from_string(unpacked[ACCOUNT_ID]),
-                parse_symbol(unpacked[SYMBOL]),
+                Symbol.from_string(unpacked[SYMBOL]),
                 Label(unpacked[LABEL]),
                 OrderSide[unpacked[ORDER_SIDE]],
                 OrderType[unpacked[ORDER_TYPE]],
@@ -509,7 +508,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 AccountId.from_string(unpacked[ACCOUNT_ID]),
                 ExecutionId(unpacked[EXECUTION_ID]),
                 ExecutionTicket(unpacked[EXECUTION_TICKET]),
-                parse_symbol(unpacked[SYMBOL]),
+                Symbol.from_string(unpacked[SYMBOL]),
                 OrderSide[unpacked[ORDER_SIDE]],
                 Quantity(unpacked[FILLED_QUANTITY]),
                 Quantity(unpacked[LEAVES_QUANTITY]),
@@ -523,7 +522,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 AccountId.from_string(unpacked[ACCOUNT_ID]),
                 ExecutionId(unpacked[EXECUTION_ID]),
                 ExecutionTicket(unpacked[EXECUTION_TICKET]),
-                parse_symbol(unpacked[SYMBOL]),
+                Symbol.from_string(unpacked[SYMBOL]),
                 OrderSide[unpacked[ORDER_SIDE]],
                 Quantity(unpacked[FILLED_QUANTITY]),
                 Price(unpacked[AVERAGE_PRICE]),
