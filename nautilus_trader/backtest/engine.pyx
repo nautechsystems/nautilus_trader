@@ -16,8 +16,8 @@ from typing import List, Dict, Callable
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport as_utc_timestamp, format_zulu_datetime, pad_string
 from nautilus_trader.common.logger cimport LogLevel
-from nautilus_trader.model.c_enums.currency cimport currency_string
-from nautilus_trader.model.c_enums.resolution cimport Resolution, resolution_string
+from nautilus_trader.model.c_enums.currency cimport currency_to_string
+from nautilus_trader.model.c_enums.resolution cimport Resolution, resolution_to_string
 from nautilus_trader.model.objects cimport Instrument, Tick
 from nautilus_trader.model.events cimport TimeEvent
 from nautilus_trader.model.identifiers cimport Symbol, Venue, TraderId
@@ -437,11 +437,11 @@ cdef class BacktestEngine:
         self.log.info(f"Backtest start datetime: {format_zulu_datetime(start)}")
         self.log.info(f"Backtest stop datetime:  {format_zulu_datetime(stop)}")
         self.log.info(f"Iteration time-step: {time_step}")
-        self.log.info(f"Execution resolution: {resolution_string(self.data_client.execution_resolution)}")
+        self.log.info(f"Execution resolution: {resolution_to_string(self.data_client.execution_resolution)}")
         if self.exec_client.frozen_account:
             self.log.warning(f"ACCOUNT FROZEN")
         else:
-            self.log.info(f"Account balance (starting): {self.config.starting_capital} {currency_string(self.account.currency)}")
+            self.log.info(f"Account balance (starting): {self.config.starting_capital} {currency_to_string(self.account.currency)}")
         self.log.info("#---------------------------------------------------------------#")
 
     cdef void _backtest_footer(
@@ -450,7 +450,7 @@ cdef class BacktestEngine:
             datetime start,
             datetime stop,
             timedelta time_step):
-        cdef str account_currency = currency_string(self.account.currency)
+        cdef str account_currency = currency_to_string(self.account.currency)
         cdef int account_starting_length = len(str(self.config.starting_capital))
 
         self.log.info("#---------------------------------------------------------------#")
@@ -462,7 +462,7 @@ cdef class BacktestEngine:
         self.log.info(f"Backtest start datetime: {format_zulu_datetime(start)}")
         self.log.info(f"Backtest stop datetime:  {format_zulu_datetime(stop)}")
         self.log.info(f"Time-step iterations: {self.iteration} of {time_step}")
-        self.log.info(f"Execution resolution: {resolution_string(self.data_client.execution_resolution)}")
+        self.log.info(f"Execution resolution: {resolution_to_string(self.data_client.execution_resolution)}")
         self.log.info(f"Total events: {self.exec_client.event_count}")
         self.log.info(f"Total orders: {len(self.exec_engine.database.get_orders_all())}")
         self.log.info(f"Total positions: {len(self.exec_engine.database.get_positions_all())}")

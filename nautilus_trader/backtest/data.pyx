@@ -15,7 +15,7 @@ from typing import Set, List, Dict, Callable
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.quote_type cimport QuoteType
-from nautilus_trader.model.c_enums.resolution cimport Resolution, resolution_string
+from nautilus_trader.model.c_enums.resolution cimport Resolution, resolution_to_string
 from nautilus_trader.model.objects cimport Instrument, Tick, BarType, Bar, BarSpecification
 from nautilus_trader.model.identifiers cimport Symbol, Venue
 from nautilus_trader.common.clock cimport TestClock
@@ -197,7 +197,7 @@ cdef class BacktestDataClient(DataClient):
                 last_timestamp = exec_bid_bars[len(exec_bid_bars) - 1].timestamp
                 self._set_execution_data_index(data_provider.instrument.symbol, first_timestamp, last_timestamp)
 
-        self._log.info(f"Execution resolution = {resolution_string(self.execution_resolution)}")
+        self._log.info(f"Execution resolution = {resolution_to_string(self.execution_resolution)}")
         self._log.info(f"Iteration maximum time-step = {self.max_time_step}")
 
     cdef bint _check_ticks_exist(self):
@@ -634,7 +634,7 @@ cdef class DataProvider:
             self.bar_type_execution_bid = self.bar_type_hour_bid
             self.bar_type_execution_ask = self.bar_type_hour_ask
         else:
-            raise ValueError(f'cannot set execution bar resolution to {resolution_string(resolution)}')
+            raise ValueError(f'cannot set execution bar resolution to {resolution_to_string(resolution)}')
 
     cpdef void set_initial_iteration_indexes(self, datetime to_time):
         """

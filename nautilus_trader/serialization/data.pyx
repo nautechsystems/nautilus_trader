@@ -16,8 +16,8 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Quantity, Price, Tick, Bar, Instrument
 from nautilus_trader.model.enums import Currency, SecurityType
-from nautilus_trader.model.c_enums.currency cimport Currency, currency_string
-from nautilus_trader.model.c_enums.security_type cimport SecurityType, security_type_string
+from nautilus_trader.model.c_enums.currency cimport Currency, currency_to_string
+from nautilus_trader.model.c_enums.security_type cimport SecurityType, security_type_to_string
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.serialization.constants cimport *
 from nautilus_trader.serialization.base cimport DataSerializer, InstrumentSerializer
@@ -89,8 +89,8 @@ cdef class BsonInstrumentSerializer(InstrumentSerializer):
             ID: instrument.id.value,
             SYMBOL: instrument.symbol.value,
             BROKER_SYMBOL: instrument.broker_symbol,
-            QUOTE_CURRENCY: currency_string(instrument.quote_currency),
-            SECURITY_TYPE: security_type_string(instrument.security_type),
+            QUOTE_CURRENCY: currency_to_string(instrument.quote_currency),
+            SECURITY_TYPE: security_type_to_string(instrument.security_type),
             TICK_PRECISION: instrument.tick_precision,
             TICK_SIZE: str(instrument.tick_size),
             ROUND_LOT_SIZE: instrument.round_lot_size.value,

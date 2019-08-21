@@ -8,8 +8,8 @@
 
 from cpython.datetime cimport datetime
 
-from nautilus_trader.model.identifiers cimport Symbol, Label
-from nautilus_trader.model.objects cimport Price, BarSpecification, BarType, Tick, Bar
+from nautilus_trader.model.identifiers cimport Label
+from nautilus_trader.model.objects cimport Price
 
 
 cpdef str convert_price_to_string(Price price)
@@ -18,8 +18,3 @@ cpdef str convert_label_to_string(Label label)
 cpdef Label convert_string_to_label(str label)
 cpdef str convert_datetime_to_string(datetime time)
 cpdef datetime convert_string_to_datetime(str time_string)
-
-cpdef Tick parse_tick(Symbol symbol, str tick_string)
-cpdef BarSpecification parse_bar_spec(str bar_spec_string)
-cpdef BarType parse_bar_type(str bar_type_string)
-cpdef Bar parse_bar(str bar_string)

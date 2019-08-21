@@ -15,18 +15,32 @@ cpdef enum Resolution:
     HOUR = 3,
     DAY = 4
 
-cdef inline str resolution_string(int value):
+
+cdef inline str resolution_to_string(int value):
     if value == 0:
-        return "TICK"
+        return 'TICK'
     elif value == 1:
-        return "SECOND"
+        return 'SECOND'
     elif value == 2:
-        return "MINUTE"
+        return 'MINUTE'
     elif value == 3:
-        return "HOUR"
+        return 'HOUR'
     elif value == 4:
-        return "DAY"
-    elif value == -1:
-        return "UNKNOWN"
+        return 'DAY'
     else:
-        return "UNKNOWN"
+        return 'UNKNOWN'
+
+
+cdef inline Resolution resolution_from_string(str value):
+    if value == 'TICK':
+        return Resolution.TICK
+    elif value == 'SECOND':
+        return Resolution.SECOND
+    elif value == 'MINUTE':
+        return Resolution.MINUTE
+    elif value == 'HOUR':
+        return Resolution.HOUR
+    elif value == 'DAY':
+        return Resolution.DAY
+    else:
+        return Resolution.UNKNOWN

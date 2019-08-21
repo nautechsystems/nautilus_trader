@@ -15,11 +15,10 @@ from uuid import UUID
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport ValidString, GUID
 from nautilus_trader.core.message cimport Command, Event, Request, Response
-from nautilus_trader.model.enums import OrderSide, OrderType, Currency, TimeInForce
-from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce, time_in_force_string
-from nautilus_trader.model.c_enums.order_side cimport  order_side_string
-from nautilus_trader.model.c_enums.order_type cimport OrderType, order_type_string
-from nautilus_trader.model.c_enums.currency cimport Currency, currency_string
+from nautilus_trader.model.c_enums.time_in_force cimport time_in_force_to_string, time_in_force_from_string
+from nautilus_trader.model.c_enums.order_side cimport  order_side_to_string, order_side_from_string
+from nautilus_trader.model.c_enums.order_type cimport order_type_to_string, order_type_from_string
+from nautilus_trader.model.c_enums.currency cimport currency_to_string, currency_from_string
 from nautilus_trader.model.identifiers cimport (
     Symbol,
     TraderId,
@@ -120,12 +119,12 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
         return msgpack.packb({
             ID: order.id.value,
             SYMBOL: order.symbol.value,
-            ORDER_SIDE: order_side_string(order.side),
-            ORDER_TYPE: order_type_string(order.type),
+            ORDER_SIDE: order_side_to_string(order.side),
+            ORDER_TYPE: order_type_to_string(order.type),
             QUANTITY: order.quantity.value,
             PRICE: convert_price_to_string(order.price),
             LABEL: convert_label_to_string(order.label),
-            TIME_IN_FORCE: time_in_force_string(order.time_in_force),
+            TIME_IN_FORCE: time_in_force_to_string(order.time_in_force),
             EXPIRE_TIME: convert_datetime_to_string(order.expire_time),
             TIMESTAMP: convert_datetime_to_string(order.timestamp),
             INIT_ID: order.init_id.value})
@@ -147,13 +146,13 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
 
         return Order(order_id=OrderId(unpacked[ID]),
                      symbol=Symbol.from_string(unpacked[SYMBOL]),
-                     order_side=OrderSide[unpacked[ORDER_SIDE]],
-                     order_type=OrderType[unpacked[ORDER_TYPE]],
+                     order_side=order_side_from_string(unpacked[ORDER_SIDE]),
+                     order_type=order_type_from_string(unpacked[ORDER_TYPE]),
                      quantity=Quantity(unpacked[QUANTITY]),
                      timestamp=convert_string_to_datetime(unpacked[TIMESTAMP]),
                      price=convert_string_to_price(unpacked[PRICE]),
                      label=convert_string_to_label(unpacked[LABEL]),
-                     time_in_force=TimeInForce[unpacked[TIME_IN_FORCE]],
+                     time_in_force=time_in_force_from_string(unpacked[TIME_IN_FORCE]),
                      expire_time=convert_string_to_datetime(unpacked[EXPIRE_TIME]))
 
 
@@ -311,7 +310,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
 
         if isinstance(event, AccountEvent):
             package[ACCOUNT_ID] = event.account_id.value
-            package[CURRENCY] = currency_string(event.currency)
+            package[CURRENCY] = currency_to_string(event.currency)
             package[CASH_BALANCE] = str(event.cash_balance)
             package[CASH_START_DAY] = str(event.cash_start_day)
             package[CASH_ACTIVITY_DAY] = str(event.cash_activity_day)
@@ -323,11 +322,11 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[ORDER_ID] = event.order_id.value
             package[SYMBOL] = event.symbol.value
             package[LABEL] = event.label.value
-            package[ORDER_SIDE] = order_side_string(event.order_side)
-            package[ORDER_TYPE] = order_type_string(event.order_type)
+            package[ORDER_SIDE] = order_side_to_string(event.order_side)
+            package[ORDER_TYPE] = order_type_to_string(event.order_type)
             package[QUANTITY] = event.quantity.value
             package[PRICE] = str(event.price)
-            package[TIME_IN_FORCE] = time_in_force_string(event.time_in_force)
+            package[TIME_IN_FORCE] = time_in_force_to_string(event.time_in_force)
             package[EXPIRE_TIME] = convert_datetime_to_string(event.expire_time)
         elif isinstance(event, OrderSubmitted):
             package[ORDER_ID] = event.order_id.value
@@ -348,11 +347,11 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[ORDER_ID_BROKER] = event.order_id_broker.value
             package[SYMBOL] = event.symbol.value
             package[LABEL] = event.label.value
-            package[ORDER_SIDE] = order_side_string(event.order_side)
-            package[ORDER_TYPE] = order_type_string(event.order_type)
+            package[ORDER_SIDE] = order_side_to_string(event.order_side)
+            package[ORDER_TYPE] = order_type_to_string(event.order_type)
             package[QUANTITY] = event.quantity.value
             package[PRICE] = str(event.price)
-            package[TIME_IN_FORCE] = time_in_force_string(event.time_in_force)
+            package[TIME_IN_FORCE] = time_in_force_to_string(event.time_in_force)
             package[EXPIRE_TIME] = convert_datetime_to_string(event.expire_time)
             package[WORKING_TIME] = convert_datetime_to_string(event.working_time)
         elif isinstance(event, OrderCancelReject):
@@ -381,7 +380,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[EXECUTION_ID] = event.execution_id.value
             package[EXECUTION_TICKET] = event.execution_ticket.value
             package[SYMBOL] = event.symbol.value
-            package[ORDER_SIDE] = order_side_string(event.order_side)
+            package[ORDER_SIDE] = order_side_to_string(event.order_side)
             package[FILLED_QUANTITY] = event.filled_quantity.value
             package[LEAVES_QUANTITY] = event.leaves_quantity.value
             package[AVERAGE_PRICE] = str(event.average_price)
@@ -392,7 +391,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[EXECUTION_ID] = event.execution_id.value
             package[EXECUTION_TICKET] = event.execution_ticket.value
             package[SYMBOL] = event.symbol.value
-            package[ORDER_SIDE] = order_side_string(event.order_side)
+            package[ORDER_SIDE] = order_side_to_string(event.order_side)
             package[FILLED_QUANTITY] = event.filled_quantity.value
             package[AVERAGE_PRICE] = str(event.average_price)
             package[EXECUTION_TIME] = convert_datetime_to_string(event.execution_time)
@@ -421,7 +420,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
         if event_type == AccountEvent.__name__:
             return AccountEvent(
                 AccountId.from_string(unpacked[ACCOUNT_ID]),
-                Currency[unpacked[CURRENCY]],
+                currency_from_string(unpacked[CURRENCY]),
                 Money(unpacked[CASH_BALANCE]),
                 Money(unpacked[CASH_START_DAY]),
                 Money(unpacked[CASH_ACTIVITY_DAY]),
@@ -461,11 +460,11 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 AccountId.from_string(unpacked[ACCOUNT_ID]),
                 Symbol.from_string(unpacked[SYMBOL]),
                 Label(unpacked[LABEL]),
-                OrderSide[unpacked[ORDER_SIDE]],
-                OrderType[unpacked[ORDER_TYPE]],
+                order_side_from_string(unpacked[ORDER_SIDE]),
+                order_type_from_string(unpacked[ORDER_TYPE]),
                 Quantity(unpacked[QUANTITY]),
                 Price(unpacked[PRICE]),
-                TimeInForce[unpacked[TIME_IN_FORCE]],
+                time_in_force_from_string(unpacked[TIME_IN_FORCE]),
                 convert_string_to_datetime(unpacked[WORKING_TIME]),
                 event_id,
                 event_timestamp,
@@ -509,7 +508,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 ExecutionId(unpacked[EXECUTION_ID]),
                 ExecutionTicket(unpacked[EXECUTION_TICKET]),
                 Symbol.from_string(unpacked[SYMBOL]),
-                OrderSide[unpacked[ORDER_SIDE]],
+                order_side_from_string(unpacked[ORDER_SIDE]),
                 Quantity(unpacked[FILLED_QUANTITY]),
                 Quantity(unpacked[LEAVES_QUANTITY]),
                 Price(unpacked[AVERAGE_PRICE]),
@@ -523,7 +522,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 ExecutionId(unpacked[EXECUTION_ID]),
                 ExecutionTicket(unpacked[EXECUTION_TICKET]),
                 Symbol.from_string(unpacked[SYMBOL]),
-                OrderSide[unpacked[ORDER_SIDE]],
+                order_side_from_string(unpacked[ORDER_SIDE]),
                 Quantity(unpacked[FILLED_QUANTITY]),
                 Price(unpacked[AVERAGE_PRICE]),
                 convert_string_to_datetime(unpacked[EXECUTION_TIME]),

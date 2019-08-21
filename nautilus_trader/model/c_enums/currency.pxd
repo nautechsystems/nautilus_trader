@@ -31,50 +31,96 @@ cpdef enum Currency:
     XAU = 959,
     ZAR = 710
 
-cdef inline str currency_string(int value):
+
+cdef inline str currency_to_string(int value):
     if value == 36:
-        return "AUD"
+        return 'AUD'
     elif value == 124:
-        return "CAD"
+        return 'CAD'
     elif value == 756:
-        return "CHF"
+        return 'CHF'
     elif value == 156:
-        return "CNY"
+        return 'CNY'
     elif value == 999:
-        return "CNH"
+        return 'CNH'
     elif value == 203:
-        return "CZK"
+        return 'CZK'
     elif value == 978:
-        return "EUR"
+        return 'EUR'
     elif value == 826:
-        return "GBP"
+        return 'GBP'
     elif value == 344:
-        return "HKD"
+        return 'HKD'
     elif value == 392:
-        return "JPY"
+        return 'JPY'
     elif value == 484:
-        return "MXN"
+        return 'MXN'
     elif value == 578:
-        return "NOK"
+        return 'NOK'
     elif value == 554:
-        return "NZD"
+        return 'NZD'
     elif value == 752:
-        return "SEK"
+        return 'SEK'
     elif value == 949:
-        return "TRY"
+        return 'TRY'
     elif value == 702:
-        return "SGD"
+        return 'SGD'
     elif value == 840:
-        return "USD"
+        return 'USD'
     elif value == 961:
-        return "XAG"
+        return 'XAG'
     elif value == 962:
-        return "XPT"
+        return 'XPT'
     elif value == 959:
-        return "XAU"
+        return 'XAU'
     elif value == 710:
-        return "ZAR"
-    elif value == -1:
-        return "UNKNOWN"
+        return 'ZAR'
     else:
-        return "UNKNOWN"
+        return 'UNKNOWN'
+
+
+cdef inline Currency currency_from_string(int value):
+    if value == 'AUD':
+        return Currency.AUD
+    elif value == 'CAD':
+        return Currency.CAD
+    elif value == 'CHF':
+        return Currency.CHF
+    elif value == 'CNY':
+        return Currency.CNY
+    elif value == 'CNH':
+        return Currency.CNH
+    elif value == 'CZK':
+        return Currency.CZK
+    elif value == 'EUR':
+        return Currency.EUR
+    elif value == 'GBP':
+        return Currency.GBP
+    elif value == 'HKD':
+        return Currency.HKD
+    elif value == 'JPY':
+        return Currency.JPY
+    elif value == 'MXN':
+        return Currency.MXN
+    elif value == 'NOK':
+        return Currency.NOK
+    elif value == 'NZD':
+        return Currency.NZD
+    elif value == 'SEK':
+        return Currency.SEK
+    elif value == 'TRY':
+        return Currency.TRY
+    elif value == 'SGD':
+        return Currency.SGD
+    elif value == 'USD':
+        return Currency.USD
+    elif value == 'XAG':
+        return Currency.XAG
+    elif value == 'XPT':
+        return Currency.XPT
+    elif value == 'XAU':
+        return Currency.XAU
+    elif value == 'ZAR':
+        return Currency.ZAR
+    else:
+        return Currency.UNKNOWN

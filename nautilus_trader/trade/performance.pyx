@@ -26,7 +26,7 @@ from empyrical.stats import (
     beta,
     tail_ratio)
 
-from nautilus_trader.model.c_enums.currency cimport Currency, currency_string
+from nautilus_trader.model.c_enums.currency cimport Currency, currency_to_string
 from nautilus_trader.model.objects cimport Money
 
 
@@ -457,7 +457,7 @@ cdef class PerformanceAnalyzer:
         
         :return: List[str].
         """
-        cdef str account_currency = currency_string(self._account_currency)
+        cdef str account_currency = currency_to_string(self._account_currency)
 
         return [
             f"PNL:               {self.total_pnl()} {account_currency}",

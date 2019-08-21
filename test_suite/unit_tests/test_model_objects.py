@@ -408,7 +408,6 @@ class ObjectTests(unittest.TestCase):
         self.assertEqual(Decimal('0.00'), result3.value)
         self.assertEqual(Decimal('0.00'), result4.value)
         self.assertEqual(0, result1.as_float())
-        #print(result1)
 
     def test_money_str(self):
         # Arrange
@@ -557,6 +556,16 @@ class ObjectTests(unittest.TestCase):
         # Assert
         self.assertEqual("1-MINUTE[BID]", str(bar_spec))
         self.assertTrue(repr(bar_spec).startswith("<BarSpecification(1-MINUTE[BID]) object at"))
+
+    def test_can_parse_bar_spec_from_string(self):
+        # Arrange
+        bar_spec = BarSpecification(1, Resolution.MINUTE, QuoteType.MID)
+
+        # Act
+        result = BarSpecification.py_from_string(str(bar_spec))
+
+        # Assert
+        self.assertEqual(bar_spec, result)
 
     def test_bar_type_equality(self):
         # Arrange

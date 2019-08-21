@@ -9,7 +9,7 @@
 from decimal import Decimal
 from typing import List
 
-from nautilus_trader.model.c_enums.market_position cimport MarketPosition, market_position_string
+from nautilus_trader.model.c_enums.market_position cimport MarketPosition, market_position_to_string
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.events cimport OrderFillEvent
@@ -102,7 +102,7 @@ cdef class Position:
         :return: str.
         """
         cdef str quantity = '' if self.relative_quantity == 0 else ' {:,}'.format(self.quantity.value)
-        return f"{self.symbol} {market_position_string(self.market_position)}{quantity}"
+        return f"{self.symbol} {market_position_to_string(self.market_position)}{quantity}"
 
     cpdef list get_order_ids(self):
         """

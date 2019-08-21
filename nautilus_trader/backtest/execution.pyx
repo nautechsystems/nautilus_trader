@@ -16,7 +16,7 @@ from nautilus_trader.model.c_enums.quote_type cimport QuoteType
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_status cimport OrderStatus
-from nautilus_trader.model.c_enums.market_position cimport MarketPosition, market_position_string
+from nautilus_trader.model.c_enums.market_position cimport MarketPosition, market_position_to_string
 from nautilus_trader.model.identifiers cimport Symbol, AccountId, PositionId
 from nautilus_trader.model.currency cimport ExchangeRateCalculator
 from nautilus_trader.model.objects cimport Price, Tick, Bar, Money, Instrument, Quantity
@@ -744,6 +744,6 @@ cdef class BacktestExecClient(ExecutionClient):
         elif direction == MarketPosition.SHORT:
             difference = entry_price - exit_price
         else:
-            raise ValueError(f'Cannot calculate the pnl of a {market_position_string(direction)} direction.')
+            raise ValueError(f'Cannot calculate the pnl of a {market_position_to_string(direction)} direction.')
 
         return Money(difference * quantity.value * Decimal(exchange_rate))

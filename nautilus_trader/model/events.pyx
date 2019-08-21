@@ -12,7 +12,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport ValidString, GUID
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.model.c_enums.currency cimport Currency
-from nautilus_trader.model.c_enums.order_side cimport OrderSide, order_side_string
+from nautilus_trader.model.c_enums.order_side cimport OrderSide, order_side_to_string
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.identifiers cimport (
@@ -683,7 +683,7 @@ cdef class PositionOpened(PositionEvent):
         """
         return (f"{self.__class__.__name__}("
                 f"{self.position.id.value}, "
-                f"entry_direction={order_side_string(self.position.entry_direction)}, "
+                f"entry_direction={order_side_to_string(self.position.entry_direction)}, "
                 f"av_entry_price={self.position.average_entry_price}) "
                 f"{self.position.status_string()}")
 
@@ -720,7 +720,7 @@ cdef class PositionModified(PositionEvent):
         """
         return (f"{self.__class__.__name__}("
                 f"{self.position.id.value}, "
-                f"entry_direction={order_side_string(self.position.entry_direction)}, "
+                f"entry_direction={order_side_to_string(self.position.entry_direction)}, "
                 f"av_entry_price={self.position.average_entry_price}, "
                 f"points_realized={self.position.points_realized}) "
                 f"{self.position.status_string()}")
@@ -758,7 +758,7 @@ cdef class PositionClosed(PositionEvent):
         """
         return (f"{self.__class__.__name__}("
                 f"{self.position.id.value}, "
-                f"entry_direction={order_side_string(self.position.entry_direction)}, "
+                f"entry_direction={order_side_to_string(self.position.entry_direction)}, "
                 f"av_entry_price={self.position.average_entry_price}, "
                 f"av_exit_price={self.position.average_exit_price}, "
                 f"points_realized={self.position.points_realized}) "

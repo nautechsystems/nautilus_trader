@@ -52,6 +52,8 @@ cdef class Tick:
     cdef readonly Price bid
     cdef readonly Price ask
     cdef readonly datetime timestamp
+    @staticmethod
+    cdef Tick from_string(Symbol symbol, str values)
 
 
 cdef class BarSpecification:
@@ -65,6 +67,8 @@ cdef class BarSpecification:
     cdef bint equals(self, BarSpecification other)
     cdef str resolution_string(self)
     cdef str quote_type_string(self)
+    @staticmethod
+    cdef BarSpecification from_string(str value)
 
 
 cdef class BarType:
@@ -76,6 +80,8 @@ cdef class BarType:
     cdef bint equals(self, BarType other)
     cdef str resolution_string(self)
     cdef str quote_type_string(self)
+    @staticmethod
+    cdef BarType from_string(str value)
 
 
 cdef class Bar:
@@ -89,6 +95,8 @@ cdef class Bar:
     cdef readonly long volume
     cdef readonly datetime timestamp
     cdef readonly bint checked
+    @staticmethod
+    cdef Bar from_string(str value)
 
 
 cdef class DataBar:
