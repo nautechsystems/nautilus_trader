@@ -20,7 +20,7 @@ from nautilus_trader.model.c_enums.currency cimport Currency, currency_to_string
 from nautilus_trader.model.c_enums.security_type cimport SecurityType, security_type_to_string
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.serialization.constants cimport *
-from nautilus_trader.serialization.base cimport DataSerializer, InstrumentSerializer
+from nautilus_trader.serialization.base cimport InstrumentSerializer
 from nautilus_trader.serialization.common cimport convert_datetime_to_string, convert_string_to_datetime
 
 
@@ -73,6 +73,54 @@ cpdef list deserialize_bars(bytes[:] bar_bytes_array):
     return bars
 
 
+cdef class BsonSerializer:
+    """
+    Provides a serializer for the BSON specification.
+    """
+    @staticmethod
+    cdef bytes serialize(dict data):
+        """
+        Serialize the given data to bytes.
+
+        :param: data: The data to serialize.
+        :return: bytes.
+        """
+        return bytes(RawBSONDocument(BSON.encode(data)).raw)
+
+    @staticmethod
+    cdef dict deserialize(bytes data_bytes):
+        """
+        Deserialize the given bytes to a data object.
+
+        :param: data_bytes: The data bytes to deserialize.
+        :return: Dict.
+        """
+        return BSON.decode(data_bytes)
+
+
+cdef class BsonDataSerializer(DataSerializer):
+    """
+    Provides a serializer for data objects to BSON specification.
+    """
+    cpdef bytes serialize(self, dict data):
+        """
+        Serialize the given data mapping to bytes.
+
+        :param: data: The data to serialize.
+        :return: bytes.
+        """
+        return BsonSerializer.serialize(data)
+
+    cpdef dict deserialize(self, bytes data_bytes):
+        """
+        Deserialize the given bytes to a mapping of data.
+
+        :param: data_bytes: The data bytes to deserialize.
+        :return: Dict.
+        """
+        return BsonSerializer.deserialize(data_bytes)
+
+
 cdef class BsonInstrumentSerializer(InstrumentSerializer):
     """
     Provides an instrument serializer for the MessagePack specification.
@@ -85,7 +133,7 @@ cdef class BsonInstrumentSerializer(InstrumentSerializer):
         :param instrument: The instrument to serialize.
         :return: bytes.
         """
-        return bytes(RawBSONDocument(BSON.encode({
+        return BsonSerializer.serialize({
             ID: instrument.id.value,
             SYMBOL: instrument.symbol.value,
             BROKER_SYMBOL: instrument.broker_symbol,
@@ -103,7 +151,7 @@ cdef class BsonInstrumentSerializer(InstrumentSerializer):
             ROLL_OVER_INTEREST_BUY: str(instrument.rollover_interest_buy),
             ROLL_OVER_INTEREST_SELL: str(instrument.rollover_interest_sell),
             TIMESTAMP: convert_datetime_to_string(instrument.timestamp),
-        })).raw)
+        })
 
     cpdef Instrument deserialize(self, bytes instrument_bytes):
         """
@@ -112,7 +160,7 @@ cdef class BsonInstrumentSerializer(InstrumentSerializer):
         :param instrument_bytes: The bytes to deserialize.
         :return: Instrument.
         """
-        cdef dict deserialized = BSON.decode(instrument_bytes)
+        cdef dict deserialized = BsonSerializer.deserialize(instrument_bytes)
 
         return Instrument(
             instrument_id=InstrumentId(deserialized[ID]),
@@ -174,27 +222,3 @@ cdef class DataMapper:
             DATA_TYPE: type(instruments[0]).__name__,
             DATA: [self.instrument_serializer.serialize(instrument) for instrument in instruments]
         }
-
-
-cdef class BsonDataSerializer(DataSerializer):
-    """
-    Provides a serializer for data objects for the BSON specification.
-    """
-
-    cpdef bytes serialize(self, dict data):
-        """
-        Serialize the given data to bytes.
-
-        :param: data: The data to serialize.
-        :return: bytes.
-        """
-        return bytes(RawBSONDocument(BSON.encode(data)).raw)
-
-    cpdef dict deserialize(self, bytes data_bytes):
-        """
-        Deserialize the given bytes to a data object.
-
-        :param: data_bytes: The data bytes to deserialize.
-        :return: Dict.
-        """
-        return BSON.decode(data_bytes)

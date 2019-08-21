@@ -10,6 +10,12 @@ from nautilus_trader.model.objects cimport BarType
 from nautilus_trader.serialization.base cimport DataSerializer, InstrumentSerializer
 
 
+cdef class BsonDataSerializer(DataSerializer):
+    """
+    Provides a serializer for data objects to BSON specification.
+    """
+
+
 cdef class DataMapper:
     """
     Provides a data mapper for data objects.
@@ -24,10 +30,4 @@ cdef class DataMapper:
 cdef class BsonInstrumentSerializer(InstrumentSerializer):
     """
     Provides an instrument serializer for the MessagePack specification.
-    """
-
-
-cdef class BsonDataSerializer(DataSerializer):
-    """
-    Provides a serializer for data objects to BSON specification.
     """

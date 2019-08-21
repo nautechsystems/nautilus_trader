@@ -77,6 +77,53 @@ from nautilus_trader.network.responses cimport (
 )
 
 
+cdef class MsgPackSerializer:
+    """
+    Provides a serializer for the MessagePack specification.
+    """
+    @staticmethod
+    cdef bytes serialize(dict message):
+        """
+        Serialize the given message to MessagePack specification bytes.
+
+        :param: data: The message to serialize.
+        :return: bytes.
+        """
+        return msgpack.packb(message)
+
+    @staticmethod
+    cdef dict deserialize(bytes message_bytes):
+        """
+        Deserialize the given MessagePack specification bytes to a dictionary.
+
+        :param: message_bytes: The message bytes to deserialize.
+        :return: Dict.
+        """
+        return msgpack.unpackb(message_bytes, raw=False)
+
+    @staticmethod
+    cdef dict deserialize_partial(bytes message_bytes, tuple ignore):
+        """
+        Deserialize the given MessagePack specification bytes to a dictionary.
+        The values of the keys in the ignore tuple of bytes are not deserialized.
+
+        :param: message_bytes: The message bytes to deserialize.
+        :param: ignore: The tuple of byte keys to not deserialize.
+        :return: Dict.
+        """
+        cdef dict unpacked_raw = msgpack.unpackb(message_bytes)
+        cdef dict unpacked = {}
+
+        # Manually decode
+        for k, v in unpacked_raw.items():
+            if k in ignore:
+                unpacked[k.decode(UTF8)] = v
+            else:
+                unpacked[k.decode(UTF8)] = v.decode(UTF8)
+
+        return unpacked
+
+
 cdef class MsgPackQuerySerializer(QuerySerializer):
     """
     Provides a serializer for data query objects for the MsgPack specification.
@@ -89,7 +136,7 @@ cdef class MsgPackQuerySerializer(QuerySerializer):
         :param: data: The data query to serialize.
         :return: bytes.
         """
-        return msgpack.packb(query)
+        return MsgPackSerializer.serialize(query)
 
     cpdef dict deserialize(self, bytes query_bytes):
         """
@@ -98,7 +145,7 @@ cdef class MsgPackQuerySerializer(QuerySerializer):
         :param: data_bytes: The data query bytes to deserialize.
         :return: Dict.
         """
-        return msgpack.unpackb(query_bytes, raw=False)
+        return MsgPackSerializer.deserialize(query_bytes)
 
 
 cdef class MsgPackOrderSerializer(OrderSerializer):
@@ -114,9 +161,9 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
         :return: bytes.
         """
         if order is None:
-            return msgpack.packb({})  # Null order
+            return MsgPackSerializer.serialize({})  # Null order
 
-        return msgpack.packb({
+        return MsgPackSerializer.serialize({
             ID: order.id.value,
             SYMBOL: order.symbol.value,
             ORDER_SIDE: order_side_to_string(order.side),
@@ -139,7 +186,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
         """
         Condition.not_empty(order_bytes, 'order_bytes')
 
-        cdef dict unpacked = msgpack.unpackb(order_bytes, raw=False)
+        cdef dict unpacked = MsgPackSerializer.deserialize(order_bytes)
 
         if len(unpacked) == 0:
             return None  # Null order
@@ -212,7 +259,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         else:
             raise RuntimeError("Cannot serialize command (unrecognized command).")
 
-        return msgpack.packb(package)
+        return MsgPackSerializer.serialize(package)
 
     cpdef Command deserialize(self, bytes command_bytes):
         """
@@ -225,18 +272,9 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         """
         Condition.not_empty(command_bytes, 'command_bytes')
 
-        cdef dict unpacked_raw = msgpack.unpackb(command_bytes)
-        cdef dict unpacked = {}
-
-        # Manually unpack and decode
-        for k, v in unpacked_raw.items():
-            if k not in (b'Order', b'Entry', b'StopLoss', b'TakeProfit'):
-                if isinstance(v, bytes):
-                    unpacked[k.decode(UTF8)] = v.decode(UTF8)
-                else:
-                    unpacked[k.decode(UTF8)] = v
-            else:
-                unpacked[k.decode(UTF8)] = v
+        cdef dict unpacked = MsgPackSerializer.deserialize_partial(
+            message_bytes=command_bytes,
+            ignore=(b'Order', b'Entry', b'StopLoss', b'TakeProfit'))
 
         cdef str command_type = unpacked[TYPE]
         cdef GUID command_id = GUID(UUID(unpacked[ID]))
@@ -398,7 +436,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
         else:
             raise RuntimeError("Cannot serialize event (unrecognized event.")
 
-        return msgpack.packb(package)
+        return MsgPackSerializer.serialize(package)
 
     cpdef Event deserialize(self, bytes event_bytes):
         """
@@ -562,7 +600,7 @@ cdef class MsgPackRequestSerializer(RequestSerializer):
         else:
             raise RuntimeError("Cannot serialize request (unrecognized request.")
 
-        return msgpack.packb(package)
+        return MsgPackSerializer.serialize(package)
 
     cpdef Request deserialize(self, bytes request_bytes):
         """
@@ -574,18 +612,9 @@ cdef class MsgPackRequestSerializer(RequestSerializer):
         """
         Condition.not_empty(request_bytes, 'request_bytes')
 
-        cdef dict unpacked_raw = msgpack.unpackb(request_bytes)
-        cdef dict unpacked = {}
-
-        # Manually unpack and decode
-        for k, v in unpacked_raw.items():
-            if k not in b'Query':
-                if isinstance(v, bytes):
-                    unpacked[k.decode(UTF8)] = v.decode(UTF8)
-                else:
-                    unpacked[k.decode(UTF8)] = v
-            else:
-                unpacked[k.decode(UTF8)] = v
+        cdef dict unpacked = MsgPackSerializer.deserialize_partial(
+            message_bytes=request_bytes,
+            ignore=(b'', b'Query'))
 
         cdef str request_type = unpacked[TYPE]
         cdef GUID request_id = GUID(UUID(unpacked[ID]))
@@ -630,7 +659,7 @@ cdef class MsgPackResponseSerializer(ResponseSerializer):
         else:
             raise RuntimeError("Cannot serialize response (unrecognized response.")
 
-        return msgpack.packb(package)
+        return MsgPackSerializer.serialize(package)
 
     cpdef Response deserialize(self, bytes response_bytes):
         """
@@ -642,18 +671,9 @@ cdef class MsgPackResponseSerializer(ResponseSerializer):
         """
         Condition.not_empty(response_bytes, 'response_bytes')
 
-        cdef dict unpacked_raw = msgpack.unpackb(response_bytes)
-        cdef dict unpacked = {}
-
-        # Manually unpack and decode
-        for k, v in unpacked_raw.items():
-            if k not in b'Data':
-                if isinstance(v, bytes):
-                    unpacked[k.decode(UTF8)] = v.decode(UTF8)
-                else:
-                    unpacked[k.decode(UTF8)] = v
-            else:
-                unpacked[k.decode(UTF8)] = v
+        cdef dict unpacked = MsgPackSerializer.deserialize_partial(
+            message_bytes=response_bytes,
+            ignore=(b'', b'Data'))
 
         cdef str response_type = unpacked[TYPE]
         cdef GUID correlation_id = GUID(UUID(unpacked[CORRELATION_ID]))

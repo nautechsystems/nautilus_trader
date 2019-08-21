@@ -17,7 +17,7 @@ from nautilus_trader.model.identifiers import Symbol, Venue
 from nautilus_trader.live.logger import LiveLogger
 from nautilus_trader.live.data import LiveDataClient
 from nautilus_trader.network.responses import DataResponse
-from nautilus_trader.serialization.data import DataMapper, BsonDataSerializer, BsonInstrumentSerializer
+from nautilus_trader.serialization.data import DataMapper, BsonSerializer, BsonInstrumentSerializer
 from nautilus_trader.serialization.serializers import MsgPackResponseSerializer
 from test_kit.objects import ObjectStorer
 from test_kit.stubs import TestStubs
@@ -35,7 +35,7 @@ class LiveDataClientTests(unittest.TestCase):
         self.logger = LiveLogger()
         self.zmq_context = zmq.Context()
         self.data_mapper = DataMapper()
-        self.data_serializer = BsonDataSerializer()
+        self.data_serializer = BsonSerializer()
         self.response_serializer = MsgPackResponseSerializer()
         self.tick_req_port = 55501
         self.bar_req_port = 55503
