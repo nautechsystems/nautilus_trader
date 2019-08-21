@@ -10,7 +10,13 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.model.objects cimport Quantity, Price
 from nautilus_trader.model.events cimport OrderFillEvent
-from nautilus_trader.model.identifiers cimport Symbol, PositionId, OrderId, ExecutionId, ExecutionTicket
+from nautilus_trader.model.identifiers cimport (
+    Symbol,
+    PositionId,
+    OrderId,
+    AccountId,
+    ExecutionId,
+    ExecutionTicket)
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 
@@ -26,6 +32,7 @@ cdef class Position:
 
     cdef readonly Symbol symbol
     cdef readonly PositionId id
+    cdef readonly AccountId account_id
     cdef readonly ExecutionId last_execution_id
     cdef readonly ExecutionTicket last_execution_ticket
     cdef readonly OrderId from_order_id

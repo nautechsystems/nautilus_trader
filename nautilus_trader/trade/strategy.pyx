@@ -1156,7 +1156,12 @@ cdef class TradingStrategy:
         """
         Send an account inquiry command to the execution service.
         """
+        if self.account is None:
+            self.log.error("Cannot send account inquiry (account not registered).")
+            return
+
         cdef AccountInquiry command = AccountInquiry(
+            self.account.id,
             self._guid_factory.generate(),
             self.clock.time_now())
 
@@ -1171,7 +1176,7 @@ cdef class TradingStrategy:
         :param position_id: The position identifier to associate with this order.
         """
         if self._exec_engine is None:
-            self.log.error("Cannot submit order (execution client not registered).")
+            self.log.error("Cannot submit order (execution engine not registered).")
             return
 
         self.log.info(f"Submitting {order} with {position_id}")
@@ -1180,6 +1185,7 @@ cdef class TradingStrategy:
             self.trader_id,
             self.id,
             position_id,
+            self.account.id,
             order,
             self._guid_factory.generate(),
             self.clock.time_now())
@@ -1219,7 +1225,7 @@ cdef class TradingStrategy:
         :param position_id: The position identifier to associate with this order.
         """
         if self._exec_engine is None:
-            self.log.error("Cannot submit atomic order (execution client not registered).")
+            self.log.error("Cannot submit atomic order (execution engine not registered).")
             return
 
         self.log.info(f"Submitting {atomic_order} for {position_id}")
@@ -1240,6 +1246,7 @@ cdef class TradingStrategy:
             self.trader_id,
             self.id,
             position_id,
+            self.account.id,
             atomic_order,
             self._guid_factory.generate(),
             self.clock.time_now())
@@ -1255,12 +1262,13 @@ cdef class TradingStrategy:
         :param new_price: The new price for the given order.
         """
         if self._exec_engine is None:
-            self.log.error("Cannot modify order (execution client not registered).")
+            self.log.error("Cannot modify order (execution engine not registered).")
             return
 
         cdef ModifyOrder command = ModifyOrder(
             self.trader_id,
             self.id,
+            self.account.id,
             order.id,
             new_price,
             self._guid_factory.generate(),
@@ -1294,6 +1302,7 @@ cdef class TradingStrategy:
         cdef CancelOrder command = CancelOrder(
             self.trader_id,
             self.id,
+            self.account.id,
             order.id,
             ValidString(cancel_reason),
             self._guid_factory.generate(),
@@ -1321,6 +1330,7 @@ cdef class TradingStrategy:
                 command = CancelOrder(
                     self.trader_id,
                     self.id,
+                    self.account.id,
                     order_id,
                     ValidString(cancel_reason),
                     self._guid_factory.generate(),
