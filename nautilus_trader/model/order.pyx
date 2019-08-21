@@ -19,11 +19,22 @@ from nautilus_trader.model.c_enums.order_type cimport OrderType, order_type_stri
 from nautilus_trader.model.c_enums.order_status cimport OrderStatus, order_status_string
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce, time_in_force_string
 from nautilus_trader.model.objects cimport Quantity, Symbol, Price
-from nautilus_trader.model.events cimport OrderEvent
-from nautilus_trader.model.events cimport OrderInitialized, OrderSubmitted, OrderAccepted, OrderRejected
-from nautilus_trader.model.events cimport OrderWorking, OrderExpired, OrderModified, OrderCancelled
-from nautilus_trader.model.events cimport OrderCancelReject, OrderPartiallyFilled, OrderFilled
-from nautilus_trader.model.identifiers cimport Label, IdTag, OrderId, ExecutionId, ExecutionTicket, OrderIdGenerator
+from nautilus_trader.model.events cimport (
+    OrderEvent,
+    OrderFillEvent,
+    OrderInitialized,
+    OrderSubmitted,
+    OrderAccepted,
+    OrderRejected,
+    OrderWorking,
+    OrderExpired,
+    OrderModified,
+    OrderCancelled,
+    OrderCancelReject,
+    OrderPartiallyFilled,
+    OrderFilled)
+from nautilus_trader.model.identifiers cimport Label, IdTag, OrderId, ExecutionId, ExecutionTicket
+from nautilus_trader.model.generators cimport OrderIdGenerator
 from nautilus_trader.common.clock cimport Clock, LiveClock
 
 
@@ -274,7 +285,7 @@ cdef class Order:
             self._order_ids_broker.append(event.order_id_broker)
             self.id_broker = event.order_id_broker
             self.price = event.modified_price
-        elif isinstance(event, (OrderFilled, OrderPartiallyFilled)):
+        elif isinstance(event, OrderFillEvent):
             self._execution_ids.append(event.execution_id)
             self._execution_tickets.append(event.execution_ticket)
             self.execution_id = event.execution_id

@@ -6,10 +6,120 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
-
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.common.clock cimport Clock, LiveClock
+from nautilus_trader.core.types cimport Identifier
+
+
+cdef class Symbol:
+    """
+    Represents the symbol for a financial market tradeable instrument.
+    """
+
+    def __init__(self,
+                 str code,
+                 Venue venue):
+        """
+        Initializes a new instance of the Symbol class.
+
+        :param code: The symbols code.
+        :param venue: The symbols venue.
+        :raises ConditionFailed: If the code is not a valid string.
+        """
+        Condition.valid_string(code, 'code')
+
+        self.code = code.upper()
+        self.venue = venue
+        self.value = f'{self.code}.{self.venue.value}'
+
+    cdef bint equals(self, Symbol other):
+        """
+        Return a value indicating whether the object equals the given object.
+        
+        :param other: The other object to compare
+        :return: True if the objects are equal, otherwise False.
+        """
+        return self.value == other.value
+
+    def __eq__(self, Symbol other) -> bool:
+        """
+        Return a value indicating whether this object is equal to the given object.
+
+        :return: bool.
+        """
+        return self.equals(other)
+
+    def __ne__(self, Symbol other) -> bool:
+        """
+        Return a value indicating whether this object is not equal to the given object.
+
+        :return: bool.
+        """
+        return not self.equals(other)
+
+    def __hash__(self) -> int:
+        """"
+        Return the hash representation of this object.
+
+        :return: int.
+        """
+        return hash((self.code, self.venue))
+
+    def __str__(self) -> str:
+        """
+        :return: The str() string representation of the symbol.
+        """
+        return self.value
+
+    def __repr__(self) -> str:
+        """
+        :return: The repr() string representation of the symbol.
+        """
+        return f"<{self.__class__.__name__}({str(self)}) object at {id(self)}>"
+
+
+cdef class Venue(Identifier):
+    """
+    Represents a trading venue for a financial market tradeable instrument.
+    """
+
+    def __init__(self, str name):
+        """
+        Initializes a new instance of the Venue class.
+
+        :param name: The venues name.
+        :raises ConditionFailed: If the name is not a valid string.
+        """
+        super().__init__(name.upper())
+
+
+cdef class Exchange(Venue):
+    """
+    Represents an exchange that financial market instruments are traded on.
+    """
+
+    def __init__(self, str name):
+        """
+        Initializes a new instance of the Exchange class.
+
+        :param name: The exchanges name.
+        :raises ConditionFailed: If the name is not a valid string.
+        """
+        super().__init__(name.upper())
+
+
+cdef class Brokerage(Identifier):
+    """
+    Represents a brokerage.
+    """
+
+    def __init__(self, str name):
+        """
+        Initializes a new instance of the Brokerage class.
+
+        :param name: The brokerages name.
+        :raises ConditionFailed: If the name is not a valid string.
+        """
+        super().__init__(name.upper())
 
 
 cdef class Label(Identifier):
@@ -64,7 +174,7 @@ cdef class TraderId(Identifier):
         self.order_id_tag = IdTag(order_id_tag)
 
     @staticmethod
-    cdef from_string(str value):
+    cdef TraderId from_string(str value):
         """
         Return a trader identifier from the given string value. Must be correctly
         formatted with two valid strings either side of a hyphen '-'.
@@ -72,11 +182,26 @@ cdef class TraderId(Identifier):
         Example: 'Trader1-001'.
 
         :param value: The value for the strategy identifier.
-        :return: StrategyId.
+        :return: TraderId.
         """
         cdef tuple partitioned = value.partition('-')
 
         return TraderId(name=partitioned[0], order_id_tag=partitioned[2])
+
+    @staticmethod
+    def py_from_string(value: str) -> TraderId:
+        """
+        Python wrapper for the from_string method.
+
+        Return a trader identifier from the given string value. Must be correctly
+        formatted with two valid strings either side of a hyphen '-'.
+
+        Example: 'Trader1-001'.
+
+        :param value: The value for the trader identifier.
+        :return: TraderId.
+        """
+        return TraderId.from_string(value)
 
 
 cdef class StrategyId(Identifier):
@@ -101,7 +226,7 @@ cdef class StrategyId(Identifier):
         self.order_id_tag = IdTag(order_id_tag)
 
     @staticmethod
-    cdef from_string(str value):
+    cdef StrategyId from_string(str value):
         """
         Return a strategy identifier from the given string value. Must be correctly
         formatted with two valid strings either side of a hyphen '-'.
@@ -115,19 +240,70 @@ cdef class StrategyId(Identifier):
 
         return StrategyId(name=partitioned[0], order_id_tag=partitioned[2])
 
+    @staticmethod
+    def py_from_string(value: str) -> StrategyId:
+        """
+        Python wrapper for the from_string method.
+
+        Return a strategy identifier from the given string value. Must be correctly
+        formatted with two valid strings either side of a hyphen '-'.
+
+        Example: 'Strategy1-001'.
+
+        :param value: The value for the strategy identifier.
+        :return: StrategyId.
+        """
+        return StrategyId.from_string(value)
+
 
 cdef class AccountId(Identifier):
     """
     Represents a valid account identifier.
     """
 
-    def __init__(self, str value):
+    def __init__(self, str broker, str account_number):
         """
         Initializes a new instance of the AccountId class.
 
-        :param value: The value of the account identifier.
+        :param broker: The broker for the account identifier.
+        :param account_number: The account number for the account identifier.
+        :raises ConditionFailed: If the broker is not a valid string.
+        :raises ConditionFailed: If the account_number is not a valid string.
         """
-        super().__init__(value)
+        super().__init__(f'{broker}-{account_number}')
+
+        self.broker = Brokerage(broker)
+        self.number = AccountNumber(account_number)
+
+    @staticmethod
+    cdef AccountId from_string(str value):
+        """
+        Return an account identifier from the given string value. Must be correctly
+        formatted with two valid strings either side of a hyphen '-'.
+        
+        Example: 'FXCM-02851908'.
+
+        :param value: The value for the account identifier.
+        :return: AccountId.
+        """
+        cdef tuple partitioned = value.partition('-')
+
+        return AccountId(broker=partitioned[0], account_number=partitioned[2])
+
+    @staticmethod
+    def py_from_string(value: str) -> AccountId:
+        """
+        Python wrapper for the from_string method.
+
+        Return an account identifier from the given string value. Must be correctly
+        formatted with two valid strings either side of a hyphen '-'.
+
+        Example: 'FXCM-02851908'.
+
+        :param value: The value for the account identifier.
+        :return: AccountId.
+        """
+        return AccountId.from_string(value)
 
 
 cdef class AccountNumber(Identifier):
@@ -212,129 +388,3 @@ cdef class InstrumentId(Identifier):
         :param value: The value of the instrument identifier.
         """
         super().__init__(value)
-
-
-cdef class IdentifierGenerator:
-    """
-    Provides a generator for unique identifier strings.
-    """
-
-    def __init__(self,
-                 str prefix,
-                 IdTag id_tag_trader,
-                 IdTag id_tag_strategy,
-                 Clock clock):
-        """
-        Initializes a new instance of the IdentifierGenerator class.
-
-        :param prefix: The prefix for each generated identifier.
-        :param id_tag_trader: The identifier tag for the trader.
-        :param id_tag_strategy: The identifier tag for the strategy.
-        :param clock: The internal clock.
-        :raises ConditionFailed: If the prefix is not a valid string.
-        :raises ConditionFailed: If the id_tag_trader is not a valid string.
-        :raises ConditionFailed: If the id_tag_strategy is not a valid string.
-        """
-        Condition.valid_string(prefix, 'prefix')
-
-        self._clock = clock
-        self.prefix = prefix
-        self.id_tag_trader = id_tag_trader
-        self.id_tag_strategy = id_tag_strategy
-        self.counter = 0
-
-    cpdef void reset(self):
-        """
-        Reset the identifier generator by returning all stateful internal values
-        to their initial value.
-        """
-        self.counter = 0
-
-    cdef str _generate(self):
-        """
-        Return a unique identifier string.
-
-        :return: str.
-        """
-        self.counter += 1
-
-        return (f'{self.prefix}-'
-                f'{self._get_datetime_tag()}-'
-                f'{self.id_tag_trader.value}-'
-                f'{self.id_tag_strategy.value}-'
-                f'{self.counter}')
-
-    cdef str _get_datetime_tag(self):
-        """
-        Return the datetime tag string for the current time.
-
-        :return: str.
-        """
-        cdef datetime time_now = self._clock.time_now()
-        return (f'{time_now.year}'
-                f'{time_now.month:02d}'
-                f'{time_now.day:02d}'
-                f'-'
-                f'{time_now.hour:02d}'
-                f'{time_now.minute:02d}'
-                f'{time_now.second:02d}')
-
-
-cdef class OrderIdGenerator(IdentifierGenerator):
-    """
-    Provides a generator for unique OrderId(s).
-    """
-
-    def __init__(self,
-                 IdTag id_tag_trader,
-                 IdTag id_tag_strategy,
-                 Clock clock=LiveClock()):
-        """
-        Initializes a new instance of the OrderIdGenerator class.
-
-        :param id_tag_trader: The order identifier tag for the trader.
-        :param id_tag_strategy: The order identifier tag for the strategy.
-        :param clock: The clock for the component.
-        """
-        super().__init__('O',
-                         id_tag_trader,
-                         id_tag_strategy,
-                         clock)
-
-    cpdef OrderId generate(self):
-        """
-        Return a unique order identifier.
-
-        :return: OrderId.
-        """
-        return OrderId(self._generate())
-
-
-cdef class PositionIdGenerator(IdentifierGenerator):
-    """
-    Provides a generator for unique PositionId(s).
-    """
-
-    def __init__(self,
-                 IdTag id_tag_trader,
-                 IdTag id_tag_strategy,
-                 Clock clock=LiveClock()):
-        """
-        Initializes a new instance of the PositionIdGenerator class.
-
-        :param id_tag_trader: The position identifier tag for the trader.
-        :param id_tag_strategy: The position identifier tag for the strategy.
-        :param clock: The clock for the component.
-        """
-        super().__init__('P',
-                         id_tag_trader,
-                         id_tag_strategy,
-                         clock)
-
-    cpdef PositionId generate(self):
-        """
-        Return a unique position identifier.
-
-        :return: PositionId.
-        """
-        return PositionId(self._generate())

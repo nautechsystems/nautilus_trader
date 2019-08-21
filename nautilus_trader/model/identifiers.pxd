@@ -7,8 +7,28 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.types cimport Identifier
-from nautilus_trader.common.clock cimport Clock
 
+
+cdef class Symbol:
+    """
+    Represents the symbol for a financial market tradeable instrument.
+    """
+    cdef readonly str value
+    cdef readonly str code
+    cdef readonly Venue venue
+    cdef bint equals(self, Symbol other)
+
+
+cdef class Venue(Identifier):
+    pass
+
+
+cdef class Exchange(Venue):
+    pass
+
+
+cdef class Brokerage(Identifier):
+    pass
 
 cdef class Label(Identifier):
     pass
@@ -22,18 +42,21 @@ cdef class TraderId(Identifier):
     cdef readonly str name
     cdef readonly IdTag order_id_tag
     @staticmethod
-    cdef from_string(str value)
+    cdef TraderId from_string(str value)
 
 
 cdef class StrategyId(Identifier):
     cdef readonly str name
     cdef readonly IdTag order_id_tag
     @staticmethod
-    cdef from_string(str value)
+    cdef StrategyId from_string(str value)
 
 
 cdef class AccountId(Identifier):
-    pass
+    cdef readonly Brokerage broker
+    cdef readonly AccountNumber number
+    @staticmethod
+    cdef AccountId from_string(str value)
 
 
 cdef class AccountNumber(Identifier):
@@ -58,34 +81,3 @@ cdef class ExecutionTicket(Identifier):
 
 cdef class InstrumentId(Identifier):
     pass
-
-
-cdef class IdentifierGenerator:
-    """
-    Provides a generator for unique order identifiers.
-    """
-    cdef Clock _clock
-
-    cdef readonly str prefix
-    cdef readonly IdTag id_tag_trader
-    cdef readonly IdTag id_tag_strategy
-    cdef readonly int counter
-
-    cpdef void reset(self)
-
-    cdef str _generate(self)
-    cdef str _get_datetime_tag(self)
-
-
-cdef class OrderIdGenerator(IdentifierGenerator):
-    """
-    Provides a generator for unique OrderIds.
-    """
-    cpdef OrderId generate(self)
-
-
-cdef class PositionIdGenerator(IdentifierGenerator):
-    """
-    Provides a generator for unique PositionIds.
-    """
-    cpdef PositionId generate(self)

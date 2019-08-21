@@ -10,7 +10,15 @@ import unittest
 
 from nautilus_trader.core.types import Identifier
 from nautilus_trader.common.clock import TestClock
-from nautilus_trader.model.identifiers import Label, TraderId, StrategyId, IdTag, OrderId, PositionId, OrderIdGenerator, PositionIdGenerator
+from nautilus_trader.model.identifiers import (
+    Brokerage,
+    AccountId,
+    TraderId,
+    StrategyId,
+    IdTag,
+    OrderId,
+    PositionId)
+from nautilus_trader.model.generators import OrderIdGenerator, PositionIdGenerator
 
 
 class IdentifierTests(unittest.TestCase):
@@ -74,6 +82,7 @@ class IdentifierTests(unittest.TestCase):
         self.assertNotEqual(trader_id1, trader_id2)
         self.assertEqual('TESTER-000', trader_id1.value)
         self.assertEqual('TESTER', trader_id1.name)
+        self.assertEqual(trader_id1, StrategyId.py_from_string('TESTER-000'))
 
     def test_strategy_identifier(self):
         # Arrange
@@ -86,6 +95,20 @@ class IdentifierTests(unittest.TestCase):
         self.assertNotEqual(strategy_id1, strategy_id2)
         self.assertEqual('SCALPER-00', strategy_id1.value)
         self.assertEqual('SCALPER', strategy_id1.name)
+        self.assertEqual(strategy_id1, StrategyId.py_from_string('SCALPER-00'))
+
+    def test_account_identifier(self):
+        # Arrange
+        # Act
+        account_id1 = AccountId('FXCM', '02851908')
+        account_id2 = AccountId('FXCM', '09999999')
+
+        # Assert
+        self.assertEqual(account_id1, account_id1)
+        self.assertNotEqual(account_id1, account_id2)
+        self.assertEqual('FXCM-02851908', account_id1.value)
+        self.assertEqual(Brokerage('FXCM'), account_id1.broker)
+        self.assertEqual(account_id1, AccountId.py_from_string('FXCM-02851908'))
 
 
 class OrderIdGeneratorTests(unittest.TestCase):

@@ -11,7 +11,8 @@ import unittest
 from decimal import Decimal
 
 from nautilus_trader.data.analyzers import SpreadAnalyzer, LiquidityAnalyzer
-from nautilus_trader.model.objects import Venue, Symbol, Price, Tick
+from nautilus_trader.model.identifiers import Symbol, Venue
+from nautilus_trader.model.objects import Price, Tick
 from test_kit.stubs import TestStubs
 
 UNIX_EPOCH = TestStubs.unix_epoch()

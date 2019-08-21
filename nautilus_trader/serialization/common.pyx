@@ -11,12 +11,11 @@ import iso8601
 
 from cpython.datetime cimport datetime
 
-from nautilus_trader.model.enums import Resolution, QuoteType, OrderSide
-from nautilus_trader.model.objects cimport Venue
+from nautilus_trader.model.enums import Resolution, QuoteType
+from nautilus_trader.model.identifiers cimport Symbol, Venue, Label
 from nautilus_trader.model.c_enums.resolution cimport Resolution
 from nautilus_trader.model.c_enums.quote_type cimport QuoteType
-from nautilus_trader.model.identifiers cimport Label
-from nautilus_trader.model.objects cimport Symbol, Price, BarSpecification, BarType, Tick, Bar
+from nautilus_trader.model.objects cimport Price, BarSpecification, BarType, Tick, Bar
 from nautilus_trader.serialization.constants cimport *
 
 

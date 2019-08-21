@@ -12,23 +12,20 @@ from decimal import Decimal
 from datetime import datetime, timedelta, timezone
 
 from nautilus_trader.model.enums import Resolution, QuoteType, Currency, SecurityType
+
+from nautilus_trader.core.types import GUID
+from nautilus_trader.common.clock import TestClock
+from nautilus_trader.model.enums import OrderSide, OrderType, OrderStatus, TimeInForce
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.objects import (
     Quantity,
-    Venue,
-    Symbol,
     Price,
     BarSpecification,
     BarType,
     Bar,
     Instrument)
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.events import OrderFilled
-from nautilus_trader.core.correctness import ConditionFailed
-from nautilus_trader.core.types import GUID, ValidString
-from nautilus_trader.common.clock import TestClock
-from nautilus_trader.model.enums import OrderSide, OrderType, OrderStatus, TimeInForce
-from nautilus_trader.model.objects import Quantity, Venue, Symbol, Price
-from nautilus_trader.model.identifiers import Label, IdTag, OrderId, ExecutionId, ExecutionTicket, PositionIdGenerator
+from nautilus_trader.model.identifiers import Venue, IdTag, InstrumentId, ExecutionId, ExecutionTicket
+from nautilus_trader.model.generators import PositionIdGenerator
 from nautilus_trader.model.order import Order, OrderFactory
 from nautilus_trader.model.position import Position
 from nautilus_trader.model.events import OrderInitialized, OrderSubmitted, OrderAccepted, OrderRejected

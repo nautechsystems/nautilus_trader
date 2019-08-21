@@ -15,8 +15,8 @@ from nautilus_trader.core.correctness import ConditionFailed
 from nautilus_trader.core.types import GUID, ValidString
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.model.enums import OrderSide, OrderType, OrderStatus, TimeInForce
-from nautilus_trader.model.objects import Quantity, Venue, Symbol, Price
-from nautilus_trader.model.identifiers import Label, IdTag, OrderId, ExecutionId, ExecutionTicket
+from nautilus_trader.model.objects import Quantity, Price
+from nautilus_trader.model.identifiers import Symbol, Venue, Label, IdTag, OrderId, ExecutionId, ExecutionTicket
 from nautilus_trader.model.order import Order, OrderFactory
 from nautilus_trader.model.events import OrderInitialized, OrderSubmitted, OrderAccepted, OrderRejected
 from nautilus_trader.model.events import OrderWorking, OrderExpired, OrderModified, OrderCancelled

@@ -10,7 +10,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport ValidString
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.events cimport AccountEvent
-from nautilus_trader.model.objects cimport Brokerage, Money
+from nautilus_trader.model.objects cimport Money
 
 
 cdef class Account:
@@ -25,9 +25,9 @@ cdef class Account:
         self._events = []
 
         self.initialized = False
-        self.id = None
-        self.brokerage = Brokerage('UNKNOWN')
-        self.account_number = None
+        self.id = AccountId('UNKNOWN', '000000000')
+        self.broker = self.id.broker
+        self.number = self.id.number
         self.currency = currency
         self.cash_balance = Money.zero()
         self.cash_start_day = Money.zero()
@@ -63,13 +63,13 @@ cdef class Account:
 
         :return: int.
         """
-        return hash((self.brokerage, self.account_number))
+        return hash((self.broker, self.number))
 
     def __str__(self) -> str:
         """
         Return the str() string representation of the account.
         """
-        return f"Account({str(self.brokerage)}-{str(self.account_number)})"
+        return f"Account({str(self.broker)}-{str(self.number)})"
 
     def __repr__(self) -> str:
         """
@@ -90,9 +90,8 @@ cdef class Account:
         :param event: The event to initialize with.
         """
         self.id = event.account_id
-        self.brokerage = event.brokerage
-        self.account_number = event.account_number
-        self.id = event.account_id
+        self.broker = self.id.broker
+        self.number = self.id.number
         self.currency = event.currency
         self.initialized = True
 
@@ -130,9 +129,9 @@ cdef class Account:
         self._events = []
 
         self.initialized = False
-        self.id = None
-        self.brokerage = Brokerage('UNKNOWN')
-        self.account_number = None
+        self.id = AccountId('UNKNOWN', '000000000')
+        self.broker = self.id.broker
+        self.number = self.id.number
         self.currency = Currency.UNKNOWN
         self.cash_balance = Money.zero()
         self.cash_start_day = Money.zero()

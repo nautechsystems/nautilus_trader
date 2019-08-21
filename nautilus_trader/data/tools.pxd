@@ -8,7 +8,8 @@
 
 from cpython.datetime cimport datetime
 
-from nautilus_trader.model.objects cimport Symbol, Tick, Bar, DataBar
+from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.objects cimport Tick, Bar, DataBar
 
 
 cdef class TickBuilder:

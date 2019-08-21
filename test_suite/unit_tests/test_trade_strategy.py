@@ -21,8 +21,8 @@ from nautilus_trader.common.guid import TestGuidFactory
 from nautilus_trader.common.logger import TestLogger
 from nautilus_trader.common.execution import InMemoryExecutionDatabase, ExecutionEngine
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.objects import Quantity, Venue, Symbol, Price, Money
-from nautilus_trader.model.identifiers import TraderId, OrderId, PositionId
+from nautilus_trader.model.objects import Quantity, Price, Money
+from nautilus_trader.model.identifiers import Symbol, Venue, TraderId, OrderId, PositionId
 from nautilus_trader.model.position import Position
 from nautilus_trader.model.enums import OrderStatus, Currency
 from nautilus_trader.model.enums import MarketPosition

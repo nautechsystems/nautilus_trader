@@ -13,8 +13,9 @@ from datetime import datetime
 from pandas import Timestamp
 
 from nautilus_trader.model.enums import Resolution
-from nautilus_trader.model.objects import Venue, Tick, Bar
+from nautilus_trader.model.objects import Tick, Bar
 from nautilus_trader.model.events import TimeEvent
+from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.engine import BacktestEngine

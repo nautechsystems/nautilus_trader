@@ -10,8 +10,8 @@ import unittest
 import timeit
 from time import time
 
-from nautilus_trader.model.objects import Venue, Symbol
-from nautilus_trader.model.identifiers import IdTag, OrderIdGenerator
+from nautilus_trader.model.identifiers import Symbol, Venue, IdTag
+from nautilus_trader.model.generators import OrderIdGenerator
 
 MILLISECONDS_IN_SECOND = 1000
 AUDUSD_FXCM = Symbol('USDJPY', Venue('FXCM'))

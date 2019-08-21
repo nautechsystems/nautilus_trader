@@ -15,7 +15,8 @@ from pandas.core.frame import DataFrame
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport with_utc_index
-from nautilus_trader.model.objects cimport Symbol, Price, Bar, DataBar, Tick
+from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.objects cimport Price, Bar, DataBar, Tick
 
 cdef str POINT = 'point'
 cdef str PRICE = 'price'

@@ -14,7 +14,8 @@ from datetime import timedelta
 from nautilus_trader.core.correctness import ConditionFailed
 from nautilus_trader.core.types import ValidString
 from nautilus_trader.model.enums import Resolution, QuoteType
-from nautilus_trader.model.objects import Quantity, Venue, Symbol, Price, Money
+from nautilus_trader.model.identifiers import Symbol, Venue
+from nautilus_trader.model.objects import Quantity, Price, Money
 from nautilus_trader.model.objects import BarSpecification, BarType
 
 

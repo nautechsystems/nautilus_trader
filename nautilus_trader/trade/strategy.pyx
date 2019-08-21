@@ -19,8 +19,9 @@ from nautilus_trader.model.c_enums.market_position cimport MarketPosition
 from nautilus_trader.model.currency cimport ExchangeRateCalculator
 from nautilus_trader.model.events cimport Event, OrderRejected, OrderExpired, OrderCancelled
 from nautilus_trader.model.events cimport OrderCancelReject, OrderModified, OrderFilled, OrderPartiallyFilled
-from nautilus_trader.model.identifiers cimport Label, TraderId, StrategyId, OrderId, PositionId, PositionIdGenerator
-from nautilus_trader.model.objects cimport Symbol, Price, Tick, BarType, Bar, Instrument
+from nautilus_trader.model.identifiers cimport Symbol, Label, TraderId, StrategyId, OrderId, PositionId
+from nautilus_trader.model.generators cimport PositionIdGenerator
+from nautilus_trader.model.objects cimport Price, Tick, BarType, Bar, Instrument
 from nautilus_trader.model.order cimport Order, AtomicOrder, OrderFactory
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.common.clock cimport Clock, LiveClock

@@ -11,8 +11,8 @@ import time
 import zmq
 
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.objects import Quantity, Venue, Symbol, Price
-from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.model.identifiers import Symbol, Venue, TraderId
+from nautilus_trader.model.objects import Quantity, Price
 from nautilus_trader.common.account import Account
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.guid import LiveGuidFactory

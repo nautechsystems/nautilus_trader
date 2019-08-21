@@ -14,8 +14,8 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.enums import Currency  # Do not remove
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.security_type cimport SecurityType
-from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.objects cimport Symbol, Instrument, Quantity
+from nautilus_trader.model.identifiers cimport Symbol, InstrumentId
+from nautilus_trader.model.objects cimport Instrument, Quantity
 
 
 cdef class InstrumentLoader:

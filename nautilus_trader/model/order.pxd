@@ -17,7 +17,7 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.model.objects cimport Quantity, Symbol, Price
 from nautilus_trader.model.events cimport OrderEvent
 from nautilus_trader.model.identifiers cimport Label, OrderId, ExecutionId, ExecutionTicket
-from nautilus_trader.model.identifiers cimport OrderIdGenerator
+from nautilus_trader.model.generators cimport OrderIdGenerator
 
 
 cdef class Order:

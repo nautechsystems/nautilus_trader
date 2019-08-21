@@ -10,8 +10,6 @@ from decimal import Decimal
 from cpython.datetime cimport datetime, timedelta
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.types cimport StringValue
-from nautilus_trader.model.objects cimport Venue
 from nautilus_trader.model.c_enums.resolution cimport Resolution, resolution_string
 from nautilus_trader.model.c_enums.quote_type cimport QuoteType, quote_type_string
 from nautilus_trader.model.c_enums.security_type cimport SecurityType
@@ -126,118 +124,6 @@ cdef class Quantity:
             return self.value - other
         else:
             raise NotImplementedError(f"Cannot subtract {type(other)} from a quantity.")
-
-
-cdef class Brokerage(StringValue):
-    """
-    Represents a brokerage.
-    """
-
-    def __init__(self, str name):
-        """
-        Initializes a new instance of the Brokerage class.
-
-        :param name: The brokerages name.
-        :raises ConditionFailed: If the name is not a valid string.
-        """
-        super().__init__(name.upper())
-
-
-cdef class Venue(StringValue):
-    """
-    Represents a trading venue for a financial market tradeable instrument.
-    """
-
-    def __init__(self, str name):
-        """
-        Initializes a new instance of the Venue class.
-
-        :param name: The venues name.
-        :raises ConditionFailed: If the name is not a valid string.
-        """
-        super().__init__(name.upper())
-
-
-cdef class Exchange(Venue):
-    """
-    Represents an exchange that financial market instruments are traded on.
-    """
-
-    def __init__(self, str name):
-        """
-        Initializes a new instance of the Exchange class.
-
-        :param name: The exchanges name.
-        :raises ConditionFailed: If the name is not a valid string.
-        """
-        super().__init__(name.upper())
-
-
-cdef class Symbol:
-    """
-    Represents the symbol for a financial market tradeable instrument.
-    """
-
-    def __init__(self,
-                 str code,
-                 Venue venue):
-        """
-        Initializes a new instance of the Symbol class.
-
-        :param code: The symbols code.
-        :param venue: The symbols venue.
-        :raises ConditionFailed: If the code is not a valid string.
-        """
-        Condition.valid_string(code, 'code')
-
-        self.code = code.upper()
-        self.venue = venue
-        self.value = f'{self.code}.{self.venue.value}'
-
-    cdef bint equals(self, Symbol other):
-        """
-        Return a value indicating whether the object equals the given object.
-        
-        :param other: The other object to compare
-        :return: True if the objects are equal, otherwise False.
-        """
-        return self.value == other.value
-
-    def __eq__(self, Symbol other) -> bool:
-        """
-        Return a value indicating whether this object is equal to the given object.
-
-        :return: bool.
-        """
-        return self.equals(other)
-
-    def __ne__(self, Symbol other) -> bool:
-        """
-        Return a value indicating whether this object is not equal to the given object.
-
-        :return: bool.
-        """
-        return not self.equals(other)
-
-    def __hash__(self) -> int:
-        """"
-        Return the hash representation of this object.
-
-        :return: int.
-        """
-        return hash((self.code, self.venue))
-
-    def __str__(self) -> str:
-        """
-        :return: The str() string representation of the symbol.
-        """
-        return self.value
-
-    def __repr__(self) -> str:
-        """
-        :return: The repr() string representation of the symbol.
-        """
-        return f"<{self.__class__.__name__}({str(self)}) object at {id(self)}>"
 
 
 cdef inline str _get_decimal_str(float value, int precision):

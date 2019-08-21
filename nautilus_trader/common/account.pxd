@@ -11,8 +11,7 @@ from cpython.datetime cimport datetime
 from nautilus_trader.core.types cimport ValidString
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.events cimport AccountEvent
-from nautilus_trader.model.objects cimport Brokerage
-from nautilus_trader.model.identifiers cimport AccountId, AccountNumber
+from nautilus_trader.model.identifiers cimport Brokerage, AccountNumber, AccountId
 
 
 cdef class Account:
@@ -23,8 +22,8 @@ cdef class Account:
 
     cdef readonly bint initialized
     cdef readonly AccountId id
-    cdef readonly Brokerage brokerage
-    cdef readonly AccountNumber account_number
+    cdef readonly Brokerage broker
+    cdef readonly AccountNumber number
     cdef readonly Currency currency
     cdef readonly free_equity
     cdef readonly cash_balance

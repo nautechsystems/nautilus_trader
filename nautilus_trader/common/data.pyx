@@ -10,7 +10,8 @@ from cpython.datetime cimport datetime
 from typing import List, Dict, Callable
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.objects cimport Venue, Symbol, Tick, BarType, Bar, Instrument
+from nautilus_trader.model.identifiers cimport Symbol, Venue
+from nautilus_trader.model.objects cimport Tick, BarType, Bar, Instrument
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logger cimport Logger, LoggerAdapter
 from nautilus_trader.common.handlers cimport TickHandler, BarHandler, InstrumentHandler

@@ -6,7 +6,8 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.objects cimport Symbol, Instrument
+from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.objects cimport Instrument
 
 
 cdef class InstrumentLoader:
