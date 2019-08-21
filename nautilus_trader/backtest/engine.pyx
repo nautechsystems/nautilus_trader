@@ -42,6 +42,7 @@ cdef class BacktestEngine:
     """
 
     def __init__(self,
+                 TraderId trader_id,
                  Venue venue,
                  list instruments: List[Instrument],
                  dict data_ticks: Dict[Symbol, DataFrame],
@@ -53,6 +54,7 @@ cdef class BacktestEngine:
         """
         Initializes a new instance of the BacktestEngine class.
 
+        :param trader_id: The trader identifier for the backtest engine.
         :param venue: The venue for the backtest engine.
         :param data_ticks: The tick data for the backtest engine.
         :param data_bars_bid: The bid bar data needed for the backtest engine.
@@ -63,6 +65,9 @@ cdef class BacktestEngine:
         :raises ConditionFailed: If the instruments list contains a type other than Instrument.
         :raises ConditionFailed: If the strategies list contains a type other than TradingStrategy.
         """
+        if trader_id is None:
+            trader_id = TraderId('BACKTESTER', '000')
+
         # Data checked in BacktestDataClient
         Condition.list_type(instruments, Instrument, 'instruments')
         Condition.list_type(strategies, TradingStrategy, 'strategies')
@@ -76,7 +81,7 @@ cdef class BacktestEngine:
         self.guid_factory = TestGuidFactory()
 
         self.logger = TestLogger(
-            name='backtest',
+            name=trader_id.value,
             bypass_logging=False,
             level_console=LogLevel.INFO,
             level_file=LogLevel.INFO,
@@ -90,7 +95,7 @@ cdef class BacktestEngine:
         self.log = LoggerAdapter(component_name=self.__class__.__name__, logger=self.logger)
 
         self.test_logger = TestLogger(
-            name='backtest',
+            name=trader_id.value,
             bypass_logging=config.bypass_logging,
             level_console=config.level_console,
             level_file=config.level_file,
@@ -121,7 +126,6 @@ cdef class BacktestEngine:
             guid_factory=self.guid_factory,
             logger=self.test_logger)
 
-        trader_id = TraderId('BACKTESTER-000')
         self.exec_db = InMemoryExecutionDatabase(trader_id=trader_id, logger=self.test_logger)
 
         self.exec_engine = ExecutionEngine(
@@ -153,7 +157,6 @@ cdef class BacktestEngine:
 
         self.trader = Trader(
             trader_id=trader_id,
-            id_tag_trader=IdTag('000'),
             strategies=strategies,
             data_client=self.data_client,
             exec_engine=self.exec_engine,
@@ -406,8 +409,11 @@ cdef class BacktestEngine:
         self.log.info(f"Resetting...")
         self.iteration = 0
         self.data_client.reset()
+        self.exec_engine.reset()
         self.exec_client.reset()
         self.trader.reset()
+        self.logger.clear_log_store()
+        self.test_logger.clear_log_store()
         self.log.info("Reset.")
 
     cpdef void dispose(self):

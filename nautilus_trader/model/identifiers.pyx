@@ -22,6 +22,7 @@ cdef class Label(Identifier):
         Initializes a new instance of the Label class.
 
         :param value: The value of the label.
+        :raises ConditionFailed: If the value is not a valid string.
         """
         super().__init__(value)
 
@@ -36,41 +37,86 @@ cdef class IdTag(Identifier):
         Initializes a new instance of the IdTag class.
 
         :param value: The value of the identifier tag.
+        :raises ConditionFailed: If the value is not a valid string.
         """
         super().__init__(value)
 
 
 cdef class TraderId(Identifier):
     """
-    Represents a valid trader identifier (should be fund level unique).
+    Represents a valid trader identifier, the name and order_id_tag combination
+    should be unique at the fund level.
     """
 
-    def __init__(self, str value):
+    def __init__(self, str name, str order_id_tag):
         """
         Initializes a new instance of the TraderId class.
 
-        :param value: The value of the trader identifier.
+        :param name: The name of the trader.
+        :param name: The order identifier tag for the trader.
+        :raises ConditionFailed: If the name is not a valid string.
+        :raises ConditionFailed: If the order_id_tag is not a valid string.
         """
-        super().__init__(value)
+        Condition.valid_string(name, 'name')
+
+        super().__init__(f'{name}-{order_id_tag}')
+        self.order_id_tag = IdTag(order_id_tag)
+
+    @staticmethod
+    cdef from_string(str value):
+        """
+        Return a trader identifier from the given string value. Must be correctly
+        formatted with two valid strings either side of a hyphen '-'.
+        
+        Example: 'Trader1-001'.
+
+        :param value: The value for the strategy identifier.
+        :return: StrategyId.
+        """
+        cdef tuple partitioned = value.partition('-')
+
+        return TraderId(name=partitioned[0], order_id_tag=partitioned[2])
 
 
 cdef class StrategyId(Identifier):
     """
-    Represents a valid strategy identifier (should be trader level unique).
+    Represents a valid strategy identifier, the name and order_id_tag combination
+    should be unique at the trader level.
     """
 
-    def __init__(self, str value):
+    def __init__(self, str name, str order_id_tag):
         """
         Initializes a new instance of the StrategyId class.
 
-        :param value: The value of the strategy identifier.
+        :param name: The name of the strategy.
+        :param order_id_tag: The order identifier tag for the strategy.
+        :raises ConditionFailed: If the name is not a valid string.
+        :raises ConditionFailed: If the order_id_tag is not a valid string.
         """
-        super().__init__(value)
+        Condition.valid_string(name, 'name')
+
+        super().__init__(f'{name}-{order_id_tag}')
+        self.order_id_tag = IdTag(order_id_tag)
+
+    @staticmethod
+    cdef from_string(str value):
+        """
+        Return a strategy identifier from the given string value. Must be correctly
+        formatted with two valid strings either side of a hyphen '-'.
+        
+        Example: 'Strategy1-001'.
+
+        :param value: The value for the strategy identifier.
+        :return: StrategyId.
+        """
+        cdef tuple partitioned = value.partition('-')
+
+        return StrategyId(name=partitioned[0], order_id_tag=partitioned[2])
 
 
 cdef class AccountId(Identifier):
     """
-    Represents a valid account identifier (should be fund level unique).
+    Represents a valid account identifier.
     """
 
     def __init__(self, str value):
@@ -84,7 +130,7 @@ cdef class AccountId(Identifier):
 
 cdef class AccountNumber(Identifier):
     """
-    Represents a valid account number (should be unique).
+    Represents a valid account number.
     """
 
     def __init__(self, str value):
@@ -105,7 +151,7 @@ cdef class OrderId(Identifier):
         """
         Initializes a new instance of the OrderId class.
 
-        :param value: The value of the order identifier.
+        :param value: The value of the order identifier (should be unique).
         """
         super().__init__(value)
 
@@ -119,7 +165,7 @@ cdef class PositionId(Identifier):
         """
         Initializes a new instance of the PositionId class.
 
-        :param value: The value of the position identifier.
+        :param value: The value of the position identifier (should be unique).
         """
         super().__init__(value)
 
@@ -133,7 +179,7 @@ cdef class ExecutionId(Identifier):
         """
         Initializes a new instance of the ExecutionId class.
 
-        :param value: The value of the execution identifier.
+        :param value: The value of the execution identifier (should be unique).
         """
         super().__init__(value)
 

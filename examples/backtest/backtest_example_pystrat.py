@@ -13,6 +13,7 @@ from datetime import datetime
 
 from nautilus_trader.model.enums import Resolution, Currency
 from nautilus_trader.model.objects import Venue
+from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.common.logger import LogLevel
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.config import BacktestConfig
@@ -52,6 +53,7 @@ if __name__ == "__main__":
         random_seed=None)
 
     engine = BacktestEngine(
+        trader_id=TraderId('BACKTESTER', '001'),
         venue=Venue('FXCM'),
         instruments=instruments,
         data_ticks=tick_data,

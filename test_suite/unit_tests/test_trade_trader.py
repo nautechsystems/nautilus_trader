@@ -42,7 +42,7 @@ class TraderTests(unittest.TestCase):
         clock = TestClock()
         guid_factory = TestGuidFactory()
         logger = TestLogger()
-        trader_id = TraderId('000')
+        trader_id = TraderId('TESTER', '000')
 
         data_client = BacktestDataClient(
             venue=Venue('FXCM'),
@@ -86,7 +86,6 @@ class TraderTests(unittest.TestCase):
 
         self.trader = Trader(
             trader_id=trader_id,
-            id_tag_trader=IdTag('000'),
             strategies=strategies,
             data_client=data_client,
             exec_engine=self.exec_engine,
@@ -97,11 +96,10 @@ class TraderTests(unittest.TestCase):
         # Arrange
         # Act
         trader_id = self.trader.id
-        id_tag_trader = self.trader.id_tag_trader
 
         # Assert
-        self.assertEqual(TraderId('000'), trader_id)
-        self.assertEqual(IdTag('000'), id_tag_trader)
+        self.assertEqual(TraderId('TESTER', '000'), trader_id)
+        self.assertEqual(IdTag('000'), trader_id.order_id_tag)
         self.assertFalse(self.trader.is_running)
         self.assertEqual(0, len(self.trader.started_datetimes))
         self.assertEqual(0, len(self.trader.stopped_datetimes))
@@ -113,10 +111,10 @@ class TraderTests(unittest.TestCase):
         status = self.trader.strategy_status()
 
         # Assert
-        self.assertTrue(StrategyId('EmptyStrategy-001') in status)
-        self.assertTrue(StrategyId('EmptyStrategy-002') in status)
-        self.assertFalse(status[StrategyId('EmptyStrategy-001')])
-        self.assertFalse(status[StrategyId('EmptyStrategy-002')])
+        self.assertTrue(StrategyId('EmptyStrategy', '001') in status)
+        self.assertTrue(StrategyId('EmptyStrategy', '002') in status)
+        self.assertFalse(status[StrategyId('EmptyStrategy', '001')])
+        self.assertFalse(status[StrategyId('EmptyStrategy', '002')])
         self.assertEqual(2, len(status))
 
     def test_can_change_strategies(self):
@@ -149,10 +147,10 @@ class TraderTests(unittest.TestCase):
         self.assertTrue(self.trader.is_running)
         self.assertEqual(1, len(self.trader.started_datetimes))
         self.assertEqual(0, len(self.trader.stopped_datetimes))
-        self.assertTrue(StrategyId('EmptyStrategy-001') in self.trader.strategy_status())
-        self.assertTrue(StrategyId('EmptyStrategy-002') in self.trader.strategy_status())
-        self.assertTrue(self.trader.strategy_status()[StrategyId('EmptyStrategy-001')])
-        self.assertTrue(self.trader.strategy_status()[StrategyId('EmptyStrategy-002')])
+        self.assertTrue(StrategyId('EmptyStrategy', '001') in self.trader.strategy_status())
+        self.assertTrue(StrategyId('EmptyStrategy', '002') in self.trader.strategy_status())
+        self.assertTrue(self.trader.strategy_status()[StrategyId('EmptyStrategy', '001')])
+        self.assertTrue(self.trader.strategy_status()[StrategyId('EmptyStrategy', '002')])
 
     def test_can_stop_a_running_trader(self):
         # Arrange
@@ -165,7 +163,7 @@ class TraderTests(unittest.TestCase):
         self.assertFalse(self.trader.is_running)
         self.assertEqual(1, len(self.trader.started_datetimes))
         self.assertEqual(1, len(self.trader.stopped_datetimes))
-        self.assertTrue(StrategyId('EmptyStrategy-001') in self.trader.strategy_status())
-        self.assertTrue(StrategyId('EmptyStrategy-002') in self.trader.strategy_status())
-        self.assertFalse(self.trader.strategy_status()[StrategyId('EmptyStrategy-001')])
-        self.assertFalse(self.trader.strategy_status()[StrategyId('EmptyStrategy-002')])
+        self.assertTrue(StrategyId('EmptyStrategy', '001') in self.trader.strategy_status())
+        self.assertTrue(StrategyId('EmptyStrategy', '002') in self.trader.strategy_status())
+        self.assertFalse(self.trader.strategy_status()[StrategyId('EmptyStrategy', '001')])
+        self.assertFalse(self.trader.strategy_status()[StrategyId('EmptyStrategy', '002')])

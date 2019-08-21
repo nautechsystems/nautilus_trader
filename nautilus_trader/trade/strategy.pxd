@@ -37,8 +37,6 @@ cdef class TradingStrategy:
 
     cdef readonly TraderId trader_id
     cdef readonly StrategyId id
-    cdef readonly IdTag id_tag_trader
-    cdef readonly IdTag id_tag_strategy
 
     cdef readonly bint flatten_on_sl_reject
     cdef readonly bint flatten_on_stop
@@ -80,7 +78,7 @@ cdef class TradingStrategy:
     cpdef on_dispose(self)
 
 #-- REGISTRATION METHODS --------------------------------------------------------------------------#
-    cpdef void register_trader(self, TraderId trader_id, IdTag id_tag_trader)
+    cpdef void register_trader(self, TraderId trader_id)
     cpdef void register_data_client(self, DataClient client)
     cpdef void register_execution_engine(self, ExecutionEngine engine)
     cpdef void register_indicator_ticks(self, Symbol symbol, indicator, update_method)

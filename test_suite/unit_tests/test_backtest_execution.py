@@ -56,7 +56,8 @@ class BacktestExecClientTests(unittest.TestCase):
             guid_factory=self.guid_factory,
             logger=self.logger)
 
-        self.exec_db = InMemoryExecutionDatabase(trader_id=TraderId('000'), logger=self.logger)
+        trader_id = TraderId('TESTER', '000')
+        self.exec_db = InMemoryExecutionDatabase(trader_id=trader_id, logger=self.logger)
         self.exec_engine = ExecutionEngine(
             database=self.exec_db,
             account=self.account,
@@ -82,7 +83,7 @@ class BacktestExecClientTests(unittest.TestCase):
 
     def test_can_send_collateral_inquiry(self):
         # Arrange
-        strategy = TradingStrategy(id_tag_strategy='001')
+        strategy = TradingStrategy(order_id_tag='001')
         self.exec_engine.register_strategy(strategy)
 
         # Act

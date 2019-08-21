@@ -33,7 +33,7 @@ class PyStrategy(TradingStrategy):
         """
         Initializes a new instance of the PyStrategy class.
         """
-        super().__init__(id_tag_strategy='001')
+        super().__init__(order_id_tag='001')
         self.bar_type = bar_type
         self.object_storer = ObjectStorer()
 
@@ -72,7 +72,7 @@ cdef class EmptyStrategy(TradingStrategy):
         """
         Initializes a new instance of the EmptyStrategy class.
         """
-        super().__init__(id_tag_strategy=id_tag_strategy)
+        super().__init__(order_id_tag=id_tag_strategy)
 
     cpdef on_start(self):
         pass
@@ -113,7 +113,7 @@ cdef class TickTock(TradingStrategy):
         """
         Initializes a new instance of the TickTock class.
         """
-        super().__init__(id_tag_strategy='000')
+        super().__init__(order_id_tag='000')
 
         self.instrument = instrument
         self.bar_type = bar_type
@@ -174,8 +174,7 @@ cdef class TestStrategy1(TradingStrategy):
         """
         Initializes a new instance of the TestStrategy1 class.
         """
-        super().__init__(id_tag_strategy=id_tag_strategy,
-                         clock=clock)
+        super().__init__(order_id_tag=id_tag_strategy, clock=clock)
         self.object_storer = ObjectStorer()
         self.bar_type = bar_type
 
@@ -280,7 +279,7 @@ cdef class EMACross(TradingStrategy):
         :param extra_id_tag: The extra tag to appends to the strategies identifier tag.
         """
         # Order id tag must be unique at trader level
-        super().__init__(id_tag_strategy=instrument.symbol.code + extra_id_tag)
+        super().__init__(order_id_tag=instrument.symbol.code + extra_id_tag)
 
         # Custom strategy variables
         self.instrument = instrument
