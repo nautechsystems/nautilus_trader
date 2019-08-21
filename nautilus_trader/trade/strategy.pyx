@@ -38,7 +38,7 @@ cdef class TradingStrategy:
     """
 
     def __init__(self,
-                 str id_tag_strategy='001',
+                 str order_id_tag='001',
                  bint flatten_on_sl_reject=True,
                  bint flatten_on_stop=True,
                  bint cancel_all_orders_on_stop=True,
@@ -50,7 +50,7 @@ cdef class TradingStrategy:
         """
         Initializes a new instance of the TradingStrategy class.
 
-        :param id_tag_strategy: The identifier tag for the strategy (should be unique at trader level).
+        :param order_id_tag: The order identifier tag for the strategy (should be unique at trader level).
         :param flatten_on_sl_reject: The flag indicating whether the position with an
         associated stop order should be flattened if the order is rejected.
         :param flatten_on_stop: The flag indicating whether the strategy should
@@ -66,16 +66,13 @@ cdef class TradingStrategy:
         :raises ConditionFailed: If the tick_capacity is not positive (> 0).
         :raises ConditionFailed: If the bar_capacity is not positive (> 0).
         """
-        Condition.valid_string(id_tag_strategy, 'id_tag_trader')
-        Condition.valid_string(id_tag_strategy, 'id_tag_strategy')
+        Condition.valid_string(order_id_tag, 'id_tag_strategy')
         Condition.positive(tick_capacity, 'tick_capacity')
         Condition.positive(bar_capacity, 'bar_capacity')
 
         # Identification
-        self.trader_id = TraderId('000')
-        self.id = StrategyId(self.__class__.__name__ + '-' + id_tag_strategy)
-        self.id_tag_trader = IdTag('000')
-        self.id_tag_strategy = IdTag(id_tag_strategy)
+        self.trader_id = TraderId('TEST', '000')
+        self.id = StrategyId(self.__class__.__name__, order_id_tag)
 
         # Components
         self.log = LoggerAdapter(self.id.value, logger)
@@ -91,12 +88,12 @@ cdef class TradingStrategy:
 
         # Order / Position components
         self.order_factory = OrderFactory(
-            id_tag_trader=self.id_tag_trader,
-            id_tag_strategy=self.id_tag_strategy,
+            id_tag_trader=self.trader_id.order_id_tag,
+            id_tag_strategy=self.id.order_id_tag,
             clock=self.clock)
         self.position_id_generator = PositionIdGenerator(
-            id_tag_trader=self.id_tag_trader,
-            id_tag_strategy=self.id_tag_strategy,
+            id_tag_trader=self.trader_id.order_id_tag,
+            id_tag_strategy=self.id.order_id_tag,
             clock=self.clock)
 
         # Registered orders
@@ -246,16 +243,14 @@ cdef class TradingStrategy:
 
 #-- REGISTRATION METHODS --------------------------------------------------------------------------#
 
-    cpdef void register_trader(self, TraderId trader_id, IdTag id_tag_trader):
+    cpdef void register_trader(self, TraderId trader_id):
         """
         Change the trader for the strategy.
 
         :param trader_id: The trader identifier to change to.
-        :param id_tag_trader: The trader identifier tag to change to.
         """
         self.trader_id = trader_id
-        self.id_tag_trader = id_tag_trader
-        self.log.debug(f"Registered trader {trader_id.value} with order id tag {id_tag_trader.value}.")
+        self.log.debug(f"Registered trader {trader_id.value}.")
 
     cpdef void register_data_client(self, DataClient client):
         """
@@ -1407,13 +1402,13 @@ cdef class TradingStrategy:
         self.clock.register_handler(self.handle_event)
 
         self.order_factory = OrderFactory(
-            id_tag_trader=self.id_tag_trader,
-            id_tag_strategy=self.id_tag_strategy,
+            id_tag_trader=self.trader_id.order_id_tag,
+            id_tag_strategy=self.id.order_id_tag,
             clock=clock)
 
         self.position_id_generator = PositionIdGenerator(
-            id_tag_trader=self.id_tag_trader,
-            id_tag_strategy=self.id_tag_strategy,
+            id_tag_trader=self.trader_id.order_id_tag,
+            id_tag_strategy=self.id.order_id_tag,
             clock=clock)
 
     cpdef void change_guid_factory(self, GuidFactory guid_factory):

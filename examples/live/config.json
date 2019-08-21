@@ -1,7 +1,7 @@
 {
   "trader": {
-    "trader_id": "TEST-001",
-    "id_tag_trader": "001"
+    "name": "TESTER",
+    "order_id_tag": "001"
   },
 
   "logging": {

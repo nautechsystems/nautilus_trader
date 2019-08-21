@@ -42,7 +42,7 @@ class LiveExecutionTests(unittest.TestCase):
         commands_port = 56555
         events_port = 56556
 
-        trader_id = TraderId('000')
+        trader_id = TraderId('TESTER', '000')
 
         clock = LiveClock()
         guid_factory = LiveGuidFactory()

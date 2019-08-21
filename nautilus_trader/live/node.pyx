@@ -73,8 +73,9 @@ cdef class TradingNode:
         with open(config_path, 'r') as config_file:
             config = json.load(config_file)
 
-        trader_id = TraderId(config['trader']['trader_id'])
-        id_tag_trader= IdTag(config['trader']['id_tag_trader'])
+        trader_id = TraderId(
+            name=config['trader']['name'],
+            order_id_tag=config['trader']['order_id_tag'])
 
         log_config = config['logging']
         self._log_store = LogStore(trader_id=trader_id, port=log_config['redis_port'])
@@ -144,7 +145,6 @@ cdef class TradingNode:
 
         self.trader = Trader(
             trader_id=trader_id,
-            id_tag_trader=id_tag_trader,
             strategies=strategies,
             data_client=self._data_client,
             exec_engine=self._exec_engine,

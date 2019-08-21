@@ -13,32 +13,46 @@ from nautilus_trader.common.clock cimport Clock
 cdef class Label(Identifier):
     pass
 
+
 cdef class IdTag(Identifier):
     pass
 
+
 cdef class TraderId(Identifier):
-    pass
+    cdef readonly IdTag order_id_tag
+    @staticmethod
+    cdef from_string(str value)
+
 
 cdef class StrategyId(Identifier):
-    pass
+    cdef readonly IdTag order_id_tag
+    @staticmethod
+    cdef from_string(str value)
+
 
 cdef class AccountId(Identifier):
     pass
 
+
 cdef class AccountNumber(Identifier):
     pass
+
 
 cdef class OrderId(Identifier):
     pass
 
+
 cdef class PositionId(Identifier):
     pass
+
 
 cdef class ExecutionId(Identifier):
     pass
 
+
 cdef class ExecutionTicket(Identifier):
     pass
+
 
 cdef class InstrumentId(Identifier):
     pass

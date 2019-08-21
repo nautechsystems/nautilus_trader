@@ -176,8 +176,8 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             Quantity(100000))
 
         command = SubmitOrder(
-            TraderId('Trader-001'),
-            StrategyId('SCALPER01'),
+            TraderId('TESTER', '000'),
+            StrategyId('SCALPER', '01'),
             PositionId('123456'),
             order,
             GUID(uuid.uuid4()),
@@ -202,8 +202,8 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             Price('0.99900'))
 
         command = SubmitAtomicOrder(
-            TraderId('Trader-001'),
-            StrategyId('SCALPER01'),
+            TraderId('TESTER', '000'),
+            StrategyId('SCALPER', '01'),
             PositionId('123456'),
             atomic_order,
             GUID(uuid.uuid4()),
@@ -230,8 +230,8 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             Price('1.00010'))
 
         command = SubmitAtomicOrder(
-            TraderId('Trader-001'),
-            StrategyId('SCALPER01'),
+            TraderId('TESTER', '000'),
+            StrategyId('SCALPER', '01'),
             PositionId('123456'),
             atomic_order,
             GUID(uuid.uuid4()),
@@ -250,8 +250,8 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
     def test_can_serialize_and_deserialize_cancel_order_commands(self):
         # Arrange
         command = CancelOrder(
-            TraderId('Trader-001'),
-            StrategyId('SCALPER01'),
+            TraderId('TESTER', '000'),
+            StrategyId('SCALPER', '01'),
             OrderId('O-123456'),
             ValidString('EXPIRED'),
             GUID(uuid.uuid4()),
@@ -269,8 +269,8 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
     def test_can_serialize_and_deserialize_modify_order_commands(self):
         # Arrange
         command = ModifyOrder(
-            TraderId('Trader-001'),
-            StrategyId('SCALPER01'),
+            TraderId('TESTER', '000'),
+            StrategyId('SCALPER', '01'),
             OrderId('O-123456'),
             Price('1.00001'),
             GUID(uuid.uuid4()),

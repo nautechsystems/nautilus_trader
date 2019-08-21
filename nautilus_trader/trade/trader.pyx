@@ -10,7 +10,6 @@ from cpython.datetime cimport datetime
 from typing import List
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.identifiers cimport IdTag
 from nautilus_trader.common.logger cimport Logger, LoggerAdapter
 from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.common.execution cimport ExecutionEngine
@@ -25,7 +24,6 @@ cdef class Trader:
 
     def __init__(self,
                  TraderId trader_id,
-                 IdTag id_tag_trader,
                  list strategies,
                  DataClient data_client,
                  ExecutionEngine exec_engine,
@@ -35,7 +33,6 @@ cdef class Trader:
         Initializes a new instance of the Trader class.
 
         :param trader_id: The trader identifier for the instance (unique at fund level).
-        :param id_tag_trader: The trader order identifier tag for the instance (unique at fund level).
         :param strategies: The initial strategies for the trader.
         :param data_client: The data client for the trader.
         :param exec_engine: The execution engine for the trader.
@@ -47,7 +44,6 @@ cdef class Trader:
 
         self._clock = clock
         self.id = trader_id
-        self.id_tag_trader = id_tag_trader
         self._log = LoggerAdapter(self.id.value, logger)
         self._data_client = data_client
         self._exec_engine = exec_engine
@@ -104,7 +100,7 @@ cdef class Trader:
             self.strategies.append(strategy)
 
         for strategy in self.strategies:
-            strategy.register_trader(trader_id=self.id, id_tag_trader=self.id_tag_trader)
+            strategy.register_trader(self.id)
             self._data_client.register_strategy(strategy)
             self._exec_engine.register_strategy(strategy)
             self._log.info(f"Initialized {strategy}.")

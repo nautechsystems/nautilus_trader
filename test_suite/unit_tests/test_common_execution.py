@@ -47,13 +47,11 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         guid_factory = TestGuidFactory()
         logger = TestLogger()
 
-        self.trader_id = TraderId('000')
-        self.id_tag_trader = IdTag('000')
-        self.id_tag_strategy = IdTag('001')
+        self.trader_id = TraderId('TESTER', '000')
 
         self.order_factory = OrderFactory(
-            id_tag_trader=self.id_tag_trader,
-            id_tag_strategy=self.id_tag_strategy,
+            id_tag_trader=self.trader_id.order_id_tag,
+            id_tag_strategy=IdTag('001'),
             clock=clock)
 
         self.account = Account()
@@ -66,7 +64,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
 
     def test_can_add_strategy(self):
         # Arrange
-        strategy = TradingStrategy(id_tag_strategy='001')
+        strategy = TradingStrategy(order_id_tag='001')
 
         # Act
         self.exec_db.add_strategy(strategy)
@@ -81,7 +79,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000))
 
-        strategy_id = StrategyId('001')
+        strategy_id = StrategyId('SCALPER', '001')
         position_id = PositionId('AUDUSD-1-123456')
 
         # Act
@@ -93,7 +91,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
 
     def test_can_add_position(self):
         # Arrange
-        strategy = TradingStrategy(id_tag_strategy='001')
+        strategy = TradingStrategy(order_id_tag='001')
         order = strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
@@ -127,7 +125,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
 
     def test_can_delete_strategy(self):
         # Arrange
-        strategy = TradingStrategy(id_tag_strategy='001')
+        strategy = TradingStrategy(order_id_tag='001')
         self.exec_db.add_strategy(strategy)
 
         # Act
@@ -138,7 +136,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
 
     def test_can_add_order_event_with_working_order(self):
         # Arrange
-        strategy = TradingStrategy(id_tag_strategy='001')
+        strategy = TradingStrategy(order_id_tag='001')
         order = self.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
@@ -180,7 +178,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
 
     def test_can_add_order_event_with_completed_order(self):
         # Arrange
-        strategy = TradingStrategy(id_tag_strategy='001')
+        strategy = TradingStrategy(order_id_tag='001')
         order = self.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
@@ -219,7 +217,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
 
     def test_can_add_position_event_with_open_position(self):
         # Arrange
-        strategy = TradingStrategy(id_tag_strategy='001')
+        strategy = TradingStrategy(order_id_tag='001')
         self.exec_db.add_strategy(strategy)
 
         position = TestStubs.position()
@@ -238,7 +236,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
 
     def test_can_add_position_event_with_closed_position(self):
         # Arrange
-        strategy = TradingStrategy(id_tag_strategy='001')
+        strategy = TradingStrategy(order_id_tag='001')
         self.exec_db.add_strategy(strategy)
 
         position = TestStubs.position()
@@ -323,13 +321,11 @@ class ExecutionEngineTests(unittest.TestCase):
         self.guid_factory = TestGuidFactory()
         logger = TestLogger()
 
-        self.trader_id = TraderId('000')
-        id_tag_trader = IdTag('000')
-        id_tag_strategy = IdTag('001')
+        self.trader_id = TraderId('TESTER', '000')
 
         self.order_factory = OrderFactory(
-            id_tag_trader=id_tag_trader,
-            id_tag_strategy=id_tag_strategy,
+            id_tag_trader=self.trader_id.order_id_tag,
+            id_tag_strategy=IdTag('001'),
             clock=self.clock)
 
         self.account = Account()
@@ -352,7 +348,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
     def test_can_register_strategy(self):
         # Arrange
-        strategy = TradingStrategy(id_tag_strategy='001')
+        strategy = TradingStrategy(order_id_tag='001')
 
         # Act
         self.exec_engine.register_strategy(strategy)
@@ -362,7 +358,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
     def test_can_deregister_strategy(self):
         # Arrange
-        strategy = TradingStrategy(id_tag_strategy='001')
+        strategy = TradingStrategy(order_id_tag='001')
         self.exec_engine.register_strategy(strategy)
 
         # Act
@@ -373,7 +369,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
     def test_is_flat_when_strategy_registered_returns_true(self):
         # Arrange
-        strategy = TradingStrategy(id_tag_strategy='001')
+        strategy = TradingStrategy(order_id_tag='001')
 
         # Act
         self.exec_engine.register_strategy(strategy)
@@ -389,7 +385,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.assertTrue(self.exec_engine.is_flat())
 
     def test_can_reset_execution_engine(self):
-        strategy = TradingStrategy(id_tag_strategy='001')
+        strategy = TradingStrategy(order_id_tag='001')
 
         self.exec_engine.register_strategy(strategy)  # Also registers with portfolio
 
@@ -401,7 +397,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
     def test_can_submit_order(self):
         # Arrange
-        strategy = TradingStrategy(id_tag_strategy='001')
+        strategy = TradingStrategy(order_id_tag='001')
         strategy.change_clock(self.clock)
 
         self.exec_engine.register_strategy(strategy)
@@ -430,7 +426,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
     def test_can_handle_order_fill_event(self):
         # Arrange
-        strategy = TradingStrategy(id_tag_strategy='001')
+        strategy = TradingStrategy(order_id_tag='001')
         strategy.change_clock(self.clock)
 
         self.exec_engine.register_strategy(strategy)
@@ -486,7 +482,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
     def test_can_add_to_existing_position_on_order_fill(self):
         # Arrange
-        strategy = TradingStrategy(id_tag_strategy='001')
+        strategy = TradingStrategy(order_id_tag='001')
         strategy.change_clock(self.clock)
 
         self.exec_engine.register_strategy(strategy)
@@ -565,7 +561,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
     def test_can_close_position_on_order_fill(self):
         # Arrange
-        strategy = TradingStrategy(id_tag_strategy='001')
+        strategy = TradingStrategy(order_id_tag='001')
         strategy.change_clock(self.clock)
 
         self.exec_engine.register_strategy(strategy)
@@ -652,8 +648,8 @@ class ExecutionEngineTests(unittest.TestCase):
 
     def test_multiple_strategy_positions_opened(self):
         # Arrange
-        strategy1 = TradingStrategy(id_tag_strategy='001')
-        strategy2 = TradingStrategy(id_tag_strategy='002')
+        strategy1 = TradingStrategy(order_id_tag='001')
+        strategy2 = TradingStrategy(order_id_tag='002')
         position_id1 = strategy1.position_id_generator.generate()
         position_id2 = strategy2.position_id_generator.generate()
 
@@ -753,8 +749,8 @@ class ExecutionEngineTests(unittest.TestCase):
 
     def test_multiple_strategy_positions_one_active_one_closed(self):
         # Arrange
-        strategy1 = TradingStrategy(id_tag_strategy='001')
-        strategy2 = TradingStrategy(id_tag_strategy='002')
+        strategy1 = TradingStrategy(order_id_tag='001')
+        strategy2 = TradingStrategy(order_id_tag='002')
         position_id1 = strategy1.position_id_generator.generate()
         position_id2 = strategy2.position_id_generator.generate()
 

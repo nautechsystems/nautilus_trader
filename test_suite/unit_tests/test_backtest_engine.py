@@ -35,6 +35,7 @@ class BacktestEngineTests(unittest.TestCase):
         ask_data = {USDJPY_FXCM: {Resolution.MINUTE: TestDataProvider.usdjpy_1min_ask()}}
 
         self.engine = BacktestEngine(
+            trader_id=None,
             venue=Venue('FXCM'),
             instruments=instruments,
             data_ticks=tick_data,
@@ -174,6 +175,7 @@ class BacktestEngineTests(unittest.TestCase):
         tick_tock = TickTock(instrument=instrument, bar_type=bar_type)
 
         engine = BacktestEngine(
+            trader_id=None,
             venue=Venue('FXCM'),
             instruments=instruments,
             data_ticks=tick_data,
@@ -211,6 +213,7 @@ class BacktestEngineTests(unittest.TestCase):
         tick_tock = TickTock(instrument=instrument, bar_type=bar_type)
 
         engine = BacktestEngine(
+            trader_id=None,
             venue=Venue('FXCM'),
             instruments=instruments,
             data_ticks=tick_data,
