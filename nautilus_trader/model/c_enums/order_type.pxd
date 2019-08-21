@@ -15,18 +15,32 @@ cpdef enum OrderType:
     STOP_LIMIT = 3,
     MIT = 4
 
-cdef inline str order_type_string(int value):
+
+cdef inline str order_type_to_string(int value):
     if value == 0:
-        return "MARKET"
+        return 'MARKET'
     elif value == 1:
-        return "LIMIT"
+        return 'LIMIT'
     elif value == 2:
-        return "STOP_MARKET"
+        return 'STOP_MARKET'
     elif value == 3:
-        return "STOP_LIMIT"
+        return 'STOP_LIMIT'
     elif value == 4:
-        return "MIT"
-    elif value == -1:
-        return "UNKNOWN"
+        return 'MIT'
     else:
-        return "UNKNOWN"
+        return 'UNKNOWN'
+
+
+cdef inline OrderType order_type_from_string(str value):
+    if value == 'MARKET':
+        return OrderType.MARKET
+    elif value == 'LIMIT':
+        return OrderType.LIMIT
+    elif value == 'STOP_MARKET':
+        return OrderType.STOP_MARKET
+    elif value == 'STOP_LIMIT':
+        return OrderType.STOP_LIMIT
+    elif value == 'MIT':
+        return OrderType.MIT
+    else:
+        return OrderType.UNKNOWN

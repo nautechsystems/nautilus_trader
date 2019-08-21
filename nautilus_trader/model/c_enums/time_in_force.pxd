@@ -15,18 +15,32 @@ cpdef enum TimeInForce:
     FOC = 3,
     GTD = 4
 
-cdef inline str time_in_force_string(int value):
+
+cdef inline str time_in_force_to_string(int value):
     if value == 0:
-        return "DAY"
+        return 'DAY'
     elif value == 1:
-        return "GTC"
+        return 'GTC'
     elif value == 2:
-        return "IOC"
+        return 'IOC'
     elif value == 3:
-        return "FOC"
+        return 'FOC'
     elif value == 4:
-        return "GTD"
-    elif value == -1:
-        return "UNKNOWN"
+        return 'GTD'
     else:
-        return "UNKNOWN"
+        return 'UNKNOWN'
+
+
+cdef inline TimeInForce time_in_force_from_string(str value):
+    if value == 'DAY':
+        return TimeInForce.DAY
+    elif value == 'GTC':
+        return TimeInForce.GTC
+    elif value == 'IOC':
+        return TimeInForce.IOC
+    elif value == 'FOC':
+        return TimeInForce.FOC
+    elif value == 'GTD':
+        return TimeInForce.GTD
+    else:
+        return TimeInForce.UNKNOWN

@@ -11,8 +11,8 @@ import pandas as pd
 from typing import Dict
 
 from nautilus_trader.model.c_enums.order_status cimport OrderStatus
-from nautilus_trader.model.c_enums.order_side cimport order_side_string
-from nautilus_trader.model.c_enums.order_type cimport order_type_string
+from nautilus_trader.model.c_enums.order_side cimport order_side_to_string
+from nautilus_trader.model.c_enums.order_type cimport order_type_to_string
 from nautilus_trader.model.identifiers cimport OrderId, PositionId
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.position cimport Position
@@ -74,8 +74,8 @@ cdef class ReportProvider:
         return {'order_id': order.id.value,
                 'timestamp': order.last_event.timestamp,
                 'symbol': order.symbol.code,
-                'side': order_side_string(order.side),
-                'type': order_type_string(order.type),
+                'side': order_side_to_string(order.side),
+                'type': order_type_to_string(order.type),
                 'quantity': order.quantity.value,
                 'avg_price': order.average_price.value,
                 'slippage': order.slippage}
@@ -83,7 +83,7 @@ cdef class ReportProvider:
     cdef dict _position_to_dict(self, Position position):
         return {'position_id': position.id.value,
                 'symbol': position.symbol.code,
-                'direction': order_side_string(position.entry_direction),
+                'direction': order_side_to_string(position.entry_direction),
                 'peak_quantity': position.peak_quantity.value,
                 'entry_time': position.entry_time,
                 'exit_time': position.exit_time,

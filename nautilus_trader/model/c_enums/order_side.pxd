@@ -12,12 +12,20 @@ cpdef enum OrderSide:
     BUY = 0,
     SELL = 1
 
-cdef inline str order_side_string(int value):
+
+cdef inline str order_side_to_string(int value):
     if value == 0:
-        return "BUY"
+        return 'BUY'
     elif value == 1:
-        return "SELL"
-    elif value == -1:
-        return "UNKNOWN"
+        return 'SELL'
     else:
-        return "UNKNOWN"
+        return 'UNKNOWN'
+
+
+cdef inline OrderSide order_side_from_string(str value):
+    if value == 'BUY':
+        return OrderSide.BUY
+    elif value == 'SELL':
+        return OrderSide.SELL
+    else:
+        return OrderSide.UNKNOWN

@@ -6,14 +6,18 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+import iso8601
+import re
+
 from decimal import Decimal
 from cpython.datetime cimport datetime, timedelta
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.c_enums.resolution cimport Resolution, resolution_string
-from nautilus_trader.model.c_enums.quote_type cimport QuoteType, quote_type_string
+from nautilus_trader.model.c_enums.resolution cimport Resolution, resolution_to_string, resolution_from_string
+from nautilus_trader.model.c_enums.quote_type cimport QuoteType, quote_type_to_string, quote_type_from_string
 from nautilus_trader.model.c_enums.security_type cimport SecurityType
 from nautilus_trader.model.c_enums.currency cimport Currency
+from nautilus_trader.model.identifiers cimport Venue
 
 
 cdef Quantity ZERO_QUANTITY = Quantity(0)
@@ -510,6 +514,36 @@ cdef class Tick:
         """
         return f"<{self.__class__.__name__}({self.symbol},{str(self)}) object at {id(self)}>"
 
+    @staticmethod
+    cdef Tick from_string(Symbol symbol, str values):
+        """
+        Return a tick parsed from the given symbol and string string.
+
+        :param symbol: The tick symbol.
+        :param values: The tick values string.
+        :return: Tick.
+        """
+        cdef list split_tick = values.split(',')
+
+        return Tick(
+            symbol,
+            Price(split_tick[0]),
+            Price(split_tick[1]),
+            iso8601.parse_date(split_tick[2]))
+
+    @staticmethod
+    def py_from_string(Symbol symbol, str values):
+        """
+        Python wrapper for the from_string method.
+
+        Return a tick parsed from the given symbol and string string.
+
+        :param symbol: The tick symbol.
+        :param values: The tick values string.
+        :return: Tick.
+        """
+        return Tick.from_string(symbol, values)
+
 
 cdef class BarSpecification:
     """
@@ -532,51 +566,6 @@ cdef class BarSpecification:
         self.period = period
         self.resolution = resolution
         self.quote_type = quote_type
-
-    cpdef timedelta timedelta(self):
-        """
-        Return the time bar timedelta.
-        :return: timedelta.
-        """
-        if self.resolution == Resolution.TICK:
-            return timedelta(0)
-        if self.resolution == Resolution.SECOND:
-            return timedelta(seconds=self.period)
-        if self.resolution == Resolution.MINUTE:
-            return timedelta(minutes=self.period)
-        if self.resolution == Resolution.HOUR:
-            return timedelta(hours=self.period)
-        if self.resolution == Resolution.DAY:
-            return timedelta(days=self.period)
-        else:
-            raise RuntimeError(f"Cannot calculate timedelta for {resolution_string(self.resolution)}")
-
-    cdef bint equals(self, BarSpecification other):
-        """
-        Return a value indicating whether the object equals the given object.
-        
-        :param other: The other object to compare
-        :return: True if the objects are equal, otherwise False.
-        """
-        return (self.period == other.period
-                and self.resolution == other.resolution
-                and self.quote_type == other.quote_type)
-
-    cdef str resolution_string(self):
-        """
-        Return the resolution as a string
-        
-        :return: str.
-        """
-        return resolution_string(self.resolution)
-
-    cdef str quote_type_string(self):
-        """
-        Return the quote type as a string.
-        
-        :return: str.
-        """
-        return quote_type_string(self.quote_type)
 
     def __eq__(self, BarSpecification other) -> bool:
         """
@@ -606,13 +595,90 @@ cdef class BarSpecification:
         """
         :return: The str() string representation of the bar type.
         """
-        return f"{self.period}-{resolution_string(self.resolution)}[{quote_type_string(self.quote_type)}]"
+        return f"{self.period}-{resolution_to_string(self.resolution)}[{quote_type_to_string(self.quote_type)}]"
 
     def __repr__(self) -> str:
         """
         :return: The repr() string representation of the bar type.
         """
         return f"<{self.__class__.__name__}({str(self)}) object at {id(self)}>"
+
+    cpdef timedelta timedelta(self):
+        """
+        Return the time bar timedelta.
+        :return: timedelta.
+        """
+        if self.resolution == Resolution.TICK:
+            return timedelta(0)
+        if self.resolution == Resolution.SECOND:
+            return timedelta(seconds=self.period)
+        if self.resolution == Resolution.MINUTE:
+            return timedelta(minutes=self.period)
+        if self.resolution == Resolution.HOUR:
+            return timedelta(hours=self.period)
+        if self.resolution == Resolution.DAY:
+            return timedelta(days=self.period)
+        else:
+            raise RuntimeError(f"Cannot calculate timedelta for {resolution_to_string(self.resolution)}")
+
+    cdef bint equals(self, BarSpecification other):
+        """
+        Return a value indicating whether the object equals the given object.
+        
+        :param other: The other object to compare
+        :return: True if the objects are equal, otherwise False.
+        """
+        return (self.period == other.period
+                and self.resolution == other.resolution
+                and self.quote_type == other.quote_type)
+
+    cdef str resolution_string(self):
+        """
+        Return the resolution as a string
+        
+        :return: str.
+        """
+        return resolution_to_string(self.resolution)
+
+    cdef str quote_type_string(self):
+        """
+        Return the quote type as a string.
+        
+        :return: str.
+        """
+        return quote_type_to_string(self.quote_type)
+
+    @staticmethod
+    cdef BarSpecification from_string(str value):
+        """
+        Return a bar specification parsed from the given string.
+    
+        Note: String format example is '1-MINUTE-[BID]'.
+        :param value: The bar specification string to parse.
+        :return: BarSpecification.
+        """
+        cdef list split1 = value.split('-')
+        cdef list split2 = split1[1].split('[')
+        cdef str resolution = split2[0]
+        cdef str quote_type = split2[1].strip(']')
+
+        return BarSpecification(
+            int(split1[0]),
+            resolution_from_string(resolution),
+            quote_type_from_string(quote_type))
+
+    @staticmethod
+    def py_from_string(value: str) -> BarSpecification:
+        """
+        Python wrapper for the from_string method.
+
+        Return a bar specification parsed from the given string.
+
+        Note: String format example is '1-MINUTE-[BID]'.
+        :param value: The bar specification string to parse.
+        :return: BarSpecification.
+        """
+        return BarSpecification.from_string(value)
 
 
 cdef class BarType:
@@ -631,31 +697,6 @@ cdef class BarType:
         """
         self.symbol = symbol
         self.specification = bar_spec
-
-    cdef str resolution_string(self):
-        """
-        Return the resolution as a string
-        
-        :return: str.
-        """
-        return self.specification.resolution_string()
-
-    cdef str quote_type_string(self):
-        """
-        Return the quote type as a string.
-        
-        :return: str.
-        """
-        return self.specification.quote_type_string()
-
-    cdef bint equals(self, BarType other):
-        """
-        Return a value indicating whether the object equals the given object.
-        
-        :param other: The other object to compare
-        :return: True if the objects are equal, otherwise False.
-        """
-        return self.symbol.equals(other.symbol) and self.specification.equals(other.specification)
 
     def __eq__(self, BarType other) -> bool:
         """
@@ -692,6 +733,60 @@ cdef class BarType:
         :return: The repr() string representation of the bar type.
         """
         return f"<{self.__class__.__name__}({str(self)}) object at {id(self)}>"
+
+    cdef str resolution_string(self):
+        """
+        Return the resolution as a string
+        
+        :return: str.
+        """
+        return self.specification.resolution_string()
+
+    cdef str quote_type_string(self):
+        """
+        Return the quote type as a string.
+        
+        :return: str.
+        """
+        return self.specification.quote_type_string()
+
+    cdef bint equals(self, BarType other):
+        """
+        Return a value indicating whether the object equals the given object.
+        
+        :param other: The other object to compare
+        :return: True if the objects are equal, otherwise False.
+        """
+        return self.symbol.equals(other.symbol) and self.specification.equals(other.specification)
+
+    @staticmethod
+    cdef BarType from_string(str value):
+        """
+        Return a bar type parsed from the given string.
+
+        :param value: The bar type string to parse.
+        :return: BarType.
+        """
+        cdef list split_string = re.split(r'[.-]+', value)
+        cdef str resolution = split_string[3].split('[')[0]
+        cdef str quote_type = split_string[3].split('[')[1].strip(']')
+        cdef Symbol symbol = Symbol(split_string[0], Venue(split_string[1]))
+        cdef BarSpecification bar_spec = BarSpecification(int(split_string[2]),
+                                                          resolution_from_string(resolution.upper()),
+                                                          quote_type_from_string(quote_type.upper()))
+        return BarType(symbol, bar_spec)
+
+    @staticmethod
+    def py_from_string(value: str) -> BarType:
+        """
+        Python wrapper for the from_string method.
+
+        Return a bar type parsed from the given string.
+
+        :param value: The bar type string to parse.
+        :return: BarType.
+        """
+        return BarType.from_string(value)
 
 
 cdef class Bar:
@@ -772,6 +867,35 @@ cdef class Bar:
         :return: The repr() string representation of the bar.
         """
         return f"<{self.__class__.__name__}({str(self)}) object at {id(self)}>"
+
+    @staticmethod
+    cdef Bar from_string(str value):
+        """
+        Return a bar parsed from the given string.
+
+        :param value: The bar string to parse.
+        :return: Bar.
+        """
+        cdef list split_bar = value.split(',')
+
+        return Bar(Price(split_bar[0]),
+                   Price(split_bar[1]),
+                   Price(split_bar[2]),
+                   Price(split_bar[3]),
+                   int(split_bar[4]),
+                   iso8601.parse_date(split_bar[5]))
+
+    @staticmethod
+    def py_from_string(value: str) -> Bar:
+        """
+        Python wrapper for the from_string method.
+
+        Return a bar parsed from the given string.
+
+        :param value: The bar string to parse.
+        :return: Bar.
+        """
+        return Bar.from_string(value)
 
 
 cdef class DataBar:

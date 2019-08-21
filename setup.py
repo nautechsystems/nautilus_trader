@@ -47,9 +47,6 @@ DIRECTORIES_ALL = [PACKAGE_NAME, 'test_kit', 'test_suite']
 
 # Cython build options (edit here only)
 # -------------------------------------
-# Specify if modules should be re-compiled (if False .c files must exist)
-COMPILE_WITH_CYTHON = True
-
 # Create a html annotations file for each .pyx
 Options.annotate = True
 
@@ -78,7 +75,7 @@ check_file_headers(DIRECTORIES_ALL, ignore=artifacts_to_ignore, author=AUTHOR)
 def make_extensions(directories: List[str]) -> [Extension]:
     # Generate a a list of Extension objects from the given directories list
     extensions = []
-    for file in find_files('.pyx' if COMPILE_WITH_CYTHON else '.c', directories):
+    for file in find_files('.pyx', directories):
         extensions.append(Extension(
             name=file.replace(os.path.sep, ".")[:-4],
             sources=[file],
@@ -92,7 +89,7 @@ modules = (get_directories(PACKAGE_NAME))
 package_data = {PACKAGE_NAME: [definition_ext]}
 for module in modules:
     package_data[f'{PACKAGE_NAME}/{module}'] = [definition_ext]
-# print(f"Including package data; {package_data}")
+print(f"Including package data; {package_data}")
 
 
 setup(

@@ -18,16 +18,6 @@ UNIX_EPOCH = TestStubs.unix_epoch()
 
 class SerializationFunctionTests(unittest.TestCase):
 
-    def test_can_parse_bar_spec_from_string(self):
-        # Arrange
-        bar_spec = BarSpecification(1, Resolution.MINUTE, QuoteType.MID)
-
-        # Act
-        result = parse_bar_spec(str(bar_spec))
-
-        # Assert
-        self.assertEqual(bar_spec, result)
-
     def test_can_convert_price_to_string_from_none(self):
         # Arrange
         # Act

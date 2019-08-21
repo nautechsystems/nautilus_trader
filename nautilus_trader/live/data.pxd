@@ -8,8 +8,12 @@
 
 from nautilus_trader.core.cache cimport ObjectCache
 from nautilus_trader.common.data cimport DataClient
-from nautilus_trader.serialization.base cimport DataSerializer, InstrumentSerializer, RequestSerializer, ResponseSerializer
 from nautilus_trader.serialization.constants cimport *
+from nautilus_trader.serialization.base cimport (
+    DataSerializer, 
+    InstrumentSerializer, 
+    RequestSerializer, 
+    ResponseSerializer)
 
 
 cdef class LiveDataClient(DataClient):

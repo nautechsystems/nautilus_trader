@@ -15,16 +15,27 @@ cpdef enum QuoteType:
     LAST = 3
 
 
-cdef inline str quote_type_string(int value):
+cdef inline str quote_type_to_string(int value):
     if value == 0:
-        return "BID"
+        return 'BID'
     elif value == 1:
-        return "ASK"
+        return 'ASK'
     elif value == 2:
-        return "MID"
+        return 'MID'
     elif value == 3:
-        return "LAST"
-    elif value == -1:
-        return "UNKNOWN"
+        return 'LAST'
     else:
-        return "UNKNOWN"
+        return 'UNKNOWN'
+
+
+cdef inline QuoteType quote_type_from_string(str value):
+    if value == "BID":
+        return QuoteType.BID
+    elif value == "ASK":
+        return QuoteType.ASK
+    elif value == "MID":
+        return QuoteType.MID
+    elif value == "LAST":
+        return QuoteType.LAST
+    else:
+        return QuoteType.UNKNOWN

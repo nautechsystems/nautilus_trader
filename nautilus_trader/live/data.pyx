@@ -14,7 +14,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.cache cimport ObjectCache
 from nautilus_trader.core.message cimport Response
 from nautilus_trader.model.identifiers cimport Symbol, Venue
-from nautilus_trader.model.objects cimport BarType, Instrument
+from nautilus_trader.model.objects cimport Tick, Bar, BarType, Instrument
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.guid cimport LiveGuidFactory
 from nautilus_trader.live.logger cimport LiveLogger
@@ -23,12 +23,11 @@ from nautilus_trader.network.workers import RequestWorker, SubscriberWorker
 from nautilus_trader.serialization.base cimport DataSerializer, InstrumentSerializer, RequestSerializer, ResponseSerializer
 from nautilus_trader.serialization.data cimport BsonDataSerializer, BsonInstrumentSerializer
 from nautilus_trader.serialization.constants cimport *
-from nautilus_trader.serialization.common cimport parse_tick, parse_bar_type, parse_bar, convert_datetime_to_string
+from nautilus_trader.serialization.common cimport convert_datetime_to_string
 from nautilus_trader.serialization.serializers cimport MsgPackRequestSerializer, MsgPackResponseSerializer
 from nautilus_trader.network.requests cimport DataRequest
 from nautilus_trader.network.responses cimport MessageRejected, QueryFailure
 from nautilus_trader.trade.strategy cimport TradingStrategy
-from nautilus_trader.serialization.common import parse_bar_type
 
 
 cdef class LiveDataClient(DataClient):
@@ -147,7 +146,7 @@ cdef class LiveDataClient(DataClient):
         self._instrument_serializer = instrument_serializer
 
         self._cached_symbols = ObjectCache(Symbol, Symbol.from_string)
-        self._cached_bar_types = ObjectCache(BarType, parse_bar_type)
+        self._cached_bar_types = ObjectCache(BarType, BarType.from_string)
 
     cpdef void connect(self):
         """
@@ -242,7 +241,7 @@ cdef class LiveDataClient(DataClient):
         cdef Symbol received_symbol = self._cached_symbols.get(data[SYMBOL])
         assert(received_symbol == symbol)
 
-        callback([parse_tick(received_symbol, values) for values in data[DATA]])
+        callback([Tick.from_string(received_symbol, values) for values in data[DATA]])
 
     cpdef void request_bars(
             self,
@@ -283,7 +282,7 @@ cdef class LiveDataClient(DataClient):
         cdef BarType received_bar_type = self._cached_bar_types.get(data[SYMBOL] + '-' + data[SPECIFICATION])
         assert(received_bar_type == bar_type)
 
-        callback(received_bar_type, [parse_bar(values) for values in data[DATA]])
+        callback(received_bar_type, [Bar.from_string(values) for values in data[DATA]])
 
     cpdef void request_instrument(self, Symbol symbol, callback: Callable):
         """
@@ -434,11 +433,11 @@ cdef class LiveDataClient(DataClient):
 
     cpdef void _handle_tick_sub(self, str topic, bytes message):
         # Handle the given tick message published for the given topic
-        self._handle_tick(parse_tick(self._cached_symbols.get(topic), message.decode(UTF8)))
+        self._handle_tick(Tick.from_string(self._cached_symbols.get(topic), message.decode(UTF8)))
 
     cpdef void _handle_bar_sub(self, str topic, bytes message):
         # Handle the given bar message published for the given topic
-        self._handle_bar(self._cached_bar_types.get(topic), parse_bar(message.decode(UTF8)))
+        self._handle_bar(self._cached_bar_types.get(topic), Bar.from_string(message.decode(UTF8)))
 
     cpdef void _handle_inst_sub(self, str topic, bytes message):
         # Handle the given instrument message published for the given topic

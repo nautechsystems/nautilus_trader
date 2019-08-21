@@ -10,8 +10,8 @@ from typing import Dict
 from itertools import permutations
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.c_enums.currency cimport Currency, currency_string
-from nautilus_trader.model.c_enums.quote_type cimport QuoteType, quote_type_string
+from nautilus_trader.model.c_enums.currency cimport Currency, currency_to_string
+from nautilus_trader.model.c_enums.quote_type cimport QuoteType, quote_type_to_string
 
 
 cdef class ExchangeRateCalculator:
@@ -53,7 +53,7 @@ cdef class ExchangeRateCalculator:
             for ccy_pair in bid_rates.keys():
                 calculation_rates[ccy_pair] = (bid_rates[ccy_pair] + ask_rates[ccy_pair]) / 2.0
         else:
-            raise ValueError(f"Cannot calculate exchange rate for quote type {quote_type_string(quote_type)}.")
+            raise ValueError(f"Cannot calculate exchange rate for quote type {quote_type_to_string(quote_type)}.")
 
         cdef dict exchange_rates = {}
         cdef set symbols = set()
@@ -113,8 +113,8 @@ cdef class ExchangeRateCalculator:
                         if ccy_pair[1] not in exchange_rates[ccy_pair[0]]:
                             exchange_rates[ccy_pair[0]][ccy_pair[1]] = common_ccy1 / common_ccy2
 
-        cdef str lhs_str = currency_string(quote_currency)
-        cdef str rhs_str = currency_string(base_currency)
+        cdef str lhs_str = currency_to_string(quote_currency)
+        cdef str rhs_str = currency_to_string(base_currency)
 
         if rhs_str not in exchange_rates[lhs_str]:
             raise ValueError(f"Cannot calculate exchange rate for {lhs_str}{rhs_str} or {rhs_str}{lhs_str}.")
