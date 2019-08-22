@@ -52,15 +52,15 @@ from nautilus_trader.live.logger cimport LiveLogger
 from nautilus_trader.serialization.serializers cimport EventSerializer, MsgPackEventSerializer
 from nautilus_trader.trade.strategy cimport TradingStrategy
 
-
+cdef str TRADER = 'Trader'
+cdef str INDEX = 'Index'
 cdef str CONFIG = 'Config'
 cdef str ORDERS = 'Orders'
 cdef str POSITIONS = 'Positions'
-cdef str INDEX = 'Index'
-cdef str ORDER_STRATEGY = 'OrderStrategy'
-cdef str ORDER_POSITION = 'OrderPosition'
-cdef str POSITION_ORDERS = 'PositionOrders'
 cdef str STRATEGIES = 'Strategies'
+cdef str ORDER_POSITION = 'OrderPosition'
+cdef str ORDER_STRATEGY = 'OrderStrategy'
+cdef str POSITION_ORDERS = 'PositionOrders'
 cdef str WORKING = 'Working'
 cdef str COMPLETE = 'Complete'
 cdef str OPEN = 'Open'
@@ -94,11 +94,25 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         Condition.in_range(port, 'port', 0, 65535)
 
         super().__init__(trader_id, logger)
-        self._key_orders = f'Trader-{trader_id.value}:{ORDERS}'
-        self._key_positions = f'Trader-{trader_id.value}:{POSITIONS}'
-        self._key_strategies = f'Trader-{trader_id.value}:{STRATEGIES}'
+
+        # Database keys
+        self._key_trader                 = f'{TRADER}-{trader_id.value}'
+        self._key_orders                 = f'{self._key_trader}:{ORDERS}'
+        self._key_positions              = f'{self._key_trader}:{POSITIONS}'
+        self._key_strategies             = f'{self._key_trader}:{STRATEGIES}'
+        self._key_index_order_strategy   = f'{self._key_trader}:{INDEX}:{ORDER_STRATEGY}'
+        self._key_index_order_position   = f'{self._key_trader}:{INDEX}:{ORDER_POSITION}'
+        self._key_index_orders_working   = f'{self._key_trader}:{INDEX}:{ORDERS}:{WORKING}'
+        self._key_index_orders_complete  = f'{self._key_trader}:{INDEX}:{ORDERS}:{COMPLETE}'
+        self._key_index_position_orders  = f'{self._key_trader}:{INDEX}:{POSITION_ORDERS}'
+        self._key_index_positions_open   = f'{self._key_trader}:{INDEX}:{POSITIONS}:{OPEN}'
+        self._key_index_positions_closed = f'{self._key_trader}:{INDEX}:{POSITIONS}:{CLOSED}'
+
+        # Serializers
         self._command_serializer = command_serializer
         self._event_serializer = event_serializer
+
+        # Redis client
         self._redis = Redis(host=host, port=port, db=0)
 
     cdef void _store_order_event(self, OrderEvent event):
@@ -137,11 +151,16 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         self._cached_orders[order.id] = order
 
+        cdef str key_order = f'{self._key_orders}:{order.id.value}'
+
+        assert not self._redis.exists(key_order)
+
+        # Execute pipeline
         pipe = self._redis.pipeline()
-        pipe.rpush(f'{self._key_orders}:{order.id}', self._event_serializer.serialize(order.last_event))
-        pipe.hset(name=f'{self._key_orders}:{INDEX}:{ORDER_STRATEGY}', key=order.id.value, value=strategy_id.value)
-        pipe.hset(name=f'{self._key_orders}:{INDEX}:{ORDER_POSITION}', key=order.id.value, value=position_id.value)
-        pipe.rpush(f'{self._key_positions}:{INDEX}:{POSITION_ORDERS}:{position_id.value}', order.id.value)
+        pipe.rpush(key_order, self._event_serializer.serialize(order.last_event))
+        pipe.hset(name=self._key_index_order_strategy, key=order.id.value, value=strategy_id.value)
+        pipe.hset(name=self._key_index_order_position, key=order.id.value, value=position_id.value)
+        pipe.rpush(f'{self._key_index_position_orders}:{position_id.value}', order.id.value)
         pipe.execute()
 
         self._log.debug(f"Added order (id={order.id.value}, strategy_id={strategy_id.value}, position_id={position_id.value}).")
@@ -154,17 +173,20 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         :param strategy_id: The strategy identifier to associate with the position.
         """
         Condition.true(position.id not in self._cached_positions, 'position.id not in self._cached_positions')
-        # Condition.true(strategy_id in self._positions_open, 'strategy_id in self._positions_active')
-        # Condition.true(position.id not in self._positions_open[strategy_id], 'position.id not in self._positions_active[strategy_id]')
 
         self._cached_positions[position.id] = position
 
+        cdef str key_position = f'{self._key_positions}:{position.id.value}'
+
+        assert not self._redis.exists(key_position)
+
+        # Execute pipeline
         pipe = self._redis.pipeline()
-        pipe.rpush(f'{self._key_positions}:{position.id.value}', self._event_serializer.serialize(position.last_event))
-        pipe.rpush(f'{self._key_positions}:{INDEX}:{OPEN}', position.id.value)
+        pipe.rpush(key_position, self._event_serializer.serialize(position.last_event))
+        pipe.sadd(self._key_index_positions_open, position.id.value)
         pipe.execute()
 
-        self._log.debug(f"Added position (id={position.id.value}).")
+        self._log.debug(f"Added position (id={position.id.value}) .")
 
     cpdef void add_order_event(
             self,
@@ -181,15 +203,18 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         :param is_completed: The flag indicating whether the order is complete.
         """
         cdef OrderId order_id = event.order_id
+        cdef str key_order = f'{self._key_orders}:{order_id.value}'
+
+        assert self._redis.exists(key_order)
 
         pipe = self._redis.pipeline()
-        pipe.rpush(f'{self._key_orders}:{order_id}', self._event_serializer.serialize(event))
+        pipe.rpush(key_order, self._event_serializer.serialize(event))
         if is_working:
-            pipe.rpush(f'{self._key_orders}:{INDEX}:{WORKING}', order_id.value)
-            pipe.lrem(name=f'{self._key_orders}:{INDEX}:{COMPLETE}', count=1, value=order_id.value)
+            pipe.sadd(self._key_index_orders_working, order_id.value)
+            pipe.srem(self._key_index_orders_complete, order_id.value)
         elif is_completed:
-            pipe.rpush(f'{self._key_orders}:{INDEX}:{COMPLETE}', order_id.value)
-            pipe.lrem(name=f'{self._key_orders}:{INDEX}:{WORKING}', count=1, value=order_id.value)
+            pipe.sadd(self._key_index_orders_complete, order_id.value)
+            pipe.srem(self._key_index_orders_working, order_id.value)
         pipe.execute()
 #
 #     cpdef void add_position_event(
