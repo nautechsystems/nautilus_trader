@@ -122,7 +122,7 @@ cdef class Order:
         self.is_buy = self.side == OrderSide.BUY
         self.is_sell = self.side == OrderSide.SELL
         self.is_working = False
-        self.is_complete = False
+        self.is_completed = False
 
         cdef OrderInitialized initialized = OrderInitialized(
             symbol=symbol,
@@ -252,9 +252,9 @@ cdef class Order:
         :raises ConditionFailed: If the order_events order_id is not equal to the order identifier.
         :raises ConditionFailed: If the order account_id is not None and the order_events account_id is not equal to the order account_id.
         """
-        Condition.equal(event.order_id, self.id)
+        Condition.equal(self.id, event.order_id)
         if self.account_id is not None:
-            Condition.equal(event.account_id, self.account_id)
+            Condition.equal(self.account_id, event.account_id)
 
         # Update events
         self._events.append(event)
@@ -266,7 +266,7 @@ cdef class Order:
             self.account_id = event.account_id
         elif isinstance(event, OrderRejected):
             self.status = OrderStatus.REJECTED
-            self.is_complete = True
+            self.is_completed = True
         elif isinstance(event, OrderAccepted):
             self.status = OrderStatus.ACCEPTED
         elif isinstance(event, OrderWorking):
@@ -279,11 +279,11 @@ cdef class Order:
         elif isinstance(event, OrderCancelled):
             self.status = OrderStatus.CANCELLED
             self.is_working = False
-            self.is_complete = True
+            self.is_completed = True
         elif isinstance(event, OrderExpired):
             self.status = OrderStatus.EXPIRED
             self.is_working = False
-            self.is_complete = True
+            self.is_completed = True
         elif isinstance(event, OrderModified):
             self._order_ids_broker.append(event.order_id_broker)
             self.id_broker = event.order_id_broker
@@ -300,7 +300,7 @@ cdef class Order:
             self._set_fill_status()
             if self.status == OrderStatus.FILLED:
                 self.is_working = False
-                self.is_complete = True
+                self.is_completed = True
 
     cdef void _set_slippage(self):
         if self.type not in PRICED_ORDER_TYPES:

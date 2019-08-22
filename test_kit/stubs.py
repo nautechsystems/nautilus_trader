@@ -196,7 +196,7 @@ class TestStubs:
             UNIX_EPOCH)
 
         position_id = generator.generate()
-        position = Position(position_id=position_id, fill_event=order_filled)
+        position = Position(position_id=position_id, event=order_filled)
 
         return position
 

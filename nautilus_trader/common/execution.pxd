@@ -40,8 +40,8 @@ cdef class ExecutionDatabase:
     cpdef void add_strategy(self, TradingStrategy strategy)
     cpdef void add_order(self, Order order, StrategyId strategy_id, PositionId position_id)
     cpdef void add_position(self, Position position, StrategyId strategy_id)
-    cpdef void add_order_event(self, OrderEvent event, StrategyId strategy_id, bint is_working, bint is_complete)
-    cpdef void add_position_event(self, OrderFillEvent fill_event, PositionId position_id, StrategyId strategy_id, bint is_closed)
+    cpdef void add_order_event(self, Order order, OrderEvent event)
+    cpdef void add_position_event(self, Position position, OrderFillEvent event)
     cpdef void add_account_event(self, AccountEvent event)
     cpdef void delete_strategy(self, TradingStrategy strategy)
     cpdef void check_residuals(self)
@@ -62,7 +62,7 @@ cdef class ExecutionDatabase:
     cpdef dict get_orders_completed(self, StrategyId strategy_id)
     cpdef bint order_exists(self, OrderId order_id)
     cpdef bint is_order_working(self, OrderId order_id)
-    cpdef bint is_order_complete(self, OrderId order_id)
+    cpdef bint is_order_completed(self, OrderId order_id)
     cpdef Position get_position(self, PositionId position_id)
     cpdef Position get_position_for_order(self, OrderId order_id)
     cpdef PositionId get_position_id(self, OrderId order_id)
@@ -92,10 +92,10 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
     cdef list _strategies
     cdef dict _index_order_strategy
     cdef dict _index_order_position
-    cdef dict _orders_working
-    cdef dict _orders_completed
-    cdef dict _positions_open
-    cdef dict _positions_closed
+    cdef dict _index_orders_working
+    cdef dict _index_orders_completed
+    cdef dict _index_positions_open
+    cdef dict _index_positions_closed
 
 
 cdef class ExecutionEngine:
@@ -133,12 +133,12 @@ cdef class ExecutionEngine:
     cdef void _execute_command(self, Command command)
     cdef void _handle_event(self, Event event)
     cdef void _handle_order_event(self, OrderEvent event)
-    cdef void _handle_order_fill(self, OrderFillEvent fill_event, StrategyId strategy_id)
+    cdef void _handle_order_fill(self, OrderFillEvent event, StrategyId strategy_id)
     cdef void _handle_position_event(self, PositionEvent event)
     cdef void _handle_account_event(self, AccountEvent event)
-    cdef void _position_opened(self, Position position, StrategyId strategy_id, OrderEvent order_fill)
-    cdef void _position_modified(self, Position position, StrategyId strategy_id, OrderEvent order_fill)
-    cdef void _position_closed(self, Position position, StrategyId strategy_id, OrderEvent order_fill)
+    cdef void _position_opened(self, Position position, StrategyId strategy_id, OrderEvent event)
+    cdef void _position_modified(self, Position position, StrategyId strategy_id, OrderEvent event)
+    cdef void _position_closed(self, Position position, StrategyId strategy_id, OrderEvent event)
     cdef void _send_to_strategy(self, Event event, StrategyId strategy_id)
     cdef void _reset(self)
 

@@ -38,8 +38,9 @@ from nautilus_trader.model.events cimport (
     PositionModified,
     PositionClosed)
 from nautilus_trader.common.account cimport Account
-from nautilus_trader.common.clock cimport LiveClock
-from nautilus_trader.common.guid cimport LiveGuidFactory
+from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.guid cimport GuidFactory
+from nautilus_trader.common.logger cimport Logger
 from nautilus_trader.common.execution cimport ExecutionDatabase, ExecutionEngine, ExecutionClient
 from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.network.workers import RequestWorker, SubscriberWorker
@@ -55,6 +56,7 @@ from nautilus_trader.trade.strategy cimport TradingStrategy
 cdef str TRADER = 'Trader'
 cdef str INDEX = 'Index'
 cdef str CONFIG = 'Config'
+cdef str ACCOUNTS = 'Accounts'
 cdef str ORDERS = 'Orders'
 cdef str POSITIONS = 'Positions'
 cdef str STRATEGIES = 'Strategies'
@@ -78,15 +80,15 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
                  int port,
                  CommandSerializer command_serializer,
                  EventSerializer event_serializer,
-                 LiveLogger logger):
+                 Logger logger):
         """
         Initializes a new instance of the RedisExecutionEngine class.
 
         :param trader_id: The trader identifier.
         :param port: The redis host for the database connection.
         :param port: The redis port for the database connection.
-        :param command_serializer: The command serializer.
-        :param event_serializer: The event serializer.
+        :param command_serializer: The command serializer for database transactions.
+        :param event_serializer: The event serializer for database transactions.
         :raises ConditionFailed: If the host is not a valid string.
         :raises ConditionFailed: If the port is not in range [0, 65535].
         """
@@ -97,13 +99,14 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         # Database keys
         self._key_trader                 = f'{TRADER}-{trader_id.value}'
+        self._key_accounts               = f'{self._key_trader}:{ACCOUNTS}'
         self._key_orders                 = f'{self._key_trader}:{ORDERS}'
         self._key_positions              = f'{self._key_trader}:{POSITIONS}'
         self._key_strategies             = f'{self._key_trader}:{STRATEGIES}'
         self._key_index_order_strategy   = f'{self._key_trader}:{INDEX}:{ORDER_STRATEGY}'
         self._key_index_order_position   = f'{self._key_trader}:{INDEX}:{ORDER_POSITION}'
         self._key_index_orders_working   = f'{self._key_trader}:{INDEX}:{ORDERS}:{WORKING}'
-        self._key_index_orders_complete  = f'{self._key_trader}:{INDEX}:{ORDERS}:{COMPLETE}'
+        self._key_index_orders_completed  = f'{self._key_trader}:{INDEX}:{ORDERS}:{COMPLETE}'
         self._key_index_position_orders  = f'{self._key_trader}:{INDEX}:{POSITION_ORDERS}'
         self._key_index_positions_open   = f'{self._key_trader}:{INDEX}:{POSITIONS}:{OPEN}'
         self._key_index_positions_closed = f'{self._key_trader}:{INDEX}:{POSITIONS}:{CLOSED}'
@@ -114,6 +117,8 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         # Redis client
         self._redis = Redis(host=host, port=port, db=0)
+
+        self.check_integrity = True
 
     cdef void _store_order_event(self, OrderEvent event):
         self._redis.rpush(self._key_orders + event.order_id.value, self._event_serializer.serialize(event))
@@ -153,9 +158,11 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         cdef str key_order = f'{self._key_orders}:{order.id.value}'
 
-        assert not self._redis.exists(key_order)
+        if self.check_integrity:
+            if self._redis.exists(key_order):
+                self._log.warning(f'The {key_order} already exists.')
 
-        # Execute pipeline
+        # Command pipeline
         pipe = self._redis.pipeline()
         pipe.rpush(key_order, self._event_serializer.serialize(order.last_event))
         pipe.hset(name=self._key_index_order_strategy, key=order.id.value, value=strategy_id.value)
@@ -178,9 +185,11 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         cdef str key_position = f'{self._key_positions}:{position.id.value}'
 
-        assert not self._redis.exists(key_position)
+        if self.check_integrity:
+            if self._redis.exists(key_position):
+                self._log.warning(f'The {key_position} already exists.')
 
-        # Execute pipeline
+        # Command pipeline
         pipe = self._redis.pipeline()
         pipe.rpush(key_position, self._event_serializer.serialize(position.last_event))
         pipe.sadd(self._key_index_positions_open, position.id.value)
@@ -188,68 +197,64 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         self._log.debug(f"Added position (id={position.id.value}) .")
 
-    cpdef void add_order_event(
-            self,
-            OrderEvent event,
-            StrategyId strategy_id,
-            bint is_working,
-            bint is_completed):
+    cpdef void add_order_event(self, Order order, OrderEvent event):
         """
-        Add the given order event to the execution database.
+        Add the last event of the given order to the execution database.
 
-        :param event: The order event to add.
-        :param strategy_id: The strategy identifier associated with the event.
-        :param is_working: The flag indicating whether the order is working.
-        :param is_completed: The flag indicating whether the order is complete.
+        :param order: The order for the event to add (last event).
+        :param event: The event to add.
         """
-        cdef OrderId order_id = event.order_id
-        cdef str key_order = f'{self._key_orders}:{order_id.value}'
+        Condition.equal(order.id, event.order_id)
 
-        assert self._redis.exists(key_order)
+        cdef str key_order = f'{self._key_orders}:{order.id.value}'
 
+        if self.check_integrity:
+            if not self._redis.exists(key_order):
+                self._log.warning(f'The {key_order} did not already exist.')
+
+        # Command pipeline
         pipe = self._redis.pipeline()
         pipe.rpush(key_order, self._event_serializer.serialize(event))
-        if is_working:
-            pipe.sadd(self._key_index_orders_working, order_id.value)
-            pipe.srem(self._key_index_orders_complete, order_id.value)
-        elif is_completed:
-            pipe.sadd(self._key_index_orders_complete, order_id.value)
-            pipe.srem(self._key_index_orders_working, order_id.value)
+        if order.is_working:
+            pipe.sadd(self._key_index_orders_working, order.id.value)
+            pipe.srem(self._key_index_orders_completed, order.id.value)
+        elif order.is_completed:
+            pipe.sadd(self._key_index_orders_completed, order.id.value)
+            pipe.srem(self._key_index_orders_working, order.id.value)
         pipe.execute()
-#
-#     cpdef void add_position_event(
-#             self,
-#             OrderFillEvent fill_event,
-#             PositionId position_id,
-#             StrategyId strategy_id,
-#             bint is_closed):
-#         """
-#         Add the given position event to the execution database.
-#
-#         :param fill_event: The order fill position event to add.
-#         :param position_id: The position identifier associated with the event.
-#         :param strategy_id: The strategy identifier associated with the event.
-#         :param is_closed: The flag indicating whether the position is closed.
-#         """
-#         if not is_closed:
-#             if position_id not in self._positions_open[strategy_id]:
-#                 self._positions_open[strategy_id][position_id] = self._cached_positions[position_id]
-#             if position_id in self._positions_closed[strategy_id]:
-#                 del self._positions_closed[strategy_id][position_id]
-#         else:
-#             if position_id not in self._positions_closed[strategy_id]:
-#                 self._positions_closed[strategy_id][position_id] = self._cached_positions[position_id]
-#             if position_id in self._positions_open[strategy_id]:
-#                 del self._positions_open[strategy_id][position_id]
-#
-#     cpdef void add_account_event(self, AccountEvent event):
-#         """
-#         Add the given account event to the execution database.
-#
-#         :param event: The account event to add.
-#         """
-#         # Do nothing in memory
-#         pass
+
+    cpdef void add_position_event(self, Position position, OrderFillEvent event):
+        """
+        Add the given position event to the execution database.
+
+        :param position: The position for the event to add (last event).
+        :param event: The event to add.
+        """
+
+        cdef str key_position = f'{self._key_positions}:{position.id.value}'
+
+        if self.check_integrity:
+            if not self._redis.exists(key_position):
+                self._log.warning(f'The {key_position} did not already exist.')
+
+        # Command pipeline
+        pipe = self._redis.pipeline()
+        pipe.rpush(key_position, self._event_serializer.serialize(event))
+        if position.is_closed:
+            pipe.sadd(self._key_index_positions_closed, position.id.value)
+            pipe.srem(self._key_index_positions_open, position.id.value)
+        pipe.execute()
+
+    cpdef void add_account_event(self, AccountEvent event):
+        """
+        Add the given account event to the execution database.
+
+        :param event: The account event to add.
+        """
+        cdef str key_account = f'{self._key_accounts}:{event.account_id.value}'
+
+        self._redis.rpush(key_account, self._event_serializer.serialize(event))
+
 #
 #     cpdef void delete_strategy(self, TradingStrategy strategy):
 #         """
@@ -437,7 +442,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 #         :param order_id: The order identifier to check.
 #         :return: True if the order is found and complete, else False.
 #         """
-#         return order_id in self._cached_orders and self._cached_orders[order_id].is_complete
+#         return order_id in self._cached_orders and self._cached_orders[order_id].is_completed
 #
 #     cpdef Position get_position(self, PositionId position_id):
 #         """
@@ -626,9 +631,9 @@ cdef class LiveExecutionEngine(ExecutionEngine):
                  ExecutionDatabase database,
                  Account account,
                  Portfolio portfolio,
-                 LiveClock clock,
-                 LiveGuidFactory guid_factory,
-                 LiveLogger logger):
+                 Clock clock,
+                 GuidFactory guid_factory,
+                 Logger logger):
         """
         Initializes a new instance of the RedisExecutionEngine class.
 
@@ -701,7 +706,7 @@ cdef class LiveExecClient(ExecutionClient):
             CommandSerializer command_serializer=MsgPackCommandSerializer(),
             ResponseSerializer response_serializer=MsgPackResponseSerializer(),
             EventSerializer event_serializer=MsgPackEventSerializer(),
-            LiveLogger logger=LiveLogger()):
+            Logger logger=LiveLogger()):
         """
         Initializes a new instance of the LiveExecClient class.
 

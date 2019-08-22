@@ -23,40 +23,40 @@ cdef class Position:
 
     def __init__(self,
                  PositionId position_id,
-                 OrderFillEvent fill_event):
+                 OrderFillEvent event):
         """
         Initializes a new instance of the Position class.
 
         :param position_id: The positions identifier.
-        :param fill_event: The order fill event which created the position.
+        :param event: The order fill event which created the position.
         """
-        self._order_ids = [fill_event.order_id]                  # type: List[OrderId]
-        self._execution_ids = [fill_event.execution_id]          # type: List[ExecutionId]
-        self._execution_tickets = [fill_event.execution_ticket]  # type: List[ExecutionTicket]
-        self._events = [fill_event]                              # type: List[OrderFillEvent]
+        self._order_ids = [event.order_id]                  # type: List[OrderId]
+        self._execution_ids = [event.execution_id]          # type: List[ExecutionId]
+        self._execution_tickets = [event.execution_ticket]  # type: List[ExecutionTicket]
+        self._events = [event]                              # type: List[OrderFillEvent]
 
-        self.symbol = fill_event.symbol
+        self.symbol = event.symbol
         self.id = position_id
-        self.account_id = fill_event.account_id
-        self.from_order_id = fill_event.order_id
-        self.last_order_id = fill_event.order_id
-        self.last_execution_id = fill_event.execution_id
-        self.last_execution_ticket = fill_event.execution_ticket
-        self.timestamp = fill_event.execution_time
-        self.relative_quantity = self._calculate_relative_quantity(fill_event)
-        self.quantity = fill_event.filled_quantity
-        self.peak_quantity = fill_event.filled_quantity
-        self.entry_direction = fill_event.order_side
-        self.entry_time = fill_event.execution_time
+        self.account_id = event.account_id
+        self.from_order_id = event.order_id
+        self.last_order_id = event.order_id
+        self.last_execution_id = event.execution_id
+        self.last_execution_ticket = event.execution_ticket
+        self.timestamp = event.execution_time
+        self.relative_quantity = self._calculate_relative_quantity(event)
+        self.quantity = event.filled_quantity
+        self.peak_quantity = event.filled_quantity
+        self.entry_direction = event.order_side
+        self.entry_time = event.execution_time
         self.exit_time = None
-        self.average_entry_price = fill_event.average_price
+        self.average_entry_price = event.average_price
         self.average_exit_price = None
         self.points_realized = Decimal(0)
         self.return_realized = 0.0
         self.is_closed = False
-        self.last_event = fill_event
+        self.last_event = event
 
-        self._fill_logic(fill_event)
+        self._fill_logic(event)
 
     cdef bint equals(self, Position other):
         """
@@ -144,29 +144,29 @@ cdef class Position:
         """
         return len(self._events)
 
-    cpdef void apply(self, OrderFillEvent fill_event):
+    cpdef void apply(self, OrderFillEvent event):
         """
         Applies the given order fill event to the position.
 
-        :param fill_event: The order fill event to apply.
+        :param event: The order fill event to apply.
         """
         # Update events
-        self._events.append(fill_event)
-        self.last_event = fill_event
+        self._events.append(event)
+        self.last_event = event
 
         # Update identifiers
-        if fill_event.order_id not in self._order_ids:
-            self._order_ids.append(fill_event.order_id)
-        self._execution_ids.append(fill_event.execution_id)
-        self._execution_tickets.append(fill_event.execution_ticket)
-        self.last_order_id = fill_event.order_id
-        self.last_execution_id = fill_event.execution_id
-        self.last_execution_ticket = fill_event.execution_ticket
+        if event.order_id not in self._order_ids:
+            self._order_ids.append(event.order_id)
+        self._execution_ids.append(event.execution_id)
+        self._execution_tickets.append(event.execution_ticket)
+        self.last_order_id = event.order_id
+        self.last_execution_id = event.execution_id
+        self.last_execution_ticket = event.execution_ticket
 
         # Apply event
-        self._set_quantities(fill_event)
-        self._increment_returns(fill_event)
-        self._fill_logic(fill_event)
+        self._set_quantities(event)
+        self._increment_returns(event)
+        self._fill_logic(event)
 
     cpdef object points_unrealized(self, Price current_price):
         """
@@ -190,15 +190,15 @@ cdef class Position:
             return 0.0
         return self._calculate_return(self.average_entry_price, current_price)
 
-    cdef int _calculate_relative_quantity(self, OrderFillEvent fill_event):
-        if fill_event.order_side == OrderSide.BUY:
-            return fill_event.filled_quantity.value
-        elif fill_event.order_side == OrderSide.SELL:
-            return - fill_event.filled_quantity.value
+    cdef int _calculate_relative_quantity(self, OrderFillEvent event):
+        if event.order_side == OrderSide.BUY:
+            return event.filled_quantity.value
+        elif event.order_side == OrderSide.SELL:
+            return - event.filled_quantity.value
 
-    cdef void _set_quantities(self, OrderFillEvent fill_event):
+    cdef void _set_quantities(self, OrderFillEvent event):
         # Set relative quantity
-        self.relative_quantity += self._calculate_relative_quantity(fill_event)
+        self.relative_quantity += self._calculate_relative_quantity(event)
 
         # Set quantity
         self.quantity = Quantity(abs(self.relative_quantity))
@@ -207,7 +207,7 @@ cdef class Position:
         if self.quantity > self.peak_quantity:
             self.peak_quantity = self.quantity
 
-    cdef void _fill_logic(self, OrderFillEvent fill_event):
+    cdef void _fill_logic(self, OrderFillEvent event):
         # Set market position
         if self.relative_quantity > 0:
             self.market_position = MarketPosition.LONG
@@ -227,27 +227,27 @@ cdef class Position:
 
         # Exit logic
         if self.relative_quantity == 0:
-            self._exit_logic(fill_event)
+            self._exit_logic(event)
 
         if self.is_closed and self.relative_quantity != 0:
             self.is_closed = False
 
-    cdef void _exit_logic(self, OrderFillEvent fill_event):
-            self.exit_time = fill_event.timestamp
-            self.average_exit_price = fill_event.average_price
+    cdef void _exit_logic(self, OrderFillEvent event):
+            self.exit_time = event.timestamp
+            self.average_exit_price = event.average_price
             self.is_closed = True
 
-    cdef void _increment_returns(self, OrderFillEvent fill_event):
-        if fill_event.order_side == OrderSide.BUY:
+    cdef void _increment_returns(self, OrderFillEvent event):
+        if event.order_side == OrderSide.BUY:
             if self.market_position == MarketPosition.SHORT:
                 # Increment realized points and return of a short position
-                self.points_realized += self._calculate_points(self.average_entry_price, fill_event.average_price)
-                self.return_realized += self._calculate_return(self.average_entry_price, fill_event.average_price)
-        elif fill_event.order_side == OrderSide.SELL:
+                self.points_realized += self._calculate_points(self.average_entry_price, event.average_price)
+                self.return_realized += self._calculate_return(self.average_entry_price, event.average_price)
+        elif event.order_side == OrderSide.SELL:
             if self.market_position == MarketPosition.LONG:
                 # Increment realized points and return of a long position
-                self.points_realized += self._calculate_points(self.average_entry_price, fill_event.average_price)
-                self.return_realized += self._calculate_return(self.average_entry_price, fill_event.average_price)
+                self.points_realized += self._calculate_points(self.average_entry_price, event.average_price)
+                self.return_realized += self._calculate_return(self.average_entry_price, event.average_price)
 
     cdef object _calculate_points(self, Price entry_price, Price exit_price):
         if self.entry_direction == OrderSide.BUY:
