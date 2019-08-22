@@ -161,7 +161,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         pipe = self._redis.pipeline()
         pipe.rpush(f'{self._key_positions}:{position.id.value}', self._event_serializer.serialize(position.last_event))
-        pipe.rpush(f'{self._key_positions}:{OPEN}', position.id.value)
+        pipe.rpush(f'{self._key_positions}:{INDEX}:{OPEN}', position.id.value)
         pipe.execute()
 
         self._log.debug(f"Added position (id={position.id.value}).")
@@ -185,11 +185,11 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         pipe = self._redis.pipeline()
         pipe.rpush(f'{self._key_orders}:{order_id}', self._event_serializer.serialize(event))
         if is_working:
-            pipe.rpush(f'{self._key_orders}:{WORKING}', order_id.value)
-            pipe.lrem(name=f'{self._key_orders}:{COMPLETE}', count=1, value=order_id.value)
+            pipe.rpush(f'{self._key_orders}:{INDEX}:{WORKING}', order_id.value)
+            pipe.lrem(name=f'{self._key_orders}:{INDEX}:{COMPLETE}', count=1, value=order_id.value)
         elif is_completed:
-            pipe.rpush(f'{self._key_orders}:{COMPLETE}', order_id.value)
-            pipe.lrem(name=f'{self._key_orders}:{WORKING}', count=1, value=order_id.value)
+            pipe.rpush(f'{self._key_orders}:{INDEX}:{COMPLETE}', order_id.value)
+            pipe.lrem(name=f'{self._key_orders}:{INDEX}:{WORKING}', count=1, value=order_id.value)
         pipe.execute()
 #
 #     cpdef void add_position_event(
