@@ -6,8 +6,31 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.objects cimport BarType
+from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.objects cimport Tick, Bar, BarType
 from nautilus_trader.serialization.base cimport DataSerializer, InstrumentSerializer
+
+
+cdef class Utf8TickSerializer:
+    """
+    Provides a tick serializer for the UTF-8 specification.
+    """
+    @staticmethod
+    cdef bytes serialize(Tick tick)
+    @staticmethod
+    cdef Tick deserialize(Symbol symbol, bytes values_bytes)
+
+
+cdef class Utf8BarSerializer:
+    """
+    Provides a bar serializer for the UTF-8 specification.
+    """
+    @staticmethod
+    cdef bytes serialize(Bar bar)
+    @staticmethod
+    cdef Bar deserialize(bytes bar_bytes)
+    @staticmethod
+    cdef list deserialize_bars(bytes[:] bar_bytes_array)
 
 
 cdef class BsonDataSerializer(DataSerializer):
