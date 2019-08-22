@@ -45,7 +45,7 @@ cdef class TradingNode:
     cdef LiveDataClient _data_client
     cdef LiveExecClient _exec_client
 
-    cdef readonly GUID id
+    cdef readonly TraderId trader_id
     cdef readonly Account account
     cdef readonly Portfolio portfolio
     cdef readonly Trader trader
@@ -66,47 +66,49 @@ cdef class TradingNode:
         self._clock = LiveClock()
         self._guid_factory = LiveGuidFactory()
         self._zmq_context = zmq.Context()
-        self.id = GUID(uuid.uuid4())
 
         # Load the configuration from the file specified in config_path
         with open(config_path, 'r') as config_file:
             config = json.load(config_file)
+        config_trader = config['trader']
+        config_log = config['logging']
+        config_data = config['data_client']
+        config_exec_db = config['exec_database']
+        config_exec_client = config['exec_client']
 
-        trader_id = TraderId(
-            name=config['trader']['name'],
-            order_id_tag=config['trader']['order_id_tag'])
+        self.trader_id = TraderId(
+            name=config_trader['name'],
+            order_id_tag=config_trader['order_id_tag'])
 
-        log_config = config['logging']
         self._log_store = LogStore(
-            trader_id=trader_id,
-            host=log_config['redis_host'],
-            port=log_config['redis_port'])
+            trader_id=self.trader_id,
+            host=config_log['redis_host'],
+            port=config_log['redis_port'])
         self._logger = LiveLogger(
-            name=trader_id.value,
-            level_console=LogLevel[log_config['log_level_console']],
-            level_file=LogLevel[log_config['log_level_file']],
-            level_store=LogLevel[log_config['log_level_store']],
+            name=self.trader_id.value,
+            level_console=LogLevel[config_log['log_level_console']],
+            level_file=LogLevel[config_log['log_level_file']],
+            level_store=LogLevel[config_log['log_level_store']],
             log_thread=True,
-            log_to_file=log_config['log_to_file'],
-            log_file_path=log_config['log_file_path'],
+            log_to_file=config_log['log_to_file'],
+            log_file_path=config_log['log_file_path'],
             clock=self._clock,
             store=self._log_store)
         self._log = LoggerAdapter(component_name=self.__class__.__name__, logger=self._logger)
         self._log_header()
         self._log.info("Starting...")
 
-        data_config = config['data_client']
         self._data_client = LiveDataClient(
             zmq_context=self._zmq_context,
-            venue=Venue(data_config['venue']),
-            service_name=data_config['service_name'],
-            service_address=data_config['service_address'],
-            tick_rep_port=data_config['tick_rep_port'],
-            tick_pub_port=data_config['tick_pub_port'],
-            bar_rep_port=data_config['bar_rep_port'],
-            bar_pub_port=data_config['bar_pub_port'],
-            inst_rep_port=data_config['inst_rep_port'],
-            inst_pub_port=data_config['inst_pub_port'],
+            venue=Venue(config_data['venue']),
+            service_name=config_data['service_name'],
+            service_address=config_data['service_address'],
+            tick_rep_port=config_data['tick_rep_port'],
+            tick_pub_port=config_data['tick_pub_port'],
+            bar_rep_port=config_data['bar_rep_port'],
+            bar_pub_port=config_data['bar_pub_port'],
+            inst_rep_port=config_data['inst_rep_port'],
+            inst_pub_port=config_data['inst_pub_port'],
             clock=self._clock,
             guid_factory=self._guid_factory,
             logger=self._logger)
@@ -117,17 +119,16 @@ cdef class TradingNode:
             guid_factory=self._guid_factory,
             logger=self._logger)
 
-        exec_db_config = config['exec_database']
-        if exec_db_config['type'] == 'redis':
+        if config_exec_db['type'] == 'redis':
             self._exec_db = RedisExecutionDatabase(
-                trader_id=trader_id,
-                host=exec_db_config['redis_host'],
-                port=exec_db_config['redis_port'],
+                trader_id=self.trader_id,
+                host=config_exec_db['redis_host'],
+                port=config_exec_db['redis_port'],
                 serializer=MsgPackEventSerializer(),
                 logger=self._logger)
         else:
             self._exec_db = InMemoryExecutionDatabase(
-                trader_id=trader_id,
+                trader_id=self.trader_id,
                 logger=self._logger)
 
         self._exec_engine = LiveExecutionEngine(
@@ -138,26 +139,27 @@ cdef class TradingNode:
             guid_factory=self._guid_factory,
             logger=self._logger)
 
-        exec_client_config = config['exec_client']
         self._exec_client = LiveExecClient(
             exec_engine=self._exec_engine,
             zmq_context=self._zmq_context,
-            service_name=exec_client_config['service_name'],
-            service_address=exec_client_config['service_address'],
-            events_topic=exec_client_config['events_topic'],
-            commands_port=exec_client_config['commands_port'],
-            events_port=exec_client_config['events_port'],
+            service_name=config_exec_client['service_name'],
+            service_address=config_exec_client['service_address'],
+            events_topic=config_exec_client['events_topic'],
+            commands_port=config_exec_client['commands_port'],
+            events_port=config_exec_client['events_port'],
             logger=self._logger)
 
         self._exec_engine.register_client(self._exec_client)
 
         self.trader = Trader(
-            trader_id=trader_id,
+            trader_id=self.trader_id,
             strategies=strategies,
             data_client=self._data_client,
             exec_engine=self._exec_engine,
             clock=self._clock,
             logger=self._logger)
+
+        Condition.equal(self.trader_id, self.trader.id)
 
         self._log.info("Initialized.")
 
