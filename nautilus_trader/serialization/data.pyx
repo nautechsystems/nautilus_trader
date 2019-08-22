@@ -91,7 +91,7 @@ cdef class Utf8BarSerializer:
                    Price(values[1]),
                    Price(values[2]),
                    Price(values[3]),
-                   Quantity(values[4]),
+                   long(values[4]),
                    iso8601.parse_date(values[5]))
 
     @staticmethod
