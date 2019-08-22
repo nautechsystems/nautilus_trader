@@ -24,53 +24,102 @@ from nautilus_trader.serialization.base cimport InstrumentSerializer
 from nautilus_trader.serialization.common cimport convert_datetime_to_string, convert_string_to_datetime
 
 
-cpdef Tick deserialize_tick(Symbol symbol, bytes tick_bytes):
+cdef class Utf8TickSerializer:
     """
-    Return a deserialized tick from the given symbol and bytes.
-
-    :param symbol: The ticks symbol.
-    :param tick_bytes: The tick bytes to deserialize.
-    :return: Tick.
+    Provides a tick serializer for the UTF-8 specification.
     """
-    cdef list values = tick_bytes.decode(UTF8).split(',')
+    @staticmethod
+    cdef bytes serialize(Tick tick):
+        """
+        Serialize the given tick to UTF-8 specification bytes.
 
-    return Tick(
-        symbol,
-        Price(values[0]),
-        Price(values[1]),
-        iso8601.parse_date(values[2]))
+        :param: data: The tick to serialize.
+        :return: bytes.
+        """
+        return str(tick).encode(UTF8)
 
-cpdef Bar deserialize_bar(bytes bar_bytes):
+    @staticmethod
+    cdef Tick deserialize(Symbol symbol, bytes values_bytes):
+        """
+        Deserialize the given tick bytes to a tick.
+
+        :param: data_bytes: The data bytes to deserialize.
+        :return: Tick.
+        """
+        cdef list values = values_bytes.decode(UTF8).split(',')
+
+        return Tick(
+            symbol,
+            Price(values[0]),
+            Price(values[1]),
+            iso8601.parse_date(values[2]))
+
+    @staticmethod
+    def py_serialize(tick: Tick) -> bytes:
+        return Utf8TickSerializer.serialize(tick)
+
+    @staticmethod
+    def py_deserialize(symbol: Symbol, values_bytes: bytes) -> Tick:
+        return Utf8TickSerializer.deserialize(symbol, values_bytes)
+
+
+cdef class Utf8BarSerializer:
     """
-    Return the deserialized bar from the give bytes.
+    Provides a bar serializer for the UTF-8 specification.
+    """
+    @staticmethod
+    cdef bytes serialize(Bar bar):
+        """
+        Serialize the given bar to UTF-8 specification bytes.
+
+        :param: data: The bar to serialize.
+        :return: bytes.
+        """
+        return str(bar).encode(UTF8)
+
+    @staticmethod
+    cdef Bar deserialize(bytes bar_bytes):
+        """
+        Deserialize the given bar bytes to a bar.
+
+        :param: bar_bytes: The bar bytes to deserialize.
+        :return: Bar.
+        """
+        cdef list values = bar_bytes.decode(UTF8).split(',')
+
+        return Bar(Price(values[0]),
+                   Price(values[1]),
+                   Price(values[2]),
+                   Price(values[3]),
+                   Quantity(values[4]),
+                   iso8601.parse_date(values[5]))
+
+    @staticmethod
+    cdef list deserialize_bars(bytes[:] bar_bytes_array):
+        """
+        Return a list of deserialized bars from the given bars bytes.
     
-    :param bar_bytes: The bar bytes to deserialize.
-    :return: Bar.
-    """
-    cdef list values = bar_bytes.decode(UTF8).split(',')
+        :param bar_bytes_array: The bar bytes to deserialize.
+        :return: List[Bar].
+        """
+        cdef list bars = []
+        cdef int i
+        cdef int array_length = len(bar_bytes_array)
+        for i in range(array_length):
+            bars.append(Utf8BarSerializer.deserialize(bar_bytes_array[i]))
+        return bars
 
-    return Bar(
-        Price(values[0]),
-        Price(values[1]),
-        Price(values[2]),
-        Price(values[3]),
-        Quantity(values[4]),
-        iso8601.parse_date(values[5]))
+    @staticmethod
+    def py_serialize(bar: Bar) -> bytes:
+        return Utf8BarSerializer.serialize(bar)
 
-cpdef list deserialize_bars(bytes[:] bar_bytes_array):
-    """
-    Return a list of deserialized bars from the given bars bytes.
-    
-    :param bar_bytes_array: The bar bytes to deserialize.
-    :return: List[Bar].
-    """
-    cdef list bars = []
-    cdef int i
-    cdef int array_length = len(bar_bytes_array)
-    for i in range(array_length):
-        bars.append(deserialize_bar(bar_bytes_array[i]))
+    @staticmethod
+    def py_deserialize(bar_bytes: bytes) -> Bar:
+        return Utf8BarSerializer.deserialize(bar_bytes)
 
-    return bars
+    @staticmethod
+    def py_deserialize_bars(bar_bytes_array: bytearray):
+        return Utf8BarSerializer.deserialize_bars(bar_bytes_array)
 
 
 cdef class BsonSerializer:
@@ -80,7 +129,7 @@ cdef class BsonSerializer:
     @staticmethod
     cdef bytes serialize(dict data):
         """
-        Serialize the given data to bytes.
+        Serialize the given data to BSON specification bytes.
 
         :param: data: The data to serialize.
         :return: bytes.
@@ -90,7 +139,7 @@ cdef class BsonSerializer:
     @staticmethod
     cdef dict deserialize(bytes data_bytes):
         """
-        Deserialize the given bytes to a data object.
+        Deserialize the given BSON specification bytes to a data object.
 
         :param: data_bytes: The data bytes to deserialize.
         :return: Dict.

@@ -17,7 +17,7 @@ from nautilus_trader.model.identifiers import Symbol, Venue
 from nautilus_trader.live.logger import LiveLogger
 from nautilus_trader.live.data import LiveDataClient
 from nautilus_trader.network.responses import DataResponse
-from nautilus_trader.serialization.data import DataMapper, BsonSerializer, BsonInstrumentSerializer
+from nautilus_trader.serialization.data import Utf8TickSerializer, Utf8BarSerializer, DataMapper, BsonDataSerializer, BsonInstrumentSerializer
 from nautilus_trader.serialization.serializers import MsgPackResponseSerializer
 from test_kit.objects import ObjectStorer
 from test_kit.stubs import TestStubs
@@ -35,7 +35,7 @@ class LiveDataClientTests(unittest.TestCase):
         self.logger = LiveLogger()
         self.zmq_context = zmq.Context()
         self.data_mapper = DataMapper()
-        self.data_serializer = BsonSerializer()
+        self.data_serializer = BsonDataSerializer()
         self.response_serializer = MsgPackResponseSerializer()
         self.tick_req_port = 55501
         self.bar_req_port = 55503
@@ -105,7 +105,7 @@ class LiveDataClientTests(unittest.TestCase):
         self.data_client.subscribe_ticks(symbol, handler=data_receiver.store)
 
         time.sleep(0.1)
-        self.tick_publisher.publish(symbol.value, str(tick).encode(UTF8))
+        self.tick_publisher.publish(symbol.value, Utf8TickSerializer.py_serialize(tick))
         time.sleep(0.1)
 
         # Assert
@@ -156,7 +156,7 @@ class LiveDataClientTests(unittest.TestCase):
         self.data_client.subscribe_bars(bar_type, handler=data_receiver.store_2)
 
         time.sleep(0.1)
-        self.bar_publisher.publish(str(bar_type), str(bar).encode(UTF8))
+        self.bar_publisher.publish(str(bar_type), Utf8BarSerializer.py_serialize(bar))
         time.sleep(0.1)
 
         # Assert

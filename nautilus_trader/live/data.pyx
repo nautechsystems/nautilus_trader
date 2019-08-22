@@ -21,7 +21,11 @@ from nautilus_trader.live.logger cimport LiveLogger
 from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.network.workers import RequestWorker, SubscriberWorker
 from nautilus_trader.serialization.base cimport DataSerializer, InstrumentSerializer, RequestSerializer, ResponseSerializer
-from nautilus_trader.serialization.data cimport BsonDataSerializer, BsonInstrumentSerializer
+from nautilus_trader.serialization.data cimport (
+    Utf8TickSerializer,
+    Utf8BarSerializer,
+    BsonDataSerializer,
+    BsonInstrumentSerializer)
 from nautilus_trader.serialization.constants cimport *
 from nautilus_trader.serialization.common cimport convert_datetime_to_string
 from nautilus_trader.serialization.serializers cimport MsgPackRequestSerializer, MsgPackResponseSerializer
@@ -433,11 +437,11 @@ cdef class LiveDataClient(DataClient):
 
     cpdef void _handle_tick_sub(self, str topic, bytes message):
         # Handle the given tick message published for the given topic
-        self._handle_tick(Tick.from_string(self._cached_symbols.get(topic), message.decode(UTF8)))
+        self._handle_tick(Utf8TickSerializer.deserialize(self._cached_symbols.get(topic), message))
 
     cpdef void _handle_bar_sub(self, str topic, bytes message):
         # Handle the given bar message published for the given topic
-        self._handle_bar(self._cached_bar_types.get(topic), Bar.from_string(message.decode(UTF8)))
+        self._handle_bar(self._cached_bar_types.get(topic), Utf8BarSerializer.deserialize(message))
 
     cpdef void _handle_inst_sub(self, str topic, bytes message):
         # Handle the given instrument message published for the given topic
