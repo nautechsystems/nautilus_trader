@@ -1012,7 +1012,7 @@ cdef class TradingStrategy:
         :return: True if the order does not exist or is complete, else False.
         :raises ConditionFailed: If the order is not found.
         """
-        return self._exec_engine.database.is_order_complete(order_id)
+        return self._exec_engine.database.is_order_completed(order_id)
 
     cpdef bint is_flat(self):
         """

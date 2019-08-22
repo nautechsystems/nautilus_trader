@@ -17,13 +17,14 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
     Provides a Redis event store for an execution engine.
     """
     cdef str _key_trader
+    cdef str _key_accounts
     cdef str _key_orders
     cdef str _key_positions
     cdef str _key_strategies
     cdef str _key_index_order_strategy
     cdef str _key_index_order_position
     cdef str _key_index_orders_working
-    cdef str _key_index_orders_complete
+    cdef str _key_index_orders_completed
     cdef str _key_index_position_orders
     cdef str _key_index_positions_open
     cdef str _key_index_positions_closed
@@ -31,6 +32,8 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
     cdef CommandSerializer _command_serializer
     cdef EventSerializer _event_serializer
     cdef object _redis
+
+    cdef readonly bint check_integrity
 
     cdef void _store_order_event(self, OrderEvent event)
     cdef void _store_position_event(self, PositionEvent event)

@@ -8,13 +8,14 @@
 
 import uuid
 import unittest
+
+from decimal import Decimal
 from redis import Redis
 
 from nautilus_trader.model.identifiers import TraderId
-from nautilus_trader.core.types import GUID
+from nautilus_trader.core.types import GUID, ValidString
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.events import OrderFilled, OrderWorking
-from nautilus_trader.model.identifiers import Symbol, Venue, IdTag, StrategyId, PositionId, OrderId, ExecutionId, ExecutionTicket
 from nautilus_trader.model.objects import Quantity, Price
 from nautilus_trader.model.order import OrderFactory
 from nautilus_trader.model.position import Position
@@ -32,10 +33,34 @@ from nautilus_trader.network.responses import MessageReceived
 from nautilus_trader.serialization.serializers import MsgPackCommandSerializer, MsgPackEventSerializer
 from nautilus_trader.live.execution import LiveExecutionEngine, LiveExecClient
 from nautilus_trader.live.logger import LiveLogger
+from nautilus_trader.model.events import OrderFilled, OrderWorking
+from nautilus_trader.model.identifiers import (
+
+    AccountId,
+    TraderId,
+    StrategyId,
+    IdTag,
+    OrderId,
+    PositionId,
+    ExecutionId,
+    ExecutionTicket)
+from nautilus_trader.model.objects import Quantity, Price, Money
+from nautilus_trader.model.order import OrderFactory
+from nautilus_trader.model.position import Position
+from nautilus_trader.model.commands import SubmitOrder
+from nautilus_trader.model.events import AccountEvent
+from nautilus_trader.model.enums import Currency
+from nautilus_trader.common.account import Account
+from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.guid import TestGuidFactory
+from nautilus_trader.common.logger import TestLogger
+from nautilus_trader.common.portfolio import Portfolio
+from nautilus_trader.common.execution import InMemoryExecutionDatabase, ExecutionEngine
+from nautilus_trader.trade.strategy import TradingStrategy
 from test_kit.strategies import EmptyStrategy
 
 UNIX_EPOCH = TestStubs.unix_epoch()
-AUDUSD_FXCM = Symbol('AUDUSD', Venue('FXCM'))
+AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 
 # Requirements:
 #    - A Redis instance listening on the default port 6379
@@ -47,9 +72,9 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
-        clock = LiveClock()
-        guid_factory = LiveGuidFactory()
-        logger = LiveLogger()
+        clock = TestClock()
+        guid_factory = TestGuidFactory()
+        logger = TestLogger()
 
         self.trader_id = TraderId('TESTER', '000')
 
@@ -163,7 +188,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.database.add_order(order, strategy.id, position_id)
 
         # Act
-        self.database.add_order_event(order_working, strategy.id, order.is_working, order.is_complete)
+        self.database.add_order_event(order, order_working)
 
         # Assert
         # self.assertTrue(self.exec_db.order_exists(order.id))
@@ -173,3 +198,24 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         # self.assertTrue(order.id in self.exec_db.get_orders_working_all()[strategy.id])
         # self.assertTrue(order.id not in self.exec_db.get_orders_completed(strategy.id))
         # self.assertTrue(order.id not in self.exec_db.get_orders_completed_all()[strategy.id])
+
+    def test_can_add_account_event(self):
+        # Arrange
+        event = AccountEvent(
+            AccountId('SIMULATED', '123456'),
+            Currency.USD,
+            Money(1000000),
+            Money(1000000),
+            Money.zero(),
+            Money.zero(),
+            Money.zero(),
+            Decimal(0),
+            ValidString(),
+            GUID(uuid.uuid4()),
+            UNIX_EPOCH)
+
+        # Act
+        self.database.add_account_event(event)
+
+        # Assert
+        self.assertTrue(True)  # Did not raise exception

@@ -607,7 +607,7 @@ cdef class BacktestExecClient(ExecutionClient):
         # Work any atomic child orders
         if order.id in self.atomic_child_orders:
             for child_order in self.atomic_child_orders[order.id]:
-                if not child_order.is_complete:  # The order may already be cancelled or rejected
+                if not child_order.is_completed:  # The order may already be cancelled or rejected
                     self._process_order(child_order)
             del self.atomic_child_orders[order.id]
 
