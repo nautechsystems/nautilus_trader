@@ -155,7 +155,7 @@ cdef class Trader:
         Note: The trader cannot be running otherwise an error is logged.
         """
         if self.is_running:
-            self._log.error(f"Cannot reset a running Trader...")
+            self._log.error(f"Cannot reset trader (trader must be stopped to reset).")
             return
 
         self._log.info("Resetting...")
