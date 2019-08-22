@@ -302,6 +302,28 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.account = Account()
         self.serializer = MsgPackEventSerializer()
 
+    def test_can_serialize_and_deserialize_order_initialized_events(self):
+        # Arrange
+        event = OrderInitialized(
+            OrderId('O-123456'),
+            AUDUSD_FXCM,
+            None,
+            OrderSide.SELL,
+            OrderType.STOP_LIMIT,
+            Quantity(100000),
+            Price('1.50000'),
+            TimeInForce.DAY,
+            None,
+            GUID(uuid.uuid4()),
+            UNIX_EPOCH)
+
+        # Act
+        serialized = self.serializer.serialize(event)
+        deserialized = self.serializer.deserialize(serialized)
+
+        # Assert
+        self.assertEqual(deserialized, event)
+
     def test_can_serialize_and_deserialize_order_submitted_events(self):
         # Arrange
         event = OrderSubmitted(

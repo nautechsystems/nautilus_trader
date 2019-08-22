@@ -359,7 +359,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
         elif isinstance(event, OrderInitialized):
             package[ORDER_ID] = event.order_id.value
             package[SYMBOL] = event.symbol.value
-            package[LABEL] = event.label.value
+            package[LABEL] = convert_label_to_string(event.label)
             package[ORDER_SIDE] = order_side_to_string(event.order_side)
             package[ORDER_TYPE] = order_type_to_string(event.order_type)
             package[QUANTITY] = event.quantity.value
@@ -384,7 +384,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[ACCOUNT_ID] = event.account_id.value
             package[ORDER_ID_BROKER] = event.order_id_broker.value
             package[SYMBOL] = event.symbol.value
-            package[LABEL] = event.label.value
+            package[LABEL] = convert_label_to_string(event.label)
             package[ORDER_SIDE] = order_side_to_string(event.order_side)
             package[ORDER_TYPE] = order_type_to_string(event.order_type)
             package[QUANTITY] = event.quantity.value
@@ -468,7 +468,19 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 ValidString('NONE'),
                 event_id,
                 event_timestamp)
-
+        if event_type == OrderInitialized.__name__:
+            return OrderInitialized(
+                OrderId(unpacked[ORDER_ID]),
+                Symbol.from_string(unpacked[SYMBOL]),
+                convert_string_to_label(unpacked[LABEL]),
+                order_side_from_string(unpacked[ORDER_SIDE]),
+                order_type_from_string(unpacked[ORDER_TYPE]),
+                Quantity(unpacked[QUANTITY]),
+                Price(unpacked[PRICE]),
+                time_in_force_from_string(unpacked[TIME_IN_FORCE]),
+                convert_string_to_datetime(unpacked[EXPIRE_TIME]),
+                event_id,
+                event_timestamp)
         if event_type == OrderSubmitted.__name__:
             return OrderSubmitted(
                 OrderId(unpacked[ORDER_ID]),
@@ -497,7 +509,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 OrderId(unpacked[ORDER_ID_BROKER]),
                 AccountId.from_string(unpacked[ACCOUNT_ID]),
                 Symbol.from_string(unpacked[SYMBOL]),
-                Label(unpacked[LABEL]),
+                convert_string_to_label(unpacked[LABEL]),
                 order_side_from_string(unpacked[ORDER_SIDE]),
                 order_type_from_string(unpacked[ORDER_TYPE]),
                 Quantity(unpacked[QUANTITY]),

@@ -7,7 +7,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import queue
-import multiprocessing
 import threading
 
 from redis import Redis
@@ -15,14 +14,29 @@ from zmq import Context
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport MessageType, Message, Command, Event, Response
+from nautilus_trader.model.order cimport Order
+from nautilus_trader.model.position cimport Position
+from nautilus_trader.model.identifiers cimport TraderId, StrategyId, OrderId, PositionId
 from nautilus_trader.model.commands cimport (
+    Command,
     AccountInquiry,
     SubmitOrder,
     SubmitAtomicOrder,
-    CancelOrder,
-    ModifyOrder)
-from nautilus_trader.model.identifiers cimport TraderId
-from nautilus_trader.model.events cimport OrderEvent, PositionEvent
+    ModifyOrder,
+    CancelOrder)
+from nautilus_trader.model.events cimport (
+    Event,
+    OrderEvent,
+    OrderFillEvent,
+    PositionEvent,
+    AccountEvent,
+    OrderModified,
+    OrderRejected,
+    OrderCancelled,
+    OrderCancelReject,
+    PositionOpened,
+    PositionModified,
+    PositionClosed)
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.guid cimport LiveGuidFactory
@@ -36,6 +50,21 @@ from nautilus_trader.serialization.serializers cimport (
 )
 from nautilus_trader.live.logger cimport LiveLogger
 from nautilus_trader.serialization.serializers cimport EventSerializer, MsgPackEventSerializer
+from nautilus_trader.trade.strategy cimport TradingStrategy
+
+
+cdef str CONFIG = 'Config'
+cdef str ORDERS = 'Orders'
+cdef str POSITIONS = 'Positions'
+cdef str INDEX = 'Index'
+cdef str ORDER_STRATEGY = 'OrderStrategy'
+cdef str ORDER_POSITION = 'OrderPosition'
+cdef str POSITION_ORDERS = 'PositionOrders'
+cdef str STRATEGIES = 'Strategies'
+cdef str WORKING = 'Working'
+cdef str COMPLETE = 'Complete'
+cdef str OPEN = 'Open'
+cdef str CLOSED = 'Closed'
 
 
 cdef class RedisExecutionDatabase(ExecutionDatabase):
@@ -47,52 +76,520 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
                  TraderId trader_id,
                  str host,
                  int port,
-                 EventSerializer serializer,
+                 CommandSerializer command_serializer,
+                 EventSerializer event_serializer,
                  LiveLogger logger):
         """
         Initializes a new instance of the RedisExecutionEngine class.
 
         :param trader_id: The trader identifier.
-        :param port: The redis host to connect to.
-        :param port: The redis port to connect to.
-        :param serializer: The event serializer.
-        :raises ConditionFailed: If the redis_port is not in range [0, 65535].
+        :param port: The redis host for the database connection.
+        :param port: The redis port for the database connection.
+        :param command_serializer: The command serializer.
+        :param event_serializer: The event serializer.
+        :raises ConditionFailed: If the host is not a valid string.
+        :raises ConditionFailed: If the port is not in range [0, 65535].
         """
-        Condition.in_range(port, 'redis_port', 0, 65535)
+        Condition.valid_string(host, 'host')
+        Condition.in_range(port, 'port', 0, 65535)
 
         super().__init__(trader_id, logger)
-        self._key_order_event = f'{trader_id.value}:Orders:'
-        self._key_position_event = f'{trader_id.value}:Positions:'
-        self._serializer = serializer
+        self._key_orders = f'Trader-{trader_id.value}:{ORDERS}'
+        self._key_positions = f'Trader-{trader_id.value}:{POSITIONS}'
+        self._key_strategies = f'Trader-{trader_id.value}:{STRATEGIES}'
+        self._command_serializer = command_serializer
+        self._event_serializer = event_serializer
         self._redis = Redis(host=host, port=port, db=0)
-        self._queue = multiprocessing.Queue()
-        self._process = multiprocessing.Process(target=self._process_queue, daemon=True)
-        self._process.start()
-
-    cpdef void store(self, Event message):
-        """
-        Store the given event message.
-        
-        :param message: The event message to store.
-        """
-        self._queue.put(message)
-
-    cpdef void _process_queue(self):
-        # Process the queue one item at a time
-        cdef Event event
-        while True:
-            event = self._queue.get()
-
-            if isinstance(event, OrderEvent):
-                self._store_order_event(event)
-            elif isinstance(event, PositionEvent):
-                self._store_position_event(event)
 
     cdef void _store_order_event(self, OrderEvent event):
-        self._redis.rpush(self._key_order_event + event.order_id.value, self._serializer.serialize(event))
+        self._redis.rpush(self._key_orders + event.order_id.value, self._event_serializer.serialize(event))
 
     cdef void _store_position_event(self, PositionEvent event):
-        self._redis.rpush(self._key_position_event + event.position.id.value, self._serializer.serialize(event.order_fill))
+        self._redis.rpush(self._key_positions + event.position.id.value, self._event_serializer.serialize(event.order_fill))
+
+# -- COMMANDS -------------------------------------------------------------------------------------"
+
+    cpdef void add_strategy(self, TradingStrategy strategy):
+        """
+        Add the given strategy to the execution database.
+
+        :param strategy: The strategy to add.
+        """
+        # Condition.true(strategy.id not in self._strategies, 'strategy.id not in self._strategies')
+        # Condition.true(strategy.id not in self._orders_working, 'strategy.id not in self._orders_active')
+        # Condition.true(strategy.id not in  self._orders_completed, 'strategy.id not in  self._orders_completed')
+
+        pipe = self._redis.pipeline()
+        pipe.hset(f'{self._key_strategies}:{strategy.id.value}:{CONFIG}', 'some_value', 1)
+        pipe.execute()
+
+        self._log.debug(f"Added strategy (id={strategy.id.value}).")
+
+    cpdef void add_order(self, Order order, StrategyId strategy_id, PositionId position_id):
+        """
+        Add the given order to the execution database.
+
+        :param order: The order to add.
+        :param strategy_id: The strategy identifier to associate with the order.
+        :param position_id: The position identifier to associate with the order.
+        """
+        Condition.true(order.id not in self._cached_orders, 'order.id not in order_book')
+
+        self._cached_orders[order.id] = order
+
+        pipe = self._redis.pipeline()
+        pipe.rpush(f'{self._key_orders}:{order.id}', self._event_serializer.serialize(order.last_event))
+        pipe.hset(name=f'{self._key_orders}:{INDEX}:{ORDER_STRATEGY}', key=order.id.value, value=strategy_id.value)
+        pipe.hset(name=f'{self._key_orders}:{INDEX}:{ORDER_POSITION}', key=order.id.value, value=position_id.value)
+        pipe.rpush(f'{self._key_positions}:{INDEX}:{POSITION_ORDERS}:{position_id.value}', order.id.value)
+        pipe.execute()
+
+        self._log.debug(f"Added order (id={order.id.value}, strategy_id={strategy_id.value}, position_id={position_id.value}).")
+
+    cpdef void add_position(self, Position position, StrategyId strategy_id):
+        """
+        Add the given position associated with the given strategy identifier.
+
+        :param position: The position to add.
+        :param strategy_id: The strategy identifier to associate with the position.
+        """
+        Condition.true(position.id not in self._cached_positions, 'position.id not in self._cached_positions')
+        # Condition.true(strategy_id in self._positions_open, 'strategy_id in self._positions_active')
+        # Condition.true(position.id not in self._positions_open[strategy_id], 'position.id not in self._positions_active[strategy_id]')
+
+        self._cached_positions[position.id] = position
+
+        pipe = self._redis.pipeline()
+        pipe.rpush(f'{self._key_positions}:{position.id.value}', self._event_serializer.serialize(position.last_event))
+        pipe.rpush(f'{self._key_positions}:{OPEN}', position.id.value)
+        pipe.execute()
+
+        self._log.debug(f"Added position (id={position.id.value}).")
+
+    cpdef void add_order_event(
+            self,
+            OrderEvent event,
+            StrategyId strategy_id,
+            bint is_working,
+            bint is_completed):
+        """
+        Add the given order event to the execution database.
+
+        :param event: The order event to add.
+        :param strategy_id: The strategy identifier associated with the event.
+        :param is_working: The flag indicating whether the order is working.
+        :param is_completed: The flag indicating whether the order is complete.
+        """
+        cdef OrderId order_id = event.order_id
+
+        pipe = self._redis.pipeline()
+        pipe.rpush(f'{self._key_orders}:{order_id}', self._event_serializer.serialize(event))
+        if is_working:
+            pipe.rpush(f'{self._key_orders}:{WORKING}', order_id.value)
+            pipe.lrem(name=f'{self._key_orders}:{COMPLETE}', count=1, value=order_id.value)
+        elif is_completed:
+            pipe.rpush(f'{self._key_orders}:{COMPLETE}', order_id.value)
+            pipe.lrem(name=f'{self._key_orders}:{WORKING}', count=1, value=order_id.value)
+        pipe.execute()
+#
+#     cpdef void add_position_event(
+#             self,
+#             OrderFillEvent fill_event,
+#             PositionId position_id,
+#             StrategyId strategy_id,
+#             bint is_closed):
+#         """
+#         Add the given position event to the execution database.
+#
+#         :param fill_event: The order fill position event to add.
+#         :param position_id: The position identifier associated with the event.
+#         :param strategy_id: The strategy identifier associated with the event.
+#         :param is_closed: The flag indicating whether the position is closed.
+#         """
+#         if not is_closed:
+#             if position_id not in self._positions_open[strategy_id]:
+#                 self._positions_open[strategy_id][position_id] = self._cached_positions[position_id]
+#             if position_id in self._positions_closed[strategy_id]:
+#                 del self._positions_closed[strategy_id][position_id]
+#         else:
+#             if position_id not in self._positions_closed[strategy_id]:
+#                 self._positions_closed[strategy_id][position_id] = self._cached_positions[position_id]
+#             if position_id in self._positions_open[strategy_id]:
+#                 del self._positions_open[strategy_id][position_id]
+#
+#     cpdef void add_account_event(self, AccountEvent event):
+#         """
+#         Add the given account event to the execution database.
+#
+#         :param event: The account event to add.
+#         """
+#         # Do nothing in memory
+#         pass
+#
+#     cpdef void delete_strategy(self, TradingStrategy strategy):
+#         """
+#         Deregister the given strategy with the execution client.
+#
+#         :param strategy: The strategy to deregister.
+#         :raises ConditionFailed: If the strategy is not registered with the execution client.
+#         """
+#         Condition.true(strategy.id in self._strategies, 'strategy in strategies')
+#         Condition.true(strategy.id in self._orders_working, 'strategy in orders_active')
+#         Condition.true(strategy.id in self._orders_completed, 'strategy in orders_completed')
+#
+#         self._strategies.remove(strategy.id)
+#         del self._orders_working[strategy.id]
+#         del self._orders_completed[strategy.id]
+#         del self._positions_open[strategy.id]
+#         del self._positions_closed[strategy.id]
+#
+#         self._log.debug(f"Deleted strategy (id={strategy.id.value}).")
+#
+#     cpdef void check_residuals(self):
+#         # Check for any residual active orders and log warnings if any are found
+#         for orders in self._orders_working.values():
+#             for order in orders.values():
+#                 self._log.warning(f"Residual active {order}")
+#
+#         for positions in self._positions_open.values():
+#             for position in positions.values():
+#                 self._log.warning(f"Residual position {position}")
+#
+#     cpdef void reset(self):
+#         # Reset the execution database by returning all stateful internal values to their initial value
+#         self._log.debug(f"Resetting...")
+#         self._index_order_strategy = {}   # type: Dict[OrderId, StrategyId]
+#         self._index_order_position = {}   # type: Dict[OrderId, PositionId]
+#
+#         # Reset all active orders
+#         for strategy_id in self._orders_working.keys():
+#             self._orders_working[strategy_id] = {}     # type: Dict[OrderId, Order]
+#
+#         # Reset all completed orders
+#         for strategy_id in self._orders_completed.keys():
+#             self._orders_completed[strategy_id] = {}  # type: Dict[OrderId, Order]
+#
+#         # Reset all active positions
+#         for strategy_id in self._positions_open.keys():
+#             self._positions_open[strategy_id] = {}  # type: Dict[PositionId, Position]
+#
+#         # Reset all closed positions
+#         for strategy_id in self._positions_closed.keys():
+#             self._positions_closed[strategy_id] = {}  # type: Dict[PositionId, Position]
+#
+#         self._reset()
+#
+#
+# # -- QUERIES --------------------------------------------------------------------------------------"
+#
+#     cpdef list get_strategy_ids(self):
+#         """
+#         Return a list of all registered strategy identifiers.
+#
+#         :return: List[StrategyId].
+#         """
+#         return  self._strategies.copy()
+#
+#     cpdef list get_order_ids(self):
+#         """
+#         Return a list of all registered order identifiers.
+#
+#         :return: List[OrderId].
+#         """
+#         return list(self._cached_orders.keys())
+#
+#     cpdef list get_position_ids(self):
+#         """
+#         Return a list of the cached position identifiers.
+#
+#         :return: List[PositionId].
+#         """
+#         return list(self._cached_positions.keys())
+#
+#     cpdef StrategyId get_strategy_id(self, OrderId order_id):
+#         """
+#         Return the strategy identifier associated with the given order identifier.
+#
+#         :param order_id: The order identifier associated with the strategy.
+#         :return StrategyId or None:
+#         """
+#         return self._index_order_strategy.get(order_id)
+#
+#     cpdef Order get_order(self, OrderId order_id):
+#         """
+#         Return the order matching the given identifier (if found).
+#
+#         :return: Order or None.
+#         """
+#         cdef Order order = self._cached_orders.get(order_id)
+#         if order is None:
+#             self._log_cannot_find_order(order_id)
+#         return order
+#
+#     cpdef dict get_orders_all(self):
+#         """
+#         Return all orders in the execution engines order book.
+#
+#         :return: Dict[OrderId, Order].
+#         """
+#         return self._cached_orders.copy()
+#
+#     cpdef dict get_orders_working_all(self):
+#         """
+#         Return all active orders in the execution engines order book.
+#
+#         :return: Dict[OrderId, Order].
+#         """
+#         return self._orders_working.copy()
+#
+#     cpdef dict get_orders_completed_all(self):
+#         """
+#         Return all completed orders in the execution engines order book.
+#
+#         :return: Dict[OrderId, Order].
+#         """
+#         return self._orders_completed.copy()
+#
+#     cpdef dict get_orders(self, StrategyId strategy_id):
+#         """
+#         Return all orders associated with the strategy identifier.
+#
+#         :param strategy_id: The strategy identifier associated with the orders.
+#         :return: Dict[OrderId, Order].
+#         :raises ConditionFailed: If the strategy identifier is not registered with the execution client.
+#         """
+#         # Condition.true(strategy_id in self._orders_active, 'strategy_id in orders_active')
+#         # Condition.true(strategy_id in self._orders_completed, 'strategy_id in orders_completed')
+#
+#         return {**self._orders_working[strategy_id], **self._orders_completed[strategy_id]}
+#
+#     cpdef dict get_orders_working(self, StrategyId strategy_id):
+#         """
+#         Return all active orders associated with the strategy identifier.
+#
+#         :param strategy_id: The strategy identifier associated with the orders.
+#         :return: Dict[OrderId, Order].
+#         :raises ConditionFailed: If the strategy identifier is not registered with the execution client.
+#         """
+#         # Condition.true(strategy_id in self._orders_active, 'strategy_id in orders_active')
+#
+#         return self._orders_working[strategy_id].copy()
+#
+#     cpdef dict get_orders_completed(self, StrategyId strategy_id):
+#         """
+#         Return all completed orders associated with the strategy identifier.
+#
+#         :param strategy_id: The strategy identifier associated with the orders.
+#         :return: Dict[OrderId, Order].
+#         :raises ConditionFailed: If the strategy identifier is not registered with the execution client.
+#         """
+#         # Condition.true(strategy_id in self._orders_completed, 'strategy_id in orders_completed')
+#
+#         return self._orders_completed[strategy_id].copy()
+#
+#     cpdef bint order_exists(self, OrderId order_id):
+#         """
+#         Return a value indicating whether an order with the given identifier exists.
+#
+#         :param order_id: The order identifier to check.
+#         :return: True if the order exists, else False.
+#         """
+#         return order_id in self._cached_orders
+#
+#     cpdef bint is_order_working(self, OrderId order_id):
+#         """
+#         Return a value indicating whether an order with the given identifier is active.
+#
+#         :param order_id: The order identifier to check.
+#         :return: True if the order is found and active, else False.
+#         """
+#         return order_id in self._cached_orders and self._cached_orders[order_id].is_working
+#
+#     cpdef bint is_order_complete(self, OrderId order_id):
+#         """
+#         Return a value indicating whether an order with the given identifier is complete.
+#
+#         :param order_id: The order identifier to check.
+#         :return: True if the order is found and complete, else False.
+#         """
+#         return order_id in self._cached_orders and self._cached_orders[order_id].is_complete
+#
+#     cpdef Position get_position(self, PositionId position_id):
+#         """
+#         Return the position associated with the given position identifier (if found, else None).
+#
+#         :param position_id: The position identifier.
+#         :return: Position or None.
+#         """
+#         cdef Position position = self._cached_positions.get(position_id)
+#         if position is None:
+#             self._log_cannot_find_position(position_id)
+#         return position
+#
+#     cpdef Position get_position_for_order(self, OrderId order_id):
+#         """
+#         Return the position associated with the given order identifier (if found, else None).
+#
+#         :param order_id: The order identifier for the position.
+#         :return: Position or None.
+#         """
+#         cdef PositionId position_id = self.get_position_id(order_id)
+#         if position_id is None:
+#             self._log.error(f"Cannot get position for {order_id} (no matching position id found).")
+#             return None
+#
+#         return self._cached_positions.get(position_id)
+#
+#     cpdef PositionId get_position_id(self, OrderId order_id):
+#         """
+#         Return the position associated with the given order identifier (if found, else None).
+#
+#         :param order_id: The order identifier associated with the position.
+#         :return: PositionId or None.
+#         """
+#         cdef PositionId position_id = self._index_order_position.get(order_id)
+#         if position_id is None:
+#             self._log.error(f"Cannot get position id for {order_id} (no matching position id found).")
+#
+#         return position_id
+#
+#     cpdef dict get_positions_all(self):
+#         """
+#         Return a dictionary of all positions held by the portfolio.
+#
+#         :return: Dict[PositionId, Position].
+#         """
+#         return self._cached_positions.copy()
+#
+#     cpdef dict get_positions_open_all(self):
+#         """
+#         Return a dictionary of all active positions held by the portfolio.
+#
+#         :return: Dict[PositionId, Position].
+#         """
+#         return self._positions_open.copy()
+#
+#     cpdef dict get_positions_closed_all(self):
+#         """
+#         Return a dictionary of all closed positions held by the portfolio.
+#
+#         :return: Dict[PositionId, Position].
+#         """
+#         return self._positions_closed.copy()
+#
+#     cpdef dict get_positions(self, StrategyId strategy_id):
+#         """
+#         Return a list of all positions associated with the given strategy identifier.
+#
+#         :param strategy_id: The strategy identifier associated with the positions.
+#         :return: Dict[PositionId, Position].
+#         :raises ConditionFailed: If the strategy identifier is not registered with the portfolio.
+#         """
+#         Condition.is_in(strategy_id, self._positions_open, 'strategy_id', 'positions_active')
+#         Condition.is_in(strategy_id, self._positions_closed, 'strategy_id', 'positions_closed')
+#
+#         return {**self._positions_open[strategy_id], **self._positions_closed[strategy_id]}  # type: Dict[PositionId, Position]
+#
+#     cpdef dict get_positions_open(self, StrategyId strategy_id):
+#         """
+#         Return a list of all active positions associated with the given strategy identifier.
+#
+#         :param strategy_id: The strategy identifier associated with the positions.
+#         :return: Dict[PositionId, Position].
+#         :raises ConditionFailed: If the strategy identifier is not registered with the portfolio.
+#         """
+#         Condition.is_in(strategy_id, self._positions_open, 'strategy_id', 'positions_active')
+#
+#         return self._positions_open[strategy_id].copy()
+#
+#     cpdef dict get_positions_closed(self, StrategyId strategy_id):
+#         """
+#         Return a list of all active positions associated with the given strategy identifier.
+#
+#         :param strategy_id: The strategy identifier associated with the positions.
+#         :return: Dict[PositionId, Position].
+#         :raises ConditionFailed: If the strategy identifier is not registered with the portfolio.
+#         """
+#         Condition.is_in(strategy_id, self._positions_closed, 'strategy_id', 'positions_closed')
+#
+#         return self._positions_closed[strategy_id].copy()
+#
+#     cpdef bint position_exists(self, PositionId position_id):
+#         """
+#         Return a value indicating whether a position with the given identifier exists.
+#         :param position_id: The position identifier.
+#         :return: True if the position exists, else False.
+#         """
+#         return position_id in self._cached_positions
+#
+#     cpdef bint position_exists_for_order(self, OrderId order_id):
+#         """
+#         Return a value indicating whether there is a position associated with the given
+#         order identifier.
+#
+#         :param order_id: The order identifier.
+#         :return: True if an associated position exists, else False.
+#         """
+#         return order_id in self._index_order_position and self._index_order_position[order_id] in self._cached_positions
+#
+#     cpdef bint is_position_open(self, PositionId position_id):
+#         """
+#         Return a value indicating whether a position with the given identifier exists
+#         and is entered (active).
+#
+#         :param position_id: The position identifier.
+#         :return: True if the position exists and is exited, else False.
+#         """
+#         return position_id in self._cached_positions and not self._cached_positions[position_id].is_flat
+#
+#     cpdef bint is_position_closed(self, PositionId position_id):
+#         """
+#         Return a value indicating whether a position with the given identifier exists
+#         and is exited (closed).
+#
+#         :param position_id: The position identifier.
+#         :return: True if the position does not exist or is closed, else False.
+#         """
+#         return position_id in self._cached_positions and self._cached_positions[position_id].is_closed
+#
+#     cpdef int positions_count(self):
+#         """
+#         Return the total count of active and closed positions.
+#
+#         :return: int.
+#         """
+#         cdef int positions_total_count = 0
+#
+#         positions_total_count += self.positions_active_count()
+#         positions_total_count += self.positions_closed_count()
+#
+#         return positions_total_count
+#
+#     cpdef int positions_active_count(self):
+#         """
+#         Return the count of active positions held by the portfolio.
+#
+#         :return: int.
+#         """
+#         cdef int active_positions = 0
+#
+#         for positions_list in self._positions_open.values():
+#             active_positions += len(positions_list)
+#
+#         return active_positions
+#
+#     cpdef int positions_closed_count(self):
+#         """
+#         Return the count of closed positions held by the portfolio.
+#
+#         :return: int.
+#         """
+#         cdef int closed_count = 0
+#
+#         for positions_list in self._positions_closed.values():
+#             closed_count += len(positions_list)
+#
+#         return closed_count
 
 
 cdef class LiveExecutionEngine(ExecutionEngine):
@@ -158,7 +655,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             elif message.message_type == MessageType.COMMAND:
                 self._execute_command(message)
             else:
-                raise RuntimeError(f"Invalid message type on bus ({repr(message)}).")
+                raise RuntimeError(f"Invalid message type on queue ({repr(message)}).")
 
 
 cdef class LiveExecClient(ExecutionClient):
