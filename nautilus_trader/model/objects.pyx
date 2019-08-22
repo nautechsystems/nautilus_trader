@@ -882,7 +882,7 @@ cdef class Bar:
                    Price(split_bar[1]),
                    Price(split_bar[2]),
                    Price(split_bar[3]),
-                   int(split_bar[4]),
+                   long(split_bar[4]),
                    iso8601.parse_date(split_bar[5]))
 
     @staticmethod
