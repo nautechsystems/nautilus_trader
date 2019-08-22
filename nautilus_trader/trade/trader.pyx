@@ -32,7 +32,7 @@ cdef class Trader:
         """
         Initializes a new instance of the Trader class.
 
-        :param trader_id: The trader identifier for the instance (unique at fund level).
+        :param trader_id: The trader identifier for the trader (unique at fund level).
         :param strategies: The initial strategies for the trader.
         :param data_client: The data client for the trader.
         :param exec_engine: The execution engine for the trader.
@@ -73,10 +73,11 @@ cdef class Trader:
             Condition.list_type(strategies, TradingStrategy, 'strategies')
 
         if self.is_running:
-            self._log.error('Cannot change the strategies of a running trader.')
+            self._log.error('Cannot re-initialize the strategies of a running trader.')
             return
 
         for strategy in self.strategies:
+            # Design assumption that no strategies are running
             assert not strategy.is_running
 
         # Check strategy identifiers are unique
@@ -85,7 +86,8 @@ cdef class Trader:
             if strategy.id not in strategy_ids:
                 strategy_ids.add(strategy.id)
             else:
-                raise RuntimeError(f'The strategy identifier {strategy.id} was not unique.')
+                raise RuntimeError(f'The strategy identifier {strategy.id} was not unique '
+                                   f'(duplicate strategy identifiers).')
 
         # Dispose of current strategies
         for strategy in self.strategies:
@@ -96,7 +98,7 @@ cdef class Trader:
 
         # Initialize strategies
         for strategy in strategies:
-            strategy.change_logger(self._log._logger)
+            strategy.change_logger(self._log.get_logger())
             self.strategies.append(strategy)
 
         for strategy in self.strategies:
