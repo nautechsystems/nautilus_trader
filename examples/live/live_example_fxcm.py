@@ -15,7 +15,7 @@ from nautilus_trader.live.node import TradingNode
 from examples.strategies.ema_cross import EMACrossPy
 
 AUDUSD_FXCM = Symbol('AUDUSD', Venue('FXCM'))
-#BAR_TYPE = BarType(AUDUSD_FXCM, BarSpecification(1, Resolution.MINUTE, QuoteType.BID))
+# BAR_TYPE = BarType(AUDUSD_FXCM, BarSpecification(1, Resolution.MINUTE, QuoteType.BID))
 BAR_TYPE = BarType(AUDUSD_FXCM, BarSpecification(1, Resolution.SECOND, QuoteType.BID))
 
 

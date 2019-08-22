@@ -9,7 +9,8 @@
 import queue
 import multiprocessing
 import threading
-import redis
+
+from redis import Redis
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.identifiers cimport TraderId
@@ -22,18 +23,22 @@ cdef class LogStore:
     Provides a process and thread safe log store.
     """
 
-    def __init__(self, TraderId trader_id, int port=6379):
+    def __init__(self,
+                 TraderId trader_id,
+                 str host='localhost',
+                 int port=6379):
         """
         Initializes a new instance of the LogStore class.
 
         :param trader_id: The trader identifier.
+        :param host: The redis host to connect to.
         :param port: The redis port to connect to.
         :raises ConditionFailed: If the redis_port is not in range [0, 65535].
         """
         Condition.in_range(port, 'redis_port', 0, 65535)
 
-        self._key = f'Trader-{trader_id.value}:LogStore'
-        self._redis = redis.StrictRedis(host='localhost', port=port, db=0)
+        self._key = f'{trader_id.value}:LogStore'
+        self._redis = Redis(host=host, port=port, db=0)
         self._queue = multiprocessing.Queue()
         self._process = multiprocessing.Process(target=self._process_queue, daemon=True)
         self._process.start()
