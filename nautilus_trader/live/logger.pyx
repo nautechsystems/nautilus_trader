@@ -33,11 +33,13 @@ cdef class LogStore:
         :param trader_id: The trader identifier.
         :param host: The redis host to connect to.
         :param port: The redis port to connect to.
+        :raises ConditionFailed: If the redis_host is not a valid string.
         :raises ConditionFailed: If the redis_port is not in range [0, 65535].
         """
-        Condition.in_range(port, 'redis_port', 0, 65535)
+        Condition.valid_string(host, 'host')
+        Condition.in_range(port, 'port', 0, 65535)
 
-        self._key = f'{trader_id.value}:LogStore'
+        self._key = f'Trader-{trader_id.value}:LogStore'
         self._redis = Redis(host=host, port=port, db=0)
         self._queue = multiprocessing.Queue()
         self._process = multiprocessing.Process(target=self._process_queue, daemon=True)
