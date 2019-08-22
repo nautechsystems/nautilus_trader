@@ -19,7 +19,7 @@ from nautilus_trader.model.identifiers cimport Venue, TraderId
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.guid cimport LiveGuidFactory
-from nautilus_trader.common.execution cimport ExecutionDatabase
+from nautilus_trader.common.execution cimport InMemoryExecutionDatabase, ExecutionDatabase
 from nautilus_trader.common.logger import LogLevel
 from nautilus_trader.common.logger cimport LoggerAdapter, nautilus_header
 from nautilus_trader.common.portfolio cimport Portfolio
@@ -77,7 +77,10 @@ cdef class TradingNode:
             order_id_tag=config['trader']['order_id_tag'])
 
         log_config = config['logging']
-        self._log_store = LogStore(trader_id=trader_id, port=log_config['redis_port'])
+        self._log_store = LogStore(
+            trader_id=trader_id,
+            host=log_config['redis_host'],
+            port=log_config['redis_port'])
         self._logger = LiveLogger(
             name=trader_id.value,
             level_console=LogLevel[log_config['log_level_console']],
@@ -92,7 +95,7 @@ cdef class TradingNode:
         self._log_header()
         self._log.info("Starting...")
 
-        data_config = config['dataClient']
+        data_config = config['data_client']
         self._data_client = LiveDataClient(
             zmq_context=self._zmq_context,
             venue=Venue(data_config['venue']),
@@ -114,13 +117,18 @@ cdef class TradingNode:
             guid_factory=self._guid_factory,
             logger=self._logger)
 
-        exec_config = config['execClient']
-
-        self._exec_db = RedisExecutionDatabase(
-            trader_id=trader_id,
-            port=exec_config['redis_port'],
-            serializer=MsgPackEventSerializer(),
-            logger=self._logger)
+        exec_db_config = config['exec_database']
+        if exec_db_config['type'] == 'redis':
+            self._exec_db = RedisExecutionDatabase(
+                trader_id=trader_id,
+                host=exec_db_config['redis_host'],
+                port=exec_db_config['redis_port'],
+                serializer=MsgPackEventSerializer(),
+                logger=self._logger)
+        else:
+            self._exec_db = InMemoryExecutionDatabase(
+                trader_id=trader_id,
+                logger=self._logger)
 
         self._exec_engine = LiveExecutionEngine(
             database=self._exec_db,
@@ -130,14 +138,15 @@ cdef class TradingNode:
             guid_factory=self._guid_factory,
             logger=self._logger)
 
+        exec_client_config = config['exec_client']
         self._exec_client = LiveExecClient(
             exec_engine=self._exec_engine,
             zmq_context=self._zmq_context,
-            service_name=exec_config['service_name'],
-            service_address=exec_config['service_address'],
-            events_topic=exec_config['events_topic'],
-            commands_port=exec_config['commands_port'],
-            events_port=exec_config['events_port'],
+            service_name=exec_client_config['service_name'],
+            service_address=exec_client_config['service_address'],
+            events_topic=exec_client_config['events_topic'],
+            commands_port=exec_client_config['commands_port'],
+            events_port=exec_client_config['events_port'],
             logger=self._logger)
 
         self._exec_engine.register_client(self._exec_client)

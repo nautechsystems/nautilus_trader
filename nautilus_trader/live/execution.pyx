@@ -9,8 +9,8 @@
 import queue
 import multiprocessing
 import threading
-import redis
 
+from redis import Redis
 from zmq import Context
 
 from nautilus_trader.core.correctness cimport Condition
@@ -45,6 +45,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
     def __init__(self,
                  TraderId trader_id,
+                 str host,
                  int port,
                  EventSerializer serializer,
                  LiveLogger logger):
@@ -52,6 +53,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         Initializes a new instance of the RedisExecutionEngine class.
 
         :param trader_id: The trader identifier.
+        :param port: The redis host to connect to.
         :param port: The redis port to connect to.
         :param serializer: The event serializer.
         :raises ConditionFailed: If the redis_port is not in range [0, 65535].
@@ -59,10 +61,10 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         Condition.in_range(port, 'redis_port', 0, 65535)
 
         super().__init__(trader_id, logger)
-        self._key_order_event = f'Trader-{trader_id.value}:Orders:'
-        self._key_position_event = f'Trader-{trader_id.value}:Positions:'
+        self._key_order_event = f'{trader_id.value}:Orders:'
+        self._key_position_event = f'{trader_id.value}:Positions:'
         self._serializer = serializer
-        self._redis = redis.StrictRedis(host='localhost', port=port, db=0)
+        self._redis = Redis(host=host, port=port, db=0)
         self._queue = multiprocessing.Queue()
         self._process = multiprocessing.Process(target=self._process_queue, daemon=True)
         self._process.start()
