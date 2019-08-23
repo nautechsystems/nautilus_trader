@@ -77,7 +77,7 @@ cdef class ExecutionDatabase:
     cpdef bint is_position_open(self, PositionId position_id)
     cpdef bint is_position_closed(self, PositionId position_id)
     cpdef int positions_count(self)
-    cpdef int positions_active_count(self)
+    cpdef int positions_open_count(self)
     cpdef int positions_closed_count(self)
 
 # -------------------------------------------------------------------------------------------------"

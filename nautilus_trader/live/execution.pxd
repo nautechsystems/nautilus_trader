@@ -21,13 +21,16 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
     cdef readonly str key_orders
     cdef readonly str key_positions
     cdef readonly str key_strategies
-    cdef readonly str key_index_order_position
-    cdef readonly str key_index_order_strategy
-    cdef readonly str key_index_orders_working
-    cdef readonly str key_index_orders_completed
-    cdef readonly str key_index_position_orders
-    cdef readonly str key_index_positions_open
-    cdef readonly str key_index_positions_closed
+    cdef readonly str key_index_order_position      # HASH
+    cdef readonly str key_index_order_strategy      # HASH
+    cdef readonly str key_index_position_strategy   # HASH
+    cdef readonly str key_index_position_orders     # SET
+    cdef readonly str key_index_strategy_orders     # SET
+    cdef readonly str key_index_strategy_positions  # SET
+    cdef readonly str key_index_orders_working      # SET
+    cdef readonly str key_index_orders_completed    # SET
+    cdef readonly str key_index_positions_open      # SET
+    cdef readonly str key_index_positions_closed    # SET
 
     cdef CommandSerializer _command_serializer
     cdef EventSerializer _event_serializer
