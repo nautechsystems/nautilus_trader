@@ -28,6 +28,7 @@ from nautilus_trader.model.events cimport (
     Event,
     OrderEvent,
     OrderFillEvent,
+    OrderInitialized,
     PositionEvent,
     AccountEvent,
     OrderModified,
@@ -53,6 +54,8 @@ from nautilus_trader.live.logger cimport LiveLogger
 from nautilus_trader.serialization.serializers cimport EventSerializer, MsgPackEventSerializer
 from nautilus_trader.trade.strategy cimport TradingStrategy
 
+cdef str UTF8 = 'utf-8'
+
 cdef str TRADER = 'Trader'
 cdef str INDEX = 'Index'
 cdef str CONFIG = 'Config'
@@ -64,7 +67,7 @@ cdef str ORDER_POSITION = 'OrderPosition'
 cdef str ORDER_STRATEGY = 'OrderStrategy'
 cdef str POSITION_ORDERS = 'PositionOrders'
 cdef str WORKING = 'Working'
-cdef str COMPLETE = 'Complete'
+cdef str COMPLETED = 'Completed'
 cdef str OPEN = 'Open'
 cdef str CLOSED = 'Closed'
 
@@ -98,18 +101,18 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         super().__init__(trader_id, logger)
 
         # Database keys
-        self._key_trader                 = f'{TRADER}-{trader_id.value}'
-        self._key_accounts               = f'{self._key_trader}:{ACCOUNTS}'
-        self._key_orders                 = f'{self._key_trader}:{ORDERS}'
-        self._key_positions              = f'{self._key_trader}:{POSITIONS}'
-        self._key_strategies             = f'{self._key_trader}:{STRATEGIES}'
-        self._key_index_order_strategy   = f'{self._key_trader}:{INDEX}:{ORDER_STRATEGY}'
-        self._key_index_order_position   = f'{self._key_trader}:{INDEX}:{ORDER_POSITION}'
-        self._key_index_orders_working   = f'{self._key_trader}:{INDEX}:{ORDERS}:{WORKING}'
-        self._key_index_orders_completed  = f'{self._key_trader}:{INDEX}:{ORDERS}:{COMPLETE}'
-        self._key_index_position_orders  = f'{self._key_trader}:{INDEX}:{POSITION_ORDERS}'
-        self._key_index_positions_open   = f'{self._key_trader}:{INDEX}:{POSITIONS}:{OPEN}'
-        self._key_index_positions_closed = f'{self._key_trader}:{INDEX}:{POSITIONS}:{CLOSED}'
+        self.key_trader                 = f'{TRADER}-{trader_id.value}'
+        self.key_accounts               = f'{self.key_trader}:{ACCOUNTS}'
+        self.key_orders                 = f'{self.key_trader}:{ORDERS}'
+        self.key_positions              = f'{self.key_trader}:{POSITIONS}'
+        self.key_strategies             = f'{self.key_trader}:{STRATEGIES}'
+        self.key_index_order_position   = f'{self.key_trader}:{INDEX}:{ORDER_POSITION}'
+        self.key_index_order_strategy   = f'{self.key_trader}:{INDEX}:{ORDER_STRATEGY}'
+        self.key_index_orders_working   = f'{self.key_trader}:{INDEX}:{ORDERS}:{WORKING}'
+        self.key_index_orders_completed = f'{self.key_trader}:{INDEX}:{ORDERS}:{COMPLETED}'
+        self.key_index_position_orders  = f'{self.key_trader}:{INDEX}:{POSITION_ORDERS}'
+        self.key_index_positions_open   = f'{self.key_trader}:{INDEX}:{POSITIONS}:{OPEN}'
+        self.key_index_positions_closed = f'{self.key_trader}:{INDEX}:{POSITIONS}:{CLOSED}'
 
         # Serializers
         self._command_serializer = command_serializer
@@ -118,15 +121,74 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         # Redis client
         self._redis = Redis(host=host, port=port, db=0)
 
+        self.load_cache = True
         self.check_integrity = True
 
-    cdef void _store_order_event(self, OrderEvent event):
-        self._redis.rpush(self._key_orders + event.order_id.value, self._event_serializer.serialize(event))
+        # Load cache
+        if self.load_cache:
+            self.load_orders_cache()
+            self.load_positions_cache()
 
-    cdef void _store_position_event(self, PositionEvent event):
-        self._redis.rpush(self._key_positions + event.position.id.value, self._event_serializer.serialize(event.order_fill))
 
 # -- COMMANDS -------------------------------------------------------------------------------------"
+
+    cpdef void load_orders_cache(self):
+        """
+        Clear the current order cache and load orders from the database.
+        """
+        self._cached_orders.clear()
+
+        cdef bytes key_bytes
+        cdef bytes event_bytes
+        cdef list events
+        cdef Order order
+        cdef OrderEvent initial
+
+        cdef list order_keys = self._redis.keys(f'{self.key_orders}*')
+
+        for key_bytes in order_keys:
+            key = key_bytes.decode(UTF8)
+            events = self._redis.lrange(name=key, start=0, end=-1)
+            initial = self._event_serializer.deserialize(events.pop(0))
+            assert isinstance(initial, OrderInitialized)
+            order = Order.create(event=initial)
+
+            for event_bytes in events:
+                order.apply(self._event_serializer.deserialize(event_bytes))
+
+            self._cached_orders[order.id] = order
+
+    cpdef void load_positions_cache(self):
+        """
+        Clear the current order cache and load orders from the database.
+        """
+        self._cached_positions.clear()
+
+        cdef str key
+        cdef PositionId position_id
+        cdef Position position
+        cdef list events
+        cdef OrderFillEvent event
+
+        cdef list position_keys = [key.decode(UTF8) for key in self._redis.keys(f'{self.key_positions}*')]
+
+        for key in position_keys:
+            position_id = key.rsplit(':', maxsplit=1)[1]
+            events = [self._event_serializer.deserialize(event) for event in self._redis.lrange(name=key, start=0, end=-1)]
+            initial = events.pop(0)
+            assert isinstance(initial, OrderFillEvent)
+            position = Position(position_id=position_id, event=initial)
+
+            for event in events:
+                position.apply(event)
+
+            self._cached_positions[position.id] = position
+
+    cpdef void reset(self):
+        """
+        Reset the execution database by clearing the cache.
+        """
+        self._reset()
 
     cpdef void add_strategy(self, TradingStrategy strategy):
         """
@@ -139,7 +201,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         # Condition.true(strategy.id not in  self._orders_completed, 'strategy.id not in  self._orders_completed')
 
         pipe = self._redis.pipeline()
-        pipe.hset(f'{self._key_strategies}:{strategy.id.value}:{CONFIG}', 'some_value', 1)
+        pipe.hset(f'{self.key_strategies}:{strategy.id.value}:{CONFIG}', 'some_value', 1)
         pipe.execute()
 
         self._log.debug(f"Added strategy (id={strategy.id.value}).")
@@ -156,7 +218,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         self._cached_orders[order.id] = order
 
-        cdef str key_order = f'{self._key_orders}:{order.id.value}'
+        cdef str key_order = f'{self.key_orders}:{order.id.value}'
 
         if self.check_integrity:
             if self._redis.exists(key_order):
@@ -165,9 +227,9 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         # Command pipeline
         pipe = self._redis.pipeline()
         pipe.rpush(key_order, self._event_serializer.serialize(order.last_event))
-        pipe.hset(name=self._key_index_order_strategy, key=order.id.value, value=strategy_id.value)
-        pipe.hset(name=self._key_index_order_position, key=order.id.value, value=position_id.value)
-        pipe.rpush(f'{self._key_index_position_orders}:{position_id.value}', order.id.value)
+        pipe.hset(name=self.key_index_order_strategy, key=order.id.value, value=strategy_id.value)
+        pipe.hset(name=self.key_index_order_position, key=order.id.value, value=position_id.value)
+        pipe.rpush(f'{self.key_index_position_orders}:{position_id.value}', order.id.value)
         pipe.execute()
 
         self._log.debug(f"Added order (id={order.id.value}, strategy_id={strategy_id.value}, position_id={position_id.value}).")
@@ -183,7 +245,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         self._cached_positions[position.id] = position
 
-        cdef str key_position = f'{self._key_positions}:{position.id.value}'
+        cdef str key_position = f'{self.key_positions}:{position.id.value}'
 
         if self.check_integrity:
             if self._redis.exists(key_position):
@@ -192,7 +254,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         # Command pipeline
         pipe = self._redis.pipeline()
         pipe.rpush(key_position, self._event_serializer.serialize(position.last_event))
-        pipe.sadd(self._key_index_positions_open, position.id.value)
+        pipe.sadd(self.key_index_positions_open, position.id.value)
         pipe.execute()
 
         self._log.debug(f"Added position (id={position.id.value}) .")
@@ -206,7 +268,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         Condition.equal(order.id, event.order_id)
 
-        cdef str key_order = f'{self._key_orders}:{order.id.value}'
+        cdef str key_order = f'{self.key_orders}:{order.id.value}'
 
         if self.check_integrity:
             if not self._redis.exists(key_order):
@@ -216,11 +278,11 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         pipe = self._redis.pipeline()
         pipe.rpush(key_order, self._event_serializer.serialize(event))
         if order.is_working:
-            pipe.sadd(self._key_index_orders_working, order.id.value)
-            pipe.srem(self._key_index_orders_completed, order.id.value)
+            pipe.sadd(self.key_index_orders_working, order.id.value)
+            pipe.srem(self.key_index_orders_completed, order.id.value)
         elif order.is_completed:
-            pipe.sadd(self._key_index_orders_completed, order.id.value)
-            pipe.srem(self._key_index_orders_working, order.id.value)
+            pipe.sadd(self.key_index_orders_completed, order.id.value)
+            pipe.srem(self.key_index_orders_working, order.id.value)
         pipe.execute()
 
     cpdef void add_position_event(self, Position position, OrderFillEvent event):
@@ -231,7 +293,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         :param event: The event to add.
         """
 
-        cdef str key_position = f'{self._key_positions}:{position.id.value}'
+        cdef str key_position = f'{self.key_positions}:{position.id.value}'
 
         if self.check_integrity:
             if not self._redis.exists(key_position):
@@ -241,8 +303,8 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         pipe = self._redis.pipeline()
         pipe.rpush(key_position, self._event_serializer.serialize(event))
         if position.is_closed:
-            pipe.sadd(self._key_index_positions_closed, position.id.value)
-            pipe.srem(self._key_index_positions_open, position.id.value)
+            pipe.sadd(self.key_index_positions_closed, position.id.value)
+            pipe.srem(self.key_index_positions_open, position.id.value)
         pipe.execute()
 
     cpdef void add_account_event(self, AccountEvent event):
@@ -251,7 +313,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         :param event: The account event to add.
         """
-        cdef str key_account = f'{self._key_accounts}:{event.account_id.value}'
+        cdef str key_account = f'{self.key_accounts}:{event.account_id.value}'
 
         self._redis.rpush(key_account, self._event_serializer.serialize(event))
 
@@ -309,69 +371,71 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 #
 #         self._reset()
 #
-#
-# # -- QUERIES --------------------------------------------------------------------------------------"
-#
-#     cpdef list get_strategy_ids(self):
-#         """
-#         Return a list of all registered strategy identifiers.
-#
-#         :return: List[StrategyId].
-#         """
-#         return  self._strategies.copy()
-#
-#     cpdef list get_order_ids(self):
-#         """
-#         Return a list of all registered order identifiers.
-#
-#         :return: List[OrderId].
-#         """
-#         return list(self._cached_orders.keys())
-#
-#     cpdef list get_position_ids(self):
-#         """
-#         Return a list of the cached position identifiers.
-#
-#         :return: List[PositionId].
-#         """
-#         return list(self._cached_positions.keys())
-#
-#     cpdef StrategyId get_strategy_id(self, OrderId order_id):
-#         """
-#         Return the strategy identifier associated with the given order identifier.
-#
-#         :param order_id: The order identifier associated with the strategy.
-#         :return StrategyId or None:
-#         """
-#         return self._index_order_strategy.get(order_id)
-#
-#     cpdef Order get_order(self, OrderId order_id):
-#         """
-#         Return the order matching the given identifier (if found).
-#
-#         :return: Order or None.
-#         """
-#         cdef Order order = self._cached_orders.get(order_id)
-#         if order is None:
-#             self._log_cannot_find_order(order_id)
-#         return order
-#
-#     cpdef dict get_orders_all(self):
-#         """
-#         Return all orders in the execution engines order book.
-#
-#         :return: Dict[OrderId, Order].
-#         """
-#         return self._cached_orders.copy()
-#
-#     cpdef dict get_orders_working_all(self):
-#         """
-#         Return all active orders in the execution engines order book.
-#
-#         :return: Dict[OrderId, Order].
-#         """
-#         return self._orders_working.copy()
-#
+
+# -- QUERIES --------------------------------------------------------------------------------------"
+
+    cpdef list get_strategy_ids(self):
+        """
+        Return a list of all registered strategy identifiers.
+
+        :return: List[StrategyId].
+        """
+        return  self._redis.keys(pattern=f'{self.key_strategies}*')
+
+    cpdef list get_order_ids(self):
+        """
+        Return a list of all registered order identifiers.
+
+        :return: List[OrderId].
+        """
+        return self._redis.keys(pattern=f'{self.key_orders}*')
+
+    cpdef list get_position_ids(self):
+        """
+        Return a list of the cached position identifiers.
+
+        :return: List[PositionId].
+        """
+        return self._redis.keys(pattern=f'{self.key_positions}*')
+
+    cpdef StrategyId get_strategy_id(self, OrderId order_id):
+        """
+        Return the strategy identifier associated with the given order identifier.
+
+        :param order_id: The order identifier associated with the strategy.
+        :return StrategyId or None:
+        """
+        return self._redis.hget(name=self.key_index_order_strategy, key=order_id.value)
+
+    cpdef Order get_order(self, OrderId order_id):
+        """
+        Return the order matching the given identifier (if found).
+
+        :return: Order or None.
+        """
+        cdef Order order = self._cached_orders.get(order_id)
+        if order is None:
+            self._log_cannot_find_order(order_id)
+        return order
+
+    cpdef dict get_orders_all(self):
+        """
+        Return all orders in the execution engines order book.
+
+        :return: Dict[OrderId, Order].
+        """
+        return self._cached_orders.copy()
+
+    cpdef dict get_orders_working_all(self):
+        """
+        Return all active orders in the execution engines order book.
+
+        :return: Dict[OrderId, Order].
+        """
+        cdef set working_order_ids = self._redis.smembers(self.key_index_orders_working)
+
+        return self._orders_working.copy()
+
 #     cpdef dict get_orders_completed_all(self):
 #         """
 #         Return all completed orders in the execution engines order book.

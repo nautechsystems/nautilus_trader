@@ -226,10 +226,10 @@ cdef class ExecutionDatabase:
         raise NotImplementedError("Method must be implemented in the subclass.")
 
     cdef void _log_cannot_find_order(self, OrderId order_id):
-        self._log.error(f"Cannot find {order_id} in the database.")
+        self._log.error(f"Cannot find {order_id} in the cache.")
 
     cdef void _log_cannot_find_position(self, PositionId position_id):
-        self._log.error(f"Cannot find {position_id} in the database.")
+        self._log.error(f"Cannot find {position_id} in the cache.")
 
 
 cdef class InMemoryExecutionDatabase(ExecutionDatabase):

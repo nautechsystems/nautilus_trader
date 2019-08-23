@@ -94,6 +94,27 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
 
         self.redis = Redis(host='localhost', port=6379, db=0)
 
+    def tearDown(self):
+        # Tear down
+        self.redis.flushall()
+        pass
+
+    def test_keys(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertEqual('Trader-TESTER-000', self.database.key_trader)
+        self.assertEqual('Trader-TESTER-000:Accounts', self.database.key_accounts)
+        self.assertEqual('Trader-TESTER-000:Orders', self.database.key_orders)
+        self.assertEqual('Trader-TESTER-000:Positions', self.database.key_positions)
+        self.assertEqual('Trader-TESTER-000:Strategies', self.database.key_strategies)
+        self.assertEqual('Trader-TESTER-000:Index:OrderPosition', self.database.key_index_order_position)
+        self.assertEqual('Trader-TESTER-000:Index:OrderStrategy', self.database.key_index_order_strategy)
+        self.assertEqual('Trader-TESTER-000:Index:Orders:Working', self.database.key_index_orders_working)
+        self.assertEqual('Trader-TESTER-000:Index:Orders:Completed', self.database.key_index_orders_completed)
+        self.assertEqual('Trader-TESTER-000:Index:Positions:Open', self.database.key_index_positions_open)
+        self.assertEqual('Trader-TESTER-000:Index:Positions:Closed', self.database.key_index_positions_closed)
+
     def test_can_add_strategy(self):
         # Arrange
         strategy = EmptyStrategy('000')
@@ -118,8 +139,11 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.database.add_order(order, strategy_id, position_id)
 
         # Assert
-        # self.assertTrue(order.id in self.database.get_order_ids())
-        # self.assertEqual(order, self.database.get_orders_all()[order.id])
+        self.assertEqual(order, self.database.get_order(order.id))
+        self.assertTrue(self.redis.exists(self.database.key_orders + ':' + order.id.value))
+        self.assertTrue(self.redis.hexists(self.database.key_index_order_position, order.id.value))
+        self.assertTrue(self.redis.hexists(self.database.key_index_order_strategy, order.id.value))
+        self.assertTrue(self.redis.exists(self.database.key_index_position_orders + ':' + position_id.value))
 
     def test_can_add_position(self):
         # Arrange
@@ -155,6 +179,43 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         # self.assertTrue(position.id in self.exec_db.get_position_ids())
         # self.assertTrue(position.id in self.exec_db.get_positions_open(strategy.id))
         # self.assertTrue(position.id in self.exec_db.get_positions_open_all()[strategy.id])
+
+    def test_can_reset_database(self):
+        # Arrange
+        order = self.order_factory.market(
+            AUDUSD_FXCM,
+            OrderSide.BUY,
+            Quantity(100000))
+
+        strategy_id = StrategyId('SCALPER', '001')
+        position_id = PositionId('AUDUSD-1-123456')
+
+        self.database.add_order(order, strategy_id, position_id)
+
+        # Act
+        self.database.reset()
+
+        # Assert
+        self.assertIsNone(self.database.get_order(order.id))
+
+    def test_can_load_order_cache(self):
+        # Arrange
+        order = self.order_factory.market(
+            AUDUSD_FXCM,
+            OrderSide.BUY,
+            Quantity(100000))
+
+        strategy_id = StrategyId('SCALPER', '001')
+        position_id = PositionId('AUDUSD-1-123456')
+
+        self.database.add_order(order, strategy_id, position_id)
+        self.database.reset()  # Clear the cached orders for the test
+
+        # Act
+        self.database.load_orders_cache()
+
+        # Assert
+        self.assertEqual(order, self.database.get_order(order.id))
 
     def test_can_add_order_event_with_working_order(self):
         # Arrange

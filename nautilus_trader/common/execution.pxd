@@ -90,8 +90,8 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
     Provides an in-memory execution database.
     """
     cdef list _strategies
-    cdef dict _index_order_strategy
     cdef dict _index_order_position
+    cdef dict _index_order_strategy
     cdef dict _index_orders_working
     cdef dict _index_orders_completed
     cdef dict _index_positions_open
