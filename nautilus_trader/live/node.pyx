@@ -24,7 +24,7 @@ from nautilus_trader.common.logger import LogLevel
 from nautilus_trader.common.logger cimport LoggerAdapter, nautilus_header
 from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.trade.trader cimport Trader
-from nautilus_trader.serialization.serializers cimport MsgPackEventSerializer
+from nautilus_trader.serialization.serializers cimport MsgPackCommandSerializer, MsgPackEventSerializer
 from nautilus_trader.live.logger cimport LogStore, LiveLogger
 from nautilus_trader.live.data cimport LiveDataClient
 from nautilus_trader.live.execution cimport RedisExecutionDatabase, LiveExecutionEngine, LiveExecClient
@@ -124,7 +124,8 @@ cdef class TradingNode:
                 trader_id=self.trader_id,
                 host=config_exec_db['redis_host'],
                 port=config_exec_db['redis_port'],
-                serializer=MsgPackEventSerializer(),
+                command_serializer=MsgPackCommandSerializer(),
+                event_serializer=MsgPackEventSerializer(),
                 logger=self._logger)
         else:
             self._exec_db = InMemoryExecutionDatabase(
