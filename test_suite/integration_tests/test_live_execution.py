@@ -92,11 +92,11 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
             event_serializer=MsgPackEventSerializer(),
             logger=logger)
 
-        self.redis = Redis(host='localhost', port=6379, db=0)
+        self.test_redis = Redis(host='localhost', port=6379, db=0)
 
     def tearDown(self):
         # Tear down
-        self.redis.flushall()
+        self.test_redis.flushall()
         pass
 
     def test_keys(self):
@@ -104,12 +104,16 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         # Act
         # Assert
         self.assertEqual('Trader-TESTER-000', self.database.key_trader)
-        self.assertEqual('Trader-TESTER-000:Accounts', self.database.key_accounts)
-        self.assertEqual('Trader-TESTER-000:Orders', self.database.key_orders)
-        self.assertEqual('Trader-TESTER-000:Positions', self.database.key_positions)
-        self.assertEqual('Trader-TESTER-000:Strategies', self.database.key_strategies)
+        self.assertEqual('Trader-TESTER-000:Accounts:', self.database.key_accounts)
+        self.assertEqual('Trader-TESTER-000:Orders:', self.database.key_orders)
+        self.assertEqual('Trader-TESTER-000:Positions:', self.database.key_positions)
+        self.assertEqual('Trader-TESTER-000:Strategies:', self.database.key_strategies)
         self.assertEqual('Trader-TESTER-000:Index:OrderPosition', self.database.key_index_order_position)
         self.assertEqual('Trader-TESTER-000:Index:OrderStrategy', self.database.key_index_order_strategy)
+        self.assertEqual('Trader-TESTER-000:Index:PositionStrategy', self.database.key_index_position_strategy)
+        self.assertEqual('Trader-TESTER-000:Index:PositionOrders:', self.database.key_index_position_orders)
+        self.assertEqual('Trader-TESTER-000:Index:StrategyOrders:', self.database.key_index_strategy_orders)
+        self.assertEqual('Trader-TESTER-000:Index:StrategyPositions:', self.database.key_index_strategy_positions)
         self.assertEqual('Trader-TESTER-000:Index:Orders:Working', self.database.key_index_orders_working)
         self.assertEqual('Trader-TESTER-000:Index:Orders:Completed', self.database.key_index_orders_completed)
         self.assertEqual('Trader-TESTER-000:Index:Positions:Open', self.database.key_index_positions_open)
@@ -123,7 +127,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.database.add_strategy(strategy)
 
         # Assert
-        self.assertTrue(self.redis.hexists(name='Trader-TESTER-000:Strategies:EmptyStrategy-000:Config', key='some_value'))
+        self.assertTrue(self.test_redis.hexists(name='Trader-TESTER-000:Strategies:EmptyStrategy-000:Config', key='some_value'))
 
     def test_can_add_order(self):
         # Arrange
@@ -140,10 +144,13 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(order, self.database.get_order(order.id))
-        self.assertTrue(self.redis.exists(self.database.key_orders + ':' + order.id.value))
-        self.assertTrue(self.redis.hexists(self.database.key_index_order_position, order.id.value))
-        self.assertTrue(self.redis.hexists(self.database.key_index_order_strategy, order.id.value))
-        self.assertTrue(self.redis.exists(self.database.key_index_position_orders + ':' + position_id.value))
+        self.assertTrue(self.test_redis.exists(self.database.key_orders + order.id.value))
+        self.assertTrue(self.test_redis.hexists(self.database.key_index_order_position, order.id.value))
+        self.assertTrue(self.test_redis.hexists(self.database.key_index_order_strategy, order.id.value))
+        self.assertTrue(self.test_redis.hexists(self.database.key_index_position_strategy, position_id.value))
+        self.assertTrue(self.test_redis.exists(self.database.key_index_position_orders + position_id.value))
+        self.assertTrue(self.test_redis.exists(self.database.key_index_strategy_orders + strategy_id.value))
+        self.assertTrue(self.test_redis.exists(self.database.key_index_strategy_positions + strategy_id.value))
 
     def test_can_add_position(self):
         # Arrange

@@ -66,6 +66,9 @@ cdef str STRATEGIES = 'Strategies'
 cdef str ORDER_POSITION = 'OrderPosition'
 cdef str ORDER_STRATEGY = 'OrderStrategy'
 cdef str POSITION_ORDERS = 'PositionOrders'
+cdef str POSITION_STRATEGY = 'PositionStrategy'
+cdef str STRATEGY_ORDERS = 'StrategyOrders'
+cdef str STRATEGY_POSITIONS = 'StrategyPositions'
 cdef str WORKING = 'Working'
 cdef str COMPLETED = 'Completed'
 cdef str OPEN = 'Open'
@@ -101,18 +104,21 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         super().__init__(trader_id, logger)
 
         # Database keys
-        self.key_trader                 = f'{TRADER}-{trader_id.value}'
-        self.key_accounts               = f'{self.key_trader}:{ACCOUNTS}'
-        self.key_orders                 = f'{self.key_trader}:{ORDERS}'
-        self.key_positions              = f'{self.key_trader}:{POSITIONS}'
-        self.key_strategies             = f'{self.key_trader}:{STRATEGIES}'
-        self.key_index_order_position   = f'{self.key_trader}:{INDEX}:{ORDER_POSITION}'
-        self.key_index_order_strategy   = f'{self.key_trader}:{INDEX}:{ORDER_STRATEGY}'
-        self.key_index_orders_working   = f'{self.key_trader}:{INDEX}:{ORDERS}:{WORKING}'
-        self.key_index_orders_completed = f'{self.key_trader}:{INDEX}:{ORDERS}:{COMPLETED}'
-        self.key_index_position_orders  = f'{self.key_trader}:{INDEX}:{POSITION_ORDERS}'
-        self.key_index_positions_open   = f'{self.key_trader}:{INDEX}:{POSITIONS}:{OPEN}'
-        self.key_index_positions_closed = f'{self.key_trader}:{INDEX}:{POSITIONS}:{CLOSED}'
+        self.key_trader                   = f'{TRADER}-{trader_id.value}'
+        self.key_accounts                 = f'{self.key_trader}:{ACCOUNTS}:'
+        self.key_orders                   = f'{self.key_trader}:{ORDERS}:'
+        self.key_positions                = f'{self.key_trader}:{POSITIONS}:'
+        self.key_strategies               = f'{self.key_trader}:{STRATEGIES}:'
+        self.key_index_order_position     = f'{self.key_trader}:{INDEX}:{ORDER_POSITION}'      # HASH
+        self.key_index_order_strategy     = f'{self.key_trader}:{INDEX}:{ORDER_STRATEGY}'      # HASH
+        self.key_index_position_strategy  = f'{self.key_trader}:{INDEX}:{POSITION_STRATEGY}'   # HASH
+        self.key_index_position_orders    = f'{self.key_trader}:{INDEX}:{POSITION_ORDERS}:'    # SET
+        self.key_index_strategy_orders    = f'{self.key_trader}:{INDEX}:{STRATEGY_ORDERS}:'    # SET
+        self.key_index_strategy_positions = f'{self.key_trader}:{INDEX}:{STRATEGY_POSITIONS}:' # SET
+        self.key_index_orders_working     = f'{self.key_trader}:{INDEX}:{ORDERS}:{WORKING}'    # SET
+        self.key_index_orders_completed   = f'{self.key_trader}:{INDEX}:{ORDERS}:{COMPLETED}'  # SET
+        self.key_index_positions_open     = f'{self.key_trader}:{INDEX}:{POSITIONS}:{OPEN}'    # SET
+        self.key_index_positions_closed   = f'{self.key_trader}:{INDEX}:{POSITIONS}:{CLOSED}'  # SET
 
         # Serializers
         self._command_serializer = command_serializer
@@ -196,12 +202,8 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         :param strategy: The strategy to add.
         """
-        # Condition.true(strategy.id not in self._strategies, 'strategy.id not in self._strategies')
-        # Condition.true(strategy.id not in self._orders_working, 'strategy.id not in self._orders_active')
-        # Condition.true(strategy.id not in  self._orders_completed, 'strategy.id not in  self._orders_completed')
-
         pipe = self._redis.pipeline()
-        pipe.hset(f'{self.key_strategies}:{strategy.id.value}:{CONFIG}', 'some_value', 1)
+        pipe.hset(self.key_strategies + f'{strategy.id.value}:{CONFIG}', 'some_value', 1)
         pipe.execute()
 
         self._log.debug(f"Added strategy (id={strategy.id.value}).")
@@ -218,7 +220,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         self._cached_orders[order.id] = order
 
-        cdef str key_order = f'{self.key_orders}:{order.id.value}'
+        cdef str key_order =  self.key_orders + order.id.value
 
         if self.check_integrity:
             if self._redis.exists(key_order):
@@ -227,9 +229,12 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         # Command pipeline
         pipe = self._redis.pipeline()
         pipe.rpush(key_order, self._event_serializer.serialize(order.last_event))
-        pipe.hset(name=self.key_index_order_strategy, key=order.id.value, value=strategy_id.value)
         pipe.hset(name=self.key_index_order_position, key=order.id.value, value=position_id.value)
-        pipe.rpush(f'{self.key_index_position_orders}:{position_id.value}', order.id.value)
+        pipe.hset(name=self.key_index_order_strategy, key=order.id.value, value=strategy_id.value)
+        pipe.hset(name=self.key_index_position_strategy, key=position_id.value, value=strategy_id.value)
+        pipe.sadd(self.key_index_position_orders + position_id.value, order.id.value)
+        pipe.sadd(self.key_index_strategy_orders + strategy_id.value, order.id.value)
+        pipe.sadd(self.key_index_strategy_positions + strategy_id.value, position_id.value)
         pipe.execute()
 
         self._log.debug(f"Added order (id={order.id.value}, strategy_id={strategy_id.value}, position_id={position_id.value}).")
@@ -245,7 +250,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         self._cached_positions[position.id] = position
 
-        cdef str key_position = f'{self.key_positions}:{position.id.value}'
+        cdef str key_position = self.key_positions + position.id.value
 
         if self.check_integrity:
             if self._redis.exists(key_position):
@@ -268,7 +273,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         Condition.equal(order.id, event.order_id)
 
-        cdef str key_order = f'{self.key_orders}:{order.id.value}'
+        cdef str key_order = self.key_orders + order.id.value
 
         if self.check_integrity:
             if not self._redis.exists(key_order):
@@ -293,7 +298,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         :param event: The event to add.
         """
 
-        cdef str key_position = f'{self.key_positions}:{position.id.value}'
+        cdef str key_position = self.key_positions + position.id.value
 
         if self.check_integrity:
             if not self._redis.exists(key_position):
@@ -313,7 +318,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         :param event: The account event to add.
         """
-        cdef str key_account = f'{self.key_accounts}:{event.account_id.value}'
+        cdef str key_account = self.key_accounts + event.account_id.value
 
         self._redis.rpush(key_account, self._event_serializer.serialize(event))
 
@@ -337,15 +342,15 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 #
 #         self._log.debug(f"Deleted strategy (id={strategy.id.value}).")
 #
-#     cpdef void check_residuals(self):
-#         # Check for any residual active orders and log warnings if any are found
-#         for orders in self._orders_working.values():
-#             for order in orders.values():
-#                 self._log.warning(f"Residual active {order}")
-#
-#         for positions in self._positions_open.values():
-#             for position in positions.values():
-#                 self._log.warning(f"Residual position {position}")
+    cpdef void check_residuals(self):
+        # Check for any residual active orders and log warnings if any are found
+        for working_orders in self._redis.smembers(self.key_index_orders_working):
+            for order_id in working_orders:
+                self._log.warning(f"Residual working order {order_id}")
+
+        for positions_open in self._redis.smembers(self.key_index_positions_open):
+            for position_id in positions_open:
+                self._log.warning(f"Residual open position {position_id}")
 #
 #     cpdef void reset(self):
 #         # Reset the execution database by returning all stateful internal values to their initial value
@@ -434,28 +439,46 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         cdef set working_order_ids = self._redis.smembers(self.key_index_orders_working)
 
-        return self._orders_working.copy()
+        cdef dict orders_working = {}
+        cdef Order order
+        for order_id in working_order_ids:
+            order = self._cached_orders.get(order_id)
+            if order is None:
+                self._log_cannot_find_order(order_id)
+            orders_working[order_id] = order
 
-#     cpdef dict get_orders_completed_all(self):
-#         """
-#         Return all completed orders in the execution engines order book.
-#
-#         :return: Dict[OrderId, Order].
-#         """
-#         return self._orders_completed.copy()
-#
-#     cpdef dict get_orders(self, StrategyId strategy_id):
-#         """
-#         Return all orders associated with the strategy identifier.
-#
-#         :param strategy_id: The strategy identifier associated with the orders.
-#         :return: Dict[OrderId, Order].
-#         :raises ConditionFailed: If the strategy identifier is not registered with the execution client.
-#         """
-#         # Condition.true(strategy_id in self._orders_active, 'strategy_id in orders_active')
-#         # Condition.true(strategy_id in self._orders_completed, 'strategy_id in orders_completed')
-#
-#         return {**self._orders_working[strategy_id], **self._orders_completed[strategy_id]}
+        return orders_working
+
+    cpdef dict get_orders_completed_all(self):
+        """
+        Return all completed orders in the execution engines order book.
+
+        :return: Dict[OrderId, Order].
+        """
+        cdef set completed_order_ids = self._redis.smembers(self.key_index_orders_completed)
+
+        cdef dict orders_completed = {}
+        cdef Order order
+        for order_id in orders_completed:
+            order = self._cached_orders.get(order_id)
+            if order is None:
+                self._log_cannot_find_order(order_id)
+            orders_completed[order_id] = order
+
+        return orders_completed
+
+    # cpdef dict get_orders(self, StrategyId strategy_id):
+    #     """
+    #     Return all orders associated with the strategy identifier.
+    #
+    #     :param strategy_id: The strategy identifier associated with the orders.
+    #     :return: Dict[OrderId, Order].
+    #     :raises ConditionFailed: If the strategy identifier is not registered with the execution client.
+    #     """
+    #     # Condition.true(strategy_id in self._orders_active, 'strategy_id in orders_active')
+    #     # Condition.true(strategy_id in self._orders_completed, 'strategy_id in orders_completed')
+    #
+    #     return {**self._orders_working[strategy_id], **self._orders_completed[strategy_id]}
 #
 #     cpdef dict get_orders_working(self, StrategyId strategy_id):
 #         """
@@ -608,82 +631,69 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 #
 #         return self._positions_closed[strategy_id].copy()
 #
-#     cpdef bint position_exists(self, PositionId position_id):
-#         """
-#         Return a value indicating whether a position with the given identifier exists.
-#         :param position_id: The position identifier.
-#         :return: True if the position exists, else False.
-#         """
-#         return position_id in self._cached_positions
-#
-#     cpdef bint position_exists_for_order(self, OrderId order_id):
-#         """
-#         Return a value indicating whether there is a position associated with the given
-#         order identifier.
-#
-#         :param order_id: The order identifier.
-#         :return: True if an associated position exists, else False.
-#         """
-#         return order_id in self._index_order_position and self._index_order_position[order_id] in self._cached_positions
-#
-#     cpdef bint is_position_open(self, PositionId position_id):
-#         """
-#         Return a value indicating whether a position with the given identifier exists
-#         and is entered (active).
-#
-#         :param position_id: The position identifier.
-#         :return: True if the position exists and is exited, else False.
-#         """
-#         return position_id in self._cached_positions and not self._cached_positions[position_id].is_flat
-#
-#     cpdef bint is_position_closed(self, PositionId position_id):
-#         """
-#         Return a value indicating whether a position with the given identifier exists
-#         and is exited (closed).
-#
-#         :param position_id: The position identifier.
-#         :return: True if the position does not exist or is closed, else False.
-#         """
-#         return position_id in self._cached_positions and self._cached_positions[position_id].is_closed
-#
-#     cpdef int positions_count(self):
-#         """
-#         Return the total count of active and closed positions.
-#
-#         :return: int.
-#         """
-#         cdef int positions_total_count = 0
-#
-#         positions_total_count += self.positions_active_count()
-#         positions_total_count += self.positions_closed_count()
-#
-#         return positions_total_count
-#
-#     cpdef int positions_active_count(self):
-#         """
-#         Return the count of active positions held by the portfolio.
-#
-#         :return: int.
-#         """
-#         cdef int active_positions = 0
-#
-#         for positions_list in self._positions_open.values():
-#             active_positions += len(positions_list)
-#
-#         return active_positions
-#
-#     cpdef int positions_closed_count(self):
-#         """
-#         Return the count of closed positions held by the portfolio.
-#
-#         :return: int.
-#         """
-#         cdef int closed_count = 0
-#
-#         for positions_list in self._positions_closed.values():
-#             closed_count += len(positions_list)
-#
-#         return closed_count
+    cpdef bint position_exists(self, PositionId position_id):
+        """
+        Return a value indicating whether a position with the given identifier exists.
+        :param position_id: The position identifier.
+        :return: True if the position exists, else False.
+        """
+        return position_id in self._cached_positions
+
+    cpdef bint position_exists_for_order(self, OrderId order_id):
+        """
+        Return a value indicating whether there is a position associated with the given
+        order identifier.
+
+        :param order_id: The order identifier.
+        :return: True if an associated position exists, else False.
+        """
+        cdef PositionId position_id = self._redis.hget(name=self.key_index_order_position, key=order_id)
+
+        return position_id in self._cached_positions
+
+    cpdef bint is_position_open(self, PositionId position_id):
+        """
+        Return a value indicating whether a position with the given identifier exists
+        and is entered (active).
+
+        :param position_id: The position identifier.
+        :return: True if the position exists and is exited, else False.
+        """
+        return position_id in self._cached_positions and not self._cached_positions[position_id].is_flat
+
+    cpdef bint is_position_closed(self, PositionId position_id):
+        """
+        Return a value indicating whether a position with the given identifier exists
+        and is exited (closed).
+
+        :param position_id: The position identifier.
+        :return: True if the position does not exist or is closed, else False.
+        """
+        return position_id in self._cached_positions and self._cached_positions[position_id].is_closed
+
+    cpdef int positions_count(self):
+        """
+        Return the total count of positions held by the database.
+
+        :return: int.
+        """
+        return len(self._redis.keys(f'{self.key_positions}*'))
+
+    cpdef int positions_open_count(self):
+        """
+        Return the count of open positions held by the execution database.
+
+        :return: int.
+        """
+        return len(self._redis.smembers(self.key_index_positions_open))
+
+    cpdef int positions_closed_count(self):
+        """
+        Return the count of closed positions held by the execution database.
+
+        :return: int.
+        """
+        return len(self._redis.smembers(self.key_index_positions_closed))
 
 
 cdef class LiveExecutionEngine(ExecutionEngine):

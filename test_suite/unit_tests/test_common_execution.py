@@ -60,11 +60,6 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
             clock=clock)
 
         self.account = Account()
-        self.portfolio = Portfolio(
-            clock=clock,
-            guid_factory=guid_factory,
-            logger=logger)
-
         self.database = InMemoryExecutionDatabase(trader_id=self.trader_id, logger=logger)
 
     def test_can_add_strategy(self):
@@ -509,7 +504,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.assertTrue(position_id in self.exec_db.get_positions_open(strategy.id))
         self.assertTrue(position_id in self.exec_db.get_positions_open_all()[strategy.id])
         self.assertEqual(1, self.exec_db.positions_count())
-        self.assertEqual(1, self.exec_db.positions_active_count())
+        self.assertEqual(1, self.exec_db.positions_open_count())
         self.assertEqual(0, self.exec_db.positions_closed_count())
         self.assertTrue(self.exec_db.position_exists_for_order(order.id))
         self.assertEqual(Position, type(self.exec_db.get_position_for_order(order.id)))
@@ -594,7 +589,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.assertEqual(1, len(self.exec_db.get_positions_open(strategy.id)))
         self.assertEqual(1, len(self.exec_db.get_positions_open_all()[strategy.id]))
         self.assertEqual(1, self.exec_db.positions_count())
-        self.assertEqual(1, self.exec_db.positions_active_count())
+        self.assertEqual(1, self.exec_db.positions_open_count())
         self.assertEqual(0, self.exec_db.positions_closed_count())
 
     def test_can_close_position_on_order_fill(self):
@@ -685,7 +680,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.assertTrue(position_id not in self.exec_db.get_positions_open(strategy.id))
         self.assertTrue(position_id not in self.exec_db.get_positions_open_all()[strategy.id])
         self.assertEqual(1, self.exec_db.positions_count())
-        self.assertEqual(0, self.exec_db.positions_active_count())
+        self.assertEqual(0, self.exec_db.positions_open_count())
         self.assertEqual(1, self.exec_db.positions_closed_count())
 
     def test_multiple_strategy_positions_opened(self):
@@ -790,7 +785,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.assertTrue(position_id1 not in self.exec_db.get_positions_closed_all()[strategy1.id])
         self.assertTrue(position_id2 not in self.exec_db.get_positions_closed_all()[strategy2.id])
         self.assertEqual(2, self.exec_db.positions_count())
-        self.assertEqual(2, self.exec_db.positions_active_count())
+        self.assertEqual(2, self.exec_db.positions_open_count())
         self.assertEqual(0, self.exec_db.positions_closed_count())
 
     def test_multiple_strategy_positions_one_active_one_closed(self):
@@ -919,5 +914,5 @@ class ExecutionEngineTests(unittest.TestCase):
         self.assertTrue(position_id1 in self.exec_db.get_positions_closed_all()[strategy1.id])
         self.assertTrue(position_id2 not in self.exec_db.get_positions_closed_all()[strategy2.id])
         self.assertEqual(2, self.exec_db.positions_count())
-        self.assertEqual(1, self.exec_db.positions_active_count())
+        self.assertEqual(1, self.exec_db.positions_open_count())
         self.assertEqual(1, self.exec_db.positions_closed_count())

@@ -217,7 +217,7 @@ cdef class ExecutionDatabase:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef int positions_active_count(self):
+    cpdef int positions_open_count(self):
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
@@ -389,11 +389,11 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         # Check for any residual active orders and log warnings if any are found
         for orders in self._index_orders_working.values():
             for order in orders.values():
-                self._log.warning(f"Residual active {order}")
+                self._log.warning(f"Residual working {order}")
 
         for positions in self._index_positions_open.values():
             for position in positions.values():
-                self._log.warning(f"Residual position {position}")
+                self._log.warning(f"Residual open position {position}")
 
     cpdef void reset(self):
         # Reset the execution database by returning all stateful internal values to their initial value
@@ -700,12 +700,12 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         cdef int positions_total_count = 0
 
-        positions_total_count += self.positions_active_count()
+        positions_total_count += self.positions_open_count()
         positions_total_count += self.positions_closed_count()
 
         return positions_total_count
 
-    cpdef int positions_active_count(self):
+    cpdef int positions_open_count(self):
         """
         Return the count of active positions held by the portfolio.
         
