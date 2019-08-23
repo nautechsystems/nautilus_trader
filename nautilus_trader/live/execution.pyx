@@ -86,7 +86,9 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
                  int port,
                  CommandSerializer command_serializer,
                  EventSerializer event_serializer,
-                 Logger logger):
+                 Logger logger,
+                 bint load_cache=True,
+                 bint check_integrity=True):
         """
         Initializes a new instance of the RedisExecutionEngine class.
 
@@ -127,8 +129,8 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         # Redis client
         self._redis = Redis(host=host, port=port, db=0)
 
-        self.load_cache = True
-        self.check_integrity = True
+        self.load_cache = load_cache
+        self.check_integrity = check_integrity
 
         # Load cache
         if self.load_cache:
