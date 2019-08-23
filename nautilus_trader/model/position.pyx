@@ -21,9 +21,7 @@ cdef class Position:
     Represents a position in a financial market.
     """
 
-    def __init__(self,
-                 PositionId position_id,
-                 OrderFillEvent event):
+    def __init__(self, PositionId position_id, OrderFillEvent event):
         """
         Initializes a new instance of the Position class.
 

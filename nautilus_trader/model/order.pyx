@@ -125,8 +125,8 @@ cdef class Order:
         self.is_completed = False
 
         cdef OrderInitialized initialized = OrderInitialized(
-            symbol=symbol,
             order_id=order_id,
+            symbol=symbol,
             label=label,
             order_side=order_side,
             order_type=order_type,
@@ -140,6 +140,27 @@ cdef class Order:
         # Update events
         self._events.append(initialized)
         self.last_event = initialized
+
+    @staticmethod
+    cdef Order create(OrderInitialized event):
+        """
+        Return an order from the given initialized event.
+        
+        :param event: The event to initialize with.
+        :return: Order.
+        """
+        return Order(
+            order_id=event.order_id,
+            symbol=event.symbol,
+            order_side=event.order_side,
+            order_type=event.order_type,
+            quantity=event.quantity,
+            timestamp=event.timestamp,
+            price=event.price,
+            label=event.label,
+            time_in_force=event.time_in_force,
+            expire_time=event.expire_time,
+            init_id=event.id)
 
     cdef bint equals(self, Order other):
         """

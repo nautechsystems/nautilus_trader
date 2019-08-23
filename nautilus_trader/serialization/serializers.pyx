@@ -363,7 +363,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[ORDER_SIDE] = order_side_to_string(event.order_side)
             package[ORDER_TYPE] = order_type_to_string(event.order_type)
             package[QUANTITY] = event.quantity.value
-            package[PRICE] = str(event.price)
+            package[PRICE] = convert_price_to_string(event.price)
             package[TIME_IN_FORCE] = time_in_force_to_string(event.time_in_force)
             package[EXPIRE_TIME] = convert_datetime_to_string(event.expire_time)
         elif isinstance(event, OrderSubmitted):
@@ -476,7 +476,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 order_side_from_string(unpacked[ORDER_SIDE]),
                 order_type_from_string(unpacked[ORDER_TYPE]),
                 Quantity(unpacked[QUANTITY]),
-                Price(unpacked[PRICE]),
+                convert_string_to_price(unpacked[PRICE]),
                 time_in_force_from_string(unpacked[TIME_IN_FORCE]),
                 convert_string_to_datetime(unpacked[EXPIRE_TIME]),
                 event_id,

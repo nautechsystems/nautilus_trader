@@ -15,7 +15,7 @@ from nautilus_trader.model.c_enums.order_status cimport OrderStatus
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.model.objects cimport Quantity, Symbol, Price
-from nautilus_trader.model.events cimport OrderEvent
+from nautilus_trader.model.events cimport OrderEvent, OrderInitialized
 from nautilus_trader.model.identifiers cimport Label, OrderId, AccountId, ExecutionId, ExecutionTicket
 from nautilus_trader.model.generators cimport OrderIdGenerator
 
@@ -56,6 +56,8 @@ cdef class Order:
     cdef readonly bint is_working
     cdef readonly bint is_completed
 
+    @staticmethod
+    cdef Order create(OrderInitialized event)
     cdef bint equals(self, Order other)
     cpdef str status_as_string(self)
     cpdef list get_order_ids_broker(self)
