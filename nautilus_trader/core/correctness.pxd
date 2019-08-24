@@ -14,6 +14,10 @@ cdef class Condition:
     @staticmethod
     cdef not_none(object argument, str param_name)
     @staticmethod
+    cdef valid_string(unicode argument, str param_name)
+    @staticmethod
+    cdef equal(object argument1, object argument2)
+    @staticmethod
     cdef type(object argument, object is_type, str param_name)
     @staticmethod
     cdef type_or_none(object argument, object is_type, str param_name)
@@ -30,9 +34,9 @@ cdef class Condition:
     @staticmethod
     cdef key_not_in(object key, dict dictionary, str param_name, str dict_name)
     @staticmethod
-    cdef valid_string(unicode argument, str param_name)
+    cdef not_empty(object argument, str param_name)
     @staticmethod
-    cdef equal(object argument1, object argument2)
+    cdef empty(object argument, str param_name)
     @staticmethod
     cdef lists_equal_length(list list1, list list2, str list1_name, str list2_name)
     @staticmethod
@@ -47,7 +51,4 @@ cdef class Condition:
             str param_name,
             float start,
             float end)
-    @staticmethod
-    cdef not_empty(object argument, str param_name)
-    @staticmethod
-    cdef empty(object argument, str param_name)
+
