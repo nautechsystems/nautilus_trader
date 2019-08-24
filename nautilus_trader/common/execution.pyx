@@ -264,9 +264,9 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
         :param strategy: The strategy to add.
         """
-        Condition.true(strategy.id not in self._strategies, 'strategy.id not in self._strategies')
-        Condition.true(strategy.id not in self._index_orders_working, 'strategy.id not in self._orders_active')
-        Condition.true(strategy.id not in self._index_orders_completed, 'strategy.id not in  self._orders_completed')
+        Condition.not_in(strategy.id, self._strategies, 'strategy.id', 'strategies')
+        Condition.key_not_in(strategy.id, self._index_orders_working, 'strategy.id', 'index_orders_working')
+        Condition.key_not_in(strategy.id, self._index_orders_completed, 'strategy.id', 'index_orders_completed')
 
         self._strategies.append(strategy.id)
         self._index_orders_working[strategy.id] = {}     # type: Dict[OrderId, Order]
@@ -284,8 +284,8 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         :param strategy_id: The strategy identifier to associate with the order.
         :param position_id: The position identifier to associate with the order.
         """
-        Condition.true(order.id not in self._cached_orders, 'order.id not in order_book')
-        Condition.true(order.id not in self._index_order_strategy, 'order.id not in order_index')
+        Condition.key_not_in(order.id, self._cached_orders, 'order.id', 'cached_orders')
+        Condition.key_not_in(order.id, self._index_order_strategy, 'order.id', 'index_order_strategy')
 
         self._cached_orders[order.id] = order
         self._index_order_strategy[order.id] = strategy_id
@@ -300,9 +300,9 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         :param position: The position to add.
         :param strategy_id: The strategy identifier to associate with the position.
         """
-        Condition.true(position.id not in self._cached_positions, 'position.id not in self._cached_positions')
-        Condition.true(strategy_id in self._index_positions_open, 'strategy_id in self._positions_active')
-        Condition.true(position.id not in self._index_positions_open[strategy_id], 'position.id not in self._positions_active[strategy_id]')
+        Condition.key_not_in(position.id, self._cached_positions, 'position.id', 'cached_positions')
+        Condition.key_is_in(strategy_id, self._index_positions_open, 'strategy_id', 'index_positions_open')
+        Condition.key_not_in(position.id, self._index_positions_open[strategy_id], 'position.id', 'index_positions_open[strategy_id]')
 
         self._cached_positions[position.id] = position
         self._index_positions_open[strategy_id][position.id] = position
@@ -373,9 +373,9 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         :param strategy: The strategy to deregister.
         :raises ConditionFailed: If the strategy is not registered with the execution client.
         """
-        Condition.true(strategy.id in self._strategies, 'strategy in strategies')
-        Condition.true(strategy.id in self._index_orders_working, 'strategy in orders_active')
-        Condition.true(strategy.id in self._index_orders_completed, 'strategy in orders_completed')
+        Condition.is_in(strategy.id, self._strategies, 'strategy.id', 'strategies')
+        Condition.key_is_in(strategy.id, self._index_orders_working, 'strategy.id', 'index_orders_working')
+        Condition.key_is_in(strategy.id, self._index_orders_completed, 'strategy.id', 'index_orders_completed')
 
         self._strategies.remove(strategy.id)
         del self._index_orders_working[strategy.id]
@@ -782,7 +782,7 @@ cdef class ExecutionEngine:
         :param strategy: The strategy to register.
         :raises ConditionFailed: If the strategy is already registered with the execution engine.
         """
-        Condition.true(strategy.id not in self._registered_strategies, 'strategy not in registered_strategies')
+        Condition.key_not_in(strategy.id, self._registered_strategies, 'strategy.id', 'registered_strategies')
 
         self._registered_strategies[strategy.id] = strategy
         self.database.add_strategy(strategy)
@@ -796,7 +796,7 @@ cdef class ExecutionEngine:
         :param strategy: The strategy to deregister.
         :raises ConditionFailed: If the strategy is not registered with the execution client.
         """
-        Condition.true(strategy.id in self._registered_strategies, 'strategy in registered_strategies')
+        Condition.key_is_in(strategy.id, self._registered_strategies, 'strategy.id', 'registered_strategies')
 
         del self._registered_strategies[strategy.id]
         self._log.info(f"De-registered strategy {strategy}.")

@@ -198,23 +198,42 @@ cdef class Condition:
             raise ConditionFailed(f"The arguments were not equal, values = {argument1} and {argument2}.")
 
     @staticmethod
-    cdef equal_lengths(
-            list collection1,
-            list collection2,
-            str collection1_name,
-            str collection2_name):
+    cdef lists_equal_length(
+            list list1,
+            list list2,
+            str list1_name,
+            str list2_name):
         """
-        Check the collections have equal lengths.
+        Check the lists have equal lengths.
 
-        :param collection1: The first collection to check.
-        :param collection2: The second collection to check.
-        :param collection1_name: The first collections name.
-        :param collection2_name: The second collections name.
-        :raises ConditionFailed: If the collections lengths are not equal.
+        :param list1: The first list to check.
+        :param list2: The second list to check.
+        :param list1_name: The first lists name.
+        :param list2_name: The second lists name.
+        :raises ConditionFailed: If the lists lengths are not equal.
         """
-        if len(collection1) != len(collection2):
+        if len(list1) != len(list2):
             raise ConditionFailed(
-                f"The lengths of {collection1_name} and {collection2_name} were not equal, lengths = {len(collection1)} and {len(collection2)}.")
+                f"The lengths of {list1_name} and {list2_name} were not equal, lengths = {len(list1)} and {len(list2)}.")
+
+    @staticmethod
+    cdef dicts_equal_length(
+            dict dict1,
+            dict dict2,
+            str dict1_name,
+            str dict2_name):
+        """
+        Check the dictionaries have equal lengths.
+
+        :param dict1: The first dictionary to check.
+        :param dict2: The second dictionary to check.
+        :param dict1_name: The first dictionaries name.
+        :param dict2_name: The second dictionaries name.
+        :raises ConditionFailed: If the dictionaries lengths are not equal.
+        """
+        if len(dict1) != len(dict2):
+            raise ConditionFailed(
+                f"The lengths of {dict1_name} and {dict2_name} were not equal, lengths = {len(dict1)} and {len(dict2)}.")
 
     @staticmethod
     cdef positive(float value, str param_name):
@@ -338,15 +357,18 @@ class PyCondition:
         Condition.equal(argument1, argument2)
 
     @staticmethod
-    def equal_lengths(
-            collection1,
-            collection2,
-            collection1_name,
-            collection2_name):
-        Condition.equal_lengths(collection1,
-                                collection2,
-                                collection1_name,
-                                collection2_name)
+    def lists_equal_length(list1, list2, list1_name, list2_name):
+        Condition.lists_equal_length(list1,
+                                     list2,
+                                     list1_name,
+                                     list2_name)
+
+    @staticmethod
+    def dicts_equal_length(dict1, dict2, dict1_name, dict2_name):
+        Condition.dicts_equal_length(dict1,
+                                     dict2,
+                                     dict1_name,
+                                     dict2_name)
 
     @staticmethod
     def positive(value, param_name):

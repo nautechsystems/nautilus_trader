@@ -16,7 +16,7 @@ from nautilus_trader.model.identifiers import OrderId, PositionId
 
 class ConditionTests(unittest.TestCase):
 
-    def test_condition_true_when_predicate_false_raises_value_error(self):
+    def test_condition_true_when_predicate_false_raises_condition_failed(self):
         # Arrange
         # Act
         # Assert
@@ -29,7 +29,7 @@ class ConditionTests(unittest.TestCase):
         PyCondition.true(True, "predicate")
         self.assertTrue(True)  # ConditionFailed not raised
 
-    def test_condition_is_none_when_arg_not_none_raises_value_error(self):
+    def test_condition_is_none_when_arg_not_none_raises_condition_failed(self):
         # Arrange
         # Act
         # Assert
@@ -42,7 +42,7 @@ class ConditionTests(unittest.TestCase):
         PyCondition.none(None, "param_name")
         self.assertTrue(True)  # ConditionFailed not raised
 
-    def test_condition_not_none_when_arg_none_raises_value_error(self):
+    def test_condition_not_none_when_arg_none_raises_condition_failed(self):
         # Arrange
         # Act
         # Assert
@@ -55,7 +55,7 @@ class ConditionTests(unittest.TestCase):
         PyCondition.not_none("something", "param_name")
         self.assertTrue(True)  # ConditionFailed not raised
 
-    def test_condition_type_when_type_is_incorrect_raises_value_error(self):
+    def test_condition_type_when_type_is_incorrect_raises_condition_failed(self):
         # Arrange
         # Act
         # Assert
@@ -68,7 +68,7 @@ class ConditionTests(unittest.TestCase):
         PyCondition.type("a string", str, "param_name")
         self.assertTrue(True)  # ConditionFailed not raised
 
-    def test_condition_type_or_none_when_type_is_incorrect_raises_value_error(self):
+    def test_condition_type_or_none_when_type_is_incorrect_raises_condition_failed(self):
         # Arrange
         # Act
         # Assert
@@ -82,7 +82,7 @@ class ConditionTests(unittest.TestCase):
         PyCondition.type_or_none(None, str, "param_name")
         self.assertTrue(True)  # ConditionFailed not raised
 
-    def test_condition_list_type_when_contains_incorrect_types_raises_value_error(self):
+    def test_condition_list_type_when_contains_incorrect_types_raises_condition_failed(self):
         # Arrange
         # Act
         # Assert
@@ -96,7 +96,7 @@ class ConditionTests(unittest.TestCase):
         PyCondition.list_type([], None, "param_name")
         self.assertTrue(True)  # ConditionFailed not raised
 
-    def test_condition_dict_types_when_contains_incorrect_types_raises_value_error(self):
+    def test_condition_dict_types_when_contains_incorrect_types_raises_condition_failed(self):
         # Arrange
         # Act
         # Assert
@@ -112,7 +112,7 @@ class ConditionTests(unittest.TestCase):
         PyCondition.dict_types({}, str, str, "param_name")
         self.assertTrue(True)  # ConditionFailed not raised
 
-    def test_condition_is_in_when_item_not_in_list_raises_value_error(self):
+    def test_condition_is_in_when_item_not_in_list_raises_condition_failed(self):
         # Arrange
         # Act
         # Assert
@@ -125,7 +125,7 @@ class ConditionTests(unittest.TestCase):
         PyCondition.is_in('a', ['a', 1], 'item', 'list')
         self.assertTrue(True)  # ConditionFailed not raised
 
-    def test_condition_not_in_when_item_is_in_list_raises_value_error(self):
+    def test_condition_not_in_when_item_is_in_list_raises_condition_failed(self):
         # Arrange
         # Act
         # Assert
@@ -138,7 +138,7 @@ class ConditionTests(unittest.TestCase):
         PyCondition.not_in('b', ['a', 1], 'item', 'list')
         self.assertTrue(True)  # ConditionFailed not raised
 
-    def test_condition_key_is_in_when_key_not_in_dictionary_raises_value_error(self):
+    def test_condition_key_is_in_when_key_not_in_dictionary_raises_condition_failed(self):
         # Arrange
         # Act
         # Assert
@@ -151,7 +151,7 @@ class ConditionTests(unittest.TestCase):
         PyCondition.key_is_in('a', {'a': 1}, 'key', 'dict')
         self.assertTrue(True)  # ConditionFailed not raised
 
-    def test_condition_key_not_in_when_key_is_in_dictionary_raises_value_error(self):
+    def test_condition_key_not_in_when_key_is_in_dictionary_raises_condition_failed(self):
         # Arrange
         # Act
         # Assert
@@ -164,7 +164,7 @@ class ConditionTests(unittest.TestCase):
         PyCondition.key_not_in('b', {'a': 1}, 'key', 'dict')
         self.assertTrue(True)  # ConditionFailed not raised
 
-    def test_condition_valid_with_various_invalid_strings_raises_value_error(self):
+    def test_condition_valid_with_various_invalid_strings_raises_condition_failed(self):
         # Arrange
         # Act
         # Assert
@@ -182,7 +182,7 @@ class ConditionTests(unittest.TestCase):
         PyCondition.valid_string("abc  ", "param_name")
         self.assertTrue(True)  # ConditionFailed not raised
 
-    def test_condition_equal_when_args_not_equal_raises_value_error(self):
+    def test_condition_equal_when_args_not_equal_raises_condition_failed(self):
         # Arrange
         # Act
         # Assert
@@ -196,22 +196,36 @@ class ConditionTests(unittest.TestCase):
         PyCondition.equal(OrderId('123456'), OrderId('123456'))
         self.assertTrue(True)  # ConditionFailed not raised
 
-    def test_condition_equal_lengths_when_args_not_equal_lengths_raises_value_error(self):
+    def test_condition_lists_equal_length_when_args_not_equal_lengths_raises_condition_failed(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ConditionFailed, PyCondition.equal_lengths, [1], [1, 2], "1", "2")
-        self.assertRaises(ConditionFailed, PyCondition.equal_lengths, [1], [1, 2], "1", "2")
+        self.assertRaises(ConditionFailed, PyCondition.lists_equal_length, [1], [1, 2], "1", "2")
+        self.assertRaises(ConditionFailed, PyCondition.lists_equal_length, [1], [1, 2], "1", "2")
 
-    def test_condition_equal_lengths_when_args_are_equal_lengths_does_nothing(self):
+    def test_condition_lists_equal_length_when_args_are_equal_lengths_does_nothing(self):
         # Arrange
         # Act
         # Assert
-        PyCondition.equal_lengths([1], [1], "collection1", "collection2")
-        PyCondition.equal_lengths([1, 2, 3], [1, 2, 3], "collection1", "collection2")
+        PyCondition.lists_equal_length([1], [1], "collection1", "collection2")
+        PyCondition.lists_equal_length([1, 2, 3], [1, 2, 3], "collection1", "collection2")
         self.assertTrue(True)  # ConditionFailed not raised
 
-    def test_condition_not_negative_when_arg_negative_raises_value_error(self):
+    def test_condition_dicts_equal_length_when_args_not_equal_lengths_raises_condition_failed(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertRaises(ConditionFailed, PyCondition.dicts_equal_length, {1: 1}, {1: 1, 2: 2}, "1", "2")
+        self.assertRaises(ConditionFailed, PyCondition.dicts_equal_length, {1: 1}, {1: 1, 2: 2}, "1", "2")
+
+    def test_condition_dicts_equal_length_when_args_are_equal_lengths_does_nothing(self):
+        # Arrange
+        # Act
+        # Assert
+        PyCondition.dicts_equal_length({1: 1}, {1: 1}, "dict1", "dict2")
+        self.assertTrue(True)  # ConditionFailed not raised
+
+    def test_condition_not_negative_when_arg_negative_raises_condition_failed(self):
         # Arrange
         # Act
         # Assert
@@ -231,7 +245,7 @@ class ConditionTests(unittest.TestCase):
         PyCondition.not_negative(float("inf"), "param_name")
         self.assertTrue(True)  # ConditionFailed not raised
 
-    def test_condition_positive_when_args_negative_or_zero_raises_value_error(self):
+    def test_condition_positive_when_args_negative_or_zero_raises_condition_failed(self):
         # Arrange
         # Act
         # Assert
@@ -252,7 +266,7 @@ class ConditionTests(unittest.TestCase):
         PyCondition.positive(Decimal('1.0'), "param_name")
         self.assertTrue(True)  # AssertionError not raised
 
-    def test_condition_in_range_when_arg_out_of_range_raises_value_error(self):
+    def test_condition_in_range_when_arg_out_of_range_raises_condition_failed(self):
         # Arrange
         # Act
         self.assertRaises(ConditionFailed, PyCondition.in_range, -1, "param_name", 0, 1)
@@ -268,7 +282,7 @@ class ConditionTests(unittest.TestCase):
         PyCondition.in_range(1, "param_name", 0, 1)
         self.assertTrue(True)  # ConditionFailed not raised
 
-    def test_condition_not_empty_when_collection_empty_raises_value_error(self):
+    def test_condition_not_empty_when_collection_empty_raises_condition_failed(self):
         # Arrange
         # Act
         # Assert
@@ -281,7 +295,7 @@ class ConditionTests(unittest.TestCase):
         PyCondition.not_empty([1], "some_collection")
         self.assertTrue(True)  # ConditionFailed not raised
 
-    def test_condition_empty_when_collection_not_empty_raises_value_error(self):
+    def test_condition_empty_when_collection_not_empty_raises_condition_failed(self):
         # Arrange
         # Act
         # Assert

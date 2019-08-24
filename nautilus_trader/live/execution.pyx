@@ -218,7 +218,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         :param strategy_id: The strategy identifier to associate with the order.
         :param position_id: The position identifier to associate with the order.
         """
-        Condition.true(order.id not in self._cached_orders, 'order.id not in order_book')
+        Condition.key_not_in(order.id, self._cached_orders, 'order.id', 'cached_orders')
 
         self._cached_orders[order.id] = order
 
@@ -248,7 +248,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         :param position: The position to add.
         :param strategy_id: The strategy identifier to associate with the position.
         """
-        Condition.true(position.id not in self._cached_positions, 'position.id not in self._cached_positions')
+        Condition.key_not_in(position.id, self._cached_positions, 'position.id', 'cached_positions')
 
         self._cached_positions[position.id] = position
 
