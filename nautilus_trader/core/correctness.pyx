@@ -7,7 +7,9 @@
 # -------------------------------------------------------------------------------------------------
 
 class ConditionFailed(Exception):
-    pass
+    """
+    Represents a failed condition check.
+    """
 
 
 cdef class Condition:
@@ -51,6 +53,34 @@ cdef class Condition:
         """
         if argument is None:
             raise ConditionFailed(f"The {param_name} argument was None.")
+
+    @staticmethod
+    cdef valid_string(str argument, str param_name):
+        """
+        Check the string is not None, empty or whitespace.
+
+        :param argument: The string argument to check.
+        :param param_name: The parameter name.
+        :raises ConditionFailed: If the string argument is None, empty or whitespace.
+        """
+        if argument is None:
+            raise ConditionFailed(f"The {param_name} string argument was None.")
+        if argument == '':
+            raise ConditionFailed(f"The {param_name} string argument was empty.")
+        if argument.isspace():
+            raise ConditionFailed(f"The {param_name} string argument was whitespace.")
+
+    @staticmethod
+    cdef equal(object object1, object object2):
+        """
+        Check the objects are equal (the given objects must implement cdef .equals()).
+
+        :param object1: The first object to check.
+        :param object2: The second object to check.
+        :raises ConditionFailed: If the objects are not equal.
+        """
+        if not object1.equals(object2):
+            raise ConditionFailed(f"The {object1} object was not equal to the {object2} object.")
 
     @staticmethod
     cdef type(object argument, object is_type, str param_name):
@@ -170,32 +200,28 @@ cdef class Condition:
             raise ConditionFailed(f"The {param_name} {key} was already contained in the {dict_name} dictionary keys.")
 
     @staticmethod
-    cdef valid_string(str argument, str param_name):
+    cdef not_empty(object argument, str param_name):
         """
-        Check the string is not None, empty or whitespace.
+        Check the iterable is not empty.
 
-        :param argument: The string argument to check.
-        :param param_name: The parameter name.
-        :raises ConditionFailed: If the string argument is None, empty or whitespace.
+        :param argument: The iterable to check.
+        :param param_name: The iterables name.
+        :raises ConditionFailed: If the iterable argument is empty.
         """
-        if argument is None:
-            raise ConditionFailed(f"The {param_name} string argument was None.")
-        if argument == '':
-            raise ConditionFailed(f"The {param_name} string argument was empty.")
-        if argument.isspace():
-            raise ConditionFailed(f"The {param_name} string argument was whitespace.")
+        if len(argument) == 0:
+            raise ConditionFailed(f"The {param_name} was an empty collection.")
 
     @staticmethod
-    cdef equal(object argument1, object argument2):
+    cdef empty(object argument, str param_name):
         """
-        Check the arguments are equal (the given object must implement cdef .equals()).
+        Check the iterable is empty.
 
-        :param argument1: The first argument to check.
-        :param argument2: The second argument to check.
-        :raises ConditionFailed: If the arguments are not equal.
+        :param argument: The iterable to check.
+        :param param_name: The iterables name.
+        :raises ConditionFailed: If the iterable argument is not empty.
         """
-        if not argument1.equals(argument2):
-            raise ConditionFailed(f"The arguments were not equal, values = {argument1} and {argument2}.")
+        if len(argument) > 0:
+            raise ConditionFailed(f"The {param_name} was not an empty collection.")
 
     @staticmethod
     cdef lists_equal_length(
@@ -277,30 +303,6 @@ cdef class Condition:
         if value < start or value > end:
             raise ConditionFailed(f"The {param_name} was out of range [{start}-{end}], value was {value}.")
 
-    @staticmethod
-    cdef not_empty(object argument, str param_name):
-        """
-        Check the iterable is not empty.
-
-        :param argument: The iterable to check.
-        :param param_name: The iterables name.
-        :raises ConditionFailed: If the iterable argument is empty.
-        """
-        if len(argument) == 0:
-            raise ConditionFailed(f"The {param_name} was an empty collection.")
-
-    @staticmethod
-    cdef empty(object argument, str param_name):
-        """
-        Check the iterable is empty.
-
-        :param argument: The iterable to check.
-        :param param_name: The iterables name.
-        :raises ConditionFailed: If the iterable argument is not empty.
-        """
-        if len(argument) > 0:
-            raise ConditionFailed(f"The {param_name} was not an empty collection.")
-
 
 class PyCondition:
 
@@ -357,6 +359,14 @@ class PyCondition:
         Condition.equal(argument1, argument2)
 
     @staticmethod
+    def not_empty(argument, param_name):
+        Condition.not_empty(argument, param_name)
+
+    @staticmethod
+    def empty(argument, param_name):
+        Condition.empty(argument, param_name)
+
+    @staticmethod
     def lists_equal_length(list1, list2, list1_name, list2_name):
         Condition.lists_equal_length(list1,
                                      list2,
@@ -385,11 +395,3 @@ class PyCondition:
             start,
             end):
         Condition.in_range(value, param_name, start, end)
-
-    @staticmethod
-    def not_empty(argument, param_name):
-        Condition.not_empty(argument, param_name)
-
-    @staticmethod
-    def empty(argument, param_name):
-        Condition.empty(argument, param_name)
