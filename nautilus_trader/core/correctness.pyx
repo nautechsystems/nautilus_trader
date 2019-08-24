@@ -14,12 +14,12 @@ cdef class Condition:
     """
     Provides static methods for the checking of function or method conditions.
     A condition is a predicate which must be true just prior to the execution
-    of some section of code for correct behaviour as per the specification.
+    of some section of code for correct behaviour as per the design specification.
     """
     @staticmethod
     cdef true(bint predicate, str description):
         """
-        Check the conditions predicate is True.
+        Check the predicate is True.
 
         :param predicate: The predicate condition to check.
         :param description: The description of the predicate condition.
@@ -29,9 +29,33 @@ cdef class Condition:
             raise ConditionFailed(f"The predicate {description} was False.")
 
     @staticmethod
+    cdef none(object argument, str param_name):
+        """
+        Check the argument is None.
+
+        :param argument: The argument to check.
+        :param param_name: The parameter name.
+        :raises ConditionFailed: If the argument is not None.
+        """
+        if argument is not None:
+            raise ConditionFailed(f"The {param_name} argument was not None.")
+
+    @staticmethod
+    cdef not_none(object argument, str param_name):
+        """
+        Check the argument is not None.
+
+        :param argument: The argument to check.
+        :param param_name: The parameter name.
+        :raises ConditionFailed: If the argument is None.
+        """
+        if argument is None:
+            raise ConditionFailed(f"The {param_name} argument was None.")
+
+    @staticmethod
     cdef type(object argument, object is_type, str param_name):
         """
-        Check the conditions argument is of the specified type.
+        Check the argument is of the specified type.
 
         :param argument: The argument to check.
         :param is_type: The expected argument type.
@@ -44,10 +68,10 @@ cdef class Condition:
     @staticmethod
     cdef type_or_none(object argument, object is_type, str param_name):
         """
-        Check the conditions argument is of the specified type, or None.
+        Check the argument is of the specified type, or is None.
 
         :param argument: The argument to check.
-        :param is_type: The expected argument type if not None.
+        :param is_type: The expected argument type if it is not None.
         :param param_name: The parameter name.
         :raises ConditionFailed: If the object is not of the expected type, and is not None.
         """
@@ -58,41 +82,11 @@ cdef class Condition:
             raise ConditionFailed(f"The {param_name} argument was not of type {is_type} or None, type was {type(argument)}.")
 
     @staticmethod
-    cdef is_in(object key, dict dictionary, str param_name, str dict_name):
-        """
-        Check the conditions key argument is contained within the keys of the 
-        specified dictionary.
-    
-        :param key: The key argument to check.
-        :param dictionary: The dictionary which should contain the key argument.
-        :param param_name: The key parameter name.
-        :param dict_name: The dictionary name.
-        :raises ConditionFailed: If the key is not contained in the dictionary keys.
-        """
-        if key not in dictionary:
-            raise ConditionFailed(f"The {param_name} {key} key was not contained within the {dict_name} dictionary.")
-
-    @staticmethod
-    cdef not_in(object key, dict dictionary, str param_name, str dict_name):
-        """
-        Check the conditions key argument is NOT contained within the keys of 
-        the specified dictionary.
-    
-        :param key: The key argument to check.
-        :param dictionary: The dictionary which should NOT contain the key argument.
-        :param param_name: The key parameter name.
-        :param dict_name: The dictionary name.
-        :raises ConditionFailed: If the key is already contained in the dictionary keys.
-        """
-        if key in dictionary:
-            raise ConditionFailed(f"The {param_name} {key} key was already contained within the {dict_name} dictionary.")
-
-    @staticmethod
     cdef list_type(list argument, type element_type, str param_name):
         """
         Check the list only contains types of the given type to contain.
 
-        :param argument: The list argument to check.
+        :param argument: The list to check.
         :param element_type: The expected element type if not empty.
         :param param_name: The parameter name.
         :raises ConditionFailed: If the list contains a type other than the given type to contain.
@@ -106,9 +100,9 @@ cdef class Condition:
         """
         Check the dictionary only contains types of the given key and value types to contain.
 
-        :param argument: The dictionary argument to check.
-        :param key_type: The expected type of the keys if not empty.
-        :param value_type: The expected type of the values if not empty.
+        :param argument: The dictionary to check.
+        :param key_type: The expected type of the keys if dictionary is not empty.
+        :param value_type: The expected type of the values if dictionary is not empty.
         :param param_name: The parameter name.
         :raises ConditionFailed: If the dictionary contains a key type other than the given key_type to contain.
         :raises ConditionFailed: If the dictionary contains a value type other than the given value_type to contain.
@@ -120,33 +114,65 @@ cdef class Condition:
                 raise ConditionFailed(f"The {param_name} dictionary contained a value type other than {value_type}. type = {type(value)}")
 
     @staticmethod
-    cdef none(object argument, str param_name):
+    cdef is_in(object item, list collection, str param_name, str collection_name):
         """
-        Check the conditions argument is None.
-
-        :param argument: The argument to check.
-        :param param_name: The parameter name.
-        :raises ConditionFailed: If the argument is not None.
+        Check the item is contained within the specified collection.
+    
+        :param item: The item to check.
+        :param collection: The collection which should contain the item.
+        :param param_name: The item parameter name.
+        :param collection_name: The collection name.
+        :raises ConditionFailed: If the item is not contained in the collection.
         """
-        if argument is not None:
-            raise ConditionFailed(f"The {param_name} argument was not None.")
+        if item not in collection:
+            raise ConditionFailed(f"The {param_name} {item} was not contained in the {collection_name} list.")
 
     @staticmethod
-    cdef not_none(object argument, str param_name):
+    cdef not_in(object item, list collection, str param_name, str collection_name):
         """
-        Check the conditions argument is not None.
+        Check the item is NOT contained within the specified collection.
+    
+        :param item: The item to check.
+        :param collection: The collection which should NOT contain the item.
+        :param param_name: The key parameter name.
+        :param collection_name: The collection name.
+        :raises ConditionFailed: If the item is already contained in the collection.
+        """
+        if item in collection:
+            raise ConditionFailed(f"The {param_name} {item} was already contained in the {collection_name} list.")
 
-        :param argument: The argument to check.
-        :param param_name: The parameter name.
-        :raises ConditionFailed: If the argument is None.
+    @staticmethod
+    cdef key_is_in(object key, dict dictionary, str param_name, str dict_name):
         """
-        if argument is None:
-            raise ConditionFailed(f"The {param_name} argument was None.")
+        Check the key is contained within the specified dictionary.
+    
+        :param key: The key to check.
+        :param dictionary: The dictionary which should contain the key.
+        :param param_name: The key parameter name.
+        :param dict_name: The dictionary name.
+        :raises ConditionFailed: If the key is not contained in the dictionary keys.
+        """
+        if key not in dictionary:
+            raise ConditionFailed(f"The {param_name} {key} was not contained in the {dict_name} dictionary keys.")
+
+    @staticmethod
+    cdef key_not_in(object key, dict dictionary, str param_name, str dict_name):
+        """
+        Check the key is NOT contained within the specified dictionary.
+    
+        :param key: The key to check.
+        :param dictionary: The dictionary which should NOT contain the key.
+        :param param_name: The key parameter name.
+        :param dict_name: The dictionary name.
+        :raises ConditionFailed: If the key is already contained in the dictionary keys.
+        """
+        if key in dictionary:
+            raise ConditionFailed(f"The {param_name} {key} was already contained in the {dict_name} dictionary keys.")
 
     @staticmethod
     cdef valid_string(str argument, str param_name):
         """
-        Check the conditions string argument is not None, empty or whitespace.
+        Check the string is not None, empty or whitespace.
 
         :param argument: The string argument to check.
         :param param_name: The parameter name.
@@ -154,17 +180,15 @@ cdef class Condition:
         """
         if argument is None:
             raise ConditionFailed(f"The {param_name} string argument was None.")
-        if argument is '':
+        if argument == '':
             raise ConditionFailed(f"The {param_name} string argument was empty.")
         if argument.isspace():
             raise ConditionFailed(f"The {param_name} string argument was whitespace.")
-        if len(argument) > 2048:
-            raise ConditionFailed(f"The {param_name} string argument exceeded 2048 chars.")
 
     @staticmethod
     cdef equal(object argument1, object argument2):
         """
-        Check the conditions arguments are equal (the given object must implement .equals).
+        Check the arguments are equal (the given object must implement cdef .equals()).
 
         :param argument1: The first argument to check.
         :param argument2: The second argument to check.
@@ -180,7 +204,7 @@ cdef class Condition:
             str collection1_name,
             str collection2_name):
         """
-        Check the conditions collections have equal lengths.
+        Check the collections have equal lengths.
 
         :param collection1: The first collection to check.
         :param collection2: The second collection to check.
@@ -195,7 +219,7 @@ cdef class Condition:
     @staticmethod
     cdef positive(float value, str param_name):
         """
-        Check the conditions value is positive (> 0.)
+        Check the value is positive (> 0.)
 
         :param value: The value to check.
         :param param_name: The name of the value.
@@ -207,7 +231,7 @@ cdef class Condition:
     @staticmethod
     cdef not_negative(float value, str param_name):
         """
-        Check the conditions value is not negative (>= 0).
+        Check the value is not negative (>= 0).
 
         :param value: The value to check.
         :param param_name: The values name.
@@ -223,7 +247,7 @@ cdef class Condition:
             float start,
             float end):
         """
-        Check the conditions value is within the specified range (inclusive).
+        Check the value is within the specified range (inclusive).
 
         :param value: The value to check.
         :param param_name: The values name.
@@ -237,7 +261,7 @@ cdef class Condition:
     @staticmethod
     cdef not_empty(object argument, str param_name):
         """
-        Check the conditions iterable is not empty.
+        Check the iterable is not empty.
 
         :param argument: The iterable to check.
         :param param_name: The iterables name.
@@ -249,7 +273,7 @@ cdef class Condition:
     @staticmethod
     cdef empty(object argument, str param_name):
         """
-        Check the conditions iterable is empty.
+        Check the iterable is empty.
 
         :param argument: The iterable to check.
         :param param_name: The iterables name.
@@ -266,20 +290,20 @@ class PyCondition:
         Condition.true(predicate, description)
 
     @staticmethod
+    def none(argument, param_name):
+        Condition.none(argument, param_name)
+
+    @staticmethod
+    def not_none(argument, param_name):
+        Condition.not_none(argument, param_name)
+
+    @staticmethod
     def type(argument, is_type, param_name):
         Condition.type(argument, is_type, param_name)
 
     @staticmethod
     def type_or_none(argument, is_type, param_name):
         Condition.type_or_none(argument, is_type, param_name)
-
-    @staticmethod
-    def is_in(object key, dict dictionary, str param_name, str dict_name):
-        Condition.is_in(key, dictionary, param_name, dict_name)
-
-    @staticmethod
-    def not_in(object key, dict dictionary, str param_name, str dict_name):
-        Condition.not_in(key, dictionary, param_name, dict_name)
 
     @staticmethod
     def list_type(argument, element_type, param_name):
@@ -290,12 +314,20 @@ class PyCondition:
         Condition.dict_types(argument, key_type, value_type, param_name)
 
     @staticmethod
-    def none(argument, param_name):
-        Condition.none(argument, param_name)
+    def is_in(object item, list collection, str param_name, str collection_name):
+        Condition.is_in(item, collection, param_name, collection_name)
 
     @staticmethod
-    def not_none(argument, param_name):
-        Condition.not_none(argument, param_name)
+    def not_in(object item, list collection, str param_name, str collection_name):
+        Condition.not_in(item, collection, param_name, collection_name)
+
+    @staticmethod
+    def key_is_in(object key, dict dictionary, str param_name, str dict_name):
+        Condition.key_is_in(key, dictionary, param_name, dict_name)
+
+    @staticmethod
+    def key_not_in(object key, dict dictionary, str param_name, str dict_name):
+        Condition.key_not_in(key, dictionary, param_name, dict_name)
 
     @staticmethod
     def valid_string(argument, param_name):

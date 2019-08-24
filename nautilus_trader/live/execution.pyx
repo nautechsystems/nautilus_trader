@@ -604,8 +604,8 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 #         :return: Dict[PositionId, Position].
 #         :raises ConditionFailed: If the strategy identifier is not registered with the portfolio.
 #         """
-#         Condition.is_in(strategy_id, self._positions_open, 'strategy_id', 'positions_active')
-#         Condition.is_in(strategy_id, self._positions_closed, 'strategy_id', 'positions_closed')
+#         Condition.key_is_in(strategy_id, self._positions_open, 'strategy_id', 'positions_active')
+#         Condition.key_is_in(strategy_id, self._positions_closed, 'strategy_id', 'positions_closed')
 #
 #         return {**self._positions_open[strategy_id], **self._positions_closed[strategy_id]}  # type: Dict[PositionId, Position]
 #
@@ -617,7 +617,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 #         :return: Dict[PositionId, Position].
 #         :raises ConditionFailed: If the strategy identifier is not registered with the portfolio.
 #         """
-#         Condition.is_in(strategy_id, self._positions_open, 'strategy_id', 'positions_active')
+#         Condition.key_is_in(strategy_id, self._positions_open, 'strategy_id', 'positions_active')
 #
 #         return self._positions_open[strategy_id].copy()
 #
@@ -629,7 +629,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 #         :return: Dict[PositionId, Position].
 #         :raises ConditionFailed: If the strategy identifier is not registered with the portfolio.
 #         """
-#         Condition.is_in(strategy_id, self._positions_closed, 'strategy_id', 'positions_closed')
+#         Condition.key_is_in(strategy_id, self._positions_closed, 'strategy_id', 'positions_closed')
 #
 #         return self._positions_closed[strategy_id].copy()
 #

@@ -9,7 +9,7 @@
 
 cdef class ObjectCache:
     """
-    Provides a strongly typed object cache with strings as keys.
+    Provides an object cache with strings as keys.
     """
 
     def __init__(self, type type_value, parser):

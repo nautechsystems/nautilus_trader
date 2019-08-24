@@ -226,7 +226,7 @@ cdef class BacktestDataClient(DataClient):
             self.execution_data_index_max = last
 
     cdef void _build_bars(self, BarType bar_type):
-        Condition.is_in(bar_type.symbol, self.data_providers, 'symbol', 'data_providers')
+        Condition.key_is_in(bar_type.symbol, self.data_providers, 'symbol', 'data_providers')
 
         # Build bars of the given bar type inside the data provider
         cdef datetime start = datetime.utcnow()
@@ -418,7 +418,7 @@ cdef class BacktestDataClient(DataClient):
         :raises ConditionFailed: If the symbol is not a key in data_providers.
         :raises ConditionFailed: If the handler is not of type Callable.
         """
-        Condition.is_in(symbol, self.data_providers, 'symbol', 'data_providers')
+        Condition.key_is_in(symbol, self.data_providers, 'symbol', 'data_providers')
         Condition.type_or_none(handler, Callable, 'handler')
 
         self._add_tick_handler(symbol, handler)
@@ -433,7 +433,7 @@ cdef class BacktestDataClient(DataClient):
         :raises ConditionFailed: If the symbol is not a key in data_providers.
         :raises ConditionFailed: If the handler is not of type Callable.
         """
-        Condition.is_in(bar_type.symbol, self.data_providers, 'symbol', 'data_providers')
+        Condition.key_is_in(bar_type.symbol, self.data_providers, 'symbol', 'data_providers')
         Condition.type_or_none(handler, Callable, 'handler')
 
         cdef start = datetime.utcnow()
@@ -464,7 +464,7 @@ cdef class BacktestDataClient(DataClient):
         :raises ConditionFailed: If the symbol is not a key in data_providers.
         :raises ConditionFailed: If the handler is not of type Callable.
         """
-        Condition.is_in(symbol, self.data_providers, 'symbol', 'data_providers')
+        Condition.key_is_in(symbol, self.data_providers, 'symbol', 'data_providers')
         Condition.type_or_none(handler, Callable, 'handler')
 
         self.data_providers[symbol].deregister_ticks()
@@ -479,7 +479,7 @@ cdef class BacktestDataClient(DataClient):
         :raises ConditionFailed: If the symbol is not a key in data_providers.
         :raises ConditionFailed: If the handler is not of type Callable.
         """
-        Condition.is_in(bar_type.symbol, self.data_providers, 'symbol', 'data_providers')
+        Condition.key_is_in(bar_type.symbol, self.data_providers, 'symbol', 'data_providers')
         Condition.type_or_none(handler, Callable, 'handler')
 
         self.data_providers[bar_type.symbol].deregister_bars(bar_type)
