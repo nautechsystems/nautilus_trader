@@ -34,11 +34,9 @@ cdef class Condition:
     @staticmethod
     cdef equal(object argument1, object argument2)
     @staticmethod
-    cdef equal_lengths(
-            list collection1,
-            list collection2,
-            str collection1_name,
-            str collection2_name)
+    cdef lists_equal_length(list list1, list list2, str list1_name, str list2_name)
+    @staticmethod
+    cdef dicts_equal_length(dict dict1, dict dict2, str dict1_name, str dict2_name)
     @staticmethod
     cdef positive(float value, str param_name)
     @staticmethod

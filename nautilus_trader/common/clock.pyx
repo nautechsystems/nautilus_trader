@@ -195,14 +195,12 @@ cdef class LiveClock(Clock):
         Condition.key_not_in(label, self._timers, 'label', 'timers')
 
         if start_time is not None:
-            Condition.true(start_time >= self.time_now(),
-                              'start_time >= self.clock.time_now()')
+            Condition.true(start_time >= self.time_now(), 'start_time >= self.clock.time_now()')
         else:
             start_time = self.time_now()
         if stop_time is not None:
             Condition.true(stop_time > start_time, 'stop_time > start_time')
-            Condition.true(start_time + interval <= stop_time,
-                              'start_time + interval <= stop_time')
+            Condition.true(start_time + interval <= stop_time, 'start_time + interval <= stop_time')
 
         cdef datetime alert_time = start_time + interval
         cdef float delay = (alert_time - self.time_now()).total_seconds()
