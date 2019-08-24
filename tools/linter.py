@@ -15,8 +15,17 @@ from typing import List
 from tools.setup_tools import scan_directories
 
 
-def check_file_headers(directories: List[str], ignore: List[str], author: str) -> None:
-    # Check file headers
+def check_file_headers(directories: List[str], ignore: List[str], company_name: str) -> None:
+    """
+    Check the headers of all specified files for the following.
+
+    - File name in header matches the actual file name.
+    - Company name in header matches the given company name.
+
+    :param directories: The list of directories for files to check.
+    :param ignore: The list of file extensions to ignore.
+    :param company_name: The expected company name.
+    """
     files = scan_directories(directories)
     checked_extensions = set()
     for file in files:
@@ -30,13 +39,13 @@ def check_file_headers(directories: List[str], ignore: List[str], author: str) -
                     result = re.findall(r'\"(.+?)\"', source_code)
                     if len(result) == 0:
                         raise ValueError(f"No file header found in {file}.")
-                    file_name = result[0]
-                    company = result[1]
-                    if file_name != expected_file_name:
+                    parsed_file_name = result[0]
+                    parsed_company_name = result[1]
+                    if parsed_file_name != expected_file_name:
                         raise ValueError(f"The file header for {file} is incorrect"
-                                         f" (file= should be '{expected_file_name}' was '{file_name}')")
-                    if company != author:
+                                         f" (file= should be '{expected_file_name}' was '{parsed_file_name}').")
+                    if parsed_company_name != company_name:
                         raise ValueError(f"The file header for {file} is incorrect"
-                                         f" (company= should be '{author}' was '{company}')")
+                                         f" (company= should be '{company_name}' was '{parsed_company_name}').")
 
-    print(f"Checked headers for extensions; {checked_extensions} file name and company name all OK")
+    print(f"Checked headers for extensions; {checked_extensions} file name and company name all OK.")

@@ -69,7 +69,7 @@ compiler_directives = {'language_level': 3, 'embedsignature': True, 'profile': P
 
 # Lint source code (throws exception on failure)
 artifacts_to_ignore = ['', '.c', '.so', '.gz', '.o', '.pyd', '.pyc', '.prof', '.html', '.csv']
-check_file_headers(DIRECTORIES_ALL, ignore=artifacts_to_ignore, author=AUTHOR)
+check_file_headers(DIRECTORIES_ALL, ignore=artifacts_to_ignore, company_name=AUTHOR)
 
 
 def make_extensions(directories: List[str]) -> [Extension]:

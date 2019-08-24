@@ -18,7 +18,7 @@ class TestDataProvider:
 
     @staticmethod
     def usdjpy_test_ticks() -> DataFrame:
-        return pd.read_csv(os.path.join(ROOT_DIR, 'USDJPY_ticks.csv'),
+        return pd.read_csv(os.path.join(ROOT_DIR + '/data/', 'USDJPY_ticks.csv'),
                            usecols=[1, 2, 3],
                            index_col=0,
                            header=None,
@@ -26,19 +26,19 @@ class TestDataProvider:
 
     @staticmethod
     def gbpusd_1min_bid() -> DataFrame:
-        return pd.read_csv(os.path.join(ROOT_DIR, 'GBPUSD_1 Min_Bid.csv'),
+        return pd.read_csv(os.path.join(ROOT_DIR + '/data/', 'GBPUSD_1 Min_Bid.csv'),
                            index_col='Time (UTC)',
                            parse_dates=True)
 
     @staticmethod
     def usdjpy_1min_bid() -> DataFrame:
-        return pd.read_csv(os.path.join(ROOT_DIR, 'USDJPY_1 Min_Bid.csv'),
+        return pd.read_csv(os.path.join(ROOT_DIR + '/data/', 'USDJPY_1 Min_Bid.csv'),
                            index_col='Time (UTC)',
                            parse_dates=True)
 
     @staticmethod
     def usdjpy_1min_ask() -> DataFrame:
-        return pd.read_csv(os.path.join(ROOT_DIR, 'USDJPY_1 Min_Ask.csv'),
+        return pd.read_csv(os.path.join(ROOT_DIR + '/data/', 'USDJPY_1 Min_Ask.csv'),
                            index_col='Time (UTC)',
                            parse_dates=True)
 
