@@ -85,9 +85,10 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         # Act
         self.database.add_order(order, strategy_id, position_id)
 
+        print(self.database.get_order_ids())
         # Assert
         self.assertTrue(order.id in self.database.get_order_ids())
-        self.assertEqual(order, self.database.get_orders_all()[order.id])
+        self.assertEqual(order, self.database.get_orders()[order.id])
 
     def test_can_add_position(self):
         # Arrange
@@ -122,7 +123,6 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         # Assert
         self.assertTrue(position.id in self.database.get_position_ids())
         self.assertTrue(position.id in self.database.get_positions_open(strategy.id))
-        self.assertTrue(position.id in self.database.get_positions_open_all()[strategy.id])
 
     def test_can_delete_strategy(self):
         # Arrange
@@ -172,11 +172,11 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         # Assert
         self.assertTrue(self.database.order_exists(order.id))
         self.assertTrue(order.id in self.database.get_order_ids())
-        self.assertTrue(order.id in self.database.get_orders_all())
+        self.assertTrue(order.id in self.database.get_orders())
         self.assertTrue(order.id in self.database.get_orders_working(strategy.id))
-        self.assertTrue(order.id in self.database.get_orders_working_all()[strategy.id])
+        self.assertTrue(order.id in self.database.get_orders_working())
         self.assertTrue(order.id not in self.database.get_orders_completed(strategy.id))
-        self.assertTrue(order.id not in self.database.get_orders_completed_all()[strategy.id])
+        self.assertTrue(order.id not in self.database.get_orders_completed())
 
     def test_can_add_order_event_with_completed_order(self):
         # Arrange
@@ -212,11 +212,11 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         # Assert
         self.assertTrue(self.database.order_exists(order.id))
         self.assertTrue(order.id in self.database.get_order_ids())
-        self.assertTrue(order.id in self.database.get_orders_all())
+        self.assertTrue(order.id in self.database.get_orders())
         self.assertTrue(order.id in self.database.get_orders_completed(strategy.id))
-        self.assertTrue(order.id in self.database.get_orders_completed_all()[strategy.id])
+        self.assertTrue(order.id in self.database.get_orders_completed())
         self.assertTrue(order.id not in self.database.get_orders_working(strategy.id))
-        self.assertTrue(order.id not in self.database.get_orders_working_all()[strategy.id])
+        self.assertTrue(order.id not in self.database.get_orders_working())
 
     def test_can_add_position_event_with_open_position(self):
         # Arrange
@@ -231,11 +231,11 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         # Assert
         self.assertTrue(self.database.position_exists(position.id))
         self.assertTrue(position.id in self.database.get_position_ids())
-        self.assertTrue(position.id in self.database.get_positions_all())
+        self.assertTrue(position.id in self.database.get_positions())
         self.assertTrue(position.id in self.database.get_positions_open(strategy.id))
-        self.assertTrue(position.id in self.database.get_positions_open_all()[strategy.id])
+        self.assertTrue(position.id in self.database.get_positions_open())
         self.assertTrue(position.id not in self.database.get_positions_closed(strategy.id))
-        self.assertTrue(position.id not in self.database.get_positions_closed_all()[strategy.id])
+        self.assertTrue(position.id not in self.database.get_positions_closed())
 
     def test_can_add_position_event_with_closed_position(self):
         # Arrange
@@ -273,14 +273,15 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         # Assert
         self.assertTrue(self.database.position_exists(position.id))
         self.assertTrue(position.id in self.database.get_position_ids())
-        self.assertTrue(position.id in self.database.get_positions_all())
+        self.assertTrue(position.id in self.database.get_positions())
         self.assertTrue(position.id in self.database.get_positions_closed(strategy.id))
-        self.assertTrue(position.id in self.database.get_positions_closed_all()[strategy.id])
+        self.assertTrue(position.id in self.database.get_positions_closed())
         self.assertTrue(position.id not in self.database.get_positions_open(strategy.id))
-        self.assertTrue(position.id not in self.database.get_positions_open_all()[strategy.id])
+        self.assertTrue(position.id not in self.database.get_positions_open())
 
     def test_can_add_account_event(self):
         # Arrange
+        account = Account()
         event = AccountStateEvent(
             AccountId('SIMULATED', '123456'),
             Currency.USD,
@@ -294,8 +295,10 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
+        account.apply(event)
+
         # Act
-        self.database.update_account(event)
+        self.database.update_account(account)
 
         # Assert
         self.assertTrue(True)  # Did not raise exception
@@ -498,11 +501,11 @@ class ExecutionEngineTests(unittest.TestCase):
         self.assertFalse(self.exec_engine.is_strategy_flat(strategy.id))
         self.assertFalse(self.exec_engine.is_flat())
         self.assertEqual(Position, type(self.exec_db.get_position(position_id)))
-        self.assertTrue(position_id in self.exec_db.get_positions_all())
+        self.assertTrue(position_id in self.exec_db.get_positions())
         self.assertTrue(position_id not in self.exec_db.get_positions_closed(strategy.id))
-        self.assertTrue(position_id not in self.exec_db.get_positions_closed_all()[strategy.id])
+        self.assertTrue(position_id not in self.exec_db.get_positions_closed())
         self.assertTrue(position_id in self.exec_db.get_positions_open(strategy.id))
-        self.assertTrue(position_id in self.exec_db.get_positions_open_all()[strategy.id])
+        self.assertTrue(position_id in self.exec_db.get_positions_open())
         self.assertEqual(1, self.exec_db.positions_count())
         self.assertEqual(1, self.exec_db.positions_open_count())
         self.assertEqual(0, self.exec_db.positions_closed_count())
@@ -585,9 +588,9 @@ class ExecutionEngineTests(unittest.TestCase):
         self.assertFalse(self.exec_engine.is_flat())
         self.assertEqual(Position, type(self.exec_db.get_position(position_id)))
         self.assertEqual(0, len(self.exec_db.get_positions_closed(strategy.id)))
-        self.assertEqual(0, len(self.exec_db.get_positions_closed_all()[strategy.id]))
+        self.assertEqual(0, len(self.exec_db.get_positions_closed()))
         self.assertEqual(1, len(self.exec_db.get_positions_open(strategy.id)))
-        self.assertEqual(1, len(self.exec_db.get_positions_open_all()[strategy.id]))
+        self.assertEqual(1, len(self.exec_db.get_positions_open()))
         self.assertEqual(1, self.exec_db.positions_count())
         self.assertEqual(1, self.exec_db.positions_open_count())
         self.assertEqual(0, self.exec_db.positions_closed_count())
@@ -672,13 +675,13 @@ class ExecutionEngineTests(unittest.TestCase):
         self.assertTrue(self.exec_engine.is_flat())
         self.assertEqual(position_id, self.exec_db.get_position(position_id).id)
         self.assertTrue(position_id in self.exec_db.get_positions(strategy.id))
-        self.assertTrue(position_id in self.exec_db.get_positions_all())
+        self.assertTrue(position_id in self.exec_db.get_positions())
         self.assertEqual(0, len(self.exec_db.get_positions_open(strategy.id)))
-        self.assertEqual(0, len(self.exec_db.get_positions_open_all()[strategy.id]))
+        self.assertEqual(0, len(self.exec_db.get_positions_open()))
         self.assertTrue(position_id in self.exec_db.get_positions_closed(strategy.id))
-        self.assertTrue(position_id in self.exec_db.get_positions_closed_all()[strategy.id])
+        self.assertTrue(position_id in self.exec_db.get_positions_closed())
         self.assertTrue(position_id not in self.exec_db.get_positions_open(strategy.id))
-        self.assertTrue(position_id not in self.exec_db.get_positions_open_all()[strategy.id])
+        self.assertTrue(position_id not in self.exec_db.get_positions_open())
         self.assertEqual(1, self.exec_db.positions_count())
         self.assertEqual(0, self.exec_db.positions_open_count())
         self.assertEqual(1, self.exec_db.positions_closed_count())
@@ -769,21 +772,21 @@ class ExecutionEngineTests(unittest.TestCase):
         self.assertEqual(Position, type(self.exec_db.get_position(position_id2)))
         self.assertTrue(position_id1 in self.exec_db.get_positions(strategy1.id))
         self.assertTrue(position_id2 in self.exec_db.get_positions(strategy2.id))
-        self.assertTrue(position_id1 in self.exec_db.get_positions_all())
-        self.assertTrue(position_id2 in self.exec_db.get_positions_all())
+        self.assertTrue(position_id1 in self.exec_db.get_positions())
+        self.assertTrue(position_id2 in self.exec_db.get_positions())
         self.assertEqual(1, len(self.exec_db.get_positions_open(strategy1.id)))
         self.assertEqual(1, len(self.exec_db.get_positions_open(strategy2.id)))
-        self.assertEqual(2, len(self.exec_db.get_positions_open_all()))
-        self.assertEqual(1, len(self.exec_db.get_positions_open_all()[strategy1.id]))
-        self.assertEqual(1, len(self.exec_db.get_positions_open_all()[strategy2.id]))
+        self.assertEqual(2, len(self.exec_db.get_positions_open()))
+        self.assertEqual(1, len(self.exec_db.get_positions_open(strategy1.id)))
+        self.assertEqual(1, len(self.exec_db.get_positions_open(strategy2.id)))
         self.assertTrue(position_id1 in self.exec_db.get_positions_open(strategy1.id))
         self.assertTrue(position_id2 in self.exec_db.get_positions_open(strategy2.id))
-        self.assertTrue(position_id1 in self.exec_db.get_positions_open_all()[strategy1.id])
-        self.assertTrue(position_id2 in self.exec_db.get_positions_open_all()[strategy2.id])
+        self.assertTrue(position_id1 in self.exec_db.get_positions_open())
+        self.assertTrue(position_id2 in self.exec_db.get_positions_open())
         self.assertTrue(position_id1 not in self.exec_db.get_positions_closed(strategy1.id))
         self.assertTrue(position_id2 not in self.exec_db.get_positions_closed(strategy2.id))
-        self.assertTrue(position_id1 not in self.exec_db.get_positions_closed_all()[strategy1.id])
-        self.assertTrue(position_id2 not in self.exec_db.get_positions_closed_all()[strategy2.id])
+        self.assertTrue(position_id1 not in self.exec_db.get_positions_closed())
+        self.assertTrue(position_id2 not in self.exec_db.get_positions_closed())
         self.assertEqual(2, self.exec_db.positions_count())
         self.assertEqual(2, self.exec_db.positions_open_count())
         self.assertEqual(0, self.exec_db.positions_closed_count())
@@ -899,20 +902,20 @@ class ExecutionEngineTests(unittest.TestCase):
         self.assertFalse(self.exec_engine.is_flat())
         self.assertTrue(position_id1 in self.exec_db.get_positions(strategy1.id))
         self.assertTrue(position_id2 in self.exec_db.get_positions(strategy2.id))
-        self.assertTrue(position_id1 in self.exec_db.get_positions_all())
-        self.assertTrue(position_id2 in self.exec_db.get_positions_all())
+        self.assertTrue(position_id1 in self.exec_db.get_positions())
+        self.assertTrue(position_id2 in self.exec_db.get_positions())
         self.assertEqual(0, len(self.exec_db.get_positions_open(strategy1.id)))
         self.assertEqual(1, len(self.exec_db.get_positions_open(strategy2.id)))
-        self.assertEqual(0, len(self.exec_db.get_positions_open_all()[strategy1.id]))
-        self.assertEqual(1, len(self.exec_db.get_positions_open_all()[strategy2.id]))
+        self.assertEqual(0, len(self.exec_db.get_positions_open()))
+        self.assertEqual(1, len(self.exec_db.get_positions_open()))
         self.assertTrue(position_id1 not in self.exec_db.get_positions_open(strategy1.id))
         self.assertTrue(position_id2 in self.exec_db.get_positions_open(strategy2.id))
-        self.assertTrue(position_id1 not in self.exec_db.get_positions_open_all()[strategy1.id])
-        self.assertTrue(position_id2 in self.exec_db.get_positions_open_all()[strategy2.id])
+        self.assertTrue(position_id1 not in self.exec_db.get_positions_open())
+        self.assertTrue(position_id2 in self.exec_db.get_positions_open())
         self.assertTrue(position_id1 in self.exec_db.get_positions_closed(strategy1.id))
         self.assertTrue(position_id2 not in self.exec_db.get_positions_closed(strategy2.id))
-        self.assertTrue(position_id1 in self.exec_db.get_positions_closed_all()[strategy1.id])
-        self.assertTrue(position_id2 not in self.exec_db.get_positions_closed_all()[strategy2.id])
+        self.assertTrue(position_id1 in self.exec_db.get_positions_closed())
+        self.assertTrue(position_id2 not in self.exec_db.get_positions_closed())
         self.assertEqual(2, self.exec_db.positions_count())
         self.assertEqual(1, self.exec_db.positions_open_count())
         self.assertEqual(1, self.exec_db.positions_closed_count())
