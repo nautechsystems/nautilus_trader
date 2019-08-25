@@ -73,7 +73,9 @@ cdef class Condition:
     @staticmethod
     cdef equal(object object1, object object2):
         """
-        Check the objects are equal (the given objects must implement cdef .equals()).
+        Check the objects are equal.
+        
+        Note: The given objects must implement the cdef .equals() method.
 
         :param object1: The first object to check.
         :param object2: The second object to check.
@@ -114,7 +116,7 @@ cdef class Condition:
     @staticmethod
     cdef list_type(list argument, type element_type, str param_name):
         """
-        Check the list only contains types of the given type to contain.
+        Check the list only contains types of the given element_type to contain.
 
         :param argument: The list to check.
         :param element_type: The expected element type if not empty.
@@ -188,7 +190,7 @@ cdef class Condition:
     @staticmethod
     cdef key_not_in(object key, dict dictionary, str param_name, str dict_name):
         """
-        Check the key is NOT contained within the specified dictionary.
+        Check the key is not contained within the specified dictionary.
     
         :param key: The key to check.
         :param dictionary: The dictionary which should NOT contain the key.
@@ -240,7 +242,7 @@ cdef class Condition:
         """
         if len(list1) != len(list2):
             raise ConditionFailed(
-                f"The lengths of {list1_name} and {list2_name} were not equal, lengths = {len(list1)} and {len(list2)}.")
+                f"The length of {list1_name} was not equal to {list2_name} (lengths were {len(list1)} and {len(list2)}).")
 
     @staticmethod
     cdef dicts_equal_length(
@@ -259,12 +261,12 @@ cdef class Condition:
         """
         if len(dict1) != len(dict2):
             raise ConditionFailed(
-                f"The lengths of {dict1_name} and {dict2_name} were not equal, lengths = {len(dict1)} and {len(dict2)}.")
+                f"The length of {dict1_name} was not equal to {dict2_name} (lengths were {len(dict1)} and {len(dict2)}).")
 
     @staticmethod
     cdef positive(float value, str param_name):
         """
-        Check the value is positive (> 0.)
+        Check the float value is positive (> 0)
 
         :param value: The value to check.
         :param param_name: The name of the value.
@@ -276,7 +278,7 @@ cdef class Condition:
     @staticmethod
     cdef not_negative(float value, str param_name):
         """
-        Check the value is not negative (>= 0).
+        Check the float value is not negative (>= 0).
 
         :param value: The value to check.
         :param param_name: The values name.
@@ -292,7 +294,7 @@ cdef class Condition:
             float start,
             float end):
         """
-        Check the value is within the specified range (inclusive).
+        Check the float value is within the specified range (inclusive).
 
         :param value: The value to check.
         :param param_name: The values name.
