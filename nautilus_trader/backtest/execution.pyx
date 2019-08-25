@@ -24,7 +24,7 @@ from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.events cimport (
     OrderEvent,
-    AccountEvent,
+    AccountStateEvent,
     OrderSubmitted,
     OrderAccepted,
     OrderRejected,
@@ -263,7 +263,7 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         Resets the account.
         """
-        cdef AccountEvent initial_starting = AccountEvent(
+        cdef AccountStateEvent initial_starting = AccountStateEvent(
             AccountId('SIMULATED', '123456'),
             self._account.currency,
             self.starting_capital,
@@ -316,7 +316,7 @@ cdef class BacktestExecClient(ExecutionClient):
 
     cpdef void account_inquiry(self, AccountInquiry command):
         # Generate event
-        cdef AccountEvent event = AccountEvent(
+        cdef AccountStateEvent event = AccountStateEvent(
             self._account.id,
             self._account.currency,
             self._account.cash_balance,
@@ -702,7 +702,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self.account_capital += pnl
             self.account_cash_activity_day += pnl
 
-        cdef AccountEvent account_event = AccountEvent(
+        cdef AccountStateEvent account_event = AccountStateEvent(
             self._account.id,
             self._account.currency,
             self.account_capital,

@@ -130,9 +130,11 @@ cdef class RequestWorker(MQWorker):
 
     cpdef bytes send(self, bytes request):
         """
-        Send the given message to the service socket.
+        Send the given request message to the service socket.
+        Return the response.
 
         :param request: The request message bytes to send.
+        :return: bytes.
         """
         Condition.not_empty(request, 'request')
 

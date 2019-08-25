@@ -9,7 +9,7 @@
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport ValidString
 from nautilus_trader.model.c_enums.currency cimport Currency
-from nautilus_trader.model.events cimport AccountEvent
+from nautilus_trader.model.events cimport AccountStateEvent
 from nautilus_trader.model.objects cimport Money
 
 
@@ -83,7 +83,7 @@ cdef class Account:
         """
         return self._events.copy()
 
-    cpdef void initialize(self, AccountEvent event):
+    cpdef void initialize(self, AccountStateEvent event):
         """
         Initialize the account with the given event.
         
@@ -95,7 +95,7 @@ cdef class Account:
         self.currency = event.currency
         self.initialized = True
 
-    cpdef void apply(self, AccountEvent event):
+    cpdef void apply(self, AccountStateEvent event):
         """
         Applies the given account event to the account.
 

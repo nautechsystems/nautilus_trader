@@ -27,7 +27,7 @@ from nautilus_trader.model.objects cimport Quantity, Price
 from nautilus_trader.model.position cimport Position
 
 
-cdef class AccountEvent(Event):
+cdef class AccountStateEvent(Event):
     """
     Represents an account event produced from a collateral report.
     """

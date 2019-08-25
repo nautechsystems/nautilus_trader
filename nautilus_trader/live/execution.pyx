@@ -30,7 +30,7 @@ from nautilus_trader.model.events cimport (
     OrderFillEvent,
     OrderInitialized,
     PositionEvent,
-    AccountEvent,
+    AccountStateEvent,
     OrderModified,
     OrderRejected,
     OrderCancelled,
@@ -44,12 +44,9 @@ from nautilus_trader.common.guid cimport GuidFactory
 from nautilus_trader.common.logger cimport Logger
 from nautilus_trader.common.execution cimport ExecutionDatabase, ExecutionEngine, ExecutionClient
 from nautilus_trader.common.portfolio cimport Portfolio
-from nautilus_trader.network.workers import RequestWorker, SubscriberWorker
+from nautilus_trader.network.workers cimport RequestWorker, SubscriberWorker
 from nautilus_trader.serialization.base cimport CommandSerializer, ResponseSerializer
-from nautilus_trader.serialization.serializers cimport (
-    MsgPackCommandSerializer,
-    MsgPackResponseSerializer
-)
+from nautilus_trader.serialization.serializers cimport MsgPackCommandSerializer, MsgPackResponseSerializer
 from nautilus_trader.live.logger cimport LiveLogger
 from nautilus_trader.serialization.serializers cimport EventSerializer, MsgPackEventSerializer
 from nautilus_trader.trade.strategy cimport TradingStrategy
@@ -266,15 +263,13 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         self._log.debug(f"Added position (id={position.id.value}) .")
 
-    cpdef void add_order_event(self, Order order, OrderEvent event):
+    cpdef void update_order(self, Order order):
         """
-        Add the last event of the given order to the execution database.
+        Update the given order in the execution database by persisting its
+        last event.
 
-        :param order: The order for the event to add (last event).
-        :param event: The event to add.
+        :param order: The order to update (last event).
         """
-        Condition.equal(order.id, event.order_id)
-
         cdef str key_order = self.key_orders + order.id.value
 
         if self.check_integrity:
@@ -283,7 +278,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         # Command pipeline
         pipe = self._redis.pipeline()
-        pipe.rpush(key_order, self._event_serializer.serialize(event))
+        pipe.rpush(key_order, self._event_serializer.serialize(order.last_event))
         if order.is_working:
             pipe.sadd(self.key_index_orders_working, order.id.value)
             pipe.srem(self.key_index_orders_completed, order.id.value)
@@ -292,12 +287,12 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
             pipe.srem(self.key_index_orders_working, order.id.value)
         pipe.execute()
 
-    cpdef void add_position_event(self, Position position, OrderFillEvent event):
+    cpdef void update_position(self, Position position):
         """
-        Add the given position event to the execution database.
+        Update the given position in the execution database by persisting its
+        last event.
 
-        :param position: The position for the event to add (last event).
-        :param event: The event to add.
+        :param position: The position to update (last event).
         """
 
         cdef str key_position = self.key_positions + position.id.value
@@ -308,17 +303,17 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         # Command pipeline
         pipe = self._redis.pipeline()
-        pipe.rpush(key_position, self._event_serializer.serialize(event))
+        pipe.rpush(key_position, self._event_serializer.serialize(position.last_event))
         if position.is_closed:
             pipe.sadd(self.key_index_positions_closed, position.id.value)
             pipe.srem(self.key_index_positions_open, position.id.value)
         pipe.execute()
 
-    cpdef void add_account_event(self, AccountEvent event):
+    cpdef void update_account(self, AccountStateEvent event):
         """
-        Add the given account event to the execution database.
+        Update the account in the execution database with the given event.
 
-        :param event: The account event to add.
+        :param event: The account state event to update.
         """
         cdef str key_account = self.key_accounts + event.account_id.value
 

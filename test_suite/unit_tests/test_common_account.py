@@ -14,7 +14,7 @@ from decimal import Decimal
 from nautilus_trader.core.types import GUID, ValidString
 from nautilus_trader.model.enums import Currency
 from nautilus_trader.model.objects import Money
-from nautilus_trader.model.events import AccountEvent
+from nautilus_trader.model.events import AccountStateEvent
 from nautilus_trader.model.identifiers import Brokerage, AccountNumber, AccountId
 from nautilus_trader.common.account import Account
 from test_kit.stubs import TestStubs
@@ -28,7 +28,7 @@ class AccountTests(unittest.TestCase):
         # Arrange
         account = Account()
 
-        event = AccountEvent(
+        event = AccountStateEvent(
             AccountId('FXCM', 'D123456'),
             Currency.AUD,
             Money(1000000),
@@ -61,7 +61,7 @@ class AccountTests(unittest.TestCase):
         # Arrange
         account = Account()
 
-        event = AccountEvent(
+        event = AccountStateEvent(
             AccountId('FXCM', 'D123456'),
             Currency.AUD,
             Money(1000000),
@@ -86,7 +86,7 @@ class AccountTests(unittest.TestCase):
         # Arrange
         account = Account()
 
-        event = AccountEvent(
+        event = AccountStateEvent(
             AccountId('FXCM', 'D123456'),
             Currency.AUD,
             Money(100000),
@@ -121,7 +121,7 @@ class AccountTests(unittest.TestCase):
         # Arrange
         account = Account()
 
-        event = AccountEvent(
+        event = AccountStateEvent(
             AccountId('FXCM', 'D123456'),
             Currency.AUD,
             Money(20000),
@@ -156,7 +156,7 @@ class AccountTests(unittest.TestCase):
         # Arrange
         account = Account()
 
-        event = AccountEvent(
+        event = AccountStateEvent(
             AccountId('FXCM', 'D123456'),
             Currency.AUD,
             Money(20000),

@@ -31,7 +31,7 @@ class LogStoreTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
 
-        self.trader_id = TraderId('000')
+        self.trader_id = TraderId('TESTER', '000')
         self.store = LogStore(trader_id=self.trader_id)
 
     def test_can_store_order_event(self):
