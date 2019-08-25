@@ -100,8 +100,13 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         pass
 
     def test_redis_functions(self):
-        print(self.test_redis.sinter(keys=('a', 'b')))
-        print(self.test_redis.scard(name='*'))
+        #print(self.test_redis.sinter(keys=('a', 'b')))
+        #print(self.test_redis.scard(name='*'))
+        a = {'a': 1, 'b': 2}
+        x = {'a'}
+        print(list(a.keys()))
+        print(x.intersection(list(a.keys())))
+        print(set(a.keys()))
 
     def test_keys(self):
         # Arrange

@@ -271,9 +271,9 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         self._index_order_strategy[order.id] = strategy_id
         self._index_order_position[order.id] = position_id
         self._index_position_strategy[position_id] = strategy_id
-        self._index_position_orders[position_id] = set(order.id)
-        self._index_strategy_orders[strategy_id] = set(order.id)
-        self._index_strategy_positions[strategy_id] = set(position_id)
+        self._index_position_orders[position_id] = {order.id}
+        self._index_strategy_orders[strategy_id] = {order.id}
+        self._index_strategy_positions[strategy_id] = {position_id}
 
         self._log.debug(f"Added order (id={order.id.value}, strategy_id={strategy_id.value}, position_id={position_id.value}).")
 
@@ -331,7 +331,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         Deregister the given strategy with the execution client.
 
         :param strategy: The strategy to deregister.
-        :raises ConditionFailed: If the strategy is not registered with the execution client.
+        :raises ConditionFailed: If the strategy is not registered with the execution engine.
         """
         Condition.is_in(strategy.id, self._strategies, 'strategy.id', 'strategies')
         Condition.is_in(strategy.id, self._index_strategy_orders, 'strategy.id', 'index_strategy_orders')
@@ -387,13 +387,13 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         :return: Set[OrderId].
         """
         if strategy_id is None:
-            return set(self._cached_positions.keys())
+            return set(self._cached_orders.keys())
 
         cdef set strategy_position_ids = self._index_strategy_orders.get(strategy_id)
         if strategy_position_ids is None:
             return set()  # Empty set
 
-        return set(self._cached_orders.keys())
+        return strategy_position_ids.intersection(set(self._cached_orders.keys()))
 
     cpdef set get_position_ids(self, StrategyId strategy_id=None):
         """
@@ -408,7 +408,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         if strategy_position_ids is None:
             return set()  # Empty set
 
-        return strategy_position_ids.intersection(self._cached_positions.keys())
+        return strategy_position_ids.intersection(set(self._cached_positions.keys()))
 
     cpdef StrategyId get_strategy_for_order(self, OrderId order_id):
         """
@@ -436,7 +436,6 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         
         :param strategy_id: The strategy identifier filter (optional can be None).
         :return: Dict[OrderId, Order].
-        :raises ConditionFailed: If the strategy identifier is not None and not found in the index.
         """
         if strategy_id is None:
             return self._cached_orders.copy()
@@ -445,7 +444,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         if strategy_order_ids is None:
             return {}  # Empty dictionary
 
-        cdef set order_ids = strategy_order_ids.intersection(self._cached_orders.keys())
+        cdef set order_ids = strategy_order_ids.intersection(set(self._cached_orders.keys()))
         return {order_id: order for order_id, order in order_ids}
 
     cpdef dict get_orders_working(self, StrategyId strategy_id=None):
@@ -454,7 +453,6 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         
         :param strategy_id: The strategy identifier associated with the orders.
         :return: Dict[OrderId, Order].
-        :raises ConditionFailed: If the strategy identifier is not registered with the execution client.
         """
         if strategy_id is None:
             return {order_id: order for order_id, order in self._index_orders_working}
@@ -472,17 +470,16 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         
         :param strategy_id: The strategy identifier associated with the orders.
         :return: Dict[OrderId, Order].
-        :raises ConditionFailed: If the strategy identifier is not registered with the execution client.
         """
         if strategy_id is None:
-            return {order_id: order for order_id, order in self._index_orders_completed}
+            return {order_id: self._cached_orders[order_id] for order_id in self._index_orders_completed}
 
         cdef set strategy_order_ids =  self._index_strategy_orders.get(strategy_id)
         if strategy_order_ids is None:
             return {}  # Empty dictionary
 
         cdef set order_ids = strategy_order_ids.intersection(self._index_orders_completed)
-        return {order_id: order for order_id, order in order_ids}
+        return {order_id: self._cached_orders[order_id] for order_id in order_ids}
 
     cpdef bint order_exists(self, OrderId order_id):
         """
