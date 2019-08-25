@@ -39,7 +39,7 @@ cdef class ExchangeRateCalculator:
         :return: float.
         :raises ConditionFailed: If the bid rates length is not equal to the ask rates length.
         """
-        Condition.dicts_equal_length(bid_rates, ask_rates, 'bid_rates', 'ask_rates')
+        Condition.equal_length(bid_rates, ask_rates, 'bid_rates', 'ask_rates')
 
         if quote_currency == base_currency:
             return 1.0  # No exchange necessary

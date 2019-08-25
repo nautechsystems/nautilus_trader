@@ -114,154 +114,107 @@ cdef class Condition:
             raise ConditionFailed(f"The {param_name} argument was not of type {is_type} or None, type was {type(argument)}.")
 
     @staticmethod
-    cdef list_type(list argument, type element_type, str param_name):
+    cdef list_type(list collection, type element_type, str collection_name):
         """
         Check the list only contains types of the given element_type to contain.
 
-        :param argument: The list to check.
+        :param collection: The list to check.
         :param element_type: The expected element type if not empty.
-        :param param_name: The parameter name.
+        :param collection_name: The parameter name.
         :raises ConditionFailed: If the list contains a type other than the given type to contain.
         """
-        for element in argument:
+        for element in collection:
             if not isinstance(element, element_type):
-                raise ConditionFailed(f"The {param_name} list contained an element with a type other than {element_type}, type was {type(element)}.")
+                raise ConditionFailed(f"The {collection_name} list contained an element with a type other than {element_type}, type was {type(element)}.")
 
     @staticmethod
-    cdef dict_types(dict argument, type key_type, type value_type, str param_name):
+    cdef dict_types(dict collection, type key_type, type value_type, str collection_name):
         """
         Check the dictionary only contains types of the given key and value types to contain.
 
-        :param argument: The dictionary to check.
+        :param collection: The dictionary to check.
         :param key_type: The expected type of the keys if dictionary is not empty.
         :param value_type: The expected type of the values if dictionary is not empty.
-        :param param_name: The parameter name.
+        :param collection_name: The dictionary name.
         :raises ConditionFailed: If the dictionary contains a key type other than the given key_type to contain.
         :raises ConditionFailed: If the dictionary contains a value type other than the given value_type to contain.
         """
-        for key, value in argument.items():
+        for key, value in collection.items():
             if not isinstance(key, key_type):
-                raise ConditionFailed(f"The {param_name} dictionary contained a key type other than {key_type}. type = {type(key)}")
+                raise ConditionFailed(f"The {collection_name} dictionary contained a key type other than {key_type}. type = {type(key)}")
             if not isinstance(value, value_type):
-                raise ConditionFailed(f"The {param_name} dictionary contained a value type other than {value_type}. type = {type(value)}")
+                raise ConditionFailed(f"The {collection_name} dictionary contained a value type other than {value_type}. type = {type(value)}")
 
     @staticmethod
-    cdef is_in(object item, list collection, str param_name, str collection_name):
+    cdef is_in(object element, object collection, str element_name, str collection_name):
         """
-        Check the item is contained within the specified collection.
+        Check the element is contained within the specified collection.
     
-        :param item: The item to check.
-        :param collection: The collection which should contain the item.
-        :param param_name: The item parameter name.
-        :param collection_name: The collection name.
-        :raises ConditionFailed: If the item is not contained in the collection.
+        :param element: The element to check.
+        :param collection: The collection to check.
+        :param element_name: The elements name.
+        :param collection_name: The collections name.
+        :raises ConditionFailed: If the element is not contained in the collection.
         """
-        if item not in collection:
-            raise ConditionFailed(f"The {param_name} {item} was not contained in the {collection_name} list.")
+        if element not in collection:
+            raise ConditionFailed(f"The {element_name} {element} was not contained in the {collection_name} collection.")
 
     @staticmethod
-    cdef not_in(object item, list collection, str param_name, str collection_name):
+    cdef not_in(object element, object collection, str element_name, str collection_name):
         """
-        Check the item is NOT contained within the specified collection.
+        Check the element is not contained within the specified collection.
     
-        :param item: The item to check.
-        :param collection: The collection which should NOT contain the item.
-        :param param_name: The key parameter name.
-        :param collection_name: The collection name.
-        :raises ConditionFailed: If the item is already contained in the collection.
+        :param element: The element to check.
+        :param collection: The collection to check.
+        :param element_name: The element name.
+        :param collection_name: The collections name.
+        :raises ConditionFailed: If the element is already contained in the collection.
         """
-        if item in collection:
-            raise ConditionFailed(f"The {param_name} {item} was already contained in the {collection_name} list.")
+        if element in collection:
+            raise ConditionFailed(f"The {element_name} {element} was already contained in the {collection_name} collection.")
 
     @staticmethod
-    cdef key_is_in(object key, dict dictionary, str param_name, str dict_name):
+    cdef not_empty(object collection, str param_name):
         """
-        Check the key is contained within the specified dictionary.
-    
-        :param key: The key to check.
-        :param dictionary: The dictionary which should contain the key.
-        :param param_name: The key parameter name.
-        :param dict_name: The dictionary name.
-        :raises ConditionFailed: If the key is not contained in the dictionary keys.
+        Check the collection is not empty.
+
+        :param collection: The collection to check.
+        :param param_name: The collections name.
+        :raises ConditionFailed: If the collection is empty.
         """
-        if key not in dictionary:
-            raise ConditionFailed(f"The {param_name} {key} was not contained in the {dict_name} dictionary keys.")
+        if len(collection) == 0:
+            raise ConditionFailed(f"The {param_name} was empty.")
 
     @staticmethod
-    cdef key_not_in(object key, dict dictionary, str param_name, str dict_name):
+    cdef empty(object collection, str param_name):
         """
-        Check the key is not contained within the specified dictionary.
-    
-        :param key: The key to check.
-        :param dictionary: The dictionary which should NOT contain the key.
-        :param param_name: The key parameter name.
-        :param dict_name: The dictionary name.
-        :raises ConditionFailed: If the key is already contained in the dictionary keys.
+        Check the collection is empty.
+
+        :param collection: The collection to check.
+        :param param_name: The collections name.
+        :raises ConditionFailed: If the collection is not empty.
         """
-        if key in dictionary:
-            raise ConditionFailed(f"The {param_name} {key} was already contained in the {dict_name} dictionary keys.")
+        if len(collection) > 0:
+            raise ConditionFailed(f"The {param_name} was not empty.")
 
     @staticmethod
-    cdef not_empty(object argument, str param_name):
+    cdef equal_length(
+            object collection1,
+            object collection2,
+            str collection1_name,
+            str collection2_name):
         """
-        Check the iterable is not empty.
+        Check the collections have equal lengths.
 
-        :param argument: The iterable to check.
-        :param param_name: The iterables name.
-        :raises ConditionFailed: If the iterable argument is empty.
+        :param collection1: The first collection to check.
+        :param collection2: The second collection to check.
+        :param collection1_name: The first collections name.
+        :param collection2_name: The second collections name.
+        :raises ConditionFailed: If the collection lengths are not equal.
         """
-        if len(argument) == 0:
-            raise ConditionFailed(f"The {param_name} was an empty collection.")
-
-    @staticmethod
-    cdef empty(object argument, str param_name):
-        """
-        Check the iterable is empty.
-
-        :param argument: The iterable to check.
-        :param param_name: The iterables name.
-        :raises ConditionFailed: If the iterable argument is not empty.
-        """
-        if len(argument) > 0:
-            raise ConditionFailed(f"The {param_name} was not an empty collection.")
-
-    @staticmethod
-    cdef lists_equal_length(
-            list list1,
-            list list2,
-            str list1_name,
-            str list2_name):
-        """
-        Check the lists have equal lengths.
-
-        :param list1: The first list to check.
-        :param list2: The second list to check.
-        :param list1_name: The first lists name.
-        :param list2_name: The second lists name.
-        :raises ConditionFailed: If the lists lengths are not equal.
-        """
-        if len(list1) != len(list2):
+        if len(collection1) != len(collection2):
             raise ConditionFailed(
-                f"The length of {list1_name} was not equal to {list2_name} (lengths were {len(list1)} and {len(list2)}).")
-
-    @staticmethod
-    cdef dicts_equal_length(
-            dict dict1,
-            dict dict2,
-            str dict1_name,
-            str dict2_name):
-        """
-        Check the dictionaries have equal lengths.
-
-        :param dict1: The first dictionary to check.
-        :param dict2: The second dictionary to check.
-        :param dict1_name: The first dictionaries name.
-        :param dict2_name: The second dictionaries name.
-        :raises ConditionFailed: If the dictionaries lengths are not equal.
-        """
-        if len(dict1) != len(dict2):
-            raise ConditionFailed(
-                f"The length of {dict1_name} was not equal to {dict2_name} (lengths were {len(dict1)} and {len(dict2)}).")
+                f"The length of {collection1_name} was not equal to {collection2_name} (lengths were {len(collection1)} and {len(collection2)}).")
 
     @staticmethod
     cdef positive(float value, str param_name):
@@ -329,28 +282,20 @@ class PyCondition:
         Condition.type_or_none(argument, is_type, param_name)
 
     @staticmethod
-    def list_type(argument, element_type, param_name):
-        Condition.list_type(argument, element_type, param_name)
+    def list_type(collection, element_type, collection_name):
+        Condition.list_type(collection, element_type, collection_name)
 
     @staticmethod
-    def dict_types(argument, key_type, value_type, param_name):
-        Condition.dict_types(argument, key_type, value_type, param_name)
+    def dict_types(collection, key_type, value_type, collection_name):
+        Condition.dict_types(collection, key_type, value_type, collection_name)
 
     @staticmethod
-    def is_in(object item, list collection, str param_name, str collection_name):
-        Condition.is_in(item, collection, param_name, collection_name)
+    def is_in(object element, object collection, str element_name, str collection_name):
+        Condition.is_in(element, collection, element_name, collection_name)
 
     @staticmethod
-    def not_in(object item, list collection, str param_name, str collection_name):
-        Condition.not_in(item, collection, param_name, collection_name)
-
-    @staticmethod
-    def key_is_in(object key, dict dictionary, str param_name, str dict_name):
-        Condition.key_is_in(key, dictionary, param_name, dict_name)
-
-    @staticmethod
-    def key_not_in(object key, dict dictionary, str param_name, str dict_name):
-        Condition.key_not_in(key, dictionary, param_name, dict_name)
+    def not_in(object element, object collection, str element_name, str collection_name):
+        Condition.not_in(element, collection, element_name, collection_name)
 
     @staticmethod
     def valid_string(argument, param_name):
@@ -369,18 +314,11 @@ class PyCondition:
         Condition.empty(argument, param_name)
 
     @staticmethod
-    def lists_equal_length(list1, list2, list1_name, list2_name):
-        Condition.lists_equal_length(list1,
-                                     list2,
-                                     list1_name,
-                                     list2_name)
-
-    @staticmethod
-    def dicts_equal_length(dict1, dict2, dict1_name, dict2_name):
-        Condition.dicts_equal_length(dict1,
-                                     dict2,
-                                     dict1_name,
-                                     dict2_name)
+    def equal_length(collection1, collection2, collection1_name, collection2_name):
+        Condition.equal_length(collection1,
+                               collection2,
+                               collection1_name,
+                               collection2_name)
 
     @staticmethod
     def positive(value, param_name):

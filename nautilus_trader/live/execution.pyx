@@ -215,7 +215,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         :param strategy_id: The strategy identifier to associate with the order.
         :param position_id: The position identifier to associate with the order.
         """
-        Condition.key_not_in(order.id, self._cached_orders, 'order.id', 'cached_orders')
+        Condition.not_in(order.id, self._cached_orders, 'order.id', 'cached_orders')
 
         self._cached_orders[order.id] = order
 
@@ -245,7 +245,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         :param position: The position to add.
         :param strategy_id: The strategy identifier to associate with the position.
         """
-        Condition.key_not_in(position.id, self._cached_positions, 'position.id', 'cached_positions')
+        Condition.not_in(position.id, self._cached_positions, 'position.id', 'cached_positions')
 
         self._cached_positions[position.id] = position
 
@@ -376,27 +376,27 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
 # -- QUERIES --------------------------------------------------------------------------------------"
 
-    cpdef list get_strategy_ids(self):
+    cpdef set get_strategy_ids(self):
         """
         Return a list of all registered strategy identifiers.
 
-        :return: List[StrategyId].
+        :return: Set[StrategyId].
         """
         return  self._redis.keys(pattern=f'{self.key_strategies}*')
 
-    cpdef list get_order_ids(self):
+    cpdef set get_order_ids(self, StrategyId strategy_id=None):
         """
         Return a list of all registered order identifiers.
 
-        :return: List[OrderId].
+        :return: Set[OrderId].
         """
         return self._redis.keys(pattern=f'{self.key_orders}*')
 
-    cpdef list get_position_ids(self):
+    cpdef set get_position_ids(self, StrategyId strategy_id=None):
         """
         Return a list of the cached position identifiers.
 
-        :return: List[PositionId].
+        :return: Set[PositionId].
         """
         return self._redis.keys(pattern=f'{self.key_positions}*')
 
@@ -420,7 +420,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
             self._log_cannot_find_order(order_id)
         return order
 
-    cpdef dict get_orders_all(self):
+    cpdef dict get_orders(self, StrategyId strategy_id=None):
         """
         Return all orders in the execution engines order book.
 
@@ -428,7 +428,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         return self._cached_orders.copy()
 
-    cpdef dict get_orders_working_all(self):
+    cpdef dict get_orders_working(self, StrategyId strategy_id=None):
         """
         Return all active orders in the execution engines order book.
 
@@ -446,7 +446,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         return orders_working
 
-    cpdef dict get_orders_completed_all(self):
+    cpdef dict get_orders_completed(self, StrategyId strategy_id=None):
         """
         Return all completed orders in the execution engines order book.
 
@@ -599,8 +599,8 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 #         :return: Dict[PositionId, Position].
 #         :raises ConditionFailed: If the strategy identifier is not registered with the portfolio.
 #         """
-#         Condition.key_is_in(strategy_id, self._positions_open, 'strategy_id', 'positions_active')
-#         Condition.key_is_in(strategy_id, self._positions_closed, 'strategy_id', 'positions_closed')
+#         Condition.is_in(strategy_id, self._positions_open, 'strategy_id', 'positions_active')
+#         Condition.is_in(strategy_id, self._positions_closed, 'strategy_id', 'positions_closed')
 #
 #         return {**self._positions_open[strategy_id], **self._positions_closed[strategy_id]}  # type: Dict[PositionId, Position]
 #
@@ -612,7 +612,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 #         :return: Dict[PositionId, Position].
 #         :raises ConditionFailed: If the strategy identifier is not registered with the portfolio.
 #         """
-#         Condition.key_is_in(strategy_id, self._positions_open, 'strategy_id', 'positions_active')
+#         Condition.is_in(strategy_id, self._positions_open, 'strategy_id', 'positions_active')
 #
 #         return self._positions_open[strategy_id].copy()
 #
@@ -624,7 +624,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 #         :return: Dict[PositionId, Position].
 #         :raises ConditionFailed: If the strategy identifier is not registered with the portfolio.
 #         """
-#         Condition.key_is_in(strategy_id, self._positions_closed, 'strategy_id', 'positions_closed')
+#         Condition.is_in(strategy_id, self._positions_closed, 'strategy_id', 'positions_closed')
 #
 #         return self._positions_closed[strategy_id].copy()
 #
@@ -668,7 +668,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         return position_id in self._cached_positions and self._cached_positions[position_id].is_closed
 
-    cpdef int positions_count(self):
+    cpdef int positions_count(self, StrategyId strategy_id=None):
         """
         Return the total count of positions held by the database.
 
@@ -676,7 +676,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         return len(self._redis.keys(f'{self.key_positions}*'))
 
-    cpdef int positions_open_count(self):
+    cpdef int positions_open_count(self, StrategyId strategy_id=None):
         """
         Return the count of open positions held by the execution database.
 
@@ -684,13 +684,16 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         return len(self._redis.smembers(self.key_index_positions_open))
 
-    cpdef int positions_closed_count(self):
+    cpdef int positions_closed_count(self, StrategyId strategy_id=None):
         """
         Return the count of closed positions held by the execution database.
 
         :return: int.
         """
-        return len(self._redis.smembers(self.key_index_positions_closed))
+        if strategy_id is None:
+            return self._redis.scard(self.key_index_positions_closed)
+
+        return len(self._redis.sinter(keys=(self.key_index_strategy_orders + strategy_id.value, self.key_index_positions_closed)))
 
 
 cdef class LiveExecutionEngine(ExecutionEngine):

@@ -145,6 +145,9 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
 
         position_id = PositionId('AUDUSD-1-123456')
 
+        self.database.add_strategy(strategy)
+        self.database.add_order(order, strategy.id, position_id)
+
         order_working = OrderWorking(
             order.id,
             OrderId('SOME_BROKER_ID_1'),
@@ -163,11 +166,8 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
 
         order.apply(order_working)
 
-        self.database.add_strategy(strategy)
-        self.database.add_order(order, strategy.id, position_id)
-
         # Act
-        self.database.update_order(order, order_working)
+        self.database.update_order(order)
 
         # Assert
         self.assertTrue(self.database.order_exists(order.id))
@@ -207,7 +207,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         self.database.add_order(order, strategy.id, position_id)
 
         # Act
-        self.database.update_order(order, order_filled)
+        self.database.update_order(order)
 
         # Assert
         self.assertTrue(self.database.order_exists(order.id))
