@@ -23,7 +23,7 @@ from nautilus_trader.model.events cimport (
     OrderEvent,
     OrderFillEvent,
     PositionEvent,
-    AccountEvent,
+    AccountStateEvent,
     OrderModified,
     OrderRejected,
     OrderCancelled,
@@ -73,15 +73,15 @@ cdef class ExecutionDatabase:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void add_order_event(self, Order order, OrderEvent event):
+    cpdef void update_order(self, Order order):
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void add_position_event(self, Position position, OrderFillEvent event):
+    cpdef void update_position(self, Position position):
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void add_account_event(self, AccountEvent event):
+    cpdef void update_account(self, AccountStateEvent event):
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
@@ -308,18 +308,13 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         self._index_positions_open[strategy_id][position.id] = position
         self._log.debug(f"Added position (id={position.id.value}).")
 
-    cpdef void add_order_event(self, Order order, OrderEvent event):
+    cpdef void update_order(self, Order order):
         """
-        Add the given order event to the execution database.
+        Update the given order in the execution database by persisting its
+        last event.
 
-        :param order: The order for the event to add.
-        :param event: The order event to add.
-        :raises ConditionFailed: If the order identifier is not equal to the events order identifier.
-        :raises ConditionFailed: If the event is not the orders last event.
+        :param order: The order to update (last event).
         """
-        Condition.equal(order.id, event.order_id)
-        Condition.equal(order.last_event.id, event.id)
-
         cdef StrategyId strategy_id = self._index_order_strategy[order.id]
 
         if order.is_working:
@@ -334,17 +329,14 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
             if order.id in self._index_orders_working[strategy_id]:
                 del self._index_orders_working[strategy_id][order.id]
 
-    cpdef void add_position_event(self, Position position, OrderFillEvent event):
+    cpdef void update_position(self, Position position):
         """
-        Add the given position event to the execution database.
+        Update the given position in the execution database by persisting its
+        last event.
 
-        :param position: The the position for the event.
-        :param event: The position event to add.
-        :raises ConditionFailed: If the event is not the positions last event.
+        :param position: The position to update (last event).
         """
-        Condition.equal(position.last_event.id, event.id)
-
-        cdef StrategyId strategy_id = self._index_order_strategy[event.order_id]
+        cdef StrategyId strategy_id = None # TODO: self._index_order_strategy[event.order_id]
 
         if not position.is_closed:
             if position.id not in self._index_positions_open[strategy_id]:
@@ -357,7 +349,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
             if position.id in self._index_positions_open[strategy_id]:
                 del self._index_positions_open[strategy_id][position.id]
 
-    cpdef void add_account_event(self, AccountEvent event):
+    cpdef void update_account(self, AccountStateEvent event):
         """
         Add the given account event to the execution database.
 
@@ -886,8 +878,8 @@ cdef class ExecutionEngine:
         elif isinstance(event, PositionEvent):
             self._handle_position_event(event)
         # Account Event
-        elif isinstance(event, AccountEvent):
-            self.database.add_account_event(event)
+        elif isinstance(event, AccountStateEvent):
+            self.database.update_account(event)
             self._handle_account_event(event)
 
     cdef void _handle_order_event(self, OrderEvent event):
@@ -906,7 +898,7 @@ cdef class ExecutionEngine:
             self._log.error(f"Cannot process {event} ({strategy_id} not found)")
             return  # Cannot process event further
 
-        self.database.add_order_event(order=order, event=event)
+        self.database.update_order(order)
 
         if isinstance(event, OrderFillEvent):
             self._log.debug(f'{event}')
@@ -940,7 +932,7 @@ cdef class ExecutionEngine:
             self._position_opened(position, strategy_id, event)
         else:
             position.apply(event)
-            self.database.add_position_event(position=position, event=event)
+            self.database.update_position(position)
             if position.is_closed:
                 self._position_closed(position, strategy_id, event)
             else:
@@ -954,7 +946,7 @@ cdef class ExecutionEngine:
 
         self._send_to_strategy(event, event.strategy_id)
 
-    cdef void _handle_account_event(self, AccountEvent event):
+    cdef void _handle_account_event(self, AccountStateEvent event):
         self._log.debug(f'{event}')
         if not self.account.initialized or self.account.id == event.account_id:
             self.account.apply(event)

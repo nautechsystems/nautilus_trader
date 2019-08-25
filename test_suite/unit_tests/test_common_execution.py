@@ -27,7 +27,7 @@ from nautilus_trader.model.objects import Quantity, Price, Money
 from nautilus_trader.model.order import OrderFactory
 from nautilus_trader.model.position import Position
 from nautilus_trader.model.commands import SubmitOrder
-from nautilus_trader.model.events import AccountEvent
+from nautilus_trader.model.events import AccountStateEvent
 from nautilus_trader.model.enums import Currency
 from nautilus_trader.common.account import Account
 from nautilus_trader.common.clock import TestClock
@@ -167,7 +167,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         self.database.add_order(order, strategy.id, position_id)
 
         # Act
-        self.database.add_order_event(order, order_working)
+        self.database.update_order(order, order_working)
 
         # Assert
         self.assertTrue(self.database.order_exists(order.id))
@@ -207,7 +207,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         self.database.add_order(order, strategy.id, position_id)
 
         # Act
-        self.database.add_order_event(order, order_filled)
+        self.database.update_order(order, order_filled)
 
         # Assert
         self.assertTrue(self.database.order_exists(order.id))
@@ -268,7 +268,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         self.database.add_position(position, strategy.id)
 
         # Act
-        self.database.add_position_event(position, order_filled)
+        self.database.update_position(position, order_filled)
 
         # Assert
         self.assertTrue(self.database.position_exists(position.id))
@@ -281,7 +281,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
 
     def test_can_add_account_event(self):
         # Arrange
-        event = AccountEvent(
+        event = AccountStateEvent(
             AccountId('SIMULATED', '123456'),
             Currency.USD,
             Money(1000000),
@@ -295,7 +295,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
             UNIX_EPOCH)
 
         # Act
-        self.database.add_account_event(event)
+        self.database.update_account(event)
 
         # Assert
         self.assertTrue(True)  # Did not raise exception

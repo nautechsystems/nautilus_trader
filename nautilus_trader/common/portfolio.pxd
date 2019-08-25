@@ -9,7 +9,7 @@
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.guid cimport GuidFactory
 from nautilus_trader.common.logger cimport LoggerAdapter
-from nautilus_trader.model.events cimport AccountEvent
+from nautilus_trader.model.events cimport AccountStateEvent
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.trade.performance cimport PerformanceAnalyzer
 
@@ -26,5 +26,5 @@ cdef class Portfolio:
 
     cdef readonly PerformanceAnalyzer analyzer
 
-    cpdef void handle_transaction(self, AccountEvent event)
+    cpdef void handle_transaction(self, AccountStateEvent event)
     cpdef void reset(self)

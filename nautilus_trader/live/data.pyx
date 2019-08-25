@@ -19,7 +19,7 @@ from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.guid cimport LiveGuidFactory
 from nautilus_trader.live.logger cimport LiveLogger
 from nautilus_trader.common.data cimport DataClient
-from nautilus_trader.network.workers import RequestWorker, SubscriberWorker
+from nautilus_trader.network.workers cimport RequestWorker, SubscriberWorker
 from nautilus_trader.serialization.base cimport DataSerializer, InstrumentSerializer, RequestSerializer, ResponseSerializer
 from nautilus_trader.serialization.data cimport (
     Utf8TickSerializer,

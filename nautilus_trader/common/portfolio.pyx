@@ -6,7 +6,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.events cimport AccountEvent
+from nautilus_trader.model.events cimport AccountStateEvent
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.common.logger cimport Logger, LoggerAdapter
 from nautilus_trader.trade.performance cimport PerformanceAnalyzer
@@ -37,7 +37,7 @@ cdef class Portfolio:
 
         self.analyzer = PerformanceAnalyzer()
 
-    cpdef void handle_transaction(self, AccountEvent event):
+    cpdef void handle_transaction(self, AccountStateEvent event):
         """
         Handle the transaction associated with the given account event.
 

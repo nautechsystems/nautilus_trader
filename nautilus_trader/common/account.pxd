@@ -10,7 +10,7 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.core.types cimport ValidString
 from nautilus_trader.model.c_enums.currency cimport Currency
-from nautilus_trader.model.events cimport AccountEvent
+from nautilus_trader.model.events cimport AccountStateEvent
 from nautilus_trader.model.identifiers cimport Brokerage, AccountNumber, AccountId
 
 
@@ -35,9 +35,9 @@ cdef class Account:
     cdef readonly ValidString margin_call_status
     cdef readonly datetime last_updated
     cdef readonly int event_count
-    cdef readonly AccountEvent last_event
+    cdef readonly AccountStateEvent last_event
 
     cpdef list get_events(self)
-    cpdef void initialize(self, AccountEvent event)
-    cpdef void apply(self, AccountEvent event)
+    cpdef void initialize(self, AccountStateEvent event)
+    cpdef void apply(self, AccountStateEvent event)
     cpdef void reset(self)
