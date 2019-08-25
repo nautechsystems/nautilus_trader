@@ -309,15 +309,16 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
             pipe.srem(self.key_index_positions_open, position.id.value)
         pipe.execute()
 
-    cpdef void update_account(self, AccountStateEvent event):
+    cpdef void update_account(self, Account account):
         """
-        Update the account in the execution database with the given event.
+        Update the given account in the execution database by persisting its
+        last event.
 
-        :param event: The account state event to update.
+        :param account: The account to update (from last event).
         """
-        cdef str key_account = self.key_accounts + event.account_id.value
+        cdef str key_account = self.key_accounts + account.id.value
 
-        self._redis.rpush(key_account, self._event_serializer.serialize(event))
+        self._redis.rpush(key_account, self._event_serializer.serialize(account.last_event))
 
 #
 #     cpdef void delete_strategy(self, TradingStrategy strategy):
@@ -400,7 +401,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         return self._redis.keys(pattern=f'{self.key_positions}*')
 
-    cpdef StrategyId get_strategy_id(self, OrderId order_id):
+    cpdef StrategyId get_strategy_for_order(self, OrderId order_id):
         """
         Return the strategy identifier associated with the given order identifier.
 
