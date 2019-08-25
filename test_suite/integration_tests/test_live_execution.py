@@ -99,6 +99,10 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         # self.test_redis.flushall()
         pass
 
+    def test_redis_functions(self):
+        print(self.test_redis.sinter(keys=('a', 'b')))
+        print(self.test_redis.scard(name='*'))
+
     def test_keys(self):
         # Arrange
         # Act

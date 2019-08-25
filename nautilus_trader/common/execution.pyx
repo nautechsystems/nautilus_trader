@@ -81,7 +81,7 @@ cdef class ExecutionDatabase:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void update_account(self, AccountStateEvent event):
+    cpdef void update_account(self, Account event):
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
@@ -117,7 +117,7 @@ cdef class ExecutionDatabase:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef StrategyId get_strategy_id(self, OrderId order_id):
+    cpdef StrategyId get_strategy_for_order(self, OrderId order_id):
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
@@ -296,7 +296,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         Update the given order in the execution database by persisting its
         last event.
 
-        :param order: The order to update (last event).
+        :param order: The order to update (from last event).
         """
         if order.is_working:
             self._index_orders_working.add(order.id)
@@ -310,17 +310,18 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         Update the given position in the execution database by persisting its
         last event.
 
-        :param position: The position to update (last event).
+        :param position: The position to update (from last event).
         """
         if position.is_closed:
             self._index_positions_closed.add(position.id)
             self._index_positions_open.remove(position.id)
 
-    cpdef void update_account(self, AccountStateEvent event):
+    cpdef void update_account(self, Account account):
         """
-        Add the given account event to the execution database.
+        Update the given account in the execution database by persisting its
+        last event.
 
-        :param event: The account event to add.
+        :param account: The account to update (from last event).
         """
         # Do nothing in memory
         pass
@@ -344,13 +345,11 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
     cpdef void check_residuals(self):
         # Check for any residual active orders and log warnings if any are found
-        for orders in self._index_orders_working:
-            for order in orders.values():
-                self._log.warning(f"Residual working {order}")
+        for order in self._index_orders_working:
+            self._log.warning(f"Residual working {order}")
 
-        for positions in self._index_positions_open:
-            for position in positions.values():
-                self._log.warning(f"Residual open position {position}")
+        for position in self._index_positions_open:
+            self._log.warning(f"Residual open position {position}")
 
     cpdef void reset(self):
         # Reset the execution database by returning all stateful internal values to their initial value
@@ -385,7 +384,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Return a list of all registered order identifiers.
         
-        :return: List[OrderId].
+        :return: Set[OrderId].
         """
         if strategy_id is None:
             return set(self._cached_positions.keys())
@@ -400,7 +399,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Return a list of the cached position identifiers.
         
-        :return: List[PositionId].
+        :return: Set[PositionId].
         """
         if strategy_id is None:
             return set(self._cached_positions.keys())
@@ -411,7 +410,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
         return strategy_position_ids.intersection(self._cached_positions.keys())
 
-    cpdef StrategyId get_strategy_id(self, OrderId order_id):
+    cpdef StrategyId get_strategy_for_order(self, OrderId order_id):
         """
         Return the strategy identifier associated with the given order identifier.
         
@@ -858,7 +857,7 @@ cdef class ExecutionEngine:
 
         order.apply(event)
 
-        strategy_id = self.database.get_strategy_id(event.order_id)
+        strategy_id = self.database.get_strategy_for_order(event.order_id)
         if strategy_id is None:
             self._log.error(f"Cannot process {event} ({strategy_id} not found)")
             return  # Cannot process event further
