@@ -49,36 +49,30 @@ cdef class ExecutionDatabase:
     cdef void _reset(self)
 
 # -- QUERIES --------------------------------------------------------------------------------------"
-    cpdef list get_strategy_ids(self)
-    cpdef list get_order_ids(self)
-    cpdef list get_position_ids(self)
+    cpdef set get_strategy_ids(self)
+    cpdef set get_order_ids(self, StrategyId strategy_id=*)
+    cpdef set get_position_ids(self, StrategyId strategy_id=*)
     cpdef StrategyId get_strategy_id(self, OrderId order_id)
     cpdef Order get_order(self, OrderId order_id)
-    cpdef dict get_orders_all(self)
-    cpdef dict get_orders_working_all(self)
-    cpdef dict get_orders_completed_all(self)
-    cpdef dict get_orders(self, StrategyId strategy_id)
-    cpdef dict get_orders_working(self, StrategyId strategy_id)
-    cpdef dict get_orders_completed(self, StrategyId strategy_id)
+    cpdef dict get_orders(self, StrategyId strategy_id=*)
+    cpdef dict get_orders_working(self, StrategyId strategy_id=*)
+    cpdef dict get_orders_completed(self, StrategyId strategy_id=*)
     cpdef bint order_exists(self, OrderId order_id)
     cpdef bint is_order_working(self, OrderId order_id)
     cpdef bint is_order_completed(self, OrderId order_id)
     cpdef Position get_position(self, PositionId position_id)
     cpdef Position get_position_for_order(self, OrderId order_id)
     cpdef PositionId get_position_id(self, OrderId order_id)
-    cpdef dict get_positions_all(self)
-    cpdef dict get_positions_open_all(self)
-    cpdef dict get_positions_closed_all(self)
-    cpdef dict get_positions(self, StrategyId strategy_id)
-    cpdef dict get_positions_open(self, StrategyId strategy_id)
-    cpdef dict get_positions_closed(self, StrategyId strategy_id)
+    cpdef dict get_positions(self, StrategyId strategy_id=*)
+    cpdef dict get_positions_open(self, StrategyId strategy_id=*)
+    cpdef dict get_positions_closed(self, StrategyId strategy_id=*)
     cpdef bint position_exists(self, PositionId position_id)
     cpdef bint position_exists_for_order(self, OrderId order_id)
     cpdef bint is_position_open(self, PositionId position_id)
     cpdef bint is_position_closed(self, PositionId position_id)
-    cpdef int positions_count(self)
-    cpdef int positions_open_count(self)
-    cpdef int positions_closed_count(self)
+    cpdef int positions_count(self, StrategyId strategy_id=*)
+    cpdef int positions_open_count(self, StrategyId strategy_id=*)
+    cpdef int positions_closed_count(self, StrategyId strategy_id=*)
 
 # -------------------------------------------------------------------------------------------------"
     cdef void _log_cannot_find_order(self, OrderId order_id)
@@ -89,13 +83,17 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
     """
     Provides an in-memory execution database.
     """
-    cdef list _strategies
+    cdef set _strategies
     cdef dict _index_order_position
     cdef dict _index_order_strategy
-    cdef dict _index_orders_working
-    cdef dict _index_orders_completed
-    cdef dict _index_positions_open
-    cdef dict _index_positions_closed
+    cdef dict _index_position_strategy
+    cdef dict _index_position_orders
+    cdef dict _index_strategy_orders
+    cdef dict _index_strategy_positions
+    cdef set _index_orders_working
+    cdef set _index_orders_completed
+    cdef set _index_positions_open
+    cdef set _index_positions_closed
 
 
 cdef class ExecutionEngine:

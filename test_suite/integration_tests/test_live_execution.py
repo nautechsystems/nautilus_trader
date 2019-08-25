@@ -96,7 +96,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
 
     def tearDown(self):
         # Tear down
-        self.test_redis.flushall()
+        # self.test_redis.flushall()
         pass
 
     def test_keys(self):

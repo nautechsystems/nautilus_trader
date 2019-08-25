@@ -174,26 +174,26 @@ class ConditionTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ConditionFailed, PyCondition.key_is_in, 'a', {'b': 1}, 'key', 'dict')
+        self.assertRaises(ConditionFailed, PyCondition.is_in, 'a', {'b': 1}, 'key', 'dict')
 
     def test_condition_key_is_in_when_key_is_in_dictionary_does_nothing(self):
         # Arrange
         # Act
         # Assert
-        PyCondition.key_is_in('a', {'a': 1}, 'key', 'dict')
+        PyCondition.is_in('a', {'a': 1}, 'key', 'dict')
         self.assertTrue(True)  # ConditionFailed not raised
 
     def test_condition_key_not_in_when_key_is_in_dictionary_raises_condition_failed(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ConditionFailed, PyCondition.key_not_in, 'a', {'a': 1}, 'key', 'dict')
+        self.assertRaises(ConditionFailed, PyCondition.not_in, 'a', {'a': 1}, 'key', 'dict')
 
     def test_condition_key_not_in_when_key_not_in_dictionary_does_nothing(self):
         # Arrange
         # Act
         # Assert
-        PyCondition.key_not_in('b', {'a': 1}, 'key', 'dict')
+        PyCondition.not_in('b', {'a': 1}, 'key', 'dict')
         self.assertTrue(True)  # ConditionFailed not raised
 
     def test_condition_not_empty_when_collection_empty_raises_condition_failed(self):
@@ -226,29 +226,29 @@ class ConditionTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ConditionFailed, PyCondition.lists_equal_length, [1], [1, 2], "1", "2")
-        self.assertRaises(ConditionFailed, PyCondition.lists_equal_length, [1], [1, 2], "1", "2")
+        self.assertRaises(ConditionFailed, PyCondition.equal_length, [1], [1, 2], "1", "2")
+        self.assertRaises(ConditionFailed, PyCondition.equal_length, [1], [1, 2], "1", "2")
 
     def test_condition_lists_equal_length_when_args_are_equal_lengths_does_nothing(self):
         # Arrange
         # Act
         # Assert
-        PyCondition.lists_equal_length([1], [1], "collection1", "collection2")
-        PyCondition.lists_equal_length([1, 2, 3], [1, 2, 3], "collection1", "collection2")
+        PyCondition.equal_length([1], [1], "collection1", "collection2")
+        PyCondition.equal_length([1, 2, 3], [1, 2, 3], "collection1", "collection2")
         self.assertTrue(True)  # ConditionFailed not raised
 
     def test_condition_dicts_equal_length_when_args_not_equal_lengths_raises_condition_failed(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ConditionFailed, PyCondition.dicts_equal_length, {1: 1}, {1: 1, 2: 2}, "1", "2")
-        self.assertRaises(ConditionFailed, PyCondition.dicts_equal_length, {1: 1}, {1: 1, 2: 2}, "1", "2")
+        self.assertRaises(ConditionFailed, PyCondition.equal_length, {1: 1}, {1: 1, 2: 2}, "1", "2")
+        self.assertRaises(ConditionFailed, PyCondition.equal_length, {1: 1}, {1: 1, 2: 2}, "1", "2")
 
     def test_condition_dicts_equal_length_when_args_are_equal_lengths_does_nothing(self):
         # Arrange
         # Act
         # Assert
-        PyCondition.dicts_equal_length({1: 1}, {1: 1}, "dict1", "dict2")
+        PyCondition.equal_length({1: 1}, {1: 1}, "dict1", "dict2")
         self.assertTrue(True)  # ConditionFailed not raised
 
     def test_condition_not_negative_when_arg_negative_raises_condition_failed(self):

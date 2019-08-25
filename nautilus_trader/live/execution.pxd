@@ -8,7 +8,6 @@
 
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.common.execution cimport ExecutionDatabase, ExecutionEngine, ExecutionClient
-from nautilus_trader.model.events cimport Event, OrderEvent, PositionEvent
 from nautilus_trader.serialization.base cimport CommandSerializer, ResponseSerializer, EventSerializer
 
 

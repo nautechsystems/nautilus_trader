@@ -500,7 +500,7 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef void _process_order(self, Order order):
         # Work the given order
 
-        Condition.key_not_in(order.id, self.working_orders, 'order.id', 'working_orders')
+        Condition.not_in(order.id, self.working_orders, 'order.id', 'working_orders')
 
         cdef Instrument instrument = self.instruments[order.symbol]
 

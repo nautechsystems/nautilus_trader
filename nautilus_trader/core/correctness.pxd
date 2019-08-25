@@ -22,33 +22,22 @@ cdef class Condition:
     @staticmethod
     cdef type_or_none(object argument, object is_type, str param_name)
     @staticmethod
-    cdef list_type(list argument, type type_to_contain, str param_name)
+    cdef list_type(list collection, type type_to_contain, str collection_name)
     @staticmethod
-    cdef dict_types(dict argument, type key_type, type value_type, str param_name)
+    cdef dict_types(dict collection, type key_type, type value_type, str collection_name)
     @staticmethod
-    cdef is_in(object item, list collection, str param_name, str collection_name)
+    cdef is_in(object element, object collection, str element_name, str collection_name)
     @staticmethod
-    cdef not_in(object item, list collection, str param_name, str collection_name)
+    cdef not_in(object element, object collection, str element_name, str collection_name)
     @staticmethod
-    cdef key_is_in(object key, dict dictionary, str param_name, str dict_name)
+    cdef not_empty(object collection, str collection_name)
     @staticmethod
-    cdef key_not_in(object key, dict dictionary, str param_name, str dict_name)
+    cdef empty(object collection, str collection_name)
     @staticmethod
-    cdef not_empty(object argument, str param_name)
-    @staticmethod
-    cdef empty(object argument, str param_name)
-    @staticmethod
-    cdef lists_equal_length(list list1, list list2, str list1_name, str list2_name)
-    @staticmethod
-    cdef dicts_equal_length(dict dict1, dict dict2, str dict1_name, str dict2_name)
+    cdef equal_length(object collection1, object collection2, str collection1_name, str collection2_name)
     @staticmethod
     cdef positive(float value, str param_name)
     @staticmethod
     cdef not_negative(float value, str param_name)
     @staticmethod
-    cdef in_range(
-            float value,
-            str param_name,
-            float start,
-            float end)
-
+    cdef in_range(float value, str param_name, float start, float end)

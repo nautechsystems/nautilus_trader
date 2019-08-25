@@ -153,7 +153,7 @@ cdef class LiveClock(Clock):
         :raises ConditionFailed: If the alert_time is not > than the clocks current time.
         """
         Condition.true(alert_time > self.time_now(), 'alert_time > time_now()')
-        Condition.key_not_in(label, self._time_alerts, 'label', 'time_alerts')
+        Condition.not_in(label, self._time_alerts, 'label', 'time_alerts')
 
         timer = Timer(
             interval=(alert_time - self.time_now()).total_seconds(),
@@ -192,7 +192,7 @@ cdef class LiveClock(Clock):
         :raises ConditionFailed: If the stop_time is not None and start_time plus interval is greater
         than the stop_time.
         """
-        Condition.key_not_in(label, self._timers, 'label', 'timers')
+        Condition.not_in(label, self._timers, 'label', 'timers')
 
         if start_time is not None:
             Condition.true(start_time >= self.time_now(), 'start_time >= self.clock.time_now()')
@@ -236,7 +236,7 @@ cdef class LiveClock(Clock):
         :param label: The label for the alert to cancel.
         :raises ConditionFailed: If the label is not found in the internal time alerts.
         """
-        Condition.key_is_in(label, self._time_alerts, 'label', 'timers')
+        Condition.is_in(label, self._time_alerts, 'label', 'timers')
 
         self._time_alerts[label].cancel()
         del self._time_alerts[label]
@@ -251,7 +251,7 @@ cdef class LiveClock(Clock):
         :param label: The label for the timer to cancel.
         :raises ConditionFailed: If the label is not found in the internal timers.
         """
-        Condition.key_is_in(label, self._timers, 'label', 'timers')
+        Condition.is_in(label, self._timers, 'label', 'timers')
 
         self._timers[label].cancel()
         del self._timers[label]
@@ -414,7 +414,7 @@ cdef class TestClock(Clock):
         :raises ConditionFailed: If the alert_time is not > than the clocks current time.
         """
         Condition.true(alert_time > self.time_now(), 'alert_time > time_now()')
-        Condition.key_not_in(label, self._time_alerts, 'label', 'time_alerts')
+        Condition.not_in(label, self._time_alerts, 'label', 'time_alerts')
 
         self._time_alerts[label] = alert_time
 
@@ -445,7 +445,7 @@ cdef class TestClock(Clock):
         :raises ConditionFailed: If the stop_time is not None and start_time plus interval is greater
         than the stop_time.
         """
-        Condition.key_not_in(label, self._timers, 'label', 'timers')
+        Condition.not_in(label, self._timers, 'label', 'timers')
 
         if start_time is not None:
             Condition.true(start_time >= self.time_now(),
@@ -482,7 +482,7 @@ cdef class TestClock(Clock):
         :param label: The label for the alert to cancel.
         :raises ConditionFailed: If the label is not found in the internal timers.
         """
-        Condition.key_is_in(label, self._time_alerts, 'label', 'time_alerts')
+        Condition.is_in(label, self._time_alerts, 'label', 'time_alerts')
 
         del self._time_alerts[label]
 
@@ -496,7 +496,7 @@ cdef class TestClock(Clock):
         :param label: The label for the timer to cancel.
         :raises ConditionFailed: If the label is not found in the internal timers.
         """
-        Condition.key_is_in(label, self._timers, 'label', 'timers')
+        Condition.is_in(label, self._timers, 'label', 'timers')
 
         del self._timers[label]
 

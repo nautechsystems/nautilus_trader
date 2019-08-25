@@ -685,7 +685,7 @@ cdef class TradingStrategy:
         :return: int.
         :raises ConditionFailed: If the strategies tick dictionary does not contain the symbol.
         """
-        Condition.key_is_in(symbol, self._ticks, 'symbol', 'ticks')
+        Condition.is_in(symbol, self._ticks, 'symbol', 'ticks')
 
         return len(self._ticks[symbol])
 
@@ -697,7 +697,7 @@ cdef class TradingStrategy:
         :return: int.
         :raises ConditionFailed: If the strategies bars dictionary does not contain the bar type.
         """
-        Condition.key_is_in(bar_type, self._bars, 'bar_type', 'bars')
+        Condition.is_in(bar_type, self._bars, 'bar_type', 'bars')
 
         return len(self._bars[bar_type])
 
@@ -709,7 +709,7 @@ cdef class TradingStrategy:
         :return: List[Tick].
         :raises ConditionFailed: If the strategies tick dictionary does not contain the symbol.
         """
-        Condition.key_is_in(symbol, self._ticks, 'symbol', 'ticks')
+        Condition.is_in(symbol, self._ticks, 'symbol', 'ticks')
 
         return list(self._ticks[symbol])
 
@@ -721,7 +721,7 @@ cdef class TradingStrategy:
         :return: List[Bar].
         :raises ConditionFailed: If the strategies bars dictionary does not contain the bar type.
         """
-        Condition.key_is_in(bar_type, self._bars, 'bar_type', 'bars')
+        Condition.is_in(bar_type, self._bars, 'bar_type', 'bars')
 
         return list(self._bars[bar_type])
 
@@ -735,7 +735,7 @@ cdef class TradingStrategy:
         :raises ConditionFailed: If the strategies tick dictionary does not contain the symbol.
         :raises IndexError: If the tick index is out of range.
         """
-        Condition.key_is_in(symbol, self._ticks, 'symbol', 'ticks')
+        Condition.is_in(symbol, self._ticks, 'symbol', 'ticks')
 
         return self._ticks[symbol][index]
 
@@ -749,7 +749,7 @@ cdef class TradingStrategy:
         :raises ConditionFailed: If the strategies bars dictionary does not contain the bar type.
         :raises IndexError: If the bar index is out of range.
         """
-        Condition.key_is_in(bar_type, self._bars, 'bar_type', 'bars')
+        Condition.is_in(bar_type, self._bars, 'bar_type', 'bars')
 
         return self._bars[bar_type][index]
 
@@ -914,7 +914,7 @@ cdef class TradingStrategy:
         :return: Order.
         :raises ConditionFailed. If the order identifier is not registered with an entry.
         """
-        Condition.key_is_in(order_id, self._entry_orders, 'order_id', 'pending_entry_orders')
+        Condition.is_in(order_id, self._entry_orders, 'order_id', 'pending_entry_orders')
 
         return self._entry_orders[order_id].order
 
@@ -926,7 +926,7 @@ cdef class TradingStrategy:
         :return: Order.
         :raises ConditionFailed. If the order identifier is not registered with a stop-loss.
         """
-        Condition.key_is_in(order_id, self._stop_loss_orders, 'order_id', 'stop_loss_orders')
+        Condition.is_in(order_id, self._stop_loss_orders, 'order_id', 'stop_loss_orders')
 
         return self._stop_loss_orders[order_id].order
 
@@ -938,7 +938,7 @@ cdef class TradingStrategy:
         :return: Order.
         :raises ConditionFailed. If the order identifier is not registered with a take-profit.
         """
-        Condition.key_is_in(order_id, self._take_profit_orders, 'order_id', 'take_profit_orders')
+        Condition.is_in(order_id, self._take_profit_orders, 'order_id', 'take_profit_orders')
 
         return self._take_profit_orders[order_id].order
 
