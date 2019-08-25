@@ -85,65 +85,65 @@ cdef class Condition:
             raise ConditionFailed(f"The {object1} object was not equal to the {object2} object.")
 
     @staticmethod
-    cdef type(object argument, object is_type, str param_name):
+    cdef type(object argument, object expected_type, str param_name):
         """
         Check the argument is of the specified type.
 
         :param argument: The argument to check.
-        :param is_type: The expected argument type.
+        :param expected_type: The expected argument type.
         :param param_name: The parameter name.
         :raises ConditionFailed: If the object is not of the expected type.
         """
-        if not isinstance(argument, is_type):
-            raise ConditionFailed(f"The {param_name} argument was not of type {is_type}, type was {type(argument)}.")
+        if not isinstance(argument, expected_type):
+            raise ConditionFailed(f"The {param_name} argument was not of type {expected_type} (type was {type(argument)}).")
 
     @staticmethod
-    cdef type_or_none(object argument, object is_type, str param_name):
+    cdef type_or_none(object argument, object expected_type, str param_name):
         """
         Check the argument is of the specified type, or is None.
 
         :param argument: The argument to check.
-        :param is_type: The expected argument type if it is not None.
+        :param expected_type: The expected argument type (if not None).
         :param param_name: The parameter name.
-        :raises ConditionFailed: If the object is not of the expected type, and is not None.
+        :raises ConditionFailed: If the object is not None and not of the expected type.
         """
         if argument is None:
             return
 
-        if not isinstance(argument, is_type):
-            raise ConditionFailed(f"The {param_name} argument was not of type {is_type} or None, type was {type(argument)}.")
+        if not isinstance(argument, expected_type):
+            raise ConditionFailed(f"The {param_name} argument was not of type {expected_type} or None (type was {type(argument)}).")
 
     @staticmethod
-    cdef list_type(list collection, type element_type, str collection_name):
+    cdef list_type(list list, type expected_type, str list_name):
         """
-        Check the list only contains types of the given element_type to contain.
+        Check the list only contains types of the given expected_type.
 
-        :param collection: The list to check.
-        :param element_type: The expected element type if not empty.
-        :param collection_name: The parameter name.
-        :raises ConditionFailed: If the list contains a type other than the given type to contain.
+        :param list: The list to check.
+        :param expected_type: The expected element type (if not empty).
+        :param list_name: The list name.
+        :raises ConditionFailed: If the list is not empty and contains a type other than the expected type.
         """
-        for element in collection:
-            if not isinstance(element, element_type):
-                raise ConditionFailed(f"The {collection_name} list contained an element with a type other than {element_type}, type was {type(element)}.")
+        for element in list:
+            if not isinstance(element, expected_type):
+                raise ConditionFailed(f"The {list_name} list contained an element with a type other than {expected_type} (type was {type(element)}).")
 
     @staticmethod
-    cdef dict_types(dict collection, type key_type, type value_type, str collection_name):
+    cdef dict_types(dict dictionary, type key_type, type value_type, str dictionary_name):
         """
         Check the dictionary only contains types of the given key and value types to contain.
 
-        :param collection: The dictionary to check.
-        :param key_type: The expected type of the keys if dictionary is not empty.
-        :param value_type: The expected type of the values if dictionary is not empty.
-        :param collection_name: The dictionary name.
-        :raises ConditionFailed: If the dictionary contains a key type other than the given key_type to contain.
-        :raises ConditionFailed: If the dictionary contains a value type other than the given value_type to contain.
+        :param dictionary: The dictionary to check.
+        :param key_type: The expected type of the keys (if not empty).
+        :param value_type: The expected type of the values (if not empty).
+        :param dictionary_name: The dictionary name.
+        :raises ConditionFailed: If the dictionary is not empty and contains a key type other than the key_type.
+        :raises ConditionFailed: If the dictionary is not empty and contains a value type other than the value_type.
         """
-        for key, value in collection.items():
+        for key, value in dictionary.items():
             if not isinstance(key, key_type):
-                raise ConditionFailed(f"The {collection_name} dictionary contained a key type other than {key_type}. type = {type(key)}")
+                raise ConditionFailed(f"The {dictionary_name} dictionary contained a key type other than {key_type} (type was {type(key)}).")
             if not isinstance(value, value_type):
-                raise ConditionFailed(f"The {collection_name} dictionary contained a value type other than {value_type}. type = {type(value)}")
+                raise ConditionFailed(f"The {dictionary_name} dictionary contained a value type other than {value_type} (type was {type(value)}).")
 
     @staticmethod
     cdef is_in(object element, object collection, str element_name, str collection_name):
@@ -157,7 +157,7 @@ cdef class Condition:
         :raises ConditionFailed: If the element is not contained in the collection.
         """
         if element not in collection:
-            raise ConditionFailed(f"The {element_name} {element} was not contained in the {collection_name} collection.")
+            raise ConditionFailed(f"The {element_name} {element} was not contained in the {collection_name}.")
 
     @staticmethod
     cdef not_in(object element, object collection, str element_name, str collection_name):
@@ -171,7 +171,7 @@ cdef class Condition:
         :raises ConditionFailed: If the element is already contained in the collection.
         """
         if element in collection:
-            raise ConditionFailed(f"The {element_name} {element} was already contained in the {collection_name} collection.")
+            raise ConditionFailed(f"The {element_name} {element} was already contained in the {collection_name}.")
 
     @staticmethod
     cdef not_empty(object collection, str param_name):
@@ -226,7 +226,7 @@ cdef class Condition:
         :raises ConditionFailed: If the value is not positive (> 0).
         """
         if value <= 0:
-            raise ConditionFailed(f"The {param_name} was not positive, value was {value}.")
+            raise ConditionFailed(f"The {param_name} was not positive (was {value}).")
 
     @staticmethod
     cdef not_negative(float value, str param_name):
@@ -238,7 +238,7 @@ cdef class Condition:
         :raises ConditionFailed: If the value is negative (< 0).
         """
         if value < 0:
-            raise ConditionFailed(f"The {param_name} was negative, value was {value}.")
+            raise ConditionFailed(f"The {param_name} was negative (was {value}).")
 
     @staticmethod
     cdef in_range(
@@ -256,7 +256,7 @@ cdef class Condition:
         :raises ConditionFailed: If the value is not in the inclusive range.
         """
         if value < start or value > end:
-            raise ConditionFailed(f"The {param_name} was out of range [{start}-{end}], value was {value}.")
+            raise ConditionFailed(f"The {param_name} was out of range [{start}-{end}] (was {value}).")
 
 
 class PyCondition:
@@ -274,20 +274,20 @@ class PyCondition:
         Condition.not_none(argument, param_name)
 
     @staticmethod
-    def type(argument, is_type, param_name):
-        Condition.type(argument, is_type, param_name)
+    def type(argument, expected_type, param_name):
+        Condition.type(argument, expected_type, param_name)
 
     @staticmethod
-    def type_or_none(argument, is_type, param_name):
-        Condition.type_or_none(argument, is_type, param_name)
+    def type_or_none(argument, expected_type, param_name):
+        Condition.type_or_none(argument, expected_type, param_name)
 
     @staticmethod
-    def list_type(collection, element_type, collection_name):
-        Condition.list_type(collection, element_type, collection_name)
+    def list_type(list, expected_type, list_name):
+        Condition.list_type(list, expected_type, list_name)
 
     @staticmethod
-    def dict_types(collection, key_type, value_type, collection_name):
-        Condition.dict_types(collection, key_type, value_type, collection_name)
+    def dict_types(dictionary, key_type, value_type, dictionary_name):
+        Condition.dict_types(dictionary, key_type, value_type, dictionary_name)
 
     @staticmethod
     def is_in(object element, object collection, str element_name, str collection_name):

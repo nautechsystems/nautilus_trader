@@ -10,21 +10,21 @@ cdef class Condition:
     @staticmethod
     cdef true(bint predicate, str description)
     @staticmethod
-    cdef none(object argument, str param_name: str)
+    cdef none(object argument, str param_name)
     @staticmethod
     cdef not_none(object argument, str param_name)
     @staticmethod
-    cdef valid_string(unicode argument, str param_name)
+    cdef valid_string(str argument, str param_name)
     @staticmethod
     cdef equal(object argument1, object argument2)
     @staticmethod
-    cdef type(object argument, object is_type, str param_name)
+    cdef type(object argument, object expected_type, str param_name)
     @staticmethod
-    cdef type_or_none(object argument, object is_type, str param_name)
+    cdef type_or_none(object argument, object expected_type, str param_name)
     @staticmethod
-    cdef list_type(list collection, type type_to_contain, str collection_name)
+    cdef list_type(list list, type expected_type, str list_name)
     @staticmethod
-    cdef dict_types(dict collection, type key_type, type value_type, str collection_name)
+    cdef dict_types(dict dictionary, type key_type, type value_type, str dictionary_name)
     @staticmethod
     cdef is_in(object element, object collection, str element_name, str collection_name)
     @staticmethod
