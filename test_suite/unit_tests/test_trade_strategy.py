@@ -683,8 +683,8 @@ class TradeStrategyTests(unittest.TestCase):
         strategy.submit_order(order, strategy.position_id_generator.generate())
 
         # Assert
-        self.assertEqual(order, strategy.orders_all()[order.id])
-        self.assertEqual(OrderStatus.FILLED, strategy.orders_all()[order.id].status)
+        self.assertEqual(order, strategy.orders()[order.id])
+        self.assertEqual(OrderStatus.FILLED, strategy.orders()[order.id].status)
         self.assertTrue(order.id not in strategy.orders_working())
         self.assertTrue(order.id in strategy.orders_completed())
         self.assertTrue(strategy.order_exists(order.id))
@@ -708,8 +708,8 @@ class TradeStrategyTests(unittest.TestCase):
         strategy.cancel_order(order, 'NONE')
 
         # Assert
-        self.assertEqual(order, strategy.orders_all()[order.id])
-        self.assertEqual(OrderStatus.CANCELLED, strategy.orders_all()[order.id].status)
+        self.assertEqual(order, strategy.orders()[order.id])
+        self.assertEqual(OrderStatus.CANCELLED, strategy.orders()[order.id].status)
         self.assertTrue(order.id in strategy.orders_completed())
         self.assertTrue(order.id not in strategy.orders_working())
         self.assertTrue(strategy.order_exists(order.id))
@@ -733,9 +733,9 @@ class TradeStrategyTests(unittest.TestCase):
         strategy.modify_order(order, Price(90.005, 3))
 
         # Assert
-        self.assertEqual(order, strategy.orders_all()[order.id])
-        self.assertEqual(OrderStatus.WORKING, strategy.orders_all()[order.id].status)
-        self.assertEqual(Price(90.005, 3), strategy.orders_all()[order.id].price)
+        self.assertEqual(order, strategy.orders()[order.id])
+        self.assertEqual(OrderStatus.WORKING, strategy.orders()[order.id].status)
+        self.assertEqual(Price(90.005, 3), strategy.orders()[order.id].price)
         self.assertTrue(strategy.is_flat())
         self.assertTrue(strategy.order_exists(order.id))
         self.assertTrue(strategy.is_order_working(order.id))
@@ -767,10 +767,10 @@ class TradeStrategyTests(unittest.TestCase):
         strategy.cancel_all_orders()
 
         # Assert
-        self.assertEqual(order1, strategy.orders_all()[order1.id])
-        self.assertEqual(order2, strategy.orders_all()[order2.id])
-        self.assertEqual(OrderStatus.CANCELLED, strategy.orders_all()[order1.id].status)
-        self.assertEqual(OrderStatus.CANCELLED, strategy.orders_all()[order2.id].status)
+        self.assertEqual(order1, strategy.orders()[order1.id])
+        self.assertEqual(order2, strategy.orders()[order2.id])
+        self.assertEqual(OrderStatus.CANCELLED, strategy.orders()[order1.id].status)
+        self.assertEqual(OrderStatus.CANCELLED, strategy.orders()[order2.id].status)
         self.assertTrue(order1.id in strategy.orders_completed())
         self.assertTrue(order2.id in strategy.orders_completed())
 
@@ -792,10 +792,10 @@ class TradeStrategyTests(unittest.TestCase):
         strategy.flatten_position(position_id)
 
         # Assert
-        self.assertEqual(order, strategy.orders_all()[order.id])
-        self.assertEqual(OrderStatus.FILLED, strategy.orders_all()[order.id].status)
-        self.assertEqual(MarketPosition.FLAT, strategy.positions_all()[position_id].market_position)
-        self.assertTrue(strategy.positions_all()[position_id].is_closed)
+        self.assertEqual(order, strategy.orders()[order.id])
+        self.assertEqual(OrderStatus.FILLED, strategy.orders()[order.id].status)
+        self.assertEqual(MarketPosition.FLAT, strategy.positions()[position_id].market_position)
+        self.assertTrue(strategy.positions()[position_id].is_closed)
         self.assertTrue(position_id in strategy.positions_closed())
         self.assertTrue(strategy.is_flat())
 
@@ -824,14 +824,14 @@ class TradeStrategyTests(unittest.TestCase):
         strategy.flatten_all_positions()
 
         # Assert
-        self.assertEqual(order1, strategy.orders_all()[order1.id])
-        self.assertEqual(order2, strategy.orders_all()[order2.id])
-        self.assertEqual(OrderStatus.FILLED, strategy.orders_all()[order1.id].status)
-        self.assertEqual(OrderStatus.FILLED, strategy.orders_all()[order2.id].status)
-        self.assertEqual(MarketPosition.FLAT, strategy.positions_all()[position_id1].market_position)
-        self.assertEqual(MarketPosition.FLAT, strategy.positions_all()[position_id2].market_position)
-        self.assertTrue(strategy.positions_all()[position_id1].is_closed)
-        self.assertTrue(strategy.positions_all()[position_id2].is_closed)
+        self.assertEqual(order1, strategy.orders()[order1.id])
+        self.assertEqual(order2, strategy.orders()[order2.id])
+        self.assertEqual(OrderStatus.FILLED, strategy.orders()[order1.id].status)
+        self.assertEqual(OrderStatus.FILLED, strategy.orders()[order2.id].status)
+        self.assertEqual(MarketPosition.FLAT, strategy.positions()[position_id1].market_position)
+        self.assertEqual(MarketPosition.FLAT, strategy.positions()[position_id2].market_position)
+        self.assertTrue(strategy.positions()[position_id1].is_closed)
+        self.assertTrue(strategy.positions()[position_id2].is_closed)
         self.assertTrue(position_id1 in strategy.positions_closed())
         self.assertTrue(position_id2 in strategy.positions_closed())
         self.assertTrue(strategy.is_flat())
@@ -871,8 +871,8 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertTrue(OrderId('O-19700101-000000-000-001-1') in strategy.orders_all())
-        self.assertTrue(PositionId('P-19700101-000000-000-001-1') in strategy.positions_all())
+        self.assertTrue(OrderId('O-19700101-000000-000-001-1') in strategy.orders())
+        self.assertTrue(PositionId('P-19700101-000000-000-001-1') in strategy.positions())
         self.assertEqual(0, len(strategy.orders_working()))
         self.assertEqual(order, strategy.orders_completed()[order.id])
         self.assertEqual(0, len(strategy.positions_closed()))

@@ -68,24 +68,24 @@ cdef class TradingStrategy:
     cdef bint equals(self, TradingStrategy other)
 
 #-- ABSTRACT METHODS ------------------------------------------------------------------------------#
-    cpdef on_start(self)
-    cpdef on_tick(self, Tick tick)
-    cpdef on_bar(self, BarType bar_type, Bar bar)
-    cpdef on_instrument(self, Instrument instrument)
-    cpdef on_event(self, Event event)
-    cpdef on_stop(self)
-    cpdef on_reset(self)
-    cpdef on_dispose(self)
+    cpdef void on_start(self) except *
+    cpdef void on_tick(self, Tick tick) except *
+    cpdef void on_bar(self, BarType bar_type, Bar bar) except *
+    cpdef void on_instrument(self, Instrument instrument) except *
+    cpdef void on_event(self, Event event) except *
+    cpdef void on_stop(self) except *
+    cpdef void on_reset(self) except *
+    cpdef void on_dispose(self) except *
 
 #-- REGISTRATION METHODS --------------------------------------------------------------------------#
-    cpdef void register_trader(self, TraderId trader_id)
-    cpdef void register_data_client(self, DataClient client)
-    cpdef void register_execution_engine(self, ExecutionEngine engine)
-    cpdef void register_indicator_ticks(self, Symbol symbol, indicator, update_method)
-    cpdef void register_indicator_bars(self, BarType bar_type, indicator, update_method)
-    cpdef void register_entry_order(self, Order order, PositionId position_id)
-    cpdef void register_stop_loss_order(self, Order order, PositionId position_id)
-    cpdef void register_take_profit_order(self, Order order, PositionId position_id)
+    cpdef void register_trader(self, TraderId trader_id) except *
+    cpdef void register_data_client(self, DataClient client) except *
+    cpdef void register_execution_engine(self, ExecutionEngine engine) except *
+    cpdef void register_indicator_ticks(self, Symbol symbol, indicator, update_method) except *
+    cpdef void register_indicator_bars(self, BarType bar_type, indicator, update_method) except *
+    cpdef void register_entry_order(self, Order order, PositionId position_id) except *
+    cpdef void register_stop_loss_order(self, Order order, PositionId position_id) except *
+    cpdef void register_take_profit_order(self, Order order, PositionId position_id) except *
 
 #-- HANDLER METHODS -------------------------------------------------------------------------------#
     cpdef void handle_tick(self, Tick tick)
@@ -128,8 +128,9 @@ cdef class TradingStrategy:
     cpdef OrderSide get_opposite_side(self, OrderSide side)
     cpdef OrderSide get_flatten_side(self, MarketPosition market_position)
     cpdef float get_exchange_rate(self, Currency quote_currency)
+
     cpdef Order order(self, OrderId order_id)
-    cpdef dict orders_all(self)
+    cpdef dict orders(self)
     cpdef dict orders_working(self)
     cpdef dict orders_completed(self)
     cpdef dict entry_orders(self)
@@ -142,7 +143,7 @@ cdef class TradingStrategy:
     cpdef Order stop_loss_order(self, OrderId order_id)
     cpdef Order take_profit_order(self, OrderId order_id)
     cpdef Position position(self, PositionId position_id)
-    cpdef dict positions_all(self)
+    cpdef dict positions(self)
     cpdef dict positions_open(self)
     cpdef dict positions_closed(self)
     cpdef bint position_exists(self, PositionId position_id)
