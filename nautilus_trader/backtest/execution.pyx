@@ -180,8 +180,8 @@ cdef class BacktestExecClient(ExecutionClient):
             Symbol symbol,
             Price lowest_bid,
             Price highest_ask):
-        # Process the working orders for the given by simulating market dynamics
-        # using the lowest bid and highest ask.
+        # Process the working orders for the given symbol by simulating market
+        # dynamics using the lowest bid and highest ask.
 
         cdef AccountInquiry command
         cdef datetime time_now = self._clock.time_now()
