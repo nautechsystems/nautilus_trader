@@ -161,7 +161,23 @@ class TestStubs:
                    UNIX_EPOCH)
 
     @staticmethod
-    def position(number=1, price=Price('1.00000')):
+    def order_filled_event(order, fill_price):
+
+        return OrderFilled(
+            order.id,
+            AccountId('SIMULATED', '123456'),
+            ExecutionId('E-' + order.id.value),
+            ExecutionTicket('ET-' + order.id.value),
+            order.symbol,
+            order.side,
+            order.quantity,
+            order.price if fill_price is None else fill_price,
+            UNIX_EPOCH,
+            GUID(uuid.uuid4()),
+            UNIX_EPOCH)
+
+    @staticmethod
+    def position(number=1, entry_price=Price('1.00000')):
         clock = TestClock()
 
         generator = PositionIdGenerator(
@@ -182,18 +198,7 @@ class TestStubs:
             OrderSide.BUY,
             Quantity(100000))
 
-        order_filled = OrderFilled(
-            order.id,
-            AccountId('FXCM', '0999999'),
-            ExecutionId('E123456'),
-            ExecutionTicket('T123456'),
-            order.symbol,
-            order.side,
-            order.quantity,
-            price,
-            UNIX_EPOCH,
-            GUID(uuid.uuid4()),
-            UNIX_EPOCH)
+        order_filled = TestStubs.order_filled_event(order, entry_price)
 
         position_id = generator.generate()
         position = Position(position_id=position_id, event=order_filled)

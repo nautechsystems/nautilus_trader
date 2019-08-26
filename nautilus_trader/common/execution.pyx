@@ -283,7 +283,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
         self._strategies.add(strategy.id)
 
-        self._log.debug(f"Added strategy (id={strategy.id.value}).")
+        self._log.debug(f"Added new strategy (id={strategy.id.value}).")
 
     cpdef void add_order(self, Order order, StrategyId strategy_id, PositionId position_id):
         """
@@ -320,11 +320,11 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
         # Index: Strategy - Set[PositionId]
         if strategy_id not in self._index_strategy_positions:
-            self._index_strategy_positions[strategy_id] = {order.id}
+            self._index_strategy_positions[strategy_id] = {position_id}
         else:
-            self._index_strategy_positions[strategy_id].add(order.id)
+            self._index_strategy_positions[strategy_id].add(position_id)
 
-        self._log.debug(f"Added {order.id} with {strategy_id} and {position_id}.")
+        self._log.debug(f"Added new {order.id} with {strategy_id} and {position_id}.")
 
     cpdef void add_position(self, Position position, StrategyId strategy_id):
         """
@@ -341,7 +341,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
         self._index_positions.add(position.id)
         self._index_positions_open.add(position.id)
-        self._log.debug(f"Added {position.id}.")
+        self._log.debug(f"Added open {position.id}.")
 
     cpdef void update_order(self, Order order):
         """
@@ -386,12 +386,14 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         :raises ConditionFailed: If the strategy is not registered with the execution engine.
         """
         Condition.is_in(strategy.id, self._strategies, 'strategy.id', 'strategies')
-        Condition.is_in(strategy.id, self._index_strategy_orders, 'strategy.id', 'index_strategy_orders')
-        Condition.is_in(strategy.id, self._index_strategy_positions, 'strategy.id', 'index_strategy_positions')
 
         self._strategies.remove(strategy.id)
-        del self._index_strategy_orders[strategy.id]
-        del self._index_strategy_positions[strategy.id]
+
+        if strategy.id in self._index_strategy_orders:
+            del self._index_strategy_orders[strategy.id]
+
+        if strategy.id in self._index_strategy_positions:
+            del self._index_strategy_positions[strategy.id]
 
         self._log.debug(f"Deleted strategy (id={strategy.id.value}).")
 
@@ -515,6 +517,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
             return self._index_positions_open.copy()
 
         cdef set strategy_position_ids = self._index_strategy_positions.get(strategy_id)
+
         if strategy_position_ids is None:
             return set()  # Empty set
 
