@@ -123,6 +123,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(position.id in self.database.get_position_ids())
+        self.assertTrue(position.id in self.database.get_positions_open())
         self.assertTrue(position.id in self.database.get_positions_open(strategy.id))
 
     def test_can_delete_strategy(self):
@@ -222,9 +223,13 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
     def test_can_add_position_event_with_open_position(self):
         # Arrange
         strategy = TradingStrategy(order_id_tag='001')
+        position_id = strategy.position_id_generator.generate()
+        order = strategy.order_factory.market(AUDUSD_FXCM, OrderSide.BUY, Quantity(100000))
+
+        self.database.add_order(order, strategy.id, position_id)
         self.database.add_strategy(strategy)
 
-        position = TestStubs.position()
+        position = Position(position_id, TestStubs.order_filled_event(order, fill_price=Price('1.00000')))
 
         # Act
         self.database.add_position(position, strategy.id)
@@ -269,7 +274,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         self.database.add_position(position, strategy.id)
 
         # Act
-        self.database.update_position(position, order_filled)
+        self.database.update_position(position)
 
         # Assert
         self.assertTrue(self.database.position_exists(position.id))
@@ -907,8 +912,9 @@ class ExecutionEngineTests(unittest.TestCase):
         self.assertTrue(position_id2 in self.exec_db.get_positions())
         self.assertEqual(0, len(self.exec_db.get_positions_open(strategy1.id)))
         self.assertEqual(1, len(self.exec_db.get_positions_open(strategy2.id)))
-        self.assertEqual(0, len(self.exec_db.get_positions_open()))
         self.assertEqual(1, len(self.exec_db.get_positions_open()))
+        self.assertEqual(1, len(self.exec_db.get_positions_closed()))
+        self.assertEqual(2, len(self.exec_db.get_positions()))
         self.assertTrue(position_id1 not in self.exec_db.get_positions_open(strategy1.id))
         self.assertTrue(position_id2 in self.exec_db.get_positions_open(strategy2.id))
         self.assertTrue(position_id1 not in self.exec_db.get_positions_open())

@@ -225,7 +225,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         pipe.hset(self.key_strategies + f'{strategy.id.value}:{CONFIG}', 'some_value', 1)
         pipe.execute()
 
-        self._log.debug(f"Added {strategy.id}.")
+        self._log.debug(f"Added new {strategy.id}.")
 
     cpdef void add_order(self, Order order, StrategyId strategy_id, PositionId position_id):
         """
@@ -257,7 +257,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         pipe.sadd(self.key_index_strategy_positions + strategy_id.value, position_id.value)
         pipe.execute()
 
-        self._log.debug(f"Added {order.id} with {strategy_id} and {position_id}.")
+        self._log.debug(f"Added new {order.id} with {strategy_id} and {position_id}.")
 
     cpdef void add_position(self, Position position, StrategyId strategy_id):
         """
@@ -283,7 +283,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         pipe.sadd(self.key_index_positions_open, position.id.value)
         pipe.execute()
 
-        self._log.debug(f"Added {position.id}")
+        self._log.debug(f"Added open {position.id}")
 
     cpdef void update_order(self, Order order):
         """
