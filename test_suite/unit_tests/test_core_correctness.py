@@ -26,7 +26,7 @@ class ConditionTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        PyCondition.true(True, "predicate")
+        PyCondition.true(True, "this should be true")
         self.assertTrue(True)  # ConditionFailed not raised
 
     def test_condition_is_none_when_arg_not_none_raises_condition_failed(self):

@@ -19,7 +19,7 @@ cdef class Condition:
     of some section of code for correct behaviour as per the design specification.
     """
     @staticmethod
-    cdef true(bint predicate, str description):
+    cdef void true(bint predicate, str description) except *:
         """
         Check the predicate is True.
 
@@ -31,7 +31,7 @@ cdef class Condition:
             raise ConditionFailed(f"The predicate condition {description} was False")
 
     @staticmethod
-    cdef none(object argument, str param_name):
+    cdef void none(object argument, str param_name) except *:
         """
         Check the argument is None.
 
@@ -43,7 +43,7 @@ cdef class Condition:
             raise ConditionFailed(f"The {param_name} argument was not None")
 
     @staticmethod
-    cdef not_none(object argument, str param_name):
+    cdef void not_none(object argument, str param_name) except *:
         """
         Check the argument is not None.
 
@@ -55,7 +55,7 @@ cdef class Condition:
             raise ConditionFailed(f"The {param_name} argument was None")
 
     @staticmethod
-    cdef valid_string(str argument, str param_name):
+    cdef void valid_string(str argument, str param_name) except *:
         """
         Check the string is not None, empty or whitespace.
 
@@ -71,7 +71,7 @@ cdef class Condition:
             raise ConditionFailed(f"The {param_name} string argument was whitespace")
 
     @staticmethod
-    cdef equal(object object1, object object2):
+    cdef void equal(object object1, object object2) except *:
         """
         Check the objects are equal.
         
@@ -85,7 +85,7 @@ cdef class Condition:
             raise ConditionFailed(f"The {object1} object was not equal to the {object2} object")
 
     @staticmethod
-    cdef type(object argument, object expected_type, str param_name):
+    cdef void type(object argument, object expected_type, str param_name) except *:
         """
         Check the argument is of the specified type.
 
@@ -98,7 +98,7 @@ cdef class Condition:
             raise ConditionFailed(f"The {param_name} argument was not of type {expected_type}, was {type(argument)}")
 
     @staticmethod
-    cdef type_or_none(object argument, object expected_type, str param_name):
+    cdef void type_or_none(object argument, object expected_type, str param_name) except *:
         """
         Check the argument is of the specified type, or is None.
 
@@ -114,7 +114,7 @@ cdef class Condition:
             raise ConditionFailed(f"The {param_name} argument was not of type {expected_type} or None, was {type(argument)}")
 
     @staticmethod
-    cdef list_type(list list, type expected_type, str list_name):
+    cdef void list_type(list list, type expected_type, str list_name) except *:
         """
         Check the list only contains types of the given expected type.
 
@@ -128,7 +128,7 @@ cdef class Condition:
                 raise ConditionFailed(f"The {list_name} list contained an element with a type other than {expected_type}, was {type(element)}")
 
     @staticmethod
-    cdef dict_types(dict dictionary, type key_type, type value_type, str dictionary_name):
+    cdef void dict_types(dict dictionary, type key_type, type value_type, str dictionary_name) except *:
         """
         Check the dictionary only contains types of the given key and value types to contain.
 
@@ -146,7 +146,7 @@ cdef class Condition:
                 raise ConditionFailed(f"The {dictionary_name} dictionary contained a value type other than {value_type}, was {type(value)}")
 
     @staticmethod
-    cdef is_in(object element, object collection, str element_name, str collection_name):
+    cdef void is_in(object element, object collection, str element_name, str collection_name) except *:
         """
         Check the element is contained within the specified collection.
     
@@ -160,7 +160,7 @@ cdef class Condition:
             raise ConditionFailed(f"The {element_name} {element} was not contained in the {collection_name} collection")
 
     @staticmethod
-    cdef not_in(object element, object collection, str element_name, str collection_name):
+    cdef void not_in(object element, object collection, str element_name, str collection_name) except *:
         """
         Check the element is not contained within the specified collection.
     
@@ -174,7 +174,7 @@ cdef class Condition:
             raise ConditionFailed(f"The {element_name} {element} was already contained in the {collection_name} collection")
 
     @staticmethod
-    cdef not_empty(object collection, str param_name):
+    cdef void not_empty(object collection, str param_name) except *:
         """
         Check the collection is not empty.
 
@@ -186,7 +186,7 @@ cdef class Condition:
             raise ConditionFailed(f"The {param_name} was empty")
 
     @staticmethod
-    cdef empty(object collection, str param_name):
+    cdef void empty(object collection, str param_name) except *:
         """
         Check the collection is empty.
 
@@ -198,11 +198,11 @@ cdef class Condition:
             raise ConditionFailed(f"The {param_name} was not empty")
 
     @staticmethod
-    cdef equal_length(
+    cdef void equal_length(
             object collection1,
             object collection2,
             str collection1_name,
-            str collection2_name):
+            str collection2_name) except *:
         """
         Check the collections have equal lengths.
 
@@ -217,7 +217,7 @@ cdef class Condition:
                 f"The length of {collection1_name} was not equal to {collection2_name}, lengths were {len(collection1)} and {len(collection2)}")
 
     @staticmethod
-    cdef positive(float value, str param_name):
+    cdef void positive(float value, str param_name) except *:
         """
         Check the float value is positive (> 0)
 
@@ -229,7 +229,7 @@ cdef class Condition:
             raise ConditionFailed(f"The {param_name} was not positive, was {value}")
 
     @staticmethod
-    cdef not_negative(float value, str param_name):
+    cdef void not_negative(float value, str param_name) except *:
         """
         Check the float value is not negative (>= 0).
 
@@ -241,11 +241,11 @@ cdef class Condition:
             raise ConditionFailed(f"The {param_name} was negative, was {value}")
 
     @staticmethod
-    cdef in_range(
+    cdef void in_range(
             float value,
             str param_name,
             float start,
-            float end):
+            float end) except *:
         """
         Check the float value is within the specified range (inclusive).
 

@@ -8,36 +8,36 @@
 
 cdef class Condition:
     @staticmethod
-    cdef true(bint predicate, str description)
+    cdef void true(bint predicate, str description) except *
     @staticmethod
-    cdef none(object argument, str param_name)
+    cdef void none(object argument, str param_name) except *
     @staticmethod
-    cdef not_none(object argument, str param_name)
+    cdef void not_none(object argument, str param_name) except *
     @staticmethod
-    cdef valid_string(str argument, str param_name)
+    cdef void valid_string(str argument, str param_name) except *
     @staticmethod
-    cdef equal(object argument1, object argument2)
+    cdef void equal(object argument1, object argument2) except *
     @staticmethod
-    cdef type(object argument, object expected_type, str param_name)
+    cdef void type(object argument, object expected_type, str param_name) except *
     @staticmethod
-    cdef type_or_none(object argument, object expected_type, str param_name)
+    cdef void type_or_none(object argument, object expected_type, str param_name) except *
     @staticmethod
-    cdef list_type(list list, type expected_type, str list_name)
+    cdef void list_type(list list, type expected_type, str list_name) except *
     @staticmethod
-    cdef dict_types(dict dictionary, type key_type, type value_type, str dictionary_name)
+    cdef void dict_types(dict dictionary, type key_type, type value_type, str dictionary_name) except *
     @staticmethod
-    cdef is_in(object element, object collection, str element_name, str collection_name)
+    cdef void is_in(object element, object collection, str element_name, str collection_name) except *
     @staticmethod
-    cdef not_in(object element, object collection, str element_name, str collection_name)
+    cdef void not_in(object element, object collection, str element_name, str collection_name) except *
     @staticmethod
-    cdef not_empty(object collection, str collection_name)
+    cdef void not_empty(object collection, str collection_name) except *
     @staticmethod
-    cdef empty(object collection, str collection_name)
+    cdef void empty(object collection, str collection_name) except *
     @staticmethod
-    cdef equal_length(object collection1, object collection2, str collection1_name, str collection2_name)
+    cdef void equal_length(object collection1, object collection2, str collection1_name, str collection2_name) except *
     @staticmethod
-    cdef positive(float value, str param_name)
+    cdef void positive(float value, str param_name) except *
     @staticmethod
-    cdef not_negative(float value, str param_name)
+    cdef void not_negative(float value, str param_name) except *
     @staticmethod
-    cdef in_range(float value, str param_name, float start, float end)
+    cdef void in_range(float value, str param_name, float start, float end) except *
