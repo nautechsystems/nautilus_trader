@@ -25,10 +25,10 @@ cdef class Condition:
 
         :param predicate: The predicate condition to check.
         :param description: The description of the predicate condition.
-        :raises ConditionFailed: If the predicate is False.
+        :raises ConditionFailed: If the predicate condition is False.
         """
         if not predicate:
-            raise ConditionFailed(f"The predicate {description} was False.")
+            raise ConditionFailed(f"The predicate condition {description} was False.")
 
     @staticmethod
     cdef none(object argument, str param_name):
@@ -116,7 +116,7 @@ cdef class Condition:
     @staticmethod
     cdef list_type(list list, type expected_type, str list_name):
         """
-        Check the list only contains types of the given expected_type.
+        Check the list only contains types of the given expected type.
 
         :param list: The list to check.
         :param expected_type: The expected element type (if not empty).
