@@ -979,7 +979,6 @@ cdef class ExecutionEngine:
             self._handle_position_event(event)
         # Account Event
         elif isinstance(event, AccountStateEvent):
-            self._log.critical('yep')
             self._handle_account_event(event)
 
     cdef void _handle_order_event(self, OrderEvent event):
@@ -1048,7 +1047,6 @@ cdef class ExecutionEngine:
     cdef void _handle_account_event(self, AccountStateEvent event):
         self._log.debug(str(event))
         if not self.account.initialized or self.account.id == event.account_id:
-            self._log.critical('Applying account event.')
             self.account.apply(event)
             self.database.update_account(self.account)
             self.portfolio.handle_transaction(event)
