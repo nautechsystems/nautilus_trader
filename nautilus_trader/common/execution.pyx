@@ -7,6 +7,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.datetime cimport datetime
+from libcpp cimport set
 from typing import Set, List, Dict
 
 from nautilus_trader.core.correctness cimport Condition
@@ -98,8 +99,8 @@ cdef class ExecutionDatabase:
         raise NotImplementedError("Method must be implemented in the subclass.")
 
     cdef void _reset(self):
-        self._cached_orders = {}     # type: Dict[OrderId, Order]
-        self._cached_positions = {}  # type: Dict[PositionId, Position]
+        self._cached_orders.clear()
+        self._cached_positions.clear()
         self._log.debug(f"Reset.")
 
 
@@ -113,7 +114,23 @@ cdef class ExecutionDatabase:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
+    cpdef set get_order_working_ids(self, StrategyId strategy_id=None):
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
+    cpdef set get_order_completed_ids(self, StrategyId strategy_id=None):
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
     cpdef set get_position_ids(self, StrategyId strategy_id=None):
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
+    cpdef set get_position_open_ids(self, StrategyId strategy_id=None):
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
+    cpdef set get_position_closed_ids(self, StrategyId strategy_id=None):
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
@@ -177,15 +194,15 @@ cdef class ExecutionDatabase:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
+    cpdef bint position_exists_for_order(self, OrderId order_id):
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
     cpdef bint is_position_open(self, PositionId position_id):
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
     cpdef bint is_position_closed(self, PositionId position_id):
-        # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
-
-    cpdef bint position_exists_for_order(self, OrderId order_id):
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
@@ -230,8 +247,10 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         self._index_position_orders = {}      # type: Dict[PositionId, Set[OrderId]]
         self._index_strategy_orders = {}      # type: Dict[StrategyId, Set[OrderId]]
         self._index_strategy_positions = {}   # type: Dict[StrategyId, Set[PositionId]]
+        self._index_orders = set()            # type: Set[OrderId]
         self._index_orders_working = set()    # type: Set[OrderId]
         self._index_orders_completed = set()  # type: Set[OrderId]
+        self._index_positions = set()         # type: Set[PositionId]
         self._index_positions_open = set()    # type: Set[PositionId]
         self._index_positions_closed = set()  # type: Set[PositionId]
 
@@ -259,23 +278,34 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         :param position_id: The position identifier to associate with the order.
         """
         Condition.not_in(order.id, self._cached_orders, 'order.id', 'cached_orders')
-        Condition.not_in(order.id, self._index_order_position, 'order.id', 'index_order_position')
+        Condition.not_in(order.id, self._index_orders, 'order.id', 'index_orders')
         Condition.not_in(order.id, self._index_order_strategy, 'order.id', 'index_order_strategy')
-        Condition.not_in(position_id, self._index_position_strategy, 'position_id', 'index_position_strategy')
-        Condition.not_in(position_id, self._index_position_orders, 'position_id', '_index_position_orders')
-        Condition.not_in(strategy_id, self._index_strategy_orders, 'strategy_id', 'index_strategy_orders')
-        Condition.not_in(strategy_id, self._index_strategy_positions, 'strategy_id', 'index_strategy_positions')
+        Condition.not_in(order.id, self._index_order_position, 'order.id', 'index_order_position')
+        #Condition.not_in(position_id, self._index_position_strategy, 'position_id', 'index_position_strategy')
 
         self._cached_orders[order.id] = order
 
+        self._index_orders.add(order.id)
         self._index_order_strategy[order.id] = strategy_id
         self._index_order_position[order.id] = position_id
         self._index_position_strategy[position_id] = strategy_id
-        self._index_position_orders[position_id] = {order.id}
-        self._index_strategy_orders[strategy_id] = {order.id}
-        self._index_strategy_positions[strategy_id] = {position_id}
 
-        self._log.debug(f"Added order (id={order.id.value}, strategy_id={strategy_id.value}, position_id={position_id.value}).")
+        if position_id not in self._index_position_orders:
+            self._index_position_orders[position_id] = {order.id}
+        else:
+            self._index_position_orders[position_id].add(order.id)
+
+        if strategy_id not in self._index_strategy_orders:
+            self._index_strategy_orders[strategy_id] = {order.id}
+        else:
+            self._index_strategy_orders[strategy_id].add(order.id)
+
+        if strategy_id not in self._index_strategy_positions:
+            self._index_strategy_positions[strategy_id] = {order.id}
+        else:
+            self._index_strategy_positions[strategy_id].add(order.id)
+
+        self._log.debug(f"Added {order.id} with {strategy_id} and {position_id}.")
 
     cpdef void add_position(self, Position position, StrategyId strategy_id):
         """
@@ -285,11 +315,14 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         :param strategy_id: The strategy identifier to associate with the position.
         """
         Condition.not_in(position.id, self._cached_positions, 'position.id', 'cached_positions')
+        Condition.not_in(position.id, self._index_positions, 'position.id', 'index_positions')
+        Condition.not_in(position.id, self._index_positions_open, 'position.id', 'index_positions_open')
 
         self._cached_positions[position.id] = position
 
+        self._index_positions.add(position.id)
         self._index_positions_open.add(position.id)
-        self._log.debug(f"Added position (id={position.id.value}).")
+        self._log.debug(f"Added {position.id}.")
 
     cpdef void update_order(self, Order order):
         """
@@ -300,10 +333,10 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         if order.is_working:
             self._index_orders_working.add(order.id)
-            self._index_orders_completed.remove(order.id)
+            self._index_orders_completed.discard(order.id)
         elif order.is_completed:
             self._index_orders_completed.add(order.id)
-            self._index_orders_working.remove(order.id)
+            self._index_orders_working.discard(order.id)
 
     cpdef void update_position(self, Position position):
         """
@@ -314,7 +347,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         if position.is_closed:
             self._index_positions_closed.add(position.id)
-            self._index_positions_open.remove(position.id)
+            self._index_positions_open.discard(position.id)
 
     cpdef void update_account(self, Account account):
         """
@@ -352,63 +385,130 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
             self._log.warning(f"Residual open position {position}")
 
     cpdef void reset(self):
-        # Reset the execution database by returning all stateful internal values to their initial value
+        # Reset the execution database by clearing all stateful internal values
         self._log.debug(f"Resetting...")
 
-        self._strategies = set()              # type: Set[StrategyId]
-        self._index_order_position = {}       # type: Dict[OrderId, PositionId]
-        self._index_order_strategy = {}       # type: Dict[OrderId, StrategyId]
-        self._index_position_strategy = {}    # type: Dict[PositionId, StrategyId]
-        self._index_position_orders = {}      # type: Dict[PositionId, Set[OrderId]]
-        self._index_strategy_orders = {}      # type: Dict[StrategyId, Set[OrderId]]
-        self._index_strategy_positions = {}   # type: Dict[StrategyId, Set[PositionId]]
-        self._index_orders_working = set()    # type: Set[OrderId]
-        self._index_orders_completed = set()  # type: Set[OrderId]
-        self._index_positions_open = set()    # type: Set[PositionId]
-        self._index_positions_closed = set()  # type: Set[PositionId]
+        self._strategies.clear()
+        self._index_order_position.clear()
+        self._index_order_strategy.clear()
+        self._index_position_strategy.clear()
+        self._index_position_orders.clear()
+        self._index_strategy_orders.clear()
+        self._index_strategy_positions.clear()
+        self._index_orders.clear()
+        self._index_orders_working.clear()
+        self._index_orders_completed.clear()
+        self._index_positions.clear()
+        self._index_positions_open.clear()
+        self._index_positions_closed.clear()
 
         self._reset()
-
 
 # -- QUERIES --------------------------------------------------------------------------------------"
 
     cpdef set get_strategy_ids(self):
         """
-        Return a list of all registered strategy identifiers.
+        Return a set of all registered strategy identifiers.
          
-        :return: List[StrategyId].
+        :return Set[StrategyId].
         """
         return  self._strategies.copy()
 
     cpdef set get_order_ids(self, StrategyId strategy_id=None):
         """
-        Return a list of all registered order identifiers.
+        Return a set of all registered order identifiers.
         
-        :return: Set[OrderId].
+        :param strategy_id: The strategy identifier query filter (optional can be None).
+        :return Set[OrderId].
         """
         if strategy_id is None:
-            return set(self._cached_orders.keys())
+            return self._index_orders.copy()
 
-        cdef set strategy_position_ids = self._index_strategy_orders.get(strategy_id)
-        if strategy_position_ids is None:
+        cdef set strategy_order_ids = self._index_strategy_orders.get(strategy_id)
+        if strategy_order_ids is None:
             return set()  # Empty set
 
-        return strategy_position_ids.intersection(set(self._cached_orders.keys()))
+        return self._index_orders.intersection(strategy_order_ids)
+
+    cpdef set get_order_working_ids(self, StrategyId strategy_id=None):
+        """
+        Return a set of all registered working order identifiers.
+        
+        :param strategy_id: The strategy identifier query filter (optional can be None).
+        :return Set[OrderId].
+        """
+        if strategy_id is None:
+            return self._index_orders_working.copy()
+
+        cdef set strategy_order_ids = self._index_strategy_orders.get(strategy_id)
+        if strategy_order_ids is None:
+            return set()  # Empty set
+
+        return self._index_orders_working.intersection(strategy_order_ids)
+
+    cpdef set get_order_completed_ids(self, StrategyId strategy_id=None):
+        """
+        Return a set of all registered completed order identifiers.
+        
+        :param strategy_id: The strategy identifier query filter (optional can be None).
+        :return Set[OrderId].
+        """
+        if strategy_id is None:
+            return self._index_orders_completed.copy()
+
+        cdef set strategy_order_ids = self._index_strategy_orders.get(strategy_id)
+        if strategy_order_ids is None:
+            return set()  # Empty set
+
+        return self._index_orders_completed.intersection(strategy_order_ids)
 
     cpdef set get_position_ids(self, StrategyId strategy_id=None):
         """
-        Return a list of the cached position identifiers.
+        Return a set of registered position identifiers.
         
-        :return: Set[PositionId].
+        :param strategy_id: The strategy identifier query filter (optional can be None).
+        :return Set[PositionId].
         """
         if strategy_id is None:
-            return set(self._cached_positions.keys())
+            return self._index_positions.copy()
 
-        cdef set strategy_position_ids = self._index_strategy_orders.get(strategy_id)
+        cdef set strategy_position_ids = self._index_strategy_positions.get(strategy_id)
         if strategy_position_ids is None:
             return set()  # Empty set
 
-        return strategy_position_ids.intersection(set(self._cached_positions.keys()))
+        return self._index_positions.intersection(strategy_position_ids)
+
+    cpdef set get_position_open_ids(self, StrategyId strategy_id=None):
+        """
+        Return a set of registered position open identifiers.
+        
+        :param strategy_id: The strategy identifier query filter (optional can be None).
+        :return Set[PositionId].
+        """
+        if strategy_id is None:
+            return self._index_positions_open.copy()
+
+        cdef set strategy_position_ids = self._index_strategy_positions.get(strategy_id)
+        if strategy_position_ids is None:
+            return set()  # Empty set
+
+        return self._index_positions_open.intersection(strategy_position_ids)
+
+    cpdef set get_position_closed_ids(self, StrategyId strategy_id=None):
+        """
+        Return a set of registered position open identifiers.
+        
+        :param strategy_id: The strategy identifier query filter (optional can be None).
+        :return Set[PositionId].
+        """
+        if strategy_id is None:
+            return self._index_positions_closed.copy()
+
+        cdef set strategy_position_ids = self._index_strategy_positions.get(strategy_id)
+        if strategy_position_ids is None:
+            return set()  # Empty set
+
+        return self._index_positions_closed.intersection(strategy_position_ids)
 
     cpdef StrategyId get_strategy_for_order(self, OrderId order_id):
         """
@@ -423,7 +523,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Return the order matching the given identifier (if found).
 
-        :return: Order or None.
+        :return Order or None.
         """
         cdef Order order = self._cached_orders.get(order_id)
         if order is None:
@@ -434,86 +534,86 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Return all orders matching the given criteria.
         
-        :param strategy_id: The strategy identifier filter (optional can be None).
-        :return: Dict[OrderId, Order].
+        :param strategy_id: The strategy identifier query filter (optional can be None).
+        :return Dict[OrderId, Order].
         """
-        if strategy_id is None:
-            return self._cached_orders.copy()
+        cdef set order_ids = self.get_order_ids(strategy_id)
+        cdef dict orders
 
-        cdef set strategy_order_ids =  self._index_strategy_orders.get(strategy_id)
-        if strategy_order_ids is None:
-            return {}  # Empty dictionary
+        try:
+            orders = {order_id: self._cached_orders[order_id] for order_id in order_ids}
+        except KeyError as ex:
+            self._log.error("Cannot find order object in cached orders " + str(ex))
 
-        cdef set order_ids = strategy_order_ids.intersection(set(self._cached_orders.keys()))
-        return {order_id: order for order_id, order in order_ids}
+        return orders
 
     cpdef dict get_orders_working(self, StrategyId strategy_id=None):
         """
         Return all active orders associated with the strategy identifier.
         
-        :param strategy_id: The strategy identifier associated with the orders.
-        :return: Dict[OrderId, Order].
+        :param strategy_id: The strategy identifier query filter (optional can be None).
+        :return Dict[OrderId, Order].
         """
-        if strategy_id is None:
-            return {order_id: order for order_id, order in self._index_orders_working}
+        cdef set order_ids = self.get_order_working_ids(strategy_id)
+        cdef dict orders_working
 
-        cdef set strategy_order_ids =  self._index_strategy_orders.get(strategy_id)
-        if strategy_order_ids is None:
-            return {}  # Empty dictionary
+        try:
+            orders_working = {order_id: self._cached_orders[order_id] for order_id in order_ids}
+        except KeyError as ex:
+            self._log.error("Cannot find order object in cached orders " + str(ex))
 
-        cdef set order_ids = strategy_order_ids.intersection(self._index_orders_working)
-        return {order_id: order for order_id, order in order_ids}
+        return orders_working
 
     cpdef dict get_orders_completed(self, StrategyId strategy_id=None):
         """
         Return all completed orders associated with the strategy identifier.
         
-        :param strategy_id: The strategy identifier associated with the orders.
-        :return: Dict[OrderId, Order].
+        :param strategy_id: The strategy identifier query filter (optional can be None).
+        :return Dict[OrderId, Order].
         """
-        if strategy_id is None:
-            return {order_id: self._cached_orders[order_id] for order_id in self._index_orders_completed}
+        cdef set order_ids = self.get_order_completed_ids(strategy_id)
+        cdef dict orders_completed
 
-        cdef set strategy_order_ids =  self._index_strategy_orders.get(strategy_id)
-        if strategy_order_ids is None:
-            return {}  # Empty dictionary
+        try:
+            orders_completed = {order_id: self._cached_orders[order_id] for order_id in order_ids}
+        except KeyError as ex:
+            self._log.error("Cannot find order object in cached orders " + str(ex))
 
-        cdef set order_ids = strategy_order_ids.intersection(self._index_orders_completed)
-        return {order_id: self._cached_orders[order_id] for order_id in order_ids}
+        return orders_completed
 
     cpdef bint order_exists(self, OrderId order_id):
         """
         Return a value indicating whether an order with the given identifier exists.
         
         :param order_id: The order identifier to check.
-        :return: True if the order exists, else False.
+        :return True if the order exists, else False.
         """
-        return order_id in self._cached_orders
+        return order_id in self._index_orders
 
     cpdef bint is_order_working(self, OrderId order_id):
         """
         Return a value indicating whether an order with the given identifier is active.
          
         :param order_id: The order identifier to check.
-        :return: True if the order is found and active, else False.
+        :return True if the order is found and active, else False.
         """
-        return order_id in self._cached_orders and self._cached_orders[order_id].is_working
+        return order_id in self._index_orders_working
 
     cpdef bint is_order_completed(self, OrderId order_id):
         """
         Return a value indicating whether an order with the given identifier is complete.
 
         :param order_id: The order identifier to check.
-        :return: True if the order is found and complete, else False.
+        :return True if the order is found and complete, else False.
         """
-        return order_id in self._cached_orders and self._cached_orders[order_id].is_completed
+        return order_id in self._index_orders_completed
 
     cpdef Position get_position(self, PositionId position_id):
         """
         Return the position associated with the given position identifier (if found, else None).
         
         :param position_id: The position identifier.
-        :return: Position or None.
+        :return Position or None.
         """
         cdef Position position = self._cached_positions.get(position_id)
         if position is None:
@@ -525,7 +625,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         Return the position associated with the given order identifier (if found, else None).
         
         :param order_id: The order identifier for the position.
-        :return: Position or None.
+        :return Position or None.
         """
         cdef PositionId position_id = self.get_position_id(order_id)
         if position_id is None:
@@ -539,7 +639,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         Return the position associated with the given order identifier (if found, else None).
         
         :param order_id: The order identifier associated with the position.
-        :return: PositionId or None.
+        :return PositionId or None.
         """
         cdef PositionId position_id = self._index_order_position.get(order_id)
         if position_id is None:
@@ -551,60 +651,64 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Return a list of all positions associated with the given strategy identifier.
         
-        :param strategy_id: The strategy identifier associated with the positions.
-        :return: Dict[PositionId, Position].
+        :param strategy_id: The strategy identifier query filter (optional can be None).
+        :return Dict[PositionId, Position].
         """
-        if strategy_id is None:
-            return self._cached_positions.copy()
+        cdef set position_ids = self.get_position_ids(strategy_id)
+        cdef dict positions
 
-        cdef set strategy_order_ids =  self._index_strategy_orders.get(strategy_id)
-        if strategy_order_ids is None:
-            return {}  # Empty dictionary
+        try:
+            positions = {position_id: self._cached_positions[position_id] for position_id in position_ids}
+        except KeyError as ex:
+            # This should never happen
+            self._log.error("Cannot find position object in cached positions " + str(ex))
 
-        cdef set order_ids = strategy_order_ids.intersection(self._cached_positions.keys())
-        return {order_id: order for order_id, order in order_ids}
+        return positions
 
     cpdef dict get_positions_open(self, StrategyId strategy_id=None):
         """
         Return a list of all active positions associated with the given strategy identifier.
         
-        :param strategy_id: The strategy identifier associated with the positions.
-        :return: Dict[PositionId, Position].
+        :param strategy_id: The strategy identifier query filter (optional can be None).
+        :return Dict[PositionId, Position].
         """
-        if strategy_id is None:
-            return self._cached_positions.copy()
+        cdef set position_ids = self.get_position_open_ids(strategy_id)
+        cdef dict positions
 
-        cdef set strategy_order_ids =  self._index_strategy_orders.get(strategy_id)
-        if strategy_order_ids is None:
-            return {}  # Empty dictionary
+        try:
+            positions = {position_id: self._cached_positions[position_id] for position_id in position_ids}
+        except KeyError as ex:
+            # This should never happen
+            self._log.error("Cannot find position object in cached positions " + str(ex))
 
-        cdef set order_ids = strategy_order_ids.intersection(self._index_positions_open)
-        return {order_id: order for order_id, order in order_ids}
+        return positions
 
     cpdef dict get_positions_closed(self, StrategyId strategy_id=None):
         """
         Return a list of all active positions associated with the given strategy identifier.
         
-        :param strategy_id: The strategy identifier associated with the positions.
-        :return: Dict[PositionId, Position].
+        :param strategy_id: The strategy identifier query filter (optional can be None).
+        :return Dict[PositionId, Position].
         """
-        if strategy_id is None:
-            return self._cached_positions.copy()
+        cdef set position_ids = self.get_position_closed_ids(strategy_id)
+        cdef dict positions
 
-        cdef set strategy_order_ids =  self._index_strategy_orders.get(strategy_id)
-        if strategy_order_ids is None:
-            return {}  # Empty dictionary
+        try:
+            positions = {position_id: self._cached_positions[position_id] for position_id in position_ids}
+        except KeyError as ex:
+            # This should never happen
+            self._log.error("Cannot find position object in cached positions " + str(ex))
 
-        cdef set order_ids = strategy_order_ids.intersection(self._index_positions_closed)
-        return {order_id: order for order_id, order in order_ids}
+        return positions
 
     cpdef bint position_exists(self, PositionId position_id):
         """
         Return a value indicating whether a position with the given identifier exists.
+        
         :param position_id: The position identifier.
-        :return: True if the position exists, else False.
+        :return True if the position exists, else False.
         """
-        return position_id in self._cached_positions
+        return position_id in self._index_positions
 
     cpdef bint position_exists_for_order(self, OrderId order_id):
         """
@@ -612,9 +716,12 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         order identifier.
         
         :param order_id: The order identifier.
-        :return: True if an associated position exists, else False.
+        :return True if an associated position exists, else False.
         """
-        return order_id in self._index_order_position and self._index_order_position[order_id] in self._cached_positions
+        cdef PositionId position_id = self._index_order_position.get(order_id)
+        if position_id is None:
+            return False
+        return position_id in self._index_positions
 
     cpdef bint is_position_open(self, PositionId position_id):
         """
@@ -622,9 +729,9 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         and is entered (active).
 
         :param position_id: The position identifier.
-        :return: True if the position exists and is exited, else False.
+        :return True if the position exists and is exited, else False.
         """
-        return position_id in self._cached_positions and not self._cached_positions[position_id].is_flat
+        return position_id in self._index_positions_open
 
     cpdef bint is_position_closed(self, PositionId position_id):
         """
@@ -632,57 +739,36 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         and is exited (closed).
 
         :param position_id: The position identifier.
-        :return: True if the position does not exist or is closed, else False.
+        :return True if the position does not exist or is closed, else False.
         """
-        return position_id in self._cached_positions and self._cached_positions[position_id].is_closed
+        return position_id in self._index_positions_closed
 
     cpdef int positions_count(self, StrategyId strategy_id=None):
         """
         Return the total count of active and closed positions.
         
-        :param: The strategy identifier filter (optional can be None).
-        :return: int.
+        :param strategy_id: The strategy identifier query filter (optional can be None).
+        :return int.
         """
-        if strategy_id is None:
-            return len(self._cached_positions)
-
-        cdef set strategy_order_ids = self._index_strategy_orders.get(strategy_id)
-        if strategy_order_ids is None:
-            return 0
-
-        return len(strategy_order_ids.intersection(self._cached_positions.keys()))
+        return len(self.get_position_ids(strategy_id))
 
     cpdef int positions_open_count(self, StrategyId strategy_id=None):
         """
         Return the count of active positions held by the portfolio.
         
-        :param: The strategy identifier filter (optional can be None).
-        :return: int.
+        :param strategy_id: The strategy identifier query filter (optional can be None).
+        :return int.
         """
-        if strategy_id is None:
-            return len(self._index_positions_closed)
-
-        cdef set strategy_order_ids = self._index_strategy_orders.get(strategy_id)
-        if strategy_order_ids is None:
-            return 0
-
-        return len(strategy_order_ids.intersection(self._index_positions_open))
+        return len(self.get_position_open_ids(strategy_id))
 
     cpdef int positions_closed_count(self, StrategyId strategy_id=None):
         """
         Return the count of closed positions held by the portfolio.
         
-        :param: The strategy identifier filter (optional can be None).
-        :return: int.
+        :param strategy_id: The strategy identifier query filter (optional can be None).
+        :return int.
         """
-        if strategy_id is None:
-            return len(self._index_positions_closed)
-
-        cdef set strategy_order_ids = self._index_strategy_orders.get(strategy_id)
-        if strategy_order_ids is None:
-            return 0
-
-        return len(strategy_order_ids.intersection(self._index_positions_closed))
+        return len(self.get_position_closed_ids(strategy_id))
 
 
 cdef class ExecutionEngine:
@@ -782,7 +868,7 @@ cdef class ExecutionEngine:
         """
         Return a list of strategy identifiers registered with the execution engine.
         
-        :return: List[StrategyId]
+        :return List[StrategyId]
         """
         return list(self._registered_strategies.keys())
 
@@ -792,20 +878,17 @@ cdef class ExecutionEngine:
         (all associated positions FLAT).
         
         :param strategy_id: The strategy identifier.
-        :return: True if the strategy is flat, else False.
+        :return True if the strategy is flat, else False.
         """
-        return not self.database.get_positions_open(strategy_id)
+        return self.database.positions_open_count(strategy_id) == 0
 
     cpdef bint is_flat(self):
         """
         Return a value indicating whether the entire portfolio is flat.
         
-        :return: True if the portfolio is flat, else False.
+        :return True if the portfolio is flat, else False.
         """
-        for strategy_id in self._registered_strategies:
-            if not self.is_strategy_flat(strategy_id):
-                return False  # Therefore the portfolio is not flat
-        return True
+        return self.database.positions_open_count() == 0
 
 
 #--------------------------------------------------------------------------------------------------"
@@ -840,7 +923,7 @@ cdef class ExecutionEngine:
             self._handle_position_event(event)
         # Account Event
         elif isinstance(event, AccountStateEvent):
-            self.database.update_account(event)
+            self.database.update_account(self.account)
             self._handle_account_event(event)
 
     cdef void _handle_order_event(self, OrderEvent event):

@@ -30,7 +30,7 @@ cdef class ObjectCache:
         the parsed key.
 
         :param key: The key to check.
-        :return: object.
+        :return object.
         """
         parsed = self._cache.get(key, None)
 

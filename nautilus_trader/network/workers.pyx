@@ -73,7 +73,7 @@ cdef class MQWorker:
     cpdef void disconnect(self):
         """
         Disconnect from the service.
-        :return: 
+        :return 
         """
         self._zmq_socket.disconnect(self._service_address)
         self._log.info(f"Disconnected from {self._service_name} at {self._service_address}")
@@ -134,7 +134,7 @@ cdef class RequestWorker(MQWorker):
         Return the response.
 
         :param request: The request message bytes to send.
-        :return: bytes.
+        :return bytes.
         """
         Condition.not_empty(request, 'request')
 

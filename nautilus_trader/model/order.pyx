@@ -147,7 +147,7 @@ cdef class Order:
         Return an order from the given initialized event.
         
         :param event: The event to initialize with.
-        :return: Order.
+        :return Order.
         """
         return Order(
             order_id=event.order_id,
@@ -167,7 +167,7 @@ cdef class Order:
         Return a value indicating whether the object equals the given object.
         
         :param other: The other object to compare
-        :return: True if the objects are equal, otherwise False.
+        :return True if the objects are equal, otherwise False.
         """
         return self.id.equals(other.id)
 
@@ -175,7 +175,7 @@ cdef class Order:
         """
         Return a value indicating whether this object is equal to the given object.
 
-        :return: bool.
+        :return bool.
         """
         return self.equals(other)
 
@@ -183,7 +183,7 @@ cdef class Order:
         """
         Return a value indicating whether this object is not equal to the given object.
 
-        :return: bool.
+        :return bool.
         """
         return not self.equals(other)
 
@@ -191,7 +191,7 @@ cdef class Order:
         """"
         Return the hash representation of this object.
 
-        :return: int.
+        :return int.
         """
         return hash(self.id)
 
@@ -199,7 +199,7 @@ cdef class Order:
         """
         Return the str() string representation of this object.
 
-        :return: str.
+        :return str.
         """
         cdef str quantity = '{:,}'.format(self.quantity.value)
         cdef str label = '' if self.label is None else f', label={self.label.value}'
@@ -213,7 +213,7 @@ cdef class Order:
         """
         Return the repr() string representation of this object.
 
-        :return: str.
+        :return str.
         """
         return f"<{str(self)} object at {id(self)}>"
 
@@ -221,7 +221,7 @@ cdef class Order:
         """
         Return the order status as a string.
         
-        :return: str.
+        :return str.
         """
         return order_status_to_string(self.status)
 
@@ -229,7 +229,7 @@ cdef class Order:
         """
         Return a list of broker order identifiers.
         
-        :return: List[OrderId]. 
+        :return List[OrderId]. 
         """
         return self._order_ids_broker.copy()
 
@@ -237,7 +237,7 @@ cdef class Order:
         """
         Return a list of execution identifiers.
         
-        :return: List[ExecutionId].
+        :return List[ExecutionId].
         """
         return self._execution_ids.copy()
 
@@ -245,7 +245,7 @@ cdef class Order:
         """
         Return a list of execution tickets.
         
-        :return: List[ExecutionTicket]. 
+        :return List[ExecutionTicket]. 
         """
         return self._execution_tickets.copy()
 
@@ -253,7 +253,7 @@ cdef class Order:
         """
         Return a list or order events.
         
-        :return: List[OrderEvent]. 
+        :return List[OrderEvent]. 
         """
         return self._events.copy()
 
@@ -261,7 +261,7 @@ cdef class Order:
         """
         Return the count of events applied to the order.
         
-        :return: int.
+        :return int.
         """
         return len(self._events)
 
@@ -375,7 +375,7 @@ cdef class AtomicOrder:
         Return a value indicating whether the object equals the given object.
         
         :param other: The other object to compare
-        :return: True if the objects are equal, otherwise False.
+        :return True if the objects are equal, otherwise False.
         """
         return self.id.equals(other.id)
 
@@ -383,7 +383,7 @@ cdef class AtomicOrder:
         """
         Return a value indicating whether this object is equal to the given object.
 
-        :return: bool.
+        :return bool.
         """
         return self.equals(other)
 
@@ -391,7 +391,7 @@ cdef class AtomicOrder:
         """
         Return a value indicating whether this object is not equal to the given object.
 
-        :return: bool.
+        :return bool.
         """
         return not self.equals(other)
 
@@ -399,7 +399,7 @@ cdef class AtomicOrder:
         """"
         Return the hash representation of this object.
 
-        :return: int.
+        :return int.
         """
         return hash(self.id)
 
@@ -407,7 +407,7 @@ cdef class AtomicOrder:
         """
         Return the str() string representation of this object.
 
-        :return: str.
+        :return str.
         """
         cdef str take_profit = 'NONE' if self.take_profit is None else str(self.take_profit)
         return f"AtomicOrder({self.id.value}, Entry{self.entry}, SL={self.stop_loss}, TP={take_profit})"
@@ -416,7 +416,7 @@ cdef class AtomicOrder:
         """
         Return the repr() string representation of this object.
 
-        :return: str.
+        :return str.
         """
         return f"<{str(self)} object at {id(self)}>"
 
@@ -464,7 +464,7 @@ cdef class OrderFactory:
         :param quantity: The orders quantity (> 0).
         :param label: The orders label (optional can be None).
         :raises ConditionFailed: If the order quantity is not positive (> 0).
-        :return: Order.
+        :return Order.
         """
         return Order(
             self._id_generator.generate(),
@@ -498,7 +498,7 @@ cdef class OrderFactory:
         :param label: The orders label (optional can be None).
         :param time_in_force: The orders time in force (optional can be None).
         :param expire_time: The orders expire time (optional can be None - unless time_in_force is GTD).
-        :return: Order.
+        :return Order.
         :raises ConditionFailed: If the order quantity is not positive (> 0).
         :raises ConditionFailed: If the time_in_force is GTD and the expire_time is None.
         """
@@ -534,7 +534,7 @@ cdef class OrderFactory:
         :param label: The orders label (optional can be None).
         :param time_in_force: The orders time in force (optional can be None).
         :param expire_time: The orders expire time (optional can be None - unless time_in_force is GTD).
-        :return: Order.
+        :return Order.
         :raises ConditionFailed: If the order quantity is not positive (> 0).
         :raises ConditionFailed: If the time_in_force is GTD and the expire_time is None.
         """
@@ -570,7 +570,7 @@ cdef class OrderFactory:
         :param label: The orders label (optional can be None).
         :param time_in_force: The orders time in force (optional can be None).
         :param expire_time: The orders expire time (optional can be None - unless time_in_force is GTD).
-        :return: Order.
+        :return Order.
         :raises ConditionFailed: If the order quantity is not positive (> 0).
         :raises ConditionFailed: If the time_in_force is GTD and the expire_time is None.
         """
@@ -606,7 +606,7 @@ cdef class OrderFactory:
         :param label: The orders label (optional can be None).
         :param time_in_force: The orders time in force (optional can be None).
         :param expire_time: The orders expire time (optional can be None - unless time_in_force is GTD).
-        :return: Order.
+        :return Order.
         :raises ConditionFailed: If the order quantity is not positive (> 0).
         :raises ConditionFailed: If the time_in_force is GTD and the expire_time is None.
         """
@@ -635,7 +635,7 @@ cdef class OrderFactory:
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
         :param label: The orders label (optional can be None).
-        :return: Order.
+        :return Order.
         :raises ConditionFailed: If the order quantity is not positive (> 0).
         """
         return Order(
@@ -663,7 +663,7 @@ cdef class OrderFactory:
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
         :param label: The orders label (optional can be None).
-        :return: Order.
+        :return Order.
         :raises ConditionFailed: If the order quantity is not positive (> 0).
         """
         return Order(
@@ -695,7 +695,7 @@ cdef class OrderFactory:
         :param price_stop_loss: The stop-loss order price.
         :param price_take_profit: The take-profit order price (optional can be None).
         :param label: The orders label (optional can be None).
-        :return: AtomicOrder.
+        :return AtomicOrder.
         :raises ConditionFailed: If the order quantity is not positive (> 0).
         """
         cdef Label entry_label = None
@@ -738,7 +738,7 @@ cdef class OrderFactory:
         :param label: The order label (optional can be None).
         :param time_in_force: The order time in force (optional can be None).
         :param expire_time: The orders expire time (optional can be None - unless time_in_force is GTD).
-        :return: AtomicOrder.
+        :return AtomicOrder.
         :raises ConditionFailed: If the order quantity is not positive (> 0).
         :raises ConditionFailed: If the time_in_force is GTD and the expire_time is None.
         """
@@ -784,7 +784,7 @@ cdef class OrderFactory:
         :param label: The orders label (optional can be None).
         :param time_in_force: The orders time in force (optional can be None).
         :param expire_time: The orders expire time (optional can be None - unless time_in_force is GTD).
-        :return: AtomicOrder.
+        :return AtomicOrder.
         :raises ConditionFailed: If the order quantity is not positive (> 0).
         :raises ConditionFailed: If the time_in_force is GTD and the expire_time is None.
         """

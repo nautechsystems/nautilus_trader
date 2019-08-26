@@ -67,7 +67,7 @@ cdef class TickBuilder:
         """
         Return the built ticks from the held data.
 
-        :return: List[Tick].
+        :return List[Tick].
         """
         if self._tick_data is not None and len(self._tick_data) > 0:
             return list(map(self._build_tick_from_values,
@@ -134,7 +134,7 @@ cdef class BarBuilder:
         """
         Return a list of DataBars from all data.
         
-        :return: List[DataBar].
+        :return List[DataBar].
         """
         return list(map(self._build_databar,
                         self._data.values,
@@ -144,7 +144,7 @@ cdef class BarBuilder:
         """
         Return a list of DataBars from the given index.
         
-        :return: List[DataBar].
+        :return List[DataBar].
         """
         Condition.not_negative(index, 'index')
 
@@ -156,7 +156,7 @@ cdef class BarBuilder:
         """
         Return a list of DataBars within the given range.
         
-        :return: List[DataBar].
+        :return List[DataBar].
         """
         Condition.not_negative(start, 'start')
 
@@ -168,7 +168,7 @@ cdef class BarBuilder:
         """
         Return a list of Bars from all data.
 
-        :return: List[Bar].
+        :return List[Bar].
         """
         return list(map(self._build_bar,
                         self._data.values,
@@ -178,7 +178,7 @@ cdef class BarBuilder:
         """
         Return a list of Bars from the given index (>= 0).
 
-        :return: List[Bar].
+        :return List[Bar].
         """
         Condition.not_negative(index, 'index')
 
@@ -190,7 +190,7 @@ cdef class BarBuilder:
         """
         Return a list of Bars within the given range.
 
-        :return: List[Bar].
+        :return List[Bar].
         """
         Condition.not_negative(start, 'start')
 
@@ -297,7 +297,7 @@ cdef class IndicatorUpdater:
         """
         Return a dictionary of output features from the given bars data.
         
-        :return: Dict[str, float].
+        :return Dict[str, float].
         """
         cdef dict features = {}
         for output in self._outputs:
@@ -316,7 +316,7 @@ cdef class IndicatorUpdater:
         """
         Return a dictionary of output features from the given bars data.
         
-        :return: Dict[str, float].
+        :return Dict[str, float].
         """
         cdef dict features = {}
         for output in self._outputs:

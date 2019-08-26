@@ -20,7 +20,7 @@ cdef class GuidFactory:
         """
         Return a generated GUID.
 
-        :return: GUID.
+        :return GUID.
         """
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
@@ -42,7 +42,7 @@ cdef class TestGuidFactory(GuidFactory):
         """
         Return the single test GUID instance.
         
-        :return: GUID.
+        :return GUID.
         """
         return self._guid
 
@@ -62,6 +62,6 @@ cdef class LiveGuidFactory(GuidFactory):
         """
         Return a generated GUID.
 
-        :return: GUID.
+        :return GUID.
         """
         return GUID(uuid.uuid4())

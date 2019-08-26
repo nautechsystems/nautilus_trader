@@ -51,7 +51,7 @@ cdef class CommissionCalculator:
         :param filled_quantity: The filled quantity.
         :param filled_price: The filled price.
         :param exchange_rate: The exchange rate (symbol quote currency to account base currency).
-        :return: Money.
+        :return Money.
         """
         commission_rate_percent = Decimal(basis_points_as_percentage(self._get_commission_rate(symbol)))
         return max(self.minimum, Money(filled_quantity.value * filled_price.value * Decimal(exchange_rate) * commission_rate_percent))
@@ -62,7 +62,7 @@ cdef class CommissionCalculator:
         
         :param symbol: The symbol for calculation.
         :param notional_value: The notional value for the transaction.
-        :return: Money.
+        :return Money.
         """
         commission_rate_percent = Decimal(basis_points_as_percentage(self._get_commission_rate(symbol)))
         return max(self.minimum, notional_value * commission_rate_percent)

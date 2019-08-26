@@ -66,7 +66,7 @@ cdef class PositionSizer:
         :raises ConditionFailed: If the commission_rate is negative (< 0).
         :raises ConditionFailed: If the units is not positive (> 0).
         :raises ConditionFailed: If the unit_batch_size is not positive (> 0).
-        :return: Quantity.
+        :return Quantity.
         """
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
@@ -140,7 +140,7 @@ cdef class FixedRiskSizer(PositionSizer):
         :raises ConditionFailed: If the commission_rate is negative (< 0).
         :raises ConditionFailed: If the units is not positive (> 0).
         :raises ConditionFailed: If the unit_batch_size is not positive (> 0).
-        :return: Quantity.
+        :return Quantity.
         """
         Condition.positive(risk_bp, 'risk_bp')
         Condition.positive(exchange_rate, 'exchange_rate')

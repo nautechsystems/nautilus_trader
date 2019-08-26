@@ -36,7 +36,7 @@ cdef class ExchangeRateCalculator:
         :param quote_type: The quote type for conversion.
         :param bid_rates: The dictionary of currency pair bid rates Dict[str, float].
         :param ask_rates: The dictionary of currency pair ask rates Dict[str, float].
-        :return: float.
+        :return float.
         :raises ConditionFailed: If the bid rates length is not equal to the ask rates length.
         """
         Condition.equal_length(bid_rates, ask_rates, 'bid_rates', 'ask_rates')

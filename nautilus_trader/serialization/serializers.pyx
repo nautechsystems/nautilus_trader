@@ -86,8 +86,8 @@ cdef class MsgPackSerializer:
         """
         Serialize the given message to MessagePack specification bytes.
 
-        :param: data: The message to serialize.
-        :return: bytes.
+        :param data: The message to serialize.
+        :return bytes.
         """
         return msgpack.packb(message)
 
@@ -96,8 +96,8 @@ cdef class MsgPackSerializer:
         """
         Deserialize the given MessagePack specification bytes to a dictionary.
 
-        :param: message_bytes: The message bytes to deserialize.
-        :return: Dict.
+        :param message_bytes: The message bytes to deserialize.
+        :return Dict.
         """
         return msgpack.unpackb(message_bytes, raw=False)
 
@@ -107,9 +107,9 @@ cdef class MsgPackSerializer:
         Deserialize the given MessagePack specification bytes to a dictionary.
         The values of the keys in the ignore tuple of bytes are not deserialized.
 
-        :param: message_bytes: The message bytes to deserialize.
-        :param: ignore: The tuple of byte keys to not deserialize.
-        :return: Dict.
+        :param message_bytes: The message bytes to deserialize.
+        :param ignore: The tuple of byte keys to not deserialize.
+        :return Dict.
         """
         cdef dict unpacked_raw = msgpack.unpackb(message_bytes)
         cdef dict unpacked = {}
@@ -133,8 +133,8 @@ cdef class MsgPackQuerySerializer(QuerySerializer):
         """
         Serialize the given data query to bytes.
 
-        :param: data: The data query to serialize.
-        :return: bytes.
+        :param data: The data query to serialize.
+        :return bytes.
         """
         return MsgPackSerializer.serialize(query)
 
@@ -142,8 +142,8 @@ cdef class MsgPackQuerySerializer(QuerySerializer):
         """
         Deserialize the given bytes to a data query.
 
-        :param: data_bytes: The data query bytes to deserialize.
-        :return: Dict.
+        :param data_bytes: The data query bytes to deserialize.
+        :return Dict.
         """
         return MsgPackSerializer.deserialize(query_bytes)
 
@@ -158,7 +158,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
         Return the serialized MessagePack specification bytes from the given order.
 
         :param order: The order to serialize.
-        :return: bytes.
+        :return bytes.
         """
         if order is None:
             return MsgPackSerializer.serialize({})  # Null order
@@ -181,7 +181,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
         Return the order deserialized from the given MessagePack specification bytes.
 
         :param order_bytes: The bytes to deserialize.
-        :return: Order.
+        :return Order.
         :raises ConditionFailed: If the event_bytes is empty.
         """
         Condition.not_empty(order_bytes, 'order_bytes')
@@ -218,8 +218,8 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         """
         Return the serialized MessagePack specification bytes from the given command.
 
-        :param: command: The command to serialize.
-        :return: bytes.
+        :param command: The command to serialize.
+        :return bytes.
         :raises: RuntimeError: If the command cannot be serialized.
         """
         cdef dict package = {
@@ -266,7 +266,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         Return the command deserialize from the given MessagePack specification command_bytes.
 
         :param command_bytes: The command to deserialize.
-        :return: Command.
+        :return Command.
         :raises ConditionFailed: If the command_bytes is empty.
         :raises RuntimeError: If the command cannot be deserialized.
         """
@@ -337,7 +337,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
         Return the MessagePack specification bytes serialized from the given event.
 
         :param event: The event to serialize.
-        :return: bytes.
+        :return bytes.
         :raises: RuntimeError: If the event cannot be serialized.
         """
         cdef dict package = {
@@ -443,7 +443,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
         Return the event deserialized from the given MessagePack specification event_bytes.
 
         :param event_bytes: The bytes to deserialize.
-        :return: Event.
+        :return Event.
         :raises ConditionFailed: If the event_bytes is empty.
         :raises RuntimeError: If the event cannot be deserialized.
         """
@@ -598,7 +598,7 @@ cdef class MsgPackRequestSerializer(RequestSerializer):
         Serialize the given request to bytes.
 
         :param request: The request to serialize.
-        :return: bytes.
+        :return bytes.
         :raises RuntimeError: If the request cannot be serialized.
         """
         cdef dict package = {
@@ -619,7 +619,7 @@ cdef class MsgPackRequestSerializer(RequestSerializer):
         Deserialize the given bytes to a request.
 
         :param request_bytes: The bytes to deserialize.
-        :return: Request.
+        :return Request.
         :raises RuntimeError: If the request cannot be deserialized.
         """
         Condition.not_empty(request_bytes, 'request_bytes')
@@ -651,7 +651,7 @@ cdef class MsgPackResponseSerializer(ResponseSerializer):
         Serialize the given response to bytes.
 
         :param response: The response to serialize.
-        :return: bytes.
+        :return bytes.
         :raises RuntimeError: If the response cannot be serialized.
         """
         cdef dict package = {
@@ -678,7 +678,7 @@ cdef class MsgPackResponseSerializer(ResponseSerializer):
         Deserialize the given bytes to a response.
 
         :param response_bytes: The bytes to deserialize.
-        :return: Response.
+        :return Response.
         :raises RuntimeError: If the response cannot be deserialized.
         """
         Condition.not_empty(response_bytes, 'response_bytes')

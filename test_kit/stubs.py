@@ -56,7 +56,7 @@ class TestStubs:
         1 January 1970, minus the number of leap seconds which have taken place
         since then.
 
-        :return: The unix epoch datetime plus any offset.
+        :return The unix epoch datetime plus any offset.
         """
         return UNIX_EPOCH + timedelta(minutes=offset_mins)
 

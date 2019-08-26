@@ -33,7 +33,7 @@ cdef class ReportProvider:
         Return an orders report dataframe.
         
         :param orders: The dictionary of order identifiers and order objects.
-        :return: pd.DataFrame.
+        :return pd.DataFrame.
         """
         if len(orders) == 0:
             return pd.DataFrame()
@@ -47,7 +47,7 @@ cdef class ReportProvider:
         Return an order fills report dataframe.
         
         :param orders: The dictionary of order identifiers and order objects.
-        :return: pd.DataFrame.
+        :return pd.DataFrame.
         """
         if len(orders) == 0:
             return pd.DataFrame()
@@ -61,7 +61,7 @@ cdef class ReportProvider:
         Return a positions report dataframe.
         
         :param positions: The dictionary of position identifiers and objects.
-        :return: pd.DataFrame.
+        :return pd.DataFrame.
         """
         if len(positions) == 0:
             return pd.DataFrame()

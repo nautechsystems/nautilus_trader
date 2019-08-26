@@ -129,7 +129,7 @@ cdef class TradingStrategy:
         Return a value indicating whether the object equals the given object.
         
         :param other: The other object to compare
-        :return: True if the objects are equal, otherwise False.
+        :return True if the objects are equal, otherwise False.
         """
         return self.id.equals(other.id)
 
@@ -137,7 +137,7 @@ cdef class TradingStrategy:
         """
         Return a value indicating whether this object is equal to the given object.
 
-        :return: bool.
+        :return bool.
         """
         return self.equals(other)
 
@@ -145,7 +145,7 @@ cdef class TradingStrategy:
         """
         Return a value indicating whether this object is not equal to the given object.
 
-        :return: bool.
+        :return bool.
         """
         return not self.equals(other)
 
@@ -153,7 +153,7 @@ cdef class TradingStrategy:
         """"
         Return the hash representation of this object.
 
-        :return: int.
+        :return int.
         """
         return hash(self.id.value)
 
@@ -161,7 +161,7 @@ cdef class TradingStrategy:
         """
         Return the str() string representation of this object.
 
-        :return: str.
+        :return str.
         """
         return f"{self.__class__.__name__}({self.id.value})"
 
@@ -169,7 +169,7 @@ cdef class TradingStrategy:
         """
         Return the repr() string representation of this object.
 
-        :return: str.
+        :return str.
         """
         return f"<{str(self)} object at {id(self)}>"
 
@@ -521,7 +521,7 @@ cdef class TradingStrategy:
         """
         Return the current time from the strategies internal clock (UTC).
         
-        :return: datetime.
+        :return datetime.
         """
         return self.clock.time_now()
 
@@ -529,7 +529,7 @@ cdef class TradingStrategy:
         """
         Return all instruments held by the data client.
         
-        :return: List[Instrument].
+        :return List[Instrument].
         :raises ConditionFailed: If the strategy has not been registered with a data client.
         """
         Condition.not_none(self._data_client, 'data_client')
@@ -541,7 +541,7 @@ cdef class TradingStrategy:
         Return the instrument corresponding to the given symbol.
 
         :param symbol: The symbol of the instrument to return.
-        :return: Instrument (if found) or None.
+        :return Instrument (if found) or None.
         :raises ConditionFailed: If strategy has not been registered with a data client.
         :raises ConditionFailed: If the instrument is not found.
         """
@@ -553,7 +553,7 @@ cdef class TradingStrategy:
         """
         Return a dictionary of all instruments held by the data client.
         
-        :return: Dict[Symbol, Instrument].
+        :return Dict[Symbol, Instrument].
         """
         return self._data_client.get_instruments_all()
 
@@ -664,7 +664,7 @@ cdef class TradingStrategy:
         Return a value indicating whether the strategy has ticks for the given symbol.
         
         :param symbol: The symbol of the ticks.
-        :return: bool.
+        :return bool.
         """
         return symbol in self._ticks and len(self._ticks[symbol]) > 0
 
@@ -673,7 +673,7 @@ cdef class TradingStrategy:
         Return a value indicating whether the strategy has bars for the given bar type.
         
         :param bar_type: The bar_type of the bars.
-        :return: bool.
+        :return bool.
         """
         return bar_type in self._bars and len(self._bars[bar_type]) > 0
 
@@ -682,7 +682,7 @@ cdef class TradingStrategy:
         Return the count of ticks held by the strategy for the given symbol.
         
         :param symbol: The tick symbol to count.
-        :return: int.
+        :return int.
         :raises ConditionFailed: If the strategies tick dictionary does not contain the symbol.
         """
         Condition.is_in(symbol, self._ticks, 'symbol', 'ticks')
@@ -694,7 +694,7 @@ cdef class TradingStrategy:
         Return the count of ticks held by the strategy for the given symbol.
         
         :param bar_type: The bar type to count.
-        :return: int.
+        :return int.
         :raises ConditionFailed: If the strategies bars dictionary does not contain the bar type.
         """
         Condition.is_in(bar_type, self._bars, 'bar_type', 'bars')
@@ -706,7 +706,7 @@ cdef class TradingStrategy:
         Return the ticks for the given symbol (returns a copy of the internal deque).
 
         :param symbol: The symbol for the ticks to get.
-        :return: List[Tick].
+        :return List[Tick].
         :raises ConditionFailed: If the strategies tick dictionary does not contain the symbol.
         """
         Condition.is_in(symbol, self._ticks, 'symbol', 'ticks')
@@ -718,7 +718,7 @@ cdef class TradingStrategy:
         Return the bars for the given bar type (returns a copy of the internal deque).
 
         :param bar_type: The bar type to get.
-        :return: List[Bar].
+        :return List[Bar].
         :raises ConditionFailed: If the strategies bars dictionary does not contain the bar type.
         """
         Condition.is_in(bar_type, self._bars, 'bar_type', 'bars')
@@ -731,7 +731,7 @@ cdef class TradingStrategy:
 
         :param symbol: The symbol for the tick to get.
         :param index: The index for the tick to get.
-        :return: Tick.
+        :return Tick.
         :raises ConditionFailed: If the strategies tick dictionary does not contain the symbol.
         :raises IndexError: If the tick index is out of range.
         """
@@ -745,7 +745,7 @@ cdef class TradingStrategy:
 
         :param bar_type: The bar type to get.
         :param index: The index for the bar to get.
-        :return: Bar.
+        :return Bar.
         :raises ConditionFailed: If the strategies bars dictionary does not contain the bar type.
         :raises IndexError: If the bar index is out of range.
         """
@@ -760,7 +760,7 @@ cdef class TradingStrategy:
         """
         Return the registered indicators for the strategy (returns copy).
         
-        :return: List[Indicator].
+        :return List[Indicator].
         """
         return self._indicators.copy()
 
@@ -768,7 +768,7 @@ cdef class TradingStrategy:
         """
         Return a value indicating whether all indicators are initialized.
 
-        :return: True if all indicators initialized, otherwise False.
+        :return True if all indicators initialized, otherwise False.
         """
         for indicator in self._indicators:
             if indicator.initialized is False:
@@ -783,7 +783,7 @@ cdef class TradingStrategy:
         Return the opposite order side from the given side.
 
         :param side: The original order side.
-        :return: OrderSide.
+        :return OrderSide.
         """
         return OrderSide.BUY if side == OrderSide.SELL else OrderSide.SELL
 
@@ -792,7 +792,7 @@ cdef class TradingStrategy:
         Return the order side needed to flatten a position from the given market position.
 
         :param market_position: The market position to flatten.
-        :return: OrderSide.
+        :return OrderSide.
         :raises ConditionFailed: If the given market position is FLAT.
         """
         if market_position is MarketPosition.LONG:
@@ -808,7 +808,7 @@ cdef class TradingStrategy:
         account base currency.
         
         :param quote_currency: The quote currency for the exchange rate.
-        :return: float.
+        :return float.
         """
         cdef dict bid_rates = {}
         cdef dict ask_rates = {}
@@ -828,7 +828,7 @@ cdef class TradingStrategy:
         Return the order with the given identifier.
 
         :param order_id: The order identifier.
-        :return: Order or None.
+        :return Order or None.
         """
         return self._exec_engine.database.get_order(order_id)
 
@@ -836,7 +836,7 @@ cdef class TradingStrategy:
         """
         Return a dictionary of all orders associated with this strategy.
         
-        :return: Dict[OrderId, Order].
+        :return Dict[OrderId, Order].
         """
         return self._exec_engine.database.get_orders(self.id)
 
@@ -844,7 +844,7 @@ cdef class TradingStrategy:
         """
         Return a dictionary of all active orders associated with this strategy.
         
-        :return: Dict[OrderId, Order].
+        :return Dict[OrderId, Order].
         """
         return self._exec_engine.database.get_orders_working(self.id)
 
@@ -852,7 +852,7 @@ cdef class TradingStrategy:
         """
         Return a dictionary of all completed orders associated with this strategy.
         
-        :return: Dict[OrderId, Order].
+        :return Dict[OrderId, Order].
         """
         return self._exec_engine.database.get_orders_completed(self.id)
 
@@ -860,7 +860,7 @@ cdef class TradingStrategy:
         """
         Return a dictionary of pending or active entry orders.
         
-        :return: Dict[OrderId, Order].
+        :return Dict[OrderId, Order].
         """
         return self._entry_orders
 
@@ -869,7 +869,7 @@ cdef class TradingStrategy:
         Return a dictionary of pending or active stop loss orders with their 
         associated position identifiers.
         
-        :return: Dict[OrderId, Order].
+        :return Dict[OrderId, Order].
         """
         return self._stop_loss_orders
 
@@ -878,7 +878,7 @@ cdef class TradingStrategy:
         Return a dictionary of pending or active stop loss orders with their 
         associated position identifiers.
         
-        :return: Dict[OrderId, Order].
+        :return Dict[OrderId, Order].
         """
         return self._take_profit_orders
 
@@ -886,7 +886,7 @@ cdef class TradingStrategy:
         """
         Return a list of pending entry order identifiers.
 
-        :return: List[OrderId].
+        :return List[OrderId].
         """
         return list(self._entry_orders.keys())
 
@@ -894,7 +894,7 @@ cdef class TradingStrategy:
         """
         Return a list of stop-loss order identifiers.
 
-        :return: List[OrderId].
+        :return List[OrderId].
         """
         return list(self._stop_loss_orders.keys())
 
@@ -902,7 +902,7 @@ cdef class TradingStrategy:
         """
         Return a list of stop-loss order identifiers.
 
-        :return: List[OrderId].
+        :return List[OrderId].
         """
         return list(self._take_profit_orders.keys())
 
@@ -911,7 +911,7 @@ cdef class TradingStrategy:
         Return the entry order associated with the given identifier (if found).
 
         :param order_id: The entry order identifier.
-        :return: Order.
+        :return Order.
         :raises ConditionFailed. If the order identifier is not registered with an entry.
         """
         Condition.is_in(order_id, self._entry_orders, 'order_id', 'pending_entry_orders')
@@ -923,7 +923,7 @@ cdef class TradingStrategy:
         Return the stop-loss order associated with the given identifier (if found).
 
         :param order_id: The stop-loss order identifier.
-        :return: Order.
+        :return Order.
         :raises ConditionFailed. If the order identifier is not registered with a stop-loss.
         """
         Condition.is_in(order_id, self._stop_loss_orders, 'order_id', 'stop_loss_orders')
@@ -935,7 +935,7 @@ cdef class TradingStrategy:
         Return the take-profit order associated with the given identifier (if found).
 
         :param order_id: The take-profit order identifier.
-        :return: Order.
+        :return Order.
         :raises ConditionFailed. If the order identifier is not registered with a take-profit.
         """
         Condition.is_in(order_id, self._take_profit_orders, 'order_id', 'take_profit_orders')
@@ -947,7 +947,7 @@ cdef class TradingStrategy:
         Return the position associated with the given position identifier.
 
         :param position_id: The positions identifier.
-        :return: The position with the given identifier.
+        :return The position with the given identifier.
         :raises ConditionFailed: If the portfolio does not contain a position with the given identifier.
         """
         return self._exec_engine.database.get_position(position_id)
@@ -956,7 +956,7 @@ cdef class TradingStrategy:
         """
         Return a dictionary of all positions associated with this strategy.
         
-        :return: Dict[PositionId, Position]
+        :return Dict[PositionId, Position]
         """
         return self._exec_engine.database.get_positions(self.id)
 
@@ -964,7 +964,7 @@ cdef class TradingStrategy:
         """
         Return a dictionary of all active positions associated with this strategy.
         
-        :return: Dict[PositionId, Position]
+        :return Dict[PositionId, Position]
         """
         return self._exec_engine.database.get_positions_open(self.id)
 
@@ -972,7 +972,7 @@ cdef class TradingStrategy:
         """
         Return a dictionary of all closed positions associated with this strategy.
         
-        :return: Dict[PositionId, Position]
+        :return Dict[PositionId, Position]
         """
         return self._exec_engine.database.get_positions_closed(self.id)
 
@@ -981,7 +981,7 @@ cdef class TradingStrategy:
         Return a value indicating whether a position with the given identifier exists.
         
         :param position_id: The position identifier.
-        :return: True if the position exists, else False.
+        :return True if the position exists, else False.
         """
         return self._exec_engine.database.position_exists(position_id)
 
@@ -990,7 +990,7 @@ cdef class TradingStrategy:
         Return a value indicating whether an order with the given identifier exists.
         
         :param order_id: The order identifier.
-        :return: True if the order exists, else False.
+        :return True if the order exists, else False.
         """
         return self._exec_engine.database.order_exists(order_id)
 
@@ -999,7 +999,7 @@ cdef class TradingStrategy:
         Return a value indicating whether an order with the given identifier is working.
          
         :param order_id: The order identifier.
-        :return: True if the order exists and is active, else False.
+        :return True if the order exists and is active, else False.
         :raises ConditionFailed: If the order is not found.
         """
         return self._exec_engine.database.is_order_working(order_id)
@@ -1009,7 +1009,7 @@ cdef class TradingStrategy:
         Return a value indicating whether an order with the given identifier is complete.
          
         :param order_id: The order identifier.
-        :return: True if the order does not exist or is complete, else False.
+        :return True if the order does not exist or is complete, else False.
         :raises ConditionFailed: If the order is not found.
         """
         return self._exec_engine.database.is_order_completed(order_id)
@@ -1019,7 +1019,7 @@ cdef class TradingStrategy:
         Return a value indicating whether the strategy is completely flat (i.e no market positions
         other than FLAT across all instruments).
         
-        :return: True if flat, else False.
+        :return True if flat, else False.
         """
         return self._exec_engine.is_strategy_flat(self.id)
 
@@ -1027,7 +1027,7 @@ cdef class TradingStrategy:
         """
         Return the count of pending entry orders registered with the strategy.
         
-        :return: int.
+        :return int.
         """
         return len(self._entry_orders)
 
@@ -1035,7 +1035,7 @@ cdef class TradingStrategy:
         """
         Return the count of stop-loss orders registered with the strategy.
         
-        :return: int.
+        :return int.
         """
         return len(self._stop_loss_orders)
 
@@ -1043,7 +1043,7 @@ cdef class TradingStrategy:
         """
         Return the count of take-profit orders registered with the strategy.
         
-        :return: int.
+        :return int.
         """
         return len(self._take_profit_orders)
 
@@ -1452,6 +1452,6 @@ cdef class TradingStrategy:
         a list of time events generated by any time alerts or timers.
         
         :param time: The time to iterate the clock to.
-        :return: Dict[TimeEvent, Callable].
+        :return Dict[TimeEvent, Callable].
         """
         return self.clock.iterate_time(time)

@@ -36,7 +36,7 @@ cdef class Symbol(Identifier):
         """
         Return the str() representation of the symbol.
 
-        :return: str.
+        :return str.
         """
         return self.value
 
@@ -49,7 +49,7 @@ cdef class Symbol(Identifier):
         Example: 'AUDUSD.FXCM'.
         
         :param value: The symbol string value to parse.
-        :return: Symbol.
+        :return Symbol.
         """
         cdef tuple partitioned = value.partition('.')
         return Symbol(partitioned[0], Venue(partitioned[2]))
@@ -65,7 +65,7 @@ cdef class Symbol(Identifier):
         Example: 'AUDUSD.FXCM'.
 
         :param value: The symbol string value to parse.
-        :return: Symbol.
+        :return Symbol.
         """
         return Symbol.from_string(value)
 
@@ -178,7 +178,7 @@ cdef class TraderId(Identifier):
         Example: 'Trader1-001'.
 
         :param value: The value for the strategy identifier.
-        :return: TraderId.
+        :return TraderId.
         """
         cdef tuple partitioned = value.partition('-')
 
@@ -198,7 +198,7 @@ cdef class TraderId(Identifier):
         Example: 'Trader1-001'.
 
         :param value: The value for the trader identifier.
-        :return: TraderId.
+        :return TraderId.
         """
         return TraderId.from_string(value)
 
@@ -236,7 +236,7 @@ cdef class StrategyId(Identifier):
         Example: 'MyStrategy-001'.
 
         :param value: The value for the strategy identifier.
-        :return: StrategyId.
+        :return StrategyId.
         """
         cdef tuple partitioned = value.partition('-')
         return StrategyId(name=partitioned[0], order_id_tag=partitioned[2])
@@ -255,7 +255,7 @@ cdef class StrategyId(Identifier):
         Example: 'MyStrategy-001'.
 
         :param value: The value for the strategy identifier.
-        :return: StrategyId.
+        :return StrategyId.
         """
         return StrategyId.from_string(value)
 
@@ -288,7 +288,7 @@ cdef class AccountId(Identifier):
         Example: 'FXCM-02851908'.
 
         :param value: The value for the account identifier.
-        :return: AccountId.
+        :return AccountId.
         """
         cdef tuple partitioned = value.partition('-')
         return AccountId(broker=partitioned[0], account_number=partitioned[2])
@@ -304,7 +304,7 @@ cdef class AccountId(Identifier):
         Example: 'FXCM-02851908'.
 
         :param value: The value for the account identifier.
-        :return: AccountId.
+        :return AccountId.
         """
         return AccountId.from_string(value)
 

@@ -63,7 +63,7 @@ cdef class SpreadAnalyzer:
         """
         Return a list of average spread snapshots.
 
-        :return: List[Decimal].
+        :return List[Decimal].
         """
         return list(self._average_spreads)
 

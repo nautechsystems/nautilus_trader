@@ -61,7 +61,7 @@ cdef class Position:
         Return a value indicating whether the object equals the given object.
         
         :param other: The other object to compare
-        :return: True if the objects are equal, otherwise False.
+        :return True if the objects are equal, otherwise False.
         """
         return self.id.equals(other.id)
 
@@ -69,7 +69,7 @@ cdef class Position:
         """
         Return a value indicating whether this object is equal to the given object.
 
-        :return: bool.
+        :return bool.
         """
         return self.equals(other)
 
@@ -77,19 +77,19 @@ cdef class Position:
         """
         Return a value indicating whether this object is not equal to the given object.
 
-        :return: bool.
+        :return bool.
         """
         return not self.equals(other)
 
     def __str__(self) -> str:
         """
-        :return: The str() string representation of the position.
+        :return The str() string representation of the position.
         """
         return f"Position(id={self.id.value}) {self.status_string()}"
 
     def __repr__(self) -> str:
         """
-        :return: The repr() string representation of the position.
+        :return The repr() string representation of the position.
         """
         return f"<{str(self)} object at {id(self)}>"
 
@@ -97,7 +97,7 @@ cdef class Position:
         """
         Return the positions status as a string.
 
-        :return: str.
+        :return str.
         """
         cdef str quantity = '' if self.relative_quantity == 0 else ' {:,}'.format(self.quantity.value)
         return f"{self.symbol} {market_position_to_string(self.market_position)}{quantity}"
@@ -106,7 +106,7 @@ cdef class Position:
         """
         Return a list of all order identifiers.
         
-        :return: List[OrderId]. 
+        :return List[OrderId]. 
         """
         return self._order_ids.copy()
 
@@ -114,7 +114,7 @@ cdef class Position:
         """
         Return a list of all execution identifiers.
         
-        :return: List[ExecutionId]. 
+        :return List[ExecutionId]. 
         """
         return self._execution_ids.copy()
 
@@ -122,7 +122,7 @@ cdef class Position:
         """
         Return a list of all execution tickets.
         
-        :return: List[ExecutionTicket]. 
+        :return List[ExecutionTicket]. 
         """
         return self._execution_tickets.copy()
 
@@ -130,7 +130,7 @@ cdef class Position:
         """
         Return a list of all order fill events.
         
-        :return: List[Event].
+        :return List[Event].
         """
         return self._events.copy()
 
@@ -138,7 +138,7 @@ cdef class Position:
         """
         Return the count of events applied to the position.
         
-        :return: int.
+        :return int.
         """
         return len(self._events)
 
@@ -171,7 +171,7 @@ cdef class Position:
         Return the calculated unrealized points from the given current price.
          
         :param current_price: The current price of the position instrument.
-        :return: Decimal.
+        :return Decimal.
         """
         if self.is_closed:
             return Decimal(0)
@@ -182,7 +182,7 @@ cdef class Position:
         Return the calculated unrealized return from the given current price.
          
         :param current_price: The current price of the position instrument.
-        :return: float.
+        :return float.
         """
         if self.is_closed:
             return 0.0

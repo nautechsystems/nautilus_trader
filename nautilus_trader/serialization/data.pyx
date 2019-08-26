@@ -33,8 +33,8 @@ cdef class Utf8TickSerializer:
         """
         Serialize the given tick to UTF-8 specification bytes.
 
-        :param: data: The tick to serialize.
-        :return: bytes.
+        :param data: The tick to serialize.
+        :return bytes.
         """
         return str(tick).encode(UTF8)
 
@@ -43,8 +43,8 @@ cdef class Utf8TickSerializer:
         """
         Deserialize the given tick bytes to a tick.
 
-        :param: data_bytes: The data bytes to deserialize.
-        :return: Tick.
+        :param data_bytes: The data bytes to deserialize.
+        :return Tick.
         """
         cdef list values = values_bytes.decode(UTF8).split(',')
 
@@ -72,8 +72,8 @@ cdef class Utf8BarSerializer:
         """
         Serialize the given bar to UTF-8 specification bytes.
 
-        :param: data: The bar to serialize.
-        :return: bytes.
+        :param data: The bar to serialize.
+        :return bytes.
         """
         return str(bar).encode(UTF8)
 
@@ -82,8 +82,8 @@ cdef class Utf8BarSerializer:
         """
         Deserialize the given bar bytes to a bar.
 
-        :param: bar_bytes: The bar bytes to deserialize.
-        :return: Bar.
+        :param bar_bytes: The bar bytes to deserialize.
+        :return Bar.
         """
         cdef list values = bar_bytes.decode(UTF8).split(',')
 
@@ -100,7 +100,7 @@ cdef class Utf8BarSerializer:
         Return a list of deserialized bars from the given bars bytes.
     
         :param bar_bytes_array: The bar bytes to deserialize.
-        :return: List[Bar].
+        :return List[Bar].
         """
         cdef list bars = []
         cdef int i
@@ -131,8 +131,8 @@ cdef class BsonSerializer:
         """
         Serialize the given data to BSON specification bytes.
 
-        :param: data: The data to serialize.
-        :return: bytes.
+        :param data: The data to serialize.
+        :return bytes.
         """
         return bytes(RawBSONDocument(BSON.encode(data)).raw)
 
@@ -141,8 +141,8 @@ cdef class BsonSerializer:
         """
         Deserialize the given BSON specification bytes to a data object.
 
-        :param: data_bytes: The data bytes to deserialize.
-        :return: Dict.
+        :param data_bytes: The data bytes to deserialize.
+        :return Dict.
         """
         return BSON.decode(data_bytes)
 
@@ -155,8 +155,8 @@ cdef class BsonDataSerializer(DataSerializer):
         """
         Serialize the given data mapping to bytes.
 
-        :param: data: The data to serialize.
-        :return: bytes.
+        :param data: The data to serialize.
+        :return bytes.
         """
         return BsonSerializer.serialize(data)
 
@@ -164,8 +164,8 @@ cdef class BsonDataSerializer(DataSerializer):
         """
         Deserialize the given bytes to a mapping of data.
 
-        :param: data_bytes: The data bytes to deserialize.
-        :return: Dict.
+        :param data_bytes: The data bytes to deserialize.
+        :return Dict.
         """
         return BsonSerializer.deserialize(data_bytes)
 
@@ -180,7 +180,7 @@ cdef class BsonInstrumentSerializer(InstrumentSerializer):
         Return the MessagePack specification bytes serialized from the given instrument.
 
         :param instrument: The instrument to serialize.
-        :return: bytes.
+        :return bytes.
         """
         return BsonSerializer.serialize({
             ID: instrument.id.value,
@@ -207,7 +207,7 @@ cdef class BsonInstrumentSerializer(InstrumentSerializer):
         Return the instrument deserialized from the given MessagePack specification bytes.
 
         :param instrument_bytes: The bytes to deserialize.
-        :return: Instrument.
+        :return Instrument.
         """
         cdef dict deserialized = BsonSerializer.deserialize(instrument_bytes)
 
