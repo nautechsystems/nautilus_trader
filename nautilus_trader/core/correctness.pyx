@@ -28,7 +28,7 @@ cdef class Condition:
         :raises ConditionFailed: If the predicate condition is False.
         """
         if not predicate:
-            raise ConditionFailed(f"The predicate condition {description} was False.")
+            raise ConditionFailed(f"The predicate condition {description} was False")
 
     @staticmethod
     cdef none(object argument, str param_name):
@@ -40,7 +40,7 @@ cdef class Condition:
         :raises ConditionFailed: If the argument is not None.
         """
         if argument is not None:
-            raise ConditionFailed(f"The {param_name} argument was not None.")
+            raise ConditionFailed(f"The {param_name} argument was not None")
 
     @staticmethod
     cdef not_none(object argument, str param_name):
@@ -52,7 +52,7 @@ cdef class Condition:
         :raises ConditionFailed: If the argument is None.
         """
         if argument is None:
-            raise ConditionFailed(f"The {param_name} argument was None.")
+            raise ConditionFailed(f"The {param_name} argument was None")
 
     @staticmethod
     cdef valid_string(str argument, str param_name):
@@ -64,11 +64,11 @@ cdef class Condition:
         :raises ConditionFailed: If the string argument is None, empty or whitespace.
         """
         if argument is None:
-            raise ConditionFailed(f"The {param_name} string argument was None.")
+            raise ConditionFailed(f"The {param_name} string argument was None")
         if argument == '':
-            raise ConditionFailed(f"The {param_name} string argument was empty.")
+            raise ConditionFailed(f"The {param_name} string argument was empty")
         if argument.isspace():
-            raise ConditionFailed(f"The {param_name} string argument was whitespace.")
+            raise ConditionFailed(f"The {param_name} string argument was whitespace")
 
     @staticmethod
     cdef equal(object object1, object object2):
@@ -82,7 +82,7 @@ cdef class Condition:
         :raises ConditionFailed: If the objects are not equal.
         """
         if not object1.equals(object2):
-            raise ConditionFailed(f"The {object1} object was not equal to the {object2} object.")
+            raise ConditionFailed(f"The {object1} object was not equal to the {object2} object")
 
     @staticmethod
     cdef type(object argument, object expected_type, str param_name):
@@ -95,7 +95,7 @@ cdef class Condition:
         :raises ConditionFailed: If the object is not of the expected type.
         """
         if not isinstance(argument, expected_type):
-            raise ConditionFailed(f"The {param_name} argument was not of type {expected_type} (type was {type(argument)}).")
+            raise ConditionFailed(f"The {param_name} argument was not of type {expected_type}, was {type(argument)}")
 
     @staticmethod
     cdef type_or_none(object argument, object expected_type, str param_name):
@@ -111,7 +111,7 @@ cdef class Condition:
             return
 
         if not isinstance(argument, expected_type):
-            raise ConditionFailed(f"The {param_name} argument was not of type {expected_type} or None (type was {type(argument)}).")
+            raise ConditionFailed(f"The {param_name} argument was not of type {expected_type} or None, was {type(argument)}")
 
     @staticmethod
     cdef list_type(list list, type expected_type, str list_name):
@@ -125,7 +125,7 @@ cdef class Condition:
         """
         for element in list:
             if not isinstance(element, expected_type):
-                raise ConditionFailed(f"The {list_name} list contained an element with a type other than {expected_type} (type was {type(element)}).")
+                raise ConditionFailed(f"The {list_name} list contained an element with a type other than {expected_type}, was {type(element)}")
 
     @staticmethod
     cdef dict_types(dict dictionary, type key_type, type value_type, str dictionary_name):
@@ -141,9 +141,9 @@ cdef class Condition:
         """
         for key, value in dictionary.items():
             if not isinstance(key, key_type):
-                raise ConditionFailed(f"The {dictionary_name} dictionary contained a key type other than {key_type} (type was {type(key)}).")
+                raise ConditionFailed(f"The {dictionary_name} dictionary contained a key type other than {key_type}, was {type(key)}")
             if not isinstance(value, value_type):
-                raise ConditionFailed(f"The {dictionary_name} dictionary contained a value type other than {value_type} (type was {type(value)}).")
+                raise ConditionFailed(f"The {dictionary_name} dictionary contained a value type other than {value_type}, was {type(value)}")
 
     @staticmethod
     cdef is_in(object element, object collection, str element_name, str collection_name):
@@ -157,7 +157,7 @@ cdef class Condition:
         :raises ConditionFailed: If the element is not contained in the collection.
         """
         if element not in collection:
-            raise ConditionFailed(f"The {element_name} {element} was not contained in the {collection_name}.")
+            raise ConditionFailed(f"The {element_name} {element} was not contained in the {collection_name} collection")
 
     @staticmethod
     cdef not_in(object element, object collection, str element_name, str collection_name):
@@ -171,7 +171,7 @@ cdef class Condition:
         :raises ConditionFailed: If the element is already contained in the collection.
         """
         if element in collection:
-            raise ConditionFailed(f"The {element_name} {element} was already contained in the {collection_name}.")
+            raise ConditionFailed(f"The {element_name} {element} was already contained in the {collection_name} collection")
 
     @staticmethod
     cdef not_empty(object collection, str param_name):
@@ -183,7 +183,7 @@ cdef class Condition:
         :raises ConditionFailed: If the collection is empty.
         """
         if len(collection) == 0:
-            raise ConditionFailed(f"The {param_name} was empty.")
+            raise ConditionFailed(f"The {param_name} was empty")
 
     @staticmethod
     cdef empty(object collection, str param_name):
@@ -195,7 +195,7 @@ cdef class Condition:
         :raises ConditionFailed: If the collection is not empty.
         """
         if len(collection) > 0:
-            raise ConditionFailed(f"The {param_name} was not empty.")
+            raise ConditionFailed(f"The {param_name} was not empty")
 
     @staticmethod
     cdef equal_length(
@@ -214,7 +214,7 @@ cdef class Condition:
         """
         if len(collection1) != len(collection2):
             raise ConditionFailed(
-                f"The length of {collection1_name} was not equal to {collection2_name} (lengths were {len(collection1)} and {len(collection2)}).")
+                f"The length of {collection1_name} was not equal to {collection2_name}, lengths were {len(collection1)} and {len(collection2)}")
 
     @staticmethod
     cdef positive(float value, str param_name):
@@ -226,7 +226,7 @@ cdef class Condition:
         :raises ConditionFailed: If the value is not positive (> 0).
         """
         if value <= 0:
-            raise ConditionFailed(f"The {param_name} was not positive (was {value}).")
+            raise ConditionFailed(f"The {param_name} was not positive, was {value}")
 
     @staticmethod
     cdef not_negative(float value, str param_name):
@@ -238,7 +238,7 @@ cdef class Condition:
         :raises ConditionFailed: If the value is negative (< 0).
         """
         if value < 0:
-            raise ConditionFailed(f"The {param_name} was negative (was {value}).")
+            raise ConditionFailed(f"The {param_name} was negative, was {value}")
 
     @staticmethod
     cdef in_range(
@@ -256,7 +256,7 @@ cdef class Condition:
         :raises ConditionFailed: If the value is not in the inclusive range.
         """
         if value < start or value > end:
-            raise ConditionFailed(f"The {param_name} was out of range [{start}-{end}] (was {value}).")
+            raise ConditionFailed(f"The {param_name} was out of range [{start}-{end}], was {value}")
 
 
 class PyCondition:
