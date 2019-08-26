@@ -74,28 +74,28 @@ cdef class EmptyStrategy(TradingStrategy):
         """
         super().__init__(order_id_tag=id_tag_strategy)
 
-    cpdef on_start(self):
+    cpdef void on_start(self):
         pass
 
-    cpdef on_tick(self, Tick tick):
+    cpdef void on_tick(self, Tick tick):
         pass
 
-    cpdef on_bar(self, BarType bar_type, Bar bar):
+    cpdef void on_bar(self, BarType bar_type, Bar bar):
         pass
 
-    cpdef on_instrument(self, Instrument instrument):
+    cpdef void on_instrument(self, Instrument instrument):
         pass
 
-    cpdef on_event(self, Event event):
+    cpdef void on_event(self, Event event):
         pass
 
-    cpdef on_stop(self):
+    cpdef void on_stop(self):
         pass
 
-    cpdef on_reset(self):
+    cpdef void on_reset(self):
         pass
 
-    cpdef on_dispose(self):
+    cpdef void on_dispose(self):
         pass
 
 
@@ -121,15 +121,15 @@ cdef class TickTock(TradingStrategy):
         self.timer_running = False
         self.time_alert_counter = 0
 
-    cpdef on_start(self):
+    cpdef void on_start(self):
         self.subscribe_bars(self.bar_type)
         self.subscribe_ticks(self.instrument.symbol)
 
-    cpdef on_tick(self, Tick tick):
+    cpdef void on_tick(self, Tick tick):
         self.log.info(f'Received Tick({tick})')
         self.store.append(tick)
 
-    cpdef on_bar(self, BarType bar_type, Bar bar):
+    cpdef void on_bar(self, BarType bar_type, Bar bar):
         self.log.info(f'Received {bar_type} Bar({bar})')
         self.store.append(bar)
         if not self.timer_running:
@@ -141,19 +141,19 @@ cdef class TickTock(TradingStrategy):
         self.clock.set_time_alert(label=Label(f'Test-Alert-{self.time_alert_counter}'),
                             alert_time=bar.timestamp + timedelta(seconds=30))
 
-    cpdef on_instrument(self, Instrument instrument):
+    cpdef void on_instrument(self, Instrument instrument):
         pass
 
-    cpdef on_event(self, Event event):
+    cpdef void on_event(self, Event event):
         self.store.append(event)
 
-    cpdef on_stop(self):
+    cpdef void on_stop(self):
         pass
 
-    cpdef on_reset(self):
+    cpdef void on_reset(self):
         pass
 
-    cpdef on_dispose(self):
+    cpdef void on_dispose(self):
         pass
 
 
@@ -190,13 +190,13 @@ cdef class TestStrategy1(TradingStrategy):
 
         self.position_id = None
 
-    cpdef on_start(self):
+    cpdef void on_start(self):
         self.object_storer.store('custom start logic')
 
-    cpdef on_tick(self, Tick tick):
+    cpdef void on_tick(self, Tick tick):
         self.object_storer.store(tick)
 
-    cpdef on_bar(self, BarType bar_type, Bar bar):
+    cpdef void on_bar(self, BarType bar_type, Bar bar):
 
         self.object_storer.store((bar_type, Bar))
 
@@ -221,19 +221,19 @@ cdef class TestStrategy1(TradingStrategy):
                 self.submit_order(sell_order, PositionId(str(sell_order.id)))
                 self.position_id = sell_order.id
 
-    cpdef on_instrument(self, Instrument instrument):
+    cpdef void on_instrument(self, Instrument instrument):
         self.object_storer.store(instrument)
 
-    cpdef on_event(self, Event event):
+    cpdef void on_event(self, Event event):
         self.object_storer.store(event)
 
-    cpdef on_stop(self):
+    cpdef void on_stop(self):
         self.object_storer.store('custom stop logic')
 
-    cpdef on_reset(self):
+    cpdef void on_reset(self):
         self.object_storer.store('custom reset logic')
 
-    cpdef on_dispose(self):
+    cpdef void on_dispose(self):
         self.object_storer.store('custom dispose logic')
 
 
@@ -303,7 +303,7 @@ cdef class EMACross(TradingStrategy):
         self.register_indicator_bars(self.bar_type, self.slow_ema, self.slow_ema.update)
         self.register_indicator_bars(self.bar_type, self.atr, self.atr.update)
 
-    cpdef on_start(self):
+    cpdef void on_start(self):
         """
         This method is called when self.start() is called, and after internal
         start logic.
@@ -314,7 +314,7 @@ cdef class EMACross(TradingStrategy):
         self.subscribe_bars(self.bar_type)
         self.subscribe_ticks(self.symbol)
 
-    cpdef on_tick(self, Tick tick):
+    cpdef void on_tick(self, Tick tick):
         """
         This method is called whenever a Tick is received by the strategy, and 
         after the Tick has been processed by the base class.
@@ -325,7 +325,7 @@ cdef class EMACross(TradingStrategy):
         self.log.info(f"Received Tick({tick})")  # For demonstration purposes
         self.spread_analyzer.update(tick)
 
-    cpdef on_bar(self, BarType bar_type, Bar bar):
+    cpdef void on_bar(self, BarType bar_type, Bar bar):
         """
         This method is called whenever the strategy receives a Bar, and after the
         Bar has been processed by the base class.
@@ -427,7 +427,7 @@ cdef class EMACross(TradingStrategy):
                     if temp_price < trailing_stop.price:
                         self.modify_order(trailing_stop, temp_price)
 
-    cpdef on_instrument(self, Instrument instrument):
+    cpdef void on_instrument(self, Instrument instrument):
         """
         This method is called whenever the strategy receives an Instrument update.
 
@@ -438,7 +438,7 @@ cdef class EMACross(TradingStrategy):
 
         self.log.info(f"Updated instrument {instrument}.")
 
-    cpdef on_event(self, Event event):
+    cpdef void on_event(self, Event event):
         """
         This method is called whenever the strategy receives an Event object,
         after the event has been processed by the base class (updating any objects it needs to).
@@ -449,7 +449,7 @@ cdef class EMACross(TradingStrategy):
         # Put custom code for event handling here (or pass)
         pass
 
-    cpdef on_stop(self):
+    cpdef void on_stop(self):
         """
         This method is called when self.stop() is called after internal
         stopping logic.
@@ -457,7 +457,7 @@ cdef class EMACross(TradingStrategy):
         # Put custom code to be run on strategy stop here (or pass)
         pass
 
-    cpdef on_reset(self):
+    cpdef void on_reset(self):
         """
         This method is called when self.reset() is called, and after internal
         reset logic such as clearing the internally held bars, ticks and resetting
@@ -467,7 +467,7 @@ cdef class EMACross(TradingStrategy):
         self.spread_analyzer.reset()
         self.liquidity.reset()
 
-    cpdef on_dispose(self):
+    cpdef void on_dispose(self):
         """
         This method is called when self.dispose() is called. Dispose of any resources
         that had been used by the strategy here.

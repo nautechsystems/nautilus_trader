@@ -176,14 +176,14 @@ cdef class TradingStrategy:
 
 #-- ABSTRACT METHODS -----------------------------------------------------------------------------#
 
-    cpdef on_start(self):
+    cpdef void on_start(self) except *:
         """
         Called when the strategy is started.
         """
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method on_start() must be implemented in the strategy (or just add pass).")
 
-    cpdef on_tick(self, Tick tick):
+    cpdef void on_tick(self, Tick tick) except *:
         """
         Called when a tick is received by the strategy.
 
@@ -192,7 +192,7 @@ cdef class TradingStrategy:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method on_tick() must be implemented in the strategy (or just add pass).")
 
-    cpdef on_bar(self, BarType bar_type, Bar bar):
+    cpdef void on_bar(self, BarType bar_type, Bar bar) except *:
         """
         Called when a bar is received by the strategy.
 
@@ -202,7 +202,7 @@ cdef class TradingStrategy:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method on_bar() must be implemented in the strategy (or just add pass).")
 
-    cpdef on_instrument(self, Instrument bar_type):
+    cpdef void on_instrument(self, Instrument bar_type) except *:
         """
         Called when an instrument update is received by the strategy.
 
@@ -211,7 +211,7 @@ cdef class TradingStrategy:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method on_instrument() must be implemented in the strategy (or just add pass).")
 
-    cpdef on_event(self, Event event):
+    cpdef void on_event(self, Event event) except *:
         """
         Called when an event is received by the strategy.
 
@@ -220,21 +220,21 @@ cdef class TradingStrategy:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method on_event() must be implemented in the strategy (or just add pass).")
 
-    cpdef on_stop(self):
+    cpdef void on_stop(self) except *:
         """
         Called when the strategy is stopped.
         """
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method on_stop() must be implemented in the strategy (or just add pass).")
 
-    cpdef on_reset(self):
+    cpdef void on_reset(self) except *:
         """
         Called when the strategy is reset.
         """
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method reset() must be implemented in the strategy (or just add pass).")
 
-    cpdef on_dispose(self):
+    cpdef void on_dispose(self) except *:
         """
         Called when the strategy is disposed.
         """
@@ -244,7 +244,7 @@ cdef class TradingStrategy:
 
 #-- REGISTRATION METHODS --------------------------------------------------------------------------#
 
-    cpdef void register_trader(self, TraderId trader_id):
+    cpdef void register_trader(self, TraderId trader_id) except *:
         """
         Change the trader for the strategy.
 
@@ -253,7 +253,7 @@ cdef class TradingStrategy:
         self.trader_id = trader_id
         self.log.debug(f"Registered trader {trader_id.value}.")
 
-    cpdef void register_data_client(self, DataClient client):
+    cpdef void register_data_client(self, DataClient client) except *:
         """
         Register the strategy with the given data client.
 
@@ -262,7 +262,7 @@ cdef class TradingStrategy:
         self._data_client = client
         self.log.debug("Registered data client.")
 
-    cpdef void register_execution_engine(self, ExecutionEngine engine):
+    cpdef void register_execution_engine(self, ExecutionEngine engine) except *:
         """
         Register the strategy with the given execution engine.
 
@@ -277,7 +277,7 @@ cdef class TradingStrategy:
             self,
             Symbol symbol,
             indicator,
-            update_method: Callable):
+            update_method: Callable) except *:
         """
         Register the given indicator with the strategy. 
         It will receive ticks for the given symbol.
@@ -304,7 +304,7 @@ cdef class TradingStrategy:
             self,
             BarType bar_type,
             indicator,
-            update_method: Callable):
+            update_method: Callable) except *:
         """
         Register the given indicator with the strategy. 
         It will receive bars of the given bar type.
@@ -327,7 +327,7 @@ cdef class TradingStrategy:
         else:
             self.log.error(f"Indicator {indicator} already registered for {bar_type}.")
 
-    cpdef void register_entry_order(self, Order order, PositionId position_id):
+    cpdef void register_entry_order(self, Order order, PositionId position_id) except *:
         """
         Register the given order as an entry order.
         
@@ -336,7 +336,7 @@ cdef class TradingStrategy:
         """
         self._entry_orders[order.id] = order
 
-    cpdef void register_stop_loss_order(self, Order order, PositionId position_id):
+    cpdef void register_stop_loss_order(self, Order order, PositionId position_id) except *:
         """
         Register the given order as a stop loss order for the given position identifier.
         
@@ -345,7 +345,7 @@ cdef class TradingStrategy:
         """
         self._stop_loss_orders[order.id] = order
 
-    cpdef void register_take_profit_order(self, Order order, PositionId position_id):
+    cpdef void register_take_profit_order(self, Order order, PositionId position_id) except *:
         """
         Register the given order as a take-profit order for the given position identifier.
 
@@ -832,7 +832,7 @@ cdef class TradingStrategy:
         """
         return self._exec_engine.database.get_order(order_id)
 
-    cpdef dict orders_all(self):
+    cpdef dict orders(self):
         """
         Return a dictionary of all orders associated with this strategy.
         
@@ -952,7 +952,7 @@ cdef class TradingStrategy:
         """
         return self._exec_engine.database.get_position(position_id)
 
-    cpdef dict positions_all(self):
+    cpdef dict positions(self):
         """
         Return a dictionary of all positions associated with this strategy.
         
@@ -1156,8 +1156,8 @@ cdef class TradingStrategy:
         """
         Send an account inquiry command to the execution service.
         """
-        if self.account is None:
-            self.log.error("Cannot send account inquiry (account not registered).")
+        if self._exec_engine is None:
+            self.log.error("Cannot send account inquiry (execution engine not registered).")
             return
 
         cdef AccountInquiry command = AccountInquiry(
@@ -1175,9 +1175,7 @@ cdef class TradingStrategy:
         :param order: The order to submit.
         :param position_id: The position identifier to associate with this order.
         """
-        if self._exec_engine is None:
-            self.log.error("Cannot submit order (execution engine not registered).")
-            return
+        Condition.not_none(self._exec_engine, 'exec_engine')
 
         self.log.info(f"Submitting {order} with {position_id}")
 
