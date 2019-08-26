@@ -20,7 +20,7 @@ cpdef str convert_price_to_string(Price price):
     Return the converted string from the given price, can return a 'NONE' string..
 
     :param price: The price to convert.
-    :return: str.
+    :return str.
     """
     return NONE if price is None else str(price)
 
@@ -29,7 +29,7 @@ cpdef Price convert_string_to_price(str price_string):
     Return the converted price (or None) from the given price string.
 
     :param price_string: The price string to convert.
-    :return: Price or None.
+    :return Price or None.
     """
     return None if price_string == NONE else Price(price_string)
 
@@ -38,7 +38,7 @@ cpdef str convert_label_to_string(Label label):
     Return the converted string from the given label, can return a 'NONE' string.
 
     :param label: The label to convert.
-    :return: str.
+    :return str.
     """
     return NONE if label is None else label.value
 
@@ -47,7 +47,7 @@ cpdef Label convert_string_to_label(str label):
     Return the converted label (or None) from the given label string.
 
     :param label: The label string to convert.
-    :return: Label or None.
+    :return Label or None.
     """
     return None if label == NONE else Label(label)
 
@@ -56,15 +56,15 @@ cpdef str convert_datetime_to_string(datetime time):
     Return the converted ISO8601 string from the given datetime, can return a 'NONE' string.
 
     :param time: The datetime to convert
-    :return: str.
+    :return str.
     """
-    return NONE if time is None else time.isoformat(timespec='milliseconds').replace('+00:00', 'Z')
+    return NONE if time is None else str(time) # time.isoformat(timespec='milliseconds').replace('+00:00', 'Z')
 
 cpdef datetime convert_string_to_datetime(str time_string):
     """
     Return the converted datetime (or None) from the given time string.
 
     :param time_string: The time string to convert.
-    :return: datetime or None.
+    :return datetime or None.
     """
     return None if time_string == NONE else iso8601.parse_date(time_string)

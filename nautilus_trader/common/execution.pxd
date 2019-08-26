@@ -51,7 +51,11 @@ cdef class ExecutionDatabase:
 # -- QUERIES --------------------------------------------------------------------------------------"
     cpdef set get_strategy_ids(self)
     cpdef set get_order_ids(self, StrategyId strategy_id=*)
+    cpdef set get_order_working_ids(self, StrategyId strategy_id=*)
+    cpdef set get_order_completed_ids(self, StrategyId strategy_id=*)
     cpdef set get_position_ids(self, StrategyId strategy_id=*)
+    cpdef set get_position_open_ids(self, StrategyId strategy_id=*)
+    cpdef set get_position_closed_ids(self, StrategyId strategy_id=*)
     cpdef StrategyId get_strategy_for_order(self, OrderId order_id)
     cpdef Order get_order(self, OrderId order_id)
     cpdef dict get_orders(self, StrategyId strategy_id=*)
@@ -90,8 +94,10 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
     cdef dict _index_position_orders
     cdef dict _index_strategy_orders
     cdef dict _index_strategy_positions
+    cdef set _index_orders
     cdef set _index_orders_working
     cdef set _index_orders_completed
+    cdef set _index_positions
     cdef set _index_positions_open
     cdef set _index_positions_closed
 

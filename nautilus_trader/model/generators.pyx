@@ -52,7 +52,7 @@ cdef class IdentifierGenerator:
         """
         Return a unique identifier string.
 
-        :return: str.
+        :return str.
         """
         self.counter += 1
 
@@ -66,7 +66,7 @@ cdef class IdentifierGenerator:
         """
         Return the datetime tag string for the current time.
 
-        :return: str.
+        :return str.
         """
         cdef datetime time_now = self._clock.time_now()
         return (f'{time_now.year}'
@@ -103,7 +103,7 @@ cdef class OrderIdGenerator(IdentifierGenerator):
         """
         Return a unique order identifier.
 
-        :return: OrderId.
+        :return OrderId.
         """
         return OrderId(self._generate())
 
@@ -133,6 +133,6 @@ cdef class PositionIdGenerator(IdentifierGenerator):
         """
         Return a unique position identifier.
 
-        :return: PositionId.
+        :return PositionId.
         """
         return PositionId(self._generate())

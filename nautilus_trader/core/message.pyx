@@ -37,7 +37,7 @@ cdef class Message:
         Return a value indicating whether the given message is equal to this message.
         
         :param other: The other message to compare
-        :return: True if the messages are equal, otherwise False.
+        :return True if the messages are equal, otherwise False.
         """
         if self.message_type == other.message_type:
             return self.id == other.id
@@ -49,7 +49,7 @@ cdef class Message:
         Return a value indicating whether the given message is equal to this message.
 
         :param other: The other message.
-        :return: True if the messages are equal, otherwise False.
+        :return True if the messages are equal, otherwise False.
         """
         return self.equals(other)
 
@@ -58,7 +58,7 @@ cdef class Message:
         Return a value indicating whether the given message is not equal to this message.
 
         :param other: The other message.
-        :return: True if the messages are not equal, otherwise False.
+        :return True if the messages are not equal, otherwise False.
         """
         return not self.equals(other)
 
@@ -66,7 +66,7 @@ cdef class Message:
         """"
         Return the hash for this message.
 
-        :return: int.
+        :return int.
         """
         return hash(self.id)
 
@@ -74,7 +74,7 @@ cdef class Message:
         """
         Return the str() string representation of this message.
 
-        :return: str.
+        :return str.
         """
         return f"{self.__class__.__name__}({self.id.value})"
 
@@ -82,7 +82,7 @@ cdef class Message:
         """
         Return the repr() string representation of this message.
 
-        :return: str.
+        :return str.
         """
         return f"<{str(self)} object at {id(self)}>"
 

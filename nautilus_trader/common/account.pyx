@@ -45,7 +45,7 @@ cdef class Account:
         """
         Return a value indicating whether this object is equal to the given object.
 
-        :return: bool.
+        :return bool.
         """
         return self.id == other.id
 
@@ -53,7 +53,7 @@ cdef class Account:
         """
         Return a value indicating whether this object is not equal to the given object.
 
-        :return: bool.
+        :return bool.
         """
         return not self.__eq__(other)
 
@@ -61,7 +61,7 @@ cdef class Account:
         """"
         Return the hash representation of this object.
 
-        :return: int.
+        :return int.
         """
         return hash((self.broker, self.number))
 
@@ -79,7 +79,7 @@ cdef class Account:
 
     cpdef list get_events(self):
         """
-        :return: List[Event]. 
+        :return List[Event]. 
         """
         return self._events.copy()
 

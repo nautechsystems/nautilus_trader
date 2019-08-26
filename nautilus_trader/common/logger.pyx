@@ -64,7 +64,7 @@ cdef class LogMessage:
         """
         Return the string representation of the log level.
 
-        :return: str.
+        :return str.
         """
         return level_str(self.level)
 
@@ -72,7 +72,7 @@ cdef class LogMessage:
         """
         Return the string representation of the log message.
 
-        :return: str.
+        :return str.
         """
         return f"{format_zulu_datetime(self.timestamp)} [{self.thread_id}][{level_str(self.level)}] {self.text}"
 
@@ -164,7 +164,7 @@ cdef class Logger:
         """
         Return the log store of message strings.
         
-        :return: List[str].
+        :return List[str].
         """
         return self._log_store
 
@@ -296,7 +296,7 @@ cdef class LoggerAdapter:
         """
         System method. Return the encapsulated logger
         
-        :return: logging.logger.
+        :return logging.logger.
         """
         return self._logger
 

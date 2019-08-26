@@ -28,11 +28,15 @@ from nautilus_trader.common.guid cimport TestGuidFactory
 from nautilus_trader.common.logger cimport TestLogger, nautilus_header
 from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.common.execution cimport ExecutionEngine, InMemoryExecutionDatabase
+
 from nautilus_trader.trade.strategy cimport TradingStrategy
 from nautilus_trader.backtest.config cimport BacktestConfig
 from nautilus_trader.backtest.data cimport BidAskBarPair, BacktestDataClient
 from nautilus_trader.backtest.execution cimport BacktestExecClient
 from nautilus_trader.backtest.models cimport FillModel
+
+from nautilus_trader.live.execution cimport RedisExecutionDatabase
+from nautilus_trader.serialization.serializers cimport MsgPackCommandSerializer, MsgPackEventSerializer
 
 
 cdef class BacktestEngine:
@@ -126,7 +130,14 @@ cdef class BacktestEngine:
             guid_factory=self.guid_factory,
             logger=self.test_logger)
 
-        self.exec_db = InMemoryExecutionDatabase(trader_id=trader_id, logger=self.test_logger)
+        #self.exec_db = InMemoryExecutionDatabase(trader_id=trader_id, logger=self.test_logger)
+        self.exec_db = RedisExecutionDatabase(
+            trader_id=trader_id,
+            host='localhost',
+            port=6379,
+            command_serializer=MsgPackCommandSerializer(),
+            event_serializer=MsgPackEventSerializer(),
+            logger=self.test_logger)
 
         self.exec_engine = ExecutionEngine(
             database=self.exec_db,
@@ -355,7 +366,7 @@ cdef class BacktestEngine:
         
         Note: Money objects are converted to floats.
         
-        :return: Dict[str, float].
+        :return Dict[str, float].
         """
         return self.portfolio.analyzer.get_performance_stats()
 
@@ -381,7 +392,7 @@ cdef class BacktestEngine:
         """
         Return the store of log message strings for the test logger.
         
-        :return: List[str].
+        :return List[str].
         """
         return self.test_logger.get_log_store()
 
@@ -464,8 +475,8 @@ cdef class BacktestEngine:
         self.log.info(f"Time-step iterations: {self.iteration} of {time_step}")
         self.log.info(f"Execution resolution: {resolution_to_string(self.data_client.execution_resolution)}")
         self.log.info(f"Total events: {self.exec_client.event_count}")
-        self.log.info(f"Total orders: {len(self.exec_engine.database.get_orders_all())}")
-        self.log.info(f"Total positions: {len(self.exec_engine.database.get_positions_all())}")
+        self.log.info(f"Total orders: {len(self.exec_engine.database.get_orders())}")  # TODO: Orders count
+        self.log.info(f"Total positions: {self.exec_engine.database.positions_count()}")
         if self.exec_client.frozen_account:
             self.log.warning(f"ACCOUNT FROZEN")
         self.log.info(f"Account balance (starting): {self.config.starting_capital} {account_currency}")

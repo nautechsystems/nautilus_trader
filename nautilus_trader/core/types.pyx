@@ -31,7 +31,7 @@ cdef class StringValue:
         Return a value indicating whether the given object is equal to this object.
         
         :param other: The other object to compare
-        :return: True if the objects are equal, otherwise False.
+        :return True if the objects are equal, otherwise False.
         """
         if isinstance(other, self.__class__):
             return self.value == other.value
@@ -43,7 +43,7 @@ cdef class StringValue:
         Return a value indicating whether the given object is equal to this object.
 
         :param other: The other object.
-        :return: True if the objects are equal, otherwise False.
+        :return True if the objects are equal, otherwise False.
         """
         return self.equals(other)
 
@@ -52,7 +52,7 @@ cdef class StringValue:
         Return a value indicating whether the object is not equal to this object.
 
         :param other: The other object.
-        :return: True if the objects are not equal, otherwise False.
+        :return True if the objects are not equal, otherwise False.
         """
         return not self.equals(other)
 
@@ -60,7 +60,7 @@ cdef class StringValue:
         """"
         Return the hash for this object.
 
-        :return: int.
+        :return int.
         """
         return hash(self.value)
 
@@ -68,7 +68,7 @@ cdef class StringValue:
         """
         Return the str() representation of the object.
 
-        :return: str.
+        :return str.
         """
         return self.value
 
@@ -76,7 +76,7 @@ cdef class StringValue:
         """
         Return the repr() representation of the object.
 
-        :return: str.
+        :return str.
         """
         return f"<{str(self.__class__.__name__)}({str(self.value)}) object at {id(self)}>"
 
@@ -115,7 +115,7 @@ cdef class Identifier(StringValue):
         """
         Return the str() representation of the object.
 
-        :return: str.
+        :return str.
         """
         return f"{str(self.__class__.__name__)}({self.value})"
 

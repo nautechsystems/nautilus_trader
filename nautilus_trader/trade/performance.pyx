@@ -127,7 +127,7 @@ cdef class PerformanceAnalyzer:
         """
         Return the returns data.
         
-        :return: Pandas.Series.
+        :return Pandas.Series.
         """
         return self._returns
 
@@ -135,7 +135,7 @@ cdef class PerformanceAnalyzer:
         """
         Return the positions data.
         
-        :return: Pandas.DataFrame.
+        :return Pandas.DataFrame.
         """
         return self._positions
 
@@ -143,7 +143,7 @@ cdef class PerformanceAnalyzer:
         """
         Return the transactions data.
         
-        :return: Pandas.DataFrame.
+        :return Pandas.DataFrame.
         """
         return self._transactions
 
@@ -151,7 +151,7 @@ cdef class PerformanceAnalyzer:
         """
         Return the transactions data.
         
-        :return: Pandas.DataFrame.
+        :return Pandas.DataFrame.
         """
         return self._equity_curve
 
@@ -159,7 +159,7 @@ cdef class PerformanceAnalyzer:
         """
         Return the total PNL for the portfolio.
 
-        :return: Money. 
+        :return Money. 
         """
         return self._account_capital - self._account_starting_capital
 
@@ -167,7 +167,7 @@ cdef class PerformanceAnalyzer:
         """
         Return the percentage change of the total PNL for the portfolio.
         
-        :return: float. 
+        :return float. 
         """
         if self._account_capital == self._account_starting_capital:
             return 0.0
@@ -178,7 +178,7 @@ cdef class PerformanceAnalyzer:
         """
         Return the maximum winner for the portfolio.
         
-        :return: Money.
+        :return Money.
         """
         return Money(self._equity_curve['pnl'].max())
 
@@ -186,7 +186,7 @@ cdef class PerformanceAnalyzer:
         """
         Return the maximum loser for the portfolio.
         
-        :return: Money.
+        :return Money.
         """
         return Money(self._equity_curve['pnl'].min())
 
@@ -194,7 +194,7 @@ cdef class PerformanceAnalyzer:
         """
         Return the minimum winner for the portfolio.
         
-        :return: Money.
+        :return Money.
         """
         return Money(self._equity_curve['pnl'][self._equity_curve['pnl'] >= 0].min())
 
@@ -202,7 +202,7 @@ cdef class PerformanceAnalyzer:
         """
         Return the minimum loser for the portfolio.
         
-        :return: Money.
+        :return Money.
         """
         return Money(self._equity_curve['pnl'][self._equity_curve['pnl'] < 0].max())
 
@@ -210,7 +210,7 @@ cdef class PerformanceAnalyzer:
         """
         Return the average winner for the portfolio.
         
-        :return: Money.
+        :return Money.
         """
         return Money(self._equity_curve['pnl'][self._equity_curve['pnl'] >= 0].mean())
 
@@ -218,7 +218,7 @@ cdef class PerformanceAnalyzer:
         """
         Return the average loser for the portfolio.
         
-        :return: Money.
+        :return Money.
         """
         return Money(self._equity_curve['pnl'][self._equity_curve['pnl'] < 0].mean())
 
@@ -226,7 +226,7 @@ cdef class PerformanceAnalyzer:
         """
         Return the win rate (after commissions) for the portfolio.
         
-        :return: float. 
+        :return float. 
         """
         cdef object winners = self._equity_curve['pnl'][self._equity_curve['pnl'] > 0]
         cdef object losers = self._equity_curve['pnl'][self._equity_curve['pnl'] <= 0]
@@ -237,7 +237,7 @@ cdef class PerformanceAnalyzer:
         """
         Return the expectancy for the portfolio.
         
-        :return: float. 
+        :return float. 
         """
         cdef float win_rate = self.win_rate()
         cdef float loss_rate = 1.0 - win_rate
@@ -248,7 +248,7 @@ cdef class PerformanceAnalyzer:
         """
         Get the annual return for the portfolio.
         
-        :return: float.
+        :return float.
         """
         return annual_return(returns=self._returns)
 
@@ -256,7 +256,7 @@ cdef class PerformanceAnalyzer:
         """
         Get the cumulative return for the portfolio.
         
-        :return: float.
+        :return float.
         """
         return cum_returns_final(returns=self._returns)
 
@@ -264,7 +264,7 @@ cdef class PerformanceAnalyzer:
         """
         Get the maximum return drawdown for the portfolio.
         
-        :return: float.
+        :return float.
         """
         return max_drawdown(returns=self._returns)
 
@@ -272,7 +272,7 @@ cdef class PerformanceAnalyzer:
         """
         Get the annual volatility for the portfolio.
         
-        :return: float.
+        :return float.
         """
         return annual_volatility(returns=self._returns)
 
@@ -280,7 +280,7 @@ cdef class PerformanceAnalyzer:
         """
         Get the sharpe ratio for the portfolio.
         
-        :return: float.
+        :return float.
         """
         return sharpe_ratio(returns=self._returns)
 
@@ -288,7 +288,7 @@ cdef class PerformanceAnalyzer:
         """
         Get the calmar ratio for the portfolio.
         
-        :return: float.
+        :return float.
         """
         return calmar_ratio(returns=self._returns)
 
@@ -296,7 +296,7 @@ cdef class PerformanceAnalyzer:
         """
         Get the sortino ratio for the portfolio.
         
-        :return: float.
+        :return float.
         """
         return sortino_ratio(returns=self._returns)
 
@@ -304,7 +304,7 @@ cdef class PerformanceAnalyzer:
         """
         Get the omega ratio for the portfolio.
         
-        :return: float.
+        :return float.
         """
         return omega_ratio(returns=self._returns)
 
@@ -312,7 +312,7 @@ cdef class PerformanceAnalyzer:
         """
         Get the stability of time series for the portfolio.
         
-        :return: float.
+        :return float.
         """
         return stability_of_timeseries(returns=self._returns)
 
@@ -320,7 +320,7 @@ cdef class PerformanceAnalyzer:
         """
         Get the returns mean for the portfolio.
         
-        :return: float.
+        :return float.
         """
         return np.mean(self._returns)
 
@@ -328,7 +328,7 @@ cdef class PerformanceAnalyzer:
         """
         Get the returns variance for the portfolio.
         
-        :return: float.
+        :return float.
         """
         return np.var(self._returns)
 
@@ -336,7 +336,7 @@ cdef class PerformanceAnalyzer:
         """
         Get the returns skew for the portfolio.
         
-        :return: float.
+        :return float.
         """
         return skew(self._returns)
 
@@ -344,7 +344,7 @@ cdef class PerformanceAnalyzer:
         """
         Get the returns kurtosis for the portfolio.
         
-        :return: float.
+        :return float.
         """
         return kurtosis(self._returns)
 
@@ -352,7 +352,7 @@ cdef class PerformanceAnalyzer:
         """
         Get the returns nail ratio for the portfolio.
         
-        :return: float.
+        :return float.
         """
         return tail_ratio(self._returns)
 
@@ -360,7 +360,7 @@ cdef class PerformanceAnalyzer:
         """
         Get the alpha for the portfolio.
         
-        :return: float.
+        :return float.
         """
         return alpha(returns=self._returns, factor_returns=self._returns)
 
@@ -368,7 +368,7 @@ cdef class PerformanceAnalyzer:
         """
         Get the beta for the portfolio.
     
-        :return: float.
+        :return float.
         """
         return beta(returns=self._returns, factor_returns=self._returns)
 
@@ -419,7 +419,7 @@ cdef class PerformanceAnalyzer:
         - Alpha
         - Beta
         
-        :return: Dict[str, float].
+        :return Dict[str, float].
         """
         return {
             'PNL': self.total_pnl().as_float(),
@@ -455,7 +455,7 @@ cdef class PerformanceAnalyzer:
         Return the performance statistics from the last backtest run formatted 
         for printing in the backtest run footer.
         
-        :return: List[str].
+        :return List[str].
         """
         cdef str account_currency = currency_to_string(self._account_currency)
 
@@ -494,6 +494,6 @@ cdef class PerformanceAnalyzer:
         
         :param value: The value to print.
         :param decimals: The decimal precision for the value rounding.
-        :return: str.
+        :return str.
         """
         return f'{value:.{decimals}f}'

@@ -76,7 +76,7 @@ cdef class AccountStateEvent(Event):
 
     def __str__(self) -> str:
         """
-        :return: The str() string representation of the event.
+        :return The str() string representation of the event.
         """
         return (f"{self.__class__.__name__}"
                 f"({self.account_id.value}) equity={self.cash_balance}, "
@@ -85,7 +85,7 @@ cdef class AccountStateEvent(Event):
 
     def __repr__(self) -> str:
         """
-        :return: The repr() string representation of the event.
+        :return The repr() string representation of the event.
         """
         return f"<{str(self)} object at {id(self)}>"
 
@@ -111,13 +111,13 @@ cdef class OrderEvent(Event):
 
     def __str__(self) -> str:
         """
-        :return: The str() string representation of the event.
+        :return The str() string representation of the event.
         """
         return f"{self.__class__.__name__}({self.order_id.value})"
 
     def __repr__(self) -> str:
         """
-        :return: The repr() string representation of the event.
+        :return The repr() string representation of the event.
         """
         return f"<{str(self)} object at {id(self)}>"
 
@@ -168,7 +168,7 @@ cdef class OrderFillEvent(OrderEvent):
 
     def __str__(self) -> str:
         """
-        :return: The str() string representation of the event.
+        :return The str() string representation of the event.
         """
         return (f"{self.__class__.__name__}"
                 f"({self.order_id.value}, "
@@ -278,7 +278,7 @@ cdef class OrderRejected(OrderEvent):
 
     def __str__(self) -> str:
         """
-        :return: The str() string representation of the event.
+        :return The str() string representation of the event.
         """
         return (f"{self.__class__.__name__}"
                 f"({self.order_id.value}, "
@@ -369,7 +369,7 @@ cdef class OrderWorking(OrderEvent):
 
     def __str__(self) -> str:
         """
-        :return: The str() string representation of the event.
+        :return The str() string representation of the event.
         """
         return (f"{self.__class__.__name__}"
                 f"({self.order_id.value}, "
@@ -411,7 +411,7 @@ cdef class OrderCancelReject(OrderEvent):
 
     def __str__(self) -> str:
         """
-        :return: The str() string representation of the event.
+        :return The str() string representation of the event.
         """
         return (f"{self.__class__.__name__}"
                 f"({self.order_id.value}, "
@@ -556,7 +556,7 @@ cdef class OrderPartiallyFilled(OrderFillEvent):
 
     def __str__(self) -> str:
         """
-        :return: The str() string representation of the event.
+        :return The str() string representation of the event.
         """
         return (f"{self.__class__.__name__}"
                 f"({self.order_id.value}, "
@@ -611,7 +611,7 @@ cdef class OrderFilled(OrderFillEvent):
 
     def __str__(self) -> str:
         """
-        :return: The str() string representation of the event.
+        :return The str() string representation of the event.
         """
         return (f"{self.__class__.__name__}"
                 f"(order_id={self.order_id.value}, "
@@ -646,7 +646,7 @@ cdef class PositionEvent(Event):
 
     def __repr__(self) -> str:
         """
-        :return: The repr() string representation of the event.
+        :return The repr() string representation of the event.
         """
         return f"<{str(self)} object at {id(self)}>"
 
@@ -679,7 +679,7 @@ cdef class PositionOpened(PositionEvent):
 
     def __str__(self) -> str:
         """
-        :return: The str() string representation of the event.
+        :return The str() string representation of the event.
         """
         return (f"{self.__class__.__name__}("
                 f"{self.position.id.value}, "
@@ -716,7 +716,7 @@ cdef class PositionModified(PositionEvent):
 
     def __str__(self) -> str:
         """
-        :return: The str() string representation of the event.
+        :return The str() string representation of the event.
         """
         return (f"{self.__class__.__name__}("
                 f"{self.position.id.value}, "
@@ -754,7 +754,7 @@ cdef class PositionClosed(PositionEvent):
 
     def __str__(self) -> str:
         """
-        :return: The str() string representation of the event.
+        :return The str() string representation of the event.
         """
         return (f"{self.__class__.__name__}("
                 f"{self.position.id.value}, "
@@ -816,18 +816,18 @@ cdef class TimeEvent(Event):
         """"
         Return the hash representation of this object.
 
-        :return: int.
+        :return int.
         """
         return hash(self.id)
 
     def __str__(self) -> str:
         """
-        :return: The str() string representation of the event.
+        :return The str() string representation of the event.
         """
         return f"{self.__class__.__name__}('{self.label.value}', timestamp={self.timestamp})"
 
     def __repr__(self) -> str:
         """
-        :return: The repr() string representation of the event.
+        :return The repr() string representation of the event.
         """
         return f"<{str(self)} object at {id(self)}>"

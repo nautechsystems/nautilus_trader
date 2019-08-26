@@ -113,7 +113,7 @@ cdef class DataClient:
         """
         Return the current time of the data client.
         
-        :return: datetime.
+        :return datetime.
         """
         return self._clock.time_now()
 
@@ -121,7 +121,7 @@ cdef class DataClient:
         """
         Return the list of tick symbols subscribed to.
         
-        :return: List[Symbol].
+        :return List[Symbol].
         """
         return list(self._tick_handlers.keys())
 
@@ -129,7 +129,7 @@ cdef class DataClient:
         """
         Return the list of bar types subscribed to.
         
-        :return: List[BarType].
+        :return List[BarType].
         """
         return list(self._bar_handlers.keys())
 
@@ -137,7 +137,7 @@ cdef class DataClient:
         """
         Return the list of instruments subscribed to.
         
-        :return: List[Symbol].
+        :return List[Symbol].
         """
         return list(self._instrument_handlers.keys())
 
@@ -145,7 +145,7 @@ cdef class DataClient:
         """
         Return all instrument symbols held by the data client.
         
-        :return: List[Symbol].
+        :return List[Symbol].
         """
         return list(self._instruments).copy()
 
@@ -163,7 +163,7 @@ cdef class DataClient:
         """
         Return a dictionary of all instruments held by the data client.
         
-        :return: Dict[Symbol, Instrument].
+        :return Dict[Symbol, Instrument].
         """
         return self._instruments.copy()
 
@@ -172,7 +172,7 @@ cdef class DataClient:
         Return the instrument corresponding to the given symbol.
 
         :param symbol: The symbol of the instrument to return.
-        :return: Instrument (if found)
+        :return Instrument (if found)
         :raises ConditionFailed: If the instrument is not found.
         """
         Condition.is_in(symbol, self._instruments, 'symbol', 'instruments')

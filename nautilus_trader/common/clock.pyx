@@ -58,7 +58,7 @@ cdef class Clock:
         """
         Return the current UTC datetime of the clock.
         
-        :return: datetime.
+        :return datetime.
         """
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
@@ -67,7 +67,7 @@ cdef class Clock:
         """
         Return the timedelta from the given time.
         
-        :return: timedelta.
+        :return timedelta.
         """
         return self.time_now() - time
 
@@ -83,7 +83,7 @@ cdef class Clock:
         """
         Return the time alert labels held by the clock.
         
-        :return: List[Label].
+        :return List[Label].
         """
         return list(self._time_alerts.keys())
 
@@ -91,7 +91,7 @@ cdef class Clock:
         """
         Return the timer labels held by the clock.
         
-        :return: List[Label].
+        :return List[Label].
         """
         return list(self._timers.keys())
 
@@ -135,7 +135,7 @@ cdef class LiveClock(Clock):
         """
         Return the current UTC datetime of the clock.
         
-        :return: datetime.
+        :return datetime.
         """
         return datetime.now(timezone.utc)
 
@@ -322,7 +322,7 @@ cdef class TestTimer:
         test timer forward to the given time.
 
         :param time: The time to advance the test timer to.
-        :return: List[TimeEvent].
+        :return List[TimeEvent].
         """
         cdef list time_events = []  # type: List[TimeEvent]
 
@@ -363,7 +363,7 @@ cdef class TestClock(Clock):
         """
         Return the current UTC datetime of the clock.
 
-        :return: datetime.
+        :return datetime.
         """
         return self._time
 
@@ -372,7 +372,7 @@ cdef class TestClock(Clock):
         Iterates the clocks time to the given datetime.
         
         :param to_time: The datetime to iterate the test clock to.
-        :return: List[TimeEvent].
+        :return List[TimeEvent].
         """
         # Assumes time.tzinfo == self.timezone
         # Assumes to_time > self.time_now()

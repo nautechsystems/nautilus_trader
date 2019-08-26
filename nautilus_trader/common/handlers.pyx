@@ -29,7 +29,7 @@ cdef class Handler:
         """
         Return a value indicating whether this object is equal to the given object.
 
-        :return: bool.
+        :return bool.
         """
         return self.handle == other.handle
 
@@ -37,7 +37,7 @@ cdef class Handler:
         """
         Return a value indicating whether this object is not equal to the given object.
 
-        :return: bool.
+        :return bool.
         """
         return not self.handle != other.handle
 
@@ -45,7 +45,7 @@ cdef class Handler:
         """"
         Return the hash representation of this object.
 
-        :return: int.
+        :return int.
         """
         return hash(self.handle)
 

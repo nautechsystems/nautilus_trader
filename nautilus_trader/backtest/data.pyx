@@ -284,7 +284,7 @@ cdef class BacktestDataClient(DataClient):
         Return the iterated ticks up to the given time.
         
         :param to_time: The datetime to iterate to.
-        :return: List[Tick].
+        :return List[Tick].
         """
         cdef list ticks = []  # type: List[Tick]
         cdef DataProvider data_provider
@@ -298,7 +298,7 @@ cdef class BacktestDataClient(DataClient):
         Return the iterated bars up to the given time.
 
         :param to_time: The datetime to iterate to.
-        :return: Dict[BarType, Bar].
+        :return Dict[BarType, Bar].
         """
         cdef dict bars = {}  # type: Dict[BarType, List[Bar]]
         cdef DataProvider data_provider
@@ -316,7 +316,7 @@ cdef class BacktestDataClient(DataClient):
 
         Note: Values are a tuple of the bid bar [0], then the ask bar [1].
         :param time: The index time for the minute bars.
-        :return: Dict[Symbol, BidAskBarPair].
+        :return Dict[Symbol, BidAskBarPair].
         """
         cdef dict minute_bars = {}  # type: Dict[Symbol, BidAskBarPair]
         cdef Symbol symbol
@@ -677,7 +677,7 @@ cdef class DataProvider:
         Return a value indicating whether the timestamp of the next execution bars equals the given time.
 
         :param time: The reference time for next execution bars.
-        :return: True if timestamp == time, else False.
+        :return True if timestamp == time, else False.
         """
         return self.bars[self.bar_type_execution_bid][self.iterations[self.bar_type_execution_bid]].timestamp == time
 
@@ -685,7 +685,7 @@ cdef class DataProvider:
         """
         Return the next execution bid bar.
         
-        :return: Bar.
+        :return Bar.
         """
         return self.bars[self.bar_type_execution_bid][self.iterations[self.bar_type_execution_bid]]
 
@@ -693,7 +693,7 @@ cdef class DataProvider:
         """
         Return the next execution ask bar.
         
-        :return: Bar.
+        :return Bar.
         """
         return self.bars[self.bar_type_execution_ask][self.iterations[self.bar_type_execution_ask]]
 
@@ -702,7 +702,7 @@ cdef class DataProvider:
         Return a list of ticks which have been generated based on the given to datetime.
         
         :param to_time: The time to build the tick list to.
-        :return: List[Tick].
+        :return List[Tick].
         """
         cdef list ticks_list = []  # type: List[Tick]
         if self.tick_index < len(self.ticks):
@@ -721,7 +721,7 @@ cdef class DataProvider:
         Return a list of bars which have closed based on the given to datetime.
 
         :param to_time: The time to build the bar list to.
-        :return: Dict[BarType, Bar].
+        :return Dict[BarType, Bar].
         """
         cdef dict bars_dict = {}  # type: Dict[BarType, Bar]
         for bar_type, iterations in self.iterations.items():

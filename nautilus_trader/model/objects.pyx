@@ -44,7 +44,7 @@ cdef class Quantity:
         """
         Return a quantity of zero.
         
-        :return: Quantity.
+        :return Quantity.
         """
         return ZERO_QUANTITY
 
@@ -53,7 +53,7 @@ cdef class Quantity:
         Return a value indicating whether the object equals the given object.
         
         :param other: The other string to compare
-        :return: True if the objects are equal, otherwise False.
+        :return True if the objects are equal, otherwise False.
         """
         return self.value == other.value
 
@@ -61,9 +61,9 @@ cdef class Quantity:
         """
         Return a value indicating whether this object is equal to the given object.
 
-        :return: bool.
+        :return bool.
 
-        :return: bool.
+        :return bool.
         """
         return self.equals(other)
 
@@ -71,7 +71,7 @@ cdef class Quantity:
         """
         Return a value indicating whether this object is not equal to the given object.
 
-        :return: bool.
+        :return bool.
         """
         return not self.equals(other)
 
@@ -79,19 +79,19 @@ cdef class Quantity:
         """"
         Return the hash representation of this object.
 
-        :return: int.
+        :return int.
         """
         return hash(self.value)
 
     def __str__(self) -> str:
         """
-        :return: The str() string representation of the quantity.
+        :return The str() string representation of the quantity.
         """
         return str(self.value)
 
     def __repr__(self) -> str:
         """
-        :return: The repr() string representation of the quantity.
+        :return The repr() string representation of the quantity.
         """
         return f"<{self.__class__.__name__}({self.value}) object at {id(self)}>"
 
@@ -183,7 +183,7 @@ cdef class Price:
         """
         Return a value indicating whether this object is equal to the given object.
 
-        :return: bool.
+        :return bool.
         """
         return self.equals(other)
 
@@ -191,19 +191,19 @@ cdef class Price:
         """
         Return a value indicating whether this object is not equal to the given object.
 
-        :return: bool.
+        :return bool.
         """
         return not self.equals(other)
 
     def __str__(self) -> str:
         """
-        :return: The str() string representation of the price.
+        :return The str() string representation of the price.
         """
         return str(self.value)
 
     def __repr__(self) -> str:
         """
-        :return: The repr() string representation of the symbol.
+        :return The repr() string representation of the symbol.
         """
         return f"<{self.__class__.__name__}({str(self)}) object at {id(self)}>"
 
@@ -270,7 +270,7 @@ cdef class Price:
         Return a value indicating whether the object equals the given object.
         
         :param other: The other string to compare
-        :return: True if the objects are equal, otherwise False.
+        :return True if the objects are equal, otherwise False.
         """
         return self.value == other.value
 
@@ -279,7 +279,7 @@ cdef class Price:
         Return a new price by adding the given price to this price.
 
         :param price: The other price to add.
-        :return: Price.
+        :return Price.
         :raises ConditionFailed: If the precision of the prices are not equal.
         """
         Condition.true(self.precision == price.precision, 'self.precision == price.precision')
@@ -291,7 +291,7 @@ cdef class Price:
         Return a new price by subtracting the given price from this price.
 
         :param price: The other price to subtract.
-        :return: Price.
+        :return Price.
         :raises ConditionFailed: If the precision of the prices are not equal.
         """
         Condition.true(self.precision == price.precision, 'self.precision == price.precision')
@@ -302,7 +302,7 @@ cdef class Price:
         """
         Return a float representation of the price.
         
-        :return: float.
+        :return float.
         """
         return float(self.value)
 
@@ -332,7 +332,7 @@ cdef class Money:
         """
         Return money with a zero amount.
         
-        :return: Money.
+        :return Money.
         """
         return ZERO_MONEY
 
@@ -340,7 +340,7 @@ cdef class Money:
         """
         Return a value indicating whether this object is equal to the given object.
 
-        :return: bool.
+        :return bool.
         """
         return self.equals(other)
 
@@ -348,19 +348,19 @@ cdef class Money:
         """
         Return a value indicating whether this object is not equal to the given object.
 
-        :return: bool.
+        :return bool.
         """
         return not self.equals(other)
 
     def __str__(self) -> str:
         """
-        :return: The str() string representation of the price.
+        :return The str() string representation of the price.
         """
         return f'{self.value:,.2f}'
 
     def __repr__(self) -> str:
         """
-        :return: The repr() string representation of the symbol.
+        :return The repr() string representation of the symbol.
         """
         return f"<{self.__class__.__name__}({str(self)}) object at {id(self)}>"
 
@@ -427,7 +427,7 @@ cdef class Money:
         Return a value indicating whether the object equals the given object.
         
         :param other: The other string to compare
-        :return: True if the objects are equal, otherwise False.
+        :return True if the objects are equal, otherwise False.
         """
         return self.value == other.value
 
@@ -435,7 +435,7 @@ cdef class Money:
         """
         Return a float representation of the money.
         
-        :return: float.
+        :return float.
         """
         return float(self.value)
 
@@ -498,19 +498,19 @@ cdef class Tick:
         """"
         Return the hash representation of this object.
 
-        :return: int.
+        :return int.
         """
         return hash(self.timestamp)
 
     def __str__(self) -> str:
         """
-        :return: The str() string representation of the tick.
+        :return The str() string representation of the tick.
         """
         return f"{self.bid},{self.ask},{self.timestamp.isoformat()}"
 
     def __repr__(self) -> str:
         """
-        :return: The repr() string representation of the tick.
+        :return The repr() string representation of the tick.
         """
         return f"<{self.__class__.__name__}({self.symbol},{str(self)}) object at {id(self)}>"
 
@@ -521,7 +521,7 @@ cdef class Tick:
 
         :param symbol: The tick symbol.
         :param values: The tick values string.
-        :return: Tick.
+        :return Tick.
         """
         cdef list split_tick = values.split(',')
 
@@ -540,7 +540,7 @@ cdef class Tick:
 
         :param symbol: The tick symbol.
         :param values: The tick values string.
-        :return: Tick.
+        :return Tick.
         """
         return Tick.from_string(symbol, values)
 
@@ -571,7 +571,7 @@ cdef class BarSpecification:
         """
         Return a value indicating whether this object is equal to the given object.
 
-        :return: bool.
+        :return bool.
         """
         return self.equals(other)
 
@@ -579,7 +579,7 @@ cdef class BarSpecification:
         """
         Return a value indicating whether this object is not equal to the given object.
 
-        :return: bool.
+        :return bool.
         """
         return not self.equals(other)
 
@@ -587,26 +587,26 @@ cdef class BarSpecification:
         """"
         Return the hash representation of this object.
 
-        :return: int.
+        :return int.
         """
         return hash((self.period, self.resolution, self.quote_type))
 
     def __str__(self) -> str:
         """
-        :return: The str() string representation of the bar type.
+        :return The str() string representation of the bar type.
         """
         return f"{self.period}-{resolution_to_string(self.resolution)}[{quote_type_to_string(self.quote_type)}]"
 
     def __repr__(self) -> str:
         """
-        :return: The repr() string representation of the bar type.
+        :return The repr() string representation of the bar type.
         """
         return f"<{self.__class__.__name__}({str(self)}) object at {id(self)}>"
 
     cpdef timedelta timedelta(self):
         """
         Return the time bar timedelta.
-        :return: timedelta.
+        :return timedelta.
         """
         if self.resolution == Resolution.TICK:
             return timedelta(0)
@@ -626,7 +626,7 @@ cdef class BarSpecification:
         Return a value indicating whether the object equals the given object.
         
         :param other: The other object to compare
-        :return: True if the objects are equal, otherwise False.
+        :return True if the objects are equal, otherwise False.
         """
         return (self.period == other.period
                 and self.resolution == other.resolution
@@ -636,7 +636,7 @@ cdef class BarSpecification:
         """
         Return the resolution as a string
         
-        :return: str.
+        :return str.
         """
         return resolution_to_string(self.resolution)
 
@@ -644,7 +644,7 @@ cdef class BarSpecification:
         """
         Return the quote type as a string.
         
-        :return: str.
+        :return str.
         """
         return quote_type_to_string(self.quote_type)
 
@@ -655,7 +655,7 @@ cdef class BarSpecification:
     
         Note: String format example is '1-MINUTE-[BID]'.
         :param value: The bar specification string to parse.
-        :return: BarSpecification.
+        :return BarSpecification.
         """
         cdef list split1 = value.split('-')
         cdef list split2 = split1[1].split('[')
@@ -676,7 +676,7 @@ cdef class BarSpecification:
 
         Note: String format example is '1-MINUTE-[BID]'.
         :param value: The bar specification string to parse.
-        :return: BarSpecification.
+        :return BarSpecification.
         """
         return BarSpecification.from_string(value)
 
@@ -702,7 +702,7 @@ cdef class BarType:
         """
         Return a value indicating whether this object is equal to the given object.
 
-        :return: bool.
+        :return bool.
         """
         return self.equals(other)
 
@@ -710,7 +710,7 @@ cdef class BarType:
         """
         Return a value indicating whether this object is not equal to the given object.
 
-        :return: bool.
+        :return bool.
         """
         return not self.equals(other)
 
@@ -718,19 +718,19 @@ cdef class BarType:
         """"
         Return the hash representation of this object.
 
-        :return: int.
+        :return int.
         """
         return hash((self.symbol, self.specification))
 
     def __str__(self) -> str:
         """
-        :return: The str() string representation of the bar type.
+        :return The str() string representation of the bar type.
         """
         return f"{str(self.symbol)}-{self.specification}"
 
     def __repr__(self) -> str:
         """
-        :return: The repr() string representation of the bar type.
+        :return The repr() string representation of the bar type.
         """
         return f"<{self.__class__.__name__}({str(self)}) object at {id(self)}>"
 
@@ -738,7 +738,7 @@ cdef class BarType:
         """
         Return the resolution as a string
         
-        :return: str.
+        :return str.
         """
         return self.specification.resolution_string()
 
@@ -746,7 +746,7 @@ cdef class BarType:
         """
         Return the quote type as a string.
         
-        :return: str.
+        :return str.
         """
         return self.specification.quote_type_string()
 
@@ -755,7 +755,7 @@ cdef class BarType:
         Return a value indicating whether the object equals the given object.
         
         :param other: The other object to compare
-        :return: True if the objects are equal, otherwise False.
+        :return True if the objects are equal, otherwise False.
         """
         return self.symbol.equals(other.symbol) and self.specification.equals(other.specification)
 
@@ -765,7 +765,7 @@ cdef class BarType:
         Return a bar type parsed from the given string.
 
         :param value: The bar type string to parse.
-        :return: BarType.
+        :return BarType.
         """
         cdef list split_string = re.split(r'[.-]+', value)
         cdef str resolution = split_string[3].split('[')[0]
@@ -784,7 +784,7 @@ cdef class BarType:
         Return a bar type parsed from the given string.
 
         :param value: The bar type string to parse.
-        :return: BarType.
+        :return BarType.
         """
         return BarType.from_string(value)
 
@@ -835,7 +835,7 @@ cdef class Bar:
         """
         Return a value indicating whether this object is equal to the given object.
 
-        :return: bool.
+        :return bool.
         """
         return self.timestamp == other.timestamp
 
@@ -843,7 +843,7 @@ cdef class Bar:
         """
         Return a value indicating whether this object is not equal to the given object.
 
-        :return: bool.
+        :return bool.
         """
         return not self.__eq__(other)
 
@@ -851,20 +851,20 @@ cdef class Bar:
         """"
         Return the hash representation of this object.
 
-        :return: int.
+        :return int.
         """
         return hash(str(self.timestamp))
 
     def __str__(self) -> str:
         """
-        :return: The str() string representation of the bar.
+        :return The str() string representation of the bar.
         """
         return (f"{self.open},{self.high},{self.low},{self.close},"
                 f"{self.volume},{self.timestamp.isoformat()}")
 
     def __repr__(self) -> str:
         """
-        :return: The repr() string representation of the bar.
+        :return The repr() string representation of the bar.
         """
         return f"<{self.__class__.__name__}({str(self)}) object at {id(self)}>"
 
@@ -874,7 +874,7 @@ cdef class Bar:
         Return a bar parsed from the given string.
 
         :param value: The bar string to parse.
-        :return: Bar.
+        :return Bar.
         """
         cdef list split_bar = value.split(',')
 
@@ -893,7 +893,7 @@ cdef class Bar:
         Return a bar parsed from the given string.
 
         :param value: The bar string to parse.
-        :return: Bar.
+        :return Bar.
         """
         return Bar.from_string(value)
 
@@ -940,7 +940,7 @@ cdef class DataBar:
 
     def __ne__(self, DataBar other) -> bool:
         """
-        Return a value indicating whether this object is not equal to the given object.:return: bool.
+        Return a value indicating whether this object is not equal to the given object.:return bool.
         """
         return not self.__eq__(other)
 
@@ -948,20 +948,20 @@ cdef class DataBar:
         """"
         Return the hash representation of this object.
 
-        :return: int.
+        :return int.
         """
         return hash(str(self.timestamp))
 
     def __str__(self) -> str:
         """
-        :return: The str() string representation of the bar.
+        :return The str() string representation of the bar.
         """
         return (f"{self.open},{self.high},{self.low},{self.close},"
                 f"{self.volume},{self.timestamp.isoformat()}")
 
     def __repr__(self) -> str:
         """
-        :return: The repr() string representation of the bar.
+        :return The repr() string representation of the bar.
         """
         return f"<{self.__class__.__name__}({str(self)}) object at {id(self)}>"
 
@@ -1047,7 +1047,7 @@ cdef class Instrument:
 
     def __ne__(self, Instrument other) -> bool:
         """
-        Return a value indicating whether this object is not equal to the given object.:return: bool.
+        Return a value indicating whether this object is not equal to the given object.:return bool.
         """
         return not self.__eq__(other)
 
@@ -1055,18 +1055,18 @@ cdef class Instrument:
         """"
         Return the hash representation of this object.
 
-        :return: int.
+        :return int.
         """
         return hash(str(self.symbol))
 
     def __str__(self) -> str:
         """
-        :return: The str() string representation of the instrument.
+        :return The str() string representation of the instrument.
         """
         return f"{self.__class__.__name__}({self.symbol})"
 
     def __repr__(self) -> str:
         """
-        :return: The repr() string representation of the instrument.
+        :return The repr() string representation of the instrument.
         """
         return f"<{str(self)} object at {id(self)}>"

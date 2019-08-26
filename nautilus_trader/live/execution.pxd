@@ -26,8 +26,10 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
     cdef readonly str key_index_position_orders     # SET
     cdef readonly str key_index_strategy_orders     # SET
     cdef readonly str key_index_strategy_positions  # SET
+    cdef readonly str key_index_orders              # SET
     cdef readonly str key_index_orders_working      # SET
     cdef readonly str key_index_orders_completed    # SET
+    cdef readonly str key_index_positions           # SET
     cdef readonly str key_index_positions_open      # SET
     cdef readonly str key_index_positions_closed    # SET
 
@@ -40,6 +42,9 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
     cpdef void load_orders_cache(self)
     cpdef void load_positions_cache(self)
+    cdef set _decode_set_to_order_ids(self, set original)
+    cdef set _decode_set_to_position_ids(self, set original)
+    cdef set _decode_set_to_strategy_ids(self, set original)
 
 
 cdef class LiveExecutionEngine(ExecutionEngine):

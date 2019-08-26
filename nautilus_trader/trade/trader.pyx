@@ -181,7 +181,7 @@ cdef class Trader:
         The key is the strategy identifier.
         The value is a bool which is True if the strategy is running else False.
         
-        :return: Dict[StrategyId, bool].
+        :return Dict[StrategyId, bool].
         """
         cdef status = {}
         for strategy in self.strategies:
@@ -208,22 +208,22 @@ cdef class Trader:
         """
         Return an orders report dataframe.
 
-        :return: pd.DataFrame.
+        :return pd.DataFrame.
         """
-        return self._report_provider.get_orders_report(self._exec_engine.database.get_orders_all())
+        return self._report_provider.get_orders_report(self._exec_engine.database.get_orders())
 
     cpdef object get_order_fills_report(self):
         """
         Return an order fills report dataframe.
         
-        :return: pd.DataFrame.
+        :return pd.DataFrame.
         """
-        return self._report_provider.get_order_fills_report(self._exec_engine.database.get_orders_all())
+        return self._report_provider.get_order_fills_report(self._exec_engine.database.get_orders())
 
     cpdef object get_positions_report(self):
         """
         Return a positions report dataframe.
 
-        :return: pd.DataFrame.
+        :return pd.DataFrame.
         """
-        return self._report_provider.get_positions_report(self._exec_engine.database.get_positions_all())
+        return self._report_provider.get_positions_report(self._exec_engine.database.get_positions())
