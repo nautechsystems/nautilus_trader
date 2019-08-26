@@ -23,7 +23,7 @@ from nautilus_trader.model.objects cimport Price, Tick, Bar, Money, Instrument, 
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.events cimport (
-    OrderEvent,
+    OrderFillEvent,
     AccountStateEvent,
     OrderSubmitted,
     OrderAccepted,
@@ -580,7 +580,6 @@ cdef class BacktestExecClient(ExecutionClient):
             order.expire_time)
 
         self._exec_engine.handle_event(working)
-        self._log.debug(f"{order.id} WORKING at {order.price}.")
 
     cdef void _fill_order(self, Order order, Price fill_price):
         # Generate event
@@ -669,10 +668,9 @@ cdef class BacktestExecClient(ExecutionClient):
         self._log.debug(f"OCO order cancelled from {oco_order_id}.")
         self._exec_engine.handle_event(event)
 
-    cdef void _adjust_account(self, OrderEvent event):
-        # Adjust the positions based on the given order fill event
-        cdef Symbol symbol = self._exec_engine.database.get_order(event.order_id).symbol
-        cdef Instrument instrument = self.instruments[symbol]
+    cdef void _adjust_account(self, OrderFillEvent event):
+        # Calculate commission
+        cdef Instrument instrument = self.instruments[event.symbol]
         cdef float exchange_rate = self.exchange_calculator.get_rate(
             quote_currency=instrument.quote_currency,
             base_currency=self._account.currency,
@@ -680,8 +678,8 @@ cdef class BacktestExecClient(ExecutionClient):
             bid_rates=self._build_current_bid_rates(),
             ask_rates=self._build_current_ask_rates())
 
-        cdef PositionId position_id = self._exec_engine.database.get_position_id(event.order_id)
-        cdef Position position = self._exec_engine.database.get_position(position_id)
+        cdef Position position = self._exec_engine.database.get_position_for_order(event.order_id)
+
         cdef Money pnl = self._calculate_pnl(
             direction=position.market_position,
             entry_price=position.average_entry_price,
@@ -690,7 +688,7 @@ cdef class BacktestExecClient(ExecutionClient):
             exchange_rate=exchange_rate)
 
         cdef Money commission = self.commission_calculator.calculate(
-            symbol=symbol,
+            symbol=event.symbol,
             filled_quantity=event.filled_quantity,
             filled_price=event.average_price,
             exchange_rate=exchange_rate)

@@ -14,9 +14,10 @@ from nautilus_trader.common.guid cimport GuidFactory
 from nautilus_trader.common.brokerage cimport CommissionCalculator
 from nautilus_trader.common.execution cimport ExecutionClient
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition
+from nautilus_trader.model.events cimport OrderFillEvent
 from nautilus_trader.model.currency cimport ExchangeRateCalculator
 from nautilus_trader.model.objects cimport Price, Tick, Bar, Money, Quantity
-from nautilus_trader.model.order cimport Order, OrderEvent
+from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.identifiers cimport Symbol, OrderId
 from nautilus_trader.backtest.models cimport FillModel
 
@@ -69,7 +70,7 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef void _check_oco_order(self, OrderId order_id)
     cdef void _reject_oco_order(self, Order order, OrderId oco_order_id)
     cdef void _cancel_oco_order(self, Order order, OrderId oco_order_id)
-    cdef void _adjust_account(self, OrderEvent event)
+    cdef void _adjust_account(self, OrderFillEvent event)
     cdef dict _build_current_bid_rates(self)
     cdef dict _build_current_ask_rates(self)
     cdef Money _calculate_pnl(self, MarketPosition direction, Price entry_price, Price exit_price, Quantity quantity, float exchange_rate)
