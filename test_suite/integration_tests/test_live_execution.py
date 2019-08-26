@@ -96,7 +96,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
 
     def tearDown(self):
         # Tear down
-        # self.test_redis.flushall()
+        self.test_redis.flushall()
         pass
 
     def test_redis_functions(self):
@@ -291,8 +291,10 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
+        self.account.apply(event)
+
         # Act
-        self.database.update_account(event)
+        self.database.update_account(self.account)
 
         # Assert
-        self.assertTrue(True)  # Did not raise exception
+        # Did not raise exception
