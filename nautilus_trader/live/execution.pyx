@@ -146,6 +146,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         self._cached_orders.clear()
 
         cdef bytes key_bytes
+        cdef str key
         cdef bytes event_bytes
         cdef list events
         cdef Order order
@@ -171,20 +172,21 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         self._cached_positions.clear()
 
+        cdef bytes key_bytes
         cdef str key
-        cdef PositionId position_id
-        cdef Position position
+        cdef bytes event_bytes
         cdef list events
-        cdef OrderFillEvent event
+        cdef Position position
+        cdef OrderFillEvent initial
 
-        cdef list position_keys = [key.decode(UTF8) for key in self._redis.keys(f'{self.key_positions}*')]
+        cdef list position_keys = self._redis.keys(f'{self.key_positions}*')
 
-        for key in position_keys:
-            position_id = key.rsplit(':', maxsplit=1)[1]
-            events = [self._event_serializer.deserialize(event) for event in self._redis.lrange(name=key, start=0, end=-1)]
-            initial = events.pop(0)
+        for key_bytes in position_keys:
+            key = key_bytes.decode(UTF8).rsplit(':', maxsplit=1)[1]
+            events = self._redis.lrange(name=key, start=0, end=-1)
+            initial = self._event_serializer.deserialize(events.pop(0))
             assert isinstance(initial, OrderFillEvent)
-            position = Position(position_id=position_id, event=initial)
+            position = Position(position_id=key, event=initial)
 
             for event in events:
                 position.apply(event)
@@ -207,6 +209,12 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         self._reset()
 
+    cpdef void flush(self):
+        """
+        Flush the database which clears all data.
+        """
+        self._redis.flushdb()
+
     cpdef void add_strategy(self, TradingStrategy strategy):
         """
         Add the given strategy to the execution database.
@@ -217,7 +225,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         pipe.hset(self.key_strategies + f'{strategy.id.value}:{CONFIG}', 'some_value', 1)
         pipe.execute()
 
-        self._log.debug(f"Added strategy (id={strategy.id.value}).")
+        self._log.debug(f"Added {strategy.id}.")
 
     cpdef void add_order(self, Order order, StrategyId strategy_id, PositionId position_id):
         """
@@ -249,7 +257,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         pipe.sadd(self.key_index_strategy_positions + strategy_id.value, position_id.value)
         pipe.execute()
 
-        self._log.debug(f"Added order (id={order.id.value}, strategy_id={strategy_id.value}, position_id={position_id.value}).")
+        self._log.debug(f"Added {order.id} with {strategy_id} and {position_id}.")
 
     cpdef void add_position(self, Position position, StrategyId strategy_id):
         """
@@ -275,7 +283,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         pipe.sadd(self.key_index_positions_open, position.id.value)
         pipe.execute()
 
-        self._log.debug(f"Added position (id={position.id.value}) .")
+        self._log.debug(f"Added {position.id}")
 
     cpdef void update_order(self, Order order):
         """
@@ -373,6 +381,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         Return a list of all registered order identifiers.
 
+        :param strategy_id: The strategy identifier query filter (optional can be None).
         :return Set[OrderId].
         """
         if strategy_id is None:
@@ -383,6 +392,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         Return a list of all registered order identifiers.
 
+        :param strategy_id: The strategy identifier query filter (optional can be None).
         :return Set[OrderId].
         """
         if strategy_id is None:
@@ -393,6 +403,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         Return a list of all registered order identifiers.
 
+        :param strategy_id: The strategy identifier query filter (optional can be None).
         :return Set[OrderId].
         """
         if strategy_id is None:
@@ -403,6 +414,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         Return a list of the cached position identifiers.
 
+        :param strategy_id: The strategy identifier query filter (optional can be None).
         :return Set[PositionId].
         """
         if strategy_id is None:
@@ -413,6 +425,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         Return a list of the cached position identifiers.
 
+        :param strategy_id: The strategy identifier query filter (optional can be None).
         :return Set[PositionId].
         """
         if strategy_id is None:
@@ -423,6 +436,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         Return a list of the cached position identifiers.
 
+        :param strategy_id: The strategy identifier query filter (optional can be None).
         :return Set[PositionId].
         """
         if strategy_id is None:
@@ -496,33 +510,6 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
             self._log.error("Cannot find order object in cached orders " + str(ex))
 
         return orders
-
-    cpdef bint order_exists(self, OrderId order_id):
-        """
-        Return a value indicating whether an order with the given identifier exists.
-        
-        :param order_id: The order identifier to check.
-        :return True if the order exists, else False.
-        """
-        return self._redis.sismember(name=self.key_index_orders, value=order_id.value)
-
-    cpdef bint is_order_working(self, OrderId order_id):
-        """
-        Return a value indicating whether an order with the given identifier is active.
-         
-        :param order_id: The order identifier to check.
-        :return True if the order is found and active, else False.
-        """
-        return self._redis.sismember(name=self.key_index_orders_working, value=order_id.value)
-
-    cpdef bint is_order_completed(self, OrderId order_id):
-        """
-        Return a value indicating whether an order with the given identifier is complete.
-
-        :param order_id: The order identifier to check.
-        :return True if the order is found and complete, else False.
-        """
-        return self._redis.sismember(name=self.key_index_orders_completed, value=order_id.value)
 
     cpdef Position get_position(self, PositionId position_id):
         """
@@ -601,7 +588,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
     cpdef dict get_positions_closed(self, StrategyId strategy_id=None):
         """
-        Return a list of all active positions associated with the given strategy identifier.
+        Return a dictionary of closed positions.
         
         :param strategy_id: The strategy identifier query filter (optional can be None).
         :return Dict[PositionId, Position].
@@ -616,6 +603,33 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
             self._log.error("Cannot find position object in cached positions " + str(ex))
 
         return positions
+
+    cpdef bint order_exists(self, OrderId order_id):
+        """
+        Return a value indicating whether an order with the given identifier exists.
+        
+        :param order_id: The order identifier to check.
+        :return True if the order exists, else False.
+        """
+        return self._redis.sismember(name=self.key_index_orders, value=order_id.value)
+
+    cpdef bint is_order_working(self, OrderId order_id):
+        """
+        Return a value indicating whether an order with the given identifier is active.
+         
+        :param order_id: The order identifier to check.
+        :return True if the order is found and active, else False.
+        """
+        return self._redis.sismember(name=self.key_index_orders_working, value=order_id.value)
+
+    cpdef bint is_order_completed(self, OrderId order_id):
+        """
+        Return a value indicating whether an order with the given identifier is complete.
+
+        :param order_id: The order identifier to check.
+        :return True if the order is found and complete, else False.
+        """
+        return self._redis.sismember(name=self.key_index_orders_completed, value=order_id.value)
 
     cpdef bint position_exists(self, PositionId position_id):
         """
@@ -658,10 +672,47 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         return self._redis.sismember(name=self.key_index_positions_closed, value=position_id.value)
 
-    cpdef int positions_count(self, StrategyId strategy_id=None):
+    cpdef int count_orders_total(self, StrategyId strategy_id=None):
         """
         Return the total count of positions held by the database.
 
+        :param strategy_id: The strategy identifier query filter (optional can be None).
+        :return int.
+        """
+        if strategy_id is None:
+            return self._redis.scard(self.key_index_orders)
+
+        return len(self._redis.sinter(keys=(self.key_index_orders, self.key_index_strategy_orders + strategy_id.value)))
+
+    cpdef int count_orders_working(self, StrategyId strategy_id=None):
+        """
+        Return the count of open positions held by the execution database.
+
+        :param strategy_id: The strategy identifier query filter (optional can be None).
+        :return int.
+        """
+        if strategy_id is None:
+            return self._redis.scard(self.key_index_orders_working)
+
+        return len(self._redis.sinter(keys=(self.key_index_orders_working, self.key_index_strategy_orders + strategy_id.value)))
+
+    cpdef int count_orders_completed(self, StrategyId strategy_id=None):
+        """
+        Return the count of closed positions held by the execution database.
+
+        :param strategy_id: The strategy identifier query filter (optional can be None).
+        :return int.
+        """
+        if strategy_id is None:
+            return self._redis.scard(self.key_index_orders_completed)
+
+        return len(self._redis.sinter(keys=(self.key_index_orders_completed, self.key_index_strategy_orders + strategy_id.value)))
+
+    cpdef int count_positions_total(self, StrategyId strategy_id=None):
+        """
+        Return the total count of positions held by the database.
+
+        :param strategy_id: The strategy identifier query filter (optional can be None).
         :return int.
         """
         if strategy_id is None:
@@ -669,10 +720,11 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         return len(self._redis.sinter(keys=(self.key_index_positions, self.key_index_strategy_positions + strategy_id.value)))
 
-    cpdef int positions_open_count(self, StrategyId strategy_id=None):
+    cpdef int count_positions_open(self, StrategyId strategy_id=None):
         """
         Return the count of open positions held by the execution database.
 
+        :param strategy_id: The strategy identifier query filter (optional can be None).
         :return int.
         """
         if strategy_id is None:
@@ -680,10 +732,11 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         return len(self._redis.sinter(keys=(self.key_index_positions_open, self.key_index_strategy_positions + strategy_id.value)))
 
-    cpdef int positions_closed_count(self, StrategyId strategy_id=None):
+    cpdef int count_positions_closed(self, StrategyId strategy_id=None):
         """
         Return the count of closed positions held by the execution database.
 
+        :param strategy_id: The strategy identifier query filter (optional can be None).
         :return int.
         """
         if strategy_id is None:

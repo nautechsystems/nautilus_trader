@@ -44,7 +44,7 @@ cdef class Trader:
 
         self._clock = clock
         self.id = trader_id
-        self._log = LoggerAdapter(self.id.value, logger)
+        self._log = LoggerAdapter(f'Trader-{self.id.value}', logger)
         self._data_client = data_client
         self._exec_engine = exec_engine
         self._report_provider = ReportProvider()
@@ -158,7 +158,7 @@ cdef class Trader:
             self._log.error(f"Cannot reset trader (trader must be stopped to reset).")
             return
 
-        self._log.info("Resetting...")
+        self._log.debug("Resetting...")
         for strategy in self.strategies:
             strategy.reset()
 
@@ -169,7 +169,7 @@ cdef class Trader:
         """
         Dispose of the trader.
         """
-        self._log.info("Disposing...")
+        self._log.debug("Disposing...")
         for strategy in self.strategies:
             strategy.dispose()
 

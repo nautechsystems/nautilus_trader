@@ -415,11 +415,20 @@ cdef class BacktestEngine:
 
     cpdef void reset(self):
         """
-        Reset the backtest engine. The data client, execution client, trader and all strategies are reset.
+        Reset the backtest engine. 
+        
+        The following components are reset;
+        
+        - DataClient
+        - ExecutionEngine
+        - ExecutionClient
+        - Trader (including all strategies)
         """
         self.log.info(f"Resetting...")
         self.iteration = 0
         self.data_client.reset()
+        self.exec_db.reset()
+        self.exec_db.flush()
         self.exec_engine.reset()
         self.exec_client.reset()
         self.trader.reset()
@@ -474,9 +483,9 @@ cdef class BacktestEngine:
         self.log.info(f"Backtest stop datetime:  {format_zulu_datetime(stop)}")
         self.log.info(f"Time-step iterations: {self.iteration} of {time_step}")
         self.log.info(f"Execution resolution: {resolution_to_string(self.data_client.execution_resolution)}")
-        self.log.info(f"Total events: {self.exec_client.event_count}")
-        self.log.info(f"Total orders: {len(self.exec_engine.database.get_orders())}")  # TODO: Orders count
-        self.log.info(f"Total positions: {self.exec_engine.database.positions_count()}")
+        self.log.info(f"Total events: {self.exec_engine.event_count}")
+        self.log.info(f"Total orders: {self.exec_engine.database.count_orders_total()}")
+        self.log.info(f"Total positions: {self.exec_engine.database.count_positions_total()}")
         if self.exec_client.frozen_account:
             self.log.warning(f"ACCOUNT FROZEN")
         self.log.info(f"Account balance (starting): {self.config.starting_capital} {account_currency}")
