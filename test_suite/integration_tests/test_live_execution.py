@@ -423,6 +423,12 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         # Assert
         self.assertFalse(self.database.position_exists_for_order(OrderId('unknown')))
 
+    def test_position_indexed_for_order_when_no_indexing_returns_false(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertFalse(self.database.position_indexed_for_order(OrderId('unknown')))
+
     def test_order_exists_when_no_order_returns_false(self):
         # Arrange
         # Act
