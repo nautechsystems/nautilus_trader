@@ -85,15 +85,20 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
                  EventSerializer event_serializer,
                  Logger logger,
                  bint load_cache=True,
-                 bint check_integrity=True):
+                 bint check_integrity=True,
+                 bint persist_events=True):
         """
         Initializes a new instance of the RedisExecutionEngine class.
 
         :param trader_id: The trader identifier.
-        :param port: The redis host for the database connection.
+        :param host: The redis host for the database connection.
         :param port: The redis port for the database connection.
         :param command_serializer: The command serializer for database transactions.
         :param event_serializer: The event serializer for database transactions.
+        :param load_cache: The option flag to load cache from database on instantiation.
+        :param check_integrity: The option flag to check database integrity on each transaction.
+        :param check_integrity: The option flag to persist serialized events on updates
+        (WARNING: This option must only be set to False for backtesting).
         :raises ConditionFailed: If the host is not a valid string.
         :raises ConditionFailed: If the port is not in range [0, 65535].
         """
@@ -128,11 +133,31 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         # Redis client
         self._redis = Redis(host=host, port=port, db=0)
 
-        self.load_cache = load_cache
-        self.check_integrity = check_integrity
+        # Options
+        self.OPTION_LOAD_CACHE = load_cache
+        self.OPTION_CHECK_INTEGRITY = check_integrity
+        self.OPTION_PERSIST_EVENTS = persist_events
+
+        if self.OPTION_LOAD_CACHE:
+            self._log.info(f"The OPTION_LOAD_CACHE is {self.OPTION_LOAD_CACHE}")
+        else:
+            self._log.warning(f"The OPTION_LOAD_CACHE is {self.OPTION_LOAD_CACHE} "
+                              f"(this should only be done in a backtest environment).")
+
+        if self.OPTION_CHECK_INTEGRITY:
+            self._log.info(f"The OPTION_CHECK_INTEGRITY is {self.OPTION_CHECK_INTEGRITY}")
+        else:
+            self._log.warning(f"The OPTION_CHECK_INTEGRITY is {self.OPTION_CHECK_INTEGRITY} "
+                              f"(this should only be done in a backtest environment).")
+
+        if self.OPTION_PERSIST_EVENTS:
+            self._log.info(f"The OPTION_PERSIST_EVENTS is {self.OPTION_PERSIST_EVENTS}")
+        else:
+            self._log.warning(f"The OPTION_PERSIST_EVENTS is {self.OPTION_PERSIST_EVENTS} "
+                              f"(this should only be done in a backtest environment).")
 
         # Load cache
-        if self.load_cache:
+        if self.OPTION_LOAD_CACHE:
             self.load_orders_cache()
             self.load_positions_cache()
 
@@ -143,6 +168,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         Clear the current order cache and load orders from the database.
         """
+        self._log.info("Re-caching orders from the database...")
         self._cached_orders.clear()
 
         cdef bytes key_bytes
@@ -153,6 +179,10 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         cdef OrderEvent initial
 
         cdef list order_keys = self._redis.keys(f'{self.key_orders}*')
+
+        if len(order_keys) == 0:
+            self._log.info('No orders found in database.')
+            return
 
         for key_bytes in order_keys:
             key = key_bytes.decode(UTF8)
@@ -166,10 +196,13 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
             self._cached_orders[order.id] = order
 
+        self._log.info(f"Cached {len(order_keys)} orders.")
+
     cpdef void load_positions_cache(self):
         """
         Clear the current order cache and load orders from the database.
         """
+        self._log.info("Re-caching positions from the database...")
         self._cached_positions.clear()
 
         cdef bytes key_bytes
@@ -180,6 +213,10 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         cdef OrderFillEvent initial
 
         cdef list position_keys = self._redis.keys(f'{self.key_positions}*')
+
+        if len(position_keys) == 0:
+            self._log.info('No positions found in database.')
+            return
 
         for key_bytes in position_keys:
             key = key_bytes.decode(UTF8).rsplit(':', maxsplit=1)[1]
@@ -192,6 +229,8 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
                 position.apply(event)
 
             self._cached_positions[position.id] = position
+
+        self._log.info(f"Cached {len(position_keys)} positions.")
 
     cpdef void add_strategy(self, TradingStrategy strategy):
         """
@@ -219,13 +258,14 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         cdef str key_order =  self.key_orders + order.id.value
 
-        if self.check_integrity:
+        if self.OPTION_CHECK_INTEGRITY:
             if self._redis.exists(key_order):
                 self._log.warning(f'The {key_order} already exists.')
 
         # Command pipeline
         pipe = self._redis.pipeline()
-        pipe.rpush(key_order, self._event_serializer.serialize(order.last_event))
+        if self.OPTION_PERSIST_EVENTS:
+            pipe.rpush(key_order, self._event_serializer.serialize(order.last_event))
         pipe.hset(name=self.key_index_order_position, key=order.id.value, value=position_id.value)
         pipe.hset(name=self.key_index_order_strategy, key=order.id.value, value=strategy_id.value)
         pipe.hset(name=self.key_index_position_strategy, key=position_id.value, value=strategy_id.value)
@@ -250,13 +290,14 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         cdef str key_position = self.key_positions + position.id.value
 
-        if self.check_integrity:
+        if self.OPTION_CHECK_INTEGRITY:
             if self._redis.exists(key_position):
                 self._log.warning(f'The {key_position} already exists.')
 
         # Command pipeline
         pipe = self._redis.pipeline()
-        pipe.rpush(key_position, self._event_serializer.serialize(position.last_event))
+        if self.OPTION_PERSIST_EVENTS:
+            pipe.rpush(key_position, self._event_serializer.serialize(position.last_event))
         pipe.sadd(self.key_index_positions, position.id.value)
         pipe.sadd(self.key_index_positions_open, position.id.value)
         pipe.execute()
@@ -272,13 +313,14 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         cdef str key_order = self.key_orders + order.id.value
 
-        if self.check_integrity:
+        if self.OPTION_CHECK_INTEGRITY:
             if not self._redis.exists(key_order):
                 self._log.warning(f'The {key_order} did not already exist.')
 
         # Command pipeline
         pipe = self._redis.pipeline()
-        pipe.rpush(key_order, self._event_serializer.serialize(order.last_event))
+        if self.OPTION_PERSIST_EVENTS:
+            pipe.rpush(key_order, self._event_serializer.serialize(order.last_event))
         if order.is_working:
             pipe.sadd(self.key_index_orders_working, order.id.value)
             pipe.srem(self.key_index_orders_completed, order.id.value)
@@ -294,16 +336,16 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         :param position: The position to update (last event).
         """
-
         cdef str key_position = self.key_positions + position.id.value
 
-        if self.check_integrity:
+        if self.OPTION_CHECK_INTEGRITY:
             if not self._redis.exists(key_position):
                 self._log.warning(f'The {key_position} did not already exist.')
 
         # Command pipeline
         pipe = self._redis.pipeline()
-        pipe.rpush(key_position, self._event_serializer.serialize(position.last_event))
+        if self.OPTION_PERSIST_EVENTS:
+            pipe.rpush(key_position, self._event_serializer.serialize(position.last_event))
         if position.is_closed:
             pipe.sadd(self.key_index_positions_closed, position.id.value)
             pipe.srem(self.key_index_positions_open, position.id.value)
@@ -319,6 +361,9 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         :param account: The account to update (from last event).
         """
+        if not self.OPTION_PERSIST_EVENTS:
+            return
+
         cdef str key_account = self.key_accounts + account.id.value
 
         self._redis.rpush(key_account, self._event_serializer.serialize(account.last_event))

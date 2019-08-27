@@ -37,6 +37,8 @@ if __name__ == "__main__":
         bar_type=TestStubs.bartype_usdjpy_1min_bid())]
 
     config = BacktestConfig(
+        exec_db_type='in-memory',
+        exec_db_flush=True,
         frozen_account=False,
         starting_capital=1000000,
         account_currency=Currency.USD,
@@ -59,6 +61,7 @@ if __name__ == "__main__":
         data_bars_bid=bid_data,
         data_bars_ask=ask_data,
         strategies=strategies,
+        fill_model=fill_model,
         config=config)
 
     start = datetime(2013, 1, 1, 0, 0, 0, 0)
