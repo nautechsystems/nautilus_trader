@@ -9,6 +9,8 @@
 import threading
 import unittest
 
+from redis import Redis
+
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.live.logger import LogStore
 from test_kit.stubs import TestStubs
@@ -33,6 +35,13 @@ class LogStoreTests(unittest.TestCase):
 
         self.trader_id = TraderId('TESTER', '000')
         self.store = LogStore(trader_id=self.trader_id)
+
+        self.test_redis = Redis(host='localhost', port=6379, db=0)
+
+    def tearDown(self):
+        # Tear down
+        self.test_redis.flushall()  # Comment this line out to preserve data between tests
+        pass
 
     def test_can_store_order_event(self):
         # Arrange

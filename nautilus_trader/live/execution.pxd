@@ -37,8 +37,9 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
     cdef EventSerializer _event_serializer
     cdef object _redis
 
-    cdef readonly bint load_cache
-    cdef readonly bint check_integrity
+    cdef readonly bint OPTION_LOAD_CACHE
+    cdef readonly bint OPTION_CHECK_INTEGRITY
+    cdef readonly bint OPTION_PERSIST_EVENTS
 
     cpdef void load_orders_cache(self)
     cpdef void load_positions_cache(self)

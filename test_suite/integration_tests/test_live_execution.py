@@ -94,7 +94,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
 
     def tearDown(self):
         # Tear down
-        self.test_redis.flushall()
+        self.test_redis.flushall()  # Comment this line out to preserve data between tests
         pass
 
     def test_redis_functions(self):
