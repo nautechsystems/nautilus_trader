@@ -31,7 +31,7 @@ cdef class StringValue:
         Return a value indicating whether the given object is equal to this object.
         
         :param other: The other object to compare
-        :return True if the objects are equal, otherwise False.
+        :return bool.
         """
         if isinstance(other, self.__class__):
             return self.value == other.value

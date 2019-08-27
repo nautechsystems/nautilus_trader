@@ -80,14 +80,14 @@ cdef class Trader:
             # Design assumption that no strategies are running
             assert not strategy.is_running
 
-        # Check strategy identifiers are unique
+        # Check strategy_ids are unique
         strategy_ids = set()
         for strategy in strategies:
             if strategy.id not in strategy_ids:
                 strategy_ids.add(strategy.id)
             else:
-                raise RuntimeError(f'The strategy identifier {strategy.id} was not unique '
-                                   f'(duplicate strategy identifiers).')
+                raise RuntimeError(f'The strategy_id {strategy.id} was not unique '
+                                   f'(duplicate strategy_ids).')
 
         # Dispose of current strategies
         for strategy in self.strategies:
@@ -178,7 +178,7 @@ cdef class Trader:
     cpdef dict strategy_status(self):
         """
         Return a dictionary containing the traders strategy status.
-        The key is the strategy identifier.
+        The key is the strategy_id.
         The value is a bool which is True if the strategy is running else False.
         
         :return Dict[StrategyId, bool].

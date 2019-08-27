@@ -88,7 +88,7 @@ cdef class AtomicOrder:
 cdef class OrderFactory:
     """
     Provides creation of different order types. Holds an internal OrderIdGenerator
-    to handle order identifiers.
+    to handle order_ids.
     """
     cdef Clock _clock
     cdef OrderIdGenerator _id_generator

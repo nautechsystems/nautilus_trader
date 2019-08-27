@@ -64,7 +64,7 @@ cdef class Order:
         """
         Initializes a new instance of the Order class.
 
-        :param order_id: The order identifier.
+        :param order_id: The order_id.
         :param symbol: The order symbol.
         :param order_side: The order side.
         :param order_type: The order type.
@@ -230,7 +230,7 @@ cdef class Order:
 
     cpdef list get_order_ids_broker(self):
         """
-        Return a list of broker order identifiers.
+        Return a list of broker order_ids.
         
         :return List[OrderId]. 
         """
@@ -273,7 +273,7 @@ cdef class Order:
         Apply the given order event to the order.
 
         :param event: The order event to apply.
-        :raises ConditionFailed: If the order_events order_id is not equal to the order identifier.
+        :raises ConditionFailed: If the order_events order_id is not equal to the order_id.
         :raises ConditionFailed: If the order account_id is not None and the order_events account_id is not equal to the order account_id.
         """
         Condition.equal(self.id, event.order_id)

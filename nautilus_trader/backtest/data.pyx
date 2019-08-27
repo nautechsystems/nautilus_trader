@@ -677,7 +677,7 @@ cdef class DataProvider:
         Return a value indicating whether the timestamp of the next execution bars equals the given time.
 
         :param time: The reference time for next execution bars.
-        :return True if timestamp == time, else False.
+        :return bool.
         """
         return self.bars[self.bar_type_execution_bid][self.iterations[self.bar_type_execution_bid]].timestamp == time
 

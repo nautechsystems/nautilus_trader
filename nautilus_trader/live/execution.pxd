@@ -39,7 +39,6 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
     cdef readonly bint OPTION_LOAD_CACHE
     cdef readonly bint OPTION_CHECK_INTEGRITY
-    cdef readonly bint OPTION_PERSIST_EVENTS
 
     cpdef void load_orders_cache(self)
     cpdef void load_positions_cache(self)

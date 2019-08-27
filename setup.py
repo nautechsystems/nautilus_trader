@@ -27,7 +27,7 @@ MAINTAINER_EMAIL = 'info@nautechsystems.io'
 DESCRIPTION = 'An algorithmic trading framework written in Cython.'
 LICENSE = 'Nautech Systems Software License, April 2018'
 URL = 'https://nautechsystems.io/nautilus'
-PYTHON_REQUIRES = '>=3.6'
+PYTHON_REQUIRES = '>=3.7'
 REQUIREMENTS = ['cython',
                 'numpy',
                 'scipy',
@@ -60,7 +60,7 @@ Options.warning_errors = True
 Options.cimport_from_pyx = True
 
 # Write profiling hooks into methods (x2 overhead, use for profiling only)
-Profile_Hooks = False
+Profile_Hooks = True
 
 # Cython compiler directives
 compiler_directives = {'language_level': 3, 'embedsignature': True, 'profile': Profile_Hooks}

@@ -156,7 +156,7 @@ cdef class TraderId(Identifier):
         Initializes a new instance of the TraderId class.
 
         :param name: The name of the trader.
-        :param name: The order identifier tag for the trader.
+        :param name: The order_id tag for the trader.
         :raises ConditionFailed: If the name is not a valid string.
         :raises ConditionFailed: If the order_id_tag is not a valid string.
         """
@@ -173,11 +173,11 @@ cdef class TraderId(Identifier):
         correctly formatted with two valid strings either side of a hyphen '-'.
         
         Normally a trader identifier is the abbreviated name of the trader and
-        an order identifier tag number separated by a hyphen '-'.
+        an order_id tag number separated by a hyphen '-'.
         
         Example: 'Trader1-001'.
 
-        :param value: The value for the strategy identifier.
+        :param value: The value for the strategy_id.
         :return TraderId.
         """
         cdef tuple partitioned = value.partition('-')
@@ -193,7 +193,7 @@ cdef class TraderId(Identifier):
         correctly formatted with two valid strings either side of a hyphen '-'.
 
         Normally a trader identifier is the abbreviated name of the trader and
-        an order identifier tag number separated by a hyphen '-'.
+        an order_id tag number separated by a hyphen '-'.
 
         Example: 'Trader1-001'.
 
@@ -205,7 +205,7 @@ cdef class TraderId(Identifier):
 
 cdef class StrategyId(Identifier):
     """
-    Represents a valid strategy identifier, the name and order_id_tag combination
+    Represents a valid strategy_id, the name and order_id_tag combination
     should be unique at the trader level.
     """
 
@@ -214,7 +214,7 @@ cdef class StrategyId(Identifier):
         Initializes a new instance of the StrategyId class.
 
         :param name: The name of the strategy.
-        :param order_id_tag: The order identifier tag for the strategy.
+        :param order_id_tag: The order_id tag for the strategy.
         :raises ConditionFailed: If the name is not a valid string.
         :raises ConditionFailed: If the order_id_tag is not a valid string.
         """
@@ -227,15 +227,15 @@ cdef class StrategyId(Identifier):
     @staticmethod
     cdef StrategyId from_string(str value):
         """
-        Return a strategy identifier parsed from the given string value. Must be 
+        Return a strategy_id parsed from the given string value. Must be 
         correctly formatted with two valid strings either side of a hyphen '-'.
         
-        Normally a strategy identifier is the class name of the strategy and
-        an order identifier tag number separated by a hyphen '-'.
+        Normally a strategy_id is the class name of the strategy and
+        an order_id tag number separated by a hyphen '-'.
         
         Example: 'MyStrategy-001'.
 
-        :param value: The value for the strategy identifier.
+        :param value: The value for the strategy_id.
         :return StrategyId.
         """
         cdef tuple partitioned = value.partition('-')
@@ -246,15 +246,15 @@ cdef class StrategyId(Identifier):
         """
         Python wrapper for the from_string method.
 
-        Return a strategy identifier parsed from the given string value. Must be
+        Return a strategy_id parsed from the given string value. Must be
         correctly formatted with two valid strings either side of a hyphen '-'.
 
-        Normally a strategy identifier is the class name of the strategy and
-        an order identifier tag number separated by a hyphen '-'.
+        Normally a strategy_id is the class name of the strategy and
+        an order_id tag number separated by a hyphen '-'.
 
         Example: 'MyStrategy-001'.
 
-        :param value: The value for the strategy identifier.
+        :param value: The value for the strategy_id.
         :return StrategyId.
         """
         return StrategyId.from_string(value)
@@ -325,28 +325,28 @@ cdef class AccountNumber(Identifier):
 
 cdef class OrderId(Identifier):
     """
-    Represents a valid order identifier (should be unique).
+    Represents a valid order_id (should be unique).
     """
 
     def __init__(self, str value):
         """
         Initializes a new instance of the OrderId class.
 
-        :param value: The value of the order identifier (should be unique).
+        :param value: The value of the order_id (should be unique).
         """
         super().__init__(value)
 
 
 cdef class PositionId(Identifier):
     """
-    Represents a valid position identifier (should be unique).
+    Represents a valid position_id (should be unique).
     """
 
     def __init__(self, str value):
         """
         Initializes a new instance of the PositionId class.
 
-        :param value: The value of the position identifier (should be unique).
+        :param value: The value of the position_id (should be unique).
         """
         super().__init__(value)
 

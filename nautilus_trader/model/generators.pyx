@@ -90,8 +90,8 @@ cdef class OrderIdGenerator(IdentifierGenerator):
         """
         Initializes a new instance of the OrderIdGenerator class.
 
-        :param id_tag_trader: The order identifier tag for the trader.
-        :param id_tag_strategy: The order identifier tag for the strategy.
+        :param id_tag_trader: The order_id tag for the trader.
+        :param id_tag_strategy: The order_id tag for the strategy.
         :param clock: The clock for the component.
         """
         super().__init__('O',
@@ -101,7 +101,7 @@ cdef class OrderIdGenerator(IdentifierGenerator):
 
     cpdef OrderId generate(self):
         """
-        Return a unique order identifier.
+        Return a unique order_id.
 
         :return OrderId.
         """
@@ -120,8 +120,8 @@ cdef class PositionIdGenerator(IdentifierGenerator):
         """
         Initializes a new instance of the PositionIdGenerator class.
 
-        :param id_tag_trader: The position identifier tag for the trader.
-        :param id_tag_strategy: The position identifier tag for the strategy.
+        :param id_tag_trader: The position_id tag for the trader.
+        :param id_tag_strategy: The position_id tag for the strategy.
         :param clock: The clock for the component.
         """
         super().__init__('P',
@@ -131,7 +131,7 @@ cdef class PositionIdGenerator(IdentifierGenerator):
 
     cpdef PositionId generate(self):
         """
-        Return a unique position identifier.
+        Return a unique position_id.
 
         :return PositionId.
         """
