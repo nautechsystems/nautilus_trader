@@ -101,6 +101,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         self.database.add_position(position, self.strategy.id)
 
         # Assert
+        self.assertTrue(self.database.position_exists_for_order(order.id))
         self.assertTrue(self.database.position_exists(position.id))
         self.assertTrue(position.id in self.database.get_position_ids())
         self.assertTrue(position.id in self.database.get_positions())
@@ -361,6 +362,12 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         # Act
         # Assert
         self.assertIsNone(self.database.get_position_for_order(OrderId('unknown')))
+
+    def test_position_indexed_for_order_when_no_indexing_returns_false(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertFalse(self.database.position_indexed_for_order(OrderId('unknown')))
 
     def test_get_order_when_no_order_returns_none(self):
         # Arrange
