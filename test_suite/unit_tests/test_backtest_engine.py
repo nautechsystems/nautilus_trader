@@ -26,6 +26,8 @@ from test_kit.stubs import TestStubs
 UNIX_EPOCH = TestStubs.unix_epoch()
 USDJPY_FXCM = TestStubs.symbol_usdjpy_fxcm()
 
+# TODO: Speed these tests up
+
 
 class BacktestEngineTests(unittest.TestCase):
 
@@ -52,116 +54,6 @@ class BacktestEngineTests(unittest.TestCase):
     def test_initialization(self):
         self.assertEqual(TestStubs.instrument_usdjpy(), self.engine.instruments[0])
         self.assertEqual(1, len(self.engine.trader.strategy_status()))
-
-    def test_can_run_empty_strategy(self):
-        # Arrange
-        start = datetime(2013, 1, 1, 0, 0, 0, 0)
-        stop = datetime(2013, 2, 1, 0, 0, 0, 0)
-
-        # Act
-        self.engine.run(start, stop)
-
-        # Assert
-        self.assertEqual(44641, self.engine.iteration)
-
-    def test_can_reset_engine_(self):
-        # Arrange
-        start = datetime(2013, 1, 1, 0, 0, 0, 0)
-        stop = datetime(2013, 2, 1, 0, 0, 0, 0)
-
-        self.engine.run(start, stop)
-
-        # Act
-        self.engine.reset()
-
-        # Assert
-        self.assertEqual(0, self.engine.iteration)  # No exceptions raised
-
-    def test_can_run_ema_cross_strategy(self):
-        # Arrange
-        instrument = TestStubs.instrument_usdjpy()
-        bar_type = TestStubs.bartype_usdjpy_1min_bid()
-
-        strategies = [EMACross(instrument=instrument,
-                               bar_type=bar_type,
-                               risk_bp=10,
-                               fast_ema=10,
-                               slow_ema=20,
-                               atr_period=20,
-                               sl_atr_multiple=2.0)]
-
-        start = datetime(2013, 1, 2, 0, 0, 0, 0)
-        stop = datetime(2013, 1, 3, 0, 0, 0, 0)
-
-        # Act
-        self.engine.run(start, stop, strategies=strategies)
-
-        # Assert
-        self.assertEqual(2881, self.engine.data_client.data_providers[USDJPY_FXCM].iterations[TestStubs.bartype_usdjpy_1min_bid()])
-        self.assertEqual(1441, strategies[0].fast_ema.count)
-        self.assertEqual(-12085.9296875, self.engine.get_performance_stats()['PNL'])  # Money represented as float here
-
-    def test_can_reset_and_rerun_ema_cross_strategy_returns_identical_performance(self):
-        # Arrange
-        instrument = TestStubs.instrument_usdjpy()
-        bar_type = TestStubs.bartype_usdjpy_1min_bid()
-
-        strategies = [EMACross(instrument=instrument,
-                               bar_type=bar_type,
-                               risk_bp=10,
-                               fast_ema=10,
-                               slow_ema=20,
-                               atr_period=20,
-                               sl_atr_multiple=2.0)]
-
-        start = datetime(2013, 1, 2, 0, 0, 0, 0)
-        stop = datetime(2013, 1, 3, 0, 0, 0, 0)
-
-        self.engine.run(start, stop, strategies=strategies)
-
-        # Act
-        result1 = self.engine.portfolio.analyzer.get_returns()
-
-        self.engine.reset()
-        self.engine.run(start, stop)
-
-        result2 = self.engine.portfolio.analyzer.get_returns()
-
-        # Assert
-        self.assertEqual(all(result1), all(result2))
-
-    def test_can_run_multiple_strategies(self):
-        # Arrange
-        instrument = TestStubs.instrument_usdjpy()
-        bar_type = TestStubs.bartype_usdjpy_1min_bid()
-
-        strategies = [EMACross(instrument=instrument,
-                               bar_type=bar_type,
-                               risk_bp=10,
-                               fast_ema=10,
-                               slow_ema=20,
-                               atr_period=20,
-                               sl_atr_multiple=2.0,
-                               extra_id_tag='001'),
-                      EMACross(instrument=instrument,
-                               bar_type=bar_type,
-                               risk_bp=10,
-                               fast_ema=10,
-                               slow_ema=20,
-                               atr_period=20,
-                               sl_atr_multiple=2.0,
-                               extra_id_tag='002')]
-
-        start = datetime(2013, 1, 2, 0, 0, 0, 0)
-        stop = datetime(2013, 1, 3, 0, 0, 0, 0)
-
-        # Act
-        self.engine.run(start, stop, strategies=strategies)
-
-        # Assert
-        self.assertEqual(2881, self.engine.data_client.data_providers[USDJPY_FXCM].iterations[TestStubs.bartype_usdjpy_1min_bid()])
-        self.assertEqual(1441, strategies[0].fast_ema.count)
-        self.assertEqual(1441, strategies[1].fast_ema.count)
 
     def test_timer_and_alert_sequencing_with_bar_execution(self):
         # Arrange
