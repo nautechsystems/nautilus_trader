@@ -28,7 +28,7 @@ cpdef str format_zulu_datetime(datetime dt):
     :param dt: The datetime to format.
     :return str.
     """
-    cdef formatted_dt = ''
+    cdef str formatted_dt = ''
     try:
         formatted_dt = dt.isoformat(timespec='microseconds').partition('+')[0][:-3]
     except TypeError as ex:
