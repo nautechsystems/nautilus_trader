@@ -164,32 +164,34 @@ cdef class Order:
 
     cdef bint equals(self, Order other):
         """
-        Return a value indicating whether the object equals the given object.
-        
-        :param other: The other object to compare
-        :return True if the objects are equal, otherwise False.
+        Return a value indicating whether this object is equal to the given object.
+
+        :param other: The other object.
+        :return bool.
         """
         return self.id.equals(other.id)
 
-    def __eq__(self, other) -> bool:
+    def __eq__(self, Order other) -> bool:
         """
         Return a value indicating whether this object is equal to the given object.
 
+        :param other: The other object.
         :return bool.
         """
         return self.equals(other)
 
-    def __ne__(self, other) -> bool:
+    def __ne__(self, Order other) -> bool:
         """
         Return a value indicating whether this object is not equal to the given object.
 
+        :param other: The other object.
         :return bool.
         """
         return not self.equals(other)
 
     def __hash__(self) -> int:
         """"
-        Return the hash representation of this object.
+        Return a hash representation of this object.
 
         :return int.
         """
@@ -197,7 +199,7 @@ cdef class Order:
 
     def __str__(self) -> str:
         """
-        Return the str() string representation of this object.
+        Return a string representation of this object.
 
         :return str.
         """
@@ -211,7 +213,8 @@ cdef class Order:
 
     def __repr__(self) -> str:
         """
-        Return the repr() string representation of this object.
+        Return a string representation of this object which includes the objects
+        location in memory.
 
         :return str.
         """
@@ -372,32 +375,34 @@ cdef class AtomicOrder:
 
     cdef bint equals(self, AtomicOrder other):
         """
-        Return a value indicating whether the object equals the given object.
-        
-        :param other: The other object to compare
-        :return True if the objects are equal, otherwise False.
+        Return a value indicating whether this object is equal to the given object.
+
+        :param other: The other object.
+        :return bool.
         """
         return self.id.equals(other.id)
 
-    def __eq__(self, other) -> bool:
+    def __eq__(self, AtomicOrder other) -> bool:
         """
         Return a value indicating whether this object is equal to the given object.
 
+        :param other: The other object.
         :return bool.
         """
         return self.equals(other)
 
-    def __ne__(self, other) -> bool:
+    def __ne__(self, AtomicOrder other) -> bool:
         """
         Return a value indicating whether this object is not equal to the given object.
 
+        :param other: The other object.
         :return bool.
         """
         return not self.equals(other)
 
     def __hash__(self) -> int:
         """"
-        Return the hash representation of this object.
+        Return a hash representation of this object.
 
         :return int.
         """
@@ -405,7 +410,9 @@ cdef class AtomicOrder:
 
     def __str__(self) -> str:
         """
-        Return the str() string representation of this object.
+        Return a string representation of this object.
+
+        :return str.
 
         :return str.
         """
@@ -414,7 +421,8 @@ cdef class AtomicOrder:
 
     def __repr__(self) -> str:
         """
-        Return the repr() string representation of this object.
+        Return a string representation of this object which includes the objects
+        location in memory.
 
         :return str.
         """

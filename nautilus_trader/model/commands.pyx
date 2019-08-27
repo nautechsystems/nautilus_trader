@@ -67,13 +67,18 @@ cdef class SubmitOrder(Command):
 
     def __str__(self) -> str:
         """
-        :return The str() string representation of the command.
+        Return a string representation of this object.
+
+        :return str.
         """
         return f"{self.__class__.__name__}({self.order})"
 
     def __repr__(self) -> str:
         """
-        :return The repr() string representation of the command.
+        Return a string representation of this object which includes the objects
+        location in memory.
+
+        :return str.
         """
         return f"<{str(self)} object at {id(self)}>"
 
@@ -111,13 +116,18 @@ cdef class SubmitAtomicOrder(Command):
 
     def __str__(self) -> str:
         """
-        :return The str() string representation of the command.
+        Return a string representation of this object.
+
+        :return str.
         """
         return f"{self.__class__.__name__}({self.atomic_order})"
 
     def __repr__(self) -> str:
         """
-        :return The repr() string representation of the command.
+        Return a string representation of this object which includes the objects
+        location in memory.
+
+        :return str.
         """
         return f"<{str(self)} object at {id(self)}>"
 

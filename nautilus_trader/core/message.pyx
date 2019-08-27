@@ -34,10 +34,10 @@ cdef class Message:
 
     cdef bint equals(self, Message other):
         """
-        Return a value indicating whether the given message is equal to this message.
-        
-        :param other: The other message to compare
-        :return True if the messages are equal, otherwise False.
+        Return a value indicating whether this object is equal to the given object.
+
+        :param other: The other object.
+        :return bool.
         """
         if self.message_type == other.message_type:
             return self.id == other.id
@@ -46,25 +46,25 @@ cdef class Message:
 
     def __eq__(self, Message other) -> bool:
         """
-        Return a value indicating whether the given message is equal to this message.
+        Return a value indicating whether this object is equal to the given object.
 
-        :param other: The other message.
-        :return True if the messages are equal, otherwise False.
+        :param other: The other object.
+        :return bool.
         """
         return self.equals(other)
 
-    def __ne__(self, Message other):
+    def __ne__(self, Message other) -> bool:
         """
-        Return a value indicating whether the given message is not equal to this message.
+        Return a value indicating whether this object is not equal to the given object.
 
-        :param other: The other message.
-        :return True if the messages are not equal, otherwise False.
+        :param other: The other object.
+        :return bool.
         """
         return not self.equals(other)
 
     def __hash__(self) -> int:
         """"
-        Return the hash for this message.
+        Return a hash representation of this object.
 
         :return int.
         """
@@ -72,7 +72,7 @@ cdef class Message:
 
     def __str__(self) -> str:
         """
-        Return the str() string representation of this message.
+        Return a string representation of this object.
 
         :return str.
         """
@@ -80,7 +80,8 @@ cdef class Message:
 
     def __repr__(self) -> str:
         """
-        Return the repr() string representation of this message.
+        Return a string representation of this object which includes the objects
+        location in memory.
 
         :return str.
         """

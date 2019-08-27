@@ -58,38 +58,45 @@ cdef class Position:
 
     cdef bint equals(self, Position other):
         """
-        Return a value indicating whether the object equals the given object.
-        
-        :param other: The other object to compare
-        :return True if the objects are equal, otherwise False.
+        Return a value indicating whether this object is equal to the given object.
+
+        :param other: The other object.
+        :return bool.
         """
         return self.id.equals(other.id)
 
-    def __eq__(self, other) -> bool:
+    def __eq__(self, Position other) -> bool:
         """
         Return a value indicating whether this object is equal to the given object.
 
+        :param other: The other object.
         :return bool.
         """
         return self.equals(other)
 
-    def __ne__(self, other) -> bool:
+    def __ne__(self, Position other) -> bool:
         """
         Return a value indicating whether this object is not equal to the given object.
 
+        :param other: The other object.
         :return bool.
         """
         return not self.equals(other)
 
     def __str__(self) -> str:
         """
-        :return The str() string representation of the position.
+        Return a string representation of this object.
+
+        :return str.
         """
         return f"Position({self.id.value}) {self.status_string()}"
 
     def __repr__(self) -> str:
         """
-        :return The repr() string representation of the position.
+        Return a string representation of this object which includes the objects
+        location in memory.
+
+        :return str.
         """
         return f"<{str(self)} object at {id(self)}>"
 
