@@ -44,7 +44,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
     cpdef void load_positions_cache(self)
     cdef set _decode_set_to_order_ids(self, set original)
     cdef set _decode_set_to_position_ids(self, set original)
-    cdef set _decode_set_to_strategy_ids(self, set original)
+    cdef set _decode_set_to_strategy_ids(self, list original)
 
 
 cdef class LiveExecutionEngine(ExecutionEngine):

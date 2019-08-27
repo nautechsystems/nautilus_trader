@@ -192,6 +192,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         self.assertTrue(position.id in self.database.get_positions_closed())
         self.assertTrue(position.id not in self.database.get_positions_open(self.strategy.id))
         self.assertTrue(position.id not in self.database.get_positions_open())
+        self.assertEqual(position, self.database.get_position_for_order(order1.id))
 
     def test_can_update_account(self):
         # Arrange
@@ -324,6 +325,24 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
 
         # Assert
         # Does not raise exception
+
+    def test_get_strategy_ids_with_no_ids_returns_empty_set(self):
+        # Arrange
+        # Act
+        result = self.database.get_strategy_ids()
+
+        # Assert
+        self.assertEqual(set(), result)
+
+    def test_get_strategy_ids_with_id_returns_correct_set(self):
+        # Arrange
+        self.database.add_strategy(self.strategy)
+
+        # Act
+        result = self.database.get_strategy_ids()
+
+        # Assert
+        self.assertEqual({self.strategy.id}, result)
 
     def test_position_exists_when_no_position_returns_false(self):
         # Arrange
