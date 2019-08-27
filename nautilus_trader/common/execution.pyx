@@ -286,24 +286,29 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
     cpdef void add_order(self, Order order, StrategyId strategy_id, PositionId position_id):
         """
-        Add the given order to the execution database.
+        Add the given order to the execution database indexed with the given strategy and position
+        identifiers.
 
         :param order: The order to add.
-        :param strategy_id: The strategy identifier to associate with the order.
-        :param position_id: The position identifier to associate with the order.
+        :param strategy_id: The strategy identifier to index for the order.
+        :param position_id: The position identifier to index for the order.
         """
         Condition.not_in(order.id, self._cached_orders, 'order.id', 'cached_orders')
         Condition.not_in(order.id, self._index_orders, 'order.id', 'index_orders')
         Condition.not_in(order.id, self._index_order_strategy, 'order.id', 'index_order_strategy')
         Condition.not_in(order.id, self._index_order_position, 'order.id', 'index_order_position')
-        #Condition.not_in(position_id, self._index_position_strategy, 'position_id', 'index_position_strategy')
 
         self._cached_orders[order.id] = order
 
         self._index_orders.add(order.id)
         self._index_order_strategy[order.id] = strategy_id
         self._index_order_position[order.id] = position_id
-        self._index_position_strategy[position_id] = strategy_id
+
+        # Index: PositionStrategy
+        if position_id not in self._index_position_strategy:
+            self._index_position_strategy[position_id] = strategy_id
+        else:
+            assert strategy_id.equals(self._index_position_strategy[position_id])
 
         # Index: Position - Set[OrderId]
         if position_id not in self._index_position_orders:
@@ -828,7 +833,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
 cdef class ExecutionEngine:
     """
-    The base class for all execution engines.
+    Provides a generic execution engine.
     """
 
     def __init__(self,

@@ -28,7 +28,7 @@ from nautilus_trader.trade.strategy cimport TradingStrategy
 
 cdef class ExecutionDatabase:
     """
-    Provides an execution database.
+    The abstract base class for all execution databases.
     """
     cdef LoggerAdapter _log
     cdef dict _cached_orders
@@ -108,7 +108,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
 cdef class ExecutionEngine:
     """
-    The base class for all execution engines.
+    Provides a generic execution engine.
     """
     cdef Clock _clock
     cdef GuidFactory _guid_factory
