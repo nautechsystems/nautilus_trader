@@ -617,7 +617,7 @@ cdef class BacktestExecClient(ExecutionClient):
             del self.atomic_child_orders[order_id]
 
     cdef void _check_oco_order(self, OrderId order_id):
-        # Check held OCO orders and remove any paired with the given order identifier
+        # Check held OCO orders and remove any paired with the given order_id
         cdef OrderId oco_order_id
         cdef Order oco_order
 
@@ -640,7 +640,7 @@ cdef class BacktestExecClient(ExecutionClient):
 
     cdef void _reject_oco_order(self, Order order, OrderId oco_order_id):
         # order is the OCO order to reject
-        # oco_order_id is the other order identifier for this OCO pair
+        # oco_order_id is the other order_id for this OCO pair
 
         # Generate event
         cdef OrderRejected event = OrderRejected(
@@ -655,7 +655,7 @@ cdef class BacktestExecClient(ExecutionClient):
 
     cdef void _cancel_oco_order(self, Order order, OrderId oco_order_id):
         # order is the OCO order to cancel
-        # oco_order_id is the other order identifier for this OCO pair
+        # oco_order_id is the other order_id for this OCO pair
 
         # Generate event
         cdef OrderCancelled event = OrderCancelled(

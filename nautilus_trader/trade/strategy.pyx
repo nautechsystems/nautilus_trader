@@ -51,7 +51,7 @@ cdef class TradingStrategy:
         """
         Initializes a new instance of the TradingStrategy class.
 
-        :param order_id_tag: The order identifier tag for the strategy (should be unique at trader level).
+        :param order_id_tag: The order_id tag for the strategy (should be unique at trader level).
         :param flatten_on_sl_reject: The flag indicating whether the position with an
         associated stop order should be flattened if the order is rejected.
         :param flatten_on_stop: The flag indicating whether the strategy should
@@ -335,25 +335,25 @@ cdef class TradingStrategy:
         Register the given order as an entry order.
         
         :param order: The entry order to register.
-        :param position_id: The position identifier to associate with the entry order.
+        :param position_id: The position_id to associate with the entry order.
         """
         self._entry_orders[order.id] = order
 
     cpdef void register_stop_loss_order(self, Order order, PositionId position_id) except *:
         """
-        Register the given order as a stop loss order for the given position identifier.
+        Register the given order as a stop loss order for the given position_id.
         
         :param order: The stop loss order to register.
-        :param position_id: The position identifier to associate with the stop loss order.
+        :param position_id: The position_id to associate with the stop loss order.
         """
         self._stop_loss_orders[order.id] = order
 
     cpdef void register_take_profit_order(self, Order order, PositionId position_id) except *:
         """
-        Register the given order as a take-profit order for the given position identifier.
+        Register the given order as a take-profit order for the given position_id.
 
         :param order: The take-profit order to register.
-        :param position_id: The position identifier to associate with the take-profit order.
+        :param position_id: The position_id to associate with the take-profit order.
         """
         self._take_profit_orders[order.id] = order
 
@@ -492,14 +492,14 @@ cdef class TradingStrategy:
                 self.log.exception(ex)
 
     cdef void _remove_atomic_child_orders(self, OrderId order_id):
-        # Remove any atomic child orders associated with the given order identifier
+        # Remove any atomic child orders associated with the given order_id
         if order_id in self._atomic_order_ids:
             for child_order_id in self._atomic_order_ids[order_id]:
                 self._remove_from_registered_orders(child_order_id)
             del self._atomic_order_ids[order_id]
 
     cdef void _remove_from_registered_orders(self, OrderId order_id):
-        # Remove the given order identifier from any registered order dictionary
+        # Remove the given order_id from any registered order dictionary
         if order_id in self._entry_orders:
             del self._entry_orders[order_id]
         elif order_id in self._stop_loss_orders:
@@ -771,7 +771,7 @@ cdef class TradingStrategy:
         """
         Return a value indicating whether all indicators are initialized.
 
-        :return True if all indicators initialized, otherwise False.
+        :return bool.
         """
         for indicator in self._indicators:
             if indicator.initialized is False:
@@ -830,7 +830,7 @@ cdef class TradingStrategy:
         """
         Return the order with the given identifier.
 
-        :param order_id: The order identifier.
+        :param order_id: The order_id.
         :return Order or None.
         """
         return self._exec_engine.database.get_order(order_id)
@@ -870,7 +870,7 @@ cdef class TradingStrategy:
     cpdef dict stop_loss_orders(self):
         """
         Return a dictionary of pending or active stop loss orders with their 
-        associated position identifiers.
+        associated position_ids.
         
         :return Dict[OrderId, Order].
         """
@@ -879,7 +879,7 @@ cdef class TradingStrategy:
     cpdef dict take_profit_orders(self):
         """
         Return a dictionary of pending or active stop loss orders with their 
-        associated position identifiers.
+        associated position_ids.
         
         :return Dict[OrderId, Order].
         """
@@ -887,7 +887,7 @@ cdef class TradingStrategy:
 
     cpdef list entry_order_ids(self):
         """
-        Return a list of pending entry order identifiers.
+        Return a list of pending entry order_ids.
 
         :return List[OrderId].
         """
@@ -895,7 +895,7 @@ cdef class TradingStrategy:
 
     cpdef list stop_loss_order_ids(self):
         """
-        Return a list of stop-loss order identifiers.
+        Return a list of stop-loss order_ids.
 
         :return List[OrderId].
         """
@@ -903,7 +903,7 @@ cdef class TradingStrategy:
 
     cpdef list take_profit_order_ids(self):
         """
-        Return a list of stop-loss order identifiers.
+        Return a list of stop-loss order_ids.
 
         :return List[OrderId].
         """
@@ -913,9 +913,9 @@ cdef class TradingStrategy:
         """
         Return the entry order associated with the given identifier (if found).
 
-        :param order_id: The entry order identifier.
+        :param order_id: The entry order_id.
         :return Order.
-        :raises ConditionFailed. If the order identifier is not registered with an entry.
+        :raises ConditionFailed. If the order_id is not registered with an entry.
         """
         Condition.is_in(order_id, self._entry_orders, 'order_id', 'pending_entry_orders')
 
@@ -925,9 +925,9 @@ cdef class TradingStrategy:
         """
         Return the stop-loss order associated with the given identifier (if found).
 
-        :param order_id: The stop-loss order identifier.
+        :param order_id: The stop-loss order_id.
         :return Order.
-        :raises ConditionFailed. If the order identifier is not registered with a stop-loss.
+        :raises ConditionFailed. If the order_id is not registered with a stop-loss.
         """
         Condition.is_in(order_id, self._stop_loss_orders, 'order_id', 'stop_loss_orders')
 
@@ -937,9 +937,9 @@ cdef class TradingStrategy:
         """
         Return the take-profit order associated with the given identifier (if found).
 
-        :param order_id: The take-profit order identifier.
+        :param order_id: The take-profit order_id.
         :return Order.
-        :raises ConditionFailed. If the order identifier is not registered with a take-profit.
+        :raises ConditionFailed. If the order_id is not registered with a take-profit.
         """
         Condition.is_in(order_id, self._take_profit_orders, 'order_id', 'take_profit_orders')
 
@@ -947,7 +947,7 @@ cdef class TradingStrategy:
 
     cpdef Position position(self, PositionId position_id):
         """
-        Return the position associated with the given position identifier.
+        Return the position associated with the given position_id.
 
         :param position_id: The positions identifier.
         :return The position with the given identifier.
@@ -983,8 +983,8 @@ cdef class TradingStrategy:
         """
         Return a value indicating whether a position with the given identifier exists.
         
-        :param position_id: The position identifier.
-        :return True if the position exists, else False.
+        :param position_id: The position_id.
+        :return bool.
         """
         return self._exec_engine.database.position_exists(position_id)
 
@@ -992,8 +992,8 @@ cdef class TradingStrategy:
         """
         Return a value indicating whether an order with the given identifier exists.
         
-        :param order_id: The order identifier.
-        :return True if the order exists, else False.
+        :param order_id: The order_id.
+        :return bool.
         """
         return self._exec_engine.database.order_exists(order_id)
 
@@ -1001,9 +1001,8 @@ cdef class TradingStrategy:
         """
         Return a value indicating whether an order with the given identifier is working.
          
-        :param order_id: The order identifier.
-        :return True if the order exists and is active, else False.
-        :raises ConditionFailed: If the order is not found.
+        :param order_id: The order_id.
+        :return bool.
         """
         return self._exec_engine.database.is_order_working(order_id)
 
@@ -1011,9 +1010,8 @@ cdef class TradingStrategy:
         """
         Return a value indicating whether an order with the given identifier is complete.
          
-        :param order_id: The order identifier.
-        :return True if the order does not exist or is complete, else False.
-        :raises ConditionFailed: If the order is not found.
+        :param order_id: The order_id.
+        :return bool.
         """
         return self._exec_engine.database.is_order_completed(order_id)
 
@@ -1022,7 +1020,7 @@ cdef class TradingStrategy:
         Return a value indicating whether the strategy is completely flat (i.e no market positions
         other than FLAT across all instruments).
         
-        :return True if flat, else False.
+        :return bool.
         """
         return self._exec_engine.is_strategy_flat(self.id)
 
@@ -1172,11 +1170,11 @@ cdef class TradingStrategy:
 
     cpdef void submit_order(self, Order order, PositionId position_id):
         """
-        Send a submit order command with the given order and position identifier to the execution 
+        Send a submit order command with the given order and position_id to the execution 
         service.
 
         :param order: The order to submit.
-        :param position_id: The position identifier to associate with this order.
+        :param position_id: The position_id to associate with this order.
         """
         Condition.not_none(self._exec_engine, 'exec_engine')
 
@@ -1196,7 +1194,7 @@ cdef class TradingStrategy:
     cpdef void submit_entry_order(self, Order order, PositionId position_id):
         """
         Register the given order as an entry and then send a submit order command 
-        with the given order and position identifier to the execution service.
+        with the given order and position_id to the execution service.
         """
         self.register_entry_order(order, position_id)
         self.submit_order(order, position_id)
@@ -1204,7 +1202,7 @@ cdef class TradingStrategy:
     cpdef void submit_stop_loss_order(self, Order order, PositionId position_id):
         """
         Register the given order as a stop-loss and then send a submit order command 
-        with the given order and position identifier to the execution service.
+        with the given order and position_id to the execution service.
         """
         self.register_stop_loss_order(order, position_id)
         self.submit_order(order, position_id)
@@ -1212,18 +1210,18 @@ cdef class TradingStrategy:
     cpdef void submit_take_profit_order(self, Order order, PositionId position_id):
         """
         Register the given order as a take-profit and then send a submit order command 
-        with the given order and position identifier to the execution service.
+        with the given order and position_id to the execution service.
         """
         self.register_take_profit_order(order, position_id)
         self.submit_order(order, position_id)
 
     cpdef void submit_atomic_order(self, AtomicOrder atomic_order, PositionId position_id):
         """
-        Send a submit atomic order command with the given order and position identifier to the 
+        Send a submit atomic order command with the given order and position_id to the 
         execution service.
         
         :param atomic_order: The atomic order to submit.
-        :param position_id: The position identifier to associate with this order.
+        :param position_id: The position_id to associate with this order.
         """
         if self._exec_engine is None:
             self.log.error("Cannot submit atomic order (execution engine not registered).")
@@ -1237,7 +1235,7 @@ cdef class TradingStrategy:
         if atomic_order.has_take_profit:
             self.register_take_profit_order(atomic_order.take_profit, position_id)
 
-        # Track atomic order identifiers
+        # Track atomic order_ids
         cdef list child_order_ids = [atomic_order.stop_loss.id]
         if atomic_order.has_take_profit:
             child_order_ids.append(atomic_order.take_profit.id)
@@ -1345,7 +1343,7 @@ cdef class TradingStrategy:
         the required market order, and sending it to the execution service.
         If the position is None or already FLAT will log a warning.
 
-        :param position_id: The position identifier to flatten.
+        :param position_id: The position_id to flatten.
         :raises ConditionFailed: If the position_id is not found in the position book.
         """
         if self._exec_engine is None:

@@ -12,7 +12,7 @@ from nautilus_trader.common.clock cimport Clock
 
 cdef class IdentifierGenerator:
     """
-    Provides a generator for unique order identifiers.
+    Provides a generator for unique order_ids.
     """
     cdef Clock _clock
 

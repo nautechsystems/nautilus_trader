@@ -73,6 +73,7 @@ cdef class ExecutionDatabase:
     cpdef bint is_order_completed(self, OrderId order_id)
     cpdef bint position_exists(self, PositionId position_id)
     cpdef bint position_exists_for_order(self, OrderId order_id)
+    cpdef bint position_indexed_for_order(self, OrderId order_id)
     cpdef bint is_position_open(self, PositionId position_id)
     cpdef bint is_position_closed(self, PositionId position_id)
     cpdef int count_orders_total(self, StrategyId strategy_id=*)

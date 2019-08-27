@@ -107,7 +107,7 @@ cdef class OrderEvent(Event):
         """
         Initializes a new instance of the OrderEvent base class.
 
-        :param order_id: The event order identifier.
+        :param order_id: The event order_id.
         :param event_id: The event identifier.
         :param event_timestamp: The event timestamp.
         """
@@ -152,7 +152,7 @@ cdef class OrderFillEvent(OrderEvent):
         """
         Initializes a new instance of the OrderFillEvent class.
 
-        :param order_id: The event order identifier.
+        :param order_id: The event order_id.
         :param account_id: The event account identifier.
         :param execution_id: The event order execution identifier.
         :param execution_ticket: The event order execution ticket.
@@ -207,7 +207,7 @@ cdef class OrderInitialized(OrderEvent):
         """
         Initializes a new instance of the OrderInitialized class.
 
-        :param order_id: The event order identifier.
+        :param order_id: The event order_id.
         :param symbol: The event order symbol.
         :param label: The event order label.
         :param order_side: The event order side.
@@ -246,7 +246,7 @@ cdef class OrderSubmitted(OrderEvent):
         """
         Initializes a new instance of the OrderSubmitted class.
 
-        :param order_id: The event order identifier.
+        :param order_id: The event order_id.
         :param account_id: The event account identifier.
         :param submitted_time: The event order submitted time.
         :param event_id: The event identifier.
@@ -274,7 +274,7 @@ cdef class OrderRejected(OrderEvent):
         """
         Initializes a new instance of the OrderRejected class.
 
-        :param order_id: The event order identifier.
+        :param order_id: The event order_id.
         :param account_id: The event account identifier.
         :param rejected_time: The event order rejected time.
         :param rejected_reason: The event order rejected reason.
@@ -313,7 +313,7 @@ cdef class OrderAccepted(OrderEvent):
         """
         Initializes a new instance of the OrderAccepted class.
 
-        :param order_id: The event order identifier.
+        :param order_id: The event order_id.
         :param account_id: The event account identifier.
         :param accepted_time: The event order accepted time.
         :param event_id: The event identifier.
@@ -349,8 +349,8 @@ cdef class OrderWorking(OrderEvent):
         """
         Initializes a new instance of the OrderWorking class.
 
-        :param order_id: The event order identifier.
-        :param order_id_broker: The event broker order identifier.
+        :param order_id: The event order_id.
+        :param order_id_broker: The event broker order_id.
         :param account_id: The event account identifier.
         :param symbol: The event order symbol.
         :param label: The event order label.
@@ -409,7 +409,7 @@ cdef class OrderCancelReject(OrderEvent):
         """
         Initializes a new instance of the OrderCancelReject class.
 
-        :param order_id: The event order identifier.
+        :param order_id: The event order_id.
         :param account_id: The event account identifier.
         :param rejected_time: The event order cancel reject time.
         :param rejected_response_to: The event order cancel reject response.
@@ -451,7 +451,7 @@ cdef class OrderCancelled(OrderEvent):
         """
         Initializes a new instance of the OrderCancelled class.
 
-        :param order_id: The event order identifier.
+        :param order_id: The event order_id.
         :param account_id: The event account identifier.
         :param cancelled_time: The event order cancelled time.
         :param event_id: The event identifier.
@@ -480,7 +480,7 @@ cdef class OrderModified(OrderEvent):
         """
         Initializes a new instance of the OrderModified class.
 
-        :param order_id: The event order identifier.
+        :param order_id: The event order_id.
         :param order_id_broker: The event order broker identifier.
         :param account_id: The event account identifier.
         :param modified_price: The event modified price.
@@ -519,7 +519,7 @@ cdef class OrderExpired(OrderEvent):
         """
         Initializes a new instance of the OrderExpired class.
 
-        :param order_id: The event order identifier.
+        :param order_id: The event order_id.
         :param account_id: The event account identifier.
         :param expired_time: The event order expired time.
         :param event_id: The event identifier.
@@ -553,7 +553,7 @@ cdef class OrderPartiallyFilled(OrderFillEvent):
         """
         Initializes a new instance of the OrderPartiallyFilled class.
 
-        :param order_id: The event order identifier.
+        :param order_id: The event order_id.
         :param account_id: The event account identifier.
         :param execution_id: The event order execution identifier.
         :param execution_ticket: The event order execution ticket.
@@ -613,7 +613,7 @@ cdef class OrderFilled(OrderFillEvent):
         """
         Initializes a new instance of the OrderFilled class.
 
-        :param order_id: The event order identifier.
+        :param order_id: The event order_id.
         :param account_id: The event account identifier.
         :param execution_id: The event order execution identifier.
         :param execution_ticket: The event order execution ticket.
@@ -664,7 +664,7 @@ cdef class PositionEvent(Event):
         Initializes a new instance of the PositionEvent base class.
 
         :param position: The event position.
-        :param strategy_id: The strategy identifier associated with the position.
+        :param strategy_id: The strategy_id associated with the position.
         :param order_fill: The order fill event which triggered the event.
         :param event_id: The event identifier.
         :param event_timestamp: The event timestamp.
@@ -699,7 +699,7 @@ cdef class PositionOpened(PositionEvent):
         Initializes a new instance of the PositionOpened class.
 
         :param position: The event position.
-        :param strategy_id: The strategy identifier associated with the position.
+        :param strategy_id: The strategy_id associated with the position.
         :param order_fill: The order fill event which triggered the event.
         :param event_id: The event identifier.
         :param event_timestamp: The event timestamp.
@@ -738,7 +738,7 @@ cdef class PositionModified(PositionEvent):
         Initializes a new instance of the PositionModified class.
 
         :param position: The event position.
-        :param strategy_id: The strategy identifier associated with the position.
+        :param strategy_id: The strategy_id associated with the position.
         :param order_fill: The order fill event which triggered the event.
         :param event_id: The event identifier.
         :param event_timestamp: The event timestamp.
@@ -778,7 +778,7 @@ cdef class PositionClosed(PositionEvent):
         Initializes a new instance of the PositionClosed class.
 
         :param position: The event position.
-        :param strategy_id: The strategy identifier associated with the position.
+        :param strategy_id: The strategy_id associated with the position.
         :param order_fill: The order fill event which triggered the event.
         :param event_id: The event identifier.
         :param event_timestamp: The event timestamp.

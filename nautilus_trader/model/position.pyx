@@ -111,7 +111,7 @@ cdef class Position:
 
     cpdef list get_order_ids(self):
         """
-        Return a list of all order identifiers.
+        Return a list of all order_ids.
         
         :return List[OrderId]. 
         """
