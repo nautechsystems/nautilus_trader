@@ -24,7 +24,7 @@ from nautilus_trader.model.objects import (
     BarType,
     Bar,
     Instrument)
-from nautilus_trader.model.identifiers import Venue, IdTag, InstrumentId, AccountId, ExecutionId, ExecutionTicket
+from nautilus_trader.model.identifiers import Venue, IdTag, InstrumentId, AccountId, OrderId, ExecutionId, ExecutionTicket
 from nautilus_trader.model.generators import PositionIdGenerator
 from nautilus_trader.model.order import Order, OrderFactory
 from nautilus_trader.model.position import Position
@@ -161,7 +161,7 @@ class TestStubs:
                    UNIX_EPOCH)
 
     @staticmethod
-    def order_filled_event(order, fill_price):
+    def event_order_filled(order, fill_price=Price('1.00000')):
 
         return OrderFilled(
             order.id,
@@ -175,6 +175,25 @@ class TestStubs:
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
+
+    @staticmethod
+    def event_order_working(order, working_price=Price('1.00000')):
+
+        return OrderWorking(
+            order.id,
+            OrderId('B-' + order.id.value),
+            AccountId('SIMULATED', '123456'),
+            order.symbol,
+            order.label,
+            order.side,
+            order.type,
+            order.quantity,
+            order.price if working_price is None else working_price,
+            order.time_in_force,
+            UNIX_EPOCH,
+            GUID(uuid.uuid4()),
+            UNIX_EPOCH,
+            order.expire_time)
 
     @staticmethod
     def position(number=1, entry_price=Price('1.00000')):
@@ -198,7 +217,7 @@ class TestStubs:
             OrderSide.BUY,
             Quantity(100000))
 
-        order_filled = TestStubs.order_filled_event(order, entry_price)
+        order_filled = TestStubs.event_order_filled(order, entry_price)
 
         position_id = generator.generate()
         position = Position(position_id=position_id, event=order_filled)

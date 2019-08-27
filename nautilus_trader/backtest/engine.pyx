@@ -144,6 +144,9 @@ cdef class BacktestEngine:
         else:
             raise RuntimeError(f'The {config.exec_db_type} exec_db_type in the configuration is unrecognized.')
 
+        if self.config.exec_db_flush:
+            self.exec_db.flush()
+
         self.exec_engine = ExecutionEngine(
             database=self.exec_db,
             account=self.account,
@@ -433,7 +436,8 @@ cdef class BacktestEngine:
         self.iteration = 0
         self.data_client.reset()
         self.exec_db.reset()
-        self.exec_db.flush()
+        if self.config.exec_db_flush:
+            self.exec_db.flush()
         self.exec_engine.reset()
         self.exec_client.reset()
         self.trader.reset()
