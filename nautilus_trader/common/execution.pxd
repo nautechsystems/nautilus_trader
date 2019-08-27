@@ -36,7 +36,7 @@ cdef class ExecutionDatabase:
 
     cdef readonly TraderId trader_id
 
-# -- COMMANDS -------------------------------------------------------------------------------------"
+#-- COMMANDS --------------------------------------------------------------------------------------"
     cpdef void add_strategy(self, TradingStrategy strategy)
     cpdef void add_order(self, Order order, StrategyId strategy_id, PositionId position_id)
     cpdef void add_position(self, Position position, StrategyId strategy_id)
@@ -49,7 +49,7 @@ cdef class ExecutionDatabase:
     cpdef void flush(self)
     cdef void _reset(self)
 
-# -- QUERIES --------------------------------------------------------------------------------------"
+#-- QUERIES ---------------------------------------------------------------------------------------"
     cpdef set get_strategy_ids(self)
     cpdef set get_order_ids(self, StrategyId strategy_id=*)
     cpdef set get_order_working_ids(self, StrategyId strategy_id=*)
@@ -123,7 +123,7 @@ cdef class ExecutionEngine:
     cdef readonly int command_count
     cdef readonly int event_count
 
-# -- COMMANDS -------------------------------------------------------------------------------------#
+#-- COMMANDS --------------------------------------------------------------------------------------#
     cpdef void register_client(self, ExecutionClient exec_client)
     cpdef void register_strategy(self, TradingStrategy strategy)
     cpdef void deregister_strategy(self, TradingStrategy strategy)
@@ -132,12 +132,12 @@ cdef class ExecutionEngine:
     cpdef void check_residuals(self)
     cpdef void reset(self)
 
-# -- QUERIES --------------------------------------------------------------------------------------"
+#-- QUERIES ---------------------------------------------------------------------------------------"
     cpdef list registered_strategies(self)
     cpdef bint is_strategy_flat(self, StrategyId strategy_id)
     cpdef bint is_flat(self)
 
-# -------------------------------------------------------------------------------------------------"
+#--------------------------------------------------------------------------------------------------"
     cdef void _execute_command(self, Command command)
     cdef void _handle_event(self, Event event)
     cdef void _handle_order_event(self, OrderEvent event)

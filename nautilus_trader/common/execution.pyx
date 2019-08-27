@@ -323,7 +323,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         else:
             self._index_strategy_positions[strategy_id].add(position_id)
 
-        self._log.debug(f"Added new {order.id} for {strategy_id} and {position_id}.")
+        self._log.debug(f"Added new {order.id}, indexed {strategy_id}, indexed {position_id}.")
 
     cpdef void add_position(self, Position position, StrategyId strategy_id):
         """
@@ -340,7 +340,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
         self._index_positions.add(position.id)
         self._index_positions_open.add(position.id)
-        self._log.debug(f"Added open {position.id}.")
+        self._log.debug(f"Added new {position.id}.")
 
     cpdef void update_order(self, Order order):
         """
@@ -398,11 +398,11 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
     cpdef void check_residuals(self):
         # Check for any residual active orders and log warnings if any are found
-        for order in self._index_orders_working:
-            self._log.warning(f"Residual working {order}")
+        for order_id, order in self.get_orders_working().items():
+            self._log.warning(f"Residual {order}.")
 
-        for position in self._index_positions_open:
-            self._log.warning(f"Residual open position {position}")
+        for position_id, position in self.get_positions_open().items():
+            self._log.warning(f"Residual {position}.")
 
     cpdef void reset(self):
         # Reset the execution database by clearing all stateful internal values
@@ -428,7 +428,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Flush the database which clears all data.
         """
-        pass # Do nothing in memory
+        self._log.info('Flushing database (in-memory database does nothing).')
 
 
 # -- QUERIES --------------------------------------------------------------------------------------"

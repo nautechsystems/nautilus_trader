@@ -193,28 +193,6 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
             self._cached_positions[position.id] = position
 
-    cpdef void check_residuals(self):
-        # Check for any residual active orders and log warnings if any are found
-        for working_orders in self._redis.smembers(self.key_index_orders_working):
-            for order_id in working_orders:
-                self._log.warning(f"Residual working order {order_id}")
-
-        for positions_open in self._redis.smembers(self.key_index_positions_open):
-            for position_id in positions_open:
-                self._log.warning(f"Residual open position {position_id}")
-
-    cpdef void reset(self):
-        """
-        Reset the execution database by clearing the cache.
-        """
-        self._reset()
-
-    cpdef void flush(self):
-        """
-        Flush the database which clears all data.
-        """
-        self._redis.flushdb()
-
     cpdef void add_strategy(self, TradingStrategy strategy):
         """
         Add the given strategy to the execution database.
@@ -257,7 +235,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         pipe.sadd(self.key_index_strategy_positions + strategy_id.value, position_id.value)
         pipe.execute()
 
-        self._log.debug(f"Added new {order.id} for {strategy_id} and {position_id}.")
+        self._log.debug(f"Added new {order.id}, indexed {strategy_id}, indexed {position_id}.")
 
     cpdef void add_position(self, Position position, StrategyId strategy_id):
         """
@@ -283,7 +261,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         pipe.sadd(self.key_index_positions_open, position.id.value)
         pipe.execute()
 
-        self._log.debug(f"Added open {position.id}")
+        self._log.debug(f"Added new {position.id}")
 
     cpdef void update_order(self, Order order):
         """
@@ -357,6 +335,28 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         pipe.execute()
 
         self._log.debug(f"Deleted strategy (id={strategy.id.value}).")
+
+    cpdef void check_residuals(self):
+        # Check for any residual active orders and log warnings if any are found
+        for order_id, order in self.get_orders_working().items():
+            self._log.warning(f"Residual {order}")
+
+        for position_id, position in self.get_positions_open().items():
+            self._log.warning(f"Residual {position}")
+
+    cpdef void reset(self):
+        """
+        Reset the execution database by clearing the cache.
+        """
+        self._reset()
+
+    cpdef void flush(self):
+        """
+        Flush the database which clears all data.
+        """
+        self._log.debug('Flushing database....')
+        self._redis.flushdb()
+        self._log.info('Flushed database.')
 
     cdef set _decode_set_to_order_ids(self, set original):
         return {OrderId(element.decode(UTF8)) for element in original}

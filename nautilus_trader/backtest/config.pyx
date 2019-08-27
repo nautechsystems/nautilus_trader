@@ -18,6 +18,7 @@ cdef class BacktestConfig:
     """
     def __init__(self,
                  str exec_db_type='in-memory',
+                 bint exec_db_flush=True,
                  bint frozen_account=False,
                  int starting_capital=1000000,
                  Currency account_currency=Currency.USD,
@@ -34,6 +35,7 @@ cdef class BacktestConfig:
         Initializes a new instance of the BacktestConfig class.
 
         :param exec_db_type: The type for the execution database (can be the default 'in-memory' or redis).
+        :param exec_db_flush: The flag indicating whether the execution database should be flushed on each run.
         :param frozen_account: The flag indicating whether the account should be
         frozen for testing (no pnl applied).
         :param starting_capital: The starting account capital (> 0).
@@ -55,6 +57,7 @@ cdef class BacktestConfig:
         Condition.not_negative(commission_rate_bp, 'commission_rate_bp')
 
         self.exec_db_type = exec_db_type
+        self.exec_db_flush = exec_db_flush
         self.frozen_account = frozen_account
         self.starting_capital = Money(starting_capital)
         self.account_currency = account_currency

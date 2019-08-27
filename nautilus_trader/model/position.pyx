@@ -85,7 +85,7 @@ cdef class Position:
         """
         :return The str() string representation of the position.
         """
-        return f"Position(id={self.id.value}) {self.status_string()}"
+        return f"Position({self.id.value}) {self.status_string()}"
 
     def __repr__(self) -> str:
         """
