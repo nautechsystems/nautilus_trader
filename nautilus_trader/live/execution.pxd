@@ -52,10 +52,10 @@ cdef class LiveExecutionEngine(ExecutionEngine):
     """
     Provides a process and thread safe live execution engine.
     """
+    cdef object _message_bus
     cdef object _thread
-    cdef object _queue
 
-    cpdef void _process_queue(self)
+    cpdef void _consume_messages(self)
 
 
 cdef class LiveExecClient(ExecutionClient):

@@ -827,8 +827,8 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             guid_factory=guid_factory,
             logger=logger)
 
-        self._queue = queue.Queue()
-        self._thread = threading.Thread(target=self._process_queue, daemon=True)
+        self._message_bus = queue.Queue()
+        self._thread = threading.Thread(target=self._consume_messages, daemon=True)
         self._thread.start()
 
     cpdef void execute_command(self, Command command):
@@ -837,7 +837,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         
         :param command: The command to execute.
         """
-        self._queue.put(command)
+        self._message_bus.put(command)
 
     cpdef void handle_event(self, Event event):
         """
@@ -845,15 +845,14 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         
         :param event: The event to handle
         """
-        self._queue.put(event)
+        self._message_bus.put(event)
 
-    cpdef void _process_queue(self):
+    cpdef void _consume_messages(self):
         self._log.info("Running...")
 
-        # Process the queue one item at a time
         cdef Message message
         while True:
-            message = self._queue.get()
+            message = self._message_bus.get()
 
             if message.message_type == MessageType.EVENT:
                 self._handle_event(message)
@@ -978,7 +977,7 @@ cdef class LiveExecClient(ExecutionClient):
         self._command_handler(command)
 
     cdef void _command_handler(self, Command command):
-        self._log.debug(f"Sending {command} ...")
+        self._log.debug(f"Sending command {command} ...")
         cdef bytes response_bytes = self._commands_worker.send(self._command_serializer.serialize(command))
         cdef Response response =  self._response_serializer.deserialize(response_bytes)
         self._log.debug(f"Received response {response}")

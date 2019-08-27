@@ -41,8 +41,8 @@ cdef class LogStore:
 
         self._key = f'Trader-{trader_id.value}:LogStore'
         self._redis = Redis(host=host, port=port, db=0)
-        self._queue = multiprocessing.Queue()
-        self._process = multiprocessing.Process(target=self._process_queue, daemon=True)
+        self._message_bus = multiprocessing.Queue()
+        self._process = multiprocessing.Process(target=self._consume_messages, daemon=True)
         self._process.start()
 
     cpdef void store(self, LogMessage message):
@@ -51,14 +51,12 @@ cdef class LogStore:
         
         :param message: The log message to store.
         """
-        self._queue.put(message)
+        self._message_bus.put(message)
 
-    cpdef void _process_queue(self):
-        # Process the queue one item at a time
-
+    cpdef void _consume_messages(self):
         cdef LogMessage message
         while True:
-            message = self._queue.get()
+            message = self._message_bus.get()
             self._redis.rpush(f'{self._key}:{message.level_string()}', message.as_string())
 
 
@@ -105,9 +103,9 @@ cdef class LiveLogger(Logger):
                          log_file_path,
                          clock)
 
-        self._queue = queue.Queue()
+        self._message_bus = queue.Queue()
         self._store = store
-        self._thread = threading.Thread(target=self._process_queue, daemon=True)
+        self._thread = threading.Thread(target=self._consume_messages, daemon=True)
         self._thread.start()
 
     cpdef void log(self, LogMessage message):
@@ -116,13 +114,12 @@ cdef class LiveLogger(Logger):
 
         :param message: The log message to log.
         """
-        self._queue.put(message)
+        self._message_bus.put(message)
 
-    cpdef void _process_queue(self):
-        # Process the queue one item at a time
+    cpdef void _consume_messages(self):
         cdef LogMessage message
         while True:
-            message = self._queue.get()
+            message = self._message_bus.get()
             self._log(message)
 
             if self._store is not None and message.level >= self._log_level_store:

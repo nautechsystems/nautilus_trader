@@ -14,19 +14,20 @@ cdef class LogStore:
     Provides a log store.
     """
     cdef str _key
+    cdef object _message_bus
     cdef object _process
-    cdef object _queue
     cdef object _redis
 
     cpdef void store(self, LogMessage message)
-    cpdef void _process_queue(self)
+    cpdef void _consume_messages(self)
 
 
 cdef class LiveLogger(Logger):
     """
     Provides a thread safe logger for live concurrent operations.
     """
-    cdef object _queue
+    cdef object _message_bus
     cdef object _thread
     cdef LogStore _store
-    cpdef void _process_queue(self)
+
+    cpdef void _consume_messages(self)
