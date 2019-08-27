@@ -418,7 +418,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
             self._log.warning(f"Residual {position}.")
 
     cpdef void reset(self):
-        # Reset the execution database by clearing all stateful internal values
+        # Reset the execution database by clearing all stateful values
         self._log.debug(f"Resetting...")
 
         self._strategies.clear()
@@ -925,9 +925,15 @@ cdef class ExecutionEngine:
         self._handle_event(event)
 
     cpdef void check_residuals(self):
+        """
+        Check for residual working orders or open positions.
+        """
         self.database.check_residuals()
 
     cpdef void reset(self):
+        """
+        Reset the execution engine by clearing all stateful values.
+        """
         self.database.reset()
 
 #-- QUERIES ---------------------------------------------------------------------------------------"
@@ -936,7 +942,7 @@ cdef class ExecutionEngine:
         """
         Return a list of strategy identifiers registered with the execution engine.
         
-        :return List[StrategyId]
+        :return List[StrategyId].
         """
         return list(self._registered_strategies.keys())
 
@@ -946,15 +952,15 @@ cdef class ExecutionEngine:
         (all associated positions FLAT).
         
         :param strategy_id: The strategy identifier.
-        :return True if the strategy is flat, else False.
+        :return bool.
         """
         return self.database.count_positions_open(strategy_id) == 0
 
     cpdef bint is_flat(self):
         """
-        Return a value indicating whether the entire portfolio is flat.
+        Return a value indicating whether the execution engine is flat.
         
-        :return True if the portfolio is flat, else False.
+        :return bool.
         """
         return self.database.count_positions_open() == 0
 
@@ -983,21 +989,15 @@ cdef class ExecutionEngine:
     cdef void _handle_event(self, Event event):
         self.event_count += 1
 
-        # Order Event
         if isinstance(event, OrderEvent):
             self._handle_order_event(event)
-        # Position Event
         elif isinstance(event, PositionEvent):
             self._handle_position_event(event)
-        # Account Event
         elif isinstance(event, AccountStateEvent):
             self._handle_account_event(event)
 
     cdef void _handle_order_event(self, OrderEvent event):
-        cdef Order order
-        cdef StrategyId strategy_id
-
-        order = self.database.get_order(event.order_id)
+        cdef Order order = self.database.get_order(event.order_id)
         if order is None:
             self._log.error(f"Cannot process {event} ({event.order_id} not found).")
             return  # Cannot process event further
@@ -1005,9 +1005,9 @@ cdef class ExecutionEngine:
         order.apply(event)
         self.database.update_order(order)
 
-        strategy_id = self.database.get_strategy_for_order(event.order_id)
+        cdef StrategyId strategy_id = self.database.get_strategy_for_order(event.order_id)
         if strategy_id is None:
-            self._log.error(f"Cannot process {event} ({strategy_id} not found)")
+            self._log.error(f"Cannot process {event} ({strategy_id} not found).")
             return  # Cannot process event further
 
         if isinstance(event, OrderFillEvent):
@@ -1019,9 +1019,8 @@ cdef class ExecutionEngine:
         elif isinstance(event, OrderCancelled):
             self._log.debug(str(event))
             self._send_to_strategy(event, strategy_id)
-        # Warning Events
         elif isinstance(event, (OrderRejected, OrderCancelReject)):
-            self._log.debug(str(event))  # Also logged as warning by strategy
+            self._log.debug(str(event))  # WRN logged by strategy
             self._send_to_strategy(event, strategy_id)
         else:
             self._log.debug(str(event))
@@ -1030,17 +1029,18 @@ cdef class ExecutionEngine:
     cdef void _handle_order_fill(self, OrderFillEvent event, StrategyId strategy_id):
         cdef PositionId position_id = self.database.get_position_id(event.order_id)
         if position_id is None:
-            self._log.error(f"Cannot process {event} (position id for {event.order_id} not found).")
+            self._log.error(f"Cannot process {event} (position_id for {event.order_id} not found).")
             return  # Cannot process event further
 
         cdef Position position = self.database.get_position_for_order(event.order_id)
 
         if position is None:
-            # Position does not exist yet - create position
+            # Position does not exist - create new position
             position = Position(position_id, event)
             self.database.add_position(position, strategy_id)
             self._position_opened(position, strategy_id, event)
         else:
+            # Position exists - apply event
             position.apply(event)
             self.database.update_position(position)
             if position.is_closed:
@@ -1063,7 +1063,8 @@ cdef class ExecutionEngine:
             self.database.update_account(self.account)
             self.portfolio.handle_transaction(event)
         else:
-            self._log.warning(f"Cannot process {event} (event not for this account).")
+            self._log.warning(f"Cannot process {event} "
+                              f"(event account_id {event.account_id} does not match this account {self.account.id}).")
 
     cdef void _position_opened(self, Position position, StrategyId strategy_id, OrderEvent event):
         cdef PositionOpened position_opened = PositionOpened(
@@ -1103,11 +1104,11 @@ cdef class ExecutionEngine:
         if strategy_id in self._registered_strategies:
             self._registered_strategies[strategy_id].handle_event(event)
         else:
-            self._log.error(f"Cannot send event to strategy ({strategy_id} not found in registered strategies).")
+            self._log.error(f"Cannot send event to strategy ({strategy_id} not found).")
 
     cdef void _reset(self):
         """
-        Reset the execution engine by clearing all stateful internal values.
+        Reset the execution engine by clearing stateful values.
         """
         self._registered_strategies = {}  # type: Dict[StrategyId, TradingStrategy]
         self.command_count = 0

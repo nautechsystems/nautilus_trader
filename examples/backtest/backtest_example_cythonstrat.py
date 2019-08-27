@@ -43,7 +43,7 @@ if __name__ == "__main__":
         sl_atr_multiple=2.0)]
 
     config = BacktestConfig(
-        exec_db_type='in-memory',
+        exec_db_type='redis',
         exec_db_flush=True,
         frozen_account=False,
         starting_capital=1000000,

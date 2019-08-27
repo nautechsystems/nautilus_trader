@@ -179,8 +179,7 @@ cdef class LiveDataClient(DataClient):
 
     cpdef void reset(self):
         """
-        Resets the data client by clearing all stateful internal values and
-        returning it to a fresh state.
+        Resets the data client by clearing all stateful values.
         """
         self._cached_symbols.clear()
         self._cached_bar_types.clear()
