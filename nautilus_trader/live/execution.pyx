@@ -364,8 +364,8 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
     cdef set _decode_set_to_position_ids(self, set original):
         return {PositionId(element.decode(UTF8)) for element in original}
 
-    cdef set _decode_set_to_strategy_ids(self, set original):
-        return {StrategyId.from_string(element.decode(UTF8)) for element in original}
+    cdef set _decode_set_to_strategy_ids(self, list original):
+        return {StrategyId.from_string(element.decode(UTF8).rsplit(':', 2)[1]) for element in original}
 
 # -- QUERIES --------------------------------------------------------------------------------------"
 
@@ -470,7 +470,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         :return Dict[OrderId, Order].
         """
         cdef set order_ids = self.get_order_ids(strategy_id)
-        cdef dict orders
+        cdef dict orders = {}
 
         try:
             orders = {order_id: self._cached_orders[order_id] for order_id in order_ids}
@@ -486,7 +486,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         :return Dict[OrderId, Order].
         """
         cdef set order_ids = self.get_order_working_ids(strategy_id)
-        cdef dict orders
+        cdef dict orders = {}
 
         try:
             orders = {order_id: self._cached_orders[order_id] for order_id in order_ids}
@@ -502,7 +502,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         :return Dict[OrderId, Order].
         """
         cdef set order_ids = self.get_order_completed_ids(strategy_id)
-        cdef dict orders
+        cdef dict orders = {}
 
         try:
             orders = {order_id: self._cached_orders[order_id] for order_id in order_ids}
@@ -532,7 +532,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         cdef PositionId position_id = self.get_position_id(order_id)
         if position_id is None:
-            self._log.error(f"Cannot get position for {order_id} (no matching position id found).")
+            self._log.error(f"Cannot get position for {order_id} (no matching position_id found in database).")
             return None
 
         return self._cached_positions.get(position_id)
@@ -544,11 +544,12 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         :param order_id: The order identifier associated with the position.
         :return PositionId or None.
         """
-        cdef PositionId position_id = PositionId(self._redis.hget(name=self.key_index_order_position, key=order_id.value).decode(UTF8))
-        if position_id is None:
-            self._log.error(f"Cannot get position id for {order_id} (no matching position id found).")
+        cdef bytes position_id_bytes = self._redis.hget(name=self.key_index_order_position, key=order_id.value)
+        if position_id_bytes is None:
+            self._log.error(f"Cannot get position_id for {order_id} (no matching position_id found in database).")
+            return position_id_bytes
 
-        return position_id
+        return PositionId(position_id_bytes.decode(UTF8))
 
     cpdef dict get_positions(self, StrategyId strategy_id=None):
         """
@@ -558,7 +559,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         :return Dict[PositionId, Position].
         """
         cdef set position_ids = self.get_position_ids(strategy_id)
-        cdef dict positions
+        cdef dict positions = {}
 
         try:
             positions = {position_id: self._cached_positions[position_id] for position_id in position_ids}
@@ -576,7 +577,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         :return Dict[PositionId, Position].
         """
         cdef set position_ids = self.get_position_open_ids(strategy_id)
-        cdef dict positions
+        cdef dict positions = {}
 
         try:
             positions = {position_id: self._cached_positions[position_id] for position_id in position_ids}
@@ -594,7 +595,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         :return Dict[PositionId, Position].
         """
         cdef set position_ids = self.get_position_closed_ids(strategy_id)
-        cdef dict positions
+        cdef dict positions = {}
 
         try:
             positions = {position_id: self._cached_positions[position_id] for position_id in position_ids}

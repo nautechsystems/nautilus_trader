@@ -113,6 +113,24 @@ cdef class BacktestEngine:
         nautilus_header(self.log)
         self.log.info("Building engine...")
 
+        # Execution Database
+        if config.exec_db_type == 'in-memory':
+            self.exec_db = InMemoryExecutionDatabase(trader_id=trader_id, logger=self.test_logger)
+        elif config.exec_db_type == 'redis':
+            self.exec_db = RedisExecutionDatabase(
+                trader_id=trader_id,
+                host='localhost',
+                port=6379,
+                command_serializer=MsgPackCommandSerializer(),
+                event_serializer=MsgPackEventSerializer(),
+                logger=self.test_logger)
+        else:
+            raise RuntimeError(f'The exec_db_type in the backtest configuration is unrecognized '
+                               f'(can be either \'in-memory\' or \'redis\').')
+        if self.config.exec_db_flush:
+            self.exec_db.flush()
+
+
         self.instruments = instruments
         self.data_client = BacktestDataClient(
             venue=venue,
@@ -129,23 +147,6 @@ cdef class BacktestEngine:
             clock=self.test_clock,
             guid_factory=self.guid_factory,
             logger=self.test_logger)
-
-        # Execution Database
-        if config.exec_db_type == 'in-memory':
-            self.exec_db = InMemoryExecutionDatabase(trader_id=trader_id, logger=self.test_logger)
-        elif config.exec_db_type == 'redis':
-            self.exec_db = RedisExecutionDatabase(
-                trader_id=trader_id,
-                host='localhost',
-                port=6379,
-                command_serializer=MsgPackCommandSerializer(),
-                event_serializer=MsgPackEventSerializer(),
-                logger=self.test_logger)
-        else:
-            raise RuntimeError(f'The {config.exec_db_type} exec_db_type in the configuration is unrecognized.')
-
-        if self.config.exec_db_flush:
-            self.exec_db.flush()
 
         self.exec_engine = ExecutionEngine(
             database=self.exec_db,
