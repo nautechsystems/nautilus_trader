@@ -37,13 +37,13 @@ cdef class ExecutionDatabase:
     cdef readonly TraderId trader_id
 
 #-- COMMANDS --------------------------------------------------------------------------------------"
-    cpdef void add_strategy(self, TradingStrategy strategy)
-    cpdef void add_order(self, Order order, StrategyId strategy_id, PositionId position_id)
-    cpdef void add_position(self, Position position, StrategyId strategy_id)
+    cpdef void add_strategy(self, TradingStrategy strategy) except *
+    cpdef void add_order(self, Order order, StrategyId strategy_id, PositionId position_id) except *
+    cpdef void add_position(self, Position position, StrategyId strategy_id) except *
     cpdef void update_order(self, Order order)
     cpdef void update_position(self, Position position)
     cpdef void update_account(self, Account account)
-    cpdef void delete_strategy(self, TradingStrategy strategy)
+    cpdef void delete_strategy(self, TradingStrategy strategy) except *
     cpdef void check_residuals(self)
     cpdef void reset(self)
     cpdef void flush(self)
