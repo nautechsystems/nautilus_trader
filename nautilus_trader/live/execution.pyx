@@ -257,7 +257,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         pipe.sadd(self.key_index_strategy_positions + strategy_id.value, position_id.value)
         pipe.execute()
 
-        self._log.debug(f"Added new {order.id} with {strategy_id} and {position_id}.")
+        self._log.debug(f"Added new {order.id} for {strategy_id} and {position_id}.")
 
     cpdef void add_position(self, Position position, StrategyId strategy_id):
         """

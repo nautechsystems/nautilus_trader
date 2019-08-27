@@ -366,7 +366,7 @@ cdef class TradingStrategy:
         :param tick: The tick received.
         """
         if tick.symbol not in self._ticks:
-            self._ticks[tick.symbol] = deque(self.tick_capacity)
+            self._ticks[tick.symbol] = deque(maxlen=self.tick_capacity)
         self._ticks[tick.symbol].appendleft(tick)
 
         cdef IndicatorUpdater updater
@@ -397,7 +397,7 @@ cdef class TradingStrategy:
         :param bar: The bar received.
         """
         if bar_type not in self._bars:
-            self._bars[bar_type] = deque(self.bar_capacity)
+            self._bars[bar_type] = deque(maxlen=self.bar_capacity)
         self._bars[bar_type].appendleft(bar)
 
         cdef IndicatorUpdater updater

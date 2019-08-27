@@ -13,6 +13,7 @@ cdef class BacktestConfig:
     """
     Provides a configuration for a BacktestEngine.
     """
+    cdef readonly str exec_db_type
     cdef readonly bint frozen_account
     cdef readonly Money starting_capital
     cdef readonly Currency account_currency
