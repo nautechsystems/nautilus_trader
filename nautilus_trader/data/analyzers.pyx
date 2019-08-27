@@ -135,8 +135,7 @@ cdef class LiquidityAnalyzer:
 
     cpdef void reset(self):
         """
-        Reset the spread analyzer by clearing all internally held values and 
-        returning it to a fresh state.
+        Reset the spread analyzer by clearing all stateful values.
         """
         self.value = 0.0
         self.initialized = False

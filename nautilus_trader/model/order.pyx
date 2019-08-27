@@ -453,8 +453,7 @@ cdef class OrderFactory:
 
     cpdef void reset(self):
         """
-        Reset the order factory by clearing all stateful internal values to their
-        initial value.
+        Reset the order factory by clearing all stateful values.
         """
         self._id_generator.reset()
 
