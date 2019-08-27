@@ -154,7 +154,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
 # -- COMMANDS -------------------------------------------------------------------------------------"
 
-    cpdef void load_orders_cache(self):
+    cpdef void load_orders_cache(self) except *:
         """
         Clear the current order cache and load orders from the database.
         """
@@ -188,7 +188,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         self._log.info(f"Cached {len(order_keys)} orders.")
 
-    cpdef void load_positions_cache(self):
+    cpdef void load_positions_cache(self) except *:
         """
         Clear the current order cache and load orders from the database.
         """
@@ -229,8 +229,12 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         :param strategy: The strategy to add.
         """
         pipe = self._redis.pipeline()
-        pipe.hset(self.key_strategies + f'{strategy.id.value}:{CONFIG}', 'some_value', 1)
-        pipe.execute()
+        pipe.hset(name=self.key_strategies + f'{strategy.id.value}:{CONFIG}', key='some_value', value=1)
+        cdef list reply = pipe.execute()
+
+        if self.OPTION_CHECK_INTEGRITY:
+             if reply[0] == 0:  # "0 if field already exists in the hash and the value was updated."
+                self._log.error(f"The strategy_id {strategy.id.value} already existed and was overwritten.")
 
         self._log.debug(f"Added new {strategy.id}.")
 
@@ -248,23 +252,35 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         self._cached_orders[order.id] = order
 
-        cdef str key_order =  self.key_orders + order.id.value
-
-        if self.OPTION_CHECK_INTEGRITY:
-            if self._redis.exists(key_order):
-                self._log.warning(f'The {key_order} already exists.')
-
         # Command pipeline
         pipe = self._redis.pipeline()
-        pipe.rpush(key_order, self._event_serializer.serialize(order.last_event))
-        pipe.hset(name=self.key_index_order_position, key=order.id.value, value=position_id.value)
-        pipe.hset(name=self.key_index_order_strategy, key=order.id.value, value=strategy_id.value)
-        pipe.hset(name=self.key_index_position_strategy, key=position_id.value, value=strategy_id.value)
-        pipe.sadd(self.key_index_orders, order.id.value)
-        pipe.sadd(self.key_index_position_orders + position_id.value, order.id.value)
-        pipe.sadd(self.key_index_strategy_orders + strategy_id.value, order.id.value)
-        pipe.sadd(self.key_index_strategy_positions + strategy_id.value, position_id.value)
-        pipe.execute()
+        pipe.rpush(self.key_orders + order.id.value, self._event_serializer.serialize(order.last_event)) # 0
+        pipe.hset(name=self.key_index_order_position, key=order.id.value, value=position_id.value)       # 1
+        pipe.hset(name=self.key_index_order_strategy, key=order.id.value, value=strategy_id.value)       # 2
+        pipe.hset(name=self.key_index_position_strategy, key=position_id.value, value=strategy_id.value) # 3
+        pipe.sadd(self.key_index_orders, order.id.value)                                                 # 4
+        pipe.sadd(self.key_index_position_orders + position_id.value, order.id.value)                    # 5
+        pipe.sadd(self.key_index_strategy_orders + strategy_id.value, order.id.value)                    # 6
+        pipe.sadd(self.key_index_strategy_positions + strategy_id.value, position_id.value)              # 7
+        cdef list reply = pipe.execute()
+
+        if self.OPTION_CHECK_INTEGRITY:
+            if reply[0] > 1:  # Reply = The length of the list after the push operation
+                self._log.error(f"The order_id {order.id.value} already existed in the orders and was appended to.")
+            if reply[1] == 0:  # Reply = 0 if field already exists in the hash and the value was updated
+                self._log.error(f"The order_id {order.id.value} already existed in index_order_position and was overwritten.")
+            if reply[2] == 0:  # Reply = 0 if field already exists in the hash and the value was updated
+                self._log.error(f"The order_id {order.id.value} already existed in index_order_strategy and was overwritten.")
+            if reply[3] == 0:  # Reply = 0 if field already exists in the hash and the value was updated
+                self._log.error(f"The position_id {position_id.value} already existed in index_position_strategy and was overwritten.")
+            if reply[4] == 0:  # Reply = 0 if the element was already a member of the set
+                self._log.error(f"The order_id {order.id.value} already existed in index_orders.")
+            if reply[5] == 0:  # Reply = 0 if the element was already a member of the set
+                self._log.error(f"The order_id {order.id.value} already existed in index_position_orders.")
+            if reply[6] == 0:  # Reply = 0 if the element was already a member of the set
+                self._log.error(f"The order_id {order.id.value} already existed in index_strategy_orders.")
+            if reply[7] == 0:  # Reply = 0 if the element was already a member of the set
+                self._log.error(f"The position_id {position_id.value} already existed in index_strategy_positions.")
 
         self._log.debug(f"Added new {order.id}, indexed {strategy_id}, indexed {position_id}.")
 
@@ -280,18 +296,20 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         self._cached_positions[position.id] = position
 
-        cdef str key_position = self.key_positions + position.id.value
-
-        if self.OPTION_CHECK_INTEGRITY:
-            if self._redis.exists(key_position):
-                self._log.warning(f'The {key_position} already exists.')
-
         # Command pipeline
         pipe = self._redis.pipeline()
-        pipe.rpush(key_position, self._event_serializer.serialize(position.last_event))
+        pipe.rpush(self.key_positions + position.id.value, self._event_serializer.serialize(position.last_event))
         pipe.sadd(self.key_index_positions, position.id.value)
         pipe.sadd(self.key_index_positions_open, position.id.value)
-        pipe.execute()
+        cdef list reply = pipe.execute()
+
+        if self.OPTION_CHECK_INTEGRITY:
+            if reply[0] > 1:  # Reply = The length of the list after the push operation
+                self._log.error(f"The position_id {position.id.value} already existed in the positions and was appended to.")
+            if reply[1] == 0:  # Reply = 0 if the element was already a member of the set
+                self._log.error(f"The position_id {position.id.value} already existed in index_positions.")
+            if reply[2] == 0:  # Reply = 0 if the element was already a member of the set
+                self._log.error(f"The position_id {position.id.value} already existed in index_positions_open.")
 
         self._log.debug(f"Added new {position.id}")
 
@@ -302,22 +320,20 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         :param order: The order to update (from last event).
         """
-        cdef str key_order = self.key_orders + order.id.value
-
-        if self.OPTION_CHECK_INTEGRITY:
-            if not self._redis.exists(key_order):
-                self._log.warning(f'The {key_order} did not already exist.')
-
         # Command pipeline
         pipe = self._redis.pipeline()
-        pipe.rpush(key_order, self._event_serializer.serialize(order.last_event))
+        pipe.rpush(self.key_orders + order.id.value, self._event_serializer.serialize(order.last_event))
         if order.is_working:
             pipe.sadd(self.key_index_orders_working, order.id.value)
             pipe.srem(self.key_index_orders_completed, order.id.value)
         elif order.is_completed:
             pipe.sadd(self.key_index_orders_completed, order.id.value)
             pipe.srem(self.key_index_orders_working, order.id.value)
-        pipe.execute()
+        cdef list reply = pipe.execute()
+
+        if self.OPTION_CHECK_INTEGRITY:
+            if reply[0] == 1:  # Reply = The length of the list after the push operation
+                self._log.error(f"The order_id {order.id.value} did not already existed in the orders.")
 
     cpdef void update_position(self, Position position):
         """
@@ -326,22 +342,20 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         :param position: The position to update (from last event).
         """
-        cdef str key_position = self.key_positions + position.id.value
-
-        if self.OPTION_CHECK_INTEGRITY:
-            if not self._redis.exists(key_position):
-                self._log.warning(f'The {key_position} did not already exist.')
-
         # Command pipeline
         pipe = self._redis.pipeline()
-        pipe.rpush(key_position, self._event_serializer.serialize(position.last_event))
+        pipe.rpush(self.key_positions + position.id.value, self._event_serializer.serialize(position.last_event))
         if position.is_closed:
             pipe.sadd(self.key_index_positions_closed, position.id.value)
             pipe.srem(self.key_index_positions_open, position.id.value)
         else:
             pipe.sadd(self.key_index_positions_open, position.id.value)
             pipe.srem(self.key_index_positions_closed, position.id.value)
-        pipe.execute()
+        cdef list reply = pipe.execute()
+
+        if self.OPTION_CHECK_INTEGRITY:
+            if reply[0] == 1:  # Reply = The length of the list after the push operation
+                self._log.error(f"The position_id {position.id.value} did not already existed in the positions.")
 
     cpdef void update_account(self, Account account):
         """
@@ -350,9 +364,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         :param account: The account to update (from last event).
         """
-        cdef str key_account = self.key_accounts + account.id.value
-
-        self._redis.rpush(key_account, self._event_serializer.serialize(account.last_event))
+        self._redis.rpush(self.key_accounts + account.id.value, self._event_serializer.serialize(account.last_event))
 
     cpdef void delete_strategy(self, TradingStrategy strategy) except *:
         """

@@ -40,8 +40,8 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
     cdef readonly bint OPTION_LOAD_CACHE
     cdef readonly bint OPTION_CHECK_INTEGRITY
 
-    cpdef void load_orders_cache(self)
-    cpdef void load_positions_cache(self)
+    cpdef void load_orders_cache(self) except *
+    cpdef void load_positions_cache(self) except *
     cdef set _decode_set_to_order_ids(self, set original)
     cdef set _decode_set_to_position_ids(self, set original)
     cdef set _decode_set_to_strategy_ids(self, list original)
