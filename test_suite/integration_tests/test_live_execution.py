@@ -93,7 +93,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.test_redis = Redis(host='localhost', port=6379, db=0)
 
     def tearDown(self):
-        # Tear down
+        # Tests will start failing if redis is not flushed on tear down.
         self.test_redis.flushall()  # Comment this line out to preserve data between tests
         pass
 

@@ -41,7 +41,7 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
 
         strategies = [EmptyStrategy('001')]
 
-        config = BacktestConfig()
+        config = BacktestConfig(exec_db_type='in-memory')
         engine = BacktestEngine(
             trader_id=None,
             venue=Venue('FXCM'),
@@ -101,6 +101,7 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
             prob_slippage=0.5)
 
         config = BacktestConfig(
+            exec_db_type='in-memory',
             bypass_logging=True,
             console_prints=False)
 
