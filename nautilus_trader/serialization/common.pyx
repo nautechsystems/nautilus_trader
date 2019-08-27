@@ -10,6 +10,7 @@ import iso8601
 
 from cpython.datetime cimport datetime
 
+from nautilus_trader.core.functions cimport format_zulu_datetime
 from nautilus_trader.model.identifiers cimport Label
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.serialization.constants cimport *
@@ -42,14 +43,14 @@ cpdef str convert_label_to_string(Label label):
     """
     return NONE if label is None else label.value
 
-cpdef Label convert_string_to_label(str label):
+cpdef Label convert_string_to_label(str label_string):
     """
     Return the converted label (or None) from the given label string.
 
-    :param label: The label string to convert.
+    :param label_string: The label string to convert.
     :return Label or None.
     """
-    return None if label == NONE else Label(label)
+    return None if label_string == NONE else Label(label_string)
 
 cpdef str convert_datetime_to_string(datetime time):
     """
@@ -58,7 +59,7 @@ cpdef str convert_datetime_to_string(datetime time):
     :param time: The datetime to convert
     :return str.
     """
-    return NONE if time is None else str(time) # time.isoformat(timespec='milliseconds').replace('+00:00', 'Z')
+    return NONE if time is None else format_zulu_datetime(time)
 
 cpdef datetime convert_string_to_datetime(str time_string):
     """
