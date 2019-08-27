@@ -34,7 +34,7 @@ cdef class Symbol(Identifier):
 
     def __str__(self) -> str:
         """
-        Return the str() representation of the symbol.
+        Return a string representation of this object.
 
         :return str.
         """

@@ -25,7 +25,7 @@ cdef class Account:
         self._events = []
 
         self.initialized = False
-        self.id = AccountId('UNKNOWN', '000000000')
+        self.id = AccountId('UNKNOWN', '0')
         self.broker = self.id.broker
         self.number = self.id.number
         self.currency = currency
@@ -35,16 +35,17 @@ cdef class Account:
         self.margin_used_liquidation = Money.zero()
         self.margin_used_maintenance = Money.zero()
         self.margin_ratio = Money.zero()
-        self.margin_call_status = ValidString('NONE')
+        self.margin_call_status = ValidString()
         self.free_equity = Money.zero()
         self.last_updated = None
-        self.event_count = 0
         self.last_event = None
+        self.event_count = 0
 
     def __eq__(self, Account other) -> bool:
         """
         Return a value indicating whether this object is equal to the given object.
 
+        :param other: The other object.
         :return bool.
         """
         return self.id == other.id
@@ -53,13 +54,14 @@ cdef class Account:
         """
         Return a value indicating whether this object is not equal to the given object.
 
+        :param other: The other object.
         :return bool.
         """
         return not self.__eq__(other)
 
     def __hash__(self) -> int:
         """"
-        Return the hash representation of this object.
+        Return a hash representation of this object.
 
         :return int.
         """
@@ -67,13 +69,18 @@ cdef class Account:
 
     def __str__(self) -> str:
         """
-        Return the str() string representation of the account.
+        Return a string representation of this object.
+
+        :return str.
         """
         return f"Account({str(self.broker)}-{str(self.number)})"
 
     def __repr__(self) -> str:
         """
-        Return the repr() string representation of the account.
+        Return a string representation of this object which includes the objects
+        location in memory.
+
+        :return str.
         """
         return f"<{str(self)} object at {id(self)}>"
 

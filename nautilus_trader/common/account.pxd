@@ -34,8 +34,8 @@ cdef class Account:
     cdef readonly margin_ratio
     cdef readonly ValidString margin_call_status
     cdef readonly datetime last_updated
-    cdef readonly int event_count
     cdef readonly AccountStateEvent last_event
+    cdef readonly int event_count
 
     cpdef list get_events(self)
     cpdef void initialize(self, AccountStateEvent event)

@@ -29,6 +29,7 @@ cdef class Handler:
         """
         Return a value indicating whether this object is equal to the given object.
 
+        :param other: The other object.
         :return bool.
         """
         return self.handle == other.handle
@@ -37,13 +38,14 @@ cdef class Handler:
         """
         Return a value indicating whether this object is not equal to the given object.
 
+        :param other: The other object.
         :return bool.
         """
         return not self.handle != other.handle
 
     def __hash__(self) -> int:
         """"
-        Return the hash representation of this object.
+        Return a hash representation of this object.
 
         :return int.
         """

@@ -40,25 +40,25 @@ cdef class StringValue:
 
     def __eq__(self, StringValue other) -> bool:
         """
-        Return a value indicating whether the given object is equal to this object.
+        Return a value indicating whether this object is equal to the given object.
 
         :param other: The other object.
-        :return True if the objects are equal, otherwise False.
+        :return bool.
         """
         return self.equals(other)
 
     def __ne__(self, StringValue other) -> bool:
         """
-        Return a value indicating whether the object is not equal to this object.
+        Return a value indicating whether this object is not equal to the given object.
 
         :param other: The other object.
-        :return True if the objects are not equal, otherwise False.
+        :return bool.
         """
         return not self.equals(other)
 
     def __hash__(self) -> int:
         """"
-        Return the hash for this object.
+        Return a hash representation of this object.
 
         :return int.
         """
@@ -66,7 +66,7 @@ cdef class StringValue:
 
     def __str__(self) -> str:
         """
-        Return the str() representation of the object.
+        Return a string representation of this object.
 
         :return str.
         """
@@ -74,7 +74,8 @@ cdef class StringValue:
 
     def __repr__(self) -> str:
         """
-        Return the repr() representation of the object.
+        Return a string representation of this object which includes the objects
+        location in memory.
 
         :return str.
         """
@@ -113,7 +114,7 @@ cdef class Identifier(StringValue):
 
     def __str__(self) -> str:
         """
-        Return the str() representation of the object.
+        Return a string representation of this object.
 
         :return str.
         """
