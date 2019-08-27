@@ -7,7 +7,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.datetime cimport datetime
-from libcpp cimport set
 from typing import Set, List, Dict
 
 from nautilus_trader.core.correctness cimport Condition
@@ -324,7 +323,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         else:
             self._index_strategy_positions[strategy_id].add(position_id)
 
-        self._log.debug(f"Added new {order.id} with {strategy_id} and {position_id}.")
+        self._log.debug(f"Added new {order.id} for {strategy_id} and {position_id}.")
 
     cpdef void add_position(self, Position position, StrategyId strategy_id):
         """
