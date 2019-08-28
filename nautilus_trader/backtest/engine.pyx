@@ -28,7 +28,6 @@ from nautilus_trader.common.guid cimport TestGuidFactory
 from nautilus_trader.common.logger cimport TestLogger, nautilus_header
 from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.common.execution cimport ExecutionEngine, InMemoryExecutionDatabase
-
 from nautilus_trader.trade.strategy cimport TradingStrategy
 from nautilus_trader.backtest.config cimport BacktestConfig
 from nautilus_trader.backtest.data cimport BidAskBarPair, BacktestDataClient
