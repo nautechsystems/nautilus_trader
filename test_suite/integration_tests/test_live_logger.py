@@ -6,16 +6,16 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+import redis
 import threading
 import unittest
 
-from redis import Redis
-
-from nautilus_trader.model.identifiers import TraderId
-from nautilus_trader.live.logger import LogStore
-from test_kit.stubs import TestStubs
+from nautilus_trader.model.identifiers import Symbol, Venue, TraderId
 from nautilus_trader.common.logger import LogMessage, LogLevel
-from nautilus_trader.model.identifiers import Symbol, Venue
+from nautilus_trader.live.logger import LogStore
+
+
+from test_kit.stubs import TestStubs
 
 UNIX_EPOCH = TestStubs.unix_epoch()
 AUDUSD_FXCM = Symbol('AUDUSD', Venue('FXCM'))
@@ -36,10 +36,10 @@ class LogStoreTests(unittest.TestCase):
         self.trader_id = TraderId('TESTER', '000')
         self.store = LogStore(trader_id=self.trader_id)
 
-        self.test_redis = Redis(host='localhost', port=6379, db=0)
+        self.test_redis = redis.Redis(host='localhost', port=6379, db=0)
 
     def tearDown(self):
-        # Tear down
+        # Tests will start failing if redis is not flushed on tear down
         self.test_redis.flushall()  # Comment this line out to preserve data between tests
         pass
 

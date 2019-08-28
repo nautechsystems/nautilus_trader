@@ -7,14 +7,12 @@
 # -------------------------------------------------------------------------------------------------
 
 import json
-import uuid
 import pymongo
 import redis
 import msgpack
 import zmq
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.types cimport GUID
 from nautilus_trader.model.identifiers cimport Venue, TraderId
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport LiveClock

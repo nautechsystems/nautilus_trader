@@ -6,9 +6,10 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+import zmq
+
 from cpython.datetime cimport datetime
 from typing import Callable
-from zmq import Context, ZMQError
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.cache cimport ObjectCache
@@ -40,7 +41,7 @@ cdef class LiveDataClient(DataClient):
     """
 
     def __init__(self,
-                 zmq_context: Context,
+                 zmq_context: zmq.Context,
                  Venue venue,
                  str service_name='NautilusData',
                  str service_address='localhost',
@@ -174,7 +175,7 @@ cdef class LiveDataClient(DataClient):
             self._bar_sub_worker.disconnect()
             self._inst_req_worker.disconnect()
             self._inst_sub_worker.disconnect()
-        except ZMQError as ex:
+        except zmq.ZMQError as ex:
             self._log.exception(ex)
 
     cpdef void reset(self):

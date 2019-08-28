@@ -8,12 +8,11 @@
 
 import queue
 import threading
-
-from redis import Redis
-from zmq import Context
+import redis
+import zmq
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.message cimport MessageType, Message, Command, Event, Response
+from nautilus_trader.core.message cimport MessageType, Message, Response
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.identifiers cimport TraderId, StrategyId, OrderId, PositionId
@@ -24,20 +23,7 @@ from nautilus_trader.model.commands cimport (
     SubmitAtomicOrder,
     ModifyOrder,
     CancelOrder)
-from nautilus_trader.model.events cimport (
-    Event,
-    OrderEvent,
-    OrderFillEvent,
-    OrderInitialized,
-    PositionEvent,
-    AccountStateEvent,
-    OrderModified,
-    OrderRejected,
-    OrderCancelled,
-    OrderCancelReject,
-    PositionOpened,
-    PositionModified,
-    PositionClosed)
+from nautilus_trader.model.events cimport Event, OrderEvent, OrderFillEvent, OrderInitialized
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.guid cimport GuidFactory
@@ -126,7 +112,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         self._event_serializer = event_serializer
 
         # Redis client
-        self._redis = Redis(host=host, port=port, db=0)
+        self._redis = redis.Redis(host=host, port=port, db=0)
 
         # Options
         self.OPTION_LOAD_CACHE = load_cache
@@ -865,7 +851,7 @@ cdef class LiveExecClient(ExecutionClient):
     def __init__(
             self,
             ExecutionEngine exec_engine,
-            zmq_context: Context,
+            zmq_context: zmq.Context,
             str service_name='NautilusExecutor',
             str service_address='localhost',
             str events_topic='NAUTILUS:EVENTS',
