@@ -124,8 +124,7 @@ cdef class BacktestEngine:
                 command_serializer=MsgPackCommandSerializer(),
                 event_serializer=MsgPackEventSerializer(),
                 logger=self.test_logger,
-                load_cache=False,
-                check_integrity=False)
+                load_cache=False)
         else:
             raise RuntimeError(f'The exec_db_type in the backtest configuration is unrecognized '
                                f'(can be either \'in-memory\' or \'redis\').')

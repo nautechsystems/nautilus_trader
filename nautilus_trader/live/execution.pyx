@@ -84,8 +84,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
                  CommandSerializer command_serializer,
                  EventSerializer event_serializer,
                  Logger logger,
-                 bint load_cache=True,
-                 bint check_integrity=True):
+                 bint load_cache=True):
         """
         Initializes a new instance of the RedisExecutionEngine class.
 
@@ -95,7 +94,6 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         :param command_serializer: The command serializer for database transactions.
         :param event_serializer: The event serializer for database transactions.
         :param load_cache: The option flag to load cache from database on instantiation.
-        :param check_integrity: The option flag to check database integrity on each transaction.
         :raises ConditionFailed: If the host is not a valid string.
         :raises ConditionFailed: If the port is not in range [0, 65535].
         """
@@ -132,24 +130,15 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         # Options
         self.OPTION_LOAD_CACHE = load_cache
-        self.OPTION_CHECK_INTEGRITY = check_integrity
 
         if self.OPTION_LOAD_CACHE:
             self._log.info(f"The OPTION_LOAD_CACHE is {self.OPTION_LOAD_CACHE}")
+            # Load cache
+            self.load_orders_cache()
+            self.load_positions_cache()
         else:
             self._log.warning(f"The OPTION_LOAD_CACHE is {self.OPTION_LOAD_CACHE} "
                               f"(this should only be done in a backtest environment).")
-
-        if self.OPTION_CHECK_INTEGRITY:
-            self._log.info(f"The OPTION_CHECK_INTEGRITY is {self.OPTION_CHECK_INTEGRITY}")
-        else:
-            self._log.warning(f"The OPTION_CHECK_INTEGRITY is {self.OPTION_CHECK_INTEGRITY} "
-                              f"(this should only be done in a backtest environment).")
-
-        # Load cache
-        if self.OPTION_LOAD_CACHE:
-            self.load_orders_cache()
-            self.load_positions_cache()
 
 
 # -- COMMANDS -------------------------------------------------------------------------------------"
@@ -228,13 +217,14 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         :param strategy: The strategy to add.
         """
+        # Command pipeline
         pipe = self._redis.pipeline()
         pipe.hset(name=self.key_strategies + f'{strategy.id.value}:{CONFIG}', key='some_value', value=1)
         cdef list reply = pipe.execute()
 
-        if self.OPTION_CHECK_INTEGRITY:
-             if reply[0] == 0:  # "0 if field already exists in the hash and the value was updated."
-                self._log.error(f"The strategy_id {strategy.id.value} already existed and was overwritten.")
+        # Check data integrity of reply
+        if reply[0] == 0:  # "0 if field already exists in the hash and the value was updated."
+            self._log.error(f"The strategy_id {strategy.id.value} already existed and was overwritten.")
 
         self._log.debug(f"Added new {strategy.id}.")
 
@@ -264,23 +254,23 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         pipe.sadd(self.key_index_strategy_positions + strategy_id.value, position_id.value)              # 7
         cdef list reply = pipe.execute()
 
-        if self.OPTION_CHECK_INTEGRITY:
-            if reply[0] > 1:  # Reply = The length of the list after the push operation
-                self._log.error(f"The order_id {order.id.value} already existed in the orders and was appended to.")
-            if reply[1] == 0:  # Reply = 0 if field already exists in the hash and the value was updated
-                self._log.error(f"The order_id {order.id.value} already existed in index_order_position and was overwritten.")
-            if reply[2] == 0:  # Reply = 0 if field already exists in the hash and the value was updated
-                self._log.error(f"The order_id {order.id.value} already existed in index_order_strategy and was overwritten.")
-            if reply[3] == 0:  # Reply = 0 if field already exists in the hash and the value was updated
-                self._log.error(f"The position_id {position_id.value} already existed in index_position_strategy and was overwritten.")
-            if reply[4] == 0:  # Reply = 0 if the element was already a member of the set
-                self._log.error(f"The order_id {order.id.value} already existed in index_orders.")
-            if reply[5] == 0:  # Reply = 0 if the element was already a member of the set
-                self._log.error(f"The order_id {order.id.value} already existed in index_position_orders.")
-            if reply[6] == 0:  # Reply = 0 if the element was already a member of the set
-                self._log.error(f"The order_id {order.id.value} already existed in index_strategy_orders.")
-            if reply[7] == 0:  # Reply = 0 if the element was already a member of the set
-                self._log.error(f"The position_id {position_id.value} already existed in index_strategy_positions.")
+        # Check data integrity of reply
+        if reply[0] > 1:  # Reply = The length of the list after the push operation
+            self._log.error(f"The order_id {order.id.value} already existed in the orders and was appended to.")
+        if reply[1] == 0:  # Reply = 0 if field already exists in the hash and the value was updated
+            self._log.error(f"The order_id {order.id.value} already existed in index_order_position and was overwritten.")
+        if reply[2] == 0:  # Reply = 0 if field already exists in the hash and the value was updated
+            self._log.error(f"The order_id {order.id.value} already existed in index_order_strategy and was overwritten.")
+        if reply[3] == 0:  # Reply = 0 if field already exists in the hash and the value was updated
+            self._log.error(f"The position_id {position_id.value} already existed in index_position_strategy and was overwritten.")
+        if reply[4] == 0:  # Reply = 0 if the element was already a member of the set
+            self._log.error(f"The order_id {order.id.value} already existed in index_orders.")
+        if reply[5] == 0:  # Reply = 0 if the element was already a member of the set
+            self._log.error(f"The order_id {order.id.value} already existed in index_position_orders.")
+        if reply[6] == 0:  # Reply = 0 if the element was already a member of the set
+            self._log.error(f"The order_id {order.id.value} already existed in index_strategy_orders.")
+        if reply[7] == 0:  # Reply = 0 if the element was already a member of the set
+            self._log.error(f"The position_id {position_id.value} already existed in index_strategy_positions.")
 
         self._log.debug(f"Added new {order.id}, indexed {strategy_id}, indexed {position_id}.")
 
@@ -303,13 +293,13 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         pipe.sadd(self.key_index_positions_open, position.id.value)
         cdef list reply = pipe.execute()
 
-        if self.OPTION_CHECK_INTEGRITY:
-            if reply[0] > 1:  # Reply = The length of the list after the push operation
-                self._log.error(f"The position_id {position.id.value} already existed in the positions and was appended to.")
-            if reply[1] == 0:  # Reply = 0 if the element was already a member of the set
-                self._log.error(f"The position_id {position.id.value} already existed in index_positions.")
-            if reply[2] == 0:  # Reply = 0 if the element was already a member of the set
-                self._log.error(f"The position_id {position.id.value} already existed in index_positions_open.")
+        # Check data integrity of reply
+        if reply[0] > 1:  # Reply = The length of the list after the push operation
+            self._log.error(f"The position_id {position.id.value} already existed in the positions and was appended to.")
+        if reply[1] == 0:  # Reply = 0 if the element was already a member of the set
+            self._log.error(f"The position_id {position.id.value} already existed in index_positions.")
+        if reply[2] == 0:  # Reply = 0 if the element was already a member of the set
+            self._log.error(f"The position_id {position.id.value} already existed in index_positions_open.")
 
         self._log.debug(f"Added new {position.id}")
 
@@ -331,9 +321,9 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
             pipe.srem(self.key_index_orders_working, order.id.value)
         cdef list reply = pipe.execute()
 
-        if self.OPTION_CHECK_INTEGRITY:
-            if reply[0] == 1:  # Reply = The length of the list after the push operation
-                self._log.error(f"The order_id {order.id.value} did not already existed in the orders.")
+        # Check data integrity of reply
+        if reply[0] == 1:  # Reply = The length of the list after the push operation
+            self._log.error(f"The order_id {order.id.value} did not already existed in the orders.")
 
     cpdef void update_position(self, Position position):
         """
@@ -353,9 +343,9 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
             pipe.srem(self.key_index_positions_closed, position.id.value)
         cdef list reply = pipe.execute()
 
-        if self.OPTION_CHECK_INTEGRITY:
-            if reply[0] == 1:  # Reply = The length of the list after the push operation
-                self._log.error(f"The position_id {position.id.value} did not already existed in the positions.")
+        # Check data integrity of reply
+        if reply[0] == 1:  # Reply = The length of the list after the push operation
+            self._log.error(f"The position_id {position.id.value} did not already existed in the positions.")
 
     cpdef void update_account(self, Account account):
         """
