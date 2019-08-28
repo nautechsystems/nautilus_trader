@@ -15,7 +15,7 @@ from typing import List
 from tools.setup_tools import scan_directories
 
 
-def check_file_headers(directories: List[str], ignore: List[str], company_name: str) -> None:
+def check_file_headers(directories: List[str], to_lint: List[str], company_name: str) -> None:
     """
     Check the headers of all specified files for the following.
 
@@ -23,7 +23,7 @@ def check_file_headers(directories: List[str], ignore: List[str], company_name: 
     - Company name in header matches the given company name.
 
     :param directories: The list of directories for files to check.
-    :param ignore: The list of file extensions to ignore.
+    :param to_lint: The list of file extensions to lint.
     :param company_name: The expected company name.
     """
     files = scan_directories(directories)
@@ -31,7 +31,7 @@ def check_file_headers(directories: List[str], ignore: List[str], company_name: 
     for file in files:
         if os.path.isfile(file):
             file_extension = os.path.splitext(file)[1]
-            if file_extension not in ignore:
+            if file_extension in to_lint:
                 checked_extensions.add(os.path.splitext(file)[1])
                 with open(file, 'r') as open_file:
                     source_code = (open_file.read())
