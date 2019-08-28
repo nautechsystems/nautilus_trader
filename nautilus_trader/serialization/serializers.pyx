@@ -86,7 +86,7 @@ cdef class MsgPackSerializer:
         """
         Serialize the given message to MessagePack specification bytes.
 
-        :param data: The message to serialize.
+        :param message: The message to serialize.
         :return bytes.
         """
         return msgpack.packb(message)
@@ -133,7 +133,7 @@ cdef class MsgPackQuerySerializer(QuerySerializer):
         """
         Serialize the given data query to bytes.
 
-        :param data: The data query to serialize.
+        :param query: The data query to serialize.
         :return bytes.
         """
         return MsgPackSerializer.serialize(query)
@@ -142,7 +142,7 @@ cdef class MsgPackQuerySerializer(QuerySerializer):
         """
         Deserialize the given bytes to a data query.
 
-        :param data_bytes: The data query bytes to deserialize.
+        :param query_bytes: The data query bytes to deserialize.
         :return Dict.
         """
         return MsgPackSerializer.deserialize(query_bytes)
