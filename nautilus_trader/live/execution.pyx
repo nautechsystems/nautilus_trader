@@ -94,18 +94,18 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         self.key_orders                   = f'{self.key_trader}:{ORDERS}:'
         self.key_positions                = f'{self.key_trader}:{POSITIONS}:'
         self.key_strategies               = f'{self.key_trader}:{STRATEGIES}:'
-        self.key_index_order_position     = f'{self.key_trader}:{INDEX}:{ORDER_POSITION}'      # HASH
-        self.key_index_order_strategy     = f'{self.key_trader}:{INDEX}:{ORDER_STRATEGY}'      # HASH
-        self.key_index_position_strategy  = f'{self.key_trader}:{INDEX}:{POSITION_STRATEGY}'   # HASH
-        self.key_index_position_orders    = f'{self.key_trader}:{INDEX}:{POSITION_ORDERS}:'    # SET
-        self.key_index_strategy_orders    = f'{self.key_trader}:{INDEX}:{STRATEGY_ORDERS}:'    # SET
-        self.key_index_strategy_positions = f'{self.key_trader}:{INDEX}:{STRATEGY_POSITIONS}:' # SET
-        self.key_index_orders             = f'{self.key_trader}:{INDEX}:{ORDERS}'              # SET
-        self.key_index_orders_working     = f'{self.key_trader}:{INDEX}:{ORDERS}:{WORKING}'    # SET
-        self.key_index_orders_completed   = f'{self.key_trader}:{INDEX}:{ORDERS}:{COMPLETED}'  # SET
-        self.key_index_positions          = f'{self.key_trader}:{INDEX}:{POSITIONS}'           # SET
-        self.key_index_positions_open     = f'{self.key_trader}:{INDEX}:{POSITIONS}:{OPEN}'    # SET
-        self.key_index_positions_closed   = f'{self.key_trader}:{INDEX}:{POSITIONS}:{CLOSED}'  # SET
+        self.key_index_order_position     = f'{self.key_trader}:{INDEX}:{ORDER_POSITION}'       # HASH
+        self.key_index_order_strategy     = f'{self.key_trader}:{INDEX}:{ORDER_STRATEGY}'       # HASH
+        self.key_index_position_strategy  = f'{self.key_trader}:{INDEX}:{POSITION_STRATEGY}'    # HASH
+        self.key_index_position_orders    = f'{self.key_trader}:{INDEX}:{POSITION_ORDERS}:'     # SET
+        self.key_index_strategy_orders    = f'{self.key_trader}:{INDEX}:{STRATEGY_ORDERS}:'     # SET
+        self.key_index_strategy_positions = f'{self.key_trader}:{INDEX}:{STRATEGY_POSITIONS}:'  # SET
+        self.key_index_orders             = f'{self.key_trader}:{INDEX}:{ORDERS}'               # SET
+        self.key_index_orders_working     = f'{self.key_trader}:{INDEX}:{ORDERS}:{WORKING}'     # SET
+        self.key_index_orders_completed   = f'{self.key_trader}:{INDEX}:{ORDERS}:{COMPLETED}'   # SET
+        self.key_index_positions          = f'{self.key_trader}:{INDEX}:{POSITIONS}'            # SET
+        self.key_index_positions_open     = f'{self.key_trader}:{INDEX}:{POSITIONS}:{OPEN}'     # SET
+        self.key_index_positions_closed   = f'{self.key_trader}:{INDEX}:{POSITIONS}:{CLOSED}'   # SET
 
         # Serializers
         self._command_serializer = command_serializer
@@ -141,7 +141,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         cdef bytes event_bytes
         cdef list events
         cdef Order order
-        cdef OrderEvent initial
+        cdef OrderInitialized initial
 
         cdef list order_keys = self._redis.keys(f'{self.key_orders}*')
 
@@ -153,7 +153,6 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
             key = key_bytes.decode(UTF8)
             events = self._redis.lrange(name=key, start=0, end=-1)
             initial = self._event_serializer.deserialize(events.pop(0))
-            assert isinstance(initial, OrderInitialized)
             order = Order.create(event=initial)
 
             for event_bytes in events:
@@ -187,7 +186,6 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
             key = key_bytes.decode(UTF8).rsplit(':', maxsplit=1)[1]
             events = self._redis.lrange(name=key, start=0, end=-1)
             initial = self._event_serializer.deserialize(events.pop(0))
-            assert isinstance(initial, OrderFillEvent)
             position = Position(position_id=key, event=initial)
 
             for event in events:
@@ -230,14 +228,14 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         # Command pipeline
         pipe = self._redis.pipeline()
-        pipe.rpush(self.key_orders + order.id.value, self._event_serializer.serialize(order.last_event)) # 0
-        pipe.hset(name=self.key_index_order_position, key=order.id.value, value=position_id.value)       # 1
-        pipe.hset(name=self.key_index_order_strategy, key=order.id.value, value=strategy_id.value)       # 2
-        pipe.hset(name=self.key_index_position_strategy, key=position_id.value, value=strategy_id.value) # 3
-        pipe.sadd(self.key_index_orders, order.id.value)                                                 # 4
-        pipe.sadd(self.key_index_position_orders + position_id.value, order.id.value)                    # 5
-        pipe.sadd(self.key_index_strategy_orders + strategy_id.value, order.id.value)                    # 6
-        pipe.sadd(self.key_index_strategy_positions + strategy_id.value, position_id.value)              # 7
+        pipe.rpush(self.key_orders + order.id.value, self._event_serializer.serialize(order.last_event))  # 0
+        pipe.hset(name=self.key_index_order_position, key=order.id.value, value=position_id.value)        # 1
+        pipe.hset(name=self.key_index_order_strategy, key=order.id.value, value=strategy_id.value)        # 2
+        pipe.hset(name=self.key_index_position_strategy, key=position_id.value, value=strategy_id.value)  # 3
+        pipe.sadd(self.key_index_orders, order.id.value)                                                  # 4
+        pipe.sadd(self.key_index_position_orders + position_id.value, order.id.value)                     # 5
+        pipe.sadd(self.key_index_strategy_orders + strategy_id.value, order.id.value)                     # 6
+        pipe.sadd(self.key_index_strategy_positions + strategy_id.value, position_id.value)               # 7
         cdef list reply = pipe.execute()
 
         # Check data integrity of reply
