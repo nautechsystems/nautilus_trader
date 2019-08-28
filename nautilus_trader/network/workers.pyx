@@ -6,11 +6,10 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+import threading
 import zmq
 
 from typing import Callable
-from threading import Thread
-from zmq import Context
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.common.logger cimport Logger, LoggerAdapter
@@ -29,7 +28,7 @@ cdef class MQWorker:
             str service_name,
             str service_address,
             int service_port,
-            zmq_context: Context,
+            zmq_context: zmq.Context,
             int zmq_socket_type,
             Logger logger):
         """
@@ -51,7 +50,7 @@ cdef class MQWorker:
         Condition.valid_string(service_name, 'service_name')
         Condition.valid_string(service_address, 'service_address')
         Condition.in_range(service_port, 'service_port', 0, 65535)
-        Condition.type(zmq_context, Context, 'zmq_context')
+        Condition.type(zmq_context, zmq.Context, 'zmq_context')
 
         super().__init__()
         self.name = worker_name
@@ -97,7 +96,7 @@ cdef class RequestWorker(MQWorker):
             str service_name,
             str service_address,
             int service_port,
-            zmq_context: Context,
+            zmq_context: zmq.Context,
             Logger logger):
         """
         Initializes a new instance of the RequestWorker class.
@@ -117,7 +116,7 @@ cdef class RequestWorker(MQWorker):
         Condition.valid_string(service_name, 'service_name')
         Condition.valid_string(service_address, 'service_address')
         Condition.in_range(service_port, 'service_port', 0, 65535)
-        Condition.type(zmq_context, Context, 'zmq_context')
+        Condition.type(zmq_context, zmq.Context, 'zmq_context')
 
         super().__init__(
             worker_name,
@@ -159,7 +158,7 @@ cdef class SubscriberWorker(MQWorker):
             str service_name,
             str service_address,
             int service_port,
-            zmq_context: Context,
+            zmq_context: zmq.Context,
             handler: Callable,
             Logger logger):
         """
@@ -192,7 +191,7 @@ cdef class SubscriberWorker(MQWorker):
             zmq.SUB,
             logger)
         self._handler = handler
-        self._thread = Thread(target=self._consume_messages, daemon=True)
+        self._thread = threading.Thread(target=self._consume_messages, daemon=True)
         self._thread.start()
 
     cpdef void subscribe(self, str topic):

@@ -6,58 +6,27 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+import redis
 import uuid
 import unittest
 
 from decimal import Decimal
-from redis import Redis
 
-from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.core.types import GUID, ValidString
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.events import OrderFilled, OrderWorking
-from nautilus_trader.model.objects import Quantity, Price
-from nautilus_trader.model.order import OrderFactory
-from nautilus_trader.model.position import Position
-from nautilus_trader.common.clock import TestClock
-from nautilus_trader.common.guid import TestGuidFactory
-from nautilus_trader.common.logger import TestLogger
-from nautilus_trader.live.execution import RedisExecutionDatabase
-from test_kit.stubs import TestStubs
-from nautilus_trader.common.account import Account
-from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.guid import LiveGuidFactory
-from nautilus_trader.common.portfolio import Portfolio
-from nautilus_trader.common.execution import InMemoryExecutionDatabase
-from nautilus_trader.network.responses import MessageReceived
-from nautilus_trader.serialization.serializers import MsgPackCommandSerializer, MsgPackEventSerializer
-from nautilus_trader.live.execution import LiveExecutionEngine, LiveExecClient
-from nautilus_trader.live.logger import LiveLogger
-from nautilus_trader.model.events import OrderFilled, OrderWorking
-from nautilus_trader.model.identifiers import (
-
-    AccountId,
-    TraderId,
-    StrategyId,
-    IdTag,
-    OrderId,
-    PositionId,
-    ExecutionId,
-    ExecutionTicket)
+from nautilus_trader.model.identifiers import AccountId, TraderId, OrderId, PositionId
 from nautilus_trader.model.objects import Quantity, Price, Money
-from nautilus_trader.model.order import OrderFactory
 from nautilus_trader.model.position import Position
-from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.events import AccountStateEvent
 from nautilus_trader.model.enums import Currency
 from nautilus_trader.common.account import Account
 from nautilus_trader.common.clock import TestClock
-from nautilus_trader.common.guid import TestGuidFactory
 from nautilus_trader.common.logger import TestLogger
-from nautilus_trader.common.portfolio import Portfolio
-from nautilus_trader.common.execution import InMemoryExecutionDatabase, ExecutionEngine
 from nautilus_trader.trade.strategy import TradingStrategy
-from test_kit.strategies import EmptyStrategy
+from nautilus_trader.serialization.serializers import MsgPackCommandSerializer, MsgPackEventSerializer
+from nautilus_trader.live.execution import RedisExecutionDatabase
+
+from test_kit.stubs import TestStubs
 
 UNIX_EPOCH = TestStubs.unix_epoch()
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
@@ -90,10 +59,10 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
             event_serializer=MsgPackEventSerializer(),
             logger=logger)
 
-        self.test_redis = Redis(host='localhost', port=6379, db=0)
+        self.test_redis = redis.Redis(host='localhost', port=6379, db=0)
 
     def tearDown(self):
-        # Tests will start failing if redis is not flushed on tear down.
+        # Tests will start failing if redis is not flushed on tear down
         self.test_redis.flushall()  # Comment this line out to preserve data between tests
         pass
 
