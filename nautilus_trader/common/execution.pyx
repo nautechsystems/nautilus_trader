@@ -251,7 +251,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
     def __init__(self, TraderId trader_id, Logger logger):
         """
-        Initializes a new instance of the ExecutionEngine class.
+        Initializes a new instance of the InMemoryExecutionDatabase class.
 
         :param trader_id: The trader identifier for the component.
         :param logger: The logger for the component.
@@ -259,7 +259,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         super().__init__(trader_id, logger)
 
         self._log = LoggerAdapter(self.__class__.__name__, logger)
-        self._strategies = set()              # type: List[StrategyId]
+        self._strategies = set()              # type: Set[StrategyId]
         self._index_order_position = {}       # type: Dict[OrderId, PositionId]
         self._index_order_strategy = {}       # type: Dict[OrderId, StrategyId]
         self._index_position_strategy = {}    # type: Dict[PositionId, StrategyId]

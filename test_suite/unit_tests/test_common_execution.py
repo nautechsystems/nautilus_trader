@@ -526,18 +526,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
         self.exec_engine.execute_command(submit_order)
 
-        order_filled = OrderFilled(
-            order.id,
-            self.account.id,
-            ExecutionId('E-' + order.id.value),
-            ExecutionTicket('ET-' + order.id.value),
-            order.symbol,
-            order.side,
-            order.quantity,
-            order.price,
-            UNIX_EPOCH,
-            GUID(uuid.uuid4()),
-            UNIX_EPOCH)
+        order_filled = TestStubs.event_order_filled(order)
 
         # Act
         self.exec_engine.handle_event(order_filled)
@@ -598,35 +587,12 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.execute_command(submit_order1)
         self.exec_engine.execute_command(submit_order2)
 
-        order_filled1 = OrderFilled(
-            order1.id,
-            self.account.id,
-            ExecutionId('E-' + order1.id.value),
-            ExecutionTicket('ET-' + order1.id.value),
-            order1.symbol,
-            order1.side,
-            order1.quantity,
-            order1.price,
-            UNIX_EPOCH,
-            GUID(uuid.uuid4()),
-            UNIX_EPOCH)
-
-        order_filled2 = OrderFilled(
-            order2.id,
-            self.account.id,
-            ExecutionId('E-' + order1.id.value),
-            ExecutionTicket('ET-' + order1.id.value),
-            order2.symbol,
-            order2.side,
-            order2.quantity,
-            order2.price,
-            UNIX_EPOCH,
-            GUID(uuid.uuid4()),
-            UNIX_EPOCH)
+        order1_filled = TestStubs.event_order_filled(order1)
+        order2_filled = TestStubs.event_order_filled(order2)
 
         # Act
-        self.exec_engine.handle_event(order_filled1)
-        self.exec_engine.handle_event(order_filled2)
+        self.exec_engine.handle_event(order1_filled)
+        self.exec_engine.handle_event(order2_filled)
 
         # Assert
         self.assertTrue(self.exec_db.position_exists(position_id))
@@ -685,35 +651,12 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.execute_command(submit_order1)
         self.exec_engine.execute_command(submit_order2)
 
-        order_filled1 = OrderFilled(
-            order1.id,
-            self.account.id,
-            ExecutionId('E-' + order1.id.value),
-            ExecutionTicket('ET-' + order1.id.value),
-            order1.symbol,
-            order1.side,
-            order1.quantity,
-            order1.price,
-            UNIX_EPOCH,
-            GUID(uuid.uuid4()),
-            UNIX_EPOCH)
-
-        order_filled2 = OrderFilled(
-            order2.id,
-            self.account.id,
-            ExecutionId('E-' + order1.id.value),
-            ExecutionTicket('ET-' + order1.id.value),
-            order2.symbol,
-            order2.side,
-            order2.quantity,
-            order2.price,
-            UNIX_EPOCH,
-            GUID(uuid.uuid4()),
-            UNIX_EPOCH)
+        order1_filled = TestStubs.event_order_filled(order1)
+        order2_filled = TestStubs.event_order_filled(order2)
 
         # Act
-        self.exec_engine.handle_event(order_filled1)
-        self.exec_engine.handle_event(order_filled2)
+        self.exec_engine.handle_event(order1_filled)
+        self.exec_engine.handle_event(order2_filled)
 
         # Assert
         self.assertTrue(self.exec_db.position_exists(position_id))
@@ -774,31 +717,8 @@ class ExecutionEngineTests(unittest.TestCase):
             self.guid_factory.generate(),
             self.clock.time_now())
 
-        order1_filled = OrderFilled(
-            order1.id,
-            self.account.id,
-            ExecutionId('E-' + order1.id.value),
-            ExecutionTicket('ET-' + order1.id.value),
-            order1.symbol,
-            order1.side,
-            order1.quantity,
-            order1.price,
-            UNIX_EPOCH,
-            GUID(uuid.uuid4()),
-            UNIX_EPOCH)
-
-        order2_filled = OrderFilled(
-            order2.id,
-            self.account.id,
-            ExecutionId('E-' + order2.id.value),
-            ExecutionTicket('ET-' + order2.id.value),
-            order2.symbol,
-            order2.side,
-            order2.quantity,
-            order2.price,
-            UNIX_EPOCH,
-            GUID(uuid.uuid4()),
-            UNIX_EPOCH)
+        order1_filled = TestStubs.event_order_filled(order1)
+        order2_filled = TestStubs.event_order_filled(order2)
 
         # Act
         self.exec_engine.execute_command(submit_order1)
@@ -894,31 +814,8 @@ class ExecutionEngineTests(unittest.TestCase):
             self.guid_factory.generate(),
             self.clock.time_now())
 
-        order1_filled = OrderFilled(
-            order1.id,
-            self.account.id,
-            ExecutionId('E1'),
-            ExecutionTicket('T1'),
-            AUDUSD_FXCM,
-            OrderSide.BUY,
-            Quantity(100000),
-            Price('1.00000'),
-            UNIX_EPOCH,
-            GUID(uuid.uuid4()),
-            UNIX_EPOCH)
-
-        order2_filled = OrderFilled(
-            order2.id,
-            self.account.id,
-            ExecutionId('E2'),
-            ExecutionTicket('T2'),
-            AUDUSD_FXCM,
-            OrderSide.SELL,
-            Quantity(100000),
-            Price('1.00000'),
-            UNIX_EPOCH,
-            GUID(uuid.uuid4()),
-            UNIX_EPOCH)
+        order1_filled = TestStubs.event_order_filled(order1)
+        order2_filled = TestStubs.event_order_filled(order2)
 
         order3_filled = OrderFilled(
             order3.id,

@@ -565,7 +565,7 @@ cdef class BacktestExecClient(ExecutionClient):
         # Generate event
         cdef OrderWorking working = OrderWorking(
             order.id,
-            OrderId('B' + str(order.id.value)),  # Dummy broker id
+            OrderId('B' + order.id.value),
             self._account.id,
             order.symbol,
             order.label,
@@ -586,8 +586,8 @@ cdef class BacktestExecClient(ExecutionClient):
         cdef OrderFilled filled = OrderFilled(
             order.id,
             self._account.id,
-            ExecutionId('E-' + str(order.id.value)),
-            ExecutionTicket('ET-' + str(order.id.value)),
+            ExecutionId('E-' + order.id.value),
+            ExecutionTicket('ET-' + order.id.value),
             order.symbol,
             order.side,
             order.quantity,
@@ -716,18 +716,12 @@ cdef class BacktestExecClient(ExecutionClient):
         self._exec_engine.handle_event(account_event)
 
     cdef dict _build_current_bid_rates(self):
-        # Return the current currency bid rates in the markets
-        cdef dict bid_rates = {}  # type: Dict[str, float]
-        for symbol, price in self.current_bids.items():
-            bid_rates[symbol.code] = price.as_float()
-        return bid_rates
+        # Return the current currency bid rates in the markets as Dict[str, float]
+        return {symbol.code: price.as_float() for symbol, price in self.current_bids.items()}
 
     cdef dict _build_current_ask_rates(self):
-        # Return the current currency ask rates in the markets
-        cdef dict ask_rates = {}  # type: Dict[str, float]
-        for symbol, prices in self.current_asks.items():
-            ask_rates[symbol.code] = prices.as_float()
-        return ask_rates
+        # Return the current currency ask rates in the markets as Dict[str, float]
+        return {symbol.code: price.as_float() for symbol, price in self.current_asks.items()}
 
     cdef Money _calculate_pnl(
             self,
