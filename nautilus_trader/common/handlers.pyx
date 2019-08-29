@@ -27,7 +27,7 @@ cdef class Handler:
 
     def __eq__(self, Handler other) -> bool:
         """
-        Return a value indicating whether this object is equal to the given object.
+        Return a value indicating whether this object is equal to (==) the given object.
 
         :param other: The other object.
         :return bool.
@@ -36,7 +36,7 @@ cdef class Handler:
 
     def __ne__(self, Handler other) -> bool:
         """
-        Return a value indicating whether this object is not equal to the given object.
+        Return a value indicating whether this object is not equal to (!=) the given object.
 
         :param other: The other object.
         :return bool.

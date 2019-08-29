@@ -32,6 +32,8 @@ cdef class Position:
         self._execution_ids = {event.execution_id}          # type: Set[ExecutionId]
         self._execution_tickets = {event.execution_ticket}  # type: Set[ExecutionTicket]
         self._events = [event]                              # type: List[OrderFillEvent]
+        self.last_event = event
+        self.event_count = 1
 
         self.symbol = event.symbol
         self.id = position_id
@@ -43,23 +45,22 @@ cdef class Position:
         self.timestamp = event.execution_time
         self.entry_direction = event.order_side
         self.entry_time = event.execution_time
-        self.exit_time = None
+        self.exit_time = None  # Can be none
         self.average_entry_price = event.average_price
-        self.average_exit_price = None
+        self.average_exit_price = None  # Can be none
         self.points_realized = Decimal(0)
         self.return_realized = 0.0
-        self.last_event = event
 
-        self.relative_quantity = 0
-        self.quantity = Quantity(0)
-        self.peak_quantity = Quantity(0)
-        self.market_position = MarketPosition.FLAT
+        self.relative_quantity = 0                   # Initialized in _fill_logic
+        self.quantity = Quantity(0)                  # Initialized in _fill_logic
+        self.peak_quantity = Quantity(0)             # Initialized in _fill_logic
+        self.market_position = MarketPosition.FLAT   # Initialized in _fill_logic
 
         self._fill_logic(event)
 
     cdef bint equals(self, Position other):
         """
-        Return a value indicating whether this object is equal to the given object.
+        Return a value indicating whether this object is equal to (==) the given object.
 
         :param other: The other object.
         :return bool.
@@ -68,7 +69,7 @@ cdef class Position:
 
     def __eq__(self, Position other) -> bool:
         """
-        Return a value indicating whether this object is equal to the given object.
+        Return a value indicating whether this object is equal to (==) the given object.
 
         :param other: The other object.
         :return bool.
@@ -77,7 +78,7 @@ cdef class Position:
 
     def __ne__(self, Position other) -> bool:
         """
-        Return a value indicating whether this object is not equal to the given object.
+        Return a value indicating whether this object is not equal to (!=) the given object.
 
         :param other: The other object.
         :return bool.
@@ -142,14 +143,6 @@ cdef class Position:
         """
         return self._events.copy()
 
-    cpdef int event_count(self):
-        """
-        Return the count of events applied to the position.
-        
-        :return int.
-        """
-        return len(self._events)
-
     cpdef void apply(self, OrderFillEvent event):
         """
         Applies the given order fill event to the position.
@@ -159,6 +152,7 @@ cdef class Position:
         # Update events
         self._events.append(event)
         self.last_event = event
+        self.event_count += 1
 
         # Update identifiers
         self._order_ids.add(event.order_id)

@@ -868,15 +868,9 @@ cdef class TimeEvent(Event):
         super().__init__(event_id, event_timestamp)
         self.label = label
 
-    def __lt__(self, TimeEvent other) -> bool:
-        return self.timestamp < other.timestamp
-
-    def __le__(self, TimeEvent other) -> bool:
-        return self.timestamp <= other.timestamp
-
     def __eq__(self, TimeEvent other) -> bool:
         """
-        Return a value indicating whether this object is equal to the given object.
+        Return a value indicating whether this object is equal to (==) the given object.
 
         :param other: The other object.
         :return bool.
@@ -885,26 +879,48 @@ cdef class TimeEvent(Event):
 
     def __ne__(self, TimeEvent other) -> bool:
         """
-        Return a value indicating whether this object is not equal to the given object.
+        Return a value indicating whether this object is not equal to (!=) the given object.
 
         :param other: The other object.
         :return bool.
         """
         return self.timestamp != other.timestamp
 
+    def __lt__(self, TimeEvent other) -> bool:
+        """
+        Return a value indicating whether this object is less than (<) the given object.
+
+        :param other: The other object.
+        :return bool.
+        """
+        return self.timestamp < other.timestamp
+
+    def __le__(self, TimeEvent other) -> bool:
+        """
+        Return a value indicating whether this object is less than or equal to (<=) the given object.
+
+        :param other: The other object.
+        :return bool.
+        """
+        return self.timestamp <= other.timestamp
+
     def __gt__(self, TimeEvent other) -> bool:
+        """
+        Return a value indicating whether this object is greater than (>) the given object.
+
+        :param other: The other object.
+        :return bool.
+        """
         return self.timestamp > other.timestamp
 
     def __ge__(self, TimeEvent other) -> bool:
-        return self.timestamp >= other.timestamp
+        """
+        Return a value indicating whether this object is greater than or equal to (>=) the given object.
 
-    def __cmp__(self, TimeEvent other) -> int:
-        if self.timestamp < other.timestamp:
-            return -1
-        elif self.timestamp == other.timestamp:
-            return 0
-        else:
-            return 1
+        :param other: The other object.
+        :return bool.
+        """
+        return self.timestamp >= other.timestamp
 
     def __hash__(self) -> int:
         """"

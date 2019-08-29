@@ -43,7 +43,7 @@ cdef class Account:
 
     def __eq__(self, Account other) -> bool:
         """
-        Return a value indicating whether this object is equal to the given object.
+        Return a value indicating whether this object is equal to (==) the given object.
 
         :param other: The other object.
         :return bool.
@@ -52,7 +52,7 @@ cdef class Account:
 
     def __ne__(self, Account other) -> bool:
         """
-        Return a value indicating whether this object is not equal to the given object.
+        Return a value indicating whether this object is not equal to (!=) the given object.
 
         :param other: The other object.
         :return bool.

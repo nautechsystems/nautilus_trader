@@ -34,7 +34,7 @@ cdef class Message:
 
     cdef bint equals(self, Message other):
         """
-        Return a value indicating whether this object is equal to the given object.
+        Return a value indicating whether this object is equal to (==) the given object.
 
         :param other: The other object.
         :return bool.
@@ -46,7 +46,7 @@ cdef class Message:
 
     def __eq__(self, Message other) -> bool:
         """
-        Return a value indicating whether this object is equal to the given object.
+        Return a value indicating whether this object is equal to (==) the given object.
 
         :param other: The other object.
         :return bool.
@@ -55,7 +55,7 @@ cdef class Message:
 
     def __ne__(self, Message other) -> bool:
         """
-        Return a value indicating whether this object is not equal to the given object.
+        Return a value indicating whether this object is not equal to (!=) the given object.
 
         :param other: The other object.
         :return bool.

@@ -264,7 +264,7 @@ cdef class BacktestExecClient(ExecutionClient):
         Resets the account.
         """
         cdef AccountStateEvent initial_starting = AccountStateEvent(
-            AccountId('SIMULATED', '123456'),
+            AccountId('SIMULATED', '01'),
             self._account.currency,
             self.starting_capital,
             self.starting_capital,

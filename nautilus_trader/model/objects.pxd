@@ -66,6 +66,7 @@ cdef class BarSpecification:
 cdef class BarType:
     cdef readonly Symbol symbol
     cdef readonly BarSpecification specification
+
     cdef bint equals(self, BarType other)
     cdef str resolution_string(self)
     cdef str quote_type_string(self)
