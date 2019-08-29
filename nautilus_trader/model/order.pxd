@@ -66,6 +66,8 @@ cdef class Order:
     cpdef list get_events(self)
     cpdef int event_count(self)
     cpdef void apply(self, OrderEvent event)
+    cdef void _set_state_to_working(self)
+    cdef void _set_state_to_completed(self)
     cdef void _set_slippage(self)
     cdef void _set_fill_status(self)
 
