@@ -25,9 +25,9 @@ cdef class Position:
     """
     Represents a position in a financial market.
     """
-    cdef list _order_ids
-    cdef list _execution_ids
-    cdef list _execution_tickets
+    cdef set _order_ids
+    cdef set _execution_ids
+    cdef set _execution_tickets
     cdef list _events
 
     cdef readonly Symbol symbol
@@ -37,10 +37,6 @@ cdef class Position:
     cdef readonly ExecutionTicket last_execution_ticket
     cdef readonly OrderId from_order_id
     cdef readonly OrderId last_order_id
-    cdef readonly long relative_quantity
-    cdef readonly Quantity quantity
-    cdef readonly Quantity peak_quantity
-    cdef readonly MarketPosition market_position
     cdef readonly datetime timestamp
     cdef readonly OrderSide entry_direction
     cdef readonly datetime entry_time
@@ -49,11 +45,17 @@ cdef class Position:
     cdef readonly Price average_exit_price
     cdef readonly object points_realized
     cdef readonly float return_realized
+    cdef readonly OrderFillEvent last_event
+
+    cdef readonly long relative_quantity
+    cdef readonly Quantity quantity
+    cdef readonly Quantity peak_quantity
+    cdef readonly MarketPosition market_position
+    cdef readonly bint is_open
+    cdef readonly bint is_closed
     cdef readonly bint is_flat
     cdef readonly bint is_long
     cdef readonly bint is_short
-    cdef readonly bint is_closed
-    cdef readonly OrderFillEvent last_event
 
     cdef bint equals(self, Position other)
     cdef str status_string(self)
@@ -66,10 +68,9 @@ cdef class Position:
     cpdef object points_unrealized(self, Price current_price)
     cpdef float return_unrealized(self, Price current_price)
 
-    cdef int _calculate_relative_quantity(self, OrderFillEvent event)
-    cdef void _set_quantities(self, OrderFillEvent event)
+    @staticmethod
+    cdef int _calculate_relative_quantity(OrderFillEvent event)
     cdef void _fill_logic(self, OrderFillEvent event)
-    cdef void _exit_logic(self, OrderFillEvent event)
     cdef void _increment_returns(self, OrderFillEvent event)
     cdef object _calculate_points(self, Price entry_price, Price exit_price)
     cdef float _calculate_return(self, Price entry_price, Price exit_price)
