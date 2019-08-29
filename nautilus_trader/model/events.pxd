@@ -110,8 +110,8 @@ cdef class OrderWorking(OrderEvent):
     """
     Represents an event where an order is working with the broker.
     """
-    cdef readonly AccountId account_id
     cdef readonly OrderId order_id_broker
+    cdef readonly AccountId account_id
     cdef readonly Symbol symbol
     cdef readonly Label label
     cdef readonly OrderSide order_side

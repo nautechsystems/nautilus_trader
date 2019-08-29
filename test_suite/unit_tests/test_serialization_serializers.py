@@ -598,56 +598,58 @@ class MsgPackEventSerializerTests(unittest.TestCase):
     #     self.assertEqual('INVALID_ORDER', result.rejected_reason.value)
     #     self.assertTrue(isinstance(result.id, GUID))
     #     self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.timestamp)
-    #
-    # def test_can_deserialize_order_working_events_from_csharp(self):
-    #     # Arrange
-    #     # Base64 bytes string from C# MsgPack.Cli
-    #     base64 = 'jqRUeXBlrE9yZGVyV29ya2luZ6JJZNkkNThhOTMwNzMtNTNiZi00MTI5LTk3N2YtODdkNThhZTI1NTNmqVRpbWVzdGFtcLgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFqnT3JkZXJJZKhPLTEyMzQ1Nq1PcmRlcklkQnJva2VyqUJPLTEyMzQ1NqZTeW1ib2yrQVVEVVNELkZYQ02lTGFiZWypTzEyMzQ1Nl9FqU9yZGVyU2lkZaNCVVmpT3JkZXJUeXBlq1NUT1BfTUFSS0VUqFF1YW50aXR5AaVQcmljZaMxLjCrVGltZUluRm9yY2WjREFZqkV4cGlyZVRpbWWkTk9ORatXb3JraW5nVGltZbgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFo='
-    #     body = b64decode(base64)
-    #
-    #     # Act
-    #     result = self.serializer.deserialize(body)
-    #
-    #     # Assert
-    #     self.assertTrue(isinstance(result, OrderWorking))
-    #     self.assertEqual(OrderId('O-123456'), result.order_id)
-    #     self.assertEqual(OrderId('BO-123456'), result.order_id_broker)
-    #     self.assertEqual(Symbol('AUDUSD', Venue('FXCM')), result.symbol)
-    #     self.assertEqual(Label('O123456_E'), result.label)
-    #     self.assertEqual(OrderType.STOP_MARKET, result.order_type)
-    #     self.assertEqual(Quantity(1), result.quantity)
-    #     self.assertEqual(Price('1'), result.price)
-    #     self.assertEqual(TimeInForce.DAY, result.time_in_force)
-    #     self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.working_time)
-    #     self.assertTrue(isinstance(result.id, GUID))
-    #     self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.timestamp)
-    #     self.assertIsNone(result.expire_time)
-    #
-    # def test_can_deserialize_order_working_events_with_expire_time_from_csharp(self):
-    #     # Arrange
-    #     # Base64 bytes string from C# MsgPack.Cli
-    #     base64 = 'jqRUeXBlrE9yZGVyV29ya2luZ6JJZNkkMDNkNjdhY2MtY2ZkMC00MThlLWJjMjItZWYxNDZhYWVhZjdmqVRpbWVzdGFtcLgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFqnT3JkZXJJZKhPLTEyMzQ1Nq1PcmRlcklkQnJva2VyqUJPLTEyMzQ1NqZTeW1ib2yrQVVEVVNELkZYQ02lTGFiZWypTzEyMzQ1Nl9FqU9yZGVyU2lkZaNCVVmpT3JkZXJUeXBlq1NUT1BfTUFSS0VUqFF1YW50aXR5AaVQcmljZaMxLjCrVGltZUluRm9yY2WjR1REqkV4cGlyZVRpbWW4MTk3MC0wMS0wMVQwMDowMTowMC4wMDBaq1dvcmtpbmdUaW1luDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWg=='
-    #     body = b64decode(base64)
-    #
-    #     # Act
-    #     result = self.serializer.deserialize(body)
-    #
-    #     # Assert
-    #     self.assertTrue(isinstance(result, OrderWorking))
-    #     self.assertEqual(OrderId('O-123456'), result.order_id)
-    #     self.assertEqual(OrderId('BO-123456'), result.order_id_broker)
-    #     self.assertEqual(Symbol('AUDUSD', Venue('FXCM')), result.symbol)
-    #     self.assertEqual(Label('O123456_E'), result.label)
-    #     self.assertEqual(OrderSide.BUY, result.order_side)
-    #     self.assertEqual(OrderType.STOP_MARKET, result.order_type)
-    #     self.assertEqual(Quantity(1), result.quantity)
-    #     self.assertEqual(Price('1'), result.price)
-    #     self.assertEqual(TimeInForce.GTD, result.time_in_force)
-    #     self.assertEqual(datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc), result.working_time)
-    #     self.assertTrue(isinstance(result.id, GUID))
-    #     self.assertEqual(datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc), result.timestamp)
-    #     self.assertEqual(datetime(1970, 1, 1, 0, 1, 0, 0, timezone.utc), result.expire_time)
-    #
+
+    def test_can_deserialize_order_working_events_from_csharp(self):
+        # Arrange
+        # Base64 bytes string from C# MsgPack.Cli
+        base64 = 'j6RUeXBlrE9yZGVyV29ya2luZ6JJZNkkY2VjZTQ5OGEtNWViNy00OTQ1LWJiODQtMzFlMmU0OWMyMWI3qVRpbWVzdGFtcLgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFqnT3JkZXJJZKhPLTEyMzQ1Nq1PcmRlcklkQnJva2VyqUJPLTEyMzQ1NqlBY2NvdW50SWStRlhDTS0wMjg1MTkwOKZTeW1ib2yrQVVEVVNELkZYQ02lTGFiZWyhRalPcmRlclNpZGWjQlVZqU9yZGVyVHlwZatTVE9QX01BUktFVKhRdWFudGl0eQGlUHJpY2WjMS4wq1RpbWVJbkZvcmNlo0RBWapFeHBpcmVUaW1lpE5PTkWrV29ya2luZ1RpbWW4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBa'
+        body = b64decode(base64)
+
+        # Act
+        result = self.serializer.deserialize(body)
+
+        # Assert
+        self.assertTrue(isinstance(result, OrderWorking))
+        self.assertEqual(OrderId('O-123456'), result.order_id)
+        self.assertEqual(OrderId('BO-123456'), result.order_id_broker)
+        self.assertEqual(AccountId('FXCM', '02851908'), result.account_id)
+        self.assertEqual(Symbol('AUDUSD', Venue('FXCM')), result.symbol)
+        self.assertEqual(Label('E'), result.label)
+        self.assertEqual(OrderType.STOP_MARKET, result.order_type)
+        self.assertEqual(Quantity(1), result.quantity)
+        self.assertEqual(Price('1'), result.price)
+        self.assertEqual(TimeInForce.DAY, result.time_in_force)
+        self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.working_time)
+        self.assertTrue(isinstance(result.id, GUID))
+        self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.timestamp)
+        self.assertIsNone(result.expire_time)
+
+    def test_can_deserialize_order_working_events_with_expire_time_from_csharp(self):
+        # Arrange
+        # Base64 bytes string from C# MsgPack.Cli
+        base64 = 'j6RUeXBlrE9yZGVyV29ya2luZ6JJZNkkODkwNjQ0ZTItZWY4Yy00YzU3LTk5MjgtYjA2YmU0MzBlNzFlqVRpbWVzdGFtcLgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFqnT3JkZXJJZKhPLTEyMzQ1Nq1PcmRlcklkQnJva2VyqUJPLTEyMzQ1NqlBY2NvdW50SWStRlhDTS0wMjg1MTkwOKZTeW1ib2yrQVVEVVNELkZYQ02lTGFiZWyhRalPcmRlclNpZGWjQlVZqU9yZGVyVHlwZatTVE9QX01BUktFVKhRdWFudGl0eQGlUHJpY2WjMS4wq1RpbWVJbkZvcmNlo0dURKpFeHBpcmVUaW1luDE5NzAtMDEtMDFUMDA6MDE6MDAuMDAwWqtXb3JraW5nVGltZbgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFo='
+        body = b64decode(base64)
+
+        # Act
+        result = self.serializer.deserialize(body)
+
+        # Assert
+        self.assertTrue(isinstance(result, OrderWorking))
+        self.assertEqual(OrderId('O-123456'), result.order_id)
+        self.assertEqual(OrderId('BO-123456'), result.order_id_broker)
+        self.assertEqual(AccountId('FXCM', '02851908'), result.account_id)
+        self.assertEqual(Symbol('AUDUSD', Venue('FXCM')), result.symbol)
+        self.assertEqual(Label('E'), result.label)
+        self.assertEqual(OrderSide.BUY, result.order_side)
+        self.assertEqual(OrderType.STOP_MARKET, result.order_type)
+        self.assertEqual(Quantity(1), result.quantity)
+        self.assertEqual(Price('1'), result.price)
+        self.assertEqual(TimeInForce.GTD, result.time_in_force)
+        self.assertEqual(datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc), result.working_time)
+        self.assertTrue(isinstance(result.id, GUID))
+        self.assertEqual(datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc), result.timestamp)
+        self.assertEqual(datetime(1970, 1, 1, 0, 1, 0, 0, timezone.utc), result.expire_time)
+
     # def test_can_deserialize_order_cancelled_events_from_csharp(self):
     #     # Arrange
     #     # Base64 bytes string from C# MsgPack.Cli
