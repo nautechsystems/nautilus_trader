@@ -57,7 +57,7 @@ cdef class BacktestEngine:
         """
         Initializes a new instance of the BacktestEngine class.
 
-        :param trader_id: The trader identifier for the backtest engine.
+        :param trader_id: The trader_id for the backtest engine.
         :param venue: The venue for the backtest engine.
         :param data_ticks: The tick data for the backtest engine.
         :param data_bars_bid: The bid bar data needed for the backtest engine.

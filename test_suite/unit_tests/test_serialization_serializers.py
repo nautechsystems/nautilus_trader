@@ -182,8 +182,8 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         command = SubmitOrder(
             TraderId('TESTER', '000'),
             StrategyId('SCALPER', '01'),
-            PositionId('123456'),
             self.account.id,
+            PositionId('123456'),
             order,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -209,8 +209,8 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         command = SubmitAtomicOrder(
             TraderId('TESTER', '000'),
             StrategyId('SCALPER', '01'),
-            PositionId('123456'),
             self.account.id,
+            PositionId('123456'),
             atomic_order,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -238,8 +238,8 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         command = SubmitAtomicOrder(
             TraderId('TESTER', '000'),
             StrategyId('SCALPER', '01'),
-            PositionId('123456'),
             self.account.id,
+            PositionId('123456'),
             atomic_order,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)

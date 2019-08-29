@@ -233,14 +233,14 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         elif isinstance(command, SubmitOrder):
             package[TRADER_ID] = command.trader_id.value
             package[STRATEGY_ID] = command.strategy_id.value
-            package[POSITION_ID] = command.position_id.value
             package[ACCOUNT_ID] = command.account_id.value
+            package[POSITION_ID] = command.position_id.value
             package[ORDER] = self.order_serializer.serialize(command.order)
         elif isinstance(command, SubmitAtomicOrder):
             package[TRADER_ID] = command.trader_id.value
             package[STRATEGY_ID] = command.strategy_id.value
-            package[POSITION_ID] = command.position_id.value
             package[ACCOUNT_ID] = command.account_id.value
+            package[POSITION_ID] = command.position_id.value
             package[ENTRY] = self.order_serializer.serialize(command.atomic_order.entry)
             package[STOP_LOSS] = self.order_serializer.serialize(command.atomic_order.stop_loss)
             package[TAKE_PROFIT] = self.order_serializer.serialize(command.atomic_order.take_profit)
@@ -289,8 +289,8 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
             return SubmitOrder(
                 TraderId.from_string(unpacked[TRADER_ID]),
                 StrategyId.from_string(unpacked[STRATEGY_ID]),
-                PositionId(unpacked[POSITION_ID]),
                 AccountId.from_string(unpacked[ACCOUNT_ID]),
+                PositionId(unpacked[POSITION_ID]),
                 self.order_serializer.deserialize(unpacked[ORDER]),
                 command_id,
                 command_timestamp)
@@ -298,8 +298,8 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
             return SubmitAtomicOrder(
                 TraderId.from_string(unpacked[TRADER_ID]),
                 StrategyId.from_string(unpacked[STRATEGY_ID]),
-                PositionId(unpacked[POSITION_ID]),
                 AccountId.from_string(unpacked[ACCOUNT_ID]),
+                PositionId(unpacked[POSITION_ID]),
                 AtomicOrder(self.order_serializer.deserialize(unpacked[ENTRY]),
                             self.order_serializer.deserialize(unpacked[STOP_LOSS]),
                             self.order_serializer.deserialize(unpacked[TAKE_PROFIT])),

@@ -251,7 +251,7 @@ cdef class TradingStrategy:
         """
         Change the trader for the strategy.
 
-        :param trader_id: The trader identifier to change to.
+        :param trader_id: The trader_id to change to.
         """
         self.trader_id = trader_id
         self.log.debug(f"Registered trader {trader_id.value}.")
@@ -1183,8 +1183,8 @@ cdef class TradingStrategy:
         cdef SubmitOrder command = SubmitOrder(
             self.trader_id,
             self.id,
-            position_id,
             self.account.id,
+            position_id,
             order,
             self._guid_factory.generate(),
             self.clock.time_now())
@@ -1244,8 +1244,8 @@ cdef class TradingStrategy:
         cdef SubmitAtomicOrder command = SubmitAtomicOrder(
             self.trader_id,
             self.id,
-            position_id,
             self.account.id,
+            position_id,
             atomic_order,
             self._guid_factory.generate(),
             self.clock.time_now())
