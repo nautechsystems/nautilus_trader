@@ -24,9 +24,9 @@ cdef class Order:
     """
     Represents an order in a financial market.
     """
-    cdef list _order_ids_broker
-    cdef list _execution_ids
-    cdef list _execution_tickets
+    cdef set _order_ids_broker
+    cdef set _execution_ids
+    cdef set _execution_tickets
     cdef list _events
 
     cdef readonly OrderId id

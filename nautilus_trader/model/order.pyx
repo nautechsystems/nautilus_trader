@@ -10,7 +10,7 @@ import uuid
 
 from cpython.datetime cimport datetime
 from decimal import Decimal
-from typing import List
+from typing import Set, List
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport GUID
@@ -94,9 +94,9 @@ cdef class Order:
         if time_in_force == TimeInForce.GTD:
             Condition.not_none(expire_time, 'expire_time')
 
-        self._order_ids_broker = []         # type: List[OrderId]
-        self._execution_ids = []            # type: List[ExecutionId]
-        self._execution_tickets = []        # type: List[ExecutionTicket]
+        self._order_ids_broker = set()      # type: Set[OrderId]
+        self._execution_ids = set()         # type: Set[ExecutionId]
+        self._execution_tickets = set()     # type: Set[ExecutionTicket]
         self._events = []                   # type: List[OrderEvent]
 
         self.id = order_id
@@ -234,7 +234,7 @@ cdef class Order:
         
         :return List[OrderId]. 
         """
-        return self._order_ids_broker.copy()
+        return sorted(self._order_ids_broker)
 
     cpdef list get_execution_ids(self):
         """
@@ -242,7 +242,7 @@ cdef class Order:
         
         :return List[ExecutionId].
         """
-        return self._execution_ids.copy()
+        return sorted(self._execution_ids)
 
     cpdef list get_execution_tickets(self):
         """
@@ -250,7 +250,7 @@ cdef class Order:
         
         :return List[ExecutionTicket]. 
         """
-        return self._execution_tickets.copy()
+        return sorted(self._execution_tickets)
 
     cpdef list get_events(self):
         """
@@ -294,7 +294,7 @@ cdef class Order:
         elif isinstance(event, OrderAccepted):
             self.status = OrderStatus.ACCEPTED
         elif isinstance(event, OrderWorking):
-            self._order_ids_broker.append(event.order_id_broker)
+            self._order_ids_broker.add(event.order_id_broker)
             self.id_broker = event.order_id_broker
             self._set_state_to_working()
         elif isinstance(event, OrderCancelReject):
@@ -306,12 +306,12 @@ cdef class Order:
             self.status = OrderStatus.EXPIRED
             self._set_state_to_completed()
         elif isinstance(event, OrderModified):
-            self._order_ids_broker.append(event.order_id_broker)
+            self._order_ids_broker.add(event.order_id_broker)
             self.id_broker = event.order_id_broker
             self.price = event.modified_price
         elif isinstance(event, OrderFillEvent):
-            self._execution_ids.append(event.execution_id)
-            self._execution_tickets.append(event.execution_ticket)
+            self._execution_ids.add(event.execution_id)
+            self._execution_tickets.add(event.execution_ticket)
             self.execution_id = event.execution_id
             self.execution_ticket = event.execution_ticket
             self.filled_quantity = event.filled_quantity
