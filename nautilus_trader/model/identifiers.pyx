@@ -148,7 +148,7 @@ cdef class IdTag(Identifier):
 cdef class TraderId(Identifier):
     """
     Represents a valid trader identifier, the name and order_id_tag combination
-    should be unique at the fund level.
+    must be unique at the fund level.
     """
 
     def __init__(self, str name, str order_id_tag):
@@ -206,7 +206,7 @@ cdef class TraderId(Identifier):
 cdef class StrategyId(Identifier):
     """
     Represents a valid strategy identifier, the name and order_id_tag combination
-    should be unique at the trader level.
+    must be unique at the trader level.
     """
 
     def __init__(self, str name, str order_id_tag):
