@@ -74,7 +74,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         Initializes a new instance of the RedisExecutionEngine class.
 
-        :param trader_id: The trader identifier.
+        :param trader_id: The trader_id.
         :param host: The redis host for the database connection.
         :param port: The redis port for the database connection.
         :param command_serializer: The command serializer for database transactions.

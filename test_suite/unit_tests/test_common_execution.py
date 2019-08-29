@@ -488,8 +488,8 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            position_id,
             self.account.id,
+            position_id,
             order,
             self.guid_factory.generate(),
             self.clock.time_now())
@@ -518,8 +518,8 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            position_id,
             self.account.id,
+            position_id,
             order,
             self.guid_factory.generate(),
             self.clock.time_now())
@@ -569,8 +569,8 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order1 = SubmitOrder(
             self.trader_id,
             strategy.id,
-            position_id,
             self.account.id,
+            position_id,
             order1,
             self.guid_factory.generate(),
             self.clock.time_now())
@@ -578,8 +578,8 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order2 = SubmitOrder(
             self.trader_id,
             strategy.id,
-            position_id,
             self.account.id,
+            position_id,
             order2,
             self.guid_factory.generate(),
             self.clock.time_now())
@@ -633,8 +633,8 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order1 = SubmitOrder(
             self.trader_id,
             strategy.id,
-            position_id,
             self.account.id,
+            position_id,
             order1,
             self.guid_factory.generate(),
             self.clock.time_now())
@@ -642,8 +642,8 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order2 = SubmitOrder(
             self.trader_id,
             strategy.id,
-            position_id,
             self.account.id,
+            position_id,
             order2,
             self.guid_factory.generate(),
             self.clock.time_now())
@@ -702,8 +702,8 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order1 = SubmitOrder(
             self.trader_id,
             strategy1.id,
-            position_id1,
             self.account.id,
+            position_id1,
             order1,
             self.guid_factory.generate(),
             self.clock.time_now())
@@ -711,8 +711,8 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order2 = SubmitOrder(
             self.trader_id,
             strategy2.id,
-            position_id2,
             self.account.id,
+            position_id2,
             order2,
             self.guid_factory.generate(),
             self.clock.time_now())
@@ -790,8 +790,8 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order1 = SubmitOrder(
             self.trader_id,
             strategy1.id,
-            position_id1,
             self.account.id,
+            position_id1,
             order1,
             self.guid_factory.generate(),
             self.clock.time_now())
@@ -799,8 +799,8 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order2 = SubmitOrder(
             self.trader_id,
             strategy1.id,
-            position_id1,
             self.account.id,
+            position_id1,
             order2,
             self.guid_factory.generate(),
             self.clock.time_now())
@@ -808,8 +808,8 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order3 = SubmitOrder(
             self.trader_id,
             strategy2.id,
-            position_id2,
             self.account.id,
+            position_id2,
             order3,
             self.guid_factory.generate(),
             self.clock.time_now())

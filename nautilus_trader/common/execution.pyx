@@ -49,7 +49,7 @@ cdef class ExecutionDatabase:
         """
         Initializes a new instance of the ExecutionDatabase class.
 
-        :param trader_id: The trader identifier for the component.
+        :param trader_id: The trader_id for the component.
         :param logger: The logger for the component.
         """
         self.trader_id = trader_id
@@ -253,7 +253,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Initializes a new instance of the InMemoryExecutionDatabase class.
 
-        :param trader_id: The trader identifier for the component.
+        :param trader_id: The trader_id for the component.
         :param logger: The logger for the component.
         """
         super().__init__(trader_id, logger)

@@ -32,7 +32,7 @@ cdef class Trader:
         """
         Initializes a new instance of the Trader class.
 
-        :param trader_id: The trader identifier for the trader (unique at fund level).
+        :param trader_id: The trader_id for the trader (unique at fund level).
         :param strategies: The initial strategies for the trader.
         :param data_client: The data client for the trader.
         :param exec_engine: The execution engine for the trader.

@@ -29,7 +29,7 @@ cdef class LogStore:
         """
         Initializes a new instance of the LogStore class.
 
-        :param trader_id: The trader identifier.
+        :param trader_id: The trader_id.
         :param host: The redis host to connect to.
         :param port: The redis port to connect to.
         :raises ConditionFailed: If the redis_host is not a valid string.

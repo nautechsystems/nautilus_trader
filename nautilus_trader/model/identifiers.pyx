@@ -169,10 +169,10 @@ cdef class TraderId(Identifier):
     @staticmethod
     cdef TraderId from_string(str value):
         """
-        Return a trader identifier parsed from the given string value. Must be 
+        Return a trader_id parsed from the given string value. Must be 
         correctly formatted with two valid strings either side of a hyphen '-'.
         
-        Normally a trader identifier is the abbreviated name of the trader and
+        Normally a trader_id is the abbreviated name of the trader and
         an order_id tag number separated by a hyphen '-'.
         
         Example: 'Trader1-001'.
@@ -189,15 +189,15 @@ cdef class TraderId(Identifier):
         """
         Python wrapper for the from_string method.
 
-        Return a trader identifier parsed from the given string value. Must be
+        Return a trader_id parsed from the given string value. Must be
         correctly formatted with two valid strings either side of a hyphen '-'.
 
-        Normally a trader identifier is the abbreviated name of the trader and
+        Normally a trader_id is the abbreviated name of the trader and
         an order_id tag number separated by a hyphen '-'.
 
         Example: 'Trader1-001'.
 
-        :param value: The value for the trader identifier.
+        :param value: The value for the trader_id.
         :return TraderId.
         """
         return TraderId.from_string(value)
@@ -205,7 +205,7 @@ cdef class TraderId(Identifier):
 
 cdef class StrategyId(Identifier):
     """
-    Represents a valid strategy_id, the name and order_id_tag combination
+    Represents a valid strategy identifier, the name and order_id_tag combination
     should be unique at the trader level.
     """
 
@@ -269,8 +269,8 @@ cdef class AccountId(Identifier):
         """
         Initializes a new instance of the AccountId class.
 
-        :param broker: The broker for the account identifier.
-        :param account_number: The account number for the account identifier.
+        :param broker: The broker for the account_id.
+        :param account_number: The account number for the account_id.
         :raises ConditionFailed: If the broker is not a valid string.
         :raises ConditionFailed: If the account_number is not a valid string.
         """
@@ -282,12 +282,12 @@ cdef class AccountId(Identifier):
     @staticmethod
     cdef AccountId from_string(str value):
         """
-        Return an account identifier from the given string value. Must be correctly
+        Return an account_id from the given string value. Must be correctly
         formatted with two valid strings either side of a hyphen '-'.
         
         Example: 'FXCM-02851908'.
 
-        :param value: The value for the account identifier.
+        :param value: The value for the account_id.
         :return AccountId.
         """
         cdef tuple partitioned = value.partition('-')
@@ -298,12 +298,12 @@ cdef class AccountId(Identifier):
         """
         Python wrapper for the from_string method.
 
-        Return an account identifier from the given string value. Must be correctly
+        Return an account_id from the given string value. Must be correctly
         formatted with two valid strings either side of a hyphen '-'.
 
         Example: 'FXCM-02851908'.
 
-        :param value: The value for the account identifier.
+        :param value: The value for the account_id.
         :return AccountId.
         """
         return AccountId.from_string(value)
@@ -325,7 +325,7 @@ cdef class AccountNumber(Identifier):
 
 cdef class OrderId(Identifier):
     """
-    Represents a valid order_id (should be unique).
+    Represents a valid order identifier (should be unique).
     """
 
     def __init__(self, str value):
@@ -339,7 +339,7 @@ cdef class OrderId(Identifier):
 
 cdef class PositionId(Identifier):
     """
-    Represents a valid position_id (should be unique).
+    Represents a valid position identifier (should be unique).
     """
 
     def __init__(self, str value):
@@ -360,7 +360,7 @@ cdef class ExecutionId(Identifier):
         """
         Initializes a new instance of the ExecutionId class.
 
-        :param value: The value of the execution identifier (should be unique).
+        :param value: The value of the execution_id (should be unique).
         """
         super().__init__(value)
 
