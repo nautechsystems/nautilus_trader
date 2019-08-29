@@ -17,9 +17,6 @@ from nautilus_trader.trade.reports cimport ReportProvider
 
 
 cdef class Trader:
-    """
-    Provides a trader for managing a portfolio of trading strategies.
-    """
     cdef Clock _clock
     cdef LoggerAdapter _log
     cdef DataClient _data_client

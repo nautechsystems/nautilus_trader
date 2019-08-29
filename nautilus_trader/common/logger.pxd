@@ -38,9 +38,6 @@ cdef inline str level_str(int value):
 
 
 cdef class LogMessage:
-    """
-    Represents a log message including timestamp and log level.
-    """
     cdef readonly datetime timestamp
     cdef readonly LogLevel level
     cdef readonly str text
@@ -50,9 +47,6 @@ cdef class LogMessage:
 
 
 cdef class Logger:
-    """
-    The abstract base class for all Loggers.
-    """
     cdef LogLevel _log_level_console
     cdef LogLevel _log_level_file
     cdef LogLevel _log_level_store
@@ -80,16 +74,10 @@ cdef class Logger:
 
 
 cdef class TestLogger(Logger):
-    """
-    Provides a single threaded logger for testing.
-    """
     pass
 
 
 cdef class LoggerAdapter:
-    """
-    Provides an adapter for a components logger.
-    """
     cdef Logger _logger
 
     cdef readonly bint bypassed

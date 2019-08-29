@@ -30,9 +30,6 @@ from nautilus_trader.model.position cimport Position
 
 
 cdef class AccountStateEvent(Event):
-    """
-    Represents an account event produced from a collateral report.
-    """
     cdef readonly AccountId account_id
     cdef readonly Brokerage broker
     cdef readonly AccountNumber number
@@ -47,16 +44,10 @@ cdef class AccountStateEvent(Event):
 
 
 cdef class OrderEvent(Event):
-    """
-    The base class for all order events.
-    """
     cdef readonly OrderId order_id
 
 
 cdef class OrderFillEvent(OrderEvent):
-    """
-    The base class for all order fill events.
-    """
     cdef readonly AccountId account_id
     cdef readonly ExecutionId execution_id
     cdef readonly ExecutionTicket execution_ticket
@@ -68,9 +59,6 @@ cdef class OrderFillEvent(OrderEvent):
 
 
 cdef class OrderInitialized(OrderEvent):
-    """
-    Represents an event where an order has been initialized.
-    """
     cdef readonly Symbol symbol
     cdef readonly Label label
     cdef readonly OrderSide order_side
@@ -82,34 +70,22 @@ cdef class OrderInitialized(OrderEvent):
 
 
 cdef class OrderSubmitted(OrderEvent):
-    """
-    Represents an event where an order has been submitted by the execution system.
-    """
     cdef readonly AccountId account_id
     cdef readonly datetime submitted_time
 
 
 cdef class OrderRejected(OrderEvent):
-    """
-    Represents an event where an order has been rejected by the broker.
-    """
     cdef readonly AccountId account_id
     cdef readonly datetime rejected_time
     cdef readonly ValidString rejected_reason
 
 
 cdef class OrderAccepted(OrderEvent):
-    """
-    Represents an event where an order has been accepted by the broker.
-    """
     cdef readonly AccountId account_id
     cdef readonly datetime accepted_time
 
 
 cdef class OrderWorking(OrderEvent):
-    """
-    Represents an event where an order is working with the broker.
-    """
     cdef readonly OrderId order_id_broker
     cdef readonly AccountId account_id
     cdef readonly Symbol symbol
@@ -124,9 +100,6 @@ cdef class OrderWorking(OrderEvent):
 
 
 cdef class OrderCancelReject(OrderEvent):
-    """
-    Represents an event where an order cancel request has been rejected by the broker.
-    """
     cdef readonly AccountId account_id
     cdef readonly datetime rejected_time
     cdef readonly ValidString rejected_response_to
@@ -134,25 +107,16 @@ cdef class OrderCancelReject(OrderEvent):
 
 
 cdef class OrderCancelled(OrderEvent):
-    """
-    Represents an event where an order has been cancelled with the broker.
-    """
     cdef readonly AccountId account_id
     cdef readonly datetime cancelled_time
 
 
 cdef class OrderExpired(OrderEvent):
-    """
-    Represents an event where an order has expired with the broker.
-    """
     cdef readonly AccountId account_id
     cdef readonly datetime expired_time
 
 
 cdef class OrderModified(OrderEvent):
-    """
-    Represents an event where an order has been modified with the broker.
-    """
     cdef readonly AccountId account_id
     cdef readonly OrderId order_id_broker
     cdef readonly Price modified_price
@@ -160,47 +124,30 @@ cdef class OrderModified(OrderEvent):
 
 
 cdef class OrderFilled(OrderFillEvent):
-    """
-    Represents an event where an order has been completely filled with the broker.
-    """
+    pass
 
 
 cdef class OrderPartiallyFilled(OrderFillEvent):
-    """
-    Represents an event where an order has been partially filled with the broker.
-    """
     cdef readonly Quantity leaves_quantity
 
 
 cdef class PositionEvent(Event):
-    """
-    The base class for all position events.
-    """
     cdef readonly Position position
     cdef readonly StrategyId strategy_id
     cdef readonly OrderEvent order_fill
 
 
 cdef class PositionOpened(PositionEvent):
-    """
-    Represents an event where a position has been opened.
-    """
+    pass
 
 
 cdef class PositionModified(PositionEvent):
-    """
-    Represents an event where a position has been modified.
-    """
+    pass
 
 
 cdef class PositionClosed(PositionEvent):
-    """
-    Represents an event where a position has been closed.
-    """
+    pass
 
 
 cdef class TimeEvent(Event):
-    """
-    Represents a time event occurring at the event timestamp.
-    """
     cdef readonly Label label

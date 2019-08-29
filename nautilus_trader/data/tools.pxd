@@ -13,10 +13,6 @@ from nautilus_trader.model.objects cimport Tick, Bar, DataBar
 
 
 cdef class TickBuilder:
-    """
-    Provides a means of building lists of ticks from the given Pandas DataFrames
-    of bid and ask data.
-    """
     cdef Symbol _symbol
     cdef int _decimal_precision
     cdef object _tick_data
@@ -29,10 +25,6 @@ cdef class TickBuilder:
 
 
 cdef class BarBuilder:
-    """
-    Provides a means of building lists of bars from a given Pandas DataFrame of
-    the correct specification.
-    """
     cdef int _decimal_precision
     cdef int _volume_multiple
     cdef object _data
@@ -48,11 +40,6 @@ cdef class BarBuilder:
 
 
 cdef class IndicatorUpdater:
-    """
-    Provides an adapter for updating an indicator with a bar. When instantiated
-    with an indicator update method, the updater will inspect the method and
-    construct the required parameter list for updates.
-    """
     cdef object _indicator
     cdef object _input_method
     cdef list _input_params

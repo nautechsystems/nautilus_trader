@@ -17,9 +17,6 @@ from nautilus_trader.trade.strategy cimport TradingStrategy
 
 
 cdef class DataClient:
-    """
-    The base class for all data clients.
-    """
     cdef Clock _clock
     cdef GuidFactory _guid_factory
     cdef LoggerAdapter _log

@@ -15,9 +15,6 @@ from nautilus_trader.trade.performance cimport PerformanceAnalyzer
 
 
 cdef class Portfolio:
-    """
-    Provides a trading portfolio.
-    """
     cdef LoggerAdapter _log
     cdef Clock _clock
     cdef GuidFactory _guid_factory

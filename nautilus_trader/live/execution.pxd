@@ -12,9 +12,6 @@ from nautilus_trader.serialization.base cimport CommandSerializer, ResponseSeria
 
 
 cdef class RedisExecutionDatabase(ExecutionDatabase):
-    """
-    Provides a Redis event store for an execution engine.
-    """
     cdef readonly str key_trader
     cdef readonly str key_accounts
     cdef readonly str key_orders
@@ -47,9 +44,6 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
 
 cdef class LiveExecutionEngine(ExecutionEngine):
-    """
-    Provides a process and thread safe live execution engine.
-    """
     cdef object _message_bus
     cdef object _thread
 
@@ -57,10 +51,6 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
 
 cdef class LiveExecClient(ExecutionClient):
-    """
-    Provides an execution client for live trading utilizing a ZMQ transport
-    to the execution service.
-    """
     cdef object _zmq_context
 
     cdef object _commands_worker

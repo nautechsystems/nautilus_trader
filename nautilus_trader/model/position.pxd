@@ -22,9 +22,6 @@ from nautilus_trader.model.c_enums.order_side cimport OrderSide
 
 
 cdef class Position:
-    """
-    Represents a position in a financial market.
-    """
     cdef set _order_ids
     cdef set _execution_ids
     cdef set _execution_tickets

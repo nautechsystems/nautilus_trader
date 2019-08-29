@@ -15,9 +15,6 @@ from nautilus_trader.model.identifiers cimport Brokerage, AccountNumber, Account
 
 
 cdef class Account:
-    """
-    Represents a brokerage account.
-    """
     cdef list _events
 
     cdef readonly bint initialized

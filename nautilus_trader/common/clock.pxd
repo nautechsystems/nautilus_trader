@@ -13,11 +13,6 @@ from nautilus_trader.model.identifiers cimport Label
 
 
 cdef class Clock:
-    """
-    The abstract base class for all clocks.
-
-    All times are tz-aware UTC.
-    """
     cdef LoggerAdapter _log
     cdef object _event_handler
     cdef dict _time_alerts
@@ -41,19 +36,11 @@ cdef class Clock:
 
 
 cdef class LiveClock(Clock):
-    """
-    Provides a clock for live trading.
-
-    All times are tz-aware UTC.
-    """
     cpdef void _raise_time_event(self, Label label, datetime alert_time)
     cpdef void _repeating_timer(self, Label label, datetime alert_time, timedelta interval, datetime stop_time)
 
 
 cdef class TestTimer:
-    """
-    Provides a test timer for backtesting and unit testing.
-    """
     cdef readonly Label label
     cdef readonly timedelta interval
     cdef readonly datetime start
@@ -65,9 +52,6 @@ cdef class TestTimer:
 
 
 cdef class TestClock(Clock):
-    """
-    Provides a test clock for backtesting and unit testing.
-    """
     cdef datetime _time
 
     cpdef void set_time(self, datetime time)

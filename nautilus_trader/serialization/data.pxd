@@ -12,9 +12,6 @@ from nautilus_trader.serialization.base cimport DataSerializer, InstrumentSerial
 
 
 cdef class Utf8TickSerializer:
-    """
-    Provides a tick serializer for the UTF-8 specification.
-    """
     @staticmethod
     cdef bytes serialize(Tick tick)
     @staticmethod
@@ -22,9 +19,6 @@ cdef class Utf8TickSerializer:
 
 
 cdef class Utf8BarSerializer:
-    """
-    Provides a bar serializer for the UTF-8 specification.
-    """
     @staticmethod
     cdef bytes serialize(Bar bar)
     @staticmethod
@@ -34,15 +28,10 @@ cdef class Utf8BarSerializer:
 
 
 cdef class BsonDataSerializer(DataSerializer):
-    """
-    Provides a serializer for data objects to BSON specification.
-    """
+    pass
 
 
 cdef class DataMapper:
-    """
-    Provides a data mapper for data objects.
-    """
     cdef InstrumentSerializer instrument_serializer
 
     cpdef dict map_ticks(self, list ticks)
@@ -51,6 +40,4 @@ cdef class DataMapper:
 
 
 cdef class BsonInstrumentSerializer(InstrumentSerializer):
-    """
-    Provides an instrument serializer for the MessagePack specification.
-    """
+    pass

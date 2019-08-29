@@ -14,16 +14,10 @@ from nautilus_trader.model.order cimport Order, AtomicOrder
 
 
 cdef class AccountInquiry(Command):
-    """
-    Represents a request for account status.
-    """
     cdef readonly AccountId account_id
 
 
 cdef class SubmitOrder(Command):
-    """
-    Represents a command to submit an order.
-    """
     cdef readonly TraderId trader_id
     cdef readonly StrategyId strategy_id
     cdef readonly PositionId position_id
@@ -32,9 +26,6 @@ cdef class SubmitOrder(Command):
 
 
 cdef class SubmitAtomicOrder(Command):
-    """
-    Represents a command to submit an atomic order.
-    """
     cdef readonly TraderId trader_id
     cdef readonly StrategyId strategy_id
     cdef readonly PositionId position_id
@@ -43,9 +34,6 @@ cdef class SubmitAtomicOrder(Command):
 
 
 cdef class ModifyOrder(Command):
-    """
-    Represents a command to modify an order with the modified price.
-    """
     cdef readonly TraderId trader_id
     cdef readonly StrategyId strategy_id
     cdef readonly AccountId account_id
@@ -54,9 +42,6 @@ cdef class ModifyOrder(Command):
 
 
 cdef class CancelOrder(Command):
-    """
-    Represents a command to cancel an order.
-    """
     cdef readonly TraderId trader_id
     cdef readonly StrategyId strategy_id
     cdef readonly AccountId account_id
