@@ -17,9 +17,6 @@ from nautilus_trader.serialization.base cimport (
 
 
 cdef class LiveDataClient(DataClient):
-    """
-    Provides a data client for live trading.
-    """
     cdef object _zmq_context
     cdef object _tick_req_worker
     cdef object _tick_sub_worker

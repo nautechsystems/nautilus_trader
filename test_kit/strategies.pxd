@@ -10,7 +10,4 @@ from nautilus_trader.trade.strategy cimport TradingStrategy
 
 
 cdef class EmptyStrategyCython(TradingStrategy):
-    """
-    A Cython strategy which is empty and does nothing.
-    """
     pass

@@ -33,7 +33,7 @@ cdef class Utf8TickSerializer:
         """
         Serialize the given tick to UTF-8 specification bytes.
 
-        :param data: The tick to serialize.
+        :param tick: The tick to serialize.
         :return bytes.
         """
         return str(tick).encode(UTF8)
@@ -43,7 +43,8 @@ cdef class Utf8TickSerializer:
         """
         Deserialize the given tick bytes to a tick.
 
-        :param data_bytes: The data bytes to deserialize.
+        :param symbol: The symbol to deserialize.
+        :param values_bytes: The tick value bytes to deserialize.
         :return Tick.
         """
         cdef list values = values_bytes.decode(UTF8).split(',')
@@ -72,7 +73,7 @@ cdef class Utf8BarSerializer:
         """
         Serialize the given bar to UTF-8 specification bytes.
 
-        :param data: The bar to serialize.
+        :param bar: The bar to serialize.
         :return bytes.
         """
         return str(bar).encode(UTF8)

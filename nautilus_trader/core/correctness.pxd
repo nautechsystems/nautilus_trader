@@ -6,6 +6,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+
 cdef class Condition:
     @staticmethod
     cdef void true(bint predicate, str description) except *

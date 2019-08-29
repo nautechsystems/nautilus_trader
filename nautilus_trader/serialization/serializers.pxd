@@ -17,38 +17,24 @@ from nautilus_trader.serialization.base cimport (
 
 
 cdef class MsgPackQuerySerializer(QuerySerializer):
-    """
-    Provides a serializer for data query objects for the MsgPack specification.
-    """
+    pass
 
 
 cdef class MsgPackOrderSerializer(OrderSerializer):
-    """
-    Provides a command serializer for the MessagePack specification
-    """
+    pass
 
 
 cdef class MsgPackCommandSerializer(CommandSerializer):
-    """
-    Provides a command serializer for the MessagePack specification.
-    """
     cdef OrderSerializer order_serializer
 
 
 cdef class MsgPackEventSerializer(EventSerializer):
-    """
-    Provides an event serializer for the MessagePack specification
-    """
+    pass
 
 
 cdef class MsgPackRequestSerializer(RequestSerializer):
-    """
-    Provides a request serializer for the MessagePack specification
-    """
     cdef QuerySerializer query_serializer
 
 
 cdef class MsgPackResponseSerializer(ResponseSerializer):
-    """
-    Provides a response serializer for the MessagePack specification
-    """
+    pass

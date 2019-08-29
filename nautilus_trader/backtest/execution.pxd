@@ -23,9 +23,6 @@ from nautilus_trader.backtest.models cimport FillModel
 
 
 cdef class BacktestExecClient(ExecutionClient):
-    """
-    Provides an execution client for the BacktestEngine.
-    """
     cdef readonly Clock _clock
     cdef readonly GuidFactory _guid_factory
     cdef readonly Account _account

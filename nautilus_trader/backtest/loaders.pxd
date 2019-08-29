@@ -11,8 +11,4 @@ from nautilus_trader.model.objects cimport Instrument
 
 
 cdef class InstrumentLoader:
-    """
-    Provides instrument template methods for backtesting.
-    """
-
     cpdef Instrument default_fx_ccy(self, Symbol symbol, int tick_precision)

@@ -10,9 +10,6 @@ from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.objects cimport Money
 
 cdef class BacktestConfig:
-    """
-    Provides a configuration for a BacktestEngine.
-    """
     cdef readonly str exec_db_type
     cdef readonly bint exec_db_flush
     cdef readonly bint frozen_account

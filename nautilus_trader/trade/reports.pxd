@@ -11,9 +11,6 @@ from nautilus_trader.model.position cimport Position
 
 
 cdef class ReportProvider:
-    """
-    Provides order fill and trade reports.
-    """
     cpdef object get_orders_report(self, dict orders)
     cpdef object get_order_fills_report(self, dict orders)
     cpdef object get_positions_report(self, dict positions)

@@ -11,10 +11,6 @@ from nautilus_trader.model.c_enums.quote_type cimport QuoteType
 
 
 cdef class ExchangeRateCalculator:
-    """
-    Provides exchange rates between currencies.
-    """
-
     cpdef float get_rate(
             self,
             Currency quote_currency,

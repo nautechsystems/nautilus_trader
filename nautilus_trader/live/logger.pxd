@@ -10,9 +10,6 @@ from nautilus_trader.common.logger cimport LogMessage, Logger
 
 
 cdef class LogStore:
-    """
-    Provides a log store.
-    """
     cdef str _key
     cdef object _message_bus
     cdef object _process
@@ -23,9 +20,6 @@ cdef class LogStore:
 
 
 cdef class LiveLogger(Logger):
-    """
-    Provides a thread safe logger for live concurrent operations.
-    """
     cdef object _message_bus
     cdef object _thread
     cdef LogStore _store

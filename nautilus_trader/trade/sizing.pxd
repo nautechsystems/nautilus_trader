@@ -10,9 +10,6 @@ from nautilus_trader.model.objects cimport Quantity, Price, Money, Instrument
 
 
 cdef class PositionSizer:
-    """
-    The base class for all position sizers.
-    """
     cdef readonly Instrument instrument
 
     cpdef void update_instrument(self, Instrument instrument)
@@ -33,7 +30,4 @@ cdef class PositionSizer:
 
 
 cdef class FixedRiskSizer(PositionSizer):
-    """
-    Provides position sizing calculations based on a given risk.
-    """
     pass

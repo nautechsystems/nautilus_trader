@@ -12,17 +12,11 @@ from nautilus_trader.model.order cimport Order
 
 
 cdef class TrailingStopSignal:
-    """
-    Represents a trailing stop signal.
-    """
     cdef bint is_signal
     cdef Price price
 
 
 cdef class TrailingStopAlgorithm:
-    """
-    The base class for all trailing stop algorithms.
-    """
     cdef Order order
 
     cdef object _calculate
@@ -33,9 +27,6 @@ cdef class TrailingStopAlgorithm:
 
 
 cdef class TickTrailingStopAlgorithm(TrailingStopAlgorithm):
-    """
-    The base class for all trailing stop algorithms.
-    """
     cdef readonly Symbol symbol
 
     cpdef void update(self, Tick tick)
@@ -44,9 +35,6 @@ cdef class TickTrailingStopAlgorithm(TrailingStopAlgorithm):
 
 
 cdef class BarTrailingStopAlgorithm(TrailingStopAlgorithm):
-    """
-    The base class for all trailing stop algorithms updated with bars.
-    """
     cdef readonly BarType bar_type
 
     cpdef void update(self, Bar bar)
@@ -55,9 +43,6 @@ cdef class BarTrailingStopAlgorithm(TrailingStopAlgorithm):
 
 
 cdef class BarsBackTrail(BarTrailingStopAlgorithm):
-    """
-    A trailing stop algorithm based on the number of bars back.
-    """
     cdef int _bars_back
     cdef float _sl_atr_multiple
     cdef list _bars

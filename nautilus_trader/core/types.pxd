@@ -6,6 +6,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+
 cdef class StringValue:
     cdef readonly str value
     cpdef bint equals(self, StringValue other)

@@ -22,9 +22,6 @@ from nautilus_trader.backtest.models cimport FillModel
 
 
 cdef class BacktestEngine:
-    """
-    Provides a backtest engine to run a trader on historical data.
-    """
     cdef readonly Clock clock
     cdef readonly Clock test_clock
     cdef readonly GuidFactory guid_factory

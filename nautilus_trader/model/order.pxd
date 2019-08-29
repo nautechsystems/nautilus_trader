@@ -21,9 +21,6 @@ from nautilus_trader.model.generators cimport OrderIdGenerator
 
 
 cdef class Order:
-    """
-    Represents an order in a financial market.
-    """
     cdef set _order_ids_broker
     cdef set _execution_ids
     cdef set _execution_tickets
@@ -73,10 +70,6 @@ cdef class Order:
 
 
 cdef class AtomicOrder:
-    """
-    Represents an order for a financial market instrument consisting of a 'parent'
-    entry order and 'child' OCO orders being a stop-loss and optional profit target.
-    """
     cdef readonly OrderId id
     cdef readonly Order entry
     cdef readonly Order stop_loss
@@ -88,10 +81,6 @@ cdef class AtomicOrder:
 
 
 cdef class OrderFactory:
-    """
-    Provides creation of different order types. Holds an internal OrderIdGenerator
-    to handle order_ids.
-    """
     cdef Clock _clock
     cdef OrderIdGenerator _id_generator
 

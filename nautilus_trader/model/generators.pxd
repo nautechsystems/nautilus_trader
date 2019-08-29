@@ -11,9 +11,6 @@ from nautilus_trader.common.clock cimport Clock
 
 
 cdef class IdentifierGenerator:
-    """
-    Provides a generator for unique order_ids.
-    """
     cdef Clock _clock
 
     cdef readonly str prefix
@@ -28,14 +25,8 @@ cdef class IdentifierGenerator:
 
 
 cdef class OrderIdGenerator(IdentifierGenerator):
-    """
-    Provides a generator for unique OrderIds.
-    """
     cpdef OrderId generate(self)
 
 
 cdef class PositionIdGenerator(IdentifierGenerator):
-    """
-    Provides a generator for unique PositionIds.
-    """
     cpdef PositionId generate(self)

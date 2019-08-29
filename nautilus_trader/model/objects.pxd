@@ -16,19 +16,15 @@ from nautilus_trader.model.identifiers cimport Symbol, InstrumentId
 
 
 cdef class Quantity:
-    """
-    Represents a non-negative integer quantity.
-    """
     cdef readonly long value
+
     cdef bint equals(self, Quantity other)
 
 
 cdef class Price:
-    """
-    Represents a financial market price.
-    """
     cdef readonly object value
     cdef readonly int precision
+
     cdef bint equals(self, Price other)
     cpdef Price add(self, Price price)
     cpdef Price subtract(self, Price price)
@@ -36,33 +32,27 @@ cdef class Price:
 
 
 cdef class Money:
-    """
-    Represents money.
-    """
     cdef readonly object value
+
     cdef bint equals(self, Money other)
     cpdef float as_float(self)
 
 
 cdef class Tick:
-    """
-    Represents a single tick in a financial market.
-    """
     cdef readonly Symbol symbol
     cdef readonly Price bid
     cdef readonly Price ask
     cdef readonly datetime timestamp
+
     @staticmethod
     cdef Tick from_string(Symbol symbol, str values)
 
 
 cdef class BarSpecification:
-    """
-    Represents the specification of a financial market trade bar.
-    """
     cdef readonly int period
     cdef readonly Resolution resolution
     cdef readonly QuoteType quote_type
+
     cpdef timedelta timedelta(self)
     cdef bint equals(self, BarSpecification other)
     cdef str resolution_string(self)
@@ -72,22 +62,17 @@ cdef class BarSpecification:
 
 
 cdef class BarType:
-    """
-    Represents a financial market symbol and bar specification.
-    """
     cdef readonly Symbol symbol
     cdef readonly BarSpecification specification
     cdef bint equals(self, BarType other)
     cdef str resolution_string(self)
     cdef str quote_type_string(self)
+
     @staticmethod
     cdef BarType from_string(str value)
 
 
 cdef class Bar:
-    """
-    Represents a financial market trade bar.
-    """
     cdef readonly Price open
     cdef readonly Price high
     cdef readonly Price low
@@ -95,14 +80,12 @@ cdef class Bar:
     cdef readonly long volume
     cdef readonly datetime timestamp
     cdef readonly bint checked
+
     @staticmethod
     cdef Bar from_string(str value)
 
 
 cdef class DataBar:
-    """
-    Represents a financial market trade bar.
-    """
     cdef readonly float open
     cdef readonly float high
     cdef readonly float low
@@ -112,9 +95,6 @@ cdef class DataBar:
 
 
 cdef class Instrument:
-    """
-    Represents a tradeable financial market instrument.
-    """
     cdef readonly InstrumentId id
     cdef readonly Symbol symbol
     cdef readonly str broker_symbol

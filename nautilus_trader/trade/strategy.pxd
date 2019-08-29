@@ -28,9 +28,6 @@ from nautilus_trader.model.position cimport Position
 
 
 cdef class TradingStrategy:
-    """
-    The base class for all trading strategies.
-    """
     cdef GuidFactory _guid_factory
     cdef readonly Clock clock
     cdef readonly LoggerAdapter log

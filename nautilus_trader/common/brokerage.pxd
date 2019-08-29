@@ -11,9 +11,6 @@ from nautilus_trader.model.identifiers cimport Symbol
 
 
 cdef class CommissionCalculator:
-    """
-    Provides a means of calculating commissions.
-    """
     cdef dict rates
     cdef float default_rate_bp
     cdef Money minimum

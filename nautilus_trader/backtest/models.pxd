@@ -8,10 +8,6 @@
 
 
 cdef class FillModel:
-    """
-    Provides probabilistic modeling for order fill dynamics including probability
-    of fills and slippage by order type.
-    """
     cdef readonly float prob_fill_at_limit
     cdef readonly float prob_fill_at_stop
     cdef readonly float prob_slippage

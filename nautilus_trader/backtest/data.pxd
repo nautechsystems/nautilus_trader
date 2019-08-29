@@ -15,17 +15,11 @@ from nautilus_trader.model.identifiers cimport Symbol
 
 
 cdef class BidAskBarPair:
-    """
-    Represents a bid ask bar pair for the same market and timestamp.
-    """
     cdef readonly Bar bid
     cdef readonly Bar ask
 
 
 cdef class BacktestDataClient(DataClient):
-    """
-    Provides a data client for backtesting.
-    """
     cdef readonly dict data_ticks
     cdef readonly dict data_bars_bid
     cdef readonly dict data_bars_ask
@@ -51,9 +45,6 @@ cdef class BacktestDataClient(DataClient):
 
 
 cdef class DataProvider:
-    """
-    Provides data for a particular instrument for the BacktestDataClient.
-    """
     cdef readonly Instrument instrument
     cdef readonly object _dataframe_ticks
     cdef readonly dict _dataframes_bars_bid

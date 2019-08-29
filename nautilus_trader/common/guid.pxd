@@ -10,24 +10,12 @@ from nautilus_trader.core.types cimport GUID
 
 
 cdef class GuidFactory:
-    """
-    The abstract base class for all GUID factories.
-    """
-
     cpdef GUID generate(self)
 
 
 cdef class TestGuidFactory(GuidFactory):
-    """
-    Provides a fake GUID factory for testing purposes.
-    """
     cdef GUID _guid
 
 
-
 cdef class LiveGuidFactory(GuidFactory):
-    """
-    Provides a GUID factory for live trading. Generates actual GUIDs based on
-    Pythons UUID4.
-    """
     pass

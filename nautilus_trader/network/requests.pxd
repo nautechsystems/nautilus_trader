@@ -10,7 +10,4 @@ from nautilus_trader.core.message cimport Request
 
 
 cdef class DataRequest(Request):
-    """
-    Represents a request for historical tick data.
-    """
     cdef readonly dict query

@@ -13,10 +13,6 @@ from nautilus_trader.model.objects cimport Money
 
 
 cdef class PerformanceAnalyzer:
-    """
-    Provides a trading portfolio analyzer for generating performance metrics
-    and statistics.
-    """
     cdef bint _log_returns
     cdef object _returns
     cdef object _positions

@@ -8,36 +8,21 @@
 
 
 cdef class Handler:
-    """
-    The base class for all handlers.
-    """
     cdef readonly object handle
 
 
 cdef class TickHandler(Handler):
-    """
-    Provides a handler for tick objects.
-    """
     #cdef void (*_handler)(Tick tick)
     pass
 
 
 cdef class BarHandler(Handler):
-    """
-    Provides a handler for bar type and bar objects.
-    """
     pass
 
 
 cdef class InstrumentHandler(Handler):
-    """
-    Provides a handler for instrument objects.
-    """
     pass
 
 
 cdef class EventHandler(Handler):
-    """
-    Provides a handler for event objects.
-    """
     pass
