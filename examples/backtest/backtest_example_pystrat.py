@@ -68,5 +68,6 @@ if __name__ == "__main__":
     stop = datetime(2013, 3, 1, 0, 0, 0, 0)
 
     engine.run(start, stop)
-
-    input("Press Enter to continue...")
+    print(engine.get_order_fills_report())
+    print(engine.get_positions_report())
+    engine.dispose()

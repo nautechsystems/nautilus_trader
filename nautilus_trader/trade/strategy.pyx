@@ -595,7 +595,7 @@ cdef class TradingStrategy:
             return
 
         self._data_client.subscribe_ticks(symbol, self.handle_tick)
-        self.log.info(f"Subscribed to tick data for {symbol}.")
+        self.log.info(f"Subscribed to {symbol} tick data.")
 
     cpdef void subscribe_bars(self, BarType bar_type):
         """
@@ -608,7 +608,7 @@ cdef class TradingStrategy:
             return
 
         self._data_client.subscribe_bars(bar_type, self.handle_bar)
-        self.log.info(f"Subscribed to bar data for {bar_type}.")
+        self.log.info(f"Subscribed to {bar_type} bar data.")
 
     cpdef void subscribe_instrument(self, Symbol symbol):
         """
@@ -621,7 +621,7 @@ cdef class TradingStrategy:
             return
 
         self._data_client.subscribe_instrument(symbol, self.handle_instrument)
-        self.log.info(f"Subscribed to instrument data for {symbol}.")
+        self.log.info(f"Subscribed to {symbol} instrument data.")
 
     cpdef void unsubscribe_ticks(self, Symbol symbol):
         """
@@ -634,7 +634,7 @@ cdef class TradingStrategy:
             return
 
         self._data_client.unsubscribe_ticks(symbol, self.handle_tick)
-        self.log.info(f"Unsubscribed from tick data for {symbol}.")
+        self.log.info(f"Unsubscribed from {symbol} tick data.")
 
     cpdef void unsubscribe_bars(self, BarType bar_type):
         """
@@ -647,7 +647,7 @@ cdef class TradingStrategy:
             return
 
         self._data_client.unsubscribe_bars(bar_type, self.handle_bar)
-        self.log.info(f"Unsubscribed from bar data for {bar_type}.")
+        self.log.info(f"Unsubscribed from {bar_type} bar data.")
 
     cpdef void unsubscribe_instrument(self, Symbol symbol):
         """
@@ -660,7 +660,7 @@ cdef class TradingStrategy:
             return
 
         self._data_client.unsubscribe_instrument(symbol, self.handle_instrument)
-        self.log.info(f"Unsubscribed from instrument data for {symbol}.")
+        self.log.info(f"Unsubscribed from {symbol} instrument data.")
 
     cpdef bint has_ticks(self, Symbol symbol):
         """
@@ -1178,7 +1178,7 @@ cdef class TradingStrategy:
         """
         Condition.not_none(self._exec_engine, 'exec_engine')
 
-        self.log.info(f"Submitting {order} with {position_id}")
+        self.log.info(f"Submitting {order} for {position_id}")
 
         cdef SubmitOrder command = SubmitOrder(
             self.trader_id,
