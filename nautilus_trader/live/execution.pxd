@@ -71,5 +71,5 @@ cdef class LiveExecClient(ExecutionClient):
 
     cdef readonly str events_topic
 
-    cdef void _command_handler(self, Command command)
-    cdef void _event_handler(self, str topic, bytes event_bytes)
+    cpdef void _command_handler(self, Command command)
+    cpdef void _event_handler(self, str topic, bytes event_bytes)

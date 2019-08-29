@@ -954,12 +954,12 @@ cdef class LiveExecClient(ExecutionClient):
     cpdef void cancel_order(self, CancelOrder command):
         self._command_handler(command)
 
-    cdef void _command_handler(self, Command command):
+    cpdef void _command_handler(self, Command command):
         self._log.debug(f"Sending command {command} ...")
         cdef bytes response_bytes = self._commands_worker.send(self._command_serializer.serialize(command))
         cdef Response response =  self._response_serializer.deserialize(response_bytes)
         self._log.debug(f"Received response {response}")
 
-    cdef void _event_handler(self, str topic, bytes event_bytes):
+    cpdef void _event_handler(self, str topic, bytes event_bytes):
         cdef Event event = self._event_serializer.deserialize(event_bytes)
         self._exec_engine.handle_event(event)
