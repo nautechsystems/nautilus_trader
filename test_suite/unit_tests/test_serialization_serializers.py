@@ -536,68 +536,70 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Assert
         self.assertEqual(deserialized, event)
 
-    # def test_can_deserialize_account_events_from_csharp(self):
-    #     # Arrange
-    #     # Base64 bytes string from C# MsgPack.Cli
-    #     base64 = 'jqRUeXBlrEFjY291bnRFdmVudKJJZNkkNGJmY2MwYWEtZGJlZS00NzY5LTg3MzEtYTc3Y2Y5OWYxNzJkqVRpbWVzdGFtcLgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFqpQWNjb3VudElkrEZYQ00tRDEyMzQ1NqlCcm9rZXJhZ2WkRlhDTa1BY2NvdW50TnVtYmVyp0QxMjM0NTaoQ3VycmVuY3mjVVNEq0Nhc2hCYWxhbmNlpjEwMDAwMKxDYXNoU3RhcnREYXmmMTAwMDAwr0Nhc2hBY3Rpdml0eURheaEwtU1hcmdpblVzZWRMaXF1aWRhdGlvbqEwtU1hcmdpblVzZWRNYWludGVuYW5jZaEwq01hcmdpblJhdGlvoTCwTWFyZ2luQ2FsbFN0YXR1c6A='
-    #     body = b64decode(base64)
-    #
-    #     # Act
-    #     result = self.serializer.deserialize(body)
-    #
-    #     # Assert
-    #     self.assertTrue(isinstance(result, AccountEvent))
-    #     self.assertTrue(isinstance(result.id, GUID))
-    #     self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.timestamp)
-    #
-    # def test_can_deserialize_order_submitted_events_from_csharp(self):
-    #     # Arrange
-    #     # Base64 bytes string from C# MsgPack.Cli
-    #     base64 = 'haRUeXBlrk9yZGVyU3VibWl0dGVkoklk2SRiYjlkNTU4My1lMDk0LTQyMTYtOGFlOC1jMTM0OWU4ZWQyMzmpVGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWqdPcmRlcklkqE8tMTIzNDU2rVN1Ym1pdHRlZFRpbWW4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBa'
-    #     body = b64decode(base64)
-    #
-    #     # Act
-    #     result = self.serializer.deserialize(body)
-    #
-    #     # Assert
-    #     self.assertTrue(isinstance(result, OrderSubmitted))
-    #     self.assertEqual(OrderId('O-123456'), result.order_id)
-    #     self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.submitted_time)
-    #     self.assertTrue(isinstance(result.id, GUID))
-    #     self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.timestamp)
-    #
-    # def test_can_deserialize_order_accepted_events_from_csharp(self):
-    #     # Arrange
-    #     # Base64 bytes string from C# MsgPack.Cli
-    #     base64 = 'haRUeXBlrU9yZGVyQWNjZXB0ZWSiSWTZJGQ5YTBkMTc4LTY4Y2EtNGFhNS1iY2YyLTE1ODIzZjM1OWFhZqlUaW1lc3RhbXC4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBap09yZGVySWSoTy0xMjM0NTasQWNjZXB0ZWRUaW1luDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWg=='
-    #     body = b64decode(base64)
-    #
-    #     # Act
-    #     result = self.serializer.deserialize(body)
-    #
-    #     # Assert
-    #     self.assertTrue(isinstance(result, OrderAccepted))
-    #     self.assertEqual(OrderId('O-123456'), result.order_id)
-    #     self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.accepted_time)
-    #     self.assertTrue(isinstance(result.id, GUID))
-    #     self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.timestamp)
-    #
-    # def test_can_deserialize_order_rejected_events_from_csharp(self):
-    #     # Arrange
-    #     # Base64 bytes string from C# MsgPack.Cli
-    #     base64 = 'hqRUeXBlrU9yZGVyUmVqZWN0ZWSiSWTZJDJiOWM5MWRhLWExOWYtNDkxMi1hNjllLWNhMWM3ZTRmOWU0ZKlUaW1lc3RhbXC4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBap09yZGVySWSoTy0xMjM0NTasUmVqZWN0ZWRUaW1luDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWq5SZWplY3RlZFJlYXNvbq1JTlZBTElEX09SREVS'
-    #     body = b64decode(base64)
-    #
-    #     # Act
-    #     result = self.serializer.deserialize(body)
-    #
-    #     # Assert
-    #     self.assertTrue(isinstance(result, OrderRejected))
-    #     self.assertEqual(OrderId('O-123456'), result.order_id)
-    #     self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.rejected_time)
-    #     self.assertEqual('INVALID_ORDER', result.rejected_reason.value)
-    #     self.assertTrue(isinstance(result.id, GUID))
-    #     self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.timestamp)
+    def test_can_deserialize_account_events_from_csharp(self):
+        # Arrange
+        # Base64 bytes string from C# MsgPack.Cli
+        base64 = 'jKRUeXBlsUFjY291bnRTdGF0ZUV2ZW50oklk2SQ3Yjc4YTI4Ny05ZjY4LTQzY2UtYjhmMy01M2NlNmY3Y2M0NjKpVGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWqlBY2NvdW50SWSsRlhDTS1EMTIzNDU2qEN1cnJlbmN5o1VTRKtDYXNoQmFsYW5jZaYxMDAwMDCsQ2FzaFN0YXJ0RGF5pjEwMDAwMK9DYXNoQWN0aXZpdHlEYXmhMLVNYXJnaW5Vc2VkTGlxdWlkYXRpb26hMLVNYXJnaW5Vc2VkTWFpbnRlbmFuY2WhMKtNYXJnaW5SYXRpb6EwsE1hcmdpbkNhbGxTdGF0dXOg'
+        body = b64decode(base64)
+
+        # Act
+        result = self.serializer.deserialize(body)
+
+        # Assert
+        self.assertTrue(isinstance(result, AccountStateEvent))
+        self.assertTrue(isinstance(result.id, GUID))
+        self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.timestamp)
+
+    def test_can_deserialize_order_submitted_events_from_csharp(self):
+        # Arrange
+        # Base64 bytes string from C# MsgPack.Cli
+        base64 = 'hqRUeXBlrk9yZGVyU3VibWl0dGVkoklk2SRkYmVjNzU4OS00MjEwLTQ4Y2EtOTE2ZS01ZWM0YzliZGMyOTepVGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWqdPcmRlcklkqE8tMTIzNDU2qUFjY291bnRJZK1GWENNLTAyODUxOTA4rVN1Ym1pdHRlZFRpbWW4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBa'
+        body = b64decode(base64)
+
+        # Act
+        result = self.serializer.deserialize(body)
+
+        # Assert
+        self.assertTrue(isinstance(result, OrderSubmitted))
+        self.assertEqual(OrderId('O-123456'), result.order_id)
+        self.assertEqual(AccountId('FXCM', '02851908'), result.account_id)
+        self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.submitted_time)
+        self.assertTrue(isinstance(result.id, GUID))
+        self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.timestamp)
+
+    def test_can_deserialize_order_accepted_events_from_csharp(self):
+        # Arrange
+        # Base64 bytes string from C# MsgPack.Cli
+        base64 = 'hqRUeXBlrU9yZGVyQWNjZXB0ZWSiSWTZJGQyYjY5Y2U4LWM0MGQtNGUwMi1hOGZmLTQxYTFlYWI2NDZhM6lUaW1lc3RhbXC4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBap09yZGVySWSoTy0xMjM0NTapQWNjb3VudElkrUZYQ00tMDI4NTE5MDisQWNjZXB0ZWRUaW1luDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWg=='
+        body = b64decode(base64)
+
+        # Act
+        result = self.serializer.deserialize(body)
+
+        # Assert
+        self.assertTrue(isinstance(result, OrderAccepted))
+        self.assertEqual(OrderId('O-123456'), result.order_id)
+        self.assertEqual(AccountId('FXCM', '02851908'), result.account_id)
+        self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.accepted_time)
+        self.assertTrue(isinstance(result.id, GUID))
+        self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.timestamp)
+
+    def test_can_deserialize_order_rejected_events_from_csharp(self):
+        # Arrange
+        # Base64 bytes string from C# MsgPack.Cli
+        base64 = 'h6RUeXBlrU9yZGVyUmVqZWN0ZWSiSWTZJDIzZjJiMDE3LWQxY2QtNGFjMS1hYmIwLTRkNTRmNWMxNGYwM6lUaW1lc3RhbXC4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBap09yZGVySWSoTy0xMjM0NTapQWNjb3VudElkrUZYQ00tMDI4NTE5MDisUmVqZWN0ZWRUaW1luDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWq5SZWplY3RlZFJlYXNvbq1JTlZBTElEX09SREVS'
+        body = b64decode(base64)
+
+        # Act
+        result = self.serializer.deserialize(body)
+
+        # Assert
+        self.assertTrue(isinstance(result, OrderRejected))
+        self.assertEqual(OrderId('O-123456'), result.order_id)
+        self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.rejected_time)
+        self.assertEqual('INVALID_ORDER', result.rejected_reason.value)
+        self.assertTrue(isinstance(result.id, GUID))
+        self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.timestamp)
 
     def test_can_deserialize_order_working_events_from_csharp(self):
         # Arrange
@@ -650,117 +652,123 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         self.assertEqual(datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc), result.timestamp)
         self.assertEqual(datetime(1970, 1, 1, 0, 1, 0, 0, timezone.utc), result.expire_time)
 
-    # def test_can_deserialize_order_cancelled_events_from_csharp(self):
-    #     # Arrange
-    #     # Base64 bytes string from C# MsgPack.Cli
-    #     base64 = 'haRUeXBlrk9yZGVyQ2FuY2VsbGVkoklk2SRhMjI2YmYxZC1jN2M5LTQyNGYtOWEwMi03MjllMDI3Y2M3ZWapVGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWqdPcmRlcklkqE8tMTIzNDU2rUNhbmNlbGxlZFRpbWW4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBa'
-    #     body = b64decode(base64)
-    #
-    #     # Act
-    #     result = self.serializer.deserialize(body)
-    #
-    #     # Assert
-    #     self.assertTrue(isinstance(result, OrderCancelled))
-    #     self.assertEqual(OrderId('O-123456'), result.order_id)
-    #     self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.cancelled_time)
-    #     self.assertTrue(isinstance(result.id, GUID))
-    #     self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.timestamp)
-    #
-    # def test_can_deserialize_order_cancel_reject_events_from_csharp(self):
-    #     # Arrange
-    #     # Base64 bytes string from C# MsgPack.Cli
-    #     base64 = 'h6RUeXBlsU9yZGVyQ2FuY2VsUmVqZWN0oklk2SQyNWZkM2IzZC1iOGFkLTQ4MzctOGI5Yi04MDMwOGY4ZjFkMTGpVGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWqdPcmRlcklkqE8tMTIzNDU2rFJlamVjdGVkVGltZbgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFqyUmVqZWN0ZWRSZXNwb25zZVRvsFJFSkVDVF9SRVNQT05TRT+uUmVqZWN0ZWRSZWFzb26vT1JERVJfTk9UX0ZPVU5E'
-    #     body = b64decode(base64)
-    #
-    #     # Act
-    #     result = self.serializer.deserialize(body)
-    #
-    #     # Assert
-    #     self.assertTrue(isinstance(result, OrderCancelReject))
-    #     self.assertEqual(OrderId('O-123456'), result.order_id)
-    #     self.assertEqual('REJECT_RESPONSE?', result.rejected_response_to.value)
-    #     self.assertEqual('ORDER_NOT_FOUND', result.rejected_reason.value)
-    #     self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.rejected_time)
-    #     self.assertTrue(isinstance(result.id, GUID))
-    #     self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.timestamp)
-    #
-    # def test_can_deserialize_order_modified_events_from_csharp(self):
-    #     # Arrange
-    #     # Base64 bytes string from C# MsgPack.Cli
-    #     base64 = 'h6RUeXBlrU9yZGVyTW9kaWZpZWSiSWTZJDQ4Njc3MzYyLTYyZmItNDVkMS1iOGI5LWYwM2JmYTZjYzEwMalUaW1lc3RhbXC4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBap09yZGVySWSoTy0xMjM0NTatT3JkZXJJZEJyb2tlcqlCTy0xMjM0NTatTW9kaWZpZWRQcmljZaEyrE1vZGlmaWVkVGltZbgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFo='
-    #     body = b64decode(base64)
-    #
-    #     # Act
-    #     result = self.serializer.deserialize(body)
-    #
-    #     # Assert
-    #     self.assertTrue(isinstance(result, OrderModified))
-    #     self.assertEqual(OrderId('O-123456'), result.order_id)
-    #     self.assertEqual(OrderId('BO-123456'), result.order_id_broker)
-    #     self.assertEqual(Price('2'), result.modified_price)
-    #     self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.modified_time)
-    #     self.assertTrue(isinstance(result.id, GUID))
-    #     self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.timestamp)
-    #
-    # def test_can_deserialize_order_expired_events_from_csharp(self):
-    #     # Arrange
-    #     # Base64 bytes string from C# MsgPack.Cli
-    #     base64 = 'haRUeXBlrE9yZGVyRXhwaXJlZKJJZNkkY2Q1YjE0NjMtOWUyZS00N2E2LWE4NzQtYmI5Mjc5YzdhNGQyqVRpbWVzdGFtcLgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFqnT3JkZXJJZKhPLTEyMzQ1NqtFeHBpcmVkVGltZbgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFo='
-    #     body = b64decode(base64)
-    #
-    #     # Act
-    #     result = self.serializer.deserialize(body)
-    #
-    #     # Assert
-    #     self.assertTrue(isinstance(result, OrderExpired))
-    #     self.assertEqual(OrderId('O-123456'), result.order_id)
-    #     self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.expired_time)
-    #     self.assertTrue(isinstance(result.id, GUID))
-    #     self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.timestamp)
-    #
-    # def test_can_deserialize_order_partially_filled_events_from_csharp(self):
-    #     # Arrange
-    #     # Base64 bytes string from C# MsgPack.Cli
-    #     base64 = 'jKRUeXBltE9yZGVyUGFydGlhbGx5RmlsbGVkoklk2SQ3NzgzYTI2MC1mZjI1LTQ1ODItYTVlZC02YjYxMTYwZGFmYjCpVGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWqdPcmRlcklkqE8tMTIzNDU2q0V4ZWN1dGlvbklkp0UxMjM0NTavRXhlY3V0aW9uVGlja2V0p1AxMjM0NTamU3ltYm9sq0FVRFVTRC5GWENNqU9yZGVyU2lkZaNCVVmuRmlsbGVkUXVhbnRpdHnSAADDUK5MZWF2ZXNRdWFudGl0edIAAMNQrEF2ZXJhZ2VQcmljZaMyLjCtRXhlY3V0aW9uVGltZbgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFo='
-    #     body = b64decode(base64)
-    #
-    #     # Act
-    #     result = self.serializer.deserialize(body)
-    #
-    #     # Assert
-    #     self.assertTrue(isinstance(result, OrderPartiallyFilled))
-    #     self.assertEqual(OrderId('O-123456'), result.order_id)
-    #     self.assertEqual(ExecutionId('E123456'), result.execution_id)
-    #     self.assertEqual(ExecutionTicket('P123456'), result.execution_ticket)
-    #     self.assertEqual(Symbol('AUDUSD', Venue('FXCM')), result.symbol)
-    #     self.assertEqual(OrderSide.BUY, result.order_side)
-    #     self.assertEqual(Quantity(50000), result.filled_quantity)
-    #     self.assertEqual(Quantity(50000), result.leaves_quantity)
-    #     self.assertEqual(Price('2'), result.average_price)
-    #     self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.execution_time)
-    #     self.assertTrue(isinstance(result.id, GUID))
-    #     self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.timestamp)
-    #
-    # def test_can_deserialize_order_filled_events_from_csharp(self):
-    #     # Arrange
-    #     # Base64 bytes string from C# MsgPack.Cli
-    #     base64 = 'i6RUeXBlq09yZGVyRmlsbGVkoklk2SQ2ZjQxYjYxOS1kYWIzLTQ0M2UtODg2MS1mODVjMmNiODdjMjWpVGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWqdPcmRlcklkqE8tMTIzNDU2q0V4ZWN1dGlvbklkp0UxMjM0NTavRXhlY3V0aW9uVGlja2V0p1AxMjM0NTamU3ltYm9sq0FVRFVTRC5GWENNqU9yZGVyU2lkZaNCVVmuRmlsbGVkUXVhbnRpdHnSAAGGoKxBdmVyYWdlUHJpY2WjMi4wrUV4ZWN1dGlvblRpbWW4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBa'
-    #     body = b64decode(base64)
-    #
-    #     # Act
-    #     result = self.serializer.deserialize(body)
-    #
-    #     # Assert
-    #     self.assertTrue(isinstance(result, OrderFilled))
-    #     self.assertEqual(OrderId('O-123456'), result.order_id)
-    #     self.assertEqual(ExecutionId('E123456'), result.execution_id)
-    #     self.assertEqual(ExecutionTicket('P123456'), result.execution_ticket)
-    #     self.assertEqual(Symbol('AUDUSD', Venue('FXCM')), result.symbol)
-    #     self.assertEqual(OrderSide.BUY, result.order_side)
-    #     self.assertEqual(Quantity(100000), result.filled_quantity)
-    #     self.assertEqual(Price('2'), result.average_price)
-    #     self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.execution_time)
-    #     self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.timestamp)
+    def test_can_deserialize_order_cancelled_events_from_csharp(self):
+        # Arrange
+        # Base64 bytes string from C# MsgPack.Cli
+        base64 = 'hqRUeXBlrk9yZGVyQ2FuY2VsbGVkoklk2SRlOTJlNDlkYi1mZGFlLTQ0ZTctODY0Yy04NmFhMmZhYmI3ZjapVGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWqdPcmRlcklkqE8tMTIzNDU2qUFjY291bnRJZK1GWENNLTAyODUxOTA4rUNhbmNlbGxlZFRpbWW4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBa'
+        body = b64decode(base64)
+
+        # Act
+        result = self.serializer.deserialize(body)
+
+        # Assert
+        self.assertTrue(isinstance(result, OrderCancelled))
+        self.assertEqual(OrderId('O-123456'), result.order_id)
+        self.assertEqual(AccountId('FXCM', '02851908'), result.account_id)
+        self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.cancelled_time)
+        self.assertTrue(isinstance(result.id, GUID))
+        self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.timestamp)
+
+    def test_can_deserialize_order_cancel_reject_events_from_csharp(self):
+        # Arrange
+        # Base64 bytes string from C# MsgPack.Cli
+        base64 = 'iKRUeXBlsU9yZGVyQ2FuY2VsUmVqZWN0oklk2SQ1YTJjOWQzNi0yZDFmLTQxNTctYWQ5My02ZTBlNjM3ZGIyYTSpVGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWqdPcmRlcklkqE8tMTIzNDU2qUFjY291bnRJZK1GWENNLTAyODUxOTA4rFJlamVjdGVkVGltZbgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFqyUmVqZWN0ZWRSZXNwb25zZVRvsFJFSkVDVF9SRVNQT05TRT+uUmVqZWN0ZWRSZWFzb26vT1JERVJfTk9UX0ZPVU5E'
+        body = b64decode(base64)
+
+        # Act
+        result = self.serializer.deserialize(body)
+
+        # Assert
+        self.assertTrue(isinstance(result, OrderCancelReject))
+        self.assertEqual(OrderId('O-123456'), result.order_id)
+        self.assertEqual(AccountId('FXCM', '02851908'), result.account_id)
+        self.assertEqual('REJECT_RESPONSE?', result.rejected_response_to.value)
+        self.assertEqual('ORDER_NOT_FOUND', result.rejected_reason.value)
+        self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.rejected_time)
+        self.assertTrue(isinstance(result.id, GUID))
+        self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.timestamp)
+
+    def test_can_deserialize_order_modified_events_from_csharp(self):
+        # Arrange
+        # Base64 bytes string from C# MsgPack.Cli
+        base64 = 'iKRUeXBlrU9yZGVyTW9kaWZpZWSiSWTZJDg1MzI4NGM1LTIxN2EtNDEyYS04YzljLTZmZDlhODIxZGYxYqlUaW1lc3RhbXC4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBap09yZGVySWSoTy0xMjM0NTatT3JkZXJJZEJyb2tlcqlCTy0xMjM0NTapQWNjb3VudElkrUZYQ00tMDI4NTE5MDitTW9kaWZpZWRQcmljZaEyrE1vZGlmaWVkVGltZbgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFo='
+        body = b64decode(base64)
+
+        # Act
+        result = self.serializer.deserialize(body)
+
+        # Assert
+        self.assertTrue(isinstance(result, OrderModified))
+        self.assertEqual(OrderId('O-123456'), result.order_id)
+        self.assertEqual(OrderId('BO-123456'), result.order_id_broker)
+        self.assertEqual(AccountId('FXCM', '02851908'), result.account_id)
+        self.assertEqual(Price('2'), result.modified_price)
+        self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.modified_time)
+        self.assertTrue(isinstance(result.id, GUID))
+        self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.timestamp)
+
+    def test_can_deserialize_order_expired_events_from_csharp(self):
+        # Arrange
+        # Base64 bytes string from C# MsgPack.Cli
+        base64 = 'hqRUeXBlrE9yZGVyRXhwaXJlZKJJZNkkNTJmOGM1OTctYjA5Zi00YzYzLWE5NWEtYzQzYzExNjEzYzQ3qVRpbWVzdGFtcLgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFqnT3JkZXJJZKhPLTEyMzQ1NqlBY2NvdW50SWStRlhDTS0wMjg1MTkwOKtFeHBpcmVkVGltZbgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFo='
+        body = b64decode(base64)
+
+        # Act
+        result = self.serializer.deserialize(body)
+
+        # Assert
+        self.assertTrue(isinstance(result, OrderExpired))
+        self.assertEqual(OrderId('O-123456'), result.order_id)
+        self.assertEqual(AccountId('FXCM', '02851908'), result.account_id)
+        self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.expired_time)
+        self.assertTrue(isinstance(result.id, GUID))
+        self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.timestamp)
+
+    def test_can_deserialize_order_partially_filled_events_from_csharp(self):
+        # Arrange
+        # Base64 bytes string from C# MsgPack.Cli
+        base64 = 'jaRUeXBltE9yZGVyUGFydGlhbGx5RmlsbGVkoklk2SRmODRjM2RkNS1jZTBjLTQyNTctOTQ1Ni0yMzZhNmViYmIyYzCpVGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWqdPcmRlcklkqE8tMTIzNDU2qUFjY291bnRJZK1GWENNLTAyODUxOTA4q0V4ZWN1dGlvbklkp0UxMjM0NTavRXhlY3V0aW9uVGlja2V0p1AxMjM0NTamU3ltYm9sq0FVRFVTRC5GWENNqU9yZGVyU2lkZaNCVVmuRmlsbGVkUXVhbnRpdHnSAADDUK5MZWF2ZXNRdWFudGl0edIAAMNQrEF2ZXJhZ2VQcmljZaMyLjCtRXhlY3V0aW9uVGltZbgxOTcwLTAxLTAxVDAwOjAwOjAwLjAwMFo='
+        body = b64decode(base64)
+
+        # Act
+        result = self.serializer.deserialize(body)
+
+        # Assert
+        self.assertTrue(isinstance(result, OrderPartiallyFilled))
+        self.assertEqual(OrderId('O-123456'), result.order_id)
+        self.assertEqual(AccountId('FXCM', '02851908'), result.account_id)
+        self.assertEqual(ExecutionId('E123456'), result.execution_id)
+        self.assertEqual(ExecutionTicket('P123456'), result.execution_ticket)
+        self.assertEqual(Symbol('AUDUSD', Venue('FXCM')), result.symbol)
+        self.assertEqual(OrderSide.BUY, result.order_side)
+        self.assertEqual(Quantity(50000), result.filled_quantity)
+        self.assertEqual(Quantity(50000), result.leaves_quantity)
+        self.assertEqual(Price('2'), result.average_price)
+        self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.execution_time)
+        self.assertTrue(isinstance(result.id, GUID))
+        self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.timestamp)
+
+    def test_can_deserialize_order_filled_events_from_csharp(self):
+        # Arrange
+        # Base64 bytes string from C# MsgPack.Cli
+        base64 = 'jKRUeXBlq09yZGVyRmlsbGVkoklk2SRlNjc4N2I1ZS1lMDQzLTQyNGItYmU4Yy1lMGVkYjNhODIyM2SpVGltZXN0YW1wuDE5NzAtMDEtMDFUMDA6MDA6MDAuMDAwWqdPcmRlcklkqE8tMTIzNDU2qUFjY291bnRJZK1GWENNLTAyODUxOTA4q0V4ZWN1dGlvbklkp0UxMjM0NTavRXhlY3V0aW9uVGlja2V0p1AxMjM0NTamU3ltYm9sq0FVRFVTRC5GWENNqU9yZGVyU2lkZaNCVVmuRmlsbGVkUXVhbnRpdHnSAAGGoKxBdmVyYWdlUHJpY2WjMi4wrUV4ZWN1dGlvblRpbWW4MTk3MC0wMS0wMVQwMDowMDowMC4wMDBa'
+        body = b64decode(base64)
+
+        # Act
+        result = self.serializer.deserialize(body)
+
+        # Assert
+        self.assertTrue(isinstance(result, OrderFilled))
+        self.assertEqual(OrderId('O-123456'), result.order_id)
+        self.assertEqual(AccountId('FXCM', '02851908'), result.account_id)
+        self.assertEqual(ExecutionId('E123456'), result.execution_id)
+        self.assertEqual(ExecutionTicket('P123456'), result.execution_ticket)
+        self.assertEqual(Symbol('AUDUSD', Venue('FXCM')), result.symbol)
+        self.assertEqual(OrderSide.BUY, result.order_side)
+        self.assertEqual(Quantity(100000), result.filled_quantity)
+        self.assertEqual(Price('2'), result.average_price)
+        self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.execution_time)
+        self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.timestamp)
 
 
 class MsgPackInstrumentSerializerTests(unittest.TestCase):
