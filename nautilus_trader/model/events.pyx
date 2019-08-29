@@ -81,9 +81,10 @@ cdef class AccountStateEvent(Event):
         :return str.
         """
         return (f"{self.__class__.__name__}"
-                f"({self.account_id.value}) equity={self.cash_balance}, "
+                f"(account_id={self.account_id.value}, "
+                f"equity={self.cash_balance}, "
                 f"margin_used_maintenance={self.margin_used_maintenance}, "
-                f"margin_used_liquidation={self.margin_used_liquidation}")
+                f"margin_used_liquidation={self.margin_used_liquidation})")
 
     def __repr__(self) -> str:
         """
