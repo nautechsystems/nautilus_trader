@@ -24,6 +24,8 @@ from test_kit.stubs import TestStubs
 from test_kit.mocks import MockPublisher, MockServer
 
 UTF8 = 'utf-8'
+AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
+GBPUSD_FXCM = TestStubs.symbol_gbpusd_fxcm()
 UNIX_EPOCH = TestStubs.unix_epoch()
 
 
@@ -65,47 +67,41 @@ class LiveDataClientTests(unittest.TestCase):
     def test_can_subscribe_to_tick_data(self):
         # Arrange
         self.data_client.connect()
-
         data_receiver = ObjectStorer()
-        symbol = Symbol('AUDUSD', Venue('FXCM'))
 
         # Act
-        self.data_client.subscribe_ticks(symbol, handler=data_receiver.store)
+        self.data_client.subscribe_ticks(AUDUSD_FXCM, handler=data_receiver.store)
 
         # Assert
-        self.assertIn(Symbol('AUDUSD', Venue('FXCM')), self.data_client.subscribed_ticks())
+        self.assertIn(AUDUSD_FXCM, self.data_client.subscribed_ticks())
 
     def test_can_unsubscribe_from_tick_data(self):
         # Arrange
         self.data_client.connect()
-
         data_receiver = ObjectStorer()
-        symbol = Symbol('AUDUSD', Venue('FXCM'))
 
         # Act
-        self.data_client.subscribe_ticks(symbol, handler=data_receiver.store)
-        self.data_client.unsubscribe_ticks(symbol, handler=data_receiver.store)
+        self.data_client.subscribe_ticks(AUDUSD_FXCM, handler=data_receiver.store)
+        self.data_client.unsubscribe_ticks(AUDUSD_FXCM, handler=data_receiver.store)
 
         # Assert
-        self.assertNotIn(Symbol('AUDUSD', Venue('FXCM')), self.data_client.subscribed_ticks())
+        self.assertNotIn(AUDUSD_FXCM, self.data_client.subscribed_ticks())
 
     def test_can_receive_published_tick_data(self):
         # Arrange
         self.data_client.connect()
-
-        symbol = Symbol('AUDUSD', Venue('FXCM'))
         data_receiver = ObjectStorer()
 
-        tick = Tick(symbol,
+        tick = Tick(AUDUSD_FXCM,
                     Price('1.00000'),
                     Price('1.00001'),
                     UNIX_EPOCH)
 
         # Act
-        self.data_client.subscribe_ticks(symbol, handler=data_receiver.store)
+        self.data_client.subscribe_ticks(AUDUSD_FXCM, handler=data_receiver.store)
 
         time.sleep(0.1)
-        self.tick_publisher.publish(symbol.value, Utf8TickSerializer.py_serialize(tick))
+        self.tick_publisher.publish(AUDUSD_FXCM.value, Utf8TickSerializer.py_serialize(tick))
         time.sleep(0.1)
 
         # Assert
@@ -115,7 +111,6 @@ class LiveDataClientTests(unittest.TestCase):
     def test_can_subscribe_to_bar_data(self):
         # Arrange
         self.data_client.connect()
-
         data_receiver = ObjectStorer()
         bar_type = TestStubs.bartype_audusd_1min_bid()
 
@@ -128,7 +123,6 @@ class LiveDataClientTests(unittest.TestCase):
     def test_can_unsubscribe_from_bar_data(self):
         # Arrange
         self.data_client.connect()
-
         data_receiver = ObjectStorer()
         bar_type = TestStubs.bartype_audusd_1min_bid()
 
@@ -142,7 +136,6 @@ class LiveDataClientTests(unittest.TestCase):
     def test_can_receive_published_bar_data(self):
         # Arrange
         self.data_client.connect()
-
         data_receiver = ObjectStorer()
         bar_type = TestStubs.bartype_audusd_1min_bid()
         bar = Bar(Price('1.00001'),
@@ -166,29 +159,25 @@ class LiveDataClientTests(unittest.TestCase):
     def test_can_subscribe_to_instrument_data(self):
         # Arrange
         self.data_client.connect()
-
         data_receiver = ObjectStorer()
-        symbol = Symbol('AUDUSD', Venue('FXCM'))
 
         # Act
-        self.data_client.subscribe_instrument(symbol, handler=data_receiver.store)
+        self.data_client.subscribe_instrument(AUDUSD_FXCM, handler=data_receiver.store)
 
         # Assert
-        self.assertIn(Symbol('AUDUSD', Venue('FXCM')), self.data_client.subscribed_instruments())
+        self.assertIn(AUDUSD_FXCM, self.data_client.subscribed_instruments())
 
     def test_can_unsubscribe_from_instrument_data(self):
         # Arrange
         self.data_client.connect()
-
         data_receiver = ObjectStorer()
-        symbol = Symbol('AUDUSD', Venue('FXCM'))
 
         # Act
-        self.data_client.subscribe_instrument(symbol, handler=data_receiver.store)
-        self.data_client.unsubscribe_instrument(symbol, handler=data_receiver.store)
+        self.data_client.subscribe_instrument(AUDUSD_FXCM, handler=data_receiver.store)
+        self.data_client.unsubscribe_instrument(AUDUSD_FXCM, handler=data_receiver.store)
 
         # Assert
-        self.assertNotIn(Symbol('AUDUSD', Venue('FXCM')), self.data_client.subscribed_instruments())
+        self.assertNotIn(AUDUSD_FXCM, self.data_client.subscribed_instruments())
 
     def test_can_receive_published_instrument_data(self):
         # Arrange
@@ -211,8 +200,7 @@ class LiveDataClientTests(unittest.TestCase):
 
     def test_can_request_tick_data(self):
         # Arrange
-        symbol = Symbol('AUDUSD', Venue('FXCM'))
-        tick = Tick(symbol,
+        tick = Tick(AUDUSD_FXCM,
                     Price('1.00000'),
                     Price('1.00001'),
                     UNIX_EPOCH)
@@ -233,7 +221,7 @@ class LiveDataClientTests(unittest.TestCase):
         data_receiver = ObjectStorer()
 
         # Act
-        self.data_client.request_ticks(symbol, UNIX_EPOCH, UNIX_EPOCH, data_receiver.store)
+        self.data_client.request_ticks(AUDUSD_FXCM, UNIX_EPOCH, UNIX_EPOCH, data_receiver.store)
 
         time.sleep(0.1)
         response = data_receiver.get_store()[0]
@@ -280,7 +268,6 @@ class LiveDataClientTests(unittest.TestCase):
 
     def test_can_request_instrument_data(self):
         # Arrange
-        symbol = Symbol('GBPUSD', Venue('FXCM'))
         instruments = [TestStubs.instrument_gbpusd()]
         instrument_data = self.data_mapper.map_instruments(instruments)
 
@@ -298,7 +285,7 @@ class LiveDataClientTests(unittest.TestCase):
         data_receiver = ObjectStorer()
 
         # Act
-        self.data_client.request_instrument(symbol, data_receiver.store)
+        self.data_client.request_instrument(GBPUSD_FXCM, data_receiver.store)
 
         time.sleep(0.1)
         response = data_receiver.get_store()[0]
