@@ -84,7 +84,7 @@ cpdef object as_utc_timestamp(datetime timestamp):
     else:
         return timestamp  # Already UTC
 
-# closures in cpdef functions not yet supported (21/6/19)
+# Closures in cpdef functions not yet supported (21/6/19)
 def max_in_dict(dict dictionary):
     """
     Return the key for the maximum value held in the given dictionary.
