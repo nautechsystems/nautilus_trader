@@ -290,24 +290,21 @@ cdef class Order:
             self.account_id = event.account_id
         elif isinstance(event, OrderRejected):
             self.status = OrderStatus.REJECTED
-            self.is_completed = True
+            self._set_state_to_completed()
         elif isinstance(event, OrderAccepted):
             self.status = OrderStatus.ACCEPTED
         elif isinstance(event, OrderWorking):
-            self.status = OrderStatus.WORKING
             self._order_ids_broker.append(event.order_id_broker)
             self.id_broker = event.order_id_broker
-            self.is_working = True
+            self._set_state_to_working()
         elif isinstance(event, OrderCancelReject):
             pass
         elif isinstance(event, OrderCancelled):
             self.status = OrderStatus.CANCELLED
-            self.is_working = False
-            self.is_completed = True
+            self._set_state_to_completed()
         elif isinstance(event, OrderExpired):
             self.status = OrderStatus.EXPIRED
-            self.is_working = False
-            self.is_completed = True
+            self._set_state_to_completed()
         elif isinstance(event, OrderModified):
             self._order_ids_broker.append(event.order_id_broker)
             self.id_broker = event.order_id_broker
@@ -323,8 +320,16 @@ cdef class Order:
             self._set_slippage()
             self._set_fill_status()
             if self.status == OrderStatus.FILLED:
-                self.is_working = False
-                self.is_completed = True
+                self._set_state_to_completed()
+
+    cdef void _set_state_to_working(self):
+        self.status = OrderStatus.WORKING
+        self.is_working = True
+        self.is_completed = False
+
+    cdef void _set_state_to_completed(self):
+        self.is_working = False
+        self.is_completed = True
 
     cdef void _set_slippage(self):
         if self.type not in PRICED_ORDER_TYPES:
