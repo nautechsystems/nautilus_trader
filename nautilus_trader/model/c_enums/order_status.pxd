@@ -46,7 +46,7 @@ cdef inline str order_status_to_string(int value):
         return 'UNKNOWN'
 
 
-cdef inline OrderStatus order_status_from_string(int value):
+cdef inline OrderStatus order_status_from_string(str value):
     if value == 'INITIALIZED':
         return OrderStatus.INITIALIZED
     elif value == 'SUBMITTED':

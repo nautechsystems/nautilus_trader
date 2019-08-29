@@ -79,7 +79,7 @@ cdef inline str currency_to_string(int value):
         return 'UNKNOWN'
 
 
-cdef inline Currency currency_from_string(int value):
+cdef inline Currency currency_from_string(str value):
     if value == 'AUD':
         return Currency.AUD
     elif value == 'CAD':
