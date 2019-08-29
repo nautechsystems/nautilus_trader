@@ -1,7 +1,7 @@
 # Nautilus Trader
 An algorithmic trading framework written in Cython.
 
-To run the tests, first manually compile the C extensions for the package;
+To run the tests, first compile the C extensions for the package;
 
     $ python setup.py build_ext --inplace
 
