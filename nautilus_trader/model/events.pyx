@@ -10,11 +10,12 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport ValidString, GUID
+from nautilus_trader.core.functions cimport format_zulu_datetime
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.order_side cimport OrderSide, order_side_to_string
 from nautilus_trader.model.c_enums.order_type cimport OrderType
-from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
+from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce, time_in_force_to_string
 from nautilus_trader.model.identifiers cimport (
     Symbol,
     Label,
@@ -80,8 +81,8 @@ cdef class AccountStateEvent(Event):
 
         :return str.
         """
-        return (f"{self.__class__.__name__}"
-                f"(account_id={self.account_id.value}, "
+        return (f"{self.__class__.__name__}("
+                f"account_id={self.account_id.value}, "
                 f"equity={self.cash_balance}, "
                 f"margin_used_maintenance={self.margin_used_maintenance}, "
                 f"margin_used_liquidation={self.margin_used_liquidation})")
@@ -121,7 +122,7 @@ cdef class OrderEvent(Event):
 
         :return str.
         """
-        return f"{self.__class__.__name__}({self.order_id.value})"
+        return f"{self.__class__.__name__}(order_id={self.order_id.value})"
 
     def __repr__(self) -> str:
         """
@@ -176,16 +177,6 @@ cdef class OrderFillEvent(OrderEvent):
         self.filled_quantity = filled_quantity
         self.average_price = average_price
         self.execution_time = execution_time
-
-    def __str__(self) -> str:
-        """
-        Return a string representation of this object.
-
-        :return str.
-        """
-        return (f"{self.__class__.__name__}"
-                f"({self.order_id.value}, "
-                f"avg_filled_price={self.average_price})")
 
 
 cdef class OrderInitialized(OrderEvent):
@@ -259,6 +250,16 @@ cdef class OrderSubmitted(OrderEvent):
         self.account_id = account_id
         self.submitted_time = submitted_time
 
+    def __str__(self) -> str:
+        """
+        Return a string representation of this object.
+
+        :return str.
+        """
+        return (f"{self.__class__.__name__}("
+                f"account_id={self.account_id.value}, "
+                f"order_id={self.order_id.value})")
+
 
 cdef class OrderRejected(OrderEvent):
     """
@@ -295,8 +296,9 @@ cdef class OrderRejected(OrderEvent):
 
         :return str.
         """
-        return (f"{self.__class__.__name__}"
-                f"({self.order_id.value}, "
+        return (f"{self.__class__.__name__}("
+                f"account_id={self.account_id.value}, "
+                f"order_id={self.order_id.value}, "
                 f"rejected_reason={self.rejected_reason})")
 
 
@@ -325,6 +327,16 @@ cdef class OrderAccepted(OrderEvent):
                          event_timestamp)
         self.account_id = account_id
         self.accepted_time = accepted_time
+
+    def __str__(self) -> str:
+        """
+        Return a string representation of this object.
+
+        :return str.
+        """
+        return (f"{self.__class__.__name__}("
+                f"account_id={self.account_id.value}, "
+                f"order_id={self.order_id.value})")
 
 
 cdef class OrderWorking(OrderEvent):
@@ -388,10 +400,14 @@ cdef class OrderWorking(OrderEvent):
 
         :return str.
         """
-        return (f"{self.__class__.__name__}"
-                f"({self.order_id.value}, "
+        cdef str expire_time = 'NONE' if self.expire_time is None else format_zulu_datetime(self.expire_time)
+        return (f"{self.__class__.__name__}("
+                f"account_id={self.account_id.value}, "
+                f"order_id={self.order_id.value}, "
                 f"label={self.label.value}, "
-                f"price={self.price})")
+                f"price={self.price}, "
+                f"tif={time_in_force_to_string(self.time_in_force)},"
+                f"expire_time={expire_time})")
 
 
 cdef class OrderCancelReject(OrderEvent):
@@ -432,8 +448,9 @@ cdef class OrderCancelReject(OrderEvent):
 
         :return str.
         """
-        return (f"{self.__class__.__name__}"
-                f"({self.order_id.value}, "
+        return (f"{self.__class__.__name__}("
+                f"account_id={self.account_id.value}, "
+                f"order_id={self.order_id.value}, "
                 f"response_to={self.rejected_response_to}, "
                 f"reason={self.rejected_reason})")
 
@@ -463,6 +480,16 @@ cdef class OrderCancelled(OrderEvent):
                          event_timestamp)
         self.account_id = account_id
         self.cancelled_time = cancelled_time
+
+    def __str__(self) -> str:
+        """
+        Return a string representation of this object.
+
+        :return str.
+        """
+        return (f"{self.__class__.__name__}("
+                f"account_id={self.account_id.value}, "
+                f"order_id={self.order_id.value})")
 
 
 cdef class OrderModified(OrderEvent):
@@ -503,7 +530,10 @@ cdef class OrderModified(OrderEvent):
 
         :return str.
         """
-        return f"{self.__class__.__name__}(id={self.order_id.value}, modified_price={self.modified_price})"
+        return (f"{self.__class__.__name__}("
+                f"account_id={self.account_id.value}, "
+                f"order_id={self.order_id.value}, "
+                f"modified_price={self.modified_price})")
 
 
 cdef class OrderExpired(OrderEvent):
@@ -531,6 +561,16 @@ cdef class OrderExpired(OrderEvent):
                          event_timestamp)
         self.account_id = account_id
         self.expired_time = expired_time
+
+    def __str__(self) -> str:
+        """
+        Return a string representation of this object.
+
+        :return str.
+        """
+        return (f"{self.__class__.__name__}("
+                f"account_id={self.account_id.value}, "
+                f"order_id={self.order_id.value})")
 
 
 cdef class OrderPartiallyFilled(OrderFillEvent):
@@ -587,11 +627,12 @@ cdef class OrderPartiallyFilled(OrderFillEvent):
 
         :return str.
         """
-        return (f"{self.__class__.__name__}"
-                f"({self.order_id.value}, "
+        return (f"{self.__class__.__name__}("
+                f"account_id={self.account_id.value}, "
+                f"order_id={self.order_id.value}, "
                 f"filled_quantity={self.filled_quantity}, "
                 f"leaves_quantity={self.leaves_quantity}, "
-                f"av_filled_price={self.average_price})")
+                f"av_fill_price={self.average_price})")
 
 
 cdef class OrderFilled(OrderFillEvent):
@@ -644,10 +685,11 @@ cdef class OrderFilled(OrderFillEvent):
 
         :return str.
         """
-        return (f"{self.__class__.__name__}"
-                f"(order_id={self.order_id.value}, "
+        return (f"{self.__class__.__name__}("
+                f"account_id={self.account_id.value}, "
+                f"order_id={self.order_id.value}, "
                 f"filled_quantity={self.filled_quantity}, "
-                f"avg_filled_price={self.average_price})")
+                f"avg_fill_price={self.average_price})")
 
 
 cdef class PositionEvent(Event):
@@ -718,7 +760,8 @@ cdef class PositionOpened(PositionEvent):
         :return str.
         """
         return (f"{self.__class__.__name__}("
-                f"{self.position.id.value}, "
+                f"account_id={self.position.account_id.value}, "
+                f"position_id={self.position.id.value}, "
                 f"entry_direction={order_side_to_string(self.position.entry_direction)}, "
                 f"av_entry_price={self.position.average_entry_price}) "
                 f"{self.position.status_string()}")
@@ -757,7 +800,8 @@ cdef class PositionModified(PositionEvent):
         :return str.
         """
         return (f"{self.__class__.__name__}("
-                f"{self.position.id.value}, "
+                f"account_id={self.position.account_id.value}, "
+                f"position_id={self.position.id.value}, "
                 f"entry_direction={order_side_to_string(self.position.entry_direction)}, "
                 f"av_entry_price={self.position.average_entry_price}, "
                 f"points_realized={self.position.points_realized}) "
@@ -797,7 +841,8 @@ cdef class PositionClosed(PositionEvent):
         :return str.
         """
         return (f"{self.__class__.__name__}("
-                f"{self.position.id.value}, "
+                f"account_id={self.position.account_id.value}, "
+                f"position_id={self.position.id.value}, "
                 f"entry_direction={order_side_to_string(self.position.entry_direction)}, "
                 f"av_entry_price={self.position.average_entry_price}, "
                 f"av_exit_price={self.position.average_exit_price}, "
@@ -875,7 +920,9 @@ cdef class TimeEvent(Event):
 
         :return str.
         """
-        return f"{self.__class__.__name__}('{self.label.value}', timestamp={self.timestamp})"
+        return (f"{self.__class__.__name__}("
+                f"label={self.label.value}, "
+                f"timestamp={self.timestamp})")
 
     def __repr__(self) -> str:
         """

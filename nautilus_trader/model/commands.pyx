@@ -33,6 +33,15 @@ cdef class AccountInquiry(Command):
         super().__init__(command_id, command_timestamp)
         self.account_id = account_id
 
+    def __str__(self) -> str:
+        """
+        Return a string representation of this object.
+
+        :return str.
+        """
+        return (f"{self.__class__.__name__}("
+                f"account_id={self.account_id.value})")
+
 
 cdef class SubmitOrder(Command):
     """
@@ -71,7 +80,8 @@ cdef class SubmitOrder(Command):
 
         :return str.
         """
-        return f"{self.__class__.__name__}({self.order})"
+        return (f"{self.__class__.__name__}("
+                f"order_id={self.order.id.value})")
 
     def __repr__(self) -> str:
         """
