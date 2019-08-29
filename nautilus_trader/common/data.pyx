@@ -189,8 +189,8 @@ cdef class DataClient:
         cdef TickHandler tick_handler = TickHandler(handler)
         if tick_handler not in self._tick_handlers[symbol]:
             self._tick_handlers[symbol].append(tick_handler)
-            self._log.debug(f"Added {tick_handler} for {symbol} ticks.")
-            self._log.info(f"Subscribed to {symbol} ticks.")
+            self._log.debug(f"Added {tick_handler} for {symbol} tick data.")
+            self._log.info(f"Subscribed to {symbol} tick data.")
         else:
             self._log.error(f"Cannot add {tick_handler} (duplicate handler found).")
 
@@ -204,8 +204,8 @@ cdef class DataClient:
         cdef BarHandler bar_handler = BarHandler(handler)
         if bar_handler not in self._bar_handlers[bar_type]:
             self._bar_handlers[bar_type].append(bar_handler)
-            self._log.debug(f"Added {bar_handler} for {bar_type} bars.")
-            self._log.info(f"Subscribed to {bar_type} bars.")
+            self._log.debug(f"Added {bar_handler} for {bar_type} bar data.")
+            self._log.info(f"Subscribed to {bar_type} bar data.")
         else:
             self._log.error(f"Cannot add {bar_handler} (duplicate handler found).")
 
@@ -220,7 +220,7 @@ cdef class DataClient:
         if instrument_handler not in self._instrument_handlers[symbol]:
             self._instrument_handlers[symbol].append(instrument_handler)
             self._log.debug(f"Added {instrument_handler} for {symbol} instruments.")
-            self._log.info(f"Subscribed to {symbol} instrument updates.")
+            self._log.info(f"Subscribed to {symbol} instrument data.")
         else:
             self._log.error(f"Cannot add {instrument_handler} (duplicate handler found).")
 
@@ -298,7 +298,7 @@ cdef class DataClient:
             # Remove instrument key if already exists
             del self._instruments[instrument.symbol]
         self._instruments[instrument.symbol] = instrument
-        self._log.info(f"Updated instrument for {instrument.symbol}")
+        self._log.info(f"Updated the {instrument.symbol} instrument.")
 
         cdef InstrumentHandler handler
         if instrument.symbol in self._instrument_handlers:

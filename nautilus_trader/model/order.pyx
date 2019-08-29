@@ -14,6 +14,7 @@ from typing import Set, List
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport GUID
+from nautilus_trader.core.functions cimport format_zulu_datetime
 from nautilus_trader.model.c_enums.order_side cimport OrderSide, order_side_to_string
 from nautilus_trader.model.c_enums.order_type cimport OrderType, order_type_to_string
 from nautilus_trader.model.c_enums.order_status cimport OrderStatus, order_status_to_string
@@ -206,7 +207,7 @@ cdef class Order:
         cdef str quantity = '{:,}'.format(self.quantity.value)
         cdef str label = '' if self.label is None else f', label={self.label.value}'
         cdef str price = '' if self.price is None else f'@ {self.price} '
-        cdef str expire_time = '' if self.expire_time is None else f' {self.expire_time}'
+        cdef str expire_time = '' if self.expire_time is None else f' {format_zulu_datetime(self.expire_time)}'
         return (f"Order({self.id.value}{label}, status={order_status_to_string(self.status)}) "
                 f"{order_side_to_string(self.side)} {quantity} {self.symbol} {order_type_to_string(self.type)} {price}"
                 f"{time_in_force_to_string(self.time_in_force)}{expire_time}")

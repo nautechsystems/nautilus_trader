@@ -8,7 +8,7 @@
 
 MAJOR = 0
 MINOR = 98
-MICRO = 610
+MICRO = 615
 
 __version__ = f'{MAJOR}.{MINOR}.{MICRO}'
 # $Source$

@@ -152,6 +152,12 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         for key_bytes in order_keys:
             key = key_bytes.decode(UTF8)
             events = self._redis.lrange(name=key, start=0, end=-1)
+
+            # Check there is at least one event to pop
+            if len(events) == 0:
+                self._log.error(f"Cannot load order {key} from database (no events persisted).")
+                continue
+
             initial = self._event_serializer.deserialize(events.pop(0))
             order = Order.create(event=initial)
 
@@ -185,6 +191,12 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         for key_bytes in position_keys:
             key = key_bytes.decode(UTF8).rsplit(':', maxsplit=1)[1]
             events = self._redis.lrange(name=key, start=0, end=-1)
+
+            # Check there is at least one event to pop
+            if len(events) == 0:
+                self._log.error(f"Cannot load position {key} from database (no events persisted).")
+                continue
+
             initial = self._event_serializer.deserialize(events.pop(0))
             position = Position(position_id=key, event=initial)
 
