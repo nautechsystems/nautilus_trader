@@ -50,7 +50,7 @@ cdef class Quantity:
 
     cdef bint equals(self, Quantity other):
         """
-        Return a value indicating whether this object is equal to the given object.
+        Return a value indicating whether this object is equal to (==) the given object.
 
         :param other: The other object.
         :return bool.
@@ -59,7 +59,7 @@ cdef class Quantity:
 
     def __eq__(self, Quantity other) -> bool:
         """
-        Return a value indicating whether this object is equal to the given object.
+        Return a value indicating whether this object is equal to (==) the given object.
 
         :param other: The other object.
         :return bool.
@@ -68,12 +68,76 @@ cdef class Quantity:
 
     def __ne__(self, Quantity other) -> bool:
         """
-        Return a value indicating whether this object is not equal to the given object.
+        Return a value indicating whether this object is not equal to (!=) the given object.
 
         :param other: The other object.
         :return bool.
         """
         return not self.equals(other)
+
+    def __lt__(self, Quantity other) -> bool:
+        """
+        Return a value indicating whether this object is less than (<) the given object.
+
+        :param other: The other object.
+        :return bool.
+        """
+        return self.value < other.value
+
+    def __le__(self, Quantity other) -> bool:
+        """
+        Return a value indicating whether this object is less than or equal to (<=) the given object.
+
+        :param other: The other object.
+        :return bool.
+        """
+        return self.value <= other.value
+
+    def __gt__(self, Quantity other) -> bool:
+        """
+        Return a value indicating whether this object is greater than (>) the given object.
+
+        :param other: The other object.
+        :return bool.
+        """
+        return self.value > other.value
+
+    def __ge__(self, Quantity other) -> bool:
+        """
+        Return a value indicating whether this object is greater than or equal to (>=) the given object.
+
+        :param other: The other object.
+        :return bool.
+        """
+        return self.value >= other.value
+
+    def __add__(self, other) -> int:
+        """
+        Return the result of adding the given object to this object.
+
+        :param other: The other object.
+        :return int.
+        """
+        if isinstance(other, Quantity):
+            return self.value + other.value
+        elif isinstance(other, long):
+            return self.value + other
+        else:
+            raise NotImplementedError(f"Cannot add {type(other)} to a quantity.")
+
+    def __sub__(self, other) -> int:
+        """
+        Return the result of subtracting the given object from this object.
+
+        :param other: The other object.
+        :return int.
+        """
+        if isinstance(other, Quantity):
+            return self.value - other.value
+        elif isinstance(other, long):
+            return self.value - other
+        else:
+            raise NotImplementedError(f"Cannot subtract {type(other)} from a quantity.")
 
     def __hash__(self) -> int:
         """"
@@ -99,52 +163,6 @@ cdef class Quantity:
         :return str.
         """
         return f"<{self.__class__.__name__}({self.value}) object at {id(self)}>"
-
-    def __lt__(self, Quantity other) -> bool:
-        return self.value < other.value
-
-    def __le__(self, Quantity other) -> bool:
-        return self.value <= other.value
-
-    def __eq__(self, Quantity other) -> bool:
-        """
-        Return a value indicating whether this object is equal to the given object.
-
-        :param other: The other object.
-        :return bool.
-        """
-        return self.value == other.value
-
-    def __ne__(self, Quantity other) -> bool:
-        """
-        Return a value indicating whether this object is not equal to the given object.
-
-        :param other: The other object.
-        :return bool.
-        """
-        return self.value != other.value
-
-    def __gt__(self, Quantity other) -> bool:
-        return self.value > other.value
-
-    def __ge__(self, Quantity other) -> bool:
-        return self.value >= other.value
-
-    def __add__(self, other) -> int:
-        if isinstance(other, Quantity):
-            return self.value + other.value
-        elif isinstance(other, long):
-            return self.value + other
-        else:
-            raise NotImplementedError(f"Cannot add {type(other)} to a quantity.")
-
-    def __sub__(self, other) -> int:
-        if isinstance(other, Quantity):
-            return self.value - other.value
-        elif isinstance(other, long):
-            return self.value - other
-        else:
-            raise NotImplementedError(f"Cannot subtract {type(other)} from a quantity.")
 
 
 cdef inline str _get_decimal_str(float value, int precision):
@@ -196,9 +214,18 @@ cdef class Price:
         if self.value <= 0:
             raise ValueError('the value of the price was not positive')
 
+    cdef bint equals(self, Price other):
+        """
+        Return a value indicating whether this object is equal to (==) the given object.
+
+        :param other: The other object.
+        :return bool.
+        """
+        return self.value == other.value
+
     def __eq__(self, Price other) -> bool:
         """
-        Return a value indicating whether this object is equal to the given object.
+        Return a value indicating whether this object is equal to (==) the given object.
 
         :param other: The other object.
         :return bool.
@@ -207,12 +234,120 @@ cdef class Price:
 
     def __ne__(self, Price other) -> bool:
         """
-        Return a value indicating whether this object is not equal to the given object.
+        Return a value indicating whether this object is not equal to (!=) the given object.
 
         :param other: The other object.
         :return bool.
         """
         return not self.equals(other)
+
+    def __lt__(self, Price other) -> bool:
+        """
+        Return a value indicating whether this object is less than (<) the given object.
+
+        :param other: The other object.
+        :return bool.
+        """
+        return self.value < other.value
+
+    def __le__(self, Price other) -> bool:
+        """
+        Return a value indicating whether this object is less than or equal to (<=) the given object.
+
+        :param other: The other object.
+        :return bool.
+        """
+        return self.value <= other.value
+
+    def __gt__(self, Price other) -> bool:
+        """
+        Return a value indicating whether this object is greater than (>) the given object.
+
+        :param other: The other object.
+        :return bool.
+        """
+        return self.value > other.value
+
+    def __ge__(self, Price other) -> bool:
+        """
+        Return a value indicating whether this object is greater than or equal to (>=) the given object.
+
+        :param other: The other object.
+        :return bool.
+        """
+        return self.value >= other.value
+
+    def __add__(self, other) -> Decimal:
+        """
+        Return the result of adding the given object to this object.
+
+        :param other: The other object.
+        :return Decimal.
+        """
+        if isinstance(other, float):
+            return Decimal(_get_decimal_str(float(self.value) + other, self.precision))
+        elif isinstance(other, Decimal):
+            return Decimal(_get_decimal_str(float(self.value) + float(other), self.precision))
+        elif isinstance(other, Price):
+            return Decimal(_get_decimal_str(float(self.value) + other.as_float(), self.precision))
+        else:
+            raise NotImplementedError(f"Cannot add {type(other)} to a price.")
+
+    def __sub__(self, other) -> Decimal:
+        """
+        Return the result of subtracting the given object from this object.
+
+        :param other: The other object.
+        :return Decimal.
+        """
+        if isinstance(other, float):
+            return Decimal(_get_decimal_str(float(self.value) - other, self.precision))
+        elif isinstance(other, Decimal):
+            return Decimal(_get_decimal_str(float(self.value) - float(other), self.precision))
+        elif isinstance(other, Price):
+            return Decimal(_get_decimal_str(float(self.value) - other.as_float(), self.precision))
+        else:
+            raise NotImplementedError(f"Cannot subtract {type(other)} from a price.")
+
+    def __truediv__(self, other) -> Decimal:
+        """
+        Return the result of dividing this object by the given object.
+
+        :param other: The other object.
+        :return Decimal.
+        """
+        if isinstance(other, float):
+            return Decimal(_get_decimal_str(float(self.value) / other, self.precision))
+        elif isinstance(other, Decimal):
+            return Decimal(_get_decimal_str(float(self.value) / float(other), self.precision))
+        elif isinstance(other, Price):
+            return Decimal(_get_decimal_str(float(self.value) / other.as_float(), self.precision))
+        else:
+            raise NotImplementedError(f"Cannot divide price by {type(other)}.")
+
+    def __mul__(self, other) -> Decimal:
+        """
+        Return the result of multiplying this object by the given object.
+
+        :param other: The other object.
+        :return Decimal.
+        """
+        if isinstance(other, float):
+            return Decimal(_get_decimal_str(float(self.value) * other, self.precision))
+        elif isinstance(other, Decimal):
+            return Decimal(_get_decimal_str(float(self.value) * float(other), self.precision))
+        elif isinstance(other, Price):
+            return Decimal(_get_decimal_str(float(self.value) * other.as_float(), self.precision))
+        else:
+            raise NotImplementedError(f"Cannot multiply price with {type(other)}.")
+
+    def __hash__(self) -> int:
+        """"
+         Return a hash representation of this object.
+
+        :return int.
+        """
+        return hash(self.value)
 
     def __str__(self) -> str:
         """
@@ -230,85 +365,6 @@ cdef class Price:
         :return str.
         """
         return f"<{self.__class__.__name__}({str(self)}) object at {id(self)}>"
-
-    def __lt__(self, Price other) -> bool:
-        return self.value < other.value
-
-    def __le__(self, Price other) -> bool:
-        return self.value <= other.value
-
-    def __eq__(self, Price other) -> bool:
-        """
-        Return a value indicating whether this object is equal to the given object.
-
-        :param other: The other object.
-        :return bool.
-        """
-        return self.value == other.value
-
-    def __ne__(self, Price other) -> bool:
-        """
-        Return a value indicating whether this object is not equal to the given object.
-
-        :param other: The other object.
-        :return bool.
-        """
-        return self.value != other.value
-
-    def __gt__(self, Price other) -> bool:
-        return self.value > other.value
-
-    def __ge__(self, Price other) -> bool:
-        return self.value >= other.value
-
-    def __add__(self, other) -> Decimal:
-        if isinstance(other, float):
-            return Decimal(_get_decimal_str(float(self.value) + other, self.precision))
-        elif isinstance(other, Decimal):
-            return Decimal(_get_decimal_str(float(self.value) + float(other), self.precision))
-        elif isinstance(other, Price):
-            return Decimal(_get_decimal_str(float(self.value) + other.as_float(), self.precision))
-        else:
-            raise NotImplementedError(f"Cannot add {type(other)} to a price.")
-
-    def __sub__(self, other) -> Decimal:
-        if isinstance(other, float):
-            return Decimal(_get_decimal_str(float(self.value) - other, self.precision))
-        elif isinstance(other, Decimal):
-            return Decimal(_get_decimal_str(float(self.value) - float(other), self.precision))
-        elif isinstance(other, Price):
-            return Decimal(_get_decimal_str(float(self.value) - other.as_float(), self.precision))
-        else:
-            raise NotImplementedError(f"Cannot subtract {type(other)} from a price.")
-
-    def __truediv__(self, other) -> Decimal:
-        if isinstance(other, float):
-            return Decimal(_get_decimal_str(float(self.value) / other, self.precision))
-        elif isinstance(other, Decimal):
-            return Decimal(_get_decimal_str(float(self.value) / float(other), self.precision))
-        elif isinstance(other, Price):
-            return Decimal(_get_decimal_str(float(self.value) / other.as_float(), self.precision))
-        else:
-            raise NotImplementedError(f"Cannot divide price by {type(other)}.")
-
-    def __mul__(self, other) -> Decimal:
-        if isinstance(other, float):
-            return Decimal(_get_decimal_str(float(self.value) * other, self.precision))
-        elif isinstance(other, Decimal):
-            return Decimal(_get_decimal_str(float(self.value) * float(other), self.precision))
-        elif isinstance(other, Price):
-            return Decimal(_get_decimal_str(float(self.value) * other.as_float(), self.precision))
-        else:
-            raise NotImplementedError(f"Cannot multiply price with {type(other)}.")
-
-    cdef bint equals(self, Price other):
-        """
-        Return a value indicating whether this object is equal to the given object.
-
-        :param other: The other object.
-        :return bool.
-        """
-        return self.value == other.value
 
     cpdef Price add(self, Price price):
         """
@@ -372,9 +428,18 @@ cdef class Money:
         """
         return ZERO_MONEY
 
+    cdef bint equals(self, Money other):
+        """
+        Return a value indicating whether this object is equal to (==) the given object.
+
+        :param other: The other object.
+        :return bool.
+        """
+        return self.value == other.value
+
     def __eq__(self, Money other) -> bool:
         """
-        Return a value indicating whether this object is equal to the given object.
+        Return a value indicating whether this object is equal to (==) the given object.
 
         :param other: The other object.
         :return bool.
@@ -383,12 +448,120 @@ cdef class Money:
 
     def __ne__(self, Money other) -> bool:
         """
-        Return a value indicating whether this object is not equal to the given object.
+        Return a value indicating whether this object is not equal to (!=) the given object.
 
         :param other: The other object.
         :return bool.
         """
         return not self.equals(other)
+
+    def __lt__(self, Money other) -> bool:
+        """
+        Return a value indicating whether this object is less than (<) the given object.
+
+        :param other: The other object.
+        :return bool.
+        """
+        return self.value < other.value
+
+    def __le__(self, Money other) -> bool:
+        """
+        Return a value indicating whether this object is less than or equal to (<=) the given object.
+
+        :param other: The other object.
+        :return bool.
+        """
+        return self.value <= other.value
+
+    def __gt__(self, Money other) -> bool:
+        """
+        Return a value indicating whether this object is greater than (>) the given object.
+
+        :param other: The other object.
+        :return bool.
+        """
+        return self.value > other.value
+
+    def __ge__(self, Money other) -> bool:
+        """
+        Return a value indicating whether this object is greater than or equal to (>=) the given object.
+
+        :param other: The other object.
+        :return bool.
+        """
+        return self.value >= other.value
+
+    def __add__(self, other) -> Money:
+        """
+        Return the result of adding the given object to this object.
+
+        :param other: The other object.
+        :return Money.
+        """
+        if isinstance(other, Money):
+            return Money(self.value + other.value)
+        elif isinstance(other, Decimal):
+            return Money(self.value + other)
+        elif isinstance(other, int):
+            return self + Money(other)
+        else:
+            raise NotImplementedError(f"Cannot add {type(other)} to money.")
+
+    def __sub__(self, other) -> Money:
+        """
+        Return the result of subtracting the given object from this object.
+
+        :param other: The other object.
+        :return Money.
+        """
+        if isinstance(other, Money):
+            return Money(self.value - other.value)
+        elif isinstance(other, Decimal):
+            return Money(self.value - other)
+        elif isinstance(other, int):
+            return self - Money(other)
+        else:
+            raise NotImplementedError(f"Cannot subtract {type(other)} from money.")
+
+    def __truediv__(self, other) -> Money:
+        """
+        Return the result of dividing this object by the given object.
+
+        :param other: The other object.
+        :return Money.
+        """
+        if isinstance(other, Money):
+            return Money(self.value / other.value)
+        elif isinstance(other, Decimal):
+            return Money(self.value / other)
+        elif isinstance(other, int):
+            return self / Money(other)
+        else:
+            raise NotImplementedError(f"Cannot divide money by {type(other)}.")
+
+    def __mul__(self, other) -> Money:
+        """
+        Return the result of multiplying the given object by this object.
+
+        :param other: The other object.
+        :return Money.
+        """
+        if isinstance(other, Money):
+            return Money(self.value * other.value)
+        elif isinstance(other, Decimal):
+            return Money(self.value * other)
+        elif isinstance(other, int):
+            return self * Money(other)
+        else:
+            raise NotImplementedError(f"Cannot multiply money with {type(other)}.")
+
+    def __hash__(self) -> int:
+        """"
+         Return a hash representation of this object.
+
+        :return int.
+        """
+        return hash(self.value)
 
     def __str__(self) -> str:
         """
@@ -406,85 +579,6 @@ cdef class Money:
         :return str.
         """
         return f"<{self.__class__.__name__}({str(self)}) object at {id(self)}>"
-
-    def __lt__(self, Money other) -> bool:
-        return self.value < other.value
-
-    def __le__(self, Money other) -> bool:
-        return self.value <= other.value
-
-    def __eq__(self, Money other) -> bool:
-        """
-        Return a value indicating whether this object is equal to the given object.
-
-        :param other: The other object.
-        :return bool.
-        """
-        return self.value == other.value
-
-    def __ne__(self, Money other) -> bool:
-        """
-        Return a value indicating whether this object is not equal to the given object.
-
-        :param other: The other object.
-        :return bool.
-        """
-        return self.value != other.value
-
-    def __gt__(self, Money other) -> bool:
-        return self.value > other.value
-
-    def __ge__(self, Money other) -> bool:
-        return self.value >= other.value
-
-    def __add__(self, other) -> Money:
-        if isinstance(other, Money):
-            return Money(self.value + other.value)
-        elif isinstance(other, Decimal):
-            return Money(self.value + other)
-        elif isinstance(other, int):
-            return self + Money(other)
-        else:
-            raise NotImplementedError(f"Cannot add {type(other)} to money.")
-
-    def __sub__(self, other) -> Money:
-        if isinstance(other, Money):
-            return Money(self.value - other.value)
-        elif isinstance(other, Decimal):
-            return Money(self.value - other)
-        elif isinstance(other, int):
-            return self - Money(other)
-        else:
-            raise NotImplementedError(f"Cannot subtract {type(other)} from money.")
-
-    def __truediv__(self, other) -> Money:
-        if isinstance(other, Money):
-            return Money(self.value / other.value)
-        elif isinstance(other, Decimal):
-            return Money(self.value / other)
-        elif isinstance(other, int):
-            return self / Money(other)
-        else:
-            raise NotImplementedError(f"Cannot divide money by {type(other)}.")
-
-    def __mul__(self, other) -> Money:
-        if isinstance(other, Money):
-            return Money(self.value * other.value)
-        elif isinstance(other, Decimal):
-            return Money(self.value * other)
-        elif isinstance(other, int):
-            return self * Money(other)
-        else:
-            raise NotImplementedError(f"Cannot multiply money with {type(other)}.")
-
-    cdef bint equals(self, Money other):
-        """
-        Return a value indicating whether this object is equal to the given object.
-
-        :param other: The other object.
-        :return bool.
-        """
-        return self.value == other.value
 
     cpdef float as_float(self):
         """
@@ -520,16 +614,11 @@ cdef class Tick:
         self.ask = ask
         self.timestamp = timestamp
 
-    def __lt__(self, Tick other) -> bool:
-        return self.timestamp < other.timestamp
-
-    def __le__(self, Tick other) -> bool:
-        return self.timestamp <= other.timestamp
-
     def __eq__(self, Tick other) -> bool:
         """
-        Return a value indicating whether this object is equal to the given object.
+        Return a value indicating whether this object is equal to (==) the given object.
 
+        Note: The equality is based on the ticks timestamp only.
         :param other: The other object.
         :return bool.
         """
@@ -537,26 +626,53 @@ cdef class Tick:
 
     def __ne__(self, Tick other) -> bool:
         """
-        Return a value indicating whether this object is not equal to the given object.
+        Return a value indicating whether this object is not equal to (!=) the given object.
 
+        Note: The equality is based on the ticks timestamp only.
         :param other: The other object.
         :return bool.
         """
         return self.timestamp != other.timestamp
 
+    def __lt__(self, Tick other) -> bool:
+        """
+        Return a value indicating whether this object is less than (<) the given object.
+
+        Note: The equality is based on the ticks timestamp only.
+        :param other: The other object.
+        :return bool.
+        """
+        return self.timestamp < other.timestamp
+
+    def __le__(self, Tick other) -> bool:
+        """
+        Return a value indicating whether this object is less than or equal to (<=) the given object.
+
+        Note: The equality is based on the ticks timestamp only.
+        :param other: The other object.
+        :return bool.
+        """
+        return self.timestamp <= other.timestamp
+
     def __gt__(self, Tick other) -> bool:
+        """
+        Return a value indicating whether this object is greater than (>) the given object.
+
+        Note: The equality is based on the ticks timestamp only.
+        :param other: The other object.
+        :return bool.
+        """
         return self.timestamp > other.timestamp
 
     def __ge__(self, Tick other) -> bool:
-        return self.timestamp >= other.timestamp
+        """
+        Return a value indicating whether this object is greater than or equal to (>=) the given object.
 
-    def __cmp__(self, Tick other) -> int:
-        if self.timestamp < other.timestamp:
-            return -1
-        elif self.timestamp == other.timestamp:
-            return 0
-        else:
-            return 1
+        Note: The equality is based on the ticks timestamp only.
+        :param other: The other object.
+        :return bool.
+        """
+        return self.timestamp >= other.timestamp
 
     def __hash__(self) -> int:
         """"
@@ -664,9 +780,20 @@ cdef class BarSpecification:
         self.resolution = resolution
         self.quote_type = quote_type
 
+    cdef bint equals(self, BarSpecification other):
+        """
+        Return a value indicating whether this object is equal to (==) the given object.
+
+        :param other: The other object.
+        :return bool.
+        """
+        return (self.period == other.period
+                and self.resolution == other.resolution
+                and self.quote_type == other.quote_type)
+
     def __eq__(self, BarSpecification other) -> bool:
         """
-        Return a value indicating whether this object is equal to the given object.
+        Return a value indicating whether this object is equal to (==) the given object.
 
         :param other: The other object.
         :return bool.
@@ -675,7 +802,7 @@ cdef class BarSpecification:
 
     def __ne__(self, BarSpecification other) -> bool:
         """
-        Return a value indicating whether this object is not equal to the given object.
+        Return a value indicating whether this object is not equal to (!=) the given object.
 
         :param other: The other object.
         :return bool.
@@ -724,17 +851,6 @@ cdef class BarSpecification:
             return timedelta(days=self.period)
         else:
             raise RuntimeError(f"Cannot calculate timedelta for {resolution_to_string(self.resolution)}")
-
-    cdef bint equals(self, BarSpecification other):
-        """
-        Return a value indicating whether this object is equal to the given object.
-
-        :param other: The other object.
-        :return bool.
-        """
-        return (self.period == other.period
-                and self.resolution == other.resolution
-                and self.quote_type == other.quote_type)
 
     cdef str resolution_string(self):
         """
@@ -802,9 +918,18 @@ cdef class BarType:
         self.symbol = symbol
         self.specification = bar_spec
 
+    cdef bint equals(self, BarType other):
+        """
+        Return a value indicating whether this object is equal to (==) the given object.
+
+        :param other: The other object.
+        :return bool.
+        """
+        return self.symbol.equals(other.symbol) and self.specification.equals(other.specification)
+
     def __eq__(self, BarType other) -> bool:
         """
-        Return a value indicating whether this object is equal to the given object.
+        Return a value indicating whether this object is equal to (==) the given object.
 
         :param other: The other object.
         :return bool.
@@ -813,7 +938,7 @@ cdef class BarType:
 
     def __ne__(self, BarType other) -> bool:
         """
-        Return a value indicating whether this object is not equal to the given object.
+        Return a value indicating whether this object is not equal to (!=) the given object.
 
         :param other: The other object.
         :return bool.
@@ -860,15 +985,6 @@ cdef class BarType:
         :return str.
         """
         return self.specification.quote_type_string()
-
-    cdef bint equals(self, BarType other):
-        """
-        Return a value indicating whether this object is equal to the given object.
-
-        :param other: The other object.
-        :return bool.
-        """
-        return self.symbol.equals(other.symbol) and self.specification.equals(other.specification)
 
     @staticmethod
     cdef BarType from_string(str value):
@@ -944,8 +1060,9 @@ cdef class Bar:
 
     def __eq__(self, Bar other) -> bool:
         """
-        Return a value indicating whether this object is equal to the given object.
+        Return a value indicating whether this object is equal to (==) the given object.
 
+        Note: The equality is based on the bars timestamp only.
         :param other: The other object.
         :return bool.
         """
@@ -953,8 +1070,9 @@ cdef class Bar:
 
     def __ne__(self, Bar other) -> bool:
         """
-        Return a value indicating whether this object is not equal to the given object.
+        Return a value indicating whether this object is not equal to (!=) the given object.
 
+        Note: The equality is based on the bars timestamp only.
         :param other: The other object.
         :return bool.
         """
@@ -964,6 +1082,7 @@ cdef class Bar:
         """"
         Return a hash representation of this object.
 
+        Note: The hash is based on the bars timestamp only.
         :return int.
         """
         return hash(str(self.timestamp))
@@ -974,8 +1093,12 @@ cdef class Bar:
 
         :return str.
         """
-        return (f"{self.open},{self.high},{self.low},{self.close},"
-                f"{self.volume},{self.timestamp.isoformat()}")
+        return (f"{self.open},"
+                f"{self.high},"
+                f"{self.low},"
+                f"{self.close},"
+                f"{self.volume},"
+                f"{self.timestamp.isoformat()}")
 
     def __repr__(self) -> str:
         """
@@ -1037,11 +1160,6 @@ cdef class DataBar:
         :param close_price: The bars close price.
         :param volume: The bars volume.
         :param timestamp: The bars timestamp (UTC).
-        :raises ConditionFailed: If the open_price is not positive (> 0).
-        :raises ConditionFailed: If the high_price is not positive (> 0).
-        :raises ConditionFailed: If the low_price is not positive (> 0).
-        :raises ConditionFailed: If the close_price is not positive (> 0).
-        :raises ConditionFailed: If the volume is negative.
         """
         self.open = open_price
         self.high = high_price
@@ -1052,7 +1170,7 @@ cdef class DataBar:
 
     def __eq__(self, DataBar other) -> bool:
         """
-        Return a value indicating whether this object is equal to the given object.
+        Return a value indicating whether this object is equal to (==) the given object.
 
         :param other: The other object.
         :return bool.
@@ -1061,7 +1179,7 @@ cdef class DataBar:
 
     def __ne__(self, DataBar other) -> bool:
         """
-        Return a value indicating whether this object is not equal to the given object.
+        Return a value indicating whether this object is not equal to (!=) the given object.
 
         :param other: The other object.
         :return bool.
@@ -1070,7 +1188,7 @@ cdef class DataBar:
 
     def __hash__(self) -> int:
         """"
-         Return a hash representation of this object.
+        Return a hash representation of this object.
 
         :return int.
         """
@@ -1170,7 +1288,7 @@ cdef class Instrument:
 
     def __eq__(self, Instrument other) -> bool:
         """
-        Return a value indicating whether this object is equal to the given object.
+        Return a value indicating whether this object is equal to (==) the given object.
 
         :param other: The other object.
         :return bool.
@@ -1179,7 +1297,7 @@ cdef class Instrument:
 
     def __ne__(self, Instrument other) -> bool:
         """
-        Return a value indicating whether this object is not equal to the given object.
+        Return a value indicating whether this object is not equal to (!=) the given object.
 
         :param other: The other object.
         :return bool.

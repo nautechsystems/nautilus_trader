@@ -43,6 +43,7 @@ cdef class Position:
     cdef readonly object points_realized
     cdef readonly float return_realized
     cdef readonly OrderFillEvent last_event
+    cdef readonly int event_count
 
     cdef readonly long relative_quantity
     cdef readonly Quantity quantity
@@ -60,7 +61,6 @@ cdef class Position:
     cpdef list get_execution_ids(self)
     cpdef list get_execution_tickets(self)
     cpdef list get_events(self)
-    cpdef int event_count(self)
     cpdef void apply(self, OrderFillEvent event)
     cpdef object points_unrealized(self, Price current_price)
     cpdef float return_unrealized(self, Price current_price)

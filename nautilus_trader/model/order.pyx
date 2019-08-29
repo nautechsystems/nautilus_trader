@@ -141,6 +141,7 @@ cdef class Order:
         # Update events
         self._events.append(initialized)
         self.last_event = initialized
+        self.event_count = 1
 
     @staticmethod
     cdef Order create(OrderInitialized event):
@@ -165,7 +166,7 @@ cdef class Order:
 
     cdef bint equals(self, Order other):
         """
-        Return a value indicating whether this object is equal to the given object.
+        Return a value indicating whether this object is equal to (==) the given object.
 
         :param other: The other object.
         :return bool.
@@ -174,7 +175,7 @@ cdef class Order:
 
     def __eq__(self, Order other) -> bool:
         """
-        Return a value indicating whether this object is equal to the given object.
+        Return a value indicating whether this object is equal to (==) the given object.
 
         :param other: The other object.
         :return bool.
@@ -183,7 +184,7 @@ cdef class Order:
 
     def __ne__(self, Order other) -> bool:
         """
-        Return a value indicating whether this object is not equal to the given object.
+        Return a value indicating whether this object is not equal to (!=) the given object.
 
         :param other: The other object.
         :return bool.
@@ -261,14 +262,6 @@ cdef class Order:
         """
         return self._events.copy()
 
-    cpdef int event_count(self):
-        """
-        Return the count of events applied to the order.
-        
-        :return int.
-        """
-        return len(self._events)
-
     cpdef void apply(self, OrderEvent event):
         """
         Apply the given order event to the order.
@@ -284,6 +277,7 @@ cdef class Order:
         # Update events
         self._events.append(event)
         self.last_event = event
+        self.event_count += 1
 
         # Handle event
         if isinstance(event, OrderSubmitted):
@@ -381,7 +375,7 @@ cdef class AtomicOrder:
 
     cdef bint equals(self, AtomicOrder other):
         """
-        Return a value indicating whether this object is equal to the given object.
+        Return a value indicating whether this object is equal to (==) the given object.
 
         :param other: The other object.
         :return bool.
@@ -390,7 +384,7 @@ cdef class AtomicOrder:
 
     def __eq__(self, AtomicOrder other) -> bool:
         """
-        Return a value indicating whether this object is equal to the given object.
+        Return a value indicating whether this object is equal to (==) the given object.
 
         :param other: The other object.
         :return bool.
@@ -399,7 +393,7 @@ cdef class AtomicOrder:
 
     def __ne__(self, AtomicOrder other) -> bool:
         """
-        Return a value indicating whether this object is not equal to the given object.
+        Return a value indicating whether this object is not equal to (!=) the given object.
 
         :param other: The other object.
         :return bool.

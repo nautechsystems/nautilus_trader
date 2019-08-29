@@ -184,7 +184,7 @@ class OrderTests(unittest.TestCase):
         # Assert
         self.assertEqual(OrderType.MARKET, order.type)
         self.assertEqual(OrderStatus.INITIALIZED, order.status)
-        self.assertEqual(1, order.event_count())
+        self.assertEqual(1, order.event_count)
         self.assertTrue(isinstance(order.last_event, OrderInitialized))
         self.assertFalse(order.is_working)
         self.assertFalse(order.is_completed)
@@ -203,7 +203,7 @@ class OrderTests(unittest.TestCase):
         # Assert
         self.assertEqual(OrderType.MARKET, order.type)
         self.assertEqual(OrderStatus.INITIALIZED, order.status)
-        self.assertEqual(1, order.event_count())
+        self.assertEqual(1, order.event_count)
         self.assertTrue(isinstance(order.last_event, OrderInitialized))
         self.assertFalse(order.is_working)
         self.assertFalse(order.is_completed)
@@ -425,7 +425,7 @@ class OrderTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(OrderStatus.SUBMITTED, order.status)
-        self.assertEqual(2, order.event_count())
+        self.assertEqual(2, order.event_count)
         self.assertEqual(event, order.last_event)
         self.assertFalse(order.is_completed)
 
@@ -613,7 +613,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(Price('1.00001'), order.price)
         self.assertTrue(order.is_working)
         self.assertFalse(order.is_completed)
-        self.assertEqual(3, order.event_count())
+        self.assertEqual(3, order.event_count)
 
     def test_can_apply_order_filled_event_to_market_order(self):
         # Arrange

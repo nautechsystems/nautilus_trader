@@ -126,7 +126,7 @@ cdef class TradingStrategy:
 
     cdef bint equals(self, TradingStrategy other):
         """
-        Return a value indicating whether this object is equal to the given object.
+        Return a value indicating whether this object is equal to (==) the given object.
 
         :param other: The other object.
         :return bool.
@@ -135,7 +135,7 @@ cdef class TradingStrategy:
 
     def __eq__(self, TradingStrategy other) -> bool:
         """
-        Return a value indicating whether this object is equal to the given object.
+        Return a value indicating whether this object is equal to (==) the given object.
 
         :param other: The other object.
         :return bool.
@@ -144,7 +144,7 @@ cdef class TradingStrategy:
 
     def __ne__(self, TradingStrategy other) -> bool:
         """
-        Return a value indicating whether this object is not equal to the given object.
+        Return a value indicating whether this object is not equal to (!=) the given object.
 
         :param other: The other object.
         :return bool.

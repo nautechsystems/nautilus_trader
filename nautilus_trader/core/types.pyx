@@ -40,7 +40,7 @@ cdef class StringValue:
 
     def __eq__(self, StringValue other) -> bool:
         """
-        Return a value indicating whether this object is equal to the given object.
+        Return a value indicating whether this object is equal to (==) the given object.
 
         :param other: The other object.
         :return bool.
@@ -49,34 +49,16 @@ cdef class StringValue:
 
     def __ne__(self, StringValue other) -> bool:
         """
-        Return a value indicating whether this object is not equal to the given object.
+        Return a value indicating whether this object is not equal to (!=) the given object.
 
         :param other: The other object.
         :return bool.
         """
         return not self.equals(other)
 
-    def __ge__(self, StringValue other) -> bool:
-        """
-        Return a value indicating whether this object is greater than or equal to the given object.
-
-        :param other: The other object.
-        :return bool.
-        """
-        return self.value.__ge__(other.value)
-
-    def __gt__(self, StringValue other) -> bool:
-        """
-        Return a value indicating whether this object is greater than or equal to the given object.
-
-        :param other: The other object.
-        :return bool.
-        """
-        return self.value.__gt__(other.value)
-
     def __lt__(self, StringValue other) -> bool:
         """
-        Return a value indicating whether this object is greater than or equal to the given object.
+        Return a value indicating whether this object is less than (<) the given object.
 
         :param other: The other object.
         :return bool.
@@ -85,21 +67,30 @@ cdef class StringValue:
 
     def __le__(self, StringValue other) -> bool:
         """
-        Return a value indicating whether this object is greater than or equal to the given object.
+        Return a value indicating whether this object is greater than or equal to (>=) the given object.
 
         :param other: The other object.
         :return bool.
         """
         return self.value.__le__(other.value)
 
-    def __cmp__(self, StringValue other) -> int:
+    def __gt__(self, StringValue other) -> bool:
         """
-        Return the result of the comparison between this object and the given object.
+        Return a value indicating whether this object is greater than (>) the given object.
 
         :param other: The other object.
-        :return int.
+        :return bool.
         """
-        return self.value.__cmp__(other.value)
+        return self.value.__gt__(other.value)
+
+    def __ge__(self, StringValue other) -> bool:
+        """
+        Return a value indicating whether this object is greater than or equal to (>=) the given object.
+
+        :param other: The other object.
+        :return bool.
+        """
+        return self.value.__ge__(other.value)
 
     def __hash__(self) -> int:
         """"
