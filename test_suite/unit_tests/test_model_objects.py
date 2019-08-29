@@ -15,8 +15,12 @@ from nautilus_trader.core.correctness import ConditionFailed
 from nautilus_trader.core.types import ValidString
 from nautilus_trader.model.enums import Resolution, QuoteType
 from nautilus_trader.model.identifiers import Symbol, Venue
-from nautilus_trader.model.objects import Quantity, Price, Money
-from nautilus_trader.model.objects import BarSpecification, BarType
+from nautilus_trader.model.objects import Quantity, Price, Money, Tick, BarSpecification, BarType, Bar
+from test_kit.stubs import TestStubs
+
+AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
+GBPUSD_FXCM = TestStubs.symbol_gbpusd_fxcm()
+UNIX_EPOCH = TestStubs.unix_epoch()
 
 
 class ObjectTests(unittest.TestCase):
@@ -557,6 +561,32 @@ class ObjectTests(unittest.TestCase):
         self.assertEqual("1-MINUTE[BID]", str(bar_spec))
         self.assertTrue(repr(bar_spec).startswith("<BarSpecification(1-MINUTE[BID]) object at"))
 
+    def test_can_parse_tick_from_string_with_symbol(self):
+        # Arrange
+        tick = Tick(AUDUSD_FXCM,
+                    Price('1.00000'),
+                    Price('1.00001'),
+                    UNIX_EPOCH)
+
+        # Act
+        result = Tick.py_from_string_with_symbol(AUDUSD_FXCM, str(tick))
+
+        # Assert
+        self.assertEqual(tick, result)
+
+    def test_can_parse_tick_from_string(self):
+        # Arrange
+        tick = Tick(AUDUSD_FXCM,
+                    Price('1.00000'),
+                    Price('1.00001'),
+                    UNIX_EPOCH)
+
+        # Act
+        result = Tick.py_from_string(AUDUSD_FXCM.value + ',' + str(tick))
+
+        # Assert
+        self.assertEqual(tick, result)
+
     def test_can_parse_bar_spec_from_string(self):
         # Arrange
         bar_spec = BarSpecification(1, Resolution.MINUTE, QuoteType.MID)
@@ -592,3 +622,13 @@ class ObjectTests(unittest.TestCase):
         # Assert
         self.assertEqual("AUDUSD.FXCM-1-MINUTE[BID]", str(bar_type))
         self.assertTrue(repr(bar_type).startswith("<BarType(AUDUSD.FXCM-1-MINUTE[BID]) object at"))
+
+    def test_can_parse_bar_from_string(self):
+        # Arrange
+        bar = TestStubs.bar_5decimal()
+
+        # Act
+        result = Bar.py_from_string(str(bar))
+
+        # Assert
+        self.assertEqual(bar, result)

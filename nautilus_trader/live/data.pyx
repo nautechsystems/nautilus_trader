@@ -245,7 +245,7 @@ cdef class LiveDataClient(DataClient):
         cdef Symbol received_symbol = self._cached_symbols.get(data[SYMBOL])
         assert(received_symbol == symbol)
 
-        callback([Tick.from_string(received_symbol, values) for values in data[DATA]])
+        callback([Tick.from_string_with_symbol(received_symbol, values) for values in data[DATA]])
 
     cpdef void request_bars(
             self,

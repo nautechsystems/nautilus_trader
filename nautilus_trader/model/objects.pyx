@@ -584,34 +584,62 @@ cdef class Tick:
         return f"<{self.__class__.__name__}({self.symbol},{str(self)}) object at {id(self)}>"
 
     @staticmethod
-    cdef Tick from_string(Symbol symbol, str values):
+    cdef Tick from_string_with_symbol(Symbol symbol, str values):
         """
-        Return a tick parsed from the given symbol and string string.
+        Return a tick parsed from the given symbol and values string.
 
         :param symbol: The tick symbol.
         :param values: The tick values string.
         :return Tick.
         """
-        cdef list split_tick = values.split(',')
+        cdef list split_values = values.split(',', maxsplit=3)
 
         return Tick(
             symbol,
-            Price(split_tick[0]),
-            Price(split_tick[1]),
-            iso8601.parse_date(split_tick[2]))
+            Price(split_values[0]),
+            Price(split_values[1]),
+            iso8601.parse_date(split_values[2]))
 
     @staticmethod
-    def py_from_string(Symbol symbol, str values):
+    cdef Tick from_string(str value):
         """
-        Python wrapper for the from_string method.
+        Return a tick parsed from the given value string.
 
-        Return a tick parsed from the given symbol and string string.
+        :param value: The tick value string to parse.
+        :return Tick.
+        """
+        cdef list split_values = value.split(',', maxsplit=4)
+
+        return Tick(
+            Symbol.from_string(split_values[0]),
+            Price(split_values[1]),
+            Price(split_values[2]),
+            iso8601.parse_date(split_values[3]))
+
+    @staticmethod
+    def py_from_string_with_symbol(Symbol symbol, str values) -> Tick:
+        """
+        Python wrapper for the from_string_with_symbol method.
+
+        Return a tick parsed from the given symbol and values string.
 
         :param symbol: The tick symbol.
         :param values: The tick values string.
         :return Tick.
         """
-        return Tick.from_string(symbol, values)
+        return Tick.from_string_with_symbol(symbol, values)
+
+    @staticmethod
+    def py_from_string(str values) -> Tick:
+        """
+        Python wrapper for the from_string method.
+
+        Return a tick parsed from the given values string.
+
+        :param values: The tick values string.
+        :return Tick.
+        """
+        return Tick.from_string(values)
 
 
 cdef class BarSpecification:

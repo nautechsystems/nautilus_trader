@@ -45,7 +45,9 @@ cdef class Tick:
     cdef readonly datetime timestamp
 
     @staticmethod
-    cdef Tick from_string(Symbol symbol, str values)
+    cdef Tick from_string_with_symbol(Symbol symbol, str values)
+    @staticmethod
+    cdef Tick from_string(str value)
 
 
 cdef class BarSpecification:
