@@ -313,25 +313,25 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         self._index_order_strategy[order.id] = strategy_id
         self._index_order_position[order.id] = position_id
 
-        # Index: PositionStrategy
+        # Index: PositionId -> StrategyId
         if position_id not in self._index_position_strategy:
             self._index_position_strategy[position_id] = strategy_id
         else:
             assert strategy_id.equals(self._index_position_strategy[position_id])
 
-        # Index: Position - Set[OrderId]
+        # Index: PositionId -> Set[OrderId]
         if position_id not in self._index_position_orders:
             self._index_position_orders[position_id] = {order.id}
         else:
             self._index_position_orders[position_id].add(order.id)
 
-        # Index: Strategy - Set[OrderId]
+        # Index: StrategyId -> Set[OrderId]
         if strategy_id not in self._index_strategy_orders:
             self._index_strategy_orders[strategy_id] = {order.id}
         else:
             self._index_strategy_orders[strategy_id].add(order.id)
 
-        # Index: Strategy - Set[PositionId]
+        # Index: StrategyId -> Set[PositionId]
         if strategy_id not in self._index_strategy_positions:
             self._index_strategy_positions[strategy_id] = {position_id}
         else:
