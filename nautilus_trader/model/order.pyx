@@ -363,8 +363,8 @@ cdef class AtomicOrder:
         Initializes a new instance of the AtomicOrder class.
 
         :param entry: The entry 'parent' order.
-        :param stop_loss: The stop-loss (S/L) 'child' order.
-        :param take_profit: The take-profit (T/P) 'child' order (optional can be None).
+        :param stop_loss: The stop-loss (SL) 'child' order.
+        :param take_profit: The take-profit (TP) 'child' order (optional can be None).
         """
         self.id = OrderId('A' + entry.id.value)
         self.entry = entry
