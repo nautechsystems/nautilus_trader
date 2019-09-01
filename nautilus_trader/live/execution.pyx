@@ -23,7 +23,7 @@ from nautilus_trader.model.commands cimport (
     SubmitAtomicOrder,
     ModifyOrder,
     CancelOrder)
-from nautilus_trader.model.events cimport Event, OrderEvent, OrderFillEvent, OrderInitialized
+from nautilus_trader.model.events cimport Event, OrderFillEvent, OrderInitialized
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.guid cimport GuidFactory
@@ -39,19 +39,16 @@ from nautilus_trader.trade.strategy cimport TradingStrategy
 
 cdef str UTF8 = 'utf-8'
 
-cdef str TRADER = 'Trader'
 cdef str INDEX = 'Index'
+cdef str TRADER = 'Trader'
 cdef str CONFIG = 'Config'
 cdef str ACCOUNTS = 'Accounts'
+cdef str ORDER = 'Order'
 cdef str ORDERS = 'Orders'
+cdef str POSITION = 'Position'
 cdef str POSITIONS = 'Positions'
+cdef str STRATEGY = 'Strategy'
 cdef str STRATEGIES = 'Strategies'
-cdef str ORDER_POSITION = 'OrderPosition'
-cdef str ORDER_STRATEGY = 'OrderStrategy'
-cdef str POSITION_ORDERS = 'PositionOrders'
-cdef str POSITION_STRATEGY = 'PositionStrategy'
-cdef str STRATEGY_ORDERS = 'StrategyOrders'
-cdef str STRATEGY_POSITIONS = 'StrategyPositions'
 cdef str WORKING = 'Working'
 cdef str COMPLETED = 'Completed'
 cdef str OPEN = 'Open'
@@ -89,17 +86,17 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         super().__init__(trader_id, logger)
 
         # Database keys
-        self.key_trader                   = f'{TRADER}-{trader_id.value}'
+        self.key_trader                   = f'{TRADER}-{trader_id.value}:'
         self.key_accounts                 = f'{self.key_trader}:{ACCOUNTS}:'
         self.key_orders                   = f'{self.key_trader}:{ORDERS}:'
         self.key_positions                = f'{self.key_trader}:{POSITIONS}:'
         self.key_strategies               = f'{self.key_trader}:{STRATEGIES}:'
-        self.key_index_order_position     = f'{self.key_trader}:{INDEX}:{ORDER_POSITION}'       # HASH
-        self.key_index_order_strategy     = f'{self.key_trader}:{INDEX}:{ORDER_STRATEGY}'       # HASH
-        self.key_index_position_strategy  = f'{self.key_trader}:{INDEX}:{POSITION_STRATEGY}'    # HASH
-        self.key_index_position_orders    = f'{self.key_trader}:{INDEX}:{POSITION_ORDERS}:'     # SET
-        self.key_index_strategy_orders    = f'{self.key_trader}:{INDEX}:{STRATEGY_ORDERS}:'     # SET
-        self.key_index_strategy_positions = f'{self.key_trader}:{INDEX}:{STRATEGY_POSITIONS}:'  # SET
+        self.key_index_order_position     = f'{self.key_trader}:{INDEX}:{ORDER}{POSITION}'       # HASH
+        self.key_index_order_strategy     = f'{self.key_trader}:{INDEX}:{ORDER}{STRATEGY}'       # HASH
+        self.key_index_position_strategy  = f'{self.key_trader}:{INDEX}:{POSITION}{STRATEGY}'    # HASH
+        self.key_index_position_orders    = f'{self.key_trader}:{INDEX}:{POSITION}{ORDERS}:'     # SET
+        self.key_index_strategy_orders    = f'{self.key_trader}:{INDEX}:{STRATEGY}{ORDERS}:'     # SET
+        self.key_index_strategy_positions = f'{self.key_trader}:{INDEX}:{STRATEGY}{POSITIONS}:'  # SET
         self.key_index_orders             = f'{self.key_trader}:{INDEX}:{ORDERS}'               # SET
         self.key_index_orders_working     = f'{self.key_trader}:{INDEX}:{ORDERS}:{WORKING}'     # SET
         self.key_index_orders_completed   = f'{self.key_trader}:{INDEX}:{ORDERS}:{COMPLETED}'   # SET
