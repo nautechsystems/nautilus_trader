@@ -86,7 +86,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         super().__init__(trader_id, logger)
 
         # Database keys
-        self.key_trader                   = f'{TRADER}-{trader_id.value}:'
+        self.key_trader                   = f'{TRADER}-{trader_id.value}'
         self.key_accounts                 = f'{self.key_trader}:{ACCOUNTS}:'
         self.key_orders                   = f'{self.key_trader}:{ORDERS}:'
         self.key_positions                = f'{self.key_trader}:{POSITIONS}:'
