@@ -67,7 +67,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
                  CommandSerializer command_serializer,
                  EventSerializer event_serializer,
                  Logger logger,
-                 bint load_cache=True):
+                 bint option_load_cache=True):
         """
         Initializes a new instance of the RedisExecutionEngine class.
 
@@ -76,7 +76,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         :param port: The redis port for the database connection.
         :param command_serializer: The command serializer for database transactions.
         :param event_serializer: The event serializer for database transactions.
-        :param load_cache: The option flag to load cache from database on instantiation.
+        :param option_load_cache: The option flag to load caches from Redis on instantiation.
         :raises ConditionFailed: If the host is not a valid string.
         :raises ConditionFailed: If the port is not in range [0, 65535].
         """
@@ -112,7 +112,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         self._redis = redis.Redis(host=host, port=port, db=0)
 
         # Options
-        self.OPTION_LOAD_CACHE = load_cache
+        self.OPTION_LOAD_CACHE = option_load_cache
 
         if self.OPTION_LOAD_CACHE:
             self._log.info(f"The OPTION_LOAD_CACHE is {self.OPTION_LOAD_CACHE}")
