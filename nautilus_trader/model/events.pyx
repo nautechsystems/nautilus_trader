@@ -346,7 +346,7 @@ cdef class OrderWorking(OrderEvent):
 
     def __init__(self,
                  OrderId order_id,
-                 OrderId order_id_broker,
+                 OrderIdBroker order_id_broker,
                  AccountId account_id,
                  Symbol symbol,
                  Label label,
@@ -499,7 +499,7 @@ cdef class OrderModified(OrderEvent):
 
     def __init__(self,
                  OrderId order_id,
-                 OrderId order_id_broker,
+                 OrderIdBroker order_id_broker,
                  AccountId account_id,
                  Price modified_price,
                  datetime modified_time,

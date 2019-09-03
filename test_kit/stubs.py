@@ -24,7 +24,7 @@ from nautilus_trader.model.objects import (
     BarType,
     Bar,
     Instrument)
-from nautilus_trader.model.identifiers import Venue, IdTag, InstrumentId, AccountId, OrderId, ExecutionId, ExecutionTicket
+from nautilus_trader.model.identifiers import Venue, IdTag, InstrumentId, AccountId, OrderIdBroker, ExecutionId, ExecutionTicket
 from nautilus_trader.model.generators import PositionIdGenerator
 from nautilus_trader.model.order import Order, OrderFactory
 from nautilus_trader.model.position import Position
@@ -181,7 +181,7 @@ class TestStubs:
 
         return OrderWorking(
             order.id,
-            OrderId('B-' + order.id.value),
+            OrderIdBroker('B-' + order.id.value),
             AccountId('SIMULATED', '123456'),
             order.symbol,
             order.label,

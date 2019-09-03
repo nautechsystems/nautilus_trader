@@ -16,7 +16,14 @@ from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.model.objects cimport Quantity, Symbol, Price
 from nautilus_trader.model.events cimport OrderEvent, OrderInitialized
-from nautilus_trader.model.identifiers cimport Label, OrderId, AccountId, ExecutionId, ExecutionTicket
+from nautilus_trader.model.identifiers cimport (
+    Label,
+    OrderId,
+    OrderIdBroker,
+    AtomicOrderId,
+    AccountId,
+    ExecutionId,
+    ExecutionTicket)
 from nautilus_trader.model.generators cimport OrderIdGenerator
 
 
@@ -28,7 +35,7 @@ cdef class Order:
 
     cdef readonly OrderId id
     cdef readonly OrderId id_current
-    cdef readonly OrderId id_broker
+    cdef readonly OrderIdBroker id_broker
     cdef readonly AccountId account_id
     cdef readonly ExecutionId execution_id
     cdef readonly ExecutionTicket execution_ticket
@@ -70,7 +77,7 @@ cdef class Order:
 
 
 cdef class AtomicOrder:
-    cdef readonly OrderId id
+    cdef readonly AtomicOrderId id
     cdef readonly Order entry
     cdef readonly Order stop_loss
     cdef readonly Order take_profit

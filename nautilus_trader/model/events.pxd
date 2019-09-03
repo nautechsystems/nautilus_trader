@@ -25,6 +25,7 @@ from nautilus_trader.model.identifiers cimport (
     ExecutionTicket,
     StrategyId,
     OrderId,
+    OrderIdBroker
 )
 from nautilus_trader.model.position cimport Position
 
@@ -86,7 +87,7 @@ cdef class OrderAccepted(OrderEvent):
 
 
 cdef class OrderWorking(OrderEvent):
-    cdef readonly OrderId order_id_broker
+    cdef readonly OrderIdBroker order_id_broker
     cdef readonly AccountId account_id
     cdef readonly Symbol symbol
     cdef readonly Label label
@@ -118,7 +119,7 @@ cdef class OrderExpired(OrderEvent):
 
 cdef class OrderModified(OrderEvent):
     cdef readonly AccountId account_id
-    cdef readonly OrderId order_id_broker
+    cdef readonly OrderIdBroker order_id_broker
     cdef readonly Price modified_price
     cdef readonly datetime modified_time
 

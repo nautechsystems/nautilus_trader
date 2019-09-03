@@ -13,6 +13,8 @@ from nautilus_trader.core.types cimport Identifier
 cdef class Symbol(Identifier):
     """
     Represents the symbol for a financial market tradeable instrument.
+    The code and and venue combination identifier value must be unique at the
+    fund level.
     """
 
     def __init__(self,
@@ -21,16 +23,17 @@ cdef class Symbol(Identifier):
         """
         Initializes a new instance of the Symbol class.
 
-        :param code: The symbols code.
+        :param code: The symbols code identifier value.
         :param venue: The symbols venue.
         :raises ConditionFailed: If the code is not a valid string.
         """
+        super().__init__(f'{code.upper()}.{venue.value}')
+
         Condition.valid_string(code, 'code')
+        assert code.isupper()
 
         self.code = code.upper()
         self.venue = venue
-        # Super class initialization last because of .upper()
-        super().__init__(f'{self.code}.{self.venue.value}')
 
     def __str__(self) -> str:
         """
@@ -73,13 +76,14 @@ cdef class Symbol(Identifier):
 cdef class Venue(Identifier):
     """
     Represents a trading venue for a financial market tradeable instrument.
+    The identifier value must be unique at the fund level.
     """
 
     def __init__(self, str name):
         """
         Initializes a new instance of the Venue class.
 
-        :param name: The venues name.
+        :param name: The venue name identifier value.
         :raises ConditionFailed: If the name is not a valid string.
         """
         super().__init__(name.upper())
@@ -88,13 +92,14 @@ cdef class Venue(Identifier):
 cdef class Exchange(Venue):
     """
     Represents an exchange that financial market instruments are traded on.
+    The identifier value must be unique at the fund level.
     """
 
     def __init__(self, str name):
         """
         Initializes a new instance of the Exchange class.
 
-        :param name: The exchanges name.
+        :param name: The exchange name identifier value.
         :raises ConditionFailed: If the name is not a valid string.
         """
         super().__init__(name.upper())
@@ -102,14 +107,15 @@ cdef class Exchange(Venue):
 
 cdef class Brokerage(Identifier):
     """
-    Represents a brokerage.
+    Represents a brokerage. The identifier value must be unique at the fund
+    level.
     """
 
     def __init__(self, str name):
         """
         Initializes a new instance of the Brokerage class.
 
-        :param name: The brokerages name.
+        :param name: The brokerage name identifier value.
         :raises ConditionFailed: If the name is not a valid string.
         """
         super().__init__(name.upper())
@@ -124,7 +130,7 @@ cdef class Label(Identifier):
         """
         Initializes a new instance of the Label class.
 
-        :param value: The value of the label.
+        :param value: The label identifier value.
         :raises ConditionFailed: If the value is not a valid string.
         """
         super().__init__(value)
@@ -139,7 +145,7 @@ cdef class IdTag(Identifier):
         """
         Initializes a new instance of the IdTag class.
 
-        :param value: The value of the identifier tag.
+        :param value: The identifier tag value.
         :raises ConditionFailed: If the value is not a valid string.
         """
         super().__init__(value)
@@ -147,22 +153,23 @@ cdef class IdTag(Identifier):
 
 cdef class TraderId(Identifier):
     """
-    Represents a valid trader identifier, the name and order_id_tag combination
-    must be unique at the fund level.
+    Represents a valid trader identifier. The name and order_id_tag combination
+    identifier value must be unique at the fund level.
     """
 
     def __init__(self, str name, str order_id_tag):
         """
         Initializes a new instance of the TraderId class.
 
-        :param name: The name of the trader.
-        :param name: The order_id tag for the trader.
+        :param name: The trader name identifier value.
+        :param order_id_tag: The trader order_id tag value.
         :raises ConditionFailed: If the name is not a valid string.
         :raises ConditionFailed: If the order_id_tag is not a valid string.
         """
+        super().__init__(f'{name}-{order_id_tag}')
+
         Condition.valid_string(name, 'name')
 
-        super().__init__(f'{name}-{order_id_tag}')
         self.name = name
         self.order_id_tag = IdTag(order_id_tag)
 
@@ -205,7 +212,7 @@ cdef class TraderId(Identifier):
 
 cdef class StrategyId(Identifier):
     """
-    Represents a valid strategy identifier, the name and order_id_tag combination
+    Represents a valid strategy identifier. The name and order_id_tag combination
     must be unique at the trader level.
     """
 
@@ -213,14 +220,14 @@ cdef class StrategyId(Identifier):
         """
         Initializes a new instance of the StrategyId class.
 
-        :param name: The name of the strategy.
-        :param order_id_tag: The order_id tag for the strategy.
+        :param name: The strategy name identifier value.
+        :param order_id_tag: The strategy order_id tag value.
         :raises ConditionFailed: If the name is not a valid string.
         :raises ConditionFailed: If the order_id_tag is not a valid string.
         """
+        super().__init__(f'{name}-{order_id_tag}')
         Condition.valid_string(name, 'name')
 
-        super().__init__(f'{name}-{order_id_tag}')
         self.name = name
         self.order_id_tag = IdTag(order_id_tag)
 
@@ -262,14 +269,15 @@ cdef class StrategyId(Identifier):
 
 cdef class AccountId(Identifier):
     """
-    Represents a valid account identifier.
+    Represents a valid account identifier. The broker and account_number
+    combination must be unique at the fund level.
     """
 
     def __init__(self, str broker, str account_number):
         """
         Initializes a new instance of the AccountId class.
 
-        :param broker: The broker for the account_id.
+        :param broker: The broker identifier value.
         :param account_number: The account number for the account_id.
         :raises ConditionFailed: If the broker is not a valid string.
         :raises ConditionFailed: If the account_number is not a valid string.
@@ -323,9 +331,10 @@ cdef class AccountNumber(Identifier):
         super().__init__(value)
 
 
-cdef class OrderId(Identifier):
+cdef class AtomicOrderId(Identifier):
     """
-    Represents a valid order identifier (should be unique).
+    Represents a valid atomic order identifier. The identifier value must be
+    unique at the fund level.
     """
 
     def __init__(self, str value):
@@ -336,58 +345,95 @@ cdef class OrderId(Identifier):
         """
         super().__init__(value)
 
+        Condition.true(value.startswith('AO-'), f'value must begin with \'AO-\', was {value}.')
+
+
+cdef class OrderId(Identifier):
+    """
+    Represents a valid order identifier. The identifier value must be unique at
+    the fund level.
+    """
+
+    def __init__(self, str value):
+        """
+        Initializes a new instance of the OrderId class.
+
+        :param value: The value of the order_id (should be unique).
+        """
+        super().__init__(value)
+
+        Condition.true(value.startswith('O-'), f'value must begin with \'O-\', was {value}.')
+
+
+cdef class OrderIdBroker(Identifier):
+    """
+    Represents a valid broker order identifier.
+    """
+
+    def __init__(self, str value):
+        """
+        Initializes a new instance of the OrderId class.
+
+        :param value: The broker order identifier value.
+        """
+        super().__init__(value)
+
 
 cdef class PositionId(Identifier):
     """
-    Represents a valid position identifier (should be unique).
+    Represents a valid position identifier. The identifier value must be unique
+    at the fund level.
     """
 
     def __init__(self, str value):
         """
         Initializes a new instance of the PositionId class.
 
-        :param value: The value of the position_id (should be unique).
+        :param value: The position identifier value.
         """
         super().__init__(value)
+
+        Condition.true(value.startswith('P-'), f' value must begin with \'P-\', was {value}.')
 
 
 cdef class ExecutionId(Identifier):
     """
-    Represents a valid execution identifier (should be unique).
+    Represents a valid execution identifier.
     """
 
     def __init__(self, str value):
         """
         Initializes a new instance of the ExecutionId class.
 
-        :param value: The value of the execution_id (should be unique).
+        :param value: The execution identifier value.
         """
         super().__init__(value)
 
 
 cdef class ExecutionTicket(Identifier):
     """
-    Represents a valid execution ticket (should be unique).
+    Represents a valid execution ticket.
     """
 
     def __init__(self, str value):
         """
         Initializes a new instance of the ExecutionTicket class.
 
-        :param value: The value of the execution ticket.
+        :param value: The execution ticket identifier value.
         """
         super().__init__(value)
 
 
 cdef class InstrumentId(Identifier):
     """
-    Represents a valid instrument identifier (should be unique).
+    Represents a valid instrument identifier. The identifier value must be
+    unique at the fund level.
     """
 
     def __init__(self, str value):
         """
         Initializes a new instance of the InstrumentId class.
 
-        :param value: The value of the instrument identifier.
+        :param value: The instrument identifier value.
         """
         super().__init__(value)
