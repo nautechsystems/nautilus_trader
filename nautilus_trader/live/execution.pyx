@@ -91,12 +91,12 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         self.key_orders                   = f'{self.key_trader}:{ORDERS}:'
         self.key_positions                = f'{self.key_trader}:{POSITIONS}:'
         self.key_strategies               = f'{self.key_trader}:{STRATEGIES}:'
-        self.key_index_order_position     = f'{self.key_trader}:{INDEX}:{ORDER}{POSITION}'       # HASH
-        self.key_index_order_strategy     = f'{self.key_trader}:{INDEX}:{ORDER}{STRATEGY}'       # HASH
-        self.key_index_position_strategy  = f'{self.key_trader}:{INDEX}:{POSITION}{STRATEGY}'    # HASH
-        self.key_index_position_orders    = f'{self.key_trader}:{INDEX}:{POSITION}{ORDERS}:'     # SET
-        self.key_index_strategy_orders    = f'{self.key_trader}:{INDEX}:{STRATEGY}{ORDERS}:'     # SET
-        self.key_index_strategy_positions = f'{self.key_trader}:{INDEX}:{STRATEGY}{POSITIONS}:'  # SET
+        self.key_index_order_position     = f'{self.key_trader}:{INDEX}:{ORDER}{POSITION}'      # HASH
+        self.key_index_order_strategy     = f'{self.key_trader}:{INDEX}:{ORDER}{STRATEGY}'      # HASH
+        self.key_index_position_strategy  = f'{self.key_trader}:{INDEX}:{POSITION}{STRATEGY}'   # HASH
+        self.key_index_position_orders    = f'{self.key_trader}:{INDEX}:{POSITION}{ORDERS}:'    # SET
+        self.key_index_strategy_orders    = f'{self.key_trader}:{INDEX}:{STRATEGY}{ORDERS}:'    # SET
+        self.key_index_strategy_positions = f'{self.key_trader}:{INDEX}:{STRATEGY}{POSITIONS}:' # SET
         self.key_index_orders             = f'{self.key_trader}:{INDEX}:{ORDERS}'               # SET
         self.key_index_orders_working     = f'{self.key_trader}:{INDEX}:{ORDERS}:{WORKING}'     # SET
         self.key_index_orders_completed   = f'{self.key_trader}:{INDEX}:{ORDERS}:{COMPLETED}'   # SET
@@ -121,7 +121,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
             self.load_positions_cache()
         else:
             self._log.warning(f"The OPTION_LOAD_CACHE is {self.OPTION_LOAD_CACHE} "
-                              f"(this should only be done in a backtest environment).")
+                              f"(this should only be done in a testing environment).")
 
 
 # -- COMMANDS -------------------------------------------------------------------------------------"
@@ -163,7 +163,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
             self._cached_orders[order.id] = order
 
-        self._log.info(f"Cached {len(order_keys)} orders.")
+        self._log.info(f"Cached {len(self._cached_orders)} orders.")
 
     cpdef void load_positions_cache(self) except *:
         """
@@ -202,7 +202,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
             self._cached_positions[position.id] = position
 
-        self._log.info(f"Cached {len(position_keys)} positions.")
+        self._log.info(f"Cached {len(self._cached_positions)} positions.")
 
     cpdef void add_strategy(self, TradingStrategy strategy) except *:
         """
@@ -516,7 +516,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         try:
             orders = {order_id: self._cached_orders[order_id] for order_id in order_ids}
         except KeyError as ex:
-            self._log.error("Cannot find order object in cached orders " + str(ex))
+            self._log.error("Cannot find order object in the cache " + str(ex))
 
         return orders
 
