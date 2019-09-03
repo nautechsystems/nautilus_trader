@@ -77,14 +77,14 @@ class ConditionTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ConditionFailed, PyCondition.equal, OrderId('123456'), OrderId('123'))
-        self.assertRaises(ConditionFailed, PyCondition.equal, OrderId('123456'), PositionId('123456'))
+        self.assertRaises(ConditionFailed, PyCondition.equal, OrderId('O-123456'), OrderId('O-123'))
+        self.assertRaises(ConditionFailed, PyCondition.equal, OrderId('O-123456'), PositionId('P-123456'))
 
     def test_condition_equal_when_args_are_equal_does_nothing(self):
         # Arrange
         # Act
         # Assert
-        PyCondition.equal(OrderId('123456'), OrderId('123456'))
+        PyCondition.equal(OrderId('O-123456'), OrderId('O-123456'))
         self.assertTrue(True)  # ConditionFailed not raised
 
     def test_condition_type_when_type_is_incorrect_raises_condition_failed(self):

@@ -349,29 +349,29 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertFalse(self.database.position_exists(PositionId('unknown')))
+        self.assertFalse(self.database.position_exists(PositionId('P-123456')))
 
     def test_order_exists_when_no_order_returns_false(self):
         # Arrange
         # Act
         # Assert
-        self.assertFalse(self.database.order_exists(OrderId('unknown')))
+        self.assertFalse(self.database.order_exists(OrderId('O-123456')))
 
     def test_position_for_order_when_not_found_returns_none(self):
         # Arrange
         # Act
         # Assert
-        self.assertIsNone(self.database.get_position_for_order(OrderId('unknown')))
+        self.assertIsNone(self.database.get_position_for_order(OrderId('O-123456')))
 
     def test_position_indexed_for_order_when_no_indexing_returns_false(self):
         # Arrange
         # Act
         # Assert
-        self.assertFalse(self.database.position_indexed_for_order(OrderId('unknown')))
+        self.assertFalse(self.database.position_indexed_for_order(OrderId('O-123456')))
 
     def test_get_order_when_no_order_returns_none(self):
         # Arrange
-        position_id = PositionId('AUDUSD.FXCM-1-123456')
+        position_id = PositionId('P-123456')
 
         # Act
         result = self.database.get_position(position_id)

@@ -16,7 +16,17 @@ from nautilus_trader.core.types import GUID, ValidString
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.model.enums import OrderSide, OrderType, OrderStatus, TimeInForce
 from nautilus_trader.model.objects import Quantity, Price
-from nautilus_trader.model.identifiers import Symbol, Venue, Label, IdTag, OrderId, AccountId, ExecutionId, ExecutionTicket
+from nautilus_trader.model.identifiers import (
+    Symbol,
+    Venue,
+    Label,
+    IdTag,
+    OrderId,
+    OrderIdBroker,
+    AtomicOrderId,
+    AccountId,
+    ExecutionId,
+    ExecutionTicket)
 from nautilus_trader.model.order import Order, OrderFactory
 from nautilus_trader.model.events import OrderInitialized, OrderSubmitted, OrderAccepted, OrderRejected
 from nautilus_trader.model.events import OrderWorking, OrderExpired, OrderModified, OrderCancelled
@@ -44,7 +54,7 @@ class OrderTests(unittest.TestCase):
         self.assertRaises(
             ConditionFailed,
             Order,
-            OrderId('AUDUSD-FXCM-123456-1'),
+            OrderId('O-123456'),
             AUDUSD_FXCM,
             OrderSide.BUY,
             OrderType.MARKET,
@@ -57,7 +67,7 @@ class OrderTests(unittest.TestCase):
         self.assertRaises(
             ConditionFailed,
             Order,
-            OrderId('AUDUSD-FXCM-123456-1'),
+            OrderId('O-123456'),
             AUDUSD_FXCM,
             OrderSide.UNKNOWN,
             OrderType.MARKET,
@@ -70,7 +80,7 @@ class OrderTests(unittest.TestCase):
         self.assertRaises(
             ConditionFailed,
             Order,
-            OrderId('AUDUSD-FXCM-123456-1'),
+            OrderId('O-123456'),
             AUDUSD_FXCM,
             OrderSide.BUY,
             OrderType.LIMIT,
@@ -86,7 +96,7 @@ class OrderTests(unittest.TestCase):
         self.assertRaises(
             ConditionFailed,
             Order,
-            OrderId('AUDUSD-FXCM-123456-1'),
+            OrderId('O-123456'),
             AUDUSD_FXCM,
             OrderSide.BUY,
             OrderType.MARKET,
@@ -100,7 +110,7 @@ class OrderTests(unittest.TestCase):
         self.assertRaises(
             ConditionFailed,
             Order,
-            OrderId('AUDUSD-FXCM-123456-1'),
+            OrderId('O-123456'),
             AUDUSD_FXCM,
             OrderSide.BUY,
             OrderType.STOP_MARKET,
@@ -113,7 +123,7 @@ class OrderTests(unittest.TestCase):
         self.assertRaises(
             ConditionFailed,
             Order,
-            OrderId('AUDUSD-FXCM-123456-1'),
+            OrderId('O-123456'),
             AUDUSD_FXCM,
             OrderSide.BUY,
             OrderType.STOP_MARKET,
@@ -353,7 +363,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(TimeInForce.GTC, atomic_order.stop_loss.time_in_force)
         self.assertEqual(None, atomic_order.entry.expire_time)
         self.assertEqual(None, atomic_order.stop_loss.expire_time)
-        self.assertEqual(OrderId('AO-19700101-000000-001-001-1'), atomic_order.id)
+        self.assertEqual(AtomicOrderId('AO-19700101-000000-001-001-1'), atomic_order.id)
         self.assertEqual(UNIX_EPOCH, atomic_order.timestamp)
 
     def test_can_initialize_atomic_order_market_with_take_profit_and_label(self):
@@ -481,7 +491,7 @@ class OrderTests(unittest.TestCase):
 
         event = OrderWorking(
             order.id,
-            OrderId('SOME_BROKER_ID'),
+            OrderIdBroker('SOME_BROKER_ID'),
             self.account_id,
             order.symbol,
             order.label,
@@ -501,7 +511,7 @@ class OrderTests(unittest.TestCase):
         # Assert
         # print(order)
         self.assertEqual(OrderStatus.WORKING, order.status)
-        self.assertEqual(OrderId('SOME_BROKER_ID'), order.id_broker)
+        self.assertEqual(OrderIdBroker('SOME_BROKER_ID'), order.id_broker)
         self.assertFalse(order.is_completed)
         self.assertTrue(order.is_working)
         self.assertEqual(None, order.filled_timestamp)
@@ -579,7 +589,7 @@ class OrderTests(unittest.TestCase):
 
         order_working = OrderWorking(
             order.id,
-            OrderId('SOME_BROKER_ID_1'),
+            OrderIdBroker('SOME_BROKER_ID_1'),
             self.account_id,
             order.symbol,
             order.label,
@@ -595,7 +605,7 @@ class OrderTests(unittest.TestCase):
 
         order_modified = OrderModified(
             order.id,
-            OrderId('SOME_BROKER_ID_2'),
+            OrderIdBroker('SOME_BROKER_ID_2'),
             self.account_id,
             Price('1.00001'),
             UNIX_EPOCH,
@@ -609,7 +619,7 @@ class OrderTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(OrderStatus.WORKING, order.status)
-        self.assertEqual(OrderId('SOME_BROKER_ID_2'), order.id_broker)
+        self.assertEqual(OrderIdBroker('SOME_BROKER_ID_2'), order.id_broker)
         self.assertEqual(Price('1.00001'), order.price)
         self.assertTrue(order.is_working)
         self.assertFalse(order.is_completed)

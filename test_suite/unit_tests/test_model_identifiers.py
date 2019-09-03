@@ -61,9 +61,8 @@ class IdentifierTests(unittest.TestCase):
 
     def test_mixed_identifier_equality(self):
         # Arrange
-        identifier_string = 'some-id'
-        id1 = OrderId(identifier_string)
-        id2 = PositionId(identifier_string)
+        id1 = OrderId('O-123456')
+        id2 = PositionId('P-123456')
 
         # Act
         # Assert
