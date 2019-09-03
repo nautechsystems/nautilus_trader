@@ -17,7 +17,7 @@ from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_status cimport OrderStatus
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition, market_position_to_string
-from nautilus_trader.model.identifiers cimport Symbol, AccountId, PositionId
+from nautilus_trader.model.identifiers cimport Symbol, AccountId, OrderIdBroker
 from nautilus_trader.model.currency cimport ExchangeRateCalculator
 from nautilus_trader.model.objects cimport Price, Tick, Bar, Money, Instrument, Quantity
 from nautilus_trader.model.order cimport Order
@@ -565,7 +565,7 @@ cdef class BacktestExecClient(ExecutionClient):
         # Generate event
         cdef OrderWorking working = OrderWorking(
             order.id,
-            OrderId('B' + order.id.value),
+            OrderIdBroker('B' + order.id.value),
             self._account.id,
             order.symbol,
             order.label,

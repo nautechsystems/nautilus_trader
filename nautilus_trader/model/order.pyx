@@ -366,7 +366,7 @@ cdef class AtomicOrder:
         :param stop_loss: The stop-loss (SL) 'child' order.
         :param take_profit: The take-profit (TP) 'child' order (optional can be None).
         """
-        self.id = OrderId('A' + entry.id.value)
+        self.id = AtomicOrderId('A' + entry.id.value)
         self.entry = entry
         self.stop_loss = stop_loss
         self.take_profit = take_profit

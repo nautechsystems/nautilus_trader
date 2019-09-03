@@ -24,6 +24,7 @@ from nautilus_trader.model.identifiers cimport (
     TraderId,
     StrategyId,
     OrderId,
+    OrderIdBroker,
     PositionId,
     AccountId,
     ExecutionId,
@@ -506,7 +507,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
         if event_type == OrderWorking.__name__:
             return OrderWorking(
                 OrderId(unpacked[ORDER_ID]),
-                OrderId(unpacked[ORDER_ID_BROKER]),
+                OrderIdBroker(unpacked[ORDER_ID_BROKER]),
                 AccountId.from_string(unpacked[ACCOUNT_ID]),
                 Symbol.from_string(unpacked[SYMBOL]),
                 convert_string_to_label(unpacked[LABEL]),
@@ -538,7 +539,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
         if event_type == OrderModified.__name__:
             return OrderModified(
                 OrderId(unpacked[ORDER_ID]),
-                OrderId(unpacked[ORDER_ID_BROKER]),
+                OrderIdBroker(unpacked[ORDER_ID_BROKER]),
                 AccountId.from_string(unpacked[ACCOUNT_ID]),
                 Price(unpacked[MODIFIED_PRICE]),
                 convert_string_to_datetime(unpacked[MODIFIED_TIME]),

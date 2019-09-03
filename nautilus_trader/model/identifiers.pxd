@@ -61,7 +61,15 @@ cdef class AccountNumber(Identifier):
     pass
 
 
+cdef class AtomicOrderId(Identifier):
+    pass
+
+
 cdef class OrderId(Identifier):
+    pass
+
+
+cdef class OrderIdBroker(Identifier):
     pass
 
 
