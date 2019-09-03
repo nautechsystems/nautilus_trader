@@ -330,7 +330,7 @@ cdef class LiveDataClient(DataClient):
             VENUE: self.venue.value,
         }
 
-        self._log.info(f"Requesting all instruments for the {self.venue} venue ...")
+        self._log.info(f"Requesting all instruments for {self.venue} ...")
 
         cdef DataRequest request = DataRequest(query, self._guid_factory.generate(), self.time_now())
         cdef bytes request_bytes = self._request_serializer.serialize(request)
