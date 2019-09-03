@@ -278,7 +278,7 @@ class TradeStrategyTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         # Act
-        result = strategy.order(OrderId('unknown_order_id'))
+        result = strategy.order(OrderId('O-123456'))
         # Assert
         self.assertIsNone(result)
 
@@ -307,7 +307,7 @@ class TradeStrategyTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         # Act
-        result = strategy.position(PositionId('unknown'))
+        result = strategy.position(PositionId('P-123456'))
         # Assert
         self.assertIsNone(result)
 
@@ -886,7 +886,7 @@ class TradeStrategyTests(unittest.TestCase):
         strategy = TestStrategy1(bar_type)
         self.exec_engine.register_strategy(strategy)
 
-        position1 = PositionId('position1')
+        position1 = PositionId('P-123456')
         order1 = strategy.order_factory.market(
             USDJPY_FXCM,
             OrderSide.BUY,
@@ -906,6 +906,6 @@ class TradeStrategyTests(unittest.TestCase):
         self.assertEqual(order1, strategy.orders_completed()[order1.id])
         self.assertEqual(order2, strategy.orders_completed()[order2.id])
         self.assertEqual(1, len(strategy.positions_closed()))
-        self.assertFalse(PositionId('position1') in strategy.positions_open())
-        self.assertTrue(PositionId('position1') in strategy.positions_closed())
+        self.assertFalse(PositionId('P-123456') in strategy.positions_open())
+        self.assertTrue(PositionId('P-123456') in strategy.positions_closed())
         self.assertTrue(strategy.is_flat())

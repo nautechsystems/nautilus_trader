@@ -79,7 +79,7 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
     def test_can_serialize_and_deserialize_limit_orders_with_expire_time(self):
         # Arrange
         order = Order(
-            OrderId('O123456'),
+            OrderId('O-123456'),
             AUDUSD_FXCM,
             OrderSide.BUY,
             OrderType.LIMIT,
@@ -102,7 +102,7 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
     def test_can_serialize_and_deserialize_stop_limit_orders(self):
         # Arrange
         order = Order(
-            OrderId('O123456'),
+            OrderId('O-123456'),
             AUDUSD_FXCM,
             OrderSide.BUY,
             OrderType.STOP_LIMIT,
@@ -123,7 +123,7 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
     def test_can_serialize_and_deserialize_stop_limit_orders_with_expire_time(self):
         # Arrange
         order = Order(
-            OrderId('O123456'),
+            OrderId('O-123456'),
             AUDUSD_FXCM,
             OrderSide.BUY,
             OrderType.STOP_LIMIT,
@@ -183,7 +183,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             TraderId('TESTER', '000'),
             StrategyId('SCALPER', '01'),
             self.account.id,
-            PositionId('123456'),
+            PositionId('P-123456'),
             order,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -210,7 +210,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             TraderId('TESTER', '000'),
             StrategyId('SCALPER', '01'),
             self.account.id,
-            PositionId('123456'),
+            PositionId('P-123456'),
             atomic_order,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -239,7 +239,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             TraderId('TESTER', '000'),
             StrategyId('SCALPER', '01'),
             self.account.id,
-            PositionId('123456'),
+            PositionId('P-123456'),
             atomic_order,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -377,7 +377,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Arrange
         event = OrderWorking(
             OrderId('O-123456'),
-            OrderId('BO-123456'),
+            OrderIdBroker('BO-123456'),
             self.account.id,
             AUDUSD_FXCM,
             Label('S1_PT'),
@@ -402,7 +402,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Arrange
         event = OrderWorking(
             OrderId('O-123456'),
-            OrderId('BO-123456'),
+            OrderIdBroker('BO-123456'),
             self.account.id,
             AUDUSD_FXCM,
             Label('S1_PT'),
@@ -461,7 +461,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Arrange
         event = OrderModified(
             OrderId('O-123456'),
-            OrderId('BO-123456'),
+            OrderIdBroker('BO-123456'),
             self.account.id,
             Price('0.80010'),
             UNIX_EPOCH,
@@ -613,7 +613,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Assert
         self.assertTrue(isinstance(result, OrderWorking))
         self.assertEqual(OrderId('O-123456'), result.order_id)
-        self.assertEqual(OrderId('BO-123456'), result.order_id_broker)
+        self.assertEqual(OrderIdBroker('BO-123456'), result.order_id_broker)
         self.assertEqual(AccountId('FXCM', '02851908'), result.account_id)
         self.assertEqual(Symbol('AUDUSD', Venue('FXCM')), result.symbol)
         self.assertEqual(Label('E'), result.label)
@@ -638,7 +638,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Assert
         self.assertTrue(isinstance(result, OrderWorking))
         self.assertEqual(OrderId('O-123456'), result.order_id)
-        self.assertEqual(OrderId('BO-123456'), result.order_id_broker)
+        self.assertEqual(OrderIdBroker('BO-123456'), result.order_id_broker)
         self.assertEqual(AccountId('FXCM', '02851908'), result.account_id)
         self.assertEqual(Symbol('AUDUSD', Venue('FXCM')), result.symbol)
         self.assertEqual(Label('E'), result.label)
@@ -700,7 +700,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Assert
         self.assertTrue(isinstance(result, OrderModified))
         self.assertEqual(OrderId('O-123456'), result.order_id)
-        self.assertEqual(OrderId('BO-123456'), result.order_id_broker)
+        self.assertEqual(OrderIdBroker('BO-123456'), result.order_id_broker)
         self.assertEqual(AccountId('FXCM', '02851908'), result.account_id)
         self.assertEqual(Price('2'), result.modified_price)
         self.assertEqual(datetime(1970, 1, 1, 00, 00, 0, 0, timezone.utc), result.modified_time)

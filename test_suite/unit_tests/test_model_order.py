@@ -398,7 +398,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(None, atomic_order.entry.expire_time)
         self.assertEqual(None, atomic_order.stop_loss.expire_time)
         self.assertEqual(None, atomic_order.take_profit.expire_time)
-        self.assertEqual(OrderId('AO-19700101-000000-001-001-1'), atomic_order.id)
+        self.assertEqual(AtomicOrderId('AO-19700101-000000-001-001-1'), atomic_order.id)
         self.assertEqual(UNIX_EPOCH, atomic_order.timestamp)
 
     def test_atomic_order_str_and_repr(self):
