@@ -58,7 +58,7 @@ class PositionTests(unittest.TestCase):
             UNIX_EPOCH)
 
         # Act
-        position = Position(PositionId('P123456'), order_filled)
+        position = Position(PositionId('P-123456'), order_filled)
 
         # Assert
         self.assertEqual(OrderId('O-19700101-000000-001-001-1'), position.from_order_id)
@@ -102,7 +102,7 @@ class PositionTests(unittest.TestCase):
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
-        position = Position(PositionId('P123456'), order_filled)
+        position = Position(PositionId('P-123456'), order_filled)
 
         # Assert
         self.assertEqual(Quantity(100000), position.quantity)
@@ -142,7 +142,7 @@ class PositionTests(unittest.TestCase):
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
-        position = Position(PositionId('P123456'), order_partially_filled)
+        position = Position(PositionId('P-123456'), order_partially_filled)
 
         # Act
         position.apply(order_partially_filled)
@@ -186,7 +186,7 @@ class PositionTests(unittest.TestCase):
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
-        position = Position(PositionId('P123456'), order_partially_filled)
+        position = Position(PositionId('P-123456'), order_partially_filled)
 
         # Act
         position.apply(order_partially_filled)
@@ -229,7 +229,7 @@ class PositionTests(unittest.TestCase):
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
-        position = Position(PositionId('P123456'), order_filled1)
+        position = Position(PositionId('P-123456'), order_filled1)
 
         order_filled2 = OrderFilled(
             order.id,
@@ -287,7 +287,7 @@ class PositionTests(unittest.TestCase):
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
-        position = Position(PositionId('P123456'), order_filled1)
+        position = Position(PositionId('P-123456'), order_filled1)
 
         order_filled2 = OrderFilled(
             order.id,
@@ -351,7 +351,7 @@ class PositionTests(unittest.TestCase):
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
-        position = Position(PositionId('P123456'), order1_filled)
+        position = Position(PositionId('P-123456'), order1_filled)
 
         order2_filled = OrderFilled(
             order2.id,
