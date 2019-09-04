@@ -31,7 +31,7 @@ from nautilus_trader.model.events cimport (
     PositionOpened,
     PositionModified,
     PositionClosed)
-from nautilus_trader.model.identifiers cimport TraderId, StrategyId, OrderId, PositionId
+from nautilus_trader.model.identifiers cimport AccountId, TraderId, StrategyId, OrderId, PositionId
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.guid cimport GuidFactory
 from nautilus_trader.common.logger cimport Logger, LoggerAdapter
@@ -55,11 +55,16 @@ cdef class ExecutionDatabase:
         self.trader_id = trader_id
         self._log = LoggerAdapter(self.__class__.__name__, logger)
 
+        self._cached_accounts = {}   # type: Dict[AccountId, Account]
         self._cached_orders = {}     # type: Dict[OrderId, Order]
         self._cached_positions = {}  # type: Dict[PositionId, Position]
 
 
 # -- COMMANDS -------------------------------------------------------------------------------------"
+
+    cpdef void add_account(self, Account account) except *:
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
 
     cpdef void add_strategy(self, TradingStrategy strategy) except *:
         # Raise exception if not overridden in implementation
@@ -102,12 +107,21 @@ cdef class ExecutionDatabase:
         raise NotImplementedError("Method must be implemented in the subclass.")
 
     cdef void _reset(self):
+        self._cached_accounts.clear()
         self._cached_orders.clear()
         self._cached_positions.clear()
         self._log.debug(f"Reset.")
 
 
 # -- QUERIES -------------------------------------------------------------------------------------"
+
+    cpdef Account get_first_account(self):
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
+    cpdef Account get_account(self, AccountId account_id):
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
 
     cpdef set get_strategy_ids(self):
         # Raise exception if not overridden in implementation
@@ -287,7 +301,20 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
         self._strategies.add(strategy.id)
 
-        self._log.debug(f"Added new strategy (id={strategy.id.value}).")
+        self._log.debug(f"Added strategy (id={strategy.id.value}).")
+
+    cpdef void add_account(self, Account account) except *:
+        """
+        Add the given account to the execution database.
+
+        :param account: The account to add.
+        :raises ConditionFailed: If the account_id is already contained in the cached_accounts.
+        """
+        Condition.not_in(account.id, self._cached_accounts, 'account.id', 'cached_accounts')
+
+        self._cached_accounts[account.id] = account
+
+        self._log.debug(f"Added account (id={account.id.value}).")
 
     cpdef void add_order(self, Order order, StrategyId strategy_id, PositionId position_id) except *:
         """
@@ -449,6 +476,26 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
 
 # -- QUERIES --------------------------------------------------------------------------------------"
+
+    cpdef Account get_first_account(self):
+        """
+        Return the first account from the accounts cache.
+
+        :return Account.
+        """
+        return next(iter(self._cached_accounts.values()))
+
+    cpdef Account get_account(self, AccountId account_id):
+        """
+        Return the account matching the given identifier (if found).
+
+        :param account_id: The account identifier.
+        :return Account or None.
+        """
+        cdef Account account = self._cached_accounts.get(account_id)
+        if account is None:
+            self._log.warning(f"Cannot find {account_id} in the database.")
+        return account
 
     cpdef set get_strategy_ids(self):
         """
@@ -861,7 +908,6 @@ cdef class ExecutionEngine:
     def __init__(self,
                  ExecutionDatabase database,
                  Portfolio portfolio,
-                 Account account,
                  Clock clock,
                  GuidFactory guid_factory,
                  Logger logger):
@@ -880,7 +926,6 @@ cdef class ExecutionEngine:
         self.trader_id = database.trader_id
         self.database = database
         self.portfolio = portfolio
-        self.account = account
 
         self.command_count = 0
         self.event_count = 0
@@ -951,6 +996,13 @@ cdef class ExecutionEngine:
         self.database.reset()
 
 #-- QUERIES ---------------------------------------------------------------------------------------"
+    cpdef Account get_first_account(self):
+        """
+        Return the first account from the cached accounts.
+        Temporary method.
+        :return: Account.
+        """
+        return self.database.get_first_account()
 
     cpdef list registered_strategies(self):
         """
@@ -982,6 +1034,7 @@ cdef class ExecutionEngine:
 #--------------------------------------------------------------------------------------------------"
 
     cdef void _execute_command(self, Command command):
+        self._log.debug(f'Received {command}.')
         self.command_count += 1
 
         if isinstance(command, AccountInquiry):
@@ -1001,6 +1054,7 @@ cdef class ExecutionEngine:
             self._exec_client.cancel_order(command)
 
     cdef void _handle_event(self, Event event):
+        self._log.debug(f'Received {event}.')
         self.event_count += 1
 
         if isinstance(event, OrderEvent):
@@ -1025,19 +1079,14 @@ cdef class ExecutionEngine:
             return  # Cannot process event further
 
         if isinstance(event, OrderFillEvent):
-            self._log.debug(str(event))
             self._handle_order_fill(event, strategy_id)
         elif isinstance(event, OrderModified):
-            self._log.debug(str(event))
             self._send_to_strategy(event, strategy_id)
         elif isinstance(event, OrderCancelled):
-            self._log.debug(str(event))
             self._send_to_strategy(event, strategy_id)
         elif isinstance(event, (OrderRejected, OrderCancelReject)):
-            self._log.debug(str(event))  # WRN logged by strategy
             self._send_to_strategy(event, strategy_id)
         else:
-            self._log.debug(str(event))
             self._send_to_strategy(event, strategy_id)
 
     cdef void _handle_order_fill(self, OrderFillEvent event, StrategyId strategy_id):
@@ -1063,7 +1112,7 @@ cdef class ExecutionEngine:
                 self._position_modified(position, strategy_id, event)
 
     cdef void _handle_position_event(self, PositionEvent event):
-        self._log.debug(f'{event}')
+        self._log.debug(str(event))
 
         if isinstance(event, PositionClosed):
             self.portfolio.analyzer.add_return(event.timestamp, event.position.return_realized)
@@ -1071,12 +1120,15 @@ cdef class ExecutionEngine:
         self._send_to_strategy(event, event.strategy_id)
 
     cdef void _handle_account_event(self, AccountStateEvent event):
-        self._log.debug(str(event))
-        if self.account is None:
-            self.account = Account(event)
-        elif self.account.id == event.account_id:
-            self.account.apply(event)
-            self.database.update_account(self.account)
+        cdef Account account = self.database.get_account(event.account_id)
+
+        if account is None:
+            account = Account(event)
+            self.database.add_account(account)
+            self.portfolio.handle_transaction(event)
+        elif account.id == event.account_id:
+            account.apply(event)
+            self.database.update_account(account)
             self.portfolio.handle_transaction(event)
         else:
             self._log.warning(f"Cannot process {event} "

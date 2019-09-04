@@ -11,7 +11,7 @@ from nautilus_trader.common.guid cimport GuidFactory
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.logger cimport LoggerAdapter
 from nautilus_trader.model.events cimport Event, OrderEvent, OrderFillEvent, AccountStateEvent, PositionEvent
-from nautilus_trader.model.identifiers cimport TraderId, StrategyId, OrderId, PositionId
+from nautilus_trader.model.identifiers cimport AccountId, TraderId, StrategyId, OrderId, PositionId
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.commands cimport (
@@ -28,12 +28,14 @@ from nautilus_trader.trade.strategy cimport TradingStrategy
 
 cdef class ExecutionDatabase:
     cdef LoggerAdapter _log
+    cdef dict _cached_accounts
     cdef dict _cached_orders
     cdef dict _cached_positions
 
     cdef readonly TraderId trader_id
 
 #-- COMMANDS --------------------------------------------------------------------------------------"
+    cpdef void add_account(self, Account account) except *
     cpdef void add_strategy(self, TradingStrategy strategy) except *
     cpdef void add_order(self, Order order, StrategyId strategy_id, PositionId position_id) except *
     cpdef void add_position(self, Position position, StrategyId strategy_id) except *
@@ -47,6 +49,8 @@ cdef class ExecutionDatabase:
     cdef void _reset(self)
 
 #-- QUERIES ---------------------------------------------------------------------------------------"
+    cpdef Account get_first_account(self)
+    cpdef Account get_account(self, AccountId account_id)
     cpdef set get_strategy_ids(self)
     cpdef set get_order_ids(self, StrategyId strategy_id=*)
     cpdef set get_order_working_ids(self, StrategyId strategy_id=*)
@@ -111,7 +115,6 @@ cdef class ExecutionEngine:
     cdef readonly TraderId trader_id
     cdef readonly ExecutionDatabase database
     cdef readonly Portfolio portfolio
-    cdef readonly Account account
     cdef readonly int command_count
     cdef readonly int event_count
 
@@ -125,6 +128,7 @@ cdef class ExecutionEngine:
     cpdef void reset(self)
 
 #-- QUERIES ---------------------------------------------------------------------------------------"
+    cpdef Account get_first_account(self)
     cpdef list registered_strategies(self)
     cpdef bint is_strategy_flat(self, StrategyId strategy_id)
     cpdef bint is_flat(self)

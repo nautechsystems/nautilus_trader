@@ -36,6 +36,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
     cdef readonly bint OPTION_LOAD_CACHE
 
+    cpdef void load_accounts_cache(self) except *
     cpdef void load_orders_cache(self) except *
     cpdef void load_positions_cache(self) except *
     cdef set _decode_set_to_order_ids(self, set original)

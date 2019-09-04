@@ -161,6 +161,10 @@ class TestStubs:
                    UNIX_EPOCH)
 
     @staticmethod
+    def account_id():
+        return AccountId.py_from_string('NAUTILUS-000-SIMULATED')
+
+    @staticmethod
     def event_order_filled(order, fill_price=Price('1.00000')):
 
         return OrderFilled(

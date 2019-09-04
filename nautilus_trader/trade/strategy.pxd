@@ -55,8 +55,8 @@ cdef class TradingStrategy:
     cdef dict _indicator_updaters_bars
     cdef ExchangeRateCalculator _exchange_calculator
 
-    cdef readonly Account account
     cdef readonly Portfolio portfolio
+    cdef readonly Account account
     cdef DataClient _data_client
     cdef ExecutionEngine _exec_engine
 

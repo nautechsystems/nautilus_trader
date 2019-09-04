@@ -273,7 +273,7 @@ cdef class TradingStrategy:
         """
         self._exec_engine = engine
         self.portfolio = engine.portfolio
-        self.account = engine.account
+        self.account = engine.get_first_account()
         self.log.debug("Registered execution engine.")
 
     cpdef void register_indicator_ticks(

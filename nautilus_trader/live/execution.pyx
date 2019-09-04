@@ -15,7 +15,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport MessageType, Message, Response
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.position cimport Position
-from nautilus_trader.model.identifiers cimport TraderId, StrategyId, OrderId, PositionId
+from nautilus_trader.model.identifiers cimport AccountId, TraderId, StrategyId, OrderId, PositionId
 from nautilus_trader.model.commands cimport (
     Command,
     AccountInquiry,
@@ -23,7 +23,7 @@ from nautilus_trader.model.commands cimport (
     SubmitAtomicOrder,
     ModifyOrder,
     CancelOrder)
-from nautilus_trader.model.events cimport Event, OrderFillEvent, OrderInitialized
+from nautilus_trader.model.events cimport Event, AccountStateEvent, OrderFillEvent, OrderInitialized
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.guid cimport GuidFactory
@@ -117,6 +117,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         if self.OPTION_LOAD_CACHE:
             self._log.info(f"The OPTION_LOAD_CACHE is {self.OPTION_LOAD_CACHE}")
             # Load cache
+            self.load_accounts_cache()
             self.load_orders_cache()
             self.load_positions_cache()
         else:
@@ -125,6 +126,38 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
 
 # -- COMMANDS -------------------------------------------------------------------------------------"
+
+    cpdef void load_accounts_cache(self) except *:
+        """
+        Clear the current accounts cache and load accounts from the database.
+        """
+        self._log.info("Re-caching accounts from the database...")
+        self._cached_accounts.clear()
+
+        cdef bytes key_bytes
+        cdef str key
+        cdef bytes event_bytes
+        cdef list events
+        cdef Account account
+        cdef AccountStateEvent event
+
+        cdef list account_keys = self._redis.keys(f'{self.key_accounts}*')
+
+        for key_bytes in account_keys:
+            key = key_bytes.decode(UTF8)
+            events = self._redis.lrange(name=key, start=0, end=-1)
+
+            # Check there is at least one event to pop
+            if len(events) == 0:
+                self._log.error(f"Cannot load account {key} from database (no events persisted).")
+                continue
+
+            last_event = self._event_serializer.deserialize(events.pop())
+            account = Account(event=last_event)
+
+            self._cached_accounts[account.id] = account
+
+        self._log.info(f"Cached {len(self._cached_accounts)} account(s).")
 
     cpdef void load_orders_cache(self) except *:
         """
@@ -163,7 +196,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
             self._cached_orders[order.id] = order
 
-        self._log.info(f"Cached {len(self._cached_orders)} orders.")
+        self._log.info(f"Cached {len(self._cached_orders)} order(s).")
 
     cpdef void load_positions_cache(self) except *:
         """
@@ -202,7 +235,29 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
             self._cached_positions[position.id] = position
 
-        self._log.info(f"Cached {len(self._cached_positions)} positions.")
+        self._log.info(f"Cached {len(self._cached_positions)} position(s).")
+
+    cpdef void add_account(self, Account account) except *:
+        """
+        Add the given account to the execution database.
+
+        :param account: The account to add.
+        :raises ConditionFailed: If the account_id is already contained in the cached_accounts.
+        """
+        Condition.not_in(account.id, self._cached_accounts, 'account.id', 'cached_accounts')
+
+        self._cached_accounts[account.id] = account
+
+        # Command pipeline
+        pipe = self._redis.pipeline()
+        pipe.rpush(self.key_accounts + account.id.value, self._event_serializer.serialize(account.last_event))
+        cdef list reply = pipe.execute()
+
+        # Check data integrity of reply
+        if reply[0] > 1:  # Reply = The length of the list after the push operation
+            self._log.error(f"The {account.id} already existed in the accounts and was appended to.")
+
+        self._log.debug(f"Added new {account.id}.")
 
     cpdef void add_strategy(self, TradingStrategy strategy) except *:
         """
@@ -391,6 +446,18 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         return {StrategyId.from_string(element.decode(UTF8).rsplit(':', 2)[1]) for element in original}
 
 # -- QUERIES --------------------------------------------------------------------------------------"
+
+    cpdef Account get_account(self, AccountId account_id):
+        """
+        Return the order matching the given identifier (if found).
+
+        :param account_id: The account identifier.
+        :return Account or None.
+        """
+        cdef Account account = self._cached_accounts.get(account_id)
+        if account is None:
+            self._log.warning(f"Cannot find {account_id} in the database.")
+        return account
 
     cpdef set get_strategy_ids(self):
         """

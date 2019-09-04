@@ -16,7 +16,7 @@ from nautilus_trader.common.guid import TestGuidFactory
 from nautilus_trader.common.portfolio import Portfolio
 from nautilus_trader.common.logger import TestLogger
 from nautilus_trader.common.execution import InMemoryExecutionDatabase, ExecutionEngine
-from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import OrderSide, Currency
 from nautilus_trader.model.objects import Quantity, Price, Money
 from nautilus_trader.model.events import OrderRejected, OrderCancelled, OrderWorking, OrderModified, OrderFilled
 from nautilus_trader.model.identifiers import TraderId
@@ -69,6 +69,7 @@ class BacktestExecClientTests(unittest.TestCase):
             instruments=self.instruments,
             frozen_account=False,
             starting_capital=Money(1000000),
+            account_currency=Currency.USD,
             fill_model=FillModel(),
             commission_calculator=CommissionCalculator(),
             portfolio=self.portfolio,
@@ -87,7 +88,7 @@ class BacktestExecClientTests(unittest.TestCase):
         strategy.account_inquiry()
 
         # Assert
-        self.assertEqual(2, self.account.event_count)
+        self.assertEqual(2, strategy.account.event_count)
 
     def test_can_submit_market_order(self):
         # Arrange
@@ -244,9 +245,9 @@ class BacktestExecClientTests(unittest.TestCase):
             instruments=self.instruments,
             frozen_account=False,
             starting_capital=Money(1000000),
+            account_currency=Currency.USD,
             fill_model=fill_model,
             commission_calculator=CommissionCalculator(),
-            account=self.account,
             portfolio=self.portfolio,
             clock=TestClock(),
             guid_factory=TestGuidFactory(),

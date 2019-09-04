@@ -24,7 +24,6 @@ cdef class Trader:
     cdef ReportProvider _report_provider
 
     cdef readonly TraderId id
-    cdef readonly Account account
     cdef readonly Portfolio portfolio
     cdef readonly bint is_running
     cdef readonly list started_datetimes

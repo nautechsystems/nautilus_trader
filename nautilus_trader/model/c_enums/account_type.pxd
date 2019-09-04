@@ -16,10 +16,12 @@ cpdef enum AccountType:
 
 cdef inline str account_type_to_string(int value):
     if value == 0:
-        return 'SIMULATED'
+        return 'UNDEFINED'
     elif value == 1:
-        return 'DEMO'
+        return 'SIMULATED'
     elif value == 2:
+        return 'DEMO'
+    elif value == 3:
         return 'REAL'
     else:
         return 'UNDEFINED'

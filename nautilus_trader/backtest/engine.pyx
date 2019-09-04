@@ -145,12 +145,9 @@ cdef class BacktestEngine:
             guid_factory=self.guid_factory,
             logger=self.test_logger)
 
-        self.account = Account()
-
         self.exec_engine = ExecutionEngine(
             database=self.exec_db,
             portfolio=self.portfolio,
-            account=self.account,
             clock=self.test_clock,
             guid_factory=self.guid_factory,
             logger=self.test_logger)
@@ -160,10 +157,10 @@ cdef class BacktestEngine:
             instruments=instruments,
             frozen_account=config.frozen_account,
             starting_capital=config.starting_capital,
+            account_currency=config.account_currency,
             fill_model=fill_model,
             commission_calculator=CommissionCalculator(default_rate_bp=config.commission_rate_bp),
             portfolio=self.portfolio,
-            account=self.account,
             clock=self.test_clock,
             guid_factory=self.guid_factory,
             logger=self.test_logger)
@@ -470,7 +467,7 @@ cdef class BacktestEngine:
         if self.exec_client.frozen_account:
             self.log.warning(f"ACCOUNT FROZEN")
         else:
-            self.log.info(f"Account balance (starting): {self.config.starting_capital} {currency_to_string(self.account.currency)}")
+            self.log.info(f"Account balance (starting): {self.config.starting_capital} {currency_to_string(self.config.account_currency)}")
         self.log.info("#---------------------------------------------------------------#")
 
     cdef void _backtest_footer(
@@ -479,7 +476,7 @@ cdef class BacktestEngine:
             datetime start,
             datetime stop,
             timedelta time_step):
-        cdef str account_currency = currency_to_string(self.account.currency)
+        cdef str account_currency = currency_to_string(self.config.account_currency)
         cdef int account_starting_length = len(str(self.config.starting_capital))
 
         self.log.info("#---------------------------------------------------------------#")
