@@ -7,6 +7,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.types cimport Identifier
+from nautilus_trader.model.c_enums.account_type cimport AccountType
 
 
 cdef class Symbol(Identifier):
@@ -52,7 +53,8 @@ cdef class StrategyId(Identifier):
 
 cdef class AccountId(Identifier):
     cdef readonly Brokerage broker
-    cdef readonly AccountNumber number
+    cdef readonly AccountNumber account_number
+    cdef readonly AccountType account_type
     @staticmethod
     cdef AccountId from_string(str value)
 

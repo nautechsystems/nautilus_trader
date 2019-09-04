@@ -11,7 +11,7 @@ import uuid
 from decimal import Decimal
 from datetime import datetime, timedelta, timezone
 
-from nautilus_trader.model.enums import Resolution, QuoteType, Currency, SecurityType
+from nautilus_trader.model.enums import Resolution, QuoteType, Currency, SecurityType, AccountType
 
 from nautilus_trader.core.types import GUID
 from nautilus_trader.common.clock import TestClock
@@ -165,7 +165,7 @@ class TestStubs:
 
         return OrderFilled(
             order.id,
-            AccountId('SIMULATED', '123456'),
+            AccountId('SIMULATED', '123456', AccountType.SIMULATED),
             ExecutionId('E-' + order.id.value),
             ExecutionTicket('ET-' + order.id.value),
             order.symbol,
@@ -182,7 +182,7 @@ class TestStubs:
         return OrderWorking(
             order.id,
             OrderIdBroker('B-' + order.id.value),
-            AccountId('SIMULATED', '123456'),
+            AccountId('SIMULATED', '123456', AccountType.SIMULATED),
             order.symbol,
             order.label,
             order.side,
@@ -242,7 +242,7 @@ class TestStubs:
 
         order_filled = OrderFilled(
             order.id,
-            AccountId('FXCM', '0999999'),
+            AccountId('FXCM', '0999999', AccountType.SIMULATED),
             ExecutionId('E123456'),
             ExecutionTicket('T123456'),
             order.symbol,

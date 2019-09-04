@@ -861,7 +861,7 @@ cdef class LiveExecClient(ExecutionClient):
             zmq_context: zmq.Context,
             str service_name='NautilusExecutor',
             str service_address='localhost',
-            str events_topic='NAUTILUS:EVENTS',
+            str events_topic='EVENTS',
             int commands_port=55555,
             int events_port=55556,
             CommandSerializer command_serializer=MsgPackCommandSerializer(),

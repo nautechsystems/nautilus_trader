@@ -26,10 +26,8 @@ class AccountTests(unittest.TestCase):
 
     def test_can_initialize_account_with_event(self):
         # Arrange
-        account = Account()
-
         event = AccountStateEvent(
-            AccountId('FXCM', 'D123456'),
+            AccountId.py_from_string('FXCM-123456-SIMULATED'),
             Currency.AUD,
             Money(1000000),
             Money(1000000),
@@ -42,11 +40,10 @@ class AccountTests(unittest.TestCase):
             UNIX_EPOCH)
 
         # Act
-        account.apply(event)
+        account = Account(event)
 
         # Assert
-        self.assertTrue(account.initialized)
-        self.assertEqual(AccountId('FXCM', 'D123456'), account.id)
+        self.assertEqual(AccountId.py_from_string('FXCM-123456-SIMULATED'), account.id)
         self.assertEqual(Currency.AUD, account.currency)
         self.assertEqual(Money(1000000), account.free_equity)
         self.assertEqual(Money(1000000), account.cash_start_day)
@@ -57,37 +54,10 @@ class AccountTests(unittest.TestCase):
         self.assertEqual('NONE', account.margin_call_status.value)
         self.assertEqual(UNIX_EPOCH, account.last_updated)
 
-    def test_can_reset_account(self):
-        # Arrange
-        account = Account()
-
-        event = AccountStateEvent(
-            AccountId('FXCM', 'D123456'),
-            Currency.AUD,
-            Money(1000000),
-            Money(1000000),
-            Money.zero(),
-            Money.zero(),
-            Money.zero(),
-            Decimal('0'),
-            ValidString('NONE'),
-            GUID(uuid.uuid4()),
-            UNIX_EPOCH)
-
-        account.apply(event)
-
-        # Act
-        account.reset()
-
-        # Assert
-        self.assertFalse(account.initialized)
-
     def test_can_calculate_free_equity_when_greater_than_zero(self):
         # Arrange
-        account = Account()
-
         event = AccountStateEvent(
-            AccountId('FXCM', 'D123456'),
+            AccountId.py_from_string('FXCM-123456-SIMULATED'),
             Currency.AUD,
             Money(100000),
             Money(100000),
@@ -100,13 +70,12 @@ class AccountTests(unittest.TestCase):
             UNIX_EPOCH)
 
         # Act
-        account.apply(event)
+        account = Account(event)
 
         # Assert
-        self.assertTrue(account.initialized)
-        self.assertEqual(AccountId('FXCM', 'D123456'), account.id)
+        self.assertEqual(AccountId.py_from_string('FXCM-123456-SIMULATED'), account.id)
         self.assertEqual(Brokerage('FXCM'), account.broker)
-        self.assertEqual(AccountNumber('D123456'), account.number)
+        self.assertEqual(AccountNumber('123456'), account.account_number)
         self.assertEqual(Currency.AUD, account.currency)
         self.assertEqual(Money(97000), account.free_equity)
         self.assertEqual(Money(100000), account.cash_start_day)
@@ -119,10 +88,8 @@ class AccountTests(unittest.TestCase):
 
     def test_can_calculate_free_equity_when_zero(self):
         # Arrange
-        account = Account()
-
         event = AccountStateEvent(
-            AccountId('FXCM', 'D123456'),
+            AccountId.py_from_string('FXCM-123456-SIMULATED'),
             Currency.AUD,
             Money(20000),
             Money(100000),
@@ -135,13 +102,12 @@ class AccountTests(unittest.TestCase):
             UNIX_EPOCH)
 
         # Act
-        account.apply(event)
+        account = Account(event)
 
         # Assert
-        self.assertTrue(account.initialized)
-        self.assertEqual(AccountId('FXCM', 'D123456'), account.id)
+        self.assertEqual(AccountId.py_from_string('FXCM-123456-SIMULATED'), account.id)
         self.assertEqual(Brokerage('FXCM'), account.broker)
-        self.assertEqual(AccountNumber('D123456'), account.number)
+        self.assertEqual(AccountNumber('123456'), account.account_number)
         self.assertEqual(Currency.AUD, account.currency)
         self.assertEqual(Money.zero(), account.free_equity)
         self.assertEqual(Money(100000), account.cash_start_day)
@@ -154,10 +120,8 @@ class AccountTests(unittest.TestCase):
 
     def test_can_calculate_free_equity_when_negative(self):
         # Arrange
-        account = Account()
-
         event = AccountStateEvent(
-            AccountId('FXCM', 'D123456'),
+            AccountId.py_from_string('FXCM-123456-SIMULATED'),
             Currency.AUD,
             Money(20000),
             Money(100000),
@@ -170,13 +134,12 @@ class AccountTests(unittest.TestCase):
             UNIX_EPOCH)
 
         # Act
-        account.apply(event)
+        account = Account(event)
 
         # Assert
-        self.assertTrue(account.initialized)
-        self.assertEqual(AccountId('FXCM', 'D123456'), account.id)
+        self.assertEqual(AccountId.py_from_string('FXCM-123456-SIMULATED'), account.id)
         self.assertEqual(Brokerage('FXCM'), account.broker)
-        self.assertEqual(AccountNumber('D123456'), account.number)
+        self.assertEqual(AccountNumber('123456'), account.account_number)
         self.assertEqual(Currency.AUD, account.currency)
         self.assertEqual(Money.zero(), account.free_equity)
         self.assertEqual(Money(100000), account.cash_start_day)

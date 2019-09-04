@@ -6,6 +6,7 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.model.c_enums.account_type import AccountType
 from nautilus_trader.model.c_enums.currency import Currency
 from nautilus_trader.model.c_enums.market_position import MarketPosition
 from nautilus_trader.model.c_enums.order_side import OrderSide

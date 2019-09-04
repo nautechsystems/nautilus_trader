@@ -49,7 +49,6 @@ class BacktestExecClientTests(unittest.TestCase):
         self.clock = TestClock()
         self.guid_factory = TestGuidFactory()
         self.logger = TestLogger()
-        self.account = Account()
 
         self.portfolio = Portfolio(
             clock=self.clock,
@@ -60,7 +59,6 @@ class BacktestExecClientTests(unittest.TestCase):
         self.exec_db = InMemoryExecutionDatabase(trader_id=trader_id, logger=self.logger)
         self.exec_engine = ExecutionEngine(
             database=self.exec_db,
-            account=self.account,
             portfolio=self.portfolio,
             clock=self.clock,
             guid_factory=self.guid_factory,
@@ -73,7 +71,6 @@ class BacktestExecClientTests(unittest.TestCase):
             starting_capital=Money(1000000),
             fill_model=FillModel(),
             commission_calculator=CommissionCalculator(),
-            account=self.account,
             portfolio=self.portfolio,
             clock=TestClock(),
             guid_factory=TestGuidFactory(),

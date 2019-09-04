@@ -110,8 +110,8 @@ cdef class ExecutionEngine:
 
     cdef readonly TraderId trader_id
     cdef readonly ExecutionDatabase database
-    cdef readonly Account account
     cdef readonly Portfolio portfolio
+    cdef readonly Account account
     cdef readonly int command_count
     cdef readonly int event_count
 

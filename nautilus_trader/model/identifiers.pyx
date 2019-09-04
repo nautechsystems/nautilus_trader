@@ -8,6 +8,10 @@
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport Identifier
+from nautilus_trader.model.c_enums.account_type cimport (
+    AccountType,
+    account_type_to_string,
+    account_type_from_string)
 
 
 cdef class Symbol(Identifier):
@@ -273,19 +277,21 @@ cdef class AccountId(Identifier):
     combination must be unique at the fund level.
     """
 
-    def __init__(self, str broker, str account_number):
+    def __init__(self, str broker, str account_number, AccountType account_type):
         """
         Initializes a new instance of the AccountId class.
 
         :param broker: The broker identifier value.
-        :param account_number: The account number for the account_id.
+        :param account_number: The account number identifier value.
+        :param account_number: The account type.
         :raises ConditionFailed: If the broker is not a valid string.
         :raises ConditionFailed: If the account_number is not a valid string.
         """
-        super().__init__(f'{broker}-{account_number}')
+        super().__init__(f'{broker}-{account_number}-{account_type_to_string(account_type)}')
 
         self.broker = Brokerage(broker)
-        self.number = AccountNumber(account_number)
+        self.account_number = AccountNumber(account_number)
+        self.account_type = account_type
 
     @staticmethod
     cdef AccountId from_string(str value):
@@ -298,8 +304,11 @@ cdef class AccountId(Identifier):
         :param value: The value for the account_id.
         :return AccountId.
         """
-        cdef tuple partitioned = value.partition('-')
-        return AccountId(broker=partitioned[0], account_number=partitioned[2])
+        cdef list split = value.split('-', maxsplit=3)
+        return AccountId(
+            broker=split[0],
+            account_number=split[1],
+            account_type=account_type_from_string(split[2]))
 
     @staticmethod
     def py_from_string(value: str) -> AccountId:

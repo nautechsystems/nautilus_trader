@@ -140,7 +140,7 @@ cdef class BacktestEngine:
             clock=self.test_clock,
             logger=self.test_logger)
 
-        self.account = Account(currency=config.account_currency)
+        self.account = None
 
         self.portfolio = Portfolio(
             clock=self.test_clock,
@@ -149,7 +149,6 @@ cdef class BacktestEngine:
 
         self.exec_engine = ExecutionEngine(
             database=self.exec_db,
-            account=self.account,
             portfolio=self.portfolio,
             clock=self.test_clock,
             guid_factory=self.guid_factory,
@@ -162,7 +161,6 @@ cdef class BacktestEngine:
             starting_capital=config.starting_capital,
             fill_model=fill_model,
             commission_calculator=CommissionCalculator(default_rate_bp=config.commission_rate_bp),
-            account=self.account,
             portfolio=self.portfolio,
             clock=self.test_clock,
             guid_factory=self.guid_factory,
