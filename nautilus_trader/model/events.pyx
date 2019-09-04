@@ -65,7 +65,7 @@ cdef class AccountStateEvent(Event):
         super().__init__(event_id, event_timestamp)
         self.account_id = account_id
         self.broker = self.account_id.broker
-        self.number = self.account_id.number
+        self.number = self.account_id.account_number
         self.currency = currency
         self.cash_balance = cash_balance
         self.cash_start_day = cash_start_day

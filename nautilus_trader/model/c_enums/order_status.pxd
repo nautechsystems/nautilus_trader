@@ -15,10 +15,10 @@ cpdef enum OrderStatus:
     REJECTED = 3,
     WORKING = 4,
     CANCELLED = 5,
-    OVER_FILLED = 6,
-    PARTIALLY_FILLED = 7,
-    FILLED = 8,
-    EXPIRED = 9
+    EXPIRED = 6,
+    OVER_FILLED = 7,
+    PARTIALLY_FILLED = 8,
+    FILLED = 9,
 
 
 cdef inline str order_status_to_string(int value):
@@ -35,13 +35,13 @@ cdef inline str order_status_to_string(int value):
     elif value == 5:
         return 'CANCELLED'
     elif value == 6:
-        return 'OVER_FILLED'
-    elif value == 7:
-        return 'PARTIALLY_FILLED'
-    elif value == 8:
-        return 'FILLED'
-    elif value == 9:
         return 'EXPIRED'
+    elif value == 7:
+        return 'OVER_FILLED'
+    elif value == 8:
+        return 'PARTIALLY_FILLED'
+    elif value == 9:
+        return 'FILLED'
     else:
         return 'UNKNOWN'
 
@@ -59,13 +59,13 @@ cdef inline OrderStatus order_status_from_string(str value):
         return OrderStatus.WORKING
     elif value == 'CANCELLED':
         return OrderStatus.CANCELLED
+    elif value == 'EXPIRED':
+        return OrderStatus.EXPIRED
     elif value == 'OVER_FILLED':
         return OrderStatus.OVER_FILLED
     elif value == 'PARTIALLY_FILLED':
         return OrderStatus.PARTIALLY_FILLED
     elif value == 'FILLED':
         return OrderStatus.FILLED
-    elif value == 'EXPIRED':
-        return OrderStatus.EXPIRED
     else:
         return OrderStatus.UNKNOWN

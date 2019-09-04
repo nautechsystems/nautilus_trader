@@ -14,7 +14,7 @@ from nautilus_trader.common.guid cimport GuidFactory
 from nautilus_trader.common.brokerage cimport CommissionCalculator
 from nautilus_trader.common.execution cimport ExecutionClient
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition
-from nautilus_trader.model.events cimport OrderFillEvent
+from nautilus_trader.model.events cimport AccountStateEvent, OrderFillEvent
 from nautilus_trader.model.currency cimport ExchangeRateCalculator
 from nautilus_trader.model.objects cimport Price, Tick, Bar, Money, Quantity
 from nautilus_trader.model.order cimport Order
@@ -51,9 +51,9 @@ cdef class BacktestExecClient(ExecutionClient):
     cpdef void process_bars(self, Symbol symbol, Bar bid_bar, Bar ask_bar)
     cdef void _process_market(self, Symbol symbol, Price lowest_bid, Price highest_ask)
     cpdef void check_residuals(self)
-    cpdef void reset_account(self)
     cpdef void reset(self)
 
+    cdef AccountStateEvent _reset_account_event(self)
     cdef void _set_slippage_index(self)
 
 # -- EVENT HANDLING ------------------------------------------------------------------------------ #

@@ -12,6 +12,7 @@ from typing import List, Dict
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport ValidString
+from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.quote_type cimport QuoteType
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
@@ -71,7 +72,6 @@ cdef class BacktestExecClient(ExecutionClient):
                  Money starting_capital,
                  FillModel fill_model,
                  CommissionCalculator commission_calculator,
-                 Account account,
                  Portfolio portfolio,
                  TestClock clock,
                  TestGuidFactory guid_factory,
@@ -95,7 +95,6 @@ cdef class BacktestExecClient(ExecutionClient):
 
         self._clock = clock
         self._guid_factory = guid_factory
-        self._account = account
 
         # Convert instruments list to dictionary indexed by symbol
         cdef dict instruments_dict = {}      # type: Dict[Symbol, Instrument]
@@ -108,8 +107,10 @@ cdef class BacktestExecClient(ExecutionClient):
         self.frozen_account = frozen_account
         self.starting_capital = starting_capital
         self.account_capital = starting_capital
-        self.account_cash_start_day = self.account_capital
+        self.account_cash_start_day = starting_capital
         self.account_cash_activity_day = Money.zero()
+        self._account = Account(self._reset_account_event())
+
         self.exchange_calculator = ExchangeRateCalculator()
         self.commission_calculator = commission_calculator
         self.total_commissions = Money.zero()
@@ -122,7 +123,6 @@ cdef class BacktestExecClient(ExecutionClient):
         self.oco_orders = {}           # type: Dict[OrderId, OrderId]
 
         self._set_slippage_index()
-        self.reset_account()
 
     cpdef datetime time_now(self):
         return self._clock.time_now()
@@ -259,25 +259,6 @@ cdef class BacktestExecClient(ExecutionClient):
         for order_id in self.oco_orders.values():
             self._log.warning(f"Residual OCO {order_id}")
 
-    cpdef void reset_account(self):
-        """
-        Resets the account.
-        """
-        cdef AccountStateEvent initial_starting = AccountStateEvent(
-            AccountId('SIMULATED', '01'),
-            self._account.currency,
-            self.starting_capital,
-            self.starting_capital,
-            Money.zero(),
-            Money.zero(),
-            Money.zero(),
-            Decimal(0),
-            ValidString(),
-            self._guid_factory.generate(),
-            self._clock.time_now())
-
-        self._account.apply(initial_starting)
-
     cpdef void reset(self):
         """
         Reset the execution client by returning all stateful internal values to 
@@ -294,7 +275,7 @@ cdef class BacktestExecClient(ExecutionClient):
         self.atomic_child_orders = {}  # type: Dict[OrderId, List[Order]]
         self.oco_orders = {}           # type: Dict[OrderId, OrderId]
 
-        self.reset_account()
+        self._account.apply(self._reset_account_event())
         self._log.info("Reset.")
 
     cpdef void dispose(self):
@@ -302,6 +283,23 @@ cdef class BacktestExecClient(ExecutionClient):
         TBD.
         """
         pass
+
+    cdef AccountStateEvent _reset_account_event(self):
+        """
+        Resets the account.
+        """
+        return AccountStateEvent(
+            AccountId('SIMULATED', '01', AccountType.SIMULATED),
+            self._account.currency,
+            self.starting_capital,
+            self.starting_capital,
+            Money.zero(),
+            Money.zero(),
+            Money.zero(),
+            Decimal(0),
+            ValidString(),
+            self._guid_factory.generate(),
+            self._clock.time_now())
 
     cdef void _set_slippage_index(self):
         cdef dict slippage_index = {}

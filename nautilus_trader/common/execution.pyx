@@ -7,7 +7,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.datetime cimport datetime
-from typing import Set, List, Dict
+from typing import Set, Dict
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.order cimport Order
@@ -860,7 +860,6 @@ cdef class ExecutionEngine:
 
     def __init__(self,
                  ExecutionDatabase database,
-                 Account account,
                  Portfolio portfolio,
                  Clock clock,
                  GuidFactory guid_factory,
@@ -879,8 +878,8 @@ cdef class ExecutionEngine:
 
         self.trader_id = database.trader_id
         self.database = database
-        self.account = account
         self.portfolio = portfolio
+        self.account = None
 
         self.command_count = 0
         self.event_count = 0
@@ -1072,7 +1071,9 @@ cdef class ExecutionEngine:
 
     cdef void _handle_account_event(self, AccountStateEvent event):
         self._log.debug(str(event))
-        if not self.account.initialized or self.account.id == event.account_id:
+        if self.account is None:
+            self.account = Account(event)
+        elif self.account.id == event.account_id:
             self.account.apply(event)
             self.database.update_account(self.account)
             self.portfolio.handle_transaction(event)

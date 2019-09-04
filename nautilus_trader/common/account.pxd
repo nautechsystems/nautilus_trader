@@ -9,20 +9,23 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.types cimport ValidString
+from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.events cimport AccountStateEvent
 from nautilus_trader.model.identifiers cimport Brokerage, AccountNumber, AccountId
+from nautilus_trader.model.objects cimport Money
 
 
 cdef class Account:
     cdef list _events
+    cdef readonly AccountStateEvent last_event
+    cdef readonly int event_count
 
-    cdef readonly bint initialized
     cdef readonly AccountId id
     cdef readonly Brokerage broker
-    cdef readonly AccountNumber number
+    cdef readonly AccountNumber account_number
+    cdef readonly AccountType account_type
     cdef readonly Currency currency
-    cdef readonly free_equity
     cdef readonly cash_balance
     cdef readonly cash_start_day
     cdef readonly cash_activity_day
@@ -30,11 +33,11 @@ cdef class Account:
     cdef readonly margin_used_maintenance
     cdef readonly margin_ratio
     cdef readonly ValidString margin_call_status
+    cdef readonly free_equity
+
     cdef readonly datetime last_updated
-    cdef readonly AccountStateEvent last_event
-    cdef readonly int event_count
 
     cpdef list get_events(self)
-    cpdef void initialize(self, AccountStateEvent event)
     cpdef void apply(self, AccountStateEvent event)
-    cpdef void reset(self)
+
+    cdef Money _calculate_free_equity(self)
