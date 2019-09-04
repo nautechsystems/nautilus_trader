@@ -861,6 +861,7 @@ cdef class ExecutionEngine:
     def __init__(self,
                  ExecutionDatabase database,
                  Portfolio portfolio,
+                 Account account,
                  Clock clock,
                  GuidFactory guid_factory,
                  Logger logger):
@@ -879,7 +880,7 @@ cdef class ExecutionEngine:
         self.trader_id = database.trader_id
         self.database = database
         self.portfolio = portfolio
-        self.account = None
+        self.account = account
 
         self.command_count = 0
         self.event_count = 0

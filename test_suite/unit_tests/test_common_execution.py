@@ -197,9 +197,8 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
 
     def test_can_update_account(self):
         # Arrange
-        account = Account()
         event = AccountStateEvent(
-            AccountId('SIMULATED', '123456'),
+            AccountId.py_from_string('SIMULATED-123456-SIMULATED'),
             Currency.USD,
             Money(1000000),
             Money(1000000),
@@ -211,7 +210,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
-        account.apply(event)
+        account = Account(event)
 
         # Act
         self.database.update_account(account)

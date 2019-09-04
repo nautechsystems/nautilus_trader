@@ -73,6 +73,7 @@ cdef class BacktestExecClient(ExecutionClient):
                  FillModel fill_model,
                  CommissionCalculator commission_calculator,
                  Portfolio portfolio,
+                 Account account,
                  TestClock clock,
                  TestGuidFactory guid_factory,
                  Logger logger):
@@ -109,7 +110,7 @@ cdef class BacktestExecClient(ExecutionClient):
         self.account_capital = starting_capital
         self.account_cash_start_day = starting_capital
         self.account_cash_activity_day = Money.zero()
-        self._account = Account(self._reset_account_event())
+        self._account = account.apply(self._reset_account_event())
 
         self.exchange_calculator = ExchangeRateCalculator()
         self.commission_calculator = commission_calculator
