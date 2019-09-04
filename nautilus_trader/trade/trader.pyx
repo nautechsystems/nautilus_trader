@@ -49,7 +49,6 @@ cdef class Trader:
         self._exec_engine = exec_engine
         self._report_provider = ReportProvider()
 
-        self.account = self._exec_engine.account
         self.portfolio = self._exec_engine.portfolio
         self.is_running = False
         self.started_datetimes = []  # type: List[datetime]

@@ -26,12 +26,12 @@ cdef class Account:
     cdef readonly AccountNumber account_number
     cdef readonly AccountType account_type
     cdef readonly Currency currency
-    cdef readonly cash_balance
-    cdef readonly cash_start_day
-    cdef readonly cash_activity_day
-    cdef readonly margin_used_liquidation
-    cdef readonly margin_used_maintenance
-    cdef readonly margin_ratio
+    cdef readonly Money cash_balance
+    cdef readonly Money cash_start_day
+    cdef readonly Money cash_activity_day
+    cdef readonly Money margin_used_liquidation
+    cdef readonly Money margin_used_maintenance
+    cdef readonly object margin_ratio
     cdef readonly ValidString margin_call_status
     cdef readonly free_equity
 

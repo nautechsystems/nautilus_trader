@@ -6,8 +6,6 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from decimal import Decimal
-
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.events cimport AccountStateEvent
 from nautilus_trader.model.objects cimport Money
@@ -18,52 +16,31 @@ cdef class Account:
     Represents a brokerage account.
     """
 
-    def __init__(self, AccountStateEvent event=None):
+    def __init__(self, AccountStateEvent event):
         """
         Initializes a new instance of the Account class.
 
         :param: event: The initial account state event.
         """
-        if event is None:
-            self._events = []
-            self.event_count = 0
-            self.last_event = None
+        self._events = [event]
+        self.event_count = 1
+        self.last_event = event
 
-            self.id = None
-            self.broker = None
-            self.account_number = None
-            self.account_type = AccountType.UNDEFINED
-            self.currency = Currency.USD
-            self.cash_balance = Money(0)
-            self.cash_start_day = Money(0)
-            self.cash_activity_day = Money(0)
-            self.margin_used_liquidation = Money(0)
-            self.margin_used_maintenance = Money(0)
-            self.margin_ratio = Decimal(0)
-            self.margin_call_status = ValidString('')
-            self.free_equity = Money(0)
+        self.id = event.account_id
+        self.broker = self.id.broker
+        self.account_number = self.id.account_number
+        self.account_type = self.id.account_type
+        self.currency = event.currency
+        self.cash_balance = event.cash_balance
+        self.cash_start_day = event.cash_start_day
+        self.cash_activity_day = event.cash_activity_day
+        self.margin_used_liquidation = event.margin_used_liquidation
+        self.margin_used_maintenance = event.margin_used_maintenance
+        self.margin_ratio = event.margin_ratio
+        self.margin_call_status = event.margin_call_status
+        self.free_equity = self._calculate_free_equity()
 
-            self.last_updated = None
-        else:
-            self._events = [event]
-            self.event_count = 1
-            self.last_event = event
-
-            self.id = event.account_id
-            self.broker = self.id.broker
-            self.account_number = self.id.account_number
-            self.account_type = self.id.account_type
-            self.currency = event.currency
-            self.cash_balance = event.cash_balance
-            self.cash_start_day = event.cash_start_day
-            self.cash_activity_day = event.cash_activity_day
-            self.margin_used_liquidation = event.margin_used_liquidation
-            self.margin_used_maintenance = event.margin_used_maintenance
-            self.margin_ratio = event.margin_ratio
-            self.margin_call_status = event.margin_call_status
-            self.free_equity = self._calculate_free_equity()
-
-            self.last_updated = event.timestamp
+        self.last_updated = event.timestamp
 
     def __eq__(self, Account other) -> bool:
         """

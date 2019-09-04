@@ -33,7 +33,6 @@ cdef class BacktestEngine:
     cdef readonly LoggerAdapter log
     cdef readonly Logger logger
     cdef readonly Logger test_logger
-    cdef readonly Account account
     cdef readonly Portfolio portfolio
     cdef readonly Trader trader
     cdef readonly datetime created_time

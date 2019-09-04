@@ -70,10 +70,10 @@ cdef class BacktestExecClient(ExecutionClient):
                  list instruments: List[Instrument],
                  bint frozen_account,
                  Money starting_capital,
+                 Currency account_currency,
                  FillModel fill_model,
                  CommissionCalculator commission_calculator,
                  Portfolio portfolio,
-                 Account account,
                  TestClock clock,
                  TestGuidFactory guid_factory,
                  Logger logger):
@@ -84,6 +84,7 @@ cdef class BacktestExecClient(ExecutionClient):
         :param instruments: The instruments needed for the backtest.
         :param frozen_account: The flag indicating whether the account should be frozen (no pnl applied).
         :param starting_capital: The starting capital for the backtest account (> 0).
+        :param account_currency: The currency for the backtest account.
         :param commission_calculator: The commission calculator.
         :param clock: The clock for the component.
         :param clock: The GUID factory for the component.
@@ -107,10 +108,14 @@ cdef class BacktestExecClient(ExecutionClient):
         self.day_number = 0
         self.frozen_account = frozen_account
         self.starting_capital = starting_capital
+        self.account_currency = account_currency
         self.account_capital = starting_capital
         self.account_cash_start_day = starting_capital
         self.account_cash_activity_day = Money.zero()
-        self._account = account.apply(self._reset_account_event())
+
+        cdef AccountStateEvent reset_account = self.reset_account_event()
+        self._account = Account(reset_account)
+        self._exec_engine.handle_event(reset_account)
 
         self.exchange_calculator = ExchangeRateCalculator()
         self.commission_calculator = commission_calculator
@@ -271,12 +276,12 @@ cdef class BacktestExecClient(ExecutionClient):
         self.account_capital = self.starting_capital
         self.account_cash_start_day = self.account_capital
         self.account_cash_activity_day = Money.zero()
+        self.generate_reset_account_event()
         self.total_commissions = Money.zero()
         self.working_orders = {}       # type: Dict[OrderId, Order]
         self.atomic_child_orders = {}  # type: Dict[OrderId, List[Order]]
         self.oco_orders = {}           # type: Dict[OrderId, OrderId]
 
-        self._account.apply(self._reset_account_event())
         self._log.info("Reset.")
 
     cpdef void dispose(self):
@@ -285,13 +290,13 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         pass
 
-    cdef AccountStateEvent _reset_account_event(self):
+    cdef AccountStateEvent reset_account_event(self):
         """
         Resets the account.
         """
         return AccountStateEvent(
-            AccountId('SIMULATED', '01', AccountType.SIMULATED),
-            self._account.currency,
+            AccountId('NAUTILUS', '001', AccountType.SIMULATED),
+            self.account_currency,
             self.starting_capital,
             self.starting_capital,
             Money.zero(),

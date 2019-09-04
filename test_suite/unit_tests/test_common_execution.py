@@ -52,12 +52,12 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         logger = TestLogger()
 
         self.trader_id = TraderId('TESTER', '000')
+        self.account_id = TestStubs.account_id()
 
         self.strategy = TradingStrategy(order_id_tag='001')
         self.strategy.change_clock(clock)
         self.strategy.change_logger(logger)
 
-        self.account = Account()
         self.database = InMemoryExecutionDatabase(trader_id=self.trader_id, logger=logger)
 
     def test_can_add_strategy(self):
@@ -195,6 +195,29 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         self.assertTrue(position.id not in self.database.get_positions_open())
         self.assertEqual(position, self.database.get_position_for_order(order1.id))
 
+    def test_can_add_account(self):
+        # Arrange
+        event = AccountStateEvent(
+            AccountId.py_from_string('SIMULATED-123456-SIMULATED'),
+            Currency.USD,
+            Money(1000000),
+            Money(1000000),
+            Money.zero(),
+            Money.zero(),
+            Money.zero(),
+            Decimal(0),
+            ValidString(),
+            GUID(uuid.uuid4()),
+            UNIX_EPOCH)
+
+        account = Account(event)
+
+        # Act
+        self.database.add_account(account)
+
+        # Assert
+        self.assertTrue(True)  # Did not raise exception
+
     def test_can_update_account(self):
         # Arrange
         event = AccountStateEvent(
@@ -211,6 +234,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
             UNIX_EPOCH)
 
         account = Account(event)
+        self.database.add_account(account)
 
         # Act
         self.database.update_account(account)
@@ -404,7 +428,6 @@ class ExecutionEngineTests(unittest.TestCase):
             id_tag_strategy=IdTag('001'),
             clock=self.clock)
 
-        self.account = Account()
         self.portfolio = Portfolio(
             clock=self.clock,
             guid_factory=self.guid_factory,
@@ -413,7 +436,6 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_db = InMemoryExecutionDatabase(trader_id=self.trader_id, logger=logger)
         self.exec_engine = ExecutionEngine(
             database=self.exec_db,
-            account=self.account,
             portfolio=self.portfolio,
             clock=self.clock,
             guid_factory=self.guid_factory,
@@ -487,7 +509,7 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            self.account.id,
+            account_id,
             position_id,
             order,
             self.guid_factory.generate(),
@@ -517,7 +539,7 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            self.account.id,
+            account_id,
             position_id,
             order,
             self.guid_factory.generate(),
@@ -568,7 +590,7 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order1 = SubmitOrder(
             self.trader_id,
             strategy.id,
-            self.account.id,
+            account_id,
             position_id,
             order1,
             self.guid_factory.generate(),
@@ -577,7 +599,7 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order2 = SubmitOrder(
             self.trader_id,
             strategy.id,
-            self.account.id,
+            account_id,
             position_id,
             order2,
             self.guid_factory.generate(),
@@ -632,7 +654,7 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order1 = SubmitOrder(
             self.trader_id,
             strategy.id,
-            self.account.id,
+            account_id,
             position_id,
             order1,
             self.guid_factory.generate(),
@@ -641,7 +663,7 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order2 = SubmitOrder(
             self.trader_id,
             strategy.id,
-            self.account.id,
+            account_id,
             position_id,
             order2,
             self.guid_factory.generate(),
@@ -701,7 +723,7 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order1 = SubmitOrder(
             self.trader_id,
             strategy1.id,
-            self.account.id,
+            account_id,
             position_id1,
             order1,
             self.guid_factory.generate(),
@@ -710,7 +732,7 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order2 = SubmitOrder(
             self.trader_id,
             strategy2.id,
-            self.account.id,
+            account_id,
             position_id2,
             order2,
             self.guid_factory.generate(),
@@ -789,7 +811,7 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order1 = SubmitOrder(
             self.trader_id,
             strategy1.id,
-            self.account.id,
+            account_id,
             position_id1,
             order1,
             self.guid_factory.generate(),
@@ -798,7 +820,7 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order2 = SubmitOrder(
             self.trader_id,
             strategy1.id,
-            self.account.id,
+            account_id,
             position_id1,
             order2,
             self.guid_factory.generate(),
@@ -807,7 +829,7 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order3 = SubmitOrder(
             self.trader_id,
             strategy2.id,
-            self.account.id,
+            account_id,
             position_id2,
             order3,
             self.guid_factory.generate(),
@@ -818,7 +840,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
         order3_filled = OrderFilled(
             order3.id,
-            self.account.id,
+            account_id,
             ExecutionId('E3'),
             ExecutionTicket('T3'),
             AUDUSD_FXCM,

@@ -13,6 +13,7 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.guid cimport GuidFactory
 from nautilus_trader.common.brokerage cimport CommissionCalculator
 from nautilus_trader.common.execution cimport ExecutionClient
+from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition
 from nautilus_trader.model.events cimport AccountStateEvent, OrderFillEvent
 from nautilus_trader.model.currency cimport ExchangeRateCalculator
@@ -30,6 +31,7 @@ cdef class BacktestExecClient(ExecutionClient):
     cdef readonly dict data_ticks
     cdef readonly int day_number
     cdef readonly bint frozen_account
+    cdef readonly Currency account_currency
     cdef readonly Money starting_capital
     cdef readonly Money account_capital
     cdef readonly Money account_cash_start_day
@@ -53,7 +55,7 @@ cdef class BacktestExecClient(ExecutionClient):
     cpdef void check_residuals(self)
     cpdef void reset(self)
 
-    cdef AccountStateEvent _reset_account_event(self)
+    cdef AccountStateEvent reset_account_event(self)
     cdef void _set_slippage_index(self)
 
 # -- EVENT HANDLING ------------------------------------------------------------------------------ #
