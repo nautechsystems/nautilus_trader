@@ -44,7 +44,6 @@ cdef class TradingNode:
     cdef LiveExecClient _exec_client
 
     cdef readonly TraderId trader_id
-    cdef readonly Account account
     cdef readonly Portfolio portfolio
     cdef readonly Trader trader
 
@@ -111,7 +110,6 @@ cdef class TradingNode:
             guid_factory=self._guid_factory,
             logger=self._logger)
 
-        self.account = Account()
         self.portfolio = Portfolio(
             clock=self._clock,
             guid_factory=self._guid_factory,
@@ -132,7 +130,6 @@ cdef class TradingNode:
 
         self._exec_engine = LiveExecutionEngine(
             database=self._exec_db,
-            account=self.account,
             portfolio=self.portfolio,
             clock=self._clock,
             guid_factory=self._guid_factory,

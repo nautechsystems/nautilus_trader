@@ -50,7 +50,6 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.strategy.change_clock(clock)
         self.strategy.change_logger(logger)
 
-        self.account = Account()
         self.database = RedisExecutionDatabase(
             trader_id=self.trader_id,
             host='localhost',
@@ -221,29 +220,28 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.assertTrue(position.id not in self.database.get_positions_open())
         self.assertEqual(position, self.database.get_position_for_order(order1.id))
 
+    def test_can_add_account(self):
+        # Arrange
+        event = TestStubs.account_event()
+        account = Account(event)
+
+        # Act
+        self.database.add_account(account)
+
+        # Assert
+        self.assertEqual(account, self.database.get_account(account.id))
+
     def test_can_update_account(self):
         # Arrange
-        account = Account()
-        event = AccountStateEvent(
-            AccountId('SIMULATED', '123456'),
-            Currency.USD,
-            Money(1000000),
-            Money(1000000),
-            Money.zero(),
-            Money.zero(),
-            Money.zero(),
-            Decimal(0),
-            ValidString(),
-            GUID(uuid.uuid4()),
-            UNIX_EPOCH)
-
-        account.apply(event)
+        event = TestStubs.account_event()
+        account = Account(event)
+        self.database.add_account(account)
 
         # Act
         self.database.update_account(account)
 
         # Assert
-        self.assertTrue(True)  # Did not raise exception
+        self.assertEqual(account, self.database.get_account(account.id))
 
     def test_can_delete_strategy(self):
         # Arrange
