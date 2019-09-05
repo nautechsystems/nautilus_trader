@@ -778,7 +778,6 @@ class MsgPackInstrumentSerializerTests(unittest.TestCase):
         serializer = BsonInstrumentSerializer()
 
         instrument = Instrument(
-            instrument_id=InstrumentId('AUDUSD.FXCM'),
             symbol=Symbol('AUDUSD', Venue('FXCM')),
             broker_symbol='AUD/USD',
             quote_currency=Currency.USD,

@@ -43,7 +43,6 @@ cdef class InstrumentLoader:
             Condition.true(tick_precision == 3, 'JPY tick_precision == 3')
 
         return Instrument(
-            instrument_id=InstrumentId(str(symbol)),
             symbol=symbol,
             broker_symbol=symbol.code[:3] + '/' + symbol.code[3:],
             quote_currency=quote_currency,

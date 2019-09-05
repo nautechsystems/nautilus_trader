@@ -5,7 +5,7 @@
   },
 
   "logging": {
-    "log_level_console": "DEBUG",
+    "log_level_console": "VERBOSE",
     "log_level_file": "DEBUG",
     "log_level_store": "WARNING",
     "log_to_file": true,
@@ -26,11 +26,11 @@
     "inst_pub_port": 55506
   },
 
-  "accounts": [{
+  "account": {
     "broker": "FXCM",
     "account_number": "02851908",
     "account_type": "DEMO"
-  }],
+  },
 
   "exec_database": {
     "type": "redis",
@@ -41,7 +41,7 @@
   "exec_client": {
     "service_name": "NautilusExecutor",
     "service_address": "localhost",
-    "events_topic": "NAUTILUS:EVENTS",
+    "events_topic": "EVENTS",
     "commands_port": 55555,
     "events_port": 55556
   }

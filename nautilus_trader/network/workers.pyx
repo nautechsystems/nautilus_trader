@@ -62,14 +62,14 @@ cdef class MQWorker:
         self._log = LoggerAdapter(worker_name, logger)
         self._cycles = 0
 
-    cpdef void connect(self):
+    cpdef void connect(self) except *:
         """
         Connect to the service.
         """
         self._zmq_socket.connect(self._service_address)
         self._log.info(f"Connected to {self._service_name} at {self._service_address}")
 
-    cpdef void disconnect(self):
+    cpdef void disconnect(self) except *:
         """
         Disconnect from the service.
         :return 
@@ -77,7 +77,7 @@ cdef class MQWorker:
         self._zmq_socket.disconnect(self._service_address)
         self._log.info(f"Disconnected from {self._service_name} at {self._service_address}")
 
-    cpdef void dispose(self):
+    cpdef void dispose(self) except *:
         """
         Dispose of the MQWorker which close the socket (call disconnect first).
         """
@@ -194,7 +194,7 @@ cdef class SubscriberWorker(MQWorker):
         self._thread = threading.Thread(target=self._consume_messages, daemon=True)
         self._thread.start()
 
-    cpdef void subscribe(self, str topic):
+    cpdef void subscribe(self, str topic) except *:
         """
         Subscribe the worker to the given topic.
         
@@ -203,7 +203,7 @@ cdef class SubscriberWorker(MQWorker):
         self._zmq_socket.setsockopt(zmq.SUBSCRIBE, topic.encode(UTF8))
         self._log.debug(f"Subscribed to topic {topic}.")
 
-    cpdef void unsubscribe(self, str topic):
+    cpdef void unsubscribe(self, str topic) except *:
         """
         Unsubscribe the worker from the given topic.
         
@@ -212,7 +212,7 @@ cdef class SubscriberWorker(MQWorker):
         self._zmq_socket.setsockopt(zmq.UNSUBSCRIBE, topic.encode(UTF8))
         self._log.debug(f"Unsubscribed from topic {topic}.")
 
-    cpdef void _consume_messages(self):
+    cpdef void _consume_messages(self) except *:
         self._log.info("Running...")
 
         cdef str topic

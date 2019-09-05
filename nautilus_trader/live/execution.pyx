@@ -143,6 +143,10 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         cdef list account_keys = self._redis.keys(f'{self.key_accounts}*')
 
+        if len(account_keys) == 0:
+            self._log.info('No accounts found in database.')
+            return
+
         for key_bytes in account_keys:
             key = key_bytes.decode(UTF8)
             events = self._redis.lrange(name=key, start=0, end=-1)
@@ -1036,12 +1040,13 @@ cdef class LiveExecClient(ExecutionClient):
     cpdef void cancel_order(self, CancelOrder command):
         self._command_handler(command)
 
-    cpdef void _command_handler(self, Command command):
-        self._log.debug(f"Sending command {command} ...")
-        cdef bytes response_bytes = self._commands_worker.send(self._command_serializer.serialize(command))
+    cpdef void _command_handler(self, Command command) except *:
+        self._log.debug(f"Sending command {command}...")
+        cdef bytes command_bytes = self._command_serializer.serialize(command)
+        cdef bytes response_bytes = self._commands_worker.send(command_bytes)
         cdef Response response =  self._response_serializer.deserialize(response_bytes)
         self._log.debug(f"Received response {response}")
 
-    cpdef void _event_handler(self, str topic, bytes event_bytes):
+    cpdef void _event_handler(self, str topic, bytes event_bytes) except *:
         cdef Event event = self._event_serializer.deserialize(event_bytes)
         self._exec_engine.handle_event(event)
