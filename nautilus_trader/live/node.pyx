@@ -11,10 +11,12 @@ import pymongo
 import redis
 import msgpack
 import zmq
+import time
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.identifiers cimport Venue, TraderId
-from nautilus_trader.common.account cimport Account
+from nautilus_trader.model.c_enums.account_type cimport account_type_from_string
+from nautilus_trader.model.identifiers cimport Venue, AccountId, TraderId
+from nautilus_trader.model.commands cimport AccountInquiry
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.guid cimport LiveGuidFactory
 from nautilus_trader.common.execution cimport InMemoryExecutionDatabase, ExecutionDatabase
@@ -26,8 +28,6 @@ from nautilus_trader.serialization.serializers cimport MsgPackCommandSerializer,
 from nautilus_trader.live.logger cimport LogStore, LiveLogger
 from nautilus_trader.live.data cimport LiveDataClient
 from nautilus_trader.live.execution cimport RedisExecutionDatabase, LiveExecutionEngine, LiveExecClient
-
-from test_kit.stubs import TestStubs
 
 
 cdef class TradingNode:
@@ -72,7 +72,7 @@ cdef class TradingNode:
         config_trader = config['trader']
         config_log = config['logging']
         config_data = config['data_client']
-        config_accounts = config['accounts']
+        config_account = config['account']
         config_exec_db = config['exec_database']
         config_exec_client = config['exec_client']
 
@@ -148,8 +148,21 @@ cdef class TradingNode:
             events_port=config_exec_client['events_port'],
             logger=self._logger)
 
-        self._exec_client.account_inquiry()
         self._exec_engine.register_client(self._exec_client)
+
+        cdef AccountId account_id = AccountId(
+            config_account['broker'],
+            config_account['account_number'],
+            account_type_from_string(config_account['account_type']))
+
+        account_inquiry = AccountInquiry(
+            account_id=account_id,
+            command_id=self._guid_factory.generate(),
+            command_timestamp=self._clock.time_now())
+
+        self._exec_client.account_inquiry(account_inquiry)
+
+        time.sleep(3)
 
         self._data_client.update_instruments()
 

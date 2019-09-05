@@ -19,9 +19,9 @@ cdef class MQWorker:
 
     cdef readonly str name
 
-    cpdef void connect(self)
-    cpdef void disconnect(self)
-    cpdef void dispose(self)
+    cpdef void connect(self) except *
+    cpdef void disconnect(self) except *
+    cpdef void dispose(self) except *
 
 
 cdef class RequestWorker(MQWorker):
@@ -32,6 +32,6 @@ cdef class SubscriberWorker(MQWorker):
     cdef object _thread
     cdef object _handler
 
-    cpdef void subscribe(self, str topic)
-    cpdef void unsubscribe(self, str topic)
-    cpdef void _consume_messages(self)
+    cpdef void subscribe(self, str topic) except *
+    cpdef void unsubscribe(self, str topic) except *
+    cpdef void _consume_messages(self) except *
