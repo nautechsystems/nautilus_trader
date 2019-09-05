@@ -93,7 +93,6 @@ class TestStubs:
     @staticmethod
     def instrument_gbpusd():
         return Instrument(
-            InstrumentId('GBPUSD.FXCM'),
             Symbol('GBPUSD', Venue('FXCM')),
             'GBP/USD',
             Currency.USD,
@@ -114,7 +113,6 @@ class TestStubs:
     @staticmethod
     def instrument_usdjpy():
         return Instrument(
-            InstrumentId('USDJPY.FXCM'),
             Symbol('USDJPY', Venue('FXCM')),
             'USD/JPY',
             Currency.JPY,
