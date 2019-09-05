@@ -858,7 +858,6 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
     def __init__(self,
                  ExecutionDatabase database,
-                 Account account,
                  Portfolio portfolio,
                  Clock clock,
                  GuidFactory guid_factory,
@@ -875,7 +874,6 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         """
         super().__init__(
             database=database,
-            account=account,
             portfolio=portfolio,
             clock=clock,
             guid_factory=guid_factory,

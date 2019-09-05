@@ -30,7 +30,7 @@ class PositionTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
-        self.account_id = AccountId('FXCM', '0999999')
+        self.account_id = TestStubs.account_id()
         self.order_factory = OrderFactory(
             id_tag_trader=IdTag('001'),
             id_tag_strategy=IdTag('001'),

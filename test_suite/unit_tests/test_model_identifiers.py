@@ -9,6 +9,7 @@
 import unittest
 
 from nautilus_trader.core.types import Identifier
+from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.identifiers import (
     Symbol,
     Venue,
@@ -129,12 +130,12 @@ class IdentifierTests(unittest.TestCase):
     def test_account_identifier(self):
         # Arrange
         # Act
-        account_id1 = AccountId('FXCM', '02851908')
-        account_id2 = AccountId('FXCM', '09999999')
+        account_id1 = AccountId('FXCM', '02851908', AccountType.DEMO)
+        account_id2 = AccountId('FXCM', '09999999', AccountType.DEMO)
 
         # Assert
         self.assertEqual(account_id1, account_id1)
         self.assertNotEqual(account_id1, account_id2)
-        self.assertEqual('FXCM-02851908', account_id1.value)
+        self.assertEqual('FXCM-02851908-DEMO', account_id1.value)
         self.assertEqual(Brokerage('FXCM'), account_id1.broker)
-        self.assertEqual(account_id1, AccountId.py_from_string('FXCM-02851908'))
+        self.assertEqual(account_id1, AccountId.py_from_string('FXCM-02851908-DEMO'))

@@ -48,8 +48,6 @@ class LiveExecutionTests(unittest.TestCase):
         guid_factory = LiveGuidFactory()
         logger = LiveLogger()
 
-        account = Account()
-
         self.portfolio = Portfolio(
             clock=clock,
             guid_factory=guid_factory,
@@ -58,7 +56,6 @@ class LiveExecutionTests(unittest.TestCase):
         self.exec_db = InMemoryExecutionDatabase(trader_id=trader_id, logger=logger)
         self.exec_engine = LiveExecutionEngine(
             database=self.exec_db,
-            account=account,
             portfolio=self.portfolio,
             clock=clock,
             guid_factory=guid_factory,
