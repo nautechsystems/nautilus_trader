@@ -181,9 +181,11 @@ class TestStubs:
         return AccountId('NAUTILUS', '000', AccountType.SIMULATED)
 
     @staticmethod
-    def account_event():
+    def account_event(account_id=None):
+        if account_id is None:
+            account_id = TestStubs.account_id()
         return AccountStateEvent(
-            TestStubs.account_id(),
+            account_id,
             Currency.USD,
             Money(1000000),
             Money(1000000),

@@ -11,12 +11,12 @@ import pymongo
 import redis
 import msgpack
 import zmq
-import time
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.account_type cimport account_type_from_string
 from nautilus_trader.model.identifiers cimport Venue, AccountId, TraderId
 from nautilus_trader.model.commands cimport AccountInquiry
+from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.guid cimport LiveGuidFactory
 from nautilus_trader.common.execution cimport InMemoryExecutionDatabase, ExecutionDatabase
@@ -29,6 +29,7 @@ from nautilus_trader.live.logger cimport LogStore, LiveLogger
 from nautilus_trader.live.data cimport LiveDataClient
 from nautilus_trader.live.execution cimport RedisExecutionDatabase, LiveExecutionEngine, LiveExecClient
 
+from test_kit.stubs import TestStubs
 
 cdef class TradingNode:
     """
@@ -46,6 +47,7 @@ cdef class TradingNode:
     cdef LiveExecClient _exec_client
 
     cdef readonly TraderId trader_id
+    cdef readonly AccountId account_id
     cdef readonly Portfolio portfolio
     cdef readonly Trader trader
 
@@ -79,6 +81,11 @@ cdef class TradingNode:
         self.trader_id = TraderId(
             name=config_trader['name'],
             order_id_tag=config_trader['order_id_tag'])
+
+        self.account_id = AccountId(
+            config_account['broker'],
+            config_account['account_number'],
+            account_type_from_string(config_account['account_type']))
 
         self._log_store = LogStore(
             trader_id=self.trader_id,
@@ -138,6 +145,8 @@ cdef class TradingNode:
             guid_factory=self._guid_factory,
             logger=self._logger)
 
+        self._exec_engine.handle_event(TestStubs.account_event(self.account_id))
+
         self._exec_client = LiveExecClient(
             exec_engine=self._exec_engine,
             zmq_context=self._zmq_context,
@@ -149,22 +158,6 @@ cdef class TradingNode:
             logger=self._logger)
 
         self._exec_engine.register_client(self._exec_client)
-
-        cdef AccountId account_id = AccountId(
-            config_account['broker'],
-            config_account['account_number'],
-            account_type_from_string(config_account['account_type']))
-
-        account_inquiry = AccountInquiry(
-            account_id=account_id,
-            command_id=self._guid_factory.generate(),
-            command_timestamp=self._clock.time_now())
-
-        self._exec_client.account_inquiry(account_inquiry)
-
-        time.sleep(3)
-
-        self._data_client.update_instruments()
 
         self.trader = Trader(
             trader_id=self.trader_id,
@@ -191,6 +184,12 @@ cdef class TradingNode:
         self._data_client.connect()
         self._exec_client.connect()
         self._data_client.update_instruments()
+
+        account_inquiry = AccountInquiry(
+            account_id=self.account_id,
+            command_id=self._guid_factory.generate(),
+            command_timestamp=self._clock.time_now())
+        self._exec_client.account_inquiry(account_inquiry)
 
     cpdef void start(self):
         """
