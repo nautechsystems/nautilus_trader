@@ -447,6 +447,14 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
 # -- QUERIES --------------------------------------------------------------------------------------"
 
+    cpdef Account get_first_account(self):
+        """
+        Return the first account from the accounts cache.
+
+        :return Account.
+        """
+        return next(iter(self._cached_accounts.values()))
+
     cpdef Account get_account(self, AccountId account_id):
         """
         Return the order matching the given identifier (if found).

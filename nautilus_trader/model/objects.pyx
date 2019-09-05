@@ -414,8 +414,10 @@ cdef class Money:
         :param value: The value of the money.
         Note: Value is rounded to 2 decimal places of precision.
         """
+        cdef str value_str
         if isinstance(value, str):
-            self.value = Decimal(f'{float(value):.2f}')
+            value_str = value.replace(',', '')
+            self.value = Decimal(f'{float(value_str):.2f}')
         else:
             self.value = Decimal(f'{value:.2f}')
 
@@ -1219,7 +1221,6 @@ cdef class Instrument:
     """
 
     def __init__(self,
-                 InstrumentId instrument_id,
                  Symbol symbol,
                  str broker_symbol,
                  Currency quote_currency,
@@ -1239,7 +1240,6 @@ cdef class Instrument:
         """
         Initializes a new instance of the Instrument class.
 
-        :param symbol: The instruments identifier.
         :param symbol: The instruments symbol.
         :param broker_symbol: The instruments broker symbol.
         :param quote_currency: The instruments quote currency.
@@ -1268,7 +1268,7 @@ cdef class Instrument:
         Condition.positive(min_trade_size.value, 'min_trade_size')
         Condition.positive(max_trade_size.value, 'max_trade_size')
 
-        self.id = instrument_id
+        self.id = InstrumentId(symbol.value)
         self.symbol = symbol
         self.broker_symbol = broker_symbol
         self.quote_currency = quote_currency

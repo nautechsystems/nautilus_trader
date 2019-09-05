@@ -5,7 +5,7 @@
   },
 
   "logging": {
-    "log_level_console": "INFO",
+    "log_level_console": "DEBUG",
     "log_level_file": "DEBUG",
     "log_level_store": "WARNING",
     "log_to_file": true,

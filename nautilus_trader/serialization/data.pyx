@@ -184,7 +184,6 @@ cdef class BsonInstrumentSerializer(InstrumentSerializer):
         :return bytes.
         """
         return BsonSerializer.serialize({
-            ID: instrument.id.value,
             SYMBOL: instrument.symbol.value,
             BROKER_SYMBOL: instrument.broker_symbol,
             QUOTE_CURRENCY: currency_to_string(instrument.quote_currency),
@@ -213,7 +212,6 @@ cdef class BsonInstrumentSerializer(InstrumentSerializer):
         cdef dict deserialized = BsonSerializer.deserialize(instrument_bytes)
 
         return Instrument(
-            instrument_id=InstrumentId(deserialized[ID]),
             symbol=Symbol.from_string(deserialized[SYMBOL]),
             broker_symbol=deserialized[BROKER_SYMBOL],
             quote_currency=Currency[(deserialized[QUOTE_CURRENCY])],

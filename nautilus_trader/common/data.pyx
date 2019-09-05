@@ -298,7 +298,7 @@ cdef class DataClient:
             # Remove instrument key if already exists
             del self._instruments[instrument.symbol]
         self._instruments[instrument.symbol] = instrument
-        self._log.info(f"Updated the {instrument.symbol} instrument.")
+        self._log.info(f"Updated instrument {instrument.symbol}")
 
         cdef InstrumentHandler handler
         if instrument.symbol in self._instrument_handlers:
