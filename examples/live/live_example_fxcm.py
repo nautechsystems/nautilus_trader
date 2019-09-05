@@ -39,8 +39,6 @@ if __name__ == "__main__":
         strategies=[strategy])
 
     node.connect()
-
-    input()
     node.start()
 
     input()
