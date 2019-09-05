@@ -148,7 +148,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
-        self.account = Account()
+        self.account_id = TestStubs.account_id()
         self.serializer = MsgPackCommandSerializer()
         self.order_factory = OrderFactory(
             id_tag_trader=IdTag('001'),
@@ -159,7 +159,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
     def test_can_serialize_and_deserialize_account_inquiry_command(self):
         # Arrange
         command = AccountInquiry(
-            self.account.id,
+            self.account_id,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
@@ -182,7 +182,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         command = SubmitOrder(
             TraderId('TESTER', '000'),
             StrategyId('SCALPER', '01'),
-            self.account.id,
+            self.account_id,
             PositionId('P-123456'),
             order,
             GUID(uuid.uuid4()),
@@ -209,7 +209,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         command = SubmitAtomicOrder(
             TraderId('TESTER', '000'),
             StrategyId('SCALPER', '01'),
-            self.account.id,
+            self.account_id,
             PositionId('P-123456'),
             atomic_order,
             GUID(uuid.uuid4()),
@@ -238,7 +238,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         command = SubmitAtomicOrder(
             TraderId('TESTER', '000'),
             StrategyId('SCALPER', '01'),
-            self.account.id,
+            self.account_id,
             PositionId('P-123456'),
             atomic_order,
             GUID(uuid.uuid4()),
@@ -259,7 +259,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         command = CancelOrder(
             TraderId('TESTER', '000'),
             StrategyId('SCALPER', '01'),
-            self.account.id,
+            self.account_id,
             OrderId('O-123456'),
             ValidString('EXPIRED'),
             GUID(uuid.uuid4()),
@@ -279,7 +279,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         command = ModifyOrder(
             TraderId('TESTER', '000'),
             StrategyId('SCALPER', '01'),
-            self.account.id,
+            self.account_id,
             OrderId('O-123456'),
             Price('1.00001'),
             GUID(uuid.uuid4()),
@@ -299,7 +299,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
-        self.account = Account()
+        self.account_id = TestStubs.account_id()
         self.serializer = MsgPackEventSerializer()
 
     def test_can_serialize_and_deserialize_order_initialized_events(self):
@@ -328,7 +328,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Arrange
         event = OrderSubmitted(
             OrderId('O-123456'),
-            self.account.id,
+            self.account_id,
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -344,7 +344,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Arrange
         event = OrderAccepted(
             OrderId('O-123456'),
-            self.account.id,
+            self.account_id,
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -360,7 +360,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Arrange
         event = OrderRejected(
             OrderId('O-123456'),
-            self.account.id,
+            self.account_id,
             UNIX_EPOCH,
             ValidString('ORDER_ID_INVALID'),
             GUID(uuid.uuid4()),
@@ -378,7 +378,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         event = OrderWorking(
             OrderId('O-123456'),
             OrderIdBroker('BO-123456'),
-            self.account.id,
+            self.account_id,
             AUDUSD_FXCM,
             Label('S1_PT'),
             OrderSide.SELL,
@@ -403,7 +403,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         event = OrderWorking(
             OrderId('O-123456'),
             OrderIdBroker('BO-123456'),
-            self.account.id,
+            self.account_id,
             AUDUSD_FXCM,
             Label('S1_PT'),
             OrderSide.SELL,
@@ -427,7 +427,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Arrange
         event = OrderCancelled(
             OrderId('O-123456'),
-            self.account.id,
+            self.account_id,
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -443,7 +443,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Arrange
         event = OrderCancelReject(
             OrderId('O-123456'),
-            self.account.id,
+            self.account_id,
             UNIX_EPOCH,
             ValidString('RESPONSE'),
             ValidString('ORDER_DOES_NOT_EXIST'),
@@ -462,7 +462,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         event = OrderModified(
             OrderId('O-123456'),
             OrderIdBroker('BO-123456'),
-            self.account.id,
+            self.account_id,
             Price('0.80010'),
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
@@ -479,7 +479,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Arrange
         event = OrderExpired(
             OrderId('O-123456'),
-            self.account.id,
+            self.account_id,
             UNIX_EPOCH,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -495,7 +495,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Arrange
         event = OrderPartiallyFilled(
             OrderId('O-123456'),
-            self.account.id,
+            self.account_id,
             ExecutionId('E123456'),
             ExecutionTicket('T123456'),
             AUDUSD_FXCM,
@@ -518,7 +518,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Arrange
         event = OrderFilled(
             OrderId('O-123456'),
-            self.account.id,
+            self.account_id,
             ExecutionId('E123456'),
             ExecutionTicket('T123456'),
             AUDUSD_FXCM,
