@@ -32,7 +32,7 @@ class ReportProviderTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
-        self.account = Account()
+        self.account_id = TestStubs.account_id()
         self.order_factory = OrderFactory(
             id_tag_trader=IdTag('001'),
             id_tag_strategy=IdTag('001'),
@@ -55,7 +55,7 @@ class ReportProviderTests(unittest.TestCase):
 
         event = OrderFilled(
             order1.id,
-            self.account.id,
+            self.account_id,
             ExecutionId('SOME_EXEC_ID_1'),
             ExecutionTicket('SOME_EXEC_TICKET_1'),
             order1.symbol,
@@ -101,7 +101,7 @@ class ReportProviderTests(unittest.TestCase):
 
         event = OrderFilled(
             order1.id,
-            self.account.id,
+            self.account_id,
             ExecutionId('SOME_EXEC_ID_1'),
             ExecutionTicket('SOME_EXEC_TICKET_1'),
             order1.symbol,
