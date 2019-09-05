@@ -48,7 +48,6 @@ class TradeStrategyTests(unittest.TestCase):
         self.clock = TestClock()
         self.guid_factory = TestGuidFactory()
         self.logger = TestLogger()
-        self.account = Account()
 
         self.portfolio = Portfolio(
             clock=self.clock,
@@ -58,7 +57,6 @@ class TradeStrategyTests(unittest.TestCase):
         self.exec_db = InMemoryExecutionDatabase(trader_id=TraderId('TESTER', '000'), logger=self.logger)
         self.exec_engine = ExecutionEngine(
             database=self.exec_db,
-            account=self.account,
             portfolio=self.portfolio,
             clock=self.clock,
             guid_factory=self.guid_factory,
@@ -69,15 +67,16 @@ class TradeStrategyTests(unittest.TestCase):
             instruments=[TestStubs.instrument_usdjpy()],
             frozen_account=False,
             starting_capital=Money(1000000),
+            account_currency=Currency.USD,
             fill_model=FillModel(),
             commission_calculator=CommissionCalculator(),
-            account=self.account,
             portfolio=self.portfolio,
             clock=self.clock,
             guid_factory=self.guid_factory,
             logger=self.logger)
 
         self.exec_engine.register_client(self.exec_client)
+        self.exec_engine.handle_event(TestStubs.account_event())
 
         bar = TestStubs.bar_3decimal()
         self.exec_client.process_bars(USDJPY_FXCM, bar, bar)  # Prepare market
