@@ -27,6 +27,8 @@ from nautilus_trader.live.logger cimport LogStore, LiveLogger
 from nautilus_trader.live.data cimport LiveDataClient
 from nautilus_trader.live.execution cimport RedisExecutionDatabase, LiveExecutionEngine, LiveExecClient
 
+from test_kit.stubs import TestStubs
+
 
 cdef class TradingNode:
     """
@@ -146,6 +148,7 @@ cdef class TradingNode:
             logger=self._logger)
 
         self._exec_engine.register_client(self._exec_client)
+        self._exec_engine.handle_event(TestStubs.account_event())  # TODO: This is a temporary fix
 
         self.trader = Trader(
             trader_id=self.trader_id,
