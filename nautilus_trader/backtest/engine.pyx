@@ -495,7 +495,7 @@ cdef class BacktestEngine:
         if self.exec_client.frozen_account:
             self.log.warning(f"ACCOUNT FROZEN")
         self.log.info(f"Account balance (starting): {self.config.starting_capital} {account_currency}")
-        self.log.info(f"Account balance (ending):   {pad_string(str(self.account.cash_balance), account_starting_length)} {account_currency}")
+        self.log.info(f"Account balance (ending):   {pad_string(str(self.exec_engine.database.get_first_account().cash_balance), account_starting_length)} {account_currency}")
         self.log.info(f"Commissions (total):        {pad_string(str(self.exec_client.total_commissions), account_starting_length)} {account_currency}")
         self.log.info("")
 
