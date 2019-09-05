@@ -422,6 +422,7 @@ class ExecutionEngineTests(unittest.TestCase):
         logger = TestLogger()
 
         self.trader_id = TraderId('TESTER', '000')
+        self.account_id = TestStubs.account_id()
 
         self.order_factory = OrderFactory(
             id_tag_trader=self.trader_id.order_id_tag,
@@ -440,6 +441,8 @@ class ExecutionEngineTests(unittest.TestCase):
             clock=self.clock,
             guid_factory=self.guid_factory,
             logger=logger)
+
+        self.exec_engine.handle_event(TestStubs.account_event())
 
         self.exec_client = MockExecutionClient(self.exec_engine, logger)
         self.exec_engine.register_client(self.exec_client)
@@ -509,7 +512,7 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            account_id,
+            self.account_id,
             position_id,
             order,
             self.guid_factory.generate(),
@@ -539,7 +542,7 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            account_id,
+            self.account_id,
             position_id,
             order,
             self.guid_factory.generate(),
@@ -590,7 +593,7 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order1 = SubmitOrder(
             self.trader_id,
             strategy.id,
-            account_id,
+            self.account_id,
             position_id,
             order1,
             self.guid_factory.generate(),
@@ -599,7 +602,7 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order2 = SubmitOrder(
             self.trader_id,
             strategy.id,
-            account_id,
+            self.account_id,
             position_id,
             order2,
             self.guid_factory.generate(),
@@ -654,7 +657,7 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order1 = SubmitOrder(
             self.trader_id,
             strategy.id,
-            account_id,
+            self.account_id,
             position_id,
             order1,
             self.guid_factory.generate(),
@@ -663,7 +666,7 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order2 = SubmitOrder(
             self.trader_id,
             strategy.id,
-            account_id,
+            self.account_id,
             position_id,
             order2,
             self.guid_factory.generate(),
@@ -723,7 +726,7 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order1 = SubmitOrder(
             self.trader_id,
             strategy1.id,
-            account_id,
+            self.account_id,
             position_id1,
             order1,
             self.guid_factory.generate(),
@@ -732,7 +735,7 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order2 = SubmitOrder(
             self.trader_id,
             strategy2.id,
-            account_id,
+            self.account_id,
             position_id2,
             order2,
             self.guid_factory.generate(),
@@ -811,7 +814,7 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order1 = SubmitOrder(
             self.trader_id,
             strategy1.id,
-            account_id,
+            self.account_id,
             position_id1,
             order1,
             self.guid_factory.generate(),
@@ -820,7 +823,7 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order2 = SubmitOrder(
             self.trader_id,
             strategy1.id,
-            account_id,
+            self.account_id,
             position_id1,
             order2,
             self.guid_factory.generate(),
@@ -829,7 +832,7 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order3 = SubmitOrder(
             self.trader_id,
             strategy2.id,
-            account_id,
+            self.account_id,
             position_id2,
             order3,
             self.guid_factory.generate(),
@@ -840,7 +843,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
         order3_filled = OrderFilled(
             order3.id,
-            account_id,
+            self.account_id,
             ExecutionId('E3'),
             ExecutionTicket('T3'),
             AUDUSD_FXCM,

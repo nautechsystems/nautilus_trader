@@ -11,14 +11,22 @@ import uuid
 from decimal import Decimal
 from datetime import datetime, timedelta, timezone
 
-from nautilus_trader.model.enums import Resolution, QuoteType, Currency, SecurityType, AccountType
-
-from nautilus_trader.core.types import GUID
+from nautilus_trader.core.types import GUID, ValidString
 from nautilus_trader.common.clock import TestClock
-from nautilus_trader.model.enums import OrderSide, OrderType, OrderStatus, TimeInForce
+from nautilus_trader.model.enums import (
+    Resolution,
+    QuoteType,
+    Currency,
+    SecurityType,
+    AccountType,
+    OrderSide,
+    OrderType,
+    OrderStatus,
+    TimeInForce)
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.objects import (
     Quantity,
+    Money,
     Price,
     BarSpecification,
     BarType,
@@ -28,9 +36,19 @@ from nautilus_trader.model.identifiers import Venue, IdTag, InstrumentId, Accoun
 from nautilus_trader.model.generators import PositionIdGenerator
 from nautilus_trader.model.order import Order, OrderFactory
 from nautilus_trader.model.position import Position
-from nautilus_trader.model.events import OrderInitialized, OrderSubmitted, OrderAccepted, OrderRejected
-from nautilus_trader.model.events import OrderWorking, OrderExpired, OrderModified, OrderCancelled
-from nautilus_trader.model.events import OrderCancelReject, OrderPartiallyFilled, OrderFilled
+from nautilus_trader.model.events import (
+    AccountStateEvent,
+    OrderInitialized,
+    OrderSubmitted,
+    OrderAccepted,
+    OrderRejected,
+    OrderWorking,
+    OrderExpired,
+    OrderModified,
+    OrderCancelled,
+    OrderCancelReject,
+    OrderPartiallyFilled,
+    OrderFilled)
 
 # Unix epoch is the UTC time at 00:00:00 on 1/1/1970
 UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc)
@@ -162,7 +180,22 @@ class TestStubs:
 
     @staticmethod
     def account_id():
-        return AccountId.py_from_string('NAUTILUS-000-SIMULATED')
+        return AccountId('NAUTILUS', '000', AccountType.SIMULATED)
+
+    @staticmethod
+    def account_event():
+        return AccountStateEvent(
+            TestStubs.account_id(),
+            Currency.USD,
+            Money(1000000),
+            Money(1000000),
+            Money.zero(),
+            Money.zero(),
+            Money.zero(),
+            Decimal(0),
+            ValidString(),
+            GUID(uuid.uuid4()),
+            UNIX_EPOCH)
 
     @staticmethod
     def event_order_filled(order, fill_price=Price('1.00000')):
