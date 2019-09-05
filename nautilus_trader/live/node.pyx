@@ -72,6 +72,7 @@ cdef class TradingNode:
         config_trader = config['trader']
         config_log = config['logging']
         config_data = config['data_client']
+        config_accounts = config['accounts']
         config_exec_db = config['exec_database']
         config_exec_client = config['exec_client']
 
@@ -147,6 +148,7 @@ cdef class TradingNode:
             events_port=config_exec_client['events_port'],
             logger=self._logger)
 
+        self._exec_client.account_inquiry()
         self._exec_engine.register_client(self._exec_client)
 
         self._data_client.update_instruments()

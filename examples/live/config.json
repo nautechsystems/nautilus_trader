@@ -26,6 +26,12 @@
     "inst_pub_port": 55506
   },
 
+  "accounts": [{
+    "broker": "FXCM",
+    "account_number": "02851908",
+    "account_type": "DEMO"
+  }],
+
   "exec_database": {
     "type": "redis",
     "redis_host": "localhost",
