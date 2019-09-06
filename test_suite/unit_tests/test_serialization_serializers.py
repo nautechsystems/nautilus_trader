@@ -251,14 +251,14 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         print(b64encode(serialized))
         print(command)
 
-    def test_can_serialize_and_deserialize_cancel_order_commands(self):
+    def test_can_serialize_and_deserialize_modify_order_commands(self):
         # Arrange
-        command = CancelOrder(
+        command = ModifyOrder(
             TraderId('TESTER', '000'),
             StrategyId('SCALPER', '01'),
             self.account_id,
             OrderId('O-123456'),
-            ValidString('EXPIRED'),
+            Price('1.00001'),
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
 
@@ -271,14 +271,14 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         print(b64encode(serialized))
         print(command)
 
-    def test_can_serialize_and_deserialize_modify_order_commands(self):
+    def test_can_serialize_and_deserialize_cancel_order_commands(self):
         # Arrange
-        command = ModifyOrder(
+        command = CancelOrder(
             TraderId('TESTER', '000'),
             StrategyId('SCALPER', '01'),
             self.account_id,
             OrderId('O-123456'),
-            Price('1.00001'),
+            ValidString('EXPIRED'),
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
 

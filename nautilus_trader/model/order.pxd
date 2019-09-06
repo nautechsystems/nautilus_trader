@@ -11,7 +11,7 @@ from cpython.datetime cimport datetime
 from nautilus_trader.core.types cimport GUID
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_type cimport OrderType
-from nautilus_trader.model.c_enums.order_status cimport OrderStatus
+from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.model.objects cimport Quantity, Symbol, Price
@@ -52,7 +52,7 @@ cdef class Order:
     cdef readonly datetime filled_timestamp
     cdef readonly Price average_price
     cdef readonly object slippage
-    cdef readonly OrderStatus status
+    cdef readonly OrderState state
     cdef readonly GUID init_id
     cdef readonly OrderEvent last_event
     cdef readonly int event_count
@@ -64,7 +64,7 @@ cdef class Order:
     @staticmethod
     cdef Order create(OrderInitialized event)
     cdef bint equals(self, Order other)
-    cpdef str status_as_string(self)
+    cpdef str state_as_string(self)
     cpdef list get_order_ids_broker(self)
     cpdef list get_execution_ids(self)
     cpdef list get_execution_tickets(self)
@@ -72,8 +72,8 @@ cdef class Order:
     cpdef void apply(self, OrderEvent event)
     cdef void _set_state_to_working(self)
     cdef void _set_state_to_completed(self)
+    cdef void _set_filled_state(self)
     cdef void _set_slippage(self)
-    cdef void _set_fill_status(self)
 
 
 cdef class AtomicOrder:

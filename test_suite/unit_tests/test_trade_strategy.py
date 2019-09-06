@@ -24,7 +24,7 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.objects import Quantity, Price, Money
 from nautilus_trader.model.identifiers import Symbol, Venue, TraderId, OrderId, PositionId
 from nautilus_trader.model.position import Position
-from nautilus_trader.model.enums import OrderStatus, Currency
+from nautilus_trader.model.enums import OrderState, Currency
 from nautilus_trader.model.enums import MarketPosition
 from nautilus_trader.model.objects import Tick, Bar
 from nautilus_trader.model.events import TimeEvent
@@ -683,7 +683,7 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(order, strategy.orders()[order.id])
-        self.assertEqual(OrderStatus.FILLED, strategy.orders()[order.id].status)
+        self.assertEqual(OrderState.FILLED, strategy.orders()[order.id].state)
         self.assertTrue(order.id not in strategy.orders_working())
         self.assertTrue(order.id in strategy.orders_completed())
         self.assertTrue(strategy.order_exists(order.id))
@@ -708,7 +708,7 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(order, strategy.orders()[order.id])
-        self.assertEqual(OrderStatus.CANCELLED, strategy.orders()[order.id].status)
+        self.assertEqual(OrderState.CANCELLED, strategy.orders()[order.id].state)
         self.assertTrue(order.id in strategy.orders_completed())
         self.assertTrue(order.id not in strategy.orders_working())
         self.assertTrue(strategy.order_exists(order.id))
@@ -733,7 +733,7 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(order, strategy.orders()[order.id])
-        self.assertEqual(OrderStatus.WORKING, strategy.orders()[order.id].status)
+        self.assertEqual(OrderState.WORKING, strategy.orders()[order.id].state)
         self.assertEqual(Price(90.005, 3), strategy.orders()[order.id].price)
         self.assertTrue(strategy.is_flat())
         self.assertTrue(strategy.order_exists(order.id))
@@ -768,8 +768,8 @@ class TradeStrategyTests(unittest.TestCase):
         # Assert
         self.assertEqual(order1, strategy.orders()[order1.id])
         self.assertEqual(order2, strategy.orders()[order2.id])
-        self.assertEqual(OrderStatus.CANCELLED, strategy.orders()[order1.id].status)
-        self.assertEqual(OrderStatus.CANCELLED, strategy.orders()[order2.id].status)
+        self.assertEqual(OrderState.CANCELLED, strategy.orders()[order1.id].state)
+        self.assertEqual(OrderState.CANCELLED, strategy.orders()[order2.id].state)
         self.assertTrue(order1.id in strategy.orders_completed())
         self.assertTrue(order2.id in strategy.orders_completed())
 
@@ -792,7 +792,7 @@ class TradeStrategyTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(order, strategy.orders()[order.id])
-        self.assertEqual(OrderStatus.FILLED, strategy.orders()[order.id].status)
+        self.assertEqual(OrderState.FILLED, strategy.orders()[order.id].state)
         self.assertEqual(MarketPosition.FLAT, strategy.positions()[position_id].market_position)
         self.assertTrue(strategy.positions()[position_id].is_closed)
         self.assertTrue(position_id in strategy.positions_closed())
@@ -825,8 +825,8 @@ class TradeStrategyTests(unittest.TestCase):
         # Assert
         self.assertEqual(order1, strategy.orders()[order1.id])
         self.assertEqual(order2, strategy.orders()[order2.id])
-        self.assertEqual(OrderStatus.FILLED, strategy.orders()[order1.id].status)
-        self.assertEqual(OrderStatus.FILLED, strategy.orders()[order2.id].status)
+        self.assertEqual(OrderState.FILLED, strategy.orders()[order1.id].state)
+        self.assertEqual(OrderState.FILLED, strategy.orders()[order2.id].state)
         self.assertEqual(MarketPosition.FLAT, strategy.positions()[position_id1].market_position)
         self.assertEqual(MarketPosition.FLAT, strategy.positions()[position_id2].market_position)
         self.assertTrue(strategy.positions()[position_id1].is_closed)
