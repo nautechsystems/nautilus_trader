@@ -57,7 +57,7 @@ class BacktestAcceptanceTests(unittest.TestCase):
         # Assert
         self.assertEqual(44641, self.engine.iteration)
 
-    def test_can_reset_engine_(self):
+    def test_can_reset_engine(self):
         # Arrange
         start = datetime(2013, 1, 1, 0, 0, 0, 0)
         stop = datetime(2013, 2, 1, 0, 0, 0, 0)
