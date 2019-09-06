@@ -13,8 +13,10 @@ from decimal import Decimal
 from uuid import UUID
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.cache cimport ObjectCache
 from nautilus_trader.core.types cimport ValidString, GUID
 from nautilus_trader.core.message cimport Command, Event, Request, Response
+from nautilus_trader.common.cache cimport IdentifierCache
 from nautilus_trader.model.c_enums.time_in_force cimport time_in_force_to_string, time_in_force_from_string
 from nautilus_trader.model.c_enums.order_side cimport  order_side_to_string, order_side_from_string
 from nautilus_trader.model.c_enums.order_type cimport order_type_to_string, order_type_from_string
@@ -154,6 +156,12 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
     Provides a command serializer for the MessagePack specification.
     """
 
+    def __init__(self):
+        """
+        Initializes a new instance of the MsgPackOrderSerializer class.
+        """
+        self.symbol_cache = ObjectCache(Symbol, Symbol.from_string)
+
     cpdef bytes serialize(self, Order order):
         """
         Return the serialized MessagePack specification bytes from the given order.
@@ -193,7 +201,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
             return None  # Null order
 
         return Order(order_id=OrderId(unpacked[ID]),
-                     symbol=Symbol.from_string(unpacked[SYMBOL]),
+                     symbol=self.symbol_cache.get(unpacked[SYMBOL]),
                      order_side=order_side_from_string(unpacked[ORDER_SIDE]),
                      order_type=order_type_from_string(unpacked[ORDER_TYPE]),
                      quantity=Quantity(unpacked[QUANTITY]),
@@ -213,6 +221,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         """
         Initializes a new instance of the MsgPackCommandSerializer class.
         """
+        self.identifier_cache = IdentifierCache()
         self.order_serializer = MsgPackOrderSerializer()
 
     cpdef bytes serialize(self, Command command):
@@ -283,23 +292,23 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
 
         if command_type == AccountInquiry.__name__:
             return AccountInquiry(
-                AccountId.from_string(unpacked[ACCOUNT_ID]),
+                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 command_id,
                 command_timestamp)
         if command_type == SubmitOrder.__name__:
             return SubmitOrder(
-                TraderId.from_string(unpacked[TRADER_ID]),
-                StrategyId.from_string(unpacked[STRATEGY_ID]),
-                AccountId.from_string(unpacked[ACCOUNT_ID]),
+                self.identifier_cache.get_trader_id(unpacked[TRADER_ID]),
+                self.identifier_cache.get_strategy_id(unpacked[STRATEGY_ID]),
+                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 PositionId(unpacked[POSITION_ID]),
                 self.order_serializer.deserialize(unpacked[ORDER]),
                 command_id,
                 command_timestamp)
         if command_type == SubmitAtomicOrder.__name__:
             return SubmitAtomicOrder(
-                TraderId.from_string(unpacked[TRADER_ID]),
-                StrategyId.from_string(unpacked[STRATEGY_ID]),
-                AccountId.from_string(unpacked[ACCOUNT_ID]),
+                self.identifier_cache.get_trader_id(unpacked[TRADER_ID]),
+                self.identifier_cache.get_strategy_id(unpacked[STRATEGY_ID]),
+                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 PositionId(unpacked[POSITION_ID]),
                 AtomicOrder(self.order_serializer.deserialize(unpacked[ENTRY]),
                             self.order_serializer.deserialize(unpacked[STOP_LOSS]),
@@ -308,18 +317,18 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
                 command_timestamp)
         if command_type == ModifyOrder.__name__:
             return ModifyOrder(
-                TraderId.from_string(unpacked[TRADER_ID]),
-                StrategyId.from_string(unpacked[STRATEGY_ID]),
-                AccountId.from_string(unpacked[ACCOUNT_ID]),
+                self.identifier_cache.get_trader_id(unpacked[TRADER_ID]),
+                self.identifier_cache.get_strategy_id(unpacked[STRATEGY_ID]),
+                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 OrderId(unpacked[ORDER_ID]),
                 Price(unpacked[MODIFIED_PRICE]),
                 command_id,
                 command_timestamp)
         if command_type == CancelOrder.__name__:
             return CancelOrder(
-                TraderId.from_string(unpacked[TRADER_ID]),
-                StrategyId.from_string(unpacked[STRATEGY_ID]),
-                AccountId.from_string(unpacked[ACCOUNT_ID]),
+                self.identifier_cache.get_trader_id(unpacked[TRADER_ID]),
+                self.identifier_cache.get_strategy_id(unpacked[STRATEGY_ID]),
+                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 OrderId(unpacked[ORDER_ID]),
                 ValidString(unpacked[CANCEL_REASON]),
                 command_id,
@@ -332,6 +341,12 @@ cdef class MsgPackEventSerializer(EventSerializer):
     """
     Provides an event serializer for the MessagePack specification
     """
+
+    def __init__(self):
+        """
+        Initializes a new instance of the MsgPackCommandSerializer class.
+        """
+        self.identifier_cache = IdentifierCache()
 
     cpdef bytes serialize(self, Event event):
         """
@@ -458,7 +473,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
 
         if event_type == AccountStateEvent.__name__:
             return AccountStateEvent(
-                AccountId.from_string(unpacked[ACCOUNT_ID]),
+                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 currency_from_string(unpacked[CURRENCY]),
                 Money(unpacked[CASH_BALANCE]),
                 Money(unpacked[CASH_START_DAY]),
@@ -472,7 +487,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
         if event_type == OrderInitialized.__name__:
             return OrderInitialized(
                 OrderId(unpacked[ORDER_ID]),
-                Symbol.from_string(unpacked[SYMBOL]),
+                self.identifier_cache.get_symbol(unpacked[SYMBOL]),
                 convert_string_to_label(unpacked[LABEL]),
                 order_side_from_string(unpacked[ORDER_SIDE]),
                 order_type_from_string(unpacked[ORDER_TYPE]),
@@ -485,21 +500,21 @@ cdef class MsgPackEventSerializer(EventSerializer):
         if event_type == OrderSubmitted.__name__:
             return OrderSubmitted(
                 OrderId(unpacked[ORDER_ID]),
-                AccountId.from_string(unpacked[ACCOUNT_ID]),
+                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 convert_string_to_datetime(unpacked[SUBMITTED_TIME]),
                 event_id,
                 event_timestamp)
         if event_type == OrderAccepted.__name__:
             return OrderAccepted(
                 OrderId(unpacked[ORDER_ID]),
-                AccountId.from_string(unpacked[ACCOUNT_ID]),
+                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 convert_string_to_datetime(unpacked[ACCEPTED_TIME]),
                 event_id,
                 event_timestamp)
         if event_type == OrderRejected.__name__:
             return OrderRejected(
                 OrderId(unpacked[ORDER_ID]),
-                AccountId.from_string(unpacked[ACCOUNT_ID]),
+                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 convert_string_to_datetime(unpacked[REJECTED_TIME]),
                 ValidString(unpacked[REJECTED_REASON]),
                 event_id,
@@ -508,7 +523,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             return OrderWorking(
                 OrderId(unpacked[ORDER_ID]),
                 OrderIdBroker(unpacked[ORDER_ID_BROKER]),
-                AccountId.from_string(unpacked[ACCOUNT_ID]),
+                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 Symbol.from_string(unpacked[SYMBOL]),
                 convert_string_to_label(unpacked[LABEL]),
                 order_side_from_string(unpacked[ORDER_SIDE]),
@@ -523,14 +538,14 @@ cdef class MsgPackEventSerializer(EventSerializer):
         if event_type == OrderCancelled.__name__:
             return OrderCancelled(
                 OrderId(unpacked[ORDER_ID]),
-                AccountId.from_string(unpacked[ACCOUNT_ID]),
+                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 convert_string_to_datetime(unpacked[CANCELLED_TIME]),
                 event_id,
                 event_timestamp)
         if event_type == OrderCancelReject.__name__:
             return OrderCancelReject(
                 OrderId(unpacked[ORDER_ID]),
-                AccountId.from_string(unpacked[ACCOUNT_ID]),
+                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 convert_string_to_datetime(unpacked[REJECTED_TIME]),
                 ValidString(unpacked[REJECTED_RESPONSE_TO]),
                 ValidString(unpacked[REJECTED_REASON]),
@@ -540,7 +555,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             return OrderModified(
                 OrderId(unpacked[ORDER_ID]),
                 OrderIdBroker(unpacked[ORDER_ID_BROKER]),
-                AccountId.from_string(unpacked[ACCOUNT_ID]),
+                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 Price(unpacked[MODIFIED_PRICE]),
                 convert_string_to_datetime(unpacked[MODIFIED_TIME]),
                 event_id,
@@ -548,17 +563,17 @@ cdef class MsgPackEventSerializer(EventSerializer):
         if event_type == OrderExpired.__name__:
             return OrderExpired(
                 OrderId(unpacked[ORDER_ID]),
-                AccountId.from_string(unpacked[ACCOUNT_ID]),
+                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 convert_string_to_datetime(unpacked[EXPIRED_TIME]),
                 event_id,
                 event_timestamp)
         if event_type == OrderPartiallyFilled.__name__:
             return OrderPartiallyFilled(
                 OrderId(unpacked[ORDER_ID]),
-                AccountId.from_string(unpacked[ACCOUNT_ID]),
+                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 ExecutionId(unpacked[EXECUTION_ID]),
                 ExecutionTicket(unpacked[EXECUTION_TICKET]),
-                Symbol.from_string(unpacked[SYMBOL]),
+                self.identifier_cache.get_symbol(unpacked[SYMBOL]),
                 order_side_from_string(unpacked[ORDER_SIDE]),
                 Quantity(unpacked[FILLED_QUANTITY]),
                 Quantity(unpacked[LEAVES_QUANTITY]),
@@ -569,10 +584,10 @@ cdef class MsgPackEventSerializer(EventSerializer):
         if event_type == OrderFilled.__name__:
             return OrderFilled(
                 OrderId(unpacked[ORDER_ID]),
-                AccountId.from_string(unpacked[ACCOUNT_ID]),
+                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 ExecutionId(unpacked[EXECUTION_ID]),
                 ExecutionTicket(unpacked[EXECUTION_TICKET]),
-                Symbol.from_string(unpacked[SYMBOL]),
+                self.identifier_cache.get_symbol(unpacked[SYMBOL]),
                 order_side_from_string(unpacked[ORDER_SIDE]),
                 Quantity(unpacked[FILLED_QUANTITY]),
                 Price(unpacked[AVERAGE_PRICE]),

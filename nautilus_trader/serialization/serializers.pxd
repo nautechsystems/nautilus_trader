@@ -6,6 +6,8 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.core.cache cimport ObjectCache
+from nautilus_trader.common.cache cimport IdentifierCache
 from nautilus_trader.serialization.base cimport (
     QuerySerializer,
     OrderSerializer,
@@ -21,15 +23,16 @@ cdef class MsgPackQuerySerializer(QuerySerializer):
 
 
 cdef class MsgPackOrderSerializer(OrderSerializer):
-    pass
+    cdef ObjectCache symbol_cache
 
 
 cdef class MsgPackCommandSerializer(CommandSerializer):
+    cdef IdentifierCache identifier_cache
     cdef OrderSerializer order_serializer
 
 
 cdef class MsgPackEventSerializer(EventSerializer):
-    pass
+    cdef IdentifierCache identifier_cache
 
 
 cdef class MsgPackRequestSerializer(RequestSerializer):
