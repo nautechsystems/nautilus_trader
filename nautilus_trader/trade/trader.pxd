@@ -6,7 +6,6 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logger cimport LoggerAdapter
 from nautilus_trader.common.data cimport DataClient

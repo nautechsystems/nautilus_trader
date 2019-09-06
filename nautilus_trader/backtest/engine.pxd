@@ -8,7 +8,6 @@
 
 from cpython.datetime cimport datetime, timedelta
 
-from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.guid cimport GuidFactory
 from nautilus_trader.common.logger cimport Logger, LoggerAdapter

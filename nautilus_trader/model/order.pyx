@@ -209,7 +209,7 @@ cdef class Order:
         cdef str label = '' if self.label is None else f', label={self.label.value}'
         cdef str price = '' if self.price is None else f'@ {self.price} '
         cdef str expire_time = '' if self.expire_time is None else f' {format_zulu_datetime(self.expire_time)}'
-        return (f"Order({self.id.value}{label}, status={order_state_to_string(self.state)}) "
+        return (f"Order({self.id.value}{label}, state={order_state_to_string(self.state)}) "
                 f"{order_side_to_string(self.side)} {quantity} {self.symbol} {order_type_to_string(self.type)} {price}"
                 f"{time_in_force_to_string(self.time_in_force)}{expire_time}")
 
@@ -224,7 +224,7 @@ cdef class Order:
 
     cpdef str state_as_string(self):
         """
-        Return the order status as a string.
+        Return the order state as a string.
         
         :return str.
         """
