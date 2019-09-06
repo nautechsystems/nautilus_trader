@@ -10,7 +10,7 @@ import pandas as pd
 
 from typing import Dict
 
-from nautilus_trader.model.c_enums.order_status cimport OrderStatus
+from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.c_enums.order_side cimport order_side_to_string
 from nautilus_trader.model.c_enums.order_type cimport order_type_to_string
 from nautilus_trader.model.identifiers cimport OrderId, PositionId
@@ -52,7 +52,7 @@ cdef class ReportProvider:
         if len(orders) == 0:
             return pd.DataFrame()
 
-        cdef list filled_orders = [self._order_to_dict(o) for o in orders.values() if o.status == OrderStatus.FILLED]
+        cdef list filled_orders = [self._order_to_dict(o) for o in orders.values() if o.state == OrderState.FILLED]
 
         return pd.DataFrame(data=filled_orders).set_index('order_id')
 

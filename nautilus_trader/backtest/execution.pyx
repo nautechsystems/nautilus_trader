@@ -16,7 +16,7 @@ from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.quote_type cimport QuoteType
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.order_status cimport OrderStatus
+from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition, market_position_to_string
 from nautilus_trader.model.identifiers cimport Symbol, AccountId, OrderIdBroker
 from nautilus_trader.model.currency cimport ExchangeRateCalculator
@@ -36,7 +36,7 @@ from nautilus_trader.model.events cimport (
     OrderCancelReject,
     OrderFilled
 )
-from nautilus_trader.model.identifiers cimport OrderId, ExecutionId, ExecutionTicket, AccountNumber
+from nautilus_trader.model.identifiers cimport OrderId, ExecutionId, ExecutionTicket
 from nautilus_trader.model.commands cimport (
     AccountInquiry,
     SubmitOrder,
@@ -209,8 +209,8 @@ cdef class BacktestExecClient(ExecutionClient):
         for order_id, order in self.working_orders.copy().items():  # Copies dict to avoid resize during loop
             if order.symbol != symbol:
                 continue  # Order is for a different symbol
-            if order.status != OrderStatus.WORKING:
-                continue  # Orders status has changed since the loop commenced
+            if order.state != OrderState.WORKING:
+                continue  # Orders state has changed since the loop commenced
 
             # Check for order fill
             if order.side == OrderSide.BUY:
@@ -276,7 +276,7 @@ cdef class BacktestExecClient(ExecutionClient):
         self.account_capital = self.starting_capital
         self.account_cash_start_day = self.account_capital
         self.account_cash_activity_day = Money.zero()
-        self.generate_reset_account_event()
+        self._account.apply(self.reset_account_event())
         self.total_commissions = Money.zero()
         self.working_orders = {}       # type: Dict[OrderId, Order]
         self.atomic_child_orders = {}  # type: Dict[OrderId, List[Order]]
