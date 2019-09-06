@@ -10,7 +10,7 @@ from nautilus_trader.model.c_enums.account_type import AccountType
 from nautilus_trader.model.c_enums.currency import Currency
 from nautilus_trader.model.c_enums.market_position import MarketPosition
 from nautilus_trader.model.c_enums.order_side import OrderSide
-from nautilus_trader.model.c_enums.order_status import OrderStatus
+from nautilus_trader.model.c_enums.order_state import OrderState
 from nautilus_trader.model.c_enums.order_type import OrderType
 from nautilus_trader.model.c_enums.quote_type import QuoteType
 from nautilus_trader.model.c_enums.resolution import Resolution

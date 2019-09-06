@@ -9,7 +9,6 @@
 import pandas as pd
 import unittest
 
-from nautilus_trader.common.account import Account
 from nautilus_trader.common.brokerage import CommissionCalculator
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.guid import TestGuidFactory

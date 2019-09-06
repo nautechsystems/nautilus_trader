@@ -17,7 +17,7 @@ from nautilus_trader.core.types cimport GUID
 from nautilus_trader.core.functions cimport format_zulu_datetime
 from nautilus_trader.model.c_enums.order_side cimport OrderSide, order_side_to_string
 from nautilus_trader.model.c_enums.order_type cimport OrderType, order_type_to_string
-from nautilus_trader.model.c_enums.order_status cimport OrderStatus, order_status_to_string
+from nautilus_trader.model.c_enums.order_state cimport OrderState, order_state_to_string
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce, time_in_force_to_string
 from nautilus_trader.model.objects cimport Quantity, Symbol, Price
 from nautilus_trader.model.events cimport (
@@ -118,7 +118,7 @@ cdef class Order:
         self.filled_timestamp = None        # Can be None
         self.average_price = None           # Can be None
         self.slippage = Decimal(0.0)
-        self.status = OrderStatus.INITIALIZED
+        self.state = OrderState.INITIALIZED
         self.init_id = GUID(uuid.uuid4()) if init_id is None else init_id
         self.is_buy = self.side == OrderSide.BUY
         self.is_sell = self.side == OrderSide.SELL
@@ -209,7 +209,7 @@ cdef class Order:
         cdef str label = '' if self.label is None else f', label={self.label.value}'
         cdef str price = '' if self.price is None else f'@ {self.price} '
         cdef str expire_time = '' if self.expire_time is None else f' {format_zulu_datetime(self.expire_time)}'
-        return (f"Order({self.id.value}{label}, status={order_status_to_string(self.status)}) "
+        return (f"Order({self.id.value}{label}, status={order_state_to_string(self.state)}) "
                 f"{order_side_to_string(self.side)} {quantity} {self.symbol} {order_type_to_string(self.type)} {price}"
                 f"{time_in_force_to_string(self.time_in_force)}{expire_time}")
 
@@ -222,13 +222,13 @@ cdef class Order:
         """
         return f"<{str(self)} object at {id(self)}>"
 
-    cpdef str status_as_string(self):
+    cpdef str state_as_string(self):
         """
         Return the order status as a string.
         
         :return str.
         """
-        return order_status_to_string(self.status)
+        return order_state_to_string(self.state)
 
     cpdef list get_order_ids_broker(self):
         """
@@ -281,13 +281,13 @@ cdef class Order:
 
         # Handle event
         if isinstance(event, OrderSubmitted):
-            self.status = OrderStatus.SUBMITTED
+            self.state = OrderState.SUBMITTED
             self.account_id = event.account_id
         elif isinstance(event, OrderRejected):
-            self.status = OrderStatus.REJECTED
+            self.state = OrderState.REJECTED
             self._set_state_to_completed()
         elif isinstance(event, OrderAccepted):
-            self.status = OrderStatus.ACCEPTED
+            self.state = OrderState.ACCEPTED
         elif isinstance(event, OrderWorking):
             self._order_ids_broker.add(event.order_id_broker)
             self.id_broker = event.order_id_broker
@@ -295,10 +295,10 @@ cdef class Order:
         elif isinstance(event, OrderCancelReject):
             pass
         elif isinstance(event, OrderCancelled):
-            self.status = OrderStatus.CANCELLED
+            self.state = OrderState.CANCELLED
             self._set_state_to_completed()
         elif isinstance(event, OrderExpired):
-            self.status = OrderStatus.EXPIRED
+            self.state = OrderState.EXPIRED
             self._set_state_to_completed()
         elif isinstance(event, OrderModified):
             self._order_ids_broker.add(event.order_id_broker)
@@ -313,18 +313,26 @@ cdef class Order:
             self.filled_timestamp = event.timestamp
             self.average_price = event.average_price
             self._set_slippage()
-            self._set_fill_status()
-            if self.status == OrderStatus.FILLED:
+            self._set_filled_state()
+            if self.state == OrderState.FILLED:
                 self._set_state_to_completed()
 
     cdef void _set_state_to_working(self):
-        self.status = OrderStatus.WORKING
+        self.state = OrderState.WORKING
         self.is_working = True
         self.is_completed = False
 
     cdef void _set_state_to_completed(self):
         self.is_working = False
         self.is_completed = True
+
+    cdef void _set_filled_state(self):
+        if self.filled_quantity < self.quantity:
+            self.state = OrderState.PARTIALLY_FILLED
+        elif self.filled_quantity == self.quantity:
+            self.state = OrderState.FILLED
+        elif self.filled_quantity > self.quantity:
+            self.state = OrderState.OVER_FILLED
 
     cdef void _set_slippage(self):
         if self.type not in PRICED_ORDER_TYPES:
@@ -339,14 +347,6 @@ cdef class Order:
         # Avoids negative zero (-0.00000)
         if self.slippage == 0:
             self.slippage = Decimal(0)
-
-    cdef void _set_fill_status(self):
-        if self.filled_quantity < self.quantity:
-            self.status = OrderStatus.PARTIALLY_FILLED
-        elif self.filled_quantity == self.quantity:
-            self.status = OrderStatus.FILLED
-        elif self.filled_quantity > self.quantity:
-            self.status = OrderStatus.OVER_FILLED
 
 
 cdef class AtomicOrder:

@@ -19,10 +19,7 @@ from nautilus_trader.model.enums import (
     Currency,
     SecurityType,
     AccountType,
-    OrderSide,
-    OrderType,
-    OrderStatus,
-    TimeInForce)
+    OrderSide)
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.objects import (
     Quantity,

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-# <copyright file="order_status.pxd" company="Nautech Systems Pty Ltd">
+# <copyright file="order_state.pxd" company="Nautech Systems Pty Ltd">
 #  Copyright (C) 2015-2019 Nautech Systems Pty Ltd. All rights reserved.
 #  The use of this source code is governed by the license as found in the LICENSE.md file.
 #  https://nautechsystems.io
@@ -7,7 +7,7 @@
 # -------------------------------------------------------------------------------------------------
 
 
-cpdef enum OrderStatus:
+cpdef enum OrderState:
     UNKNOWN = -1,
     INITIALIZED = 0,
     SUBMITTED = 1,
@@ -21,7 +21,7 @@ cpdef enum OrderStatus:
     FILLED = 9,
 
 
-cdef inline str order_status_to_string(int value):
+cdef inline str order_state_to_string(int value):
     if value == 0:
         return 'INITIALIZED'
     elif value == 1:
@@ -46,26 +46,26 @@ cdef inline str order_status_to_string(int value):
         return 'UNKNOWN'
 
 
-cdef inline OrderStatus order_status_from_string(str value):
+cdef inline OrderState order_state_from_string(str value):
     if value == 'INITIALIZED':
-        return OrderStatus.INITIALIZED
+        return OrderState.INITIALIZED
     elif value == 'SUBMITTED':
-        return OrderStatus.SUBMITTED
+        return OrderState.SUBMITTED
     elif value == 'ACCEPTED':
-        return OrderStatus.ACCEPTED
+        return OrderState.ACCEPTED
     elif value == 'REJECTED':
-        return OrderStatus.REJECTED
+        return OrderState.REJECTED
     elif value == 'WORKING':
-        return OrderStatus.WORKING
+        return OrderState.WORKING
     elif value == 'CANCELLED':
-        return OrderStatus.CANCELLED
+        return OrderState.CANCELLED
     elif value == 'EXPIRED':
-        return OrderStatus.EXPIRED
+        return OrderState.EXPIRED
     elif value == 'OVER_FILLED':
-        return OrderStatus.OVER_FILLED
+        return OrderState.OVER_FILLED
     elif value == 'PARTIALLY_FILLED':
-        return OrderStatus.PARTIALLY_FILLED
+        return OrderState.PARTIALLY_FILLED
     elif value == 'FILLED':
-        return OrderStatus.FILLED
+        return OrderState.FILLED
     else:
-        return OrderStatus.UNKNOWN
+        return OrderState.UNKNOWN
