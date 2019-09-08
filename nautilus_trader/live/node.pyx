@@ -16,7 +16,6 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.account_type cimport account_type_from_string
 from nautilus_trader.model.identifiers cimport Venue, AccountId, TraderId
 from nautilus_trader.model.commands cimport AccountInquiry
-from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.guid cimport LiveGuidFactory
 from nautilus_trader.common.execution cimport InMemoryExecutionDatabase, ExecutionDatabase

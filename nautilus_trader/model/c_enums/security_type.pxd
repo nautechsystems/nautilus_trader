@@ -35,3 +35,22 @@ cdef inline str security_type_to_string(int value):
         return 'CRYPTO'
     else:
         return 'UNKNOWN'
+
+
+cdef inline str security_type_from_string(str value):
+    if value == 'FOREX':
+        return SecurityType.FOREX
+    elif value == 'BOND':
+        return SecurityType.BOND
+    elif value == 'EQUITY':
+        return SecurityType.EQUITY
+    elif value == 'FUTURE':
+        return SecurityType.FUTURE
+    elif value == 'CFD':
+        return SecurityType.CFD
+    elif value == 'OPTION':
+        return SecurityType.OPTION
+    elif value == 'CRYPTO':
+        return SecurityType.CRYPTO
+    else:
+        return SecurityType.UNKNOWN
