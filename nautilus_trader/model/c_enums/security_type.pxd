@@ -37,7 +37,7 @@ cdef inline str security_type_to_string(int value):
         return 'UNKNOWN'
 
 
-cdef inline str security_type_from_string(str value):
+cdef inline SecurityType security_type_from_string(str value):
     if value == 'FOREX':
         return SecurityType.FOREX
     elif value == 'BOND':
