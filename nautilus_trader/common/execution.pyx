@@ -679,7 +679,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         cdef PositionId position_id = self.get_position_id(order_id)
         if position_id is None:
-            self._log.error(f"Cannot get position for {order_id} (no matching position id found).")
+            self._log.warning(f"Cannot get position for {order_id} (no matching position id found).")
             return None
 
         return self._cached_positions.get(position_id)
@@ -693,7 +693,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         cdef PositionId position_id = self._index_order_position.get(order_id)
         if position_id is None:
-            self._log.error(f"Cannot get position id for {order_id} (no matching position id found).")
+            self._log.warning(f"Cannot get position id for {order_id} (no matching position id found).")
 
         return position_id
 
