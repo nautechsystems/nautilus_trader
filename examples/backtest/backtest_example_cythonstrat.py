@@ -35,7 +35,7 @@ if __name__ == "__main__":
 
     strategies = [EMACross(
         instrument=usdjpy,
-        bar_type=TestStubs.bartype_usdjpy_1min_bid(),
+        bar_spec=TestStubs.bar_spec_1min_bid(),
         risk_bp=10,
         fast_ema=10,
         slow_ema=20,

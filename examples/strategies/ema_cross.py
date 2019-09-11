@@ -11,7 +11,7 @@ from datetime import timedelta
 from nautilus_trader.core.message import Event
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
-from nautilus_trader.model.objects import Price, Tick, BarType, Bar, Instrument
+from nautilus_trader.model.objects import Price, Tick, BarSpecification, BarType, Bar, Instrument
 from nautilus_trader.model.identifiers import Symbol, Label
 from nautilus_trader.data.analyzers import SpreadAnalyzer, LiquidityAnalyzer
 from nautilus_trader.trade.strategy import TradingStrategy
@@ -30,7 +30,7 @@ class EMACrossPy(TradingStrategy):
 
     def __init__(self,
                  symbol: Symbol,
-                 bar_type: BarType,
+                 bar_spec: BarSpecification,
                  risk_bp: float=100.0,
                  fast_ema: int=10,
                  slow_ema: int=20,
@@ -40,7 +40,7 @@ class EMACrossPy(TradingStrategy):
         Initializes a new instance of the EMACrossPy class.
 
         :param symbol: The symbol for the strategy.
-        :param bar_type: The bar type for the strategy.
+        :param bar_spec: The bar specification for the strategy.
         :param risk_bp: The risk per trade (basis points).
         :param fast_ema: The fast EMA period.
         :param slow_ema: The slow EMA period.
@@ -52,7 +52,7 @@ class EMACrossPy(TradingStrategy):
 
         # Custom strategy variables
         self.symbol = symbol
-        self.bar_type = bar_type
+        self.bar_type = BarType(symbol, bar_spec)
         self.risk_bp = risk_bp
         self.entry_buffer = 0  # instrument.tick_size
         self.SL_buffer = 0  # instrument.tick_size * 10

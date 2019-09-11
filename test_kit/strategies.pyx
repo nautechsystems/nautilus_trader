@@ -10,7 +10,7 @@ from datetime import timedelta
 
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.identifiers cimport Symbol, Label, PositionId
-from nautilus_trader.model.objects cimport Price, Tick, BarType, Bar, Instrument
+from nautilus_trader.model.objects cimport Price, Tick, BarSpecification, BarType, Bar, Instrument
 from nautilus_trader.model.order cimport Order, AtomicOrder
 from nautilus_trader.trade.strategy cimport TradingStrategy
 from nautilus_trader.data.analyzers cimport SpreadAnalyzer, LiquidityAnalyzer
@@ -260,7 +260,7 @@ cdef class EMACross(TradingStrategy):
 
     def __init__(self,
                  Instrument instrument,
-                 BarType bar_type,
+                 BarSpecification bar_spec,
                  float risk_bp=10,
                  int fast_ema=10,
                  int slow_ema=20,
@@ -270,7 +270,7 @@ cdef class EMACross(TradingStrategy):
         """
         Initializes a new instance of the EMACross class.
 
-        :param bar_type: The bar type for the strategy (could also input any number of them)
+        :param bar_spec: The bar specification for the strategy.
         :param risk_bp: The risk per trade (basis points).
         :param fast_ema: The fast EMA period.
         :param slow_ema: The slow EMA period.
@@ -284,7 +284,7 @@ cdef class EMACross(TradingStrategy):
         # Custom strategy variables
         self.instrument = instrument
         self.symbol = instrument.symbol
-        self.bar_type = bar_type
+        self.bar_type = BarType(instrument.symbol, bar_spec)
         self.risk_bp = risk_bp
         self.position_sizer = FixedRiskSizer(self.instrument)
         self.spread_analyzer = SpreadAnalyzer(self.instrument.tick_precision)

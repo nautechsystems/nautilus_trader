@@ -34,7 +34,7 @@ if __name__ == "__main__":
 
     strategies = [EMACrossPy(
         symbol=usdjpy.symbol,
-        bar_type=TestStubs.bartype_usdjpy_1min_bid())]
+        bar_spec=TestStubs.bar_spec_1min_bid())]
 
     config = BacktestConfig(
         exec_db_type='in-memory',

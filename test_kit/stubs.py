@@ -52,10 +52,6 @@ UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, timezone.utc)
 AUDUSD_FXCM = Symbol('AUDUSD', Venue('FXCM'))
 GBPUSD_FXCM = Symbol('GBPUSD', Venue('FXCM'))
 USDJPY_FXCM = Symbol('USDJPY', Venue('FXCM'))
-ONE_MINUTE_BID = BarSpecification(1, Resolution.MINUTE, QuoteType.BID)
-ONE_MINUTE_ASK = BarSpecification(1, Resolution.MINUTE, QuoteType.ASK)
-ONE_MINUTE_MID = BarSpecification(1, Resolution.MINUTE, QuoteType.MID)
-ONE_SECOND_MID = BarSpecification(1, Resolution.SECOND, QuoteType.MID)
 
 
 class TestStubs:
@@ -128,32 +124,48 @@ class TestStubs:
             timestamp=UNIX_EPOCH)
 
     @staticmethod
+    def bar_spec_1min_bid():
+        return BarSpecification(1, Resolution.MINUTE, QuoteType.BID)
+
+    @staticmethod
+    def bar_spec_1min_ask():
+        return BarSpecification(1, Resolution.MINUTE, QuoteType.ASK)
+
+    @staticmethod
+    def bar_spec_1min_mid():
+        return BarSpecification(1, Resolution.MINUTE, QuoteType.MID)
+
+    @staticmethod
+    def bar_spec_1sec_mid():
+        return BarSpecification(1, Resolution.SECOND, QuoteType.MID)
+
+    @staticmethod
     def bartype_audusd_1min_bid():
-        return BarType(AUDUSD_FXCM, ONE_MINUTE_BID)
+        return BarType(AUDUSD_FXCM, TestStubs.bar_spec_1min_bid())
 
     @staticmethod
     def bartype_audusd_1min_ask():
-        return BarType(AUDUSD_FXCM, ONE_MINUTE_ASK)
+        return BarType(AUDUSD_FXCM, TestStubs.bar_spec_1min_ask())
 
     @staticmethod
     def bartype_gbpusd_1min_bid():
-        return BarType(GBPUSD_FXCM, ONE_MINUTE_BID)
+        return BarType(GBPUSD_FXCM, TestStubs.bar_spec_1min_bid())
 
     @staticmethod
     def bartype_gbpusd_1min_ask():
-        return BarType(GBPUSD_FXCM, ONE_MINUTE_ASK)
+        return BarType(GBPUSD_FXCM, TestStubs.bar_spec_1min_ask())
 
     @staticmethod
     def bartype_gbpusd_1sec_mid():
-        return BarType(GBPUSD_FXCM, ONE_SECOND_MID)
+        return BarType(GBPUSD_FXCM, TestStubs.bar_spec_1sec_mid())
 
     @staticmethod
     def bartype_usdjpy_1min_bid():
-        return BarType(USDJPY_FXCM, ONE_MINUTE_BID)
+        return BarType(USDJPY_FXCM, TestStubs.bar_spec_1min_bid())
 
     @staticmethod
     def bartype_usdjpy_1min_ask():
-        return BarType(USDJPY_FXCM, ONE_MINUTE_ASK)
+        return BarType(USDJPY_FXCM, TestStubs.bar_spec_1min_ask())
 
     @staticmethod
     def bar_5decimal():
