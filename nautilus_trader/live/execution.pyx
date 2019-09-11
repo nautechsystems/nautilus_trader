@@ -148,12 +148,12 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
             return
 
         for key_bytes in account_keys:
-            key = key_bytes.decode(UTF8)
-            events = self._redis.lrange(name=key, start=0, end=-1)
+            events = self._redis.lrange(name=key_bytes, start=0, end=-1)
+            account_id = AccountId.from_string(key_bytes.decode(UTF8).rsplit(':', maxsplit=1)[1])
 
             # Check there is at least one event to pop
             if len(events) == 0:
-                self._log.error(f"Cannot load account {key} from database (no events persisted).")
+                self._log.error(f"Cannot load {account_id} from database (no events persisted).")
                 continue
 
             last_event = self._event_serializer.deserialize(events.pop())
@@ -184,12 +184,12 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
             return
 
         for key_bytes in order_keys:
-            key = key_bytes.decode(UTF8)
-            events = self._redis.lrange(name=key, start=0, end=-1)
+            events = self._redis.lrange(name=key_bytes, start=0, end=-1)
+            order_id = OrderId(key_bytes.decode(UTF8).rsplit(':', maxsplit=1)[1])
 
             # Check there is at least one event to pop
             if len(events) == 0:
-                self._log.error(f"Cannot load order {key} from database (no events persisted).")
+                self._log.error(f"Cannot load {order_id} from database (no events persisted).")
                 continue
 
             initial = self._event_serializer.deserialize(events.pop(0))
@@ -223,19 +223,19 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
             return
 
         for key_bytes in position_keys:
-            key = key_bytes.decode(UTF8).rsplit(':', maxsplit=1)[1]
-            events = self._redis.lrange(name=key, start=0, end=-1)
+            events = self._redis.lrange(name=key_bytes, start=0, end=-1)
+            position_id = PositionId(key_bytes.decode(UTF8).rsplit(':', maxsplit=1)[1])
 
             # Check there is at least one event to pop
             if len(events) == 0:
-                self._log.error(f"Cannot load position {key} from database (no events persisted).")
+                self._log.error(f"Cannot load {position_id} from database (no events persisted).")
                 continue
 
             initial = self._event_serializer.deserialize(events.pop(0))
-            position = Position(position_id=key, event=initial)
+            position = Position(position_id=position_id, event=initial)
 
             for event in events:
-                position.apply(event)
+                position.apply(self._event_serializer.deserialize(event))
 
             self._cached_positions[position.id] = position
 
