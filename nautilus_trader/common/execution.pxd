@@ -83,10 +83,7 @@ cdef class ExecutionDatabase:
     cpdef int count_positions_total(self, StrategyId strategy_id=*)
     cpdef int count_positions_open(self, StrategyId strategy_id=*)
     cpdef int count_positions_closed(self, StrategyId strategy_id=*)
-
 # -------------------------------------------------------------------------------------------------"
-    cdef void _log_cannot_find_order(self, OrderId order_id)
-    cdef void _log_cannot_find_position(self, PositionId position_id)
 
 
 cdef class InMemoryExecutionDatabase(ExecutionDatabase):
