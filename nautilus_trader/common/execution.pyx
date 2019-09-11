@@ -251,12 +251,6 @@ cdef class ExecutionDatabase:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cdef void _log_cannot_find_order(self, OrderId order_id):
-        self._log.error(f"Cannot find {order_id} in the cache.")
-
-    cdef void _log_cannot_find_position(self, PositionId position_id):
-        self._log.error(f"Cannot find {position_id} in the cache.")
-
 
 cdef class InMemoryExecutionDatabase(ExecutionDatabase):
     """
@@ -492,10 +486,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         :param account_id: The account identifier.
         :return Account or None.
         """
-        cdef Account account = self._cached_accounts.get(account_id)
-        if account is None:
-            self._log.warning(f"Cannot find {account_id} in the database.")
-        return account
+        return self._cached_accounts.get(account_id)
 
     cpdef set get_strategy_ids(self):
         """
@@ -617,10 +608,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
         :return Order or None.
         """
-        cdef Order order = self._cached_orders.get(order_id)
-        if order is None:
-            self._log_cannot_find_order(order_id)
-        return order
+        return self._cached_orders.get(order_id)
 
     cpdef dict get_orders(self, StrategyId strategy_id=None):
         """
@@ -680,10 +668,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         :param position_id: The position_id.
         :return Position or None.
         """
-        cdef Position position = self._cached_positions.get(position_id)
-        if position is None:
-            self._log_cannot_find_position(position_id)
-        return position
+        return self._cached_positions.get(position_id)
 
     cpdef Position get_position_for_order(self, OrderId order_id):
         """
