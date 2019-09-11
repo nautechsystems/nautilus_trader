@@ -15,7 +15,13 @@ from nautilus_trader.live.node import TradingNode
 from examples.strategies.ema_cross import EMACrossPy
 
 AUDUSD_FXCM = Symbol('AUDUSD', Venue('FXCM'))
-# BAR_TYPE = BarType(AUDUSD_FXCM, BarSpecification(1, Resolution.MINUTE, QuoteType.BID))
+EURUSD_FXCM = Symbol('EURUSD', Venue('FXCM'))
+GBPUSD_FXCM = Symbol('GBPUSD', Venue('FXCM'))
+USDJPY_FXCM = Symbol('USDJPY', Venue('FXCM'))
+WTIUSD_FXCM = Symbol('WTIUSD', Venue('FXCM'))
+
+
+#BAR_TYPE = BarType(AUDUSD_FXCM, BarSpecification(1, Resolution.MINUTE, QuoteType.BID))
 BAR_TYPE = BarType(AUDUSD_FXCM, BarSpecification(1, Resolution.SECOND, QuoteType.BID))
 
 
@@ -24,19 +30,29 @@ BAR_TYPE = BarType(AUDUSD_FXCM, BarSpecification(1, Resolution.SECOND, QuoteType
 #   - A NautilusData instance listening on the default ports
 #   - A NautilusExecutor instance listening on the default ports
 
+symbols_to_trade = [
+    AUDUSD_FXCM,
+    EURUSD_FXCM,
+    GBPUSD_FXCM,
+    USDJPY_FXCM,
+    WTIUSD_FXCM
+]
 
 if __name__ == "__main__":
-    strategy = EMACrossPy(
-        AUDUSD_FXCM,
-        BAR_TYPE,
-        0.1,
-        10,
-        20,
-        20)
+
+    strategies = []
+    for symbol in symbols_to_trade:
+        strategies.append(EMACrossPy(
+            symbol,
+            BAR_TYPE,
+            0.1,
+            10,
+            20,
+            20))
 
     node = TradingNode(
         config_path='config.json',
-        strategies=[strategy])
+        strategies=strategies)
 
     node.connect()
 
