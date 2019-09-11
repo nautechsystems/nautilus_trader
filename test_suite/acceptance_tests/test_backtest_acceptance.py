@@ -135,7 +135,7 @@ class BacktestAcceptanceTests(unittest.TestCase):
                                sl_atr_multiple=2.0,
                                extra_id_tag='001'),
                       EMACross(instrument=instrument,
-                               bar_type=bar_type,
+                               bar_spec=TestStubs.bar_spec_1min_bid(),
                                risk_bp=10,
                                fast_ema=10,
                                slow_ema=20,
