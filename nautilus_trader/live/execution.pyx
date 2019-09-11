@@ -466,10 +466,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         :param account_id: The account identifier.
         :return Account or None.
         """
-        cdef Account account = self._cached_accounts.get(account_id)
-        if account is None:
-            self._log.warning(f"Cannot find {account_id} in the database.")
-        return account
+        return self._cached_accounts.get(account_id)
 
     cpdef set get_strategy_ids(self):
         """
@@ -560,10 +557,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         :return Order or None.
         """
-        cdef Order order = self._cached_orders.get(order_id)
-        if order is None:
-            self._log_cannot_find_order(order_id)
-        return order
+        return self._cached_orders.get(order_id)
 
     cpdef dict get_orders(self, StrategyId strategy_id=None):
         """
@@ -623,10 +617,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         :param position_id: The position_id.
         :return Position or None.
         """
-        cdef Position position = self._cached_positions.get(position_id)
-        if position is None:
-            self._log_cannot_find_position(position_id)
-        return position
+        return self._cached_positions.get(position_id)
 
     cpdef Position get_position_for_order(self, OrderId order_id):
         """
@@ -637,7 +628,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         cdef PositionId position_id = self.get_position_id(order_id)
         if position_id is None:
-            self._log.error(f"Cannot get position for {order_id} (no matching position_id found in database).")
+            self._log.warning(f"Cannot get position for {order_id} (no matching position_id found in database).")
             return None
 
         return self._cached_positions.get(position_id)
@@ -651,7 +642,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         cdef bytes position_id_bytes = self._redis.hget(name=self.key_index_order_position, key=order_id.value)
         if position_id_bytes is None:
-            self._log.error(f"Cannot get position_id for {order_id} (no matching position_id found in database).")
+            self._log.warning(f"Cannot get position_id for {order_id} (no matching position_id found in database).")
             return position_id_bytes
 
         return PositionId(position_id_bytes.decode(UTF8))
