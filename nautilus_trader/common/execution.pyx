@@ -1019,7 +1019,7 @@ cdef class ExecutionEngine:
 #--------------------------------------------------------------------------------------------------"
 
     cdef void _execute_command(self, Command command):
-        self._log.debug(f'Received {command}.')
+        self._log.debug(f'Received command {command}.')
         self.command_count += 1
 
         if isinstance(command, AccountInquiry):
@@ -1039,7 +1039,7 @@ cdef class ExecutionEngine:
             self._exec_client.cancel_order(command)
 
     cdef void _handle_event(self, Event event):
-        self._log.debug(f'Received {event}.')
+        self._log.debug(f'Received event {event}.')
         self.event_count += 1
 
         if isinstance(event, OrderEvent):
