@@ -160,6 +160,7 @@ cdef class TradingNode:
 
         self.trader = Trader(
             trader_id=self.trader_id,
+            account_id=self.account_id,
             strategies=strategies,
             data_client=self._data_client,
             exec_engine=self._exec_engine,

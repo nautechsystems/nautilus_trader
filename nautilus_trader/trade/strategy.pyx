@@ -117,11 +117,13 @@ cdef class TradingStrategy:
         self._modify_order_buffer = {}   # type: Dict[OrderId, ModifyOrder]
 
         # Registered modules
-        self._data_client = None  # Initialized when registered with the data client
-        self._exec_engine = None  # Initialized when registered with the execution engine
-        self.portfolio = None     # Initialized when registered with the execution engine
-        self.account = None       # Initialized when registered with the execution engine
+        self._data_client = None    # Initialized when registered with the data client
+        self._exec_engine = None    # Initialized when registered with the execution engine
+        self.portfolio = None       # Initialized when registered with the execution engine
+        self.account = None         # Initialized when registered with the execution engine
 
+        self.is_data_client_registered = False  # True when registered with the data client
+        self.is_exec_engine_registered = False  # True when registered with the execution engine
         self.is_running = False
 
     cdef bint equals(self, TradingStrategy other):
@@ -263,6 +265,7 @@ cdef class TradingStrategy:
         :param client: The data client to register.
         """
         self._data_client = client
+        self.is_data_client_registered = True
         self.log.debug("Registered data client.")
 
     cpdef void register_execution_engine(self, ExecutionEngine engine) except *:
@@ -274,6 +277,7 @@ cdef class TradingStrategy:
         self._exec_engine = engine
         self.portfolio = engine.portfolio
         self.account = engine.get_first_account()
+        self.is_exec_engine_registered = True
         self.log.debug("Registered execution engine.")
 
     cpdef void register_indicator_ticks(
@@ -548,7 +552,9 @@ cdef class TradingStrategy:
         :raises ConditionFailed: If strategy has not been registered with a data client.
         :raises ConditionFailed: If the instrument is not found.
         """
-        Condition.not_none(self._data_client, 'data_client')
+        if not self.is_data_client_registered:
+            self.log.error("Cannot get instrument (data client not registered).")
+            return
 
         return self._data_client.get_instrument(symbol)
 
@@ -558,6 +564,10 @@ cdef class TradingStrategy:
         
         :return Dict[Symbol, Instrument].
         """
+        if not self.is_data_client_registered:
+            self.log.error("Cannot get instruments (data client not registered).")
+            return
+
         return self._data_client.get_instruments_all()
 
     cpdef void request_bars(self, BarType bar_type, datetime from_datetime=None, datetime to_datetime=None):
@@ -571,6 +581,10 @@ cdef class TradingStrategy:
         :param to_datetime: The datetime to which the historical bars should be downloaded.
         :raises ConditionFailed: If the from_datetime is not None and not less than to_datetime.
         """
+        if not self.is_data_client_registered:
+            self.log.error("Cannot request bars (data client not registered).")
+            return
+
         if to_datetime is None:
             to_datetime = self.clock.time_now()
         if from_datetime is None:
@@ -590,7 +604,7 @@ cdef class TradingStrategy:
 
         :param symbol: The tick symbol to subscribe to.
         """
-        if self._data_client is None:
+        if not self.is_data_client_registered:
             self.log.error("Cannot subscribe to ticks (data client not registered).")
             return
 
@@ -603,7 +617,7 @@ cdef class TradingStrategy:
 
         :param bar_type: The bar type to subscribe to.
         """
-        if self._data_client is None:
+        if not self.is_data_client_registered:
             self.log.error("Cannot subscribe to bars (data client not registered).")
             return
 
@@ -616,7 +630,7 @@ cdef class TradingStrategy:
 
         :param symbol: The instrument symbol to subscribe to.
         """
-        if self._data_client is None:
+        if not self.is_data_client_registered:
             self.log.error("Cannot subscribe to instrument (data client not registered).")
             return
 
@@ -629,7 +643,7 @@ cdef class TradingStrategy:
 
         :param symbol: The tick symbol to unsubscribe from.
         """
-        if self._data_client is None:
+        if not self.is_data_client_registered:
             self.log.error("Cannot unsubscribe from ticks (data client not registered).")
             return
 
@@ -642,7 +656,7 @@ cdef class TradingStrategy:
 
         :param bar_type: The bar type to unsubscribe from.
         """
-        if self._data_client is None:
+        if not self.is_data_client_registered:
             self.log.error("Cannot unsubscribe from bars (data client not registered).")
             return
 
@@ -655,7 +669,7 @@ cdef class TradingStrategy:
 
         :param symbol: The instrument symbol to unsubscribe from.
         """
-        if self._data_client is None:
+        if not self.is_data_client_registered:
             self.log.error("Cannot unsubscribe from instrument (data client not registered).")
             return
 
@@ -1055,7 +1069,15 @@ cdef class TradingStrategy:
         """
         Start the trade strategy and call on_start().
         """
-        self.log.info(f"Starting...")
+        self.log.debug(f"Starting...")
+
+        if not self.is_data_client_registered:
+            self.log.error("Cannot start strategy (the data client is not registered).")
+            return
+
+        if not self.is_exec_engine_registered:
+            self.log.error("Cannot start strategy (the execution engine is not registered).")
+            return
 
         try:
             self.on_start()
@@ -1069,7 +1091,7 @@ cdef class TradingStrategy:
         """
         Stop the trade strategy and call on_stop().
         """
-        self.log.info(f"Stopping...")
+        self.log.debug(f"Stopping...")
 
         # Clean up clock
         self.clock.cancel_all_time_alerts()
@@ -1121,7 +1143,7 @@ cdef class TradingStrategy:
             self.log.error(f"Cannot reset (cannot reset a running strategy).")
             return
 
-        self.log.info(f"Resetting...")
+        self.log.debug(f"Resetting...")
         self.order_factory.reset()
         self.position_id_generator.reset()
         self._ticks = {}                      # type: Dict[Symbol, Deque[Tick]]
@@ -1144,7 +1166,7 @@ cdef class TradingStrategy:
         """
         Dispose of the strategy to release system resources, then call on_dispose().
         """
-        self.log.info(f"Disposing...")
+        self.log.debug(f"Disposing...")
 
         try:
             self.on_dispose()
@@ -1157,8 +1179,8 @@ cdef class TradingStrategy:
         """
         Send an account inquiry command to the execution service.
         """
-        if self._exec_engine is None:
-            self.log.error("Cannot send account inquiry (execution engine not registered).")
+        if not self.is_exec_engine_registered:
+            self.log.error("Cannot send AccountInquiry (execution engine not registered).")
             return
 
         cdef AccountInquiry command = AccountInquiry(
@@ -1176,7 +1198,9 @@ cdef class TradingStrategy:
         :param order: The order to submit.
         :param position_id: The position_id to associate with this order.
         """
-        Condition.not_none(self._exec_engine, 'exec_engine')
+        if not self.is_exec_engine_registered:
+            self.log.error("Cannot submit order (execution engine not registered).")
+            return
 
         self.log.info(f"Submitting {order} for {position_id}")
 
@@ -1223,7 +1247,7 @@ cdef class TradingStrategy:
         :param atomic_order: The atomic order to submit.
         :param position_id: The position_id to associate with this order.
         """
-        if self._exec_engine is None:
+        if not self.is_exec_engine_registered:
             self.log.error("Cannot submit atomic order (execution engine not registered).")
             return
 
@@ -1260,7 +1284,7 @@ cdef class TradingStrategy:
         :param order: The order to modify.
         :param new_price: The new price for the given order.
         """
-        if self._exec_engine is None:
+        if not self.is_exec_engine_registered:
             self.log.error("Cannot modify order (execution engine not registered).")
             return
 
@@ -1292,7 +1316,7 @@ cdef class TradingStrategy:
         :param cancel_reason: The reason for cancellation (will be logged).
         :raises ConditionFailed: If the strategy has not been registered with an execution client.
         """
-        if self._exec_engine is None:
+        if not self.is_exec_engine_registered:
             self.log.error("Cannot cancel order (execution client not registered).")
             return
 
@@ -1317,7 +1341,7 @@ cdef class TradingStrategy:
         :param cancel_reason: The reason for cancellation (will be logged).
         :raises ConditionFailed: If the cancel_reason is not a valid string.
         """
-        if self._exec_engine is None:
+        if not self.is_exec_engine_registered:
             self.log.error("Cannot cancel all orders (execution client not registered).")
             return
 
@@ -1346,7 +1370,7 @@ cdef class TradingStrategy:
         :param position_id: The position_id to flatten.
         :raises ConditionFailed: If the position_id is not found in the position book.
         """
-        if self._exec_engine is None:
+        if not self.is_exec_engine_registered:
             self.log.error("Cannot flatten position (execution client not registered).")
             return
 
@@ -1371,14 +1395,14 @@ cdef class TradingStrategy:
         them to the execution service. If no positions found or a position is None
         then will log a warning.
         """
-        if self._exec_engine is None:
+        if not self.is_exec_engine_registered:
             self.log.error("Cannot flatten all positions (execution client not registered).")
             return
 
         cdef dict positions = self._exec_engine.database.get_positions_open(self.id)
 
         if len(positions) == 0:
-            self.log.warning("Did not flatten all positions (no active positions to flatten).")
+            self.log.warning("Did not flatten any positions (no active positions to flatten).")
             return
 
         cdef PositionId position_id
