@@ -153,3 +153,11 @@ cdef class Response(Message):
         """
         super().__init__(MessageType.RESPONSE, identifier, timestamp)
         self.correlation_id = correlation_id
+
+    def __str__(self) -> str:
+        """
+        Return a string representation of this object.
+
+        :return str.
+        """
+        return f"{self.__class__.__name__}(id={self.id.value}, correlation_id={self.id.value})"
