@@ -1073,8 +1073,8 @@ cdef class TradingStrategy:
 
     cpdef void cancel_all_orders(self, str cancel_reason=None):
         """
-        Send a cancel order command for all currently working orders in the
-        order book with the given cancel_reason - to the execution service.
+        Send a cancel order command for orders which are not completed in the
+        order book with the given cancel_reason - to the execution engine.
 
         :param cancel_reason: The reason for cancellation (will be logged).
         :raises ConditionFailed: If the cancel_reason is not a valid string.
@@ -1087,7 +1087,7 @@ cdef class TradingStrategy:
         cdef CancelOrder command
 
         for order_id, order in all_orders.items():
-            if order.is_working:
+            if not order.is_completed:
                 command = CancelOrder(
                     self.trader_id,
                     self.id,
