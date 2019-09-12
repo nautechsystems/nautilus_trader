@@ -15,10 +15,10 @@ from nautilus_trader.core.types cimport ValidString
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.quote_type cimport QuoteType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.c_enums.order_purpose cimport OrderPurpose
 from nautilus_trader.model.c_enums.market_position cimport MarketPosition
 from nautilus_trader.model.currency cimport ExchangeRateCalculator
-from nautilus_trader.model.events cimport Event, OrderRejected, OrderExpired, OrderCancelled
-from nautilus_trader.model.events cimport OrderCancelReject, OrderModified, OrderFilled, OrderPartiallyFilled
+from nautilus_trader.model.events cimport Event, OrderRejected, OrderCancelReject
 from nautilus_trader.model.identifiers cimport Symbol, Label, TraderId, StrategyId, OrderId, PositionId
 from nautilus_trader.model.generators cimport PositionIdGenerator
 from nautilus_trader.model.objects cimport Price, Tick, BarType, Bar, Instrument
@@ -40,8 +40,7 @@ cdef class TradingStrategy:
 
     def __init__(self,
                  str order_id_tag='000',
-                 bint flatten_on_sl_reject=True,
-                 bint flatten_on_stop=True,
+                bint flatten_on_stop=True,
                  bint cancel_all_orders_on_stop=True,
                  int tick_capacity=1000,
                  int bar_capacity=1000,
@@ -52,12 +51,8 @@ cdef class TradingStrategy:
         Initializes a new instance of the TradingStrategy class.
 
         :param order_id_tag: The order_id tag for the strategy (should be unique at trader level).
-        :param flatten_on_sl_reject: The flag indicating whether the position with an
-        associated stop order should be flattened if the order is rejected.
-        :param flatten_on_stop: The flag indicating whether the strategy should
-        be flattened on stop.
-        :param cancel_all_orders_on_stop: The flag indicating whether all residual
-        orders should be cancelled on stop.
+        :param flatten_on_stop: The flag indicating whether the strategy should be flattened on stop.
+        :param cancel_all_orders_on_stop: The flag indicating whether all residual orders should be cancelled on stop.
         :param bar_capacity: The capacity for the internal bar deque(s).
         :param clock: The clock for the strategy.
         :param guid_factory: The GUID factory for the strategy.
@@ -83,7 +78,6 @@ cdef class TradingStrategy:
         self.clock.register_handler(self.handle_event)
 
         # Order management flags
-        self.flatten_on_sl_reject = flatten_on_sl_reject
         self.flatten_on_stop = flatten_on_stop
         self.cancel_all_orders_on_stop = cancel_all_orders_on_stop
 
@@ -97,12 +91,6 @@ cdef class TradingStrategy:
             id_tag_strategy=self.id.order_id_tag,
             clock=self.clock)
 
-        # Registered orders
-        self._entry_orders = {}               # type: Dict[OrderId, Order]
-        self._stop_loss_orders = {}           # type: Dict[OrderId, Order]
-        self._take_profit_orders = {}         # type: Dict[OrderId, Order]
-        self._atomic_order_ids = {}           # type: Dict[OrderId, List[OrderId]]
-
         # Data
         self.tick_capacity = tick_capacity
         self.bar_capacity = bar_capacity
@@ -112,9 +100,6 @@ cdef class TradingStrategy:
         self._indicator_updaters_ticks = {}   # type: Dict[Symbol, List[IndicatorUpdater]]
         self._indicator_updaters_bars = {}    # type: Dict[BarType, List[IndicatorUpdater]]
         self._exchange_calculator = ExchangeRateCalculator()
-
-        # Command buffers
-        self._modify_order_buffer = {}   # type: Dict[OrderId, ModifyOrder]
 
         # Registered modules
         self._data_client = None    # Initialized when registered with the data client
@@ -334,33 +319,6 @@ cdef class TradingStrategy:
         else:
             self.log.error(f"Indicator {indicator} already registered for {bar_type}.")
 
-    cpdef void register_entry_order(self, Order order, PositionId position_id) except *:
-        """
-        Register the given order as an entry order.
-        
-        :param order: The entry order to register.
-        :param position_id: The position_id to associate with the entry order.
-        """
-        self._entry_orders[order.id] = order
-
-    cpdef void register_stop_loss_order(self, Order order, PositionId position_id) except *:
-        """
-        Register the given order as a stop loss order for the given position_id.
-        
-        :param order: The stop loss order to register.
-        :param position_id: The position_id to associate with the stop loss order.
-        """
-        self._stop_loss_orders[order.id] = order
-
-    cpdef void register_take_profit_order(self, Order order, PositionId position_id) except *:
-        """
-        Register the given order as a take-profit order for the given position_id.
-
-        :param order: The take-profit order to register.
-        :param position_id: The position_id to associate with the take-profit order.
-        """
-        self._take_profit_orders[order.id] = order
-
 
 #-- HANDLER METHODS -------------------------------------------------------------------------------#
 
@@ -446,48 +404,8 @@ cdef class TradingStrategy:
 
         :param event: The event received.
         """
-        cdef Position position
-        if isinstance(event, OrderRejected):
+        if isinstance(event, (OrderRejected, OrderCancelReject)):
             self.log.warning(f"{event}")
-            if event.order_id in self._stop_loss_orders and self.flatten_on_sl_reject:
-                position = self._exec_engine.database.get_position_for_order(event.order_id)
-                if position is not None:
-                    self.log.critical(f"Rejected order {event.order_id} was a registered stop-loss. Flattening entered position {position.id}.")
-                    self.flatten_position(position.id)
-                else:
-                    self.log.critical(f"Rejected order {event.order_id} was a registered stop-loss. Position {position.id} not entered.")
-            self._remove_atomic_child_orders(event.order_id)
-            self._remove_from_registered_orders(event.order_id)
-
-        elif isinstance(event, OrderCancelled):
-            self.log.info(f"{event}")
-            self._remove_atomic_child_orders(event.order_id)
-            self._remove_from_registered_orders(event.order_id)
-
-        elif isinstance(event, OrderFilled):
-            self.log.info(f"{event}")
-            if event.order_id in self._atomic_order_ids:
-                del self._atomic_order_ids[event.order_id]
-            self._remove_from_registered_orders(event.order_id)
-
-        elif isinstance(event, OrderPartiallyFilled):
-            self.log.warning(f"{event}")
-
-        elif isinstance(event, OrderCancelReject):
-            self.log.warning(f"{event}")
-            if event.order_id in self._modify_order_buffer:
-                self._process_modify_order_buffer(event.order_id)
-
-        elif isinstance(event, OrderModified):
-            self.log.info(f"{event}")
-            if event.order_id in self._modify_order_buffer:
-                self._process_modify_order_buffer(event.order_id)
-
-        elif isinstance(event, OrderExpired):
-            self.log.info(f"{event}")
-            self._remove_atomic_child_orders(event.order_id)
-            self._remove_from_registered_orders(event.order_id)
-
         else:
             self.log.info(f"{event}")
 
@@ -496,32 +414,6 @@ cdef class TradingStrategy:
                 self.on_event(event)
             except Exception as ex:
                 self.log.exception(ex)
-
-    cdef void _remove_atomic_child_orders(self, OrderId order_id):
-        # Remove any atomic child orders associated with the given order_id
-        if order_id in self._atomic_order_ids:
-            for child_order_id in self._atomic_order_ids[order_id]:
-                self._remove_from_registered_orders(child_order_id)
-            del self._atomic_order_ids[order_id]
-
-    cdef void _remove_from_registered_orders(self, OrderId order_id):
-        # Remove the given order_id from any registered order dictionary
-        if order_id in self._entry_orders:
-            del self._entry_orders[order_id]
-        elif order_id in self._stop_loss_orders:
-            del self._stop_loss_orders[order_id]
-        elif order_id in self._take_profit_orders:
-            del self._take_profit_orders[order_id]
-
-    cdef void _process_modify_order_buffer(self, OrderId order_id):
-        # Process the modify order buffer by checking if the commands modify order
-        # price is not equal to the orders current price, in this case the buffered
-        # command is sent for execution.
-        cdef ModifyOrder buffered_command = self._modify_order_buffer[order_id]
-        if buffered_command.modified_price != self.order(order_id).price:
-            self.log.info(f"Modifying {buffered_command.order_id} with price {buffered_command.modified_price}")
-            self._exec_engine.execute_command(buffered_command)
-        del self._modify_order_buffer[order_id]
 
 
 #-- DATA METHODS ----------------------------------------------------------------------------------#
@@ -880,92 +772,6 @@ cdef class TradingStrategy:
         """
         return self._exec_engine.database.get_orders_completed(self.id)
 
-    cpdef dict entry_orders(self):
-        """
-        Return a dictionary of pending or active entry orders.
-        
-        :return Dict[OrderId, Order].
-        """
-        return self._entry_orders
-
-    cpdef dict stop_loss_orders(self):
-        """
-        Return a dictionary of pending or active stop loss orders with their 
-        associated position_ids.
-        
-        :return Dict[OrderId, Order].
-        """
-        return self._stop_loss_orders
-
-    cpdef dict take_profit_orders(self):
-        """
-        Return a dictionary of pending or active stop loss orders with their 
-        associated position_ids.
-        
-        :return Dict[OrderId, Order].
-        """
-        return self._take_profit_orders
-
-    cpdef list entry_order_ids(self):
-        """
-        Return a list of pending entry order_ids.
-
-        :return List[OrderId].
-        """
-        return list(self._entry_orders.keys())
-
-    cpdef list stop_loss_order_ids(self):
-        """
-        Return a list of stop-loss order_ids.
-
-        :return List[OrderId].
-        """
-        return list(self._stop_loss_orders.keys())
-
-    cpdef list take_profit_order_ids(self):
-        """
-        Return a list of stop-loss order_ids.
-
-        :return List[OrderId].
-        """
-        return list(self._take_profit_orders.keys())
-
-    cpdef Order entry_order(self, OrderId order_id):
-        """
-        Return the entry order associated with the given identifier (if found).
-
-        :param order_id: The entry order_id.
-        :return Order.
-        :raises ConditionFailed. If the order_id is not registered with an entry.
-        """
-        Condition.is_in(order_id, self._entry_orders, 'order_id', 'pending_entry_orders')
-
-        return self._entry_orders[order_id].order
-
-    cpdef Order stop_loss_order(self, OrderId order_id):
-        """
-        Return the stop-loss order associated with the given identifier (if found).
-
-        :param order_id: The stop-loss order_id.
-        :return Order.
-        :raises ConditionFailed. If the order_id is not registered with a stop-loss.
-        """
-        Condition.is_in(order_id, self._stop_loss_orders, 'order_id', 'stop_loss_orders')
-
-        return self._stop_loss_orders[order_id].order
-
-    cpdef Order take_profit_order(self, OrderId order_id):
-        """
-        Return the take-profit order associated with the given identifier (if found).
-
-        :param order_id: The take-profit order_id.
-        :return Order.
-        :raises ConditionFailed. If the order_id is not registered with a take-profit.
-        """
-        Condition.is_in(order_id, self._take_profit_orders, 'order_id', 'take_profit_orders')
-
-        return self._take_profit_orders[order_id].order
-
     cpdef Position position(self, PositionId position_id):
         """
         Return the position associated with the given position_id.
@@ -1045,30 +851,6 @@ cdef class TradingStrategy:
         """
         return self._exec_engine.is_strategy_flat(self.id)
 
-    cpdef int entry_orders_count(self):
-        """
-        Return the count of pending entry orders registered with the strategy.
-        
-        :return int.
-        """
-        return len(self._entry_orders)
-
-    cpdef int stop_loss_orders_count(self):
-        """
-        Return the count of stop-loss orders registered with the strategy.
-        
-        :return int.
-        """
-        return len(self._stop_loss_orders)
-
-    cpdef int take_profit_orders_count(self):
-        """
-        Return the count of take-profit orders registered with the strategy.
-        
-        :return int.
-        """
-        return len(self._take_profit_orders)
-
 
 #-- COMMANDS --------------------------------------------------------------------------------------#
 
@@ -1114,22 +896,11 @@ cdef class TradingStrategy:
             self.cancel_all_orders("STOPPING STRATEGY")
 
         # Check for residual objects
-        for order in self._entry_orders.values():
-            self.log.warning(f"Residual entry {order}")
+        for order_id, order in self._exec_engine.database.get_orders_working(self.id):
+            self.log.warning(f"Residual working {order}")
 
-        for order in self._stop_loss_orders.values():
-            self.log.warning(f"Residual stop-loss {order}")
-
-        for order in self._take_profit_orders.values():
-            self.log.warning(f"Residual take-profit {order}")
-
-        for order_id in self._atomic_order_ids:
-            for child_order_id in self._atomic_order_ids[order_id]:
-                self.log.warning(f"Residual child order {child_order_id}")
-
-        # Check for residual buffered commands
-        for order_id, command in self._modify_order_buffer.items():
-            self.log.warning(f"Residual buffered {command} command for {order_id}.")
+        for position_id, position in self._exec_engine.database.get_positions_open(self.id):
+            self.log.warning(f"Residual open {position}")
 
         try:
             self.on_stop()
@@ -1195,6 +966,8 @@ cdef class TradingStrategy:
             self._guid_factory.generate(),
             self.clock.time_now())
 
+        self.log.info(f"Sending {command}...")
+
         self._exec_engine.execute_command(command)
 
     cpdef void submit_order(self, Order order, PositionId position_id):
@@ -1209,8 +982,6 @@ cdef class TradingStrategy:
             self.log.error("Cannot submit order (execution engine not registered).")
             return
 
-        self.log.info(f"Submitting {order} for {position_id}")
-
         cdef SubmitOrder command = SubmitOrder(
             self.trader_id,
             self.id,
@@ -1220,31 +991,9 @@ cdef class TradingStrategy:
             self._guid_factory.generate(),
             self.clock.time_now())
 
+        self.log.info(f"Sending {command}...")
+
         self._exec_engine.execute_command(command)
-
-    cpdef void submit_entry_order(self, Order order, PositionId position_id):
-        """
-        Register the given order as an entry and then send a submit order command 
-        with the given order and position_id to the execution service.
-        """
-        self.register_entry_order(order, position_id)
-        self.submit_order(order, position_id)
-
-    cpdef void submit_stop_loss_order(self, Order order, PositionId position_id):
-        """
-        Register the given order as a stop-loss and then send a submit order command 
-        with the given order and position_id to the execution service.
-        """
-        self.register_stop_loss_order(order, position_id)
-        self.submit_order(order, position_id)
-
-    cpdef void submit_take_profit_order(self, Order order, PositionId position_id):
-        """
-        Register the given order as a take-profit and then send a submit order command 
-        with the given order and position_id to the execution service.
-        """
-        self.register_take_profit_order(order, position_id)
-        self.submit_order(order, position_id)
 
     cpdef void submit_atomic_order(self, AtomicOrder atomic_order, PositionId position_id):
         """
@@ -1258,20 +1007,6 @@ cdef class TradingStrategy:
             self.log.error("Cannot submit atomic order (execution engine not registered).")
             return
 
-        self.log.info(f"Submitting {atomic_order} for {position_id}")
-
-        self.register_entry_order(atomic_order.entry, position_id)
-        self.register_stop_loss_order(atomic_order.stop_loss, position_id)
-
-        if atomic_order.has_take_profit:
-            self.register_take_profit_order(atomic_order.take_profit, position_id)
-
-        # Track atomic order_ids
-        cdef list child_order_ids = [atomic_order.stop_loss.id]
-        if atomic_order.has_take_profit:
-            child_order_ids.append(atomic_order.take_profit.id)
-        self._atomic_order_ids[atomic_order.entry.id] = child_order_ids
-
         cdef SubmitAtomicOrder command = SubmitAtomicOrder(
             self.trader_id,
             self.id,
@@ -1280,6 +1015,8 @@ cdef class TradingStrategy:
             atomic_order,
             self._guid_factory.generate(),
             self.clock.time_now())
+
+        self.log.info(f"Sending {command}...")
 
         self._exec_engine.execute_command(command)
 
@@ -1304,13 +1041,7 @@ cdef class TradingStrategy:
             self._guid_factory.generate(),
             self.clock.time_now())
 
-        if order.id in self._modify_order_buffer:
-            self._modify_order_buffer[order.id] = command
-            self.log.warning(f"Buffering ModifyOrder command for {order} with new price {new_price}")
-            return
-
-        self._modify_order_buffer[order.id] = command
-        self.log.info(f"Modifying {order} with new price {new_price}")
+        self.log.info(f"Sending {command}...")
 
         self._exec_engine.execute_command(command)
 
@@ -1327,8 +1058,6 @@ cdef class TradingStrategy:
             self.log.error("Cannot cancel order (execution client not registered).")
             return
 
-        self.log.info(f"Cancelling {order}")
-
         cdef CancelOrder command = CancelOrder(
             self.trader_id,
             self.id,
@@ -1337,6 +1066,8 @@ cdef class TradingStrategy:
             ValidString(cancel_reason),
             self._guid_factory.generate(),
             self.clock.time_now())
+
+        self.log.info(f"Sending {command}...")
 
         self._exec_engine.execute_command(command)
 
@@ -1391,9 +1122,10 @@ cdef class TradingStrategy:
             position.symbol,
             self.get_flatten_side(position.market_position),
             position.quantity,
-            Label("EXIT"),)
+            Label("EXIT"),
+            OrderPurpose.EXIT)
 
-        self.log.info(f"Flattening {position}")
+        self.log.info(f"Flattening {position}...")
         self.submit_order(order, position_id)
 
     cpdef void flatten_all_positions(self):
@@ -1424,9 +1156,10 @@ cdef class TradingStrategy:
                 position.symbol,
                 self.get_flatten_side(position.market_position),
                 position.quantity,
-                Label("EXIT"))
+                Label("EXIT"),
+                OrderPurpose.EXIT)
 
-            self.log.info(f"Flattening {position}.")
+            self.log.info(f"Flattening {position}...")
             self.submit_order(order, position_id)
 
 

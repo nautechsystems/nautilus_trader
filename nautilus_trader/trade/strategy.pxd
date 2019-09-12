@@ -35,16 +35,10 @@ cdef class TradingStrategy:
     cdef readonly TraderId trader_id
     cdef readonly StrategyId id
 
-    cdef readonly bint flatten_on_sl_reject
     cdef readonly bint flatten_on_stop
     cdef readonly bint cancel_all_orders_on_stop
     cdef readonly OrderFactory order_factory
     cdef readonly PositionIdGenerator position_id_generator
-    cdef dict _entry_orders
-    cdef dict _stop_loss_orders
-    cdef dict _take_profit_orders
-    cdef dict _atomic_order_ids
-    cdef dict _modify_order_buffer
 
     cdef readonly int tick_capacity
     cdef readonly int bar_capacity
@@ -82,9 +76,6 @@ cdef class TradingStrategy:
     cpdef void register_execution_engine(self, ExecutionEngine engine) except *
     cpdef void register_indicator_ticks(self, Symbol symbol, indicator, update_method) except *
     cpdef void register_indicator_bars(self, BarType bar_type, indicator, update_method) except *
-    cpdef void register_entry_order(self, Order order, PositionId position_id) except *
-    cpdef void register_stop_loss_order(self, Order order, PositionId position_id) except *
-    cpdef void register_take_profit_order(self, Order order, PositionId position_id) except *
 
 #-- HANDLER METHODS -------------------------------------------------------------------------------#
     cpdef void handle_tick(self, Tick tick)
@@ -93,10 +84,6 @@ cdef class TradingStrategy:
     cpdef void handle_bars(self, BarType bar_type, list bars)
     cpdef void handle_instrument(self, Instrument instrument)
     cpdef void handle_event(self, Event event)
-
-    cdef void _remove_atomic_child_orders(self, OrderId order_id)
-    cdef void _remove_from_registered_orders(self, OrderId order_id)
-    cdef void _process_modify_order_buffer(self, OrderId order_id)
 
 #-- DATA METHODS ----------------------------------------------------------------------------------#
     cpdef datetime time_now(self)
@@ -132,15 +119,6 @@ cdef class TradingStrategy:
     cpdef dict orders(self)
     cpdef dict orders_working(self)
     cpdef dict orders_completed(self)
-    cpdef dict entry_orders(self)
-    cpdef dict stop_loss_orders(self)
-    cpdef dict take_profit_orders(self)
-    cpdef list entry_order_ids(self)
-    cpdef list stop_loss_order_ids(self)
-    cpdef list take_profit_order_ids(self)
-    cpdef Order entry_order(self, OrderId order_id)
-    cpdef Order stop_loss_order(self, OrderId order_id)
-    cpdef Order take_profit_order(self, OrderId order_id)
     cpdef Position position(self, PositionId position_id)
     cpdef dict positions(self)
     cpdef dict positions_open(self)
@@ -150,9 +128,6 @@ cdef class TradingStrategy:
     cpdef bint is_order_working(self, OrderId order_id)
     cpdef bint is_order_complete(self, OrderId order_id)
     cpdef bint is_flat(self)
-    cpdef int entry_orders_count(self)
-    cpdef int stop_loss_orders_count(self)
-    cpdef int take_profit_orders_count(self)
 
 #-- COMMANDS --------------------------------------------------------------------------------------#
     cpdef void start(self)
@@ -161,9 +136,6 @@ cdef class TradingStrategy:
     cpdef void dispose(self)
     cpdef void account_inquiry(self)
     cpdef void submit_order(self, Order order, PositionId position_id)
-    cpdef void submit_entry_order(self, Order order, PositionId position_id)
-    cpdef void submit_stop_loss_order(self, Order order, PositionId position_id)
-    cpdef void submit_take_profit_order(self, Order order, PositionId position_id)
     cpdef void submit_atomic_order(self, AtomicOrder atomic_order, PositionId position_id)
     cpdef void modify_order(self, Order order, Price new_price)
     cpdef void cancel_order(self, Order order, str cancel_reason=*)
