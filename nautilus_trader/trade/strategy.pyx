@@ -896,10 +896,10 @@ cdef class TradingStrategy:
             self.cancel_all_orders("STOPPING STRATEGY")
 
         # Check for residual objects
-        for order_id, order in self._exec_engine.database.get_orders_working(self.id):
+        for order in self._exec_engine.database.get_orders_working(self.id).values():
             self.log.warning(f"Residual working {order}")
 
-        for position_id, position in self._exec_engine.database.get_positions_open(self.id):
+        for position in self._exec_engine.database.get_positions_open(self.id).values():
             self.log.warning(f"Residual open {position}")
 
         try:
