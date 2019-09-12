@@ -404,14 +404,13 @@ cdef class OrderWorking(OrderEvent):
 
         :return str.
         """
-        cdef str expire_time = 'NONE' if self.expire_time is None else format_zulu_datetime(self.expire_time)
+        cdef str expire_time = '' if self.expire_time is None else f', expire_time={format_zulu_datetime(self.expire_time)}'
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id.value}, "
                 f"order_id={self.order_id.value}, "
                 f"label={self.label.value}, "
                 f"price={self.price}, "
-                f"tif={time_in_force_to_string(self.time_in_force)},"
-                f"expire_time={expire_time})")
+                f"tif={time_in_force_to_string(self.time_in_force)}{expire_time})")
 
 
 cdef class OrderCancelReject(OrderEvent):
