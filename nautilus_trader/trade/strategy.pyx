@@ -994,14 +994,14 @@ cdef class TradingStrategy:
 
         cdef SubmitOrder command = SubmitOrder(
             self.trader_id,
-            self.id,
             self.account.id,
+            self.id,
             position_id,
             order,
             self._guid_factory.generate(),
             self.clock.time_now())
 
-        self.log.info(f"Sending {command}...")
+        self.log.info(f"Sending {command}.")
 
         self._exec_engine.execute_command(command)
 
@@ -1019,8 +1019,8 @@ cdef class TradingStrategy:
 
         cdef SubmitAtomicOrder command = SubmitAtomicOrder(
             self.trader_id,
-            self.id,
             self.account.id,
+            self.id,
             position_id,
             atomic_order,
             self._guid_factory.generate(),
@@ -1044,7 +1044,6 @@ cdef class TradingStrategy:
 
         cdef ModifyOrder command = ModifyOrder(
             self.trader_id,
-            self.id,
             self.account.id,
             order.id,
             new_price,
@@ -1070,7 +1069,6 @@ cdef class TradingStrategy:
 
         cdef CancelOrder command = CancelOrder(
             self.trader_id,
-            self.id,
             self.account.id,
             order.id,
             ValidString(cancel_reason),
@@ -1099,7 +1097,6 @@ cdef class TradingStrategy:
         for order_id, order in working_orders.items():
             command = CancelOrder(
                 self.trader_id,
-                self.id,
                 self.account.id,
                 order_id,
                 ValidString(cancel_reason),

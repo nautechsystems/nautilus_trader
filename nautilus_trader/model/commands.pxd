@@ -19,23 +19,22 @@ cdef class AccountInquiry(Command):
 
 cdef class SubmitOrder(Command):
     cdef readonly TraderId trader_id
-    cdef readonly StrategyId strategy_id
     cdef readonly AccountId account_id
+    cdef readonly StrategyId strategy_id
     cdef readonly PositionId position_id
     cdef readonly Order order
 
 
 cdef class SubmitAtomicOrder(Command):
     cdef readonly TraderId trader_id
-    cdef readonly StrategyId strategy_id
     cdef readonly AccountId account_id
+    cdef readonly StrategyId strategy_id
     cdef readonly PositionId position_id
     cdef readonly AtomicOrder atomic_order
 
 
 cdef class ModifyOrder(Command):
     cdef readonly TraderId trader_id
-    cdef readonly StrategyId strategy_id
     cdef readonly AccountId account_id
     cdef readonly OrderId order_id
     cdef readonly Price modified_price
@@ -43,7 +42,6 @@ cdef class ModifyOrder(Command):
 
 cdef class CancelOrder(Command):
     cdef readonly TraderId trader_id
-    cdef readonly StrategyId strategy_id
     cdef readonly AccountId account_id
     cdef readonly OrderId order_id
     cdef readonly ValidString cancel_reason

@@ -511,8 +511,8 @@ class ExecutionEngineTests(unittest.TestCase):
 
         submit_order = SubmitOrder(
             self.trader_id,
-            strategy.id,
             self.account_id,
+            strategy.id,
             position_id,
             order,
             self.guid_factory.generate(),
@@ -541,8 +541,8 @@ class ExecutionEngineTests(unittest.TestCase):
 
         submit_order = SubmitOrder(
             self.trader_id,
-            strategy.id,
             self.account_id,
+            strategy.id,
             position_id,
             order,
             self.guid_factory.generate(),
@@ -592,8 +592,8 @@ class ExecutionEngineTests(unittest.TestCase):
 
         submit_order1 = SubmitOrder(
             self.trader_id,
-            strategy.id,
             self.account_id,
+            strategy.id,
             position_id,
             order1,
             self.guid_factory.generate(),
@@ -601,8 +601,8 @@ class ExecutionEngineTests(unittest.TestCase):
 
         submit_order2 = SubmitOrder(
             self.trader_id,
-            strategy.id,
             self.account_id,
+            strategy.id,
             position_id,
             order2,
             self.guid_factory.generate(),
@@ -656,8 +656,8 @@ class ExecutionEngineTests(unittest.TestCase):
 
         submit_order1 = SubmitOrder(
             self.trader_id,
-            strategy.id,
             self.account_id,
+            strategy.id,
             position_id,
             order1,
             self.guid_factory.generate(),
@@ -665,8 +665,8 @@ class ExecutionEngineTests(unittest.TestCase):
 
         submit_order2 = SubmitOrder(
             self.trader_id,
-            strategy.id,
             self.account_id,
+            strategy.id,
             position_id,
             order2,
             self.guid_factory.generate(),
@@ -705,8 +705,8 @@ class ExecutionEngineTests(unittest.TestCase):
         # Arrange
         strategy1 = TradingStrategy(order_id_tag='001')
         strategy2 = TradingStrategy(order_id_tag='002')
-        position_id1 = strategy1.position_id_generator.generate()
-        position_id2 = strategy2.position_id_generator.generate()
+        position1_id = strategy1.position_id_generator.generate()
+        position2_id = strategy2.position_id_generator.generate()
 
         self.exec_engine.register_strategy(strategy1)
         self.exec_engine.register_strategy(strategy2)
@@ -725,18 +725,18 @@ class ExecutionEngineTests(unittest.TestCase):
 
         submit_order1 = SubmitOrder(
             self.trader_id,
-            strategy1.id,
             self.account_id,
-            position_id1,
+            strategy1.id,
+            position1_id,
             order1,
             self.guid_factory.generate(),
             self.clock.time_now())
 
         submit_order2 = SubmitOrder(
             self.trader_id,
-            strategy2.id,
             self.account_id,
-            position_id2,
+            strategy2.id,
+            position2_id,
             order2,
             self.guid_factory.generate(),
             self.clock.time_now())
@@ -751,34 +751,34 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.handle_event(order2_filled)
 
         # Assert
-        self.assertTrue(self.exec_db.position_exists(position_id1))
-        self.assertTrue(self.exec_db.position_exists(position_id2))
-        self.assertTrue(self.exec_db.is_position_open(position_id1))
-        self.assertTrue(self.exec_db.is_position_open(position_id2))
-        self.assertFalse(self.exec_db.is_position_closed(position_id1))
-        self.assertFalse(self.exec_db.is_position_closed(position_id2))
+        self.assertTrue(self.exec_db.position_exists(position1_id))
+        self.assertTrue(self.exec_db.position_exists(position2_id))
+        self.assertTrue(self.exec_db.is_position_open(position1_id))
+        self.assertTrue(self.exec_db.is_position_open(position2_id))
+        self.assertFalse(self.exec_db.is_position_closed(position1_id))
+        self.assertFalse(self.exec_db.is_position_closed(position2_id))
         self.assertFalse(self.exec_engine.is_strategy_flat(strategy1.id))
         self.assertFalse(self.exec_engine.is_strategy_flat(strategy2.id))
         self.assertFalse(self.exec_engine.is_flat())
-        self.assertEqual(Position, type(self.exec_db.get_position(position_id1)))
-        self.assertEqual(Position, type(self.exec_db.get_position(position_id2)))
-        self.assertTrue(position_id1 in self.exec_db.get_positions(strategy1.id))
-        self.assertTrue(position_id2 in self.exec_db.get_positions(strategy2.id))
-        self.assertTrue(position_id1 in self.exec_db.get_positions())
-        self.assertTrue(position_id2 in self.exec_db.get_positions())
+        self.assertEqual(Position, type(self.exec_db.get_position(position1_id)))
+        self.assertEqual(Position, type(self.exec_db.get_position(position2_id)))
+        self.assertTrue(position1_id in self.exec_db.get_positions(strategy1.id))
+        self.assertTrue(position2_id in self.exec_db.get_positions(strategy2.id))
+        self.assertTrue(position1_id in self.exec_db.get_positions())
+        self.assertTrue(position2_id in self.exec_db.get_positions())
         self.assertEqual(1, len(self.exec_db.get_positions_open(strategy1.id)))
         self.assertEqual(1, len(self.exec_db.get_positions_open(strategy2.id)))
         self.assertEqual(2, len(self.exec_db.get_positions_open()))
         self.assertEqual(1, len(self.exec_db.get_positions_open(strategy1.id)))
         self.assertEqual(1, len(self.exec_db.get_positions_open(strategy2.id)))
-        self.assertTrue(position_id1 in self.exec_db.get_positions_open(strategy1.id))
-        self.assertTrue(position_id2 in self.exec_db.get_positions_open(strategy2.id))
-        self.assertTrue(position_id1 in self.exec_db.get_positions_open())
-        self.assertTrue(position_id2 in self.exec_db.get_positions_open())
-        self.assertTrue(position_id1 not in self.exec_db.get_positions_closed(strategy1.id))
-        self.assertTrue(position_id2 not in self.exec_db.get_positions_closed(strategy2.id))
-        self.assertTrue(position_id1 not in self.exec_db.get_positions_closed())
-        self.assertTrue(position_id2 not in self.exec_db.get_positions_closed())
+        self.assertTrue(position1_id in self.exec_db.get_positions_open(strategy1.id))
+        self.assertTrue(position2_id in self.exec_db.get_positions_open(strategy2.id))
+        self.assertTrue(position1_id in self.exec_db.get_positions_open())
+        self.assertTrue(position2_id in self.exec_db.get_positions_open())
+        self.assertTrue(position1_id not in self.exec_db.get_positions_closed(strategy1.id))
+        self.assertTrue(position2_id not in self.exec_db.get_positions_closed(strategy2.id))
+        self.assertTrue(position1_id not in self.exec_db.get_positions_closed())
+        self.assertTrue(position2_id not in self.exec_db.get_positions_closed())
         self.assertEqual(2, self.exec_db.count_positions_total())
         self.assertEqual(2, self.exec_db.count_positions_open())
         self.assertEqual(0, self.exec_db.count_positions_closed())
@@ -813,8 +813,8 @@ class ExecutionEngineTests(unittest.TestCase):
 
         submit_order1 = SubmitOrder(
             self.trader_id,
-            strategy1.id,
             self.account_id,
+            strategy1.id,
             position_id1,
             order1,
             self.guid_factory.generate(),
@@ -822,8 +822,8 @@ class ExecutionEngineTests(unittest.TestCase):
 
         submit_order2 = SubmitOrder(
             self.trader_id,
-            strategy1.id,
             self.account_id,
+            strategy1.id,
             position_id1,
             order2,
             self.guid_factory.generate(),
@@ -831,8 +831,8 @@ class ExecutionEngineTests(unittest.TestCase):
 
         submit_order3 = SubmitOrder(
             self.trader_id,
-            strategy2.id,
             self.account_id,
+            strategy2.id,
             position_id2,
             order3,
             self.guid_factory.generate(),
