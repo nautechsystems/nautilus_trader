@@ -9,10 +9,10 @@
 from datetime import timedelta
 
 from nautilus_trader.core.message import Event
-from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.enums import OrderSide, OrderPurpose, TimeInForce
 from nautilus_trader.model.objects import Price, Tick, BarSpecification, BarType, Bar, Instrument
 from nautilus_trader.model.identifiers import Symbol, Label
+from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.data.analyzers import SpreadAnalyzer, LiquidityAnalyzer
 from nautilus_trader.trade.strategy import TradingStrategy
 from nautilus_trader.trade.sizing import FixedRiskSizer
@@ -122,7 +122,7 @@ class EMACrossPy(TradingStrategy):
         self.liquidity.update(self.spread_analyzer.average_spread, self.atr.value)
 
         # if self.liquidity.is_liquid
-        if self.entry_orders_count() == 0 and self.is_flat():
+        if len(self.orders_working()) == 0 and self.is_flat():
             atomic_order = None
 
             # BUY LOGIC
@@ -193,19 +193,19 @@ class EMACrossPy(TradingStrategy):
                 self.submit_atomic_order(atomic_order, self.position_id_generator.generate())
 
         # TRAILING STOP LOGIC
-        for trailing_stop in self.stop_loss_orders().values():
-            if trailing_stop.is_working:
+        for working_order in self.orders_working().values():
+            if working_order.purpose == OrderPurpose.STOP_LOSS:
                 # SELL SIDE ORDERS
-                if trailing_stop.is_sell:
+                if working_order.is_sell:
                     temp_price = Price(bar.low - (self.atr.value * self.SL_atr_multiple))
-                    if temp_price > trailing_stop.price:
-                        self.modify_order(trailing_stop, temp_price)
+                    if temp_price > working_order.price:
+                        self.modify_order(working_order, temp_price)
                 # BUY SIDE ORDERS
-                elif trailing_stop.is_buy:
+                elif working_order.is_buy:
                     temp_price = Price(
                         bar.high + (self.atr.value * self.SL_atr_multiple) + self.spread_analyzer.average_spread)
-                    if temp_price < trailing_stop.price:
-                        self.modify_order(trailing_stop, temp_price)
+                    if temp_price < working_order.price:
+                        self.modify_order(working_order, temp_price)
 
     def on_instrument(self, instrument: Instrument):
         """
@@ -227,7 +227,9 @@ class EMACrossPy(TradingStrategy):
         :param event: The received event.
         """
         # Put custom code for event handling here (or pass)
-        pass
+        if isinstance(event, OrderRejected):
+            self.cancel_all_orders("RESET ON REJECT")
+            self.flatten_all_positions()
 
     def on_stop(self):
         """
