@@ -18,6 +18,7 @@ from nautilus_trader.core.functions cimport format_zulu_datetime
 from nautilus_trader.model.c_enums.order_side cimport OrderSide, order_side_to_string
 from nautilus_trader.model.c_enums.order_type cimport OrderType, order_type_to_string
 from nautilus_trader.model.c_enums.order_state cimport OrderState, order_state_to_string
+from nautilus_trader.model.c_enums.order_purpose cimport OrderPurpose, order_purpose_to_string
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce, time_in_force_to_string
 from nautilus_trader.model.objects cimport Quantity, Symbol, Price
 from nautilus_trader.model.events cimport (
@@ -59,6 +60,7 @@ cdef class Order:
                  datetime timestamp,
                  Price price=None,
                  Label label=None,
+                 OrderPurpose order_purpose=OrderPurpose.NONE,
                  TimeInForce time_in_force=TimeInForce.DAY,
                  datetime expire_time=None,
                  GUID init_id=None):
@@ -73,6 +75,7 @@ cdef class Order:
         :param timestamp: The order initialization timestamp.
         :param price: The order price (must be None for non-priced orders).
         :param label: The order label / secondary identifier (optional can be None).
+        :param order_purpose: The specified order purpose (default NONE).
         :param time_in_force: The order time in force (default DAY).
         :param expire_time: The order expire time (optional can be None).
         :param init_id: The order initialization event identifier.
@@ -112,7 +115,8 @@ cdef class Order:
         self.timestamp = timestamp
         self.price = price                  # Can be None
         self.label = label                  # Can be None
-        self.time_in_force = time_in_force  # Can be None
+        self.purpose = order_purpose
+        self.time_in_force = time_in_force
         self.expire_time = expire_time      # Can be None
         self.filled_quantity = Quantity(0)
         self.filled_timestamp = None        # Can be None
@@ -133,6 +137,7 @@ cdef class Order:
             order_type=order_type,
             quantity=quantity,
             price=price,
+            order_purpose=order_purpose,
             time_in_force=time_in_force,
             expire_time=expire_time,
             event_id=self.init_id,
@@ -160,6 +165,7 @@ cdef class Order:
             timestamp=event.timestamp,
             price=event.price,
             label=event.label,
+            order_purpose=event.order_purpose,
             time_in_force=event.time_in_force,
             expire_time=event.expire_time,
             init_id=event.id)
@@ -207,9 +213,11 @@ cdef class Order:
         """
         cdef str quantity = '{:,}'.format(self.quantity.value)
         cdef str label = '' if self.label is None else f', label={self.label.value}'
+        cdef str purpose = '' if self.purpose == OrderPurpose.NONE else f', purpose={order_purpose_to_string(self.purpose)}'
         cdef str price = '' if self.price is None else f'@ {self.price} '
         cdef str expire_time = '' if self.expire_time is None else f' {format_zulu_datetime(self.expire_time)}'
-        return (f"Order(id={self.id.value}{label}, state={order_state_to_string(self.state)}) "
+        return (f"Order(id={self.id.value}, state={order_state_to_string(self.state)}"
+                f"{label}{purpose}) "
                 f"{order_side_to_string(self.side)} {quantity} {self.symbol} {order_type_to_string(self.type)} {price}"
                 f"{time_in_force_to_string(self.time_in_force)}{expire_time}")
 
@@ -416,8 +424,8 @@ cdef class AtomicOrder:
 
         :return str.
         """
-        cdef str take_profit = 'NONE' if self.take_profit is None else str(self.take_profit)
-        return f"AtomicOrder(id={self.id.value}, Entry{self.entry}, SL={self.stop_loss}, TP={take_profit})"
+        cdef str take_profit_price = 'NONE' if self.take_profit is None or self.take_profit.price is None else str(self.take_profit.price)
+        return f"AtomicOrder(id={self.id.value}, Entry{self.entry}, SL={self.stop_loss.price}, TP={take_profit_price}"
 
     def __repr__(self) -> str:
         """
@@ -462,7 +470,8 @@ cdef class OrderFactory:
             Symbol symbol,
             OrderSide order_side,
             Quantity quantity,
-            Label label=None):
+            Label label=None,
+            OrderPurpose order_purpose=OrderPurpose.NONE):
         """
         Return a market order with the given parameters.
 
@@ -470,6 +479,7 @@ cdef class OrderFactory:
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
         :param label: The orders label (optional can be None).
+        :param order_purpose: The orders specified purpose (default None).
         :raises ConditionFailed: If the order quantity is not positive (> 0).
         :return Order.
         """
@@ -482,6 +492,7 @@ cdef class OrderFactory:
             self._clock.time_now(),
             price=None,
             label=label,
+            order_purpose=order_purpose,
             time_in_force=TimeInForce.DAY,
             expire_time=None)
 
@@ -492,6 +503,7 @@ cdef class OrderFactory:
             Quantity quantity,
             Price price,
             Label label=None,
+            OrderPurpose order_purpose=OrderPurpose.NONE,
             TimeInForce time_in_force=TimeInForce.DAY,
             datetime expire_time=None):
         """
@@ -503,6 +515,7 @@ cdef class OrderFactory:
         :param quantity: The orders quantity (> 0).
         :param price: The orders price.
         :param label: The orders label (optional can be None).
+        :param order_purpose: The orders specified purpose (default NONE).
         :param time_in_force: The orders time in force (optional can be None).
         :param expire_time: The orders expire time (optional can be None - unless time_in_force is GTD).
         :return Order.
@@ -518,6 +531,7 @@ cdef class OrderFactory:
             self._clock.time_now(),
             price,
             label,
+            order_purpose,
             time_in_force,
             expire_time)
 
@@ -528,6 +542,7 @@ cdef class OrderFactory:
             Quantity quantity,
             Price price,
             Label label=None,
+            OrderPurpose order_purpose=OrderPurpose.NONE,
             TimeInForce time_in_force=TimeInForce.DAY,
             datetime expire_time=None):
         """
@@ -539,6 +554,7 @@ cdef class OrderFactory:
         :param quantity: The orders quantity (> 0).
         :param price: The orders price.
         :param label: The orders label (optional can be None).
+        :param order_purpose: The orders specified purpose (default NONE).
         :param time_in_force: The orders time in force (optional can be None).
         :param expire_time: The orders expire time (optional can be None - unless time_in_force is GTD).
         :return Order.
@@ -554,6 +570,7 @@ cdef class OrderFactory:
             self._clock.time_now(),
             price,
             label,
+            order_purpose,
             time_in_force,
             expire_time)
 
@@ -564,6 +581,7 @@ cdef class OrderFactory:
             Quantity quantity,
             Price price,
             Label label=None,
+            OrderPurpose order_purpose=OrderPurpose.NONE,
             TimeInForce time_in_force=TimeInForce.DAY,
             datetime expire_time=None):
         """
@@ -575,6 +593,7 @@ cdef class OrderFactory:
         :param quantity: The orders quantity (> 0).
         :param price: The orders price.
         :param label: The orders label (optional can be None).
+        :param order_purpose: The orders specified purpose (default NONE).
         :param time_in_force: The orders time in force (optional can be None).
         :param expire_time: The orders expire time (optional can be None - unless time_in_force is GTD).
         :return Order.
@@ -590,6 +609,7 @@ cdef class OrderFactory:
             self._clock.time_now(),
             price,
             label,
+            order_purpose,
             time_in_force,
             expire_time)
 
@@ -600,6 +620,7 @@ cdef class OrderFactory:
             Quantity quantity,
             Price price,
             Label label=None,
+            OrderPurpose order_purpose=OrderPurpose.NONE,
             TimeInForce time_in_force=TimeInForce.DAY,
             datetime expire_time=None):
         """
@@ -611,6 +632,7 @@ cdef class OrderFactory:
         :param quantity: The orders quantity (> 0).
         :param price: The orders price.
         :param label: The orders label (optional can be None).
+        :param order_purpose: The orders specified purpose (default NONE).
         :param time_in_force: The orders time in force (optional can be None).
         :param expire_time: The orders expire time (optional can be None - unless time_in_force is GTD).
         :return Order.
@@ -626,6 +648,7 @@ cdef class OrderFactory:
             self._clock.time_now(),
             price,
             label,
+            order_purpose,
             time_in_force,
             expire_time)
 
@@ -634,7 +657,8 @@ cdef class OrderFactory:
             Symbol symbol,
             OrderSide order_side,
             Quantity quantity,
-            Label label=None):
+            Label label=None,
+            OrderPurpose order_purpose=OrderPurpose.NONE):
         """
         Return a fill-or-kill order with the given parameters.
 
@@ -642,6 +666,7 @@ cdef class OrderFactory:
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
         :param label: The orders label (optional can be None).
+        :param order_purpose: The orders specified purpose (default NONE).
         :return Order.
         :raises ConditionFailed: If the order quantity is not positive (> 0).
         """
@@ -654,6 +679,7 @@ cdef class OrderFactory:
             self._clock.time_now(),
             price=None,
             label=label,
+            order_purpose=order_purpose,
             time_in_force=TimeInForce.FOC,
             expire_time=None)
 
@@ -662,7 +688,8 @@ cdef class OrderFactory:
             Symbol symbol,
             OrderSide order_side,
             Quantity quantity,
-            Label label=None):
+            Label label=None,
+            OrderPurpose order_purpose=OrderPurpose.NONE):
         """
         Return a immediate-or-cancel order with the given parameters.
 
@@ -670,6 +697,7 @@ cdef class OrderFactory:
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
         :param label: The orders label (optional can be None).
+        :param order_purpose: The orders specified purpose (default NONE).
         :return Order.
         :raises ConditionFailed: If the order quantity is not positive (> 0).
         """
@@ -682,6 +710,7 @@ cdef class OrderFactory:
             self._clock.time_now(),
             price=None,
             label=label,
+            order_purpose=order_purpose,
             time_in_force=TimeInForce.IOC,
             expire_time=None)
 
@@ -713,7 +742,8 @@ cdef class OrderFactory:
             symbol,
             order_side,
             quantity,
-            entry_label)
+            entry_label,
+            OrderPurpose.ENTRY)
 
         return self._create_atomic_order(
             entry_order,
@@ -759,6 +789,7 @@ cdef class OrderFactory:
             quantity,
             price_entry,
             label,
+            OrderPurpose.ENTRY,
             time_in_force,
             expire_time)
 
@@ -805,6 +836,7 @@ cdef class OrderFactory:
             quantity,
             price_entry,
             label,
+            OrderPurpose.ENTRY,
             time_in_force,
             expire_time)
 
@@ -834,6 +866,7 @@ cdef class OrderFactory:
             entry.quantity,
             price_stop_loss,
             label_stop_loss,
+            OrderPurpose.STOP_LOSS,
             TimeInForce.GTC,
             expire_time=None)
 
@@ -845,10 +878,8 @@ cdef class OrderFactory:
                 entry.quantity,
                 price_take_profit,
                 label_take_profit,
+                OrderPurpose.TAKE_PROFIT,
                 TimeInForce.GTC,
                 expire_time=None)
 
-        return AtomicOrder(
-            entry,
-            stop_loss,
-            take_profit)
+        return AtomicOrder(entry, stop_loss, take_profit)

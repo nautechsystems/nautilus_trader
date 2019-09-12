@@ -310,6 +310,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             OrderType.STOP_LIMIT,
             Quantity(100000),
             Price('1.50000'),
+            OrderPurpose.NONE,
             TimeInForce.DAY,
             None,
             GUID(uuid.uuid4()),

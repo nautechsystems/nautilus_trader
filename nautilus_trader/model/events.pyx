@@ -15,6 +15,7 @@ from nautilus_trader.core.message cimport Event
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.order_side cimport OrderSide, order_side_to_string
 from nautilus_trader.model.c_enums.order_type cimport OrderType
+from nautilus_trader.model.c_enums.order_purpose cimport OrderPurpose
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce, time_in_force_to_string
 from nautilus_trader.model.identifiers cimport (
     Symbol,
@@ -192,6 +193,7 @@ cdef class OrderInitialized(OrderEvent):
                  OrderType order_type,
                  Quantity quantity,
                  Price price,
+                 OrderPurpose order_purpose,
                  TimeInForce time_in_force,
                  datetime expire_time,
                  GUID event_id,
@@ -206,6 +208,7 @@ cdef class OrderInitialized(OrderEvent):
         :param order_type: The event order type.
         :param quantity: The event order quantity.
         :param price: The event order price.
+        :param order_purpose: The event order purpose.
         :param time_in_force: The event order time in force.
         :param expire_time: The event order expire time.
         :param event_id: The event identifier.
@@ -220,6 +223,7 @@ cdef class OrderInitialized(OrderEvent):
         self.order_type = order_type
         self.quantity = quantity
         self.price = price
+        self.order_purpose = order_purpose
         self.time_in_force = time_in_force
         self.expire_time = expire_time
 

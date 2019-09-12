@@ -14,7 +14,7 @@ from decimal import Decimal
 from nautilus_trader.core.correctness import ConditionFailed
 from nautilus_trader.core.types import GUID, ValidString
 from nautilus_trader.common.clock import TestClock
-from nautilus_trader.model.enums import OrderSide, OrderType, OrderState, TimeInForce
+from nautilus_trader.model.enums import OrderSide, OrderType, OrderState, OrderPurpose, TimeInForce
 from nautilus_trader.model.objects import Quantity, Price
 from nautilus_trader.model.identifiers import (
     Symbol,
@@ -257,6 +257,7 @@ class OrderTests(unittest.TestCase):
             Quantity(100000),
             Price('1.00000'),
             Label('U1_TP'),
+            OrderPurpose.NONE,
             TimeInForce.GTD,
             UNIX_EPOCH)
 
@@ -413,8 +414,8 @@ class OrderTests(unittest.TestCase):
             Label('U1'))
 
         # Assert
-        self.assertEqual('AtomicOrder(id=AO-19700101-000000-001-001-1, EntryOrder(id=O-19700101-000000-001-001-1, label=U1_E, state=INITIALIZED) BUY 100,000 AUDUSD.FXCM MARKET DAY, SL=Order(id=O-19700101-000000-001-001-2, label=U1_SL, state=INITIALIZED) SELL 100,000 AUDUSD.FXCM STOP_MARKET @ 0.99990 GTC, TP=Order(id=O-19700101-000000-001-001-3, label=U1_TP, state=INITIALIZED) SELL 100,000 AUDUSD.FXCM LIMIT @ 1.00010 GTC)', str(atomic_order))
-        self.assertTrue(repr(atomic_order).startswith('<AtomicOrder(id=AO-19700101-000000-001-001-1, EntryOrder(id=O-19700101-000000-001-001-1, label=U1_E, state=INITIALIZED) BUY 100,000 AUDUSD.FXCM MARKET DAY, SL=Order(id=O-19700101-000000-001-001-2, label=U1_SL, state=INITIALIZED) SELL 100,000 AUDUSD.FXCM STOP_MARKET @ 0.99990 GTC, TP=Order(id=O-19700101-000000-001-001-3, label=U1_TP, state=INITIALIZED) SELL 100,000 AUDUSD.FXCM LIMIT @ 1.00010 GTC)'))
+        self.assertEqual('AtomicOrder(id=AO-19700101-000000-001-001-1, EntryOrder(id=O-19700101-000000-001-001-1, state=INITIALIZED, label=U1_E, purpose=ENTRY) BUY 100,000 AUDUSD.FXCM MARKET DAY, SL=0.99990, TP=1.00010', str(atomic_order))
+        self.assertTrue(repr(atomic_order).startswith('<AtomicOrder(id=AO-19700101-000000-001-001-1, EntryOrder(id=O-19700101-000000-001-001-1, state=INITIALIZED, label=U1_E, purpose=ENTRY) BUY 100,000 AUDUSD.FXCM MARKET DAY, SL=0.99990, TP=1.00010 object at'))
 
     def test_can_apply_order_submitted_event_to_order(self):
         # Arrange

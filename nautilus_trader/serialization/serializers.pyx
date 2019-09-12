@@ -20,6 +20,7 @@ from nautilus_trader.common.cache cimport IdentifierCache
 from nautilus_trader.model.c_enums.time_in_force cimport time_in_force_to_string, time_in_force_from_string
 from nautilus_trader.model.c_enums.order_side cimport  order_side_to_string, order_side_from_string
 from nautilus_trader.model.c_enums.order_type cimport order_type_to_string, order_type_from_string
+from nautilus_trader.model.c_enums.order_purpose cimport order_purpose_to_string, order_purpose_from_string
 from nautilus_trader.model.c_enums.currency cimport currency_to_string, currency_from_string
 from nautilus_trader.model.identifiers cimport (
     Symbol,
@@ -180,6 +181,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
             QUANTITY: order.quantity.value,
             PRICE: convert_price_to_string(order.price),
             LABEL: convert_label_to_string(order.label),
+            ORDER_PURPOSE: order_purpose_to_string(order.purpose),
             TIME_IN_FORCE: time_in_force_to_string(order.time_in_force),
             EXPIRE_TIME: convert_datetime_to_string(order.expire_time),
             TIMESTAMP: convert_datetime_to_string(order.timestamp),
@@ -208,6 +210,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
                      timestamp=convert_string_to_datetime(unpacked[TIMESTAMP]),
                      price=convert_string_to_price(unpacked[PRICE]),
                      label=convert_string_to_label(unpacked[LABEL]),
+                     order_purpose=order_purpose_from_string(unpacked[ORDER_PURPOSE]),
                      time_in_force=time_in_force_from_string(unpacked[TIME_IN_FORCE]),
                      expire_time=convert_string_to_datetime(unpacked[EXPIRE_TIME]))
 
@@ -375,11 +378,12 @@ cdef class MsgPackEventSerializer(EventSerializer):
         elif isinstance(event, OrderInitialized):
             package[ORDER_ID] = event.order_id.value
             package[SYMBOL] = event.symbol.value
-            package[LABEL] = convert_label_to_string(event.label)
             package[ORDER_SIDE] = order_side_to_string(event.order_side)
             package[ORDER_TYPE] = order_type_to_string(event.order_type)
             package[QUANTITY] = event.quantity.value
             package[PRICE] = convert_price_to_string(event.price)
+            package[LABEL] = convert_label_to_string(event.label)
+            package[ORDER_PURPOSE] = order_purpose_to_string(event.order_purpose)
             package[TIME_IN_FORCE] = time_in_force_to_string(event.time_in_force)
             package[EXPIRE_TIME] = convert_datetime_to_string(event.expire_time)
         elif isinstance(event, OrderSubmitted):
@@ -493,6 +497,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 order_type_from_string(unpacked[ORDER_TYPE]),
                 Quantity(unpacked[QUANTITY]),
                 convert_string_to_price(unpacked[PRICE]),
+                order_purpose_from_string(unpacked[ORDER_PURPOSE]),
                 time_in_force_from_string(unpacked[TIME_IN_FORCE]),
                 convert_string_to_datetime(unpacked[EXPIRE_TIME]),
                 event_id,
