@@ -165,6 +165,7 @@ cdef class TradingNode:
             data_client=self._data_client,
             exec_engine=self._exec_engine,
             clock=self._clock,
+            guid_factory=self._guid_factory,
             logger=self._logger)
 
         Condition.equal(self.trader_id, self.trader.id)

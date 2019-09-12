@@ -33,6 +33,14 @@ cdef class MessageReceived(Response):
         super().__init__(correlation_id, response_id, response_timestamp)
         self.received_type = received_type
 
+    def __str__(self) -> str:
+        """
+        Return a string representation of this object.
+
+        :return str.
+        """
+        return f"{self.__class__.__name__}(id={self.id.value}, correlation_id={self.id.value}, received_type={self.received_type})"
+
 
 cdef class MessageRejected(Response):
     """
@@ -55,6 +63,14 @@ cdef class MessageRejected(Response):
         super().__init__(correlation_id, response_id, response_timestamp)
         self.message = rejected_message
 
+    def __str__(self) -> str:
+        """
+        Return a string representation of this object.
+
+        :return str.
+        """
+        return f"{self.__class__.__name__}(id={self.id.value}, correlation_id={self.id.value}, message='{self.message}')"
+
 
 cdef class QueryFailure(Response):
     """
@@ -76,6 +92,14 @@ cdef class QueryFailure(Response):
         """
         super().__init__(correlation_id, response_id, response_timestamp)
         self.message = failure_message
+
+    def __str__(self) -> str:
+        """
+        Return a string representation of this object.
+
+        :return str.
+        """
+        return f"{self.__class__.__name__}(id={self.id.value}, correlation_id={self.id.value}, message='{self.message}')"
 
 
 cdef class DataResponse(Response):
