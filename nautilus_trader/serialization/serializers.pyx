@@ -247,27 +247,25 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
             package[ACCOUNT_ID] = command.account_id.value
         elif isinstance(command, SubmitOrder):
             package[TRADER_ID] = command.trader_id.value
-            package[STRATEGY_ID] = command.strategy_id.value
             package[ACCOUNT_ID] = command.account_id.value
+            package[STRATEGY_ID] = command.strategy_id.value
             package[POSITION_ID] = command.position_id.value
             package[ORDER] = self.order_serializer.serialize(command.order)
         elif isinstance(command, SubmitAtomicOrder):
             package[TRADER_ID] = command.trader_id.value
-            package[STRATEGY_ID] = command.strategy_id.value
             package[ACCOUNT_ID] = command.account_id.value
+            package[STRATEGY_ID] = command.strategy_id.value
             package[POSITION_ID] = command.position_id.value
             package[ENTRY] = self.order_serializer.serialize(command.atomic_order.entry)
             package[STOP_LOSS] = self.order_serializer.serialize(command.atomic_order.stop_loss)
             package[TAKE_PROFIT] = self.order_serializer.serialize(command.atomic_order.take_profit)
         elif isinstance(command, ModifyOrder):
             package[TRADER_ID] = command.trader_id.value
-            package[STRATEGY_ID] = command.strategy_id.value
             package[ACCOUNT_ID] = command.account_id.value
             package[ORDER_ID] = command.order_id.value
             package[MODIFIED_PRICE] = str(command.modified_price)
         elif isinstance(command, CancelOrder):
             package[TRADER_ID] = command.trader_id.value
-            package[STRATEGY_ID] = command.strategy_id.value
             package[ACCOUNT_ID] = command.account_id.value
             package[ORDER_ID] = command.order_id.value
             package[CANCEL_REASON] = command.cancel_reason.value
@@ -303,8 +301,8 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         if command_type == SubmitOrder.__name__:
             return SubmitOrder(
                 self.identifier_cache.get_trader_id(unpacked[TRADER_ID]),
-                self.identifier_cache.get_strategy_id(unpacked[STRATEGY_ID]),
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
+                self.identifier_cache.get_strategy_id(unpacked[STRATEGY_ID]),
                 PositionId(unpacked[POSITION_ID]),
                 self.order_serializer.deserialize(unpacked[ORDER]),
                 command_id,
@@ -312,8 +310,8 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         if command_type == SubmitAtomicOrder.__name__:
             return SubmitAtomicOrder(
                 self.identifier_cache.get_trader_id(unpacked[TRADER_ID]),
-                self.identifier_cache.get_strategy_id(unpacked[STRATEGY_ID]),
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
+                self.identifier_cache.get_strategy_id(unpacked[STRATEGY_ID]),
                 PositionId(unpacked[POSITION_ID]),
                 AtomicOrder(self.order_serializer.deserialize(unpacked[ENTRY]),
                             self.order_serializer.deserialize(unpacked[STOP_LOSS]),
@@ -323,7 +321,6 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         if command_type == ModifyOrder.__name__:
             return ModifyOrder(
                 self.identifier_cache.get_trader_id(unpacked[TRADER_ID]),
-                self.identifier_cache.get_strategy_id(unpacked[STRATEGY_ID]),
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 OrderId(unpacked[ORDER_ID]),
                 Price(unpacked[MODIFIED_PRICE]),
@@ -332,7 +329,6 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         if command_type == CancelOrder.__name__:
             return CancelOrder(
                 self.identifier_cache.get_trader_id(unpacked[TRADER_ID]),
-                self.identifier_cache.get_strategy_id(unpacked[STRATEGY_ID]),
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 OrderId(unpacked[ORDER_ID]),
                 ValidString(unpacked[CANCEL_REASON]),

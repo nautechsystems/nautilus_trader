@@ -180,8 +180,8 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
 
         command = SubmitOrder(
             TraderId('TESTER', '000'),
-            StrategyId('SCALPER', '01'),
             self.account_id,
+            StrategyId('SCALPER', '01'),
             PositionId('P-123456'),
             order,
             GUID(uuid.uuid4()),
@@ -207,8 +207,8 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
 
         command = SubmitAtomicOrder(
             TraderId('TESTER', '000'),
-            StrategyId('SCALPER', '01'),
             self.account_id,
+            StrategyId('SCALPER', '01'),
             PositionId('P-123456'),
             atomic_order,
             GUID(uuid.uuid4()),
@@ -236,8 +236,8 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
 
         command = SubmitAtomicOrder(
             TraderId('TESTER', '000'),
-            StrategyId('SCALPER', '01'),
             self.account_id,
+            StrategyId('SCALPER', '01'),
             PositionId('P-123456'),
             atomic_order,
             GUID(uuid.uuid4()),
@@ -257,7 +257,6 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         # Arrange
         command = ModifyOrder(
             TraderId('TESTER', '000'),
-            StrategyId('SCALPER', '01'),
             self.account_id,
             OrderId('O-123456'),
             Price('1.00001'),
@@ -277,7 +276,6 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         # Arrange
         command = CancelOrder(
             TraderId('TESTER', '000'),
-            StrategyId('SCALPER', '01'),
             self.account_id,
             OrderId('O-123456'),
             ValidString('EXPIRED'),
