@@ -9,8 +9,8 @@
 import pandas as pd
 import unittest
 
-from nautilus_trader.common.account import Account
 from nautilus_trader.common.brokerage import CommissionCalculator
+from nautilus_trader.common.data import DataClient
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.guid import TestGuidFactory
 from nautilus_trader.common.portfolio import Portfolio
@@ -19,7 +19,7 @@ from nautilus_trader.common.execution import InMemoryExecutionDatabase, Executio
 from nautilus_trader.model.enums import OrderSide, Currency
 from nautilus_trader.model.objects import Quantity, Price, Money
 from nautilus_trader.model.events import OrderRejected, OrderCancelled, OrderWorking, OrderModified, OrderFilled
-from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.model.identifiers import TraderId, Venue
 from nautilus_trader.trade.strategy import TradingStrategy
 from nautilus_trader.backtest.execution import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
@@ -49,6 +49,12 @@ class BacktestExecClientTests(unittest.TestCase):
         self.clock = TestClock()
         self.guid_factory = TestGuidFactory()
         self.logger = TestLogger()
+
+        self.data_client = DataClient(
+            venue=Venue('FXCM'),
+            clock=self.clock,
+            guid_factory=self.guid_factory,
+            logger=self.logger)
 
         self.portfolio = Portfolio(
             clock=self.clock,
@@ -93,6 +99,7 @@ class BacktestExecClientTests(unittest.TestCase):
     def test_can_submit_market_order(self):
         # Arrange
         strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
+        self.data_client.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 
@@ -114,6 +121,7 @@ class BacktestExecClientTests(unittest.TestCase):
     def test_can_submit_limit_order(self):
         # Arrange
         strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
+        self.data_client.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 
@@ -136,6 +144,7 @@ class BacktestExecClientTests(unittest.TestCase):
     def test_can_submit_atomic_market_order(self):
         # Arrange
         strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
+        self.data_client.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 
@@ -160,6 +169,7 @@ class BacktestExecClientTests(unittest.TestCase):
     def test_can_submit_atomic_stop_order(self):
         # Arrange
         strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
+        self.data_client.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 
@@ -187,6 +197,7 @@ class BacktestExecClientTests(unittest.TestCase):
     def test_can_modify_stop_order(self):
         # Arrange
         strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
+        self.data_client.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 
@@ -211,6 +222,7 @@ class BacktestExecClientTests(unittest.TestCase):
     def test_can_modify_atomic_order_working_stop_loss(self):
         # Arrange
         strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
+        self.data_client.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 
@@ -255,6 +267,7 @@ class BacktestExecClientTests(unittest.TestCase):
 
         self.exec_engine.register_client(exec_client)
         strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
+        self.data_client.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 
@@ -276,6 +289,7 @@ class BacktestExecClientTests(unittest.TestCase):
     def test_submit_order_with_no_market_rejects_order(self):
         # Arrange
         strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
+        self.data_client.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 
@@ -295,6 +309,7 @@ class BacktestExecClientTests(unittest.TestCase):
     def test_submit_order_with_invalid_price_gets_rejected(self):
         # Arrange
         strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
+        self.data_client.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 
@@ -316,6 +331,7 @@ class BacktestExecClientTests(unittest.TestCase):
     def test_submit_atomic_order_with_invalid_stop_loss_rejects_and_cancels_OCO(self):
         # Arrange
         strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
+        self.data_client.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 
@@ -340,6 +356,7 @@ class BacktestExecClientTests(unittest.TestCase):
     def test_submit_atomic_order_with_invalid_take_profit_rejects_and_cancels_OCO(self):
         # Arrange
         strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
+        self.data_client.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
         strategy.start()
 
