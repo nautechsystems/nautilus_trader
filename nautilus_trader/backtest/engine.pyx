@@ -18,9 +18,10 @@ from nautilus_trader.core.functions cimport as_utc_timestamp, format_zulu_dateti
 from nautilus_trader.common.logger cimport LogLevel
 from nautilus_trader.model.c_enums.currency cimport currency_to_string
 from nautilus_trader.model.c_enums.resolution cimport Resolution, resolution_to_string
+from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.objects cimport Instrument, Tick
 from nautilus_trader.model.events cimport TimeEvent
-from nautilus_trader.model.identifiers cimport Symbol, Venue, TraderId
+from nautilus_trader.model.identifiers cimport Symbol, Venue, TraderId, AccountId
 from nautilus_trader.common.brokerage import CommissionCalculator
 from nautilus_trader.common.clock cimport LiveClock, TestClock
 from nautilus_trader.common.guid cimport TestGuidFactory
@@ -172,10 +173,12 @@ cdef class BacktestEngine:
 
         self.trader = Trader(
             trader_id=trader_id,
+            account_id=AccountId('NAUTILUS', '001', AccountType.SIMULATED),
             strategies=strategies,
             data_client=self.data_client,
             exec_engine=self.exec_engine,
             clock=self.test_clock,
+            guid_factory=self.guid_factory,
             logger=self.test_logger)
 
         self.iteration = 0

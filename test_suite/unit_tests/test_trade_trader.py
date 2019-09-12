@@ -83,10 +83,12 @@ class TraderTests(unittest.TestCase):
 
         self.trader = Trader(
             trader_id=trader_id,
+            account_id=TestStubs.account_id(),
             strategies=strategies,
             data_client=data_client,
             exec_engine=self.exec_engine,
             clock=clock,
+            guid_factory=guid_factory,
             logger=logger)
 
     def test_can_initialize_trader(self):

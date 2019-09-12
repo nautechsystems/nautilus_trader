@@ -7,22 +7,25 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.guid cimport GuidFactory
 from nautilus_trader.common.logger cimport LoggerAdapter
 from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.common.execution cimport ExecutionEngine
 from nautilus_trader.common.portfolio cimport Portfolio
-from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.model.identifiers cimport TraderId, AccountId
 from nautilus_trader.trade.reports cimport ReportProvider
 
 
 cdef class Trader:
     cdef Clock _clock
+    cdef GuidFactory _guid_factory
     cdef LoggerAdapter _log
     cdef DataClient _data_client
     cdef ExecutionEngine _exec_engine
     cdef ReportProvider _report_provider
 
     cdef readonly TraderId id
+    cdef readonly AccountId account_id
     cdef readonly Portfolio portfolio
     cdef readonly bint is_running
     cdef readonly list started_datetimes

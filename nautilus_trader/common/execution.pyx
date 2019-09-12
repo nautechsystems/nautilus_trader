@@ -1117,7 +1117,7 @@ cdef class ExecutionEngine:
             self.portfolio.handle_transaction(event)
         else:
             self._log.warning(f"Cannot process {event} "
-                              f"(event account_id {event.account_id} does not match this account {self.account.id}).")
+                              f"(event account_id {event.account_id} does not match this account {account.id}).")
 
     cdef void _position_opened(self, Position position, StrategyId strategy_id, OrderEvent event):
         cdef PositionOpened position_opened = PositionOpened(

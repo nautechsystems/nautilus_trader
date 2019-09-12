@@ -60,6 +60,8 @@ cdef class TradingStrategy:
     cdef DataClient _data_client
     cdef ExecutionEngine _exec_engine
 
+    cdef readonly bint is_data_client_registered
+    cdef readonly bint is_exec_engine_registered
     cdef readonly bint is_running
 
     cdef bint equals(self, TradingStrategy other)

@@ -10,6 +10,7 @@ from cpython.datetime cimport datetime
 from typing import List
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.model.commands cimport AccountInquiry
 from nautilus_trader.common.logger cimport Logger, LoggerAdapter
 from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.common.execution cimport ExecutionEngine
@@ -24,26 +25,32 @@ cdef class Trader:
 
     def __init__(self,
                  TraderId trader_id,
+                 AccountId account_id,
                  list strategies,
                  DataClient data_client,
                  ExecutionEngine exec_engine,
                  Clock clock,
+                 GuidFactory guid_factory,
                  Logger logger):
         """
         Initializes a new instance of the Trader class.
 
-        :param trader_id: The trader_id for the trader (unique at fund level).
+        :param trader_id: The trader_id for the trader.
+        :param trader_id: The account_id for the trader.
         :param strategies: The initial strategies for the trader.
         :param data_client: The data client for the trader.
         :param exec_engine: The execution engine for the trader.
         :param clock: The clock for the trader.
+        :param guid_factory: The guid_factory for the trader.
         :param logger: The logger for the trader.
         :raises ConditionFailed: If the trader_id is not equal to the exec_engine.trader_id.
         """
         Condition.equal(trader_id, exec_engine.trader_id)
 
         self._clock = clock
+        self._guid_factory = guid_factory
         self.id = trader_id
+        self.account_id = account_id
         self._log = LoggerAdapter(f'Trader-{self.id.value}', logger)
         self._data_client = data_client
         self._exec_engine = exec_engine
@@ -118,9 +125,16 @@ cdef class Trader:
             self._log.error(f"Cannot start trader (no strategies loaded).")
             return
 
+        self._log.info("Starting...")
         self.started_datetimes.append(self._clock.time_now())
 
-        self._log.info("Starting...")
+        # TODO: Implement below
+        # cdef AccountInquiry account_inquiry = AccountInquiry(
+        #     account_id=self.account_id,
+        #     command_id=self._guid_factory.generate(),
+        #     command_timestamp=self._clock.time_now())
+        #
+        # self._exec_engine.execute_command(account_inquiry)
 
         for strategy in self.strategies:
             strategy.start()

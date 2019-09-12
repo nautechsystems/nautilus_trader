@@ -14,7 +14,7 @@ from datetime import datetime, timezone, timedelta
 
 from nautilus_trader.core.correctness import ConditionFailed
 from nautilus_trader.common.clock import TestClock, LiveClock
-from nautilus_trader.common.account import Account
+from nautilus_trader.common.data import DataClient
 from nautilus_trader.common.brokerage import CommissionCalculator
 from nautilus_trader.common.portfolio import Portfolio
 from nautilus_trader.common.guid import TestGuidFactory
@@ -48,6 +48,12 @@ class TradeStrategyTests(unittest.TestCase):
         self.clock = TestClock()
         self.guid_factory = TestGuidFactory()
         self.logger = TestLogger()
+
+        self.data_client = DataClient(
+            venue=Venue('FXCM'),
+            clock=self.clock,
+            guid_factory=self.guid_factory,
+            logger=self.logger)
 
         self.portfolio = Portfolio(
             clock=self.clock,
@@ -147,16 +153,16 @@ class TradeStrategyTests(unittest.TestCase):
         # Assert
         self.assertEqual(timezone.utc, result.tzinfo)
 
-    def test_indicator_initialization(self):
+    def test_initialization(self):
         # Arrange
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
         strategy = TestStrategy1(bar_type)
 
         # Act
-        result = strategy.indicators_initialized()
-
         # Assert
-        self.assertFalse(result)
+        self.assertFalse(strategy.is_data_client_registered)
+        self.assertFalse(strategy.is_exec_engine_registered)
+        self.assertFalse(strategy.indicators_initialized())
 
     def test_getting_bars_for_unknown_bar_type_raises_exception(self):
         # Arrange
@@ -335,6 +341,7 @@ class TradeStrategyTests(unittest.TestCase):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = TestStrategy1(bar_type)
+        self.data_client.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
 
         result1 = strategy.is_running
@@ -445,6 +452,7 @@ class TradeStrategyTests(unittest.TestCase):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = TestStrategy1(bar_type, clock=LiveClock())
+        self.data_client.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
 
         alert_time = datetime.now(timezone.utc) + timedelta(milliseconds=300)
@@ -463,6 +471,7 @@ class TradeStrategyTests(unittest.TestCase):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = TestStrategy1(bar_type)
+        self.data_client.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
 
         alert_time = datetime.now(timezone.utc) + timedelta(seconds=1)
@@ -481,6 +490,7 @@ class TradeStrategyTests(unittest.TestCase):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = TestStrategy1(bar_type)
+        self.data_client.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
 
         alert_time = datetime.now(timezone.utc) + timedelta(milliseconds=200)
@@ -498,6 +508,7 @@ class TradeStrategyTests(unittest.TestCase):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = TestStrategy1(bar_type, clock=LiveClock())
+        self.data_client.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
 
         alert_time1 = datetime.now(timezone.utc) + timedelta(milliseconds=200)
@@ -518,6 +529,7 @@ class TradeStrategyTests(unittest.TestCase):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = TestStrategy1(bar_type, clock=LiveClock())
+        self.data_client.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
 
         start_time = datetime.now(timezone.utc) + timedelta(milliseconds=100)
@@ -535,6 +547,7 @@ class TradeStrategyTests(unittest.TestCase):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = TestStrategy1(bar_type, clock=LiveClock())
+        self.data_client.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
 
         start_time = datetime.now(timezone.utc) + timedelta(milliseconds=100)
@@ -554,6 +567,7 @@ class TradeStrategyTests(unittest.TestCase):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = TestStrategy1(bar_type)
+        self.data_client.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
 
         start_time = datetime.now(timezone.utc) + timedelta(milliseconds=100)
@@ -571,6 +585,7 @@ class TradeStrategyTests(unittest.TestCase):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = TestStrategy1(bar_type, clock=LiveClock())
+        self.data_client.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
 
         start_time = datetime.now(timezone.utc) + timedelta(milliseconds=100)
@@ -590,6 +605,7 @@ class TradeStrategyTests(unittest.TestCase):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = TestStrategy1(bar_type, clock=LiveClock())
+        self.data_client.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
 
         start_time = datetime.now(timezone.utc) + timedelta(milliseconds=100)
@@ -608,6 +624,7 @@ class TradeStrategyTests(unittest.TestCase):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = TestStrategy1(bar_type, clock=LiveClock())
+        self.data_client.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
 
         start_time = datetime.now(timezone.utc) + timedelta(milliseconds=100)
