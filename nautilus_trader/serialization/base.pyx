@@ -20,7 +20,7 @@ cdef class QuerySerializer:
         """
         Serialize the given data query to bytes.
 
-        :param data: The data query to serialize.
+        :param query: The data query to serialize.
         :return bytes.
         """
         # Raise exception if not overridden in implementation
@@ -30,7 +30,7 @@ cdef class QuerySerializer:
         """
         Deserialize the given bytes to a data query.
 
-        :param data_bytes: The data query bytes to deserialize.
+        :param query_bytes: The data query bytes to deserialize.
         :return Dict.
         """
         # Raise exception if not overridden in implementation
@@ -176,7 +176,7 @@ cdef class RequestSerializer:
         """
         Serialize the given request to bytes.
 
-        :param request: The event to serialize.
+        :param request: The request to serialize.
         :return bytes.
         """
         # Raise exception if not overridden in implementation
@@ -202,7 +202,7 @@ cdef class ResponseSerializer:
         """
         Serialize the given response to bytes.
 
-        :param response: The event to serialize.
+        :param response: The response to serialize.
         :return bytes.
         """
         # Raise exception if not overridden in implementation
@@ -214,6 +214,32 @@ cdef class ResponseSerializer:
 
         :param response_bytes: The bytes to deserialize.
         :return Response.
+        """
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
+
+cdef class LogSerializer:
+    """
+    The abstract base class for all log message serializers.
+    """
+
+    cpdef bytes serialize(self, LogMessage message):
+        """
+        Serialize the given message to bytes.
+
+        :param message: The message to serialize.
+        :return bytes.
+        """
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
+    cpdef LogMessage deserialize(self, bytes message_bytes):
+        """
+        Deserialize the given bytes to a response.
+
+        :param message_bytes: The bytes to deserialize.
+        :return LogMessage.
         """
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")

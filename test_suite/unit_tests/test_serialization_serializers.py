@@ -11,6 +11,7 @@ import unittest
 from base64 import b64encode, b64decode
 
 from nautilus_trader.common.clock import *
+from nautilus_trader.common.logger import *
 from nautilus_trader.model.commands import *
 from nautilus_trader.model.enums import *
 from nautilus_trader.model.identifiers import *
@@ -940,4 +941,26 @@ class MsgPackResponseSerializerTests(unittest.TestCase):
         self.assertEqual(data, deserialized.data)
         self.assertEqual(data_encoding, deserialized.data_encoding)
 
+        print(deserialized)
+
+
+class MsgPackLogSerializerTests(unittest.TestCase):
+
+    def setUp(self):
+        # Fixture Setup
+        self.serializer = MsgPackLogSerializer()
+
+    def test_can_serialize_and_deserialize_log_messages(self):
+        # Arrange
+        message = LogMessage(
+            timestamp=UNIX_EPOCH,
+            level=LogLevel.DEBUG,
+            text="This is a test message")
+
+        # Act
+        serialized = self.serializer.serialize(message)
+        deserialized = self.serializer.deserialize(serialized)
+
+        # Assert
+        self.assertTrue(isinstance(deserialized, LogMessage))
         print(deserialized)

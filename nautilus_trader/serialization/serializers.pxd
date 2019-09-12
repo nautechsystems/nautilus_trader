@@ -15,6 +15,7 @@ from nautilus_trader.serialization.base cimport (
     CommandSerializer,
     RequestSerializer,
     ResponseSerializer,
+    LogSerializer
 )
 
 
@@ -40,4 +41,8 @@ cdef class MsgPackRequestSerializer(RequestSerializer):
 
 
 cdef class MsgPackResponseSerializer(ResponseSerializer):
+    pass
+
+
+cdef class MsgPackLogSerializer(LogSerializer):
     pass
