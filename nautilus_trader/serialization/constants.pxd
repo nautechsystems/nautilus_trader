@@ -24,6 +24,7 @@ cdef str ACCOUNT_ID
 cdef str ORDER_ID
 cdef str INIT_ID
 cdef str LABEL
+cdef str ORDER_PURPOSE
 cdef str SUBMITTED_TIME
 cdef str ACCEPTED_TIME
 cdef str REJECTED_TIME

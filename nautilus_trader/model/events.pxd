@@ -13,6 +13,7 @@ from nautilus_trader.core.message cimport Event
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_type cimport OrderType
+from nautilus_trader.model.c_enums.order_purpose cimport OrderPurpose
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.objects cimport Quantity, Price, Money
 from nautilus_trader.model.identifiers cimport (
@@ -66,6 +67,7 @@ cdef class OrderInitialized(OrderEvent):
     cdef readonly OrderType order_type
     cdef readonly Quantity quantity
     cdef readonly Price price
+    cdef readonly OrderPurpose order_purpose
     cdef readonly TimeInForce time_in_force
     cdef readonly datetime expire_time
 

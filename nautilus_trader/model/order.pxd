@@ -12,6 +12,7 @@ from nautilus_trader.core.types cimport GUID
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_state cimport OrderState
+from nautilus_trader.model.c_enums.order_purpose cimport OrderPurpose
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.model.objects cimport Quantity, Symbol, Price
@@ -42,17 +43,18 @@ cdef class Order:
     cdef readonly Symbol symbol
     cdef readonly OrderSide side
     cdef readonly OrderType type
+    cdef readonly OrderState state
     cdef readonly Quantity quantity
     cdef readonly datetime timestamp
     cdef readonly Price price
     cdef readonly Label label
+    cdef readonly OrderPurpose purpose
     cdef readonly TimeInForce time_in_force
     cdef readonly datetime expire_time
     cdef readonly Quantity filled_quantity
     cdef readonly datetime filled_timestamp
     cdef readonly Price average_price
     cdef readonly object slippage
-    cdef readonly OrderState state
     cdef readonly GUID init_id
     cdef readonly OrderEvent last_event
     cdef readonly int event_count
@@ -98,7 +100,8 @@ cdef class OrderFactory:
             Symbol symbol,
             OrderSide order_side,
             Quantity quantity,
-            Label label=*)
+            Label label=*,
+            OrderPurpose order_purpose=*)
 
     cpdef Order limit(
             self,
@@ -107,6 +110,7 @@ cdef class OrderFactory:
             Quantity quantity,
             Price price,
             Label label=*,
+            OrderPurpose order_purpose=*,
             TimeInForce time_in_force=*,
             datetime expire_time=*)
 
@@ -117,6 +121,7 @@ cdef class OrderFactory:
             Quantity quantity,
             Price price,
             Label label=*,
+            OrderPurpose order_purpose=*,
             TimeInForce time_in_force=*,
             datetime expire_time=*)
 
@@ -127,6 +132,7 @@ cdef class OrderFactory:
             Quantity quantity,
             Price price,
             Label label=*,
+            OrderPurpose order_purpose=*,
             TimeInForce time_in_force=*,
             datetime expire_time=*)
 
@@ -137,6 +143,7 @@ cdef class OrderFactory:
             Quantity quantity,
             Price price,
             Label label=*,
+            OrderPurpose order_purpose=*,
             TimeInForce time_in_force=*,
             datetime expire_time=*)
 
@@ -145,14 +152,16 @@ cdef class OrderFactory:
             Symbol symbol,
             OrderSide order_side,
             Quantity quantity,
-            Label label=*)
+            Label label=*,
+            OrderPurpose order_purpose=*,)
 
     cpdef Order immediate_or_cancel(
             self,
             Symbol symbol,
             OrderSide order_side,
             Quantity quantity,
-            Label label=*)
+            Label label=*,
+            OrderPurpose order_purpose=*)
 
     cpdef AtomicOrder atomic_market(
             self,

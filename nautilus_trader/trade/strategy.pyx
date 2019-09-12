@@ -39,7 +39,7 @@ cdef class TradingStrategy:
     """
 
     def __init__(self,
-                 str order_id_tag='001',
+                 str order_id_tag='000',
                  bint flatten_on_sl_reject=True,
                  bint flatten_on_stop=True,
                  bint cancel_all_orders_on_stop=True,
@@ -67,7 +67,7 @@ cdef class TradingStrategy:
         :raises ConditionFailed: If the tick_capacity is not positive (> 0).
         :raises ConditionFailed: If the bar_capacity is not positive (> 0).
         """
-        Condition.valid_string(order_id_tag, 'id_tag_strategy')
+        Condition.valid_string(order_id_tag, 'order_id_tag')
         Condition.positive(tick_capacity, 'tick_capacity')
         Condition.positive(bar_capacity, 'bar_capacity')
 
@@ -391,6 +391,7 @@ cdef class TradingStrategy:
         """
         System method. Handle the given list of ticks by handling each tick individually.
         """
+        cdef int i
         for i in range(len(ticks)):
             self.handle_tick(ticks[i])
 
@@ -425,6 +426,7 @@ cdef class TradingStrategy:
         """
         self.log.info(f"Received bar data for {bar_type} of {len(bars)} bars.")
 
+        cdef int i
         for i in range(len(bars)):
             self.handle_bar(bar_type, bars[i])
 
@@ -787,8 +789,9 @@ cdef class TradingStrategy:
 
         :return bool.
         """
-        for indicator in self._indicators:
-            if indicator.initialized is False:
+        cdef int i
+        for i in range(len(self._indicators)):
+            if self._indicators[i].initialized is False:
                 return False
         return True
 
@@ -827,6 +830,10 @@ cdef class TradingStrategy:
         :param quote_currency: The quote currency for the exchange rate.
         :return float.
         """
+        if self.account is None:
+            self.log.error("Cannot get exchange rate (account is not initialized).")
+            return 0.0
+
         cdef dict bid_rates = {}
         cdef dict ask_rates = {}
         for symbol, ticks in self._ticks.items():
