@@ -1093,21 +1093,20 @@ cdef class TradingStrategy:
             self.log.error("Cannot cancel all orders (execution client not registered).")
             return
 
-        cdef dict all_orders = self._exec_engine.database.get_orders(self.id)
+        cdef dict working_orders = self._exec_engine.database.get_orders_working(self.id)
         cdef CancelOrder command
 
-        for order_id, order in all_orders.items():
-            if not order.is_completed:
-                command = CancelOrder(
-                    self.trader_id,
-                    self.id,
-                    self.account.id,
-                    order_id,
-                    ValidString(cancel_reason),
-                    self._guid_factory.generate(),
-                    self.clock.time_now())
+        for order_id, order in working_orders.items():
+            command = CancelOrder(
+                self.trader_id,
+                self.id,
+                self.account.id,
+                order_id,
+                ValidString(cancel_reason),
+                self._guid_factory.generate(),
+                self.clock.time_now())
 
-                self._exec_engine.execute_command(command)
+            self._exec_engine.execute_command(command)
 
     cpdef void flatten_position(self, PositionId position_id):
         """
