@@ -20,7 +20,7 @@ cpdef enum LogLevel:
     CRITICAL = 5,
     FATAL = 6,
 
-cdef inline str level_str(int value):
+cdef inline str log_level_to_string(int value):
     if value == 0:
         return 'VRB'
     elif value == 1:
@@ -35,6 +35,22 @@ cdef inline str level_str(int value):
         return 'CRT'
     elif value == 6:
         return 'FTL'
+
+cdef inline LogLevel log_level_from_string(str value):
+    if value == 'VRB':
+        return LogLevel.VERBOSE
+    elif value == 'DBG':
+        return LogLevel.DEBUG
+    elif value == 'INF':
+        return LogLevel.INFO
+    elif value == 'WRN':
+        return LogLevel.WARNING
+    elif value == 'ERR':
+        return LogLevel.ERROR
+    elif value == 'CRT':
+        return LogLevel.CRITICAL
+    elif value == 'FTL':
+        return LogLevel.FATAL
 
 
 cdef class LogMessage:

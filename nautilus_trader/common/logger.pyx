@@ -66,7 +66,7 @@ cdef class LogMessage:
 
         :return str.
         """
-        return level_str(self.level)
+        return log_level_to_string(self.level)
 
     cdef str as_string(self):
         """
@@ -74,7 +74,7 @@ cdef class LogMessage:
 
         :return str.
         """
-        return f"{format_zulu_datetime(self.timestamp)} [{self.thread_id}][{level_str(self.level)}] {self.text}"
+        return f"{format_zulu_datetime(self.timestamp)} [{self.thread_id}][{log_level_to_string(self.level)}] {self.text}"
 
 
 cdef class Logger:

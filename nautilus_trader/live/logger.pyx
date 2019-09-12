@@ -15,6 +15,8 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logger cimport LogLevel, LogMessage
+from nautilus_trader.serialization.base cimport LogSerializer
+from nautilus_trader.serialization.serializers cimport MsgPackLogSerializer
 
 
 cdef class LogStore:
@@ -25,7 +27,8 @@ cdef class LogStore:
     def __init__(self,
                  TraderId trader_id,
                  str host='localhost',
-                 int port=6379):
+                 int port=6379,
+                 LogSerializer serializer=MsgPackLogSerializer()):
         """
         Initializes a new instance of the LogStore class.
 
@@ -41,6 +44,7 @@ cdef class LogStore:
         self._key = f'Trader-{trader_id.value}:LogStore'
         self._redis = redis.Redis(host=host, port=port, db=0)
         self._message_bus = multiprocessing.Queue()
+        self._serializer = serializer
         self._process = multiprocessing.Process(target=self._consume_messages, daemon=True)
         self._process.start()
 
@@ -56,7 +60,7 @@ cdef class LogStore:
         cdef LogMessage message
         while True:
             message = self._message_bus.get()
-            self._redis.rpush(f'{self._key}:{message.level_string()}', message.as_string())
+            self._redis.rpush(f'{self._key}:{message.level_string()}', self._serializer.serialize(message))
 
 
 cdef class LiveLogger(Logger):

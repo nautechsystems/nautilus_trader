@@ -355,7 +355,7 @@ cdef class Price:
 
         :return str.
         """
-        return str(self.value)
+        return f'{self.value:,.{self.precision}f}'
 
     def __repr__(self) -> str:
         """

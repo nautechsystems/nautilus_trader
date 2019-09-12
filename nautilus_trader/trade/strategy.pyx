@@ -741,7 +741,7 @@ cdef class TradingStrategy:
 
     cpdef Order order(self, OrderId order_id):
         """
-        Return the order with the given identifier.
+        Return the order with the given identifier (if found).
 
         :param order_id: The order_id.
         :return Order or None.
@@ -750,7 +750,7 @@ cdef class TradingStrategy:
 
     cpdef dict orders(self):
         """
-        Return a dictionary of all orders associated with this strategy.
+        Return a all orders associated with this strategy.
         
         :return Dict[OrderId, Order].
         """
@@ -758,7 +758,7 @@ cdef class TradingStrategy:
 
     cpdef dict orders_working(self):
         """
-        Return a dictionary of all active orders associated with this strategy.
+        Return all working orders associated with this strategy.
         
         :return Dict[OrderId, Order].
         """
@@ -766,7 +766,7 @@ cdef class TradingStrategy:
 
     cpdef dict orders_completed(self):
         """
-        Return a dictionary of all completed orders associated with this strategy.
+        Return all completed orders associated with this strategy.
         
         :return Dict[OrderId, Order].
         """
@@ -774,13 +774,21 @@ cdef class TradingStrategy:
 
     cpdef Position position(self, PositionId position_id):
         """
-        Return the position associated with the given position_id.
+        Return the position associated with the given position_id (if found).
 
         :param position_id: The positions identifier.
-        :return The position with the given identifier.
-        :raises ConditionFailed: If the portfolio does not contain a position with the given identifier.
+        :return Position or None.
         """
         return self._exec_engine.database.get_position(position_id)
+
+    cpdef Position position_for_order(self, OrderId order_id):
+        """
+        Return the position associated with the given order_id (if found).
+
+        :param order_id: The order identifier.
+        :return Position or None.
+        """
+        return self._exec_engine.database.get_position_for_order(order_id)
 
     cpdef dict positions(self):
         """
@@ -895,13 +903,6 @@ cdef class TradingStrategy:
         if self.cancel_all_orders_on_stop:
             self.cancel_all_orders("STOPPING STRATEGY")
 
-        # Check for residual objects
-        for order in self._exec_engine.database.get_orders_working(self.id).values():
-            self.log.warning(f"Residual working {order}")
-
-        for position in self._exec_engine.database.get_positions_open(self.id).values():
-            self.log.warning(f"Residual open {position}")
-
         try:
             self.on_stop()
         except Exception as ex:
@@ -945,6 +946,15 @@ cdef class TradingStrategy:
         Dispose of the strategy to release system resources, then call on_dispose().
         """
         self.log.debug(f"Disposing...")
+
+        # Check for residual objects
+        cdef list working_orders = self._exec_engine.database.get_orders_working(self.id).values()
+        for order in working_orders:
+            self.log.warning(f"Residual working {order}")
+
+        cdef list open_positions = self._exec_engine.database.get_positions_open(self.id).values();
+        for position in open_positions:
+            self.log.warning(f"Residual open {position}")
 
         try:
             self.on_dispose()
@@ -1016,7 +1026,7 @@ cdef class TradingStrategy:
             self._guid_factory.generate(),
             self.clock.time_now())
 
-        self.log.info(f"Sending {command}...")
+        self.log.info(f"Sending {command}.")
 
         self._exec_engine.execute_command(command)
 
@@ -1041,7 +1051,7 @@ cdef class TradingStrategy:
             self._guid_factory.generate(),
             self.clock.time_now())
 
-        self.log.info(f"Sending {command}...")
+        self.log.info(f"Sending {command}.")
 
         self._exec_engine.execute_command(command)
 
@@ -1067,7 +1077,7 @@ cdef class TradingStrategy:
             self._guid_factory.generate(),
             self.clock.time_now())
 
-        self.log.info(f"Sending {command}...")
+        self.log.info(f"Sending {command}.")
 
         self._exec_engine.execute_command(command)
 
@@ -1125,7 +1135,7 @@ cdef class TradingStrategy:
             Label("EXIT"),
             OrderPurpose.EXIT)
 
-        self.log.info(f"Flattening {position}...")
+        self.log.info(f"Flattening {position}.")
         self.submit_order(order, position_id)
 
     cpdef void flatten_all_positions(self):
@@ -1159,7 +1169,7 @@ cdef class TradingStrategy:
                 Label("EXIT"),
                 OrderPurpose.EXIT)
 
-            self.log.info(f"Flattening {position}...")
+            self.log.info(f"Flattening {position}.")
             self.submit_order(order, position_id)
 
 
@@ -1199,7 +1209,7 @@ cdef class TradingStrategy:
         
         :param logger: The logger to change to.
         """
-        self.log = LoggerAdapter(f"{self.id.value}", logger)
+        self.log = LoggerAdapter(self.id.value, logger)
 
     cpdef void set_time(self, datetime time):
         """

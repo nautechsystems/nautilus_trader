@@ -120,6 +120,7 @@ cdef class TradingStrategy:
     cpdef dict orders_working(self)
     cpdef dict orders_completed(self)
     cpdef Position position(self, PositionId position_id)
+    cpdef Position position_for_order(self, OrderId order_id)
     cpdef dict positions(self)
     cpdef dict positions_open(self)
     cpdef dict positions_closed(self)

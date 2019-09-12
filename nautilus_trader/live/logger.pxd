@@ -7,6 +7,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.common.logger cimport LogMessage, Logger
+from nautilus_trader.serialization.base cimport LogSerializer
 
 
 cdef class LogStore:
@@ -14,6 +15,7 @@ cdef class LogStore:
     cdef object _message_bus
     cdef object _process
     cdef object _redis
+    cdef LogSerializer _serializer
 
     cpdef void store(self, LogMessage message)
     cpdef void _consume_messages(self)

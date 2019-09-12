@@ -16,7 +16,6 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.cache cimport ObjectCache
 from nautilus_trader.core.types cimport ValidString, GUID
 from nautilus_trader.core.message cimport Command, Event, Request, Response
-from nautilus_trader.common.cache cimport IdentifierCache
 from nautilus_trader.model.c_enums.time_in_force cimport time_in_force_to_string, time_in_force_from_string
 from nautilus_trader.model.c_enums.order_side cimport  order_side_to_string, order_side_from_string
 from nautilus_trader.model.c_enums.order_type cimport order_type_to_string, order_type_from_string
@@ -35,13 +34,16 @@ from nautilus_trader.model.identifiers cimport (
     Label)
 from nautilus_trader.model.objects cimport Quantity, Money, Price
 from nautilus_trader.model.order cimport Order, AtomicOrder
+from nautilus_trader.common.cache cimport IdentifierCache
+from nautilus_trader.common.logger cimport LogMessage, LogLevel, log_level_from_string
 from nautilus_trader.serialization.constants cimport *
 from nautilus_trader.serialization.base cimport (
     OrderSerializer,
     CommandSerializer,
     EventSerializer,
     RequestSerializer,
-    ResponseSerializer
+    ResponseSerializer,
+    LogSerializer
 )
 from nautilus_trader.serialization.common cimport (
     convert_price_to_string,
@@ -740,3 +742,42 @@ cdef class MsgPackResponseSerializer(ResponseSerializer):
                 response_timestamp)
         else:
             raise RuntimeError("Cannot deserialize response (unrecognized response).")
+
+
+cdef class MsgPackLogSerializer(LogSerializer):
+    """
+    Provides a log message serializer for the MessagePack specification.
+    """
+
+    cpdef bytes serialize(self, LogMessage message):
+        """
+        Serialize the given log message to bytes.
+
+        :param message: The message to serialize.
+        :return bytes.
+        """
+        cdef dict package = {
+            TIMESTAMP: convert_datetime_to_string(message.timestamp),
+            LOG_LEVEL: message.level_string(),
+            LOG_TEXT: message.text,
+            THREAD_ID: message.thread_id,
+        }
+
+        return MsgPackSerializer.serialize(package)
+
+    cpdef LogMessage deserialize(self, bytes message_bytes):
+        """
+        Deserialize the given bytes to a response.
+
+        :param message_bytes: The bytes to deserialize.
+        :return LogMessage.
+        """
+        Condition.not_empty(message_bytes, 'message_bytes')
+
+        cdef dict unpacked = MsgPackSerializer.deserialize(message_bytes)
+
+        return LogMessage(
+            timestamp=convert_string_to_datetime(unpacked[TIMESTAMP]),
+            level=log_level_from_string(unpacked[LOG_LEVEL]),
+            text=unpacked[LOG_TEXT],
+            thread_id=unpacked[THREAD_ID])

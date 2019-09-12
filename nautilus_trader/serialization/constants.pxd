@@ -87,3 +87,7 @@ cdef str BAR_TYPE
 cdef str SPECIFICATION
 cdef str FROM_DATETIME
 cdef str TO_DATETIME
+
+cdef str LOG_LEVEL
+cdef str LOG_TEXT
+cdef str THREAD_ID

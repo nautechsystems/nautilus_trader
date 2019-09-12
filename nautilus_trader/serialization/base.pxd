@@ -9,6 +9,7 @@
 from nautilus_trader.core.message cimport Command, Event, Request, Response
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.objects cimport Instrument
+from nautilus_trader.common.logger cimport LogMessage
 
 
 cdef class QuerySerializer:
@@ -49,3 +50,8 @@ cdef class RequestSerializer:
 cdef class ResponseSerializer:
     cpdef bytes serialize(self, Response request)
     cpdef Response deserialize(self, bytes response_bytes)
+
+
+cdef class LogSerializer:
+    cpdef bytes serialize(self, LogMessage message)
+    cpdef LogMessage deserialize(self, bytes message_bytes)

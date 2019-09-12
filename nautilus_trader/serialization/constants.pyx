@@ -87,3 +87,7 @@ BAR_TYPE = 'BarType'
 SPECIFICATION = 'Specification'
 FROM_DATETIME = 'FromDateTime'
 TO_DATETIME = 'ToDateTime'
+
+LOG_LEVEL = 'LogLevel'
+LOG_TEXT = 'LogText'
+THREAD_ID = 'ThreadId'
