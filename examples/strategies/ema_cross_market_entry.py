@@ -218,7 +218,6 @@ class EMACrossMarketEntryPy(TradingStrategy):
         """
         # Put custom code for event handling here (or pass)
         if isinstance(event, OrderRejected):
-            self.cancel_all_orders("RESET ON REJECT")
             position = self.position_for_order(event.order_id)
             if position is not None and position.is_open:
                 self.flatten_position(position.id)
