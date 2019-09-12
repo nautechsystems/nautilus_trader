@@ -496,7 +496,7 @@ cdef class BacktestDataClient(DataClient):
         Condition.type(handler, Callable, 'handler')
 
         self._log.info(f"Simulated unsubscribe from {symbol} instrument updates "
-                       f"(a backtest data client wont update an instrument).")
+                       f"(a backtest data client will not update an instrument).")
 
     cpdef void update_instruments(self):
         """

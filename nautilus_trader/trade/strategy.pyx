@@ -948,12 +948,12 @@ cdef class TradingStrategy:
         self.log.debug(f"Disposing...")
 
         # Check for residual objects
-        cdef list working_orders = self._exec_engine.database.get_orders_working(self.id).values()
-        for order in working_orders:
+        cdef dict working_orders = self._exec_engine.database.get_orders_working(self.id)
+        for order_id, order in working_orders:
             self.log.warning(f"Residual working {order}")
 
-        cdef list open_positions = self._exec_engine.database.get_positions_open(self.id).values();
-        for position in open_positions:
+        cdef dict open_positions = self._exec_engine.database.get_positions_open(self.id)
+        for position_id, position in open_positions:
             self.log.warning(f"Residual open {position}")
 
         try:
