@@ -6,8 +6,6 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
-from datetime import timedelta
-
 from nautilus_trader.core.message import Event
 from nautilus_trader.model.enums import OrderSide, OrderPurpose, TimeInForce
 from nautilus_trader.model.objects import Price, Tick, BarSpecification, BarType, Bar, Instrument
@@ -21,10 +19,10 @@ from nautilus_indicators.average.ema import ExponentialMovingAverage
 from nautilus_indicators.atr import AverageTrueRange
 
 
-class EMACrossPy(TradingStrategy):
+class EMACrossMarketEntryPy(TradingStrategy):
     """"
     A simple moving average cross example strategy. When the fast EMA crosses
-    the slow EMA then a STOP_MARKET atomic order is placed for that direction
+    the slow EMA then a MARKET entry atomic order is placed for that direction
     with a trailing stop and profit target at 1R risk.
     """
 
@@ -127,7 +125,7 @@ class EMACrossPy(TradingStrategy):
 
             # BUY LOGIC
             if self.fast_ema.value >= self.slow_ema.value:
-                price_entry = Price(bar.high + self.entry_buffer + self.spread_analyzer.average_spread)
+                price_entry = self.tick(self.symbol, index=0).ask
                 price_stop_loss = Price(bar.low - (self.atr.value * self.SL_atr_multiple))
                 price_take_profit = Price(price_entry + (price_entry - price_stop_loss))
 
@@ -143,22 +141,18 @@ class EMACrossPy(TradingStrategy):
                     units=1,
                     unit_batch_size=10000)
                 if position_size.value > 0:
-                    atomic_order = self.order_factory.atomic_stop_market(
+                    atomic_order = self.order_factory.atomic_market(
                         symbol=self.symbol,
                         order_side=OrderSide.BUY,
                         quantity=position_size,
-                        price_entry=price_entry,
                         price_stop_loss=price_stop_loss,
-                        price_take_profit=price_take_profit,
-                        label=Label('S1'),
-                        time_in_force=TimeInForce.GTD,
-                        expire_time=self.time_now() + timedelta(minutes=1))
+                        price_take_profit=price_take_profit)
                 else:
                     self.log.info("Insufficient equity for BUY signal.")
 
             # SELL LOGIC
             elif self.fast_ema.value < self.slow_ema.value:
-                price_entry = Price(bar.low - self.entry_buffer)
+                price_entry = self.tick(self.symbol, index=0).bid
                 price_stop_loss = Price(bar.high + (self.atr.value * self.SL_atr_multiple) + self.spread_analyzer.average_spread)
                 price_take_profit = Price(price_entry - (price_stop_loss - price_entry))
 
@@ -175,16 +169,12 @@ class EMACrossPy(TradingStrategy):
                     unit_batch_size=10000)
 
                 if position_size.value > 0:  # Sufficient equity for a position
-                    atomic_order = self.order_factory.atomic_stop_market(
+                    atomic_order = self.order_factory.atomic_market(
                         symbol=self.symbol,
                         order_side=OrderSide.SELL,
                         quantity=position_size,
-                        price_entry=price_entry,
                         price_stop_loss=price_stop_loss,
-                        price_take_profit=price_take_profit,
-                        label=Label('S1'),
-                        time_in_force=TimeInForce.GTD,
-                        expire_time=self.time_now() + timedelta(minutes=1))
+                        price_take_profit=price_take_profit)
                 else:
                     self.log.info("Insufficient equity for SELL signal.")
 
@@ -192,8 +182,8 @@ class EMACrossPy(TradingStrategy):
             if atomic_order is not None:
                 self.submit_atomic_order(atomic_order, self.position_id_generator.generate())
 
+        # TRAILING STOP LOGIC
         for working_order in self.orders_working().values():
-            # TRAILING STOP LOGIC
             if working_order.purpose == OrderPurpose.STOP_LOSS:
                 # SELL SIDE ORDERS
                 if working_order.is_sell:
@@ -206,11 +196,6 @@ class EMACrossPy(TradingStrategy):
                         bar.high + (self.atr.value * self.SL_atr_multiple) + self.spread_analyzer.average_spread)
                     if temp_price < working_order.price:
                         self.modify_order(working_order, temp_price)
-            # EXPIRY BACKUP LOGIC
-            elif working_order.purpose == OrderPurpose.ENTRY:
-                if working_order.time_in_force == TimeInForce.GTD:
-                    if self.time_now() >= working_order.expire_time:
-                        self.cancel_order(working_order, "EXPIRY_CANCEL_BACKUP")
 
     def on_instrument(self, instrument: Instrument):
         """
