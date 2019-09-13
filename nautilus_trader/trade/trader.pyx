@@ -130,6 +130,7 @@ cdef class Trader:
 
         # TODO: Implement below
         # cdef AccountInquiry account_inquiry = AccountInquiry(
+        #     trader_id=self.id,
         #     account_id=self.account_id,
         #     command_id=self._guid_factory.generate(),
         #     command_timestamp=self._clock.time_now())

@@ -29,7 +29,14 @@ from nautilus_trader.model.objects import (
     BarType,
     Bar,
     Instrument)
-from nautilus_trader.model.identifiers import Venue, IdTag, InstrumentId, AccountId, OrderIdBroker, ExecutionId, ExecutionTicket
+from nautilus_trader.model.identifiers import (
+    Venue,
+    IdTag,
+    TraderId,
+    AccountId,
+    OrderIdBroker,
+    ExecutionId,
+    ExecutionTicket)
 from nautilus_trader.model.generators import PositionIdGenerator
 from nautilus_trader.model.order import Order, OrderFactory
 from nautilus_trader.model.position import Position
@@ -184,6 +191,10 @@ class TestStubs:
                    Price('90.003'),
                    100000,
                    UNIX_EPOCH)
+
+    @staticmethod
+    def trader_id():
+        return TraderId('TESTER', '000')
 
     @staticmethod
     def account_id():

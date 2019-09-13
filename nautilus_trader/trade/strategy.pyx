@@ -785,7 +785,7 @@ cdef class TradingStrategy:
         """
         Return the position associated with the given order_id (if found).
 
-        :param order_id: The order identifier.
+        :param order_id: The order_id.
         :return Position or None.
         """
         return self._exec_engine.database.get_position_for_order(order_id)
@@ -968,11 +968,16 @@ cdef class TradingStrategy:
         """
         Send an account inquiry command to the execution service.
         """
+        if self.account is None:
+            self.log.error("Cannot send command AccountInquiry (account not registered).")
+            return
+
         if not self.is_exec_engine_registered:
-            self.log.error("Cannot send AccountInquiry (execution engine not registered).")
+            self.log.error("Cannot send command AccountInquiry (execution engine not registered).")
             return
 
         cdef AccountInquiry command = AccountInquiry(
+            self.trader_id,
             self.account.id,
             self._guid_factory.generate(),
             self.clock.time_now())
@@ -989,7 +994,7 @@ cdef class TradingStrategy:
         :param position_id: The position_id to associate with this order.
         """
         if not self.is_exec_engine_registered:
-            self.log.error("Cannot submit order (execution engine not registered).")
+            self.log.error("Cannot send command SubmitOrder (execution engine not registered).")
             return
 
         cdef SubmitOrder command = SubmitOrder(
@@ -1013,7 +1018,7 @@ cdef class TradingStrategy:
         :param position_id: The position_id to associate with this order.
         """
         if not self.is_exec_engine_registered:
-            self.log.error("Cannot submit atomic order (execution engine not registered).")
+            self.log.error("Cannot command SubmitAtomicOrder (execution engine not registered).")
             return
 
         cdef SubmitAtomicOrder command = SubmitAtomicOrder(
@@ -1037,7 +1042,7 @@ cdef class TradingStrategy:
         :param new_price: The new price for the given order.
         """
         if not self.is_exec_engine_registered:
-            self.log.error("Cannot modify order (execution engine not registered).")
+            self.log.error("Cannot send command ModifyOrder (execution engine not registered).")
             return
 
         cdef ModifyOrder command = ModifyOrder(
@@ -1061,7 +1066,7 @@ cdef class TradingStrategy:
         :raises ConditionFailed: If the strategy has not been registered with an execution client.
         """
         if not self.is_exec_engine_registered:
-            self.log.error("Cannot cancel order (execution client not registered).")
+            self.log.error("Cannot send command CancelOrder (execution client not registered).")
             return
 
         cdef CancelOrder command = CancelOrder(

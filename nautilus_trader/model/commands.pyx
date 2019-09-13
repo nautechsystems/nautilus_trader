@@ -20,17 +20,20 @@ cdef class AccountInquiry(Command):
     """
 
     def __init__(self,
+                 TraderId trader_id,
                  AccountId account_id,
                  GUID command_id,
                  datetime command_timestamp):
         """
         Initializes a new instance of the AccountInquiry class.
 
+        :param trader_id: The trader_id.
         :param account_id: The account_id for the inquiry.
         :param command_id: The command identifier.
         :param command_timestamp: The command timestamp.
         """
         super().__init__(command_id, command_timestamp)
+        self.trader_id = trader_id
         self.account_id = account_id
 
     def __str__(self) -> str:
@@ -40,6 +43,7 @@ cdef class AccountInquiry(Command):
         :return str.
         """
         return (f"{self.__class__.__name__}("
+                f"trader_id={self.account_id.value}, "
                 f"account_id={self.account_id.value})")
 
 
