@@ -206,11 +206,12 @@ class EMACrossPy(TradingStrategy):
                         bar.high + (self.atr.value * self.SL_atr_multiple) + self.spread_analyzer.average_spread)
                     if temp_price < working_order.price:
                         self.modify_order(working_order, temp_price)
-            # EXPIRY BACKUP LOGIC
-            elif working_order.purpose == OrderPurpose.ENTRY:
-                if working_order.time_in_force == TimeInForce.GTD:
-                    if self.time_now() >= working_order.expire_time:
-                        self.cancel_order(working_order, "EXPIRY_CANCEL_BACKUP")
+
+            # # EXPIRY BACKUP LOGIC
+            # elif working_order.purpose == OrderPurpose.ENTRY:
+            #     if working_order.time_in_force == TimeInForce.GTD:
+            #         if self.time_now() >= working_order.expire_time:
+            #             self.cancel_order(working_order, "EXPIRY_CANCEL_BACKUP")
 
     def on_instrument(self, instrument: Instrument):
         """

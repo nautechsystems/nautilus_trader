@@ -894,6 +894,16 @@ cdef class TradingStrategy:
         self.clock.cancel_all_time_alerts()
         self.clock.cancel_all_timers()
 
+        # Check residual working orders
+        cdef dict working_orders = self._exec_engine.database.get_orders_working(self.id)
+        for order_id, order in working_orders.items():
+            self.log.warning(f"Residual working {order}")
+
+        # Check residual open positions
+        cdef dict open_positions = self._exec_engine.database.get_positions_open(self.id)
+        for position_id, position in open_positions.items():
+            self.log.warning(f"Residual open {position}")
+
         # Clean up positions
         if self.flatten_on_stop:
             if not self.is_flat():
@@ -947,15 +957,6 @@ cdef class TradingStrategy:
         """
         self.log.debug(f"Disposing...")
 
-        # Check for residual objects
-        cdef dict working_orders = self._exec_engine.database.get_orders_working(self.id)
-        for order_id, order in working_orders:
-            self.log.warning(f"Residual working {order}")
-
-        cdef dict open_positions = self._exec_engine.database.get_positions_open(self.id)
-        for position_id, position in open_positions:
-            self.log.warning(f"Residual open {position}")
-
         try:
             self.on_dispose()
         except Exception as ex:
@@ -977,7 +978,6 @@ cdef class TradingStrategy:
             self.clock.time_now())
 
         self.log.info(f"Sending {command}...")
-
         self._exec_engine.execute_command(command)
 
     cpdef void submit_order(self, Order order, PositionId position_id):
@@ -1002,7 +1002,6 @@ cdef class TradingStrategy:
             self.clock.time_now())
 
         self.log.info(f"Sending {command}.")
-
         self._exec_engine.execute_command(command)
 
     cpdef void submit_atomic_order(self, AtomicOrder atomic_order, PositionId position_id):
@@ -1027,7 +1026,6 @@ cdef class TradingStrategy:
             self.clock.time_now())
 
         self.log.info(f"Sending {command}.")
-
         self._exec_engine.execute_command(command)
 
     cpdef void modify_order(self, Order order, Price new_price):
@@ -1051,7 +1049,6 @@ cdef class TradingStrategy:
             self.clock.time_now())
 
         self.log.info(f"Sending {command}.")
-
         self._exec_engine.execute_command(command)
 
     cpdef void cancel_order(self, Order order, str cancel_reason=None):
@@ -1076,7 +1073,6 @@ cdef class TradingStrategy:
             self.clock.time_now())
 
         self.log.info(f"Sending {command}.")
-
         self._exec_engine.execute_command(command)
 
     cpdef void cancel_all_orders(self, str cancel_reason=None):
@@ -1103,6 +1099,7 @@ cdef class TradingStrategy:
                 self._guid_factory.generate(),
                 self.clock.time_now())
 
+            self.log.info(f"Sending {command}.")
             self._exec_engine.execute_command(command)
 
     cpdef void flatten_position(self, PositionId position_id):
