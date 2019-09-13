@@ -44,6 +44,7 @@ if __name__ == "__main__":
         starting_capital=1000000,
         account_currency=Currency.USD,
         level_console=LogLevel.INFO,
+        level_file=LogLevel.DEBUG,
         level_store=LogLevel.WARNING,
         log_thread=False,
         log_to_file=False)

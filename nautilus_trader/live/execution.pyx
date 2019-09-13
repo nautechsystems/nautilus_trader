@@ -261,7 +261,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         if reply[0] > 1:  # Reply = The length of the list after the push operation
             self._log.error(f"The {account.id} already existed in the accounts and was appended to.")
 
-        self._log.debug(f"Added new {account.id}.")
+        self._log.debug(f"Added Account(id={account.id.value}).")
 
     cpdef void add_strategy(self, TradingStrategy strategy) except *:
         """
@@ -278,7 +278,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         if reply[0] == 0:  # "0 if field already exists in the hash and the value was updated."
             self._log.error(f"The strategy_id {strategy.id.value} already existed and was overwritten.")
 
-        self._log.debug(f"Added new {strategy.id}.")
+        self._log.debug(f"Added Strategy(id={strategy.id.value}).")
 
     cpdef void add_order(self, Order order, StrategyId strategy_id, PositionId position_id) except *:
         """
@@ -322,7 +322,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
             self._log.error(f"The order_id {order.id.value} already existed in index_strategy_orders.")
         # reply[7] index_strategy_positions does not need to be checked as there will be multiple writes for atomic orders
 
-        self._log.debug(f"Added new {order.id}, indexed {strategy_id}, indexed {position_id}.")
+        self._log.debug(f"Added Order(id={order.id.value}).")
 
     cpdef void add_position(self, Position position, StrategyId strategy_id) except *:
         """
@@ -351,7 +351,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         if reply[2] == 0:  # Reply = 0 if the element was already a member of the set
             self._log.error(f"The position_id {position.id.value} already existed in index_positions_open.")
 
-        self._log.debug(f"Added new {position.id}")
+        self._log.debug(f"Added Position(id={position.id}).")
 
     cpdef void update_order(self, Order order):
         """
@@ -416,7 +416,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         pipe.delete(self.key_strategies + f'{strategy.id.value}:{CONFIG}')
         pipe.execute()
 
-        self._log.debug(f"Deleted strategy (id={strategy.id.value}).")
+        self._log.debug(f"Deleted Strategy(id={strategy.id.value}).")
 
     cpdef void check_residuals(self):
         # Check for any residual active orders and log warnings if any are found

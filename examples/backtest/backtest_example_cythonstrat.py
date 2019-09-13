@@ -49,7 +49,8 @@ if __name__ == "__main__":
         starting_capital=1000000,
         account_currency=Currency.USD,
         bypass_logging=False,
-        level_console=LogLevel.DEBUG,
+        level_console=LogLevel.INFO,
+        level_file=LogLevel.DEBUG,
         level_store=LogLevel.WARNING,
         log_thread=False,
         log_to_file=False)
@@ -79,10 +80,4 @@ if __name__ == "__main__":
     engine.run(start, stop)
     print(engine.get_order_fills_report())
     print(engine.get_positions_report())
-
-    input("Press Enter to continue...")
-
-    engine.reset()
-
-    input("Press Enter to continue...")
-    engine.run(start, stop)
+    engine.dispose()

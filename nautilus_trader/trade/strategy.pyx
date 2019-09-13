@@ -32,6 +32,11 @@ from nautilus_trader.common.guid cimport GuidFactory, LiveGuidFactory
 from nautilus_trader.model.commands cimport AccountInquiry, SubmitOrder, SubmitAtomicOrder, ModifyOrder, CancelOrder
 from nautilus_trader.data.tools cimport IndicatorUpdater
 
+cdef str RECV = '<--'
+cdef str SENT = '-->'
+cdef str CMD = '[CMD]'
+cdef str EVT = '[EVT]'
+
 
 cdef class TradingStrategy:
     """
@@ -405,9 +410,9 @@ cdef class TradingStrategy:
         :param event: The event received.
         """
         if isinstance(event, (OrderRejected, OrderCancelReject)):
-            self.log.warning(f"{event}")
+            self.log.warning(f"{EVT}{RECV} {event}")
         else:
-            self.log.info(f"{event}")
+            self.log.info(f"{EVT}{RECV} {event}")
 
         if self.is_running:
             try:
@@ -982,7 +987,7 @@ cdef class TradingStrategy:
             self._guid_factory.generate(),
             self.clock.time_now())
 
-        self.log.info(f"Sending {command}...")
+        self.log.info(f"{CMD}{SENT} {command}...")
         self._exec_engine.execute_command(command)
 
     cpdef void submit_order(self, Order order, PositionId position_id):
@@ -1006,7 +1011,7 @@ cdef class TradingStrategy:
             self._guid_factory.generate(),
             self.clock.time_now())
 
-        self.log.info(f"Sending {command}.")
+        self.log.info(f"{CMD}{SENT} {command}.")
         self._exec_engine.execute_command(command)
 
     cpdef void submit_atomic_order(self, AtomicOrder atomic_order, PositionId position_id):
@@ -1030,7 +1035,7 @@ cdef class TradingStrategy:
             self._guid_factory.generate(),
             self.clock.time_now())
 
-        self.log.info(f"Sending {command}.")
+        self.log.info(f"{CMD}{SENT} {command}.")
         self._exec_engine.execute_command(command)
 
     cpdef void modify_order(self, Order order, Price new_price):
@@ -1053,7 +1058,7 @@ cdef class TradingStrategy:
             self._guid_factory.generate(),
             self.clock.time_now())
 
-        self.log.info(f"Sending {command}.")
+        self.log.info(f"{CMD}{SENT} {command}.")
         self._exec_engine.execute_command(command)
 
     cpdef void cancel_order(self, Order order, str cancel_reason=None):
@@ -1077,7 +1082,7 @@ cdef class TradingStrategy:
             self._guid_factory.generate(),
             self.clock.time_now())
 
-        self.log.info(f"Sending {command}.")
+        self.log.info(f"{CMD}{SENT} {command}.")
         self._exec_engine.execute_command(command)
 
     cpdef void cancel_all_orders(self, str cancel_reason=None):
@@ -1104,7 +1109,7 @@ cdef class TradingStrategy:
                 self._guid_factory.generate(),
                 self.clock.time_now())
 
-            self.log.info(f"Sending {command}.")
+            self.log.info(f"{CMD}{SENT} {command}.")
             self._exec_engine.execute_command(command)
 
     cpdef void flatten_position(self, PositionId position_id):

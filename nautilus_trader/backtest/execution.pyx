@@ -189,7 +189,7 @@ cdef class BacktestExecClient(ExecutionClient):
         # Process the working orders for the given symbol by simulating market
         # dynamics using the lowest bid and highest ask.
 
-        cdef AccountInquiry command
+        cdef AccountStateEvent event
         cdef datetime time_now = self._clock.time_now()
 
         if self.day_number is not time_now.day:
@@ -198,12 +198,21 @@ cdef class BacktestExecClient(ExecutionClient):
             self.account_cash_start_day = self._account.cash_balance
             self.account_cash_activity_day = Money.zero()
 
-            # Generate command
-            command = AccountInquiry(
+            # Generate event
+            event = AccountStateEvent(
             self._account.id,
+            self._account.currency,
+            self._account.cash_balance,
+            self.account_cash_start_day,
+            self.account_cash_activity_day,
+            self._account.margin_used_liquidation,
+            self._account.margin_used_maintenance,
+            self._account.margin_ratio,
+            self._account.margin_call_status,
             self._guid_factory.generate(),
             self._clock.time_now())
-            self.account_inquiry(command)
+
+            self._exec_engine.handle_event(event)
 
         # Simulate market dynamics
         for order_id, order in self.working_orders.copy().items():  # Copies dict to avoid resize during loop
