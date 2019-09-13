@@ -85,16 +85,11 @@ cdef class SubmitOrder(Command):
         :return str.
         """
         return (f"{self.__class__.__name__}("
+                f"trader_id={self.trader_id.value}, "
+                f"account_id={self.account_id.value}, "
+                f"strategy_id={self.strategy_id.value}, "
+                f"position_id={self.position_id.value}, "
                 f"order_id={self.order.id.value})")
-
-    def __repr__(self) -> str:
-        """
-        Return a string representation of this object which includes the objects
-        location in memory.
-
-        :return str.
-        """
-        return f"<{str(self)} object at {id(self)}>"
 
 
 cdef class SubmitAtomicOrder(Command):
@@ -134,16 +129,12 @@ cdef class SubmitAtomicOrder(Command):
 
         :return str.
         """
-        return f"{self.__class__.__name__}({self.atomic_order})"
-
-    def __repr__(self) -> str:
-        """
-        Return a string representation of this object which includes the objects
-        location in memory.
-
-        :return str.
-        """
-        return f"<{str(self)} object at {id(self)}>"
+        return (f"{self.__class__.__name__}("
+                f"trader_id={self.trader_id.value}, "
+                f"account_id={self.account_id.value}, "
+                f"strategy_id={self.strategy_id.value}, "
+                f"position_id={self.position_id.value}, "
+                f"order_id={self.atomic_order.id.value})")
 
 
 cdef class ModifyOrder(Command):
@@ -174,6 +165,18 @@ cdef class ModifyOrder(Command):
         self.order_id = order_id
         self.modified_price = modified_price
 
+    def __str__(self) -> str:
+        """
+        Return a string representation of this object.
+
+        :return str.
+        """
+        return (f"{self.__class__.__name__}("
+                f"trader_id={self.trader_id.value}, "
+                f"account_id={self.account_id.value}, "
+                f"order_id={self.order_id.value}, "
+                f"modified_price={self.modified_price})")
+
 
 cdef class CancelOrder(Command):
     """
@@ -202,3 +205,15 @@ cdef class CancelOrder(Command):
         self.account_id = account_id
         self.order_id = order_id
         self.cancel_reason = cancel_reason
+
+    def __str__(self) -> str:
+        """
+        Return a string representation of this object.
+
+        :return str.
+        """
+        return (f"{self.__class__.__name__}("
+                f"trader_id={self.trader_id.value}, "
+                f"account_id={self.account_id.value}, "
+                f"order_id={self.order_id.value}, "
+                f"cancel_reason={self.cancel_reason})")
