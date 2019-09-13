@@ -22,13 +22,13 @@ from examples.strategies.ema_cross_market_entry import EMACrossMarketEntryPy
 #   - A NautilusExecutor instance listening on the default ports
 
 
-BAR_SPEC = BarSpecification(1, Resolution.MINUTE, QuoteType.BID)
-# BAR_SPEC = BarSpecification(1, Resolution.SECOND, QuoteType.BID)
+# BAR_SPEC = BarSpecification(1, Resolution.MINUTE, QuoteType.BID)
+BAR_SPEC = BarSpecification(1, Resolution.SECOND, QuoteType.BID)
 
 symbols_to_trade = [
     Symbol('AUDUSD', Venue('FXCM')),
-    Symbol('EURUSD', Venue('FXCM')),
-    Symbol('GBPUSD', Venue('FXCM')),
+    # Symbol('EURUSD', Venue('FXCM')),
+    # Symbol('GBPUSD', Venue('FXCM')),
     # Symbol('USDJPY', Venue('FXCM')),
 ]
 
