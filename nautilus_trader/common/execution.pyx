@@ -483,7 +483,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         Return the account matching the given identifier (if found).
 
-        :param account_id: The account identifier.
+        :param account_id: The account_id.
         :return Account or None.
         """
         return self._cached_accounts.get(account_id)

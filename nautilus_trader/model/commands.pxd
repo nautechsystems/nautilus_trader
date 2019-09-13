@@ -14,6 +14,7 @@ from nautilus_trader.model.order cimport Order, AtomicOrder
 
 
 cdef class AccountInquiry(Command):
+    cdef readonly TraderId trader_id
     cdef readonly AccountId account_id
 
 

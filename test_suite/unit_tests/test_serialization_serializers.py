@@ -147,6 +147,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
+        self.trader_id = TestStubs.trader_id()
         self.account_id = TestStubs.account_id()
         self.serializer = MsgPackCommandSerializer()
         self.order_factory = OrderFactory(
@@ -158,6 +159,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
     def test_can_serialize_and_deserialize_account_inquiry_command(self):
         # Arrange
         command = AccountInquiry(
+            self.trader_id,
             self.account_id,
             GUID(uuid.uuid4()),
             UNIX_EPOCH)
@@ -179,7 +181,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             Quantity(100000))
 
         command = SubmitOrder(
-            TraderId('TESTER', '000'),
+            self.trader_id,
             self.account_id,
             StrategyId('SCALPER', '01'),
             PositionId('P-123456'),
@@ -206,7 +208,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             Price('0.99900'))
 
         command = SubmitAtomicOrder(
-            TraderId('TESTER', '000'),
+            self.trader_id,
             self.account_id,
             StrategyId('SCALPER', '01'),
             PositionId('P-123456'),
@@ -235,7 +237,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             Price('1.00010'))
 
         command = SubmitAtomicOrder(
-            TraderId('TESTER', '000'),
+            self.trader_id,
             self.account_id,
             StrategyId('SCALPER', '01'),
             PositionId('P-123456'),
@@ -256,7 +258,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
     def test_can_serialize_and_deserialize_modify_order_commands(self):
         # Arrange
         command = ModifyOrder(
-            TraderId('TESTER', '000'),
+            self.trader_id,
             self.account_id,
             OrderId('O-123456'),
             Price('1.00001'),
@@ -275,7 +277,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
     def test_can_serialize_and_deserialize_cancel_order_commands(self):
         # Arrange
         command = CancelOrder(
-            TraderId('TESTER', '000'),
+            self.trader_id,
             self.account_id,
             OrderId('O-123456'),
             ValidString('EXPIRED'),

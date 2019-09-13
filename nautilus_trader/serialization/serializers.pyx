@@ -244,6 +244,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         }
 
         if isinstance(command, AccountInquiry):
+            package[TRADER_ID] = command.trader_id.value
             package[ACCOUNT_ID] = command.account_id.value
         elif isinstance(command, SubmitOrder):
             package[TRADER_ID] = command.trader_id.value
@@ -295,6 +296,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
 
         if command_type == AccountInquiry.__name__:
             return AccountInquiry(
+                self.identifier_cache.get_trader_id(unpacked[TRADER_ID]),
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 command_id,
                 command_timestamp)
@@ -467,7 +469,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
         """
         Condition.not_empty(event_bytes, 'event_bytes')
 
-        cdef dict unpacked = msgpack.unpackb(event_bytes, raw=False)
+        cdef dict unpacked = MsgPackSerializer.deserialize(event_bytes)
 
         cdef str event_type = unpacked[TYPE]
         cdef GUID event_id = GUID(UUID(unpacked[ID]))
