@@ -27,10 +27,10 @@ cdef class Trader:
     cdef readonly TraderId id
     cdef readonly AccountId account_id
     cdef readonly Portfolio portfolio
-    cdef readonly bint is_running
+    cdef readonly list strategies
     cdef readonly list started_datetimes
     cdef readonly list stopped_datetimes
-    cdef readonly list strategies
+    cdef readonly bint is_running
 
     cpdef initialize_strategies(self, list strategies)
     cpdef start(self)

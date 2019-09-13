@@ -57,10 +57,10 @@ cdef class Trader:
         self._report_provider = ReportProvider()
 
         self.portfolio = self._exec_engine.portfolio
-        self.is_running = False
+        self.strategies = None
         self.started_datetimes = []  # type: List[datetime]
         self.stopped_datetimes = []  # type: List[datetime]
-        self.strategies = None
+        self.is_running = False
 
         self.initialize_strategies(strategies)
 

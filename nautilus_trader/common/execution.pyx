@@ -39,6 +39,11 @@ from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.trade.strategy cimport TradingStrategy
 
+cdef str RECV = '<--'
+cdef str SENT = '-->'
+cdef str CMD = '[CMD]'
+cdef str EVT = '[EVT]'
+
 
 cdef class ExecutionDatabase:
     """
@@ -295,7 +300,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
         self._strategies.add(strategy.id)
 
-        self._log.debug(f"Added strategy (id={strategy.id.value}).")
+        self._log.debug(f"Added Strategy(id={strategy.id.value}).")
 
     cpdef void add_account(self, Account account) except *:
         """
@@ -308,7 +313,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
         self._cached_accounts[account.id] = account
 
-        self._log.debug(f"Added account (id={account.id.value}).")
+        self._log.debug(f"Added Account(id={account.id.value}).")
 
     cpdef void add_order(self, Order order, StrategyId strategy_id, PositionId position_id) except *:
         """
@@ -358,7 +363,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         else:
             self._index_strategy_positions[strategy_id].add(position_id)
 
-        self._log.debug(f"Added new {order.id}, indexed {strategy_id}, indexed {position_id}.")
+        self._log.debug(f"Added Order(id={order.id.value}).")
 
     cpdef void add_position(self, Position position, StrategyId strategy_id) except *:
         """
@@ -378,7 +383,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
         self._index_positions.add(position.id)
         self._index_positions_open.add(position.id)
-        self._log.debug(f"Added new {position.id}.")
+        self._log.debug(f"Added Position(id={position.id.value}).")
 
     cpdef void update_order(self, Order order):
         """
@@ -432,7 +437,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         if strategy.id in self._index_strategy_positions:
             del self._index_strategy_positions[strategy.id]
 
-        self._log.debug(f"Deleted strategy (id={strategy.id.value}).")
+        self._log.debug(f"Deleted Strategy(id={strategy.id.value}).")
 
     cpdef void check_residuals(self):
         # Check for any residual active orders and log warnings if any are found
@@ -1019,7 +1024,7 @@ cdef class ExecutionEngine:
 #--------------------------------------------------------------------------------------------------"
 
     cdef void _execute_command(self, Command command):
-        self._log.debug(f'Received command {command}.')
+        self._log.debug(f'{CMD}{RECV} {command}.')
         self.command_count += 1
 
         if isinstance(command, AccountInquiry):
@@ -1039,7 +1044,7 @@ cdef class ExecutionEngine:
             self._exec_client.cancel_order(command)
 
     cdef void _handle_event(self, Event event):
-        self._log.debug(f'Received event {event}.')
+        self._log.debug(f'{EVT}{RECV} {event}.')
         self.event_count += 1
 
         if isinstance(event, OrderEvent):
@@ -1097,7 +1102,7 @@ cdef class ExecutionEngine:
                 self._position_modified(position, strategy_id, event)
 
     cdef void _handle_position_event(self, PositionEvent event):
-        self._log.debug(str(event))
+        self._log.debug(f'{EVT}{RECV}')
 
         if isinstance(event, PositionClosed):
             self.portfolio.analyzer.add_return(event.timestamp, event.position.return_realized)
