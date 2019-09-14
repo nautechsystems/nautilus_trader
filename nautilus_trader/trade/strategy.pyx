@@ -225,6 +225,20 @@ cdef class TradingStrategy:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method reset() must be implemented in the strategy (or just add pass).")
 
+    cpdef dict on_save(self):
+        """
+        Called when the strategy is saved.
+        """
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method on_save() must be implemented in the strategy (or just add pass).")
+
+    cpdef void on_load(self, dict state_dict) except *:
+        """
+        Called when the strategy is loaded.
+        """
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method on_load() must be implemented in the strategy (or just add pass).")
+
     cpdef void on_dispose(self) except *:
         """
         Called when the strategy is disposed.
@@ -951,6 +965,34 @@ cdef class TradingStrategy:
             self.log.exception(ex)
 
         self.log.info(f"Reset.")
+
+    cpdef void save(self):
+        """
+        Save the strategy state.
+        """
+        self.log.debug(f"Saving...")
+
+        cpdef dict state_dict
+        try:
+            state_dict = self.on_save()
+        except Exception as ex:
+            self.log.error(str(ex))
+
+        self.log.info(f"Saved.")
+
+    cpdef void load(self):
+        """
+        Load the strategy state.
+        """
+        self.log.debug(f"Loading...")
+        cpdef dict state_dict = {}
+
+        try:
+            self.on_load(state_dict)
+        except Exception as ex:
+            self.log.error(str(ex))
+
+        self.log.info(f"Loaded.")
 
     cpdef void dispose(self):
         """

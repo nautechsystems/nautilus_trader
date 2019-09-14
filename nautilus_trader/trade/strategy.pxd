@@ -68,6 +68,8 @@ cdef class TradingStrategy:
     cpdef void on_event(self, Event event) except *
     cpdef void on_stop(self) except *
     cpdef void on_reset(self) except *
+    cpdef dict on_save(self)
+    cpdef void on_load(self, dict state_dict) except *
     cpdef void on_dispose(self) except *
 
 #-- REGISTRATION METHODS --------------------------------------------------------------------------#
@@ -134,6 +136,8 @@ cdef class TradingStrategy:
     cpdef void start(self)
     cpdef void stop(self)
     cpdef void reset(self)
+    cpdef void save(self)
+    cpdef void load(self)
     cpdef void dispose(self)
     cpdef void account_inquiry(self)
     cpdef void submit_order(self, Order order, PositionId position_id)

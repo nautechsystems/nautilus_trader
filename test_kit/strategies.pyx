@@ -61,6 +61,12 @@ class PyStrategy(TradingStrategy):
     def on_reset(self):
         pass
 
+    def on_save(self):
+        return {}
+
+    def on_load(self, dict state_dict):
+        pass
+
     def on_dispose(self):
         pass
 
@@ -95,6 +101,12 @@ cdef class EmptyStrategy(TradingStrategy):
         pass
 
     cpdef void on_reset(self):
+        pass
+
+    cpdef dict on_save(self):
+        return {}
+
+    cpdef void on_load(self, dict state_dict):
         pass
 
     cpdef void on_dispose(self):
@@ -153,6 +165,12 @@ cdef class TickTock(TradingStrategy):
         pass
 
     cpdef void on_reset(self):
+        pass
+
+    cpdef dict on_save(self):
+        return {}
+
+    cpdef void on_load(self, dict state_dict):
         pass
 
     cpdef void on_dispose(self):
@@ -234,6 +252,13 @@ cdef class TestStrategy1(TradingStrategy):
 
     cpdef void on_reset(self):
         self.object_storer.store('custom reset logic')
+
+    cpdef dict on_save(self):
+        self.object_storer.store('custom save logic')
+        return {}
+
+    cpdef void on_load(self, dict state_dict):
+        self.object_storer.store('custom load logic')
 
     cpdef void on_dispose(self):
         self.object_storer.store('custom dispose logic')
@@ -471,6 +496,12 @@ cdef class EMACross(TradingStrategy):
         # Put custom code to be run on a strategy reset here (or pass)
         self.spread_analyzer.reset()
         self.liquidity.reset()
+
+    cpdef dict on_save(self):
+        return {}
+
+    cpdef void on_load(self, dict state_dict):
+        pass
 
     cpdef void on_dispose(self):
         """

@@ -256,6 +256,12 @@ class EMACrossPy(TradingStrategy):
         self.spread_analyzer.reset()
         self.liquidity.reset()
 
+    def on_save(self) -> Dict:
+        return {}
+
+    def on_load(self, state_dict: Dict):
+        pass
+
     def on_dispose(self):
         """
         This method is called when self.dispose() is called. Dispose of any
