@@ -83,15 +83,23 @@ cdef class ExecutionDatabase:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void update_order(self, Order order):
+    cpdef void update_account(self, Account event) except *:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void update_position(self, Position position):
+    cpdef void update_strategy(self, TradingStrategy strategy) except *:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void update_account(self, Account event):
+    cpdef void update_order(self, Order order) except *:
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
+    cpdef void update_position(self, Position position) except *:
+        # Raise exception if not overridden in implementation
+        raise NotImplementedError("Method must be implemented in the subclass.")
+
+    cpdef void load_strategy(self, TradingStrategy strategy) except *:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
@@ -99,19 +107,19 @@ cdef class ExecutionDatabase:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void check_residuals(self):
+    cpdef void check_residuals(self) except *:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void reset(self):
+    cpdef void reset(self) except *:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void flush(self):
+    cpdef void flush(self) except *:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cdef void _reset(self):
+    cdef void _reset(self) except *:
         self._cached_accounts.clear()
         self._cached_orders.clear()
         self._cached_positions.clear()
@@ -289,19 +297,6 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
 # -- COMMANDS -------------------------------------------------------------------------------------"
 
-    cpdef void add_strategy(self, TradingStrategy strategy) except *:
-        """
-        Add the given strategy to the execution database.
-
-        :param strategy: The strategy to add.
-        :raises ConditionFailed: If the strategy_id is already contained in the strategies.
-        """
-        Condition.not_in(strategy.id, self._strategies, 'strategy.id', 'strategies')
-
-        self._strategies.add(strategy.id)
-
-        self._log.debug(f"Added Strategy(id={strategy.id.value}).")
-
     cpdef void add_account(self, Account account) except *:
         """
         Add the given account to the execution database.
@@ -314,6 +309,19 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         self._cached_accounts[account.id] = account
 
         self._log.debug(f"Added Account(id={account.id.value}).")
+
+    cpdef void add_strategy(self, TradingStrategy strategy) except *:
+        """
+        Add the given strategy to the execution database.
+
+        :param strategy: The strategy to add.
+        :raises ConditionFailed: If the strategy_id is already contained in the strategies.
+        """
+        Condition.not_in(strategy.id, self._strategies, 'strategy.id', 'strategies')
+
+        self._strategies.add(strategy.id)
+
+        self._log.debug(f"Added Strategy(id={strategy.id.value}).")
 
     cpdef void add_order(self, Order order, StrategyId strategy_id, PositionId position_id) except *:
         """
@@ -385,10 +393,27 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         self._index_positions_open.add(position.id)
         self._log.debug(f"Added Position(id={position.id.value}).")
 
-    cpdef void update_order(self, Order order):
+    cpdef void update_account(self, Account account) except *:
         """
-        Update the given order in the execution database by persisting its
-        last event.
+        Update the given account in the execution database.
+
+        :param account: The account to update (from last event).
+        """
+        # Do nothing in memory
+        pass
+
+    cpdef void update_strategy(self, TradingStrategy strategy) except *:
+        """
+        Update the given strategy state in the execution database .
+        
+        :param strategy: The strategy to update.
+        """
+        # Do nothing in memory
+        pass
+
+    cpdef void update_order(self, Order order) except *:
+        """
+        Update the given order in the execution database.
 
         :param order: The order to update (from last event).
         """
@@ -399,26 +424,15 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
             self._index_orders_completed.add(order.id)
             self._index_orders_working.discard(order.id)
 
-    cpdef void update_position(self, Position position):
+    cpdef void update_position(self, Position position) except *:
         """
-        Update the given position in the execution database by persisting its
-        last event.
+        Update the given position in the execution database.
 
         :param position: The position to update (from last event).
         """
         if position.is_closed:
             self._index_positions_closed.add(position.id)
             self._index_positions_open.discard(position.id)
-
-    cpdef void update_account(self, Account account):
-        """
-        Update the given account in the execution database by persisting its
-        last event.
-
-        :param account: The account to update (from last event).
-        """
-        # Do nothing in memory
-        pass
 
     cpdef void delete_strategy(self, TradingStrategy strategy) except *:
         """
@@ -439,7 +453,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
         self._log.debug(f"Deleted Strategy(id={strategy.id.value}).")
 
-    cpdef void check_residuals(self):
+    cpdef void check_residuals(self) except *:
         # Check for any residual active orders and log warnings if any are found
         for order_id, order in self.get_orders_working().items():
             self._log.warning(f"Residual {order}.")
@@ -447,7 +461,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         for position_id, position in self.get_positions_open().items():
             self._log.warning(f"Residual {position}.")
 
-    cpdef void reset(self):
+    cpdef void reset(self) except *:
         # Reset the execution database by clearing all stateful values
         self._log.debug(f"Resetting...")
 
@@ -467,7 +481,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
 
         self._reset()
 
-    cpdef void flush(self):
+    cpdef void flush(self) except *:
         """
         Flush the database which clears all data.
         """
@@ -1057,7 +1071,7 @@ cdef class ExecutionEngine:
     cdef void _handle_order_event(self, OrderEvent event):
         cdef Order order = self.database.get_order(event.order_id)
         if order is None:
-            self._log.error(f"Cannot process {event} ({event.order_id} not found).")
+            self._log.error(f"Cannot process event {event} ({event.order_id} not found).")
             return  # Cannot process event further
 
         order.apply(event)
@@ -1065,7 +1079,7 @@ cdef class ExecutionEngine:
 
         cdef StrategyId strategy_id = self.database.get_strategy_for_order(event.order_id)
         if strategy_id is None:
-            self._log.error(f"Cannot process {event} ({strategy_id} not found).")
+            self._log.error(f"Cannot process event {event} ({strategy_id} not found).")
             return  # Cannot process event further
 
         if isinstance(event, OrderFillEvent):
@@ -1082,7 +1096,7 @@ cdef class ExecutionEngine:
     cdef void _handle_order_fill(self, OrderFillEvent event, StrategyId strategy_id):
         cdef PositionId position_id = self.database.get_position_id(event.order_id)
         if position_id is None:
-            self._log.error(f"Cannot process {event} (position_id for {event.order_id} not found).")
+            self._log.error(f"Cannot process event {event} (position_id for {event.order_id} not found).")
             return  # Cannot process event further
 
         cdef Position position = self.database.get_position_for_order(event.order_id)
@@ -1121,7 +1135,7 @@ cdef class ExecutionEngine:
             self.database.update_account(account)
             self.portfolio.handle_transaction(event)
         else:
-            self._log.warning(f"Cannot process {event} "
+            self._log.warning(f"Cannot process event {event} "
                               f"(event account_id {event.account_id} does not match this account {account.id}).")
 
     cdef void _position_opened(self, Position position, StrategyId strategy_id, OrderEvent event):

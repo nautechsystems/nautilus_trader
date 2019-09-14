@@ -39,14 +39,16 @@ cdef class ExecutionDatabase:
     cpdef void add_strategy(self, TradingStrategy strategy) except *
     cpdef void add_order(self, Order order, StrategyId strategy_id, PositionId position_id) except *
     cpdef void add_position(self, Position position, StrategyId strategy_id) except *
-    cpdef void update_order(self, Order order)
-    cpdef void update_position(self, Position position)
-    cpdef void update_account(self, Account account)
+    cpdef void update_account(self, Account account) except *
+    cpdef void update_strategy(self, TradingStrategy strategy) except *
+    cpdef void update_order(self, Order order) except *
+    cpdef void update_position(self, Position position) except *
+    cpdef void load_strategy(self, TradingStrategy strategy) except *
     cpdef void delete_strategy(self, TradingStrategy strategy) except *
-    cpdef void check_residuals(self)
-    cpdef void reset(self)
-    cpdef void flush(self)
-    cdef void _reset(self)
+    cpdef void check_residuals(self) except *
+    cpdef void reset(self) except *
+    cpdef void flush(self) except *
+    cdef void _reset(self) except *
 
 #-- QUERIES ---------------------------------------------------------------------------------------"
     cpdef Account get_first_account(self)

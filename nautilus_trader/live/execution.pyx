@@ -263,23 +263,6 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         self._log.debug(f"Added Account(id={account.id.value}).")
 
-    cpdef void add_strategy(self, TradingStrategy strategy) except *:
-        """
-        Add the given strategy to the execution database.
-
-        :param strategy: The strategy to add.
-        """
-        # Command pipeline
-        pipe = self._redis.pipeline()
-        pipe.hset(name=self.key_strategies + f'{strategy.id.value}:{CONFIG}', key='some_value', value=1)
-        cdef list reply = pipe.execute()
-
-        # Check data integrity of reply
-        if reply[0] == 0:  # "0 if field already exists in the hash and the value was updated."
-            self._log.error(f"The strategy_id {strategy.id.value} already existed and was overwritten.")
-
-        self._log.debug(f"Added Strategy(id={strategy.id.value}).")
-
     cpdef void add_order(self, Order order, StrategyId strategy_id, PositionId position_id) except *:
         """
         Add the given order to the execution database indexed with the given strategy and position
@@ -322,7 +305,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
             self._log.error(f"The order_id {order.id.value} already existed in index_strategy_orders.")
         # reply[7] index_strategy_positions does not need to be checked as there will be multiple writes for atomic orders
 
-        self._log.debug(f"Added Order(id={order.id.value}).")
+        self._log.info(f"Added Order(id={order.id.value}).")
 
     cpdef void add_position(self, Position position, StrategyId strategy_id) except *:
         """
@@ -351,12 +334,36 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         if reply[2] == 0:  # Reply = 0 if the element was already a member of the set
             self._log.error(f"The position_id {position.id.value} already existed in index_positions_open.")
 
-        self._log.debug(f"Added Position(id={position.id}).")
+        self._log.info(f"Added Position(id={position.id.value}).")
 
-    cpdef void update_order(self, Order order):
+    cpdef void update_account(self, Account account) except *:
         """
-        Update the given order in the execution database by persisting its
+        Update the given account in the execution database by persisting its
         last event.
+
+        :param account: The account to update (from last event).
+        """
+        self._redis.rpush(self.key_accounts + account.id.value, self._event_serializer.serialize(account.last_event))
+
+    cpdef void update_strategy(self, TradingStrategy strategy) except *:
+        """
+        Update the given strategy state in the execution database.
+        
+        :param strategy: The strategy to update.
+        """
+        cdef dict state = strategy.save()
+
+        pipe = self._redis.pipeline()
+        for key, value in state.items():
+            pipe.hset(name=self.key_strategies + strategy.id.value, key=key, value=value)
+            self._log.debug(f"Saving {strategy.id} state (key='{key}', value={value})...")
+        cdef list reply = pipe.execute()
+
+        self._log.info(f"Saved {strategy.id} state.")
+
+    cpdef void update_order(self, Order order) except *:
+        """
+        Update the given order in the execution database.
 
         :param order: The order to update (from last event).
         """
@@ -373,9 +380,9 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         # Check data integrity of reply
         if reply[0] == 1:  # Reply = The length of the list after the push operation
-            self._log.error(f"The order_id {order.id.value} did not already existed in the orders.")
+            self._log.error(f"The updated Order(id={order.id.value}) did not already exist.")
 
-    cpdef void update_position(self, Position position):
+    cpdef void update_position(self, Position position) except *:
         """
         Update the given position in the execution database by persisting its
         last event.
@@ -395,16 +402,27 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         # Check data integrity of reply
         if reply[0] == 1:  # Reply = The length of the list after the push operation
-            self._log.error(f"The position_id {position.id.value} did not already existed in the positions.")
+            self._log.error(f"The updated Position(id={position.id.value}) did not already exist.")
 
-    cpdef void update_account(self, Account account):
-        """
-        Update the given account in the execution database by persisting its
-        last event.
+        self._log.info(f"Updated {position.id}.")
 
-        :param account: The account to update (from last event).
+    cpdef void load_strategy(self, TradingStrategy strategy) except *:
         """
-        self._redis.rpush(self.key_accounts + account.id.value, self._event_serializer.serialize(account.last_event))
+        Load the state for the given strategy from the execution database.
+        
+        :param strategy: The strategy to load.
+        """
+        cdef dict state = self._redis.hgetall(name=self.key_strategies + strategy.id.value)
+
+        if len(state) == 0:
+            self._log.info(f"No previous state found for Strategy(id={strategy.id.value}).")
+            return
+
+        for key, value in state.items():
+            self._log.debug(f"Loading Strategy(id={strategy.id.value}) state (key='{key}', value={value})...")
+        strategy.load(state)
+
+        self._log.debug(f"Loaded Strategy(id={strategy.id.value}) state.")
 
     cpdef void delete_strategy(self, TradingStrategy strategy) except *:
         """
@@ -413,12 +431,12 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         :param strategy: The strategy to deregister.
         """
         pipe = self._redis.pipeline()
-        pipe.delete(self.key_strategies + f'{strategy.id.value}:{CONFIG}')
+        pipe.delete(self.key_strategies + strategy.id.value)
         pipe.execute()
 
-        self._log.debug(f"Deleted Strategy(id={strategy.id.value}).")
+        self._log.info(f"Deleted Strategy(id={strategy.id.value}).")
 
-    cpdef void check_residuals(self):
+    cpdef void check_residuals(self) except *:
         # Check for any residual active orders and log warnings if any are found
         for order_id, order in self.get_orders_working().items():
             self._log.warning(f"Residual {order}")
@@ -426,13 +444,13 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         for position_id, position in self.get_positions_open().items():
             self._log.warning(f"Residual {position}")
 
-    cpdef void reset(self):
+    cpdef void reset(self) except *:
         """
         Reset the execution database by clearing the cache.
         """
         self._reset()
 
-    cpdef void flush(self):
+    cpdef void flush(self) except *:
         """
         Flush the database which clears all data.
         """

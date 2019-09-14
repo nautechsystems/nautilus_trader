@@ -64,7 +64,7 @@ class PyStrategy(TradingStrategy):
     def on_save(self):
         return {}
 
-    def on_load(self, dict state_dict):
+    def on_load(self, dict state):
         pass
 
     def on_dispose(self):
@@ -106,7 +106,7 @@ cdef class EmptyStrategy(TradingStrategy):
     cpdef dict on_save(self):
         return {}
 
-    cpdef void on_load(self, dict state_dict):
+    cpdef void on_load(self, dict state):
         pass
 
     cpdef void on_dispose(self):
@@ -170,7 +170,7 @@ cdef class TickTock(TradingStrategy):
     cpdef dict on_save(self):
         return {}
 
-    cpdef void on_load(self, dict state_dict):
+    cpdef void on_load(self, dict state):
         pass
 
     cpdef void on_dispose(self):
@@ -257,7 +257,7 @@ cdef class TestStrategy1(TradingStrategy):
         self.object_storer.store('custom save logic')
         return {}
 
-    cpdef void on_load(self, dict state_dict):
+    cpdef void on_load(self, dict state):
         self.object_storer.store('custom load logic')
 
     cpdef void on_dispose(self):
@@ -500,7 +500,7 @@ cdef class EMACross(TradingStrategy):
     cpdef dict on_save(self):
         return {}
 
-    cpdef void on_load(self, dict state_dict):
+    cpdef void on_load(self, dict state):
         pass
 
     cpdef void on_dispose(self):
