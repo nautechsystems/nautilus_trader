@@ -6,10 +6,12 @@
 # </copyright>
 # -------------------------------------------------------------------------------------------------
 
+from typing import Dict
+
 from nautilus_trader.core.message import Event
-from nautilus_trader.model.enums import OrderSide, OrderPurpose, TimeInForce
+from nautilus_trader.model.enums import OrderSide, OrderPurpose
 from nautilus_trader.model.objects import Price, Tick, BarSpecification, BarType, Bar, Instrument
-from nautilus_trader.model.identifiers import Symbol, Label
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.data.analyzers import SpreadAnalyzer, LiquidityAnalyzer
 from nautilus_trader.trade.strategy import TradingStrategy
@@ -240,10 +242,18 @@ class EMACrossMarketEntryPy(TradingStrategy):
         self.spread_analyzer.reset()
         self.liquidity.reset()
 
+    def on_save(self) -> Dict:
+        # Put custom state to be saved here (or return empty dictionary)
+        return {}
+
+    def on_load(self, state: Dict):
+        # Put custom state to be loaded here (or pass)
+        pass
+
     def on_dispose(self):
         """
         This method is called when self.dispose() is called. Dispose of any
-        resources that had been used by the strategy here.
+        resources that has been used by the strategy here.
         """
         # Put custom code to be run on a strategy disposal here (or pass)
         self.unsubscribe_instrument(self.symbol)

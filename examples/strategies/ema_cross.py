@@ -7,6 +7,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from datetime import timedelta
+from typing import Dict
 
 from nautilus_trader.core.message import Event
 from nautilus_trader.model.enums import OrderSide, OrderPurpose, TimeInForce
@@ -257,15 +258,17 @@ class EMACrossPy(TradingStrategy):
         self.liquidity.reset()
 
     def on_save(self) -> Dict:
+        # Put custom state to be saved here (or return empty dictionary)
         return {}
 
-    def on_load(self, state_dict: Dict):
+    def on_load(self, state: Dict):
+        # Put custom state to be loaded here (or pass)
         pass
 
     def on_dispose(self):
         """
         This method is called when self.dispose() is called. Dispose of any
-        resources that had been used by the strategy here.
+        resources that has been used by the strategy here.
         """
         # Put custom code to be run on a strategy disposal here (or pass)
         self.unsubscribe_instrument(self.symbol)
