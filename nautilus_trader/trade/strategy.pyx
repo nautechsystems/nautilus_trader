@@ -230,7 +230,7 @@ cdef class TradingStrategy:
         Called when the strategy is saved.
         """
         # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method on_save() must be implemented in the strategy (or just add pass).")
+        raise NotImplementedError("Method on_save() must be implemented in the strategy (or just return empty dictionary).")
 
     cpdef void on_load(self, dict state_dict) except *:
         """
@@ -968,7 +968,7 @@ cdef class TradingStrategy:
 
     cpdef void save(self):
         """
-        Save the strategy state.
+        Save the strategy state to the execution database.
         """
         self.log.debug(f"Saving...")
 
@@ -982,7 +982,7 @@ cdef class TradingStrategy:
 
     cpdef void load(self):
         """
-        Load the strategy state.
+        Load the strategy state from the execution database.
         """
         self.log.debug(f"Loading...")
         cpdef dict state_dict = {}
