@@ -28,8 +28,8 @@ from nautilus_trader.model.position cimport Position
 
 
 cdef class TradingStrategy:
-    cdef GuidFactory _guid_factory
     cdef readonly Clock clock
+    cdef readonly GuidFactory guid_factory
     cdef readonly LoggerAdapter log
 
     cdef readonly TraderId trader_id

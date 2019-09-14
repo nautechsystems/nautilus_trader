@@ -11,6 +11,12 @@ from cpython.datetime cimport datetime
 from nautilus_trader.common.clock cimport Clock
 
 
+cdef str RECV
+cdef str SENT
+cdef str CMD
+cdef str EVT
+
+
 cpdef enum LogLevel:
     VERBOSE = 0,
     DEBUG = 1,

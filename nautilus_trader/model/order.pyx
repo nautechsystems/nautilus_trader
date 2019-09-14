@@ -75,8 +75,8 @@ cdef class Order:
         :param timestamp: The order initialization timestamp.
         :param price: The order price (must be None for non-priced orders).
         :param label: The order label / secondary identifier (optional can be None).
-        :param order_purpose: The specified order purpose (default NONE).
-        :param time_in_force: The order time in force (default DAY).
+        :param order_purpose: The specified order purpose (default=NONE).
+        :param time_in_force: The order time in force (default=DAY).
         :param expire_time: The order expire time (optional can be None).
         :param init_id: The order initialization event identifier.
         :raises ConditionFailed: If the order quantity is not positive (> 0).
@@ -479,7 +479,7 @@ cdef class OrderFactory:
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
         :param label: The orders label (optional can be None).
-        :param order_purpose: The orders specified purpose (default None).
+        :param order_purpose: The orders specified purpose (default=None).
         :raises ConditionFailed: If the order quantity is not positive (> 0).
         :return Order.
         """
@@ -515,7 +515,7 @@ cdef class OrderFactory:
         :param quantity: The orders quantity (> 0).
         :param price: The orders price.
         :param label: The orders label (optional can be None).
-        :param order_purpose: The orders specified purpose (default NONE).
+        :param order_purpose: The orders specified purpose (default=NONE).
         :param time_in_force: The orders time in force (optional can be None).
         :param expire_time: The orders expire time (optional can be None - unless time_in_force is GTD).
         :return Order.
@@ -554,7 +554,7 @@ cdef class OrderFactory:
         :param quantity: The orders quantity (> 0).
         :param price: The orders price.
         :param label: The orders label (optional can be None).
-        :param order_purpose: The orders specified purpose (default NONE).
+        :param order_purpose: The orders specified purpose (default=NONE).
         :param time_in_force: The orders time in force (optional can be None).
         :param expire_time: The orders expire time (optional can be None - unless time_in_force is GTD).
         :return Order.
@@ -593,7 +593,7 @@ cdef class OrderFactory:
         :param quantity: The orders quantity (> 0).
         :param price: The orders price.
         :param label: The orders label (optional can be None).
-        :param order_purpose: The orders specified purpose (default NONE).
+        :param order_purpose: The orders specified purpose (default=NONE).
         :param time_in_force: The orders time in force (optional can be None).
         :param expire_time: The orders expire time (optional can be None - unless time_in_force is GTD).
         :return Order.
@@ -632,7 +632,7 @@ cdef class OrderFactory:
         :param quantity: The orders quantity (> 0).
         :param price: The orders price.
         :param label: The orders label (optional can be None).
-        :param order_purpose: The orders specified purpose (default NONE).
+        :param order_purpose: The orders specified purpose (default=NONE).
         :param time_in_force: The orders time in force (optional can be None).
         :param expire_time: The orders expire time (optional can be None - unless time_in_force is GTD).
         :return Order.
@@ -666,7 +666,7 @@ cdef class OrderFactory:
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
         :param label: The orders label (optional can be None).
-        :param order_purpose: The orders specified purpose (default NONE).
+        :param order_purpose: The orders specified purpose (default=NONE).
         :return Order.
         :raises ConditionFailed: If the order quantity is not positive (> 0).
         """
@@ -697,7 +697,7 @@ cdef class OrderFactory:
         :param order_side: The orders side.
         :param quantity: The orders quantity (> 0).
         :param label: The orders label (optional can be None).
-        :param order_purpose: The orders specified purpose (default NONE).
+        :param order_purpose: The orders specified purpose (default=NONE).
         :return Order.
         :raises ConditionFailed: If the order quantity is not positive (> 0).
         """
