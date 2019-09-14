@@ -420,9 +420,9 @@ cdef class TradingStrategy:
         :param event: The event received.
         """
         if isinstance(event, (OrderRejected, OrderCancelReject)):
-            self.log.warning(f"{EVT}{RECV} {event}")
+            self.log.warning(f"{EVT}{RECV} {event}.")
         else:
-            self.log.info(f"{EVT}{RECV} {event}")
+            self.log.info(f"{EVT}{RECV} {event}.")
 
         if self.is_running:
             try:
