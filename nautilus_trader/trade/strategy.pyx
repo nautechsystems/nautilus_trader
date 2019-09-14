@@ -25,17 +25,12 @@ from nautilus_trader.model.objects cimport Price, Tick, BarType, Bar, Instrument
 from nautilus_trader.model.order cimport Order, AtomicOrder, OrderFactory
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.common.clock cimport Clock, LiveClock
-from nautilus_trader.common.logger cimport Logger, LoggerAdapter
+from nautilus_trader.common.logger cimport Logger, LoggerAdapter, EVT, CMD, SENT, RECV
 from nautilus_trader.common.execution cimport ExecutionEngine
 from nautilus_trader.common.data cimport DataClient
 from nautilus_trader.common.guid cimport GuidFactory, LiveGuidFactory
 from nautilus_trader.model.commands cimport AccountInquiry, SubmitOrder, SubmitAtomicOrder, ModifyOrder, CancelOrder
 from nautilus_trader.data.tools cimport IndicatorUpdater
-
-cdef str RECV = '<--'
-cdef str SENT = '-->'
-cdef str CMD = '[CMD]'
-cdef str EVT = '[EVT]'
 
 
 cdef class TradingStrategy:
@@ -45,7 +40,7 @@ cdef class TradingStrategy:
 
     def __init__(self,
                  str order_id_tag='000',
-                bint flatten_on_stop=True,
+                 bint flatten_on_stop=True,
                  bint cancel_all_orders_on_stop=True,
                  int tick_capacity=1000,
                  int bar_capacity=1000,
@@ -76,9 +71,10 @@ cdef class TradingStrategy:
         self.id = StrategyId(self.__class__.__name__, order_id_tag)
 
         # Components
-        self.log = LoggerAdapter(self.id.value, logger)
-        self._guid_factory = guid_factory
         self.clock = clock
+        self.guid_factory = guid_factory
+        self.log = LoggerAdapter(self.id.value, logger)
+
         self.clock.register_logger(self.log)
         self.clock.register_handler(self.handle_event)
 
@@ -984,7 +980,7 @@ cdef class TradingStrategy:
         cdef AccountInquiry command = AccountInquiry(
             self.trader_id,
             self.account.id,
-            self._guid_factory.generate(),
+            self.guid_factory.generate(),
             self.clock.time_now())
 
         self.log.info(f"{CMD}{SENT} {command}...")
@@ -1008,7 +1004,7 @@ cdef class TradingStrategy:
             self.id,
             position_id,
             order,
-            self._guid_factory.generate(),
+            self.guid_factory.generate(),
             self.clock.time_now())
 
         self.log.info(f"{CMD}{SENT} {command}.")
@@ -1032,7 +1028,7 @@ cdef class TradingStrategy:
             self.id,
             position_id,
             atomic_order,
-            self._guid_factory.generate(),
+            self.guid_factory.generate(),
             self.clock.time_now())
 
         self.log.info(f"{CMD}{SENT} {command}.")
@@ -1055,7 +1051,7 @@ cdef class TradingStrategy:
             self.account.id,
             order.id,
             new_price,
-            self._guid_factory.generate(),
+            self.guid_factory.generate(),
             self.clock.time_now())
 
         self.log.info(f"{CMD}{SENT} {command}.")
@@ -1079,7 +1075,7 @@ cdef class TradingStrategy:
             self.account.id,
             order.id,
             ValidString(cancel_reason),
-            self._guid_factory.generate(),
+            self.guid_factory.generate(),
             self.clock.time_now())
 
         self.log.info(f"{CMD}{SENT} {command}.")
@@ -1106,7 +1102,7 @@ cdef class TradingStrategy:
                 self.account.id,
                 order_id,
                 ValidString(cancel_reason),
-                self._guid_factory.generate(),
+                self.guid_factory.generate(),
                 self.clock.time_now())
 
             self.log.info(f"{CMD}{SENT} {command}.")
@@ -1204,7 +1200,7 @@ cdef class TradingStrategy:
         
         :param guid_factory: The GUID factory to change to.
         """
-        self._guid_factory = guid_factory
+        self.guid_factory = guid_factory
 
     cpdef void change_logger(self, Logger logger):
         """

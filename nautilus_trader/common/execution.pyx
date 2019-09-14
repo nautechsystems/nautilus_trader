@@ -31,18 +31,18 @@ from nautilus_trader.model.events cimport (
     PositionOpened,
     PositionModified,
     PositionClosed)
-from nautilus_trader.model.identifiers cimport AccountId, TraderId, StrategyId, OrderId, PositionId
+from nautilus_trader.model.identifiers cimport (
+    AccountId,
+    TraderId,
+    StrategyId,
+    OrderId,
+    PositionId)
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.guid cimport GuidFactory
-from nautilus_trader.common.logger cimport Logger, LoggerAdapter
+from nautilus_trader.common.logger cimport Logger, LoggerAdapter, CMD, EVT, SENT, RECV
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.trade.strategy cimport TradingStrategy
-
-cdef str RECV = '<--'
-cdef str SENT = '-->'
-cdef str CMD = '[CMD]'
-cdef str EVT = '[EVT]'
 
 
 cdef class ExecutionDatabase:

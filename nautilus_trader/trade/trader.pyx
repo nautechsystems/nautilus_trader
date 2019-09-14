@@ -153,7 +153,7 @@ cdef class Trader:
 
         self.stopped_datetimes.append(self._clock.time_now())
 
-        self._log.info("Stopping...")
+        self._log.debug("Stopping...")
         for strategy in self.strategies:
             strategy.stop()
 
