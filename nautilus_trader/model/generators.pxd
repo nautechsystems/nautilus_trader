@@ -16,8 +16,9 @@ cdef class IdentifierGenerator:
     cdef readonly str prefix
     cdef readonly IdTag id_tag_trader
     cdef readonly IdTag id_tag_strategy
-    cdef readonly int counter
+    cdef readonly int count
 
+    cpdef void set_count(self, int count)
     cpdef void reset(self)
 
     cdef str _generate(self)

@@ -12,6 +12,7 @@ from typing import List, Dict, Deque, Callable
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.types cimport ValidString
+from nautilus_trader.core.functions cimport format_zulu_datetime
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.quote_type cimport QuoteType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
@@ -95,11 +96,12 @@ cdef class TradingStrategy:
         # Data
         self.tick_capacity = tick_capacity
         self.bar_capacity = bar_capacity
-        self._ticks = {}                      # type: Dict[Symbol, Deque[Tick]]
-        self._bars = {}                       # type: Dict[BarType, Deque[Bar]]
-        self._indicators = []                 # type: List[object]
-        self._indicator_updaters_ticks = {}   # type: Dict[Symbol, List[IndicatorUpdater]]
-        self._indicator_updaters_bars = {}    # type: Dict[BarType, List[IndicatorUpdater]]
+        self._ticks = {}                        # type: Dict[Symbol, Deque[Tick]]
+        self._bars = {}                         # type: Dict[BarType, Deque[Bar]]
+        self._indicators = []                   # type: List[object]
+        self._indicator_updaters_ticks = {}     # type: Dict[Symbol, List[IndicatorUpdater]]
+        self._indicator_updaters_bars = {}      # type: Dict[BarType, List[IndicatorUpdater]]
+        self._state_log = []                    # type: List[(datetime, str)]
         self._exchange_calculator = ExchangeRateCalculator()
 
         # Registered modules
@@ -111,6 +113,8 @@ cdef class TradingStrategy:
         self.is_data_client_registered = False  # True when registered with the data client
         self.is_exec_engine_registered = False  # True when registered with the execution engine
         self.is_running = False
+
+        self._append_to_state_log(self.time_now(), 'INITIALIZED')
 
     cdef bint equals(self, TradingStrategy other):
         """
@@ -881,6 +885,7 @@ cdef class TradingStrategy:
         """
         Start the trade strategy and call on_start().
         """
+        self._append_to_state_log(self.time_now(), 'STARTING')
         self.log.debug(f"Starting...")
 
         if not self.is_data_client_registered:
@@ -897,12 +902,14 @@ cdef class TradingStrategy:
             self.log.exception(ex)
 
         self.is_running = True
+        self._append_to_state_log(self.time_now(), 'RUNNING')
         self.log.info(f"Running...")
 
     cpdef void stop(self):
         """
         Stop the trade strategy and call on_stop().
         """
+        self._append_to_state_log(self.time_now(), 'STOPPING')
         self.log.debug(f"Stopping...")
 
         # Clean up clock
@@ -934,6 +941,7 @@ cdef class TradingStrategy:
             self.log.exception(ex)
 
         self.is_running = False
+        self._append_to_state_log(self.time_now(), 'STOPPED')
         self.log.info(f"Stopped.")
 
     cpdef void reset(self):
@@ -950,11 +958,12 @@ cdef class TradingStrategy:
         self.log.debug(f"Resetting...")
         self.order_factory.reset()
         self.position_id_generator.reset()
-        self._ticks = {}                      # type: Dict[Symbol, Deque[Tick]]
-        self._bars = {}                       # type: Dict[BarType, Deque[Bar]]
-        self._indicators = []                 # type: List[object]
-        self._indicator_updaters_ticks = {}   # type: Dict[Symbol, List[IndicatorUpdater]]
-        self._indicator_updaters_bars = {}    # type: Dict[BarType, List[IndicatorUpdater]]
+        self._ticks.clear()
+        self._bars.clear()
+        self._indicators.clear()
+        self._indicator_updaters_ticks.clear()
+        self._indicator_updaters_bars.clear()
+        self._state_log.clear()
 
         for indicator in self._indicators:
             indicator.reset()
@@ -970,13 +979,20 @@ cdef class TradingStrategy:
         """
         Return the strategy state dictionary to be saved.
         """
-        cpdef dict state
+        self._append_to_state_log(self.time_now(), 'SAVING')
+
+        cpdef dict state = {
+            'StateLog': self._state_log,
+            'OrderIdCount': self.order_factory.count(),
+            'PositionIdCount': self.position_id_generator.count
+        }
+
         try:
-            state = self.on_save()
+            user_state = self.on_save()
         except Exception as ex:
             self.log.error(str(ex))
 
-        return state
+        return {**state, **user_state}
 
     cpdef void load(self, dict state):
         """
@@ -984,6 +1000,22 @@ cdef class TradingStrategy:
         
         :param state: The state dictionary to load.
         """
+        cdef list state_log = state.get('StateLog')
+
+        if state_log is None:
+            state_log = self._state_log
+        self._append_to_state_log(self.time_now(), 'LOADING')
+
+        order_id_count = state.get('OrderIdCount')
+        if order_id_count is None:
+            order_id_count = 0
+        self.order_factory.set_count(order_id_count)
+
+        position_id_count = state.get('PositionIdCount')
+        if position_id_count is None:
+            position_id_count = 0
+        self.position_id_generator.set_count(position_id_count)
+
         try:
             self.on_load(state)
         except Exception as ex:
@@ -1208,6 +1240,8 @@ cdef class TradingStrategy:
             self.log.info(f"Flattening {position}.")
             self.submit_order(order, position_id)
 
+    cdef void _append_to_state_log(self, datetime timestamp, str action):
+        self._state_log.append(f'{format_zulu_datetime(timestamp)} {action}')
 
 #-- BACKTEST METHODS ------------------------------------------------------------------------------#
 

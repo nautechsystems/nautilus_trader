@@ -60,17 +60,8 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
 
         self.database = InMemoryExecutionDatabase(trader_id=self.trader_id, logger=logger)
 
-    def test_can_add_strategy(self):
-        # Arrange
-        # Act
-        self.database.add_strategy(self.strategy)
-
-        # Assert
-        self.assertTrue(self.strategy.id in self.database.get_strategy_ids())
-
     def test_can_add_order(self):
         # Arrange
-        self.database.add_strategy(self.strategy)
         order = self.strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
@@ -86,7 +77,6 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
 
     def test_can_add_position(self):
         # Arrange
-        self.database.add_strategy(self.strategy)
         order = self.strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
@@ -112,7 +102,6 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
 
     def test_can_update_order_for_working_order(self):
         # Arrange
-        self.database.add_strategy(self.strategy)
         order = self.strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
@@ -137,7 +126,6 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
 
     def test_can_update_order_for_completed_order(self):
         # Arrange
-        self.database.add_strategy(self.strategy)
         order = self.strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
@@ -162,7 +150,6 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
 
     def test_can_update_position_for_closed_position(self):
         # Arrange
-        self.database.add_strategy(self.strategy)
         order1 = self.strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
@@ -244,7 +231,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
 
     def test_can_delete_strategy(self):
         # Arrange
-        self.database.add_strategy(self.strategy)
+        self.database.update_strategy(self.strategy)
 
         # Act
         self.database.delete_strategy(self.strategy)

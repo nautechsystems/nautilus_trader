@@ -36,7 +36,6 @@ cdef class ExecutionDatabase:
 
 #-- COMMANDS --------------------------------------------------------------------------------------"
     cpdef void add_account(self, Account account) except *
-    cpdef void add_strategy(self, TradingStrategy strategy) except *
     cpdef void add_order(self, Order order, StrategyId strategy_id, PositionId position_id) except *
     cpdef void add_position(self, Position position, StrategyId strategy_id) except *
     cpdef void update_account(self, Account account) except *

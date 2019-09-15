@@ -459,6 +459,22 @@ cdef class OrderFactory:
             id_tag_strategy=id_tag_strategy,
             clock=clock)
 
+    cpdef void set_count(self, int count):
+        """
+        System Method: Set the internal order_id generator count to the given count.
+
+        :param count: The count to set.
+        """
+        self._id_generator.set_count(count)
+
+    cpdef int count(self):
+        """
+        System Method: Return the internal order_id generator count.
+        
+        :return: int.
+        """
+        return self._id_generator.count
+
     cpdef void reset(self):
         """
         Reset the order factory by clearing all stateful values.

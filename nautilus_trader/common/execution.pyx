@@ -71,10 +71,6 @@ cdef class ExecutionDatabase:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
 
-    cpdef void add_strategy(self, TradingStrategy strategy) except *:
-        # Raise exception if not overridden in implementation
-        raise NotImplementedError("Method must be implemented in the subclass.")
-
     cpdef void add_order(self, Order order, StrategyId strategy_id, PositionId position_id) except *:
         # Raise exception if not overridden in implementation
         raise NotImplementedError("Method must be implemented in the subclass.")
@@ -280,7 +276,6 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         super().__init__(trader_id, logger)
 
         self._log = LoggerAdapter(self.__class__.__name__, logger)
-        self._strategies = set()              # type: Set[StrategyId]
         self._index_order_position = {}       # type: Dict[OrderId, PositionId]
         self._index_order_strategy = {}       # type: Dict[OrderId, StrategyId]
         self._index_position_strategy = {}    # type: Dict[PositionId, StrategyId]
@@ -309,19 +304,6 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         self._cached_accounts[account.id] = account
 
         self._log.debug(f"Added Account(id={account.id.value}).")
-
-    cpdef void add_strategy(self, TradingStrategy strategy) except *:
-        """
-        Add the given strategy to the execution database.
-
-        :param strategy: The strategy to add.
-        :raises ConditionFailed: If the strategy_id is already contained in the strategies.
-        """
-        Condition.not_in(strategy.id, self._strategies, 'strategy.id', 'strategies')
-
-        self._strategies.add(strategy.id)
-
-        self._log.debug(f"Added Strategy(id={strategy.id.value}).")
 
     cpdef void add_order(self, Order order, StrategyId strategy_id, PositionId position_id) except *:
         """
@@ -408,8 +390,8 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         
         :param strategy: The strategy to update.
         """
+        self._log.info(f'Saving {strategy.id} (in-memory database does nothing).')
         # Do nothing in memory
-        pass
 
     cpdef void update_order(self, Order order) except *:
         """
@@ -434,6 +416,15 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
             self._index_positions_closed.add(position.id)
             self._index_positions_open.discard(position.id)
 
+    cpdef void load_strategy(self, TradingStrategy strategy) except *:
+        """
+        Load the state for the given strategy from the execution database.
+        
+        :param strategy: The strategy to load.
+        """
+        self._log.info(f'Loading {strategy.id} (in-memory database does nothing).')
+        # Do nothing in memory
+
     cpdef void delete_strategy(self, TradingStrategy strategy) except *:
         """
         Delete the given strategy from the execution database.
@@ -442,8 +433,6 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         :raises ConditionFailed: If the strategy is not contained in the strategies.
         """
         Condition.is_in(strategy.id, self._strategies, 'strategy.id', 'strategies')
-
-        self._strategies.remove(strategy.id)
 
         if strategy.id in self._index_strategy_orders:
             del self._index_strategy_orders[strategy.id]
@@ -955,7 +944,6 @@ cdef class ExecutionEngine:
         Condition.not_in(strategy.id, self._registered_strategies, 'strategy.id', 'registered_strategies')
 
         self._registered_strategies[strategy.id] = strategy
-        self.database.add_strategy(strategy)
         strategy.register_execution_engine(self)
         self._log.info(f"Registered strategy {strategy}.")
 
