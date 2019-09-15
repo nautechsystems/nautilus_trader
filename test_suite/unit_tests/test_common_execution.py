@@ -241,7 +241,6 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
 
     def test_can_check_residuals(self):
         # Arrange
-        self.database.add_strategy(self.strategy)
         order1 = self.strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
@@ -272,7 +271,6 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
 
     def test_can_reset(self):
         # Arrange
-        self.database.add_strategy(self.strategy)
         order1 = self.strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
@@ -306,7 +304,6 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
 
     def test_can_flush(self):
         # Arrange
-        self.database.add_strategy(self.strategy)
         order1 = self.strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
@@ -347,7 +344,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
 
     def test_get_strategy_ids_with_id_returns_correct_set(self):
         # Arrange
-        self.database.add_strategy(self.strategy)
+        self.database.update_strategy(self.strategy)
 
         # Act
         result = self.database.get_strategy_ids()
