@@ -12,7 +12,6 @@ import redis
 import zmq
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.functions cimport format_zulu_datetime
 from nautilus_trader.core.message cimport MessageType, Message, Response
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.position cimport Position
@@ -326,6 +325,8 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
             self._log.debug(f"Saving {strategy.id} state (key='{key}', value={value})...")
         cdef list reply = pipe.execute()
 
+        strategy.update_state_log(strategy.clock.time_now(), "SAVED")
+
         self._log.info(f"Saved Strategy(id={strategy.id.value}) state.")
 
     cpdef void update_order(self, Order order) except *:
@@ -353,8 +354,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
     cpdef void update_position(self, Position position) except *:
         """
-        Update the given position in the execution database by persisting its
-        last event.
+        Update the given position in the execution database.
 
         :param position: The position to update (from last event).
         """

@@ -114,7 +114,7 @@ cdef class TradingStrategy:
         self.is_exec_engine_registered = False  # True when registered with the execution engine
         self.is_running = False
 
-        self._append_to_state_log(self.time_now(), 'INITIALIZED')
+        self.update_state_log(self.time_now(), 'INITIALIZED')
 
     cdef bint equals(self, TradingStrategy other):
         """
@@ -885,7 +885,7 @@ cdef class TradingStrategy:
         """
         Start the trade strategy and call on_start().
         """
-        self._append_to_state_log(self.time_now(), 'STARTING')
+        self.update_state_log(self.time_now(), 'STARTING')
         self.log.debug(f"Starting...")
 
         if not self.is_data_client_registered:
@@ -902,14 +902,14 @@ cdef class TradingStrategy:
             self.log.exception(ex)
 
         self.is_running = True
-        self._append_to_state_log(self.time_now(), 'RUNNING')
+        self.update_state_log(self.time_now(), 'RUNNING')
         self.log.info(f"Running...")
 
     cpdef void stop(self):
         """
         Stop the trade strategy and call on_stop().
         """
-        self._append_to_state_log(self.time_now(), 'STOPPING')
+        self.update_state_log(self.time_now(), 'STOPPING')
         self.log.debug(f"Stopping...")
 
         # Clean up clock
@@ -941,7 +941,7 @@ cdef class TradingStrategy:
             self.log.exception(ex)
 
         self.is_running = False
-        self._append_to_state_log(self.time_now(), 'STOPPED')
+        self.update_state_log(self.time_now(), 'STOPPED')
         self.log.info(f"Stopped.")
 
     cpdef void reset(self):
@@ -979,7 +979,7 @@ cdef class TradingStrategy:
         """
         Return the strategy state dictionary to be saved.
         """
-        self._append_to_state_log(self.time_now(), 'SAVING...')
+        self.update_state_log(self.time_now(), 'SAVING...')
 
         cpdef dict state = {
             'StateLog': self._state_log,
@@ -1000,7 +1000,7 @@ cdef class TradingStrategy:
         
         :param timestamp: The timestamp when the strategy was saved.
         """
-        self._append_to_state_log(timestamp, 'SAVED')
+        self.update_state_log(timestamp, 'SAVED')
 
     cpdef void load(self, dict state):
         """
@@ -1013,7 +1013,7 @@ cdef class TradingStrategy:
         if state_log:
             self._state_log = state_log.extend(self._state_log)
 
-        self._append_to_state_log(self.time_now(), 'LOADING...')
+        self.update_state_log(self.time_now(), 'LOADING...')
 
         order_id_count = state.get('OrderIdCount')
         if order_id_count is None:
@@ -1030,7 +1030,7 @@ cdef class TradingStrategy:
         except Exception as ex:
             self.log.error(str(ex))
 
-        self._append_to_state_log(self.time_now(), 'LOADED')
+        self.update_state_log(self.time_now(), 'LOADED')
 
     cpdef void dispose(self):
         """
@@ -1044,6 +1044,9 @@ cdef class TradingStrategy:
             self.log.error(str(ex))
 
         self.log.info(f"Disposed.")
+
+    cpdef void update_state_log(self, datetime timestamp, str action):
+        self._state_log.append(f'{format_zulu_datetime(timestamp)} {action}')
 
     cpdef void account_inquiry(self):
         """
@@ -1250,9 +1253,6 @@ cdef class TradingStrategy:
 
             self.log.info(f"Flattening {position}.")
             self.submit_order(order, position_id)
-
-    cdef void _append_to_state_log(self, datetime timestamp, str action):
-        self._state_log.append(f'{format_zulu_datetime(timestamp)} {action}')
 
 #-- BACKTEST METHODS ------------------------------------------------------------------------------#
 
