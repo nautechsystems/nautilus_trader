@@ -122,8 +122,7 @@ cdef class BacktestEngine:
                 port=6379,
                 command_serializer=MsgPackCommandSerializer(),
                 event_serializer=MsgPackEventSerializer(),
-                logger=self.test_logger,
-                option_load_cache=False)
+                logger=self.test_logger)
         else:
             raise RuntimeError(f'The exec_db_type in the backtest configuration is unrecognized '
                                f'(can be either \'in-memory\' or \'redis\').')
