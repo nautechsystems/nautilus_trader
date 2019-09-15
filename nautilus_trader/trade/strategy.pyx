@@ -114,8 +114,6 @@ cdef class TradingStrategy:
         self.is_exec_engine_registered = False  # True when registered with the execution engine
         self.is_running = False
 
-        self.update_state_log(self.time_now(), 'INITIALIZED')
-
     cdef bint equals(self, TradingStrategy other):
         """
         Return a value indicating whether this object is equal to (==) the given object.
@@ -283,6 +281,7 @@ cdef class TradingStrategy:
         self.account = engine.get_first_account()
         self.is_exec_engine_registered = True
         self.log.debug("Registered execution engine.")
+        self.update_state_log(self.time_now(), 'INITIALIZED')
 
     cpdef void register_indicator_ticks(
             self,
@@ -1008,22 +1007,27 @@ cdef class TradingStrategy:
         
         :param state: The state dictionary to load.
         """
-        cdef list state_log = state.get('StateLog')
-
+        state_log = state.get(b'StateLog')
+        cdef list buffered = self._state_log
         if state_log:
-            self._state_log = state_log.extend(self._state_log)
+            self._state_log = []
+            for value in state_log:
+                self._state_log.append(value.decode('utf8'))
+            self._state_log.extend(buffered)
 
         self.update_state_log(self.time_now(), 'LOADING...')
 
-        order_id_count = state.get('OrderIdCount')
-        if order_id_count is None:
-            order_id_count = 0
-        self.order_factory.set_count(order_id_count)
+        order_id_count = state.get(b'OrderIdCount')
+        if order_id_count:
+            order_id_count = int(order_id_count.decode('utf8'))
+            self.order_factory.set_count(order_id_count)
+            self.log.info(f"Setting OrderIdGenerator count to {order_id_count}.")
 
-        position_id_count = state.get('PositionIdCount')
-        if position_id_count is None:
-            position_id_count = 0
-        self.position_id_generator.set_count(position_id_count)
+        position_id_count = state.get(b'PositionIdCount')
+        if position_id_count:
+            position_id_count = int(position_id_count.decode('utf8'))
+            self.position_id_generator.set_count(position_id_count)
+            self.log.info(f"Setting PositionIdGenerator count to {position_id_count}.")
 
         try:
             self.on_load(state)
@@ -1269,12 +1273,14 @@ cdef class TradingStrategy:
         self.order_factory = OrderFactory(
             id_tag_trader=self.trader_id.order_id_tag,
             id_tag_strategy=self.id.order_id_tag,
-            clock=clock)
+            clock=clock,
+            initial_count=self.order_factory.count())
 
         self.position_id_generator = PositionIdGenerator(
             id_tag_trader=self.trader_id.order_id_tag,
             id_tag_strategy=self.id.order_id_tag,
-            clock=clock)
+            clock=clock,
+            initial_count=self.position_id_generator.count)
 
     cpdef void change_guid_factory(self, GuidFactory guid_factory):
         """

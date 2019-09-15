@@ -445,19 +445,22 @@ cdef class OrderFactory:
     def __init__(self,
                  IdTag id_tag_trader,
                  IdTag id_tag_strategy,
-                 Clock clock=LiveClock()):
+                 Clock clock=LiveClock(),
+                 int initial_count=0):
         """
         Initializes a new instance of the OrderFactory class.
 
         :param id_tag_trader: The identifier tag for the trader.
         :param id_tag_strategy: The identifier tag for the strategy.
         :param clock: The clock for the component.
+        :raises ConditionFailed: If the initial count is negative (< 0).
         """
         self._clock = clock
         self._id_generator = OrderIdGenerator(
             id_tag_trader=id_tag_trader,
             id_tag_strategy=id_tag_strategy,
-            clock=clock)
+            clock=clock,
+            initial_count=initial_count)
 
     cpdef void set_count(self, int count):
         """

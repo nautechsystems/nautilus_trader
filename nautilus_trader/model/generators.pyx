@@ -30,7 +30,7 @@ cdef class IdentifierGenerator:
         :param id_tag_trader: The identifier tag for the trader.
         :param id_tag_strategy: The identifier tag for the strategy.
         :param clock: The internal clock.
-        :param clock: The initial count for the generator.
+        :param initial_count: The initial count for the generator.
         :raises ConditionFailed: If the prefix is not a valid string.
         :raises ConditionFailed: If the id_tag_trader is not a valid string.
         :raises ConditionFailed: If the id_tag_strategy is not a valid string.
@@ -98,18 +98,22 @@ cdef class OrderIdGenerator(IdentifierGenerator):
     def __init__(self,
                  IdTag id_tag_trader,
                  IdTag id_tag_strategy,
-                 Clock clock=LiveClock()):
+                 Clock clock=LiveClock(),
+                 int initial_count=0):
         """
         Initializes a new instance of the OrderIdGenerator class.
 
         :param id_tag_trader: The order_id tag for the trader.
         :param id_tag_strategy: The order_id tag for the strategy.
         :param clock: The clock for the component.
+        :param initial_count: The initial count for the generator.
+        :raises ConditionFailed: If the initial count is negative (< 0).
         """
         super().__init__('O',
                          id_tag_trader,
                          id_tag_strategy,
-                         clock)
+                         clock,
+                         initial_count)
 
     cpdef OrderId generate(self):
         """
@@ -128,18 +132,22 @@ cdef class PositionIdGenerator(IdentifierGenerator):
     def __init__(self,
                  IdTag id_tag_trader,
                  IdTag id_tag_strategy,
-                 Clock clock=LiveClock()):
+                 Clock clock=LiveClock(),
+                 int initial_count=0):
         """
         Initializes a new instance of the PositionIdGenerator class.
 
         :param id_tag_trader: The position_id tag for the trader.
         :param id_tag_strategy: The position_id tag for the strategy.
         :param clock: The clock for the component.
+        :param initial_count: The initial count for the generator.
+        :raises ConditionFailed: If the initial count is negative (< 0).
         """
         super().__init__('P',
                          id_tag_trader,
                          id_tag_strategy,
-                         clock)
+                         clock,
+                         initial_count)
 
     cpdef PositionId generate(self):
         """

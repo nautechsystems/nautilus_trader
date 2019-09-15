@@ -264,7 +264,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
             self._log.error(f"The order_id {order.id.value} already existed in index_strategy_orders.")
         # reply[7] index_strategy_positions does not need to be checked as there will be multiple writes for atomic orders
 
-        self._log.info(f"Added Order(id={order.id.value}).")
+        self._log.debug(f"Added Order(id={order.id.value}).")
 
     cpdef void add_position(self, Position position, StrategyId strategy_id) except *:
         """
@@ -293,7 +293,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         if reply[2] == 0:  # Reply = 0 if the element was already a member of the set
             self._log.error(f"The position_id {position.id.value} already existed in index_positions_open.")
 
-        self._log.info(f"Added Position(id={position.id.value}).")
+        self._log.debug(f"Added Position(id={position.id.value}).")
 
     cpdef void update_account(self, Account account) except *:
         """
@@ -316,7 +316,8 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         pipe = self._redis.pipeline()
 
         for entry in state['StateLog']:
-            pipe.rpush(self.key_strategies + strategy.id.value + ':StateLog', entry)
+            if entry:
+                pipe.rpush(self.key_strategies + strategy.id.value + ':StateLog', entry)
 
         for key, value in state.items():
             if key == 'StateLog':
@@ -384,8 +385,8 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         cdef list state_log = self._redis.lrange(name=self.key_strategies + strategy.id.value + ':StateLog', start=0, end=-1)
         cdef dict state = self._redis.hgetall(name=self.key_strategies + strategy.id.value + ':State')
 
-        if state_log is not None:
-            state['StateLog'] = state_log
+        if state_log:
+            state[b'StateLog'] = state_log
 
         if len(state) == 0:
             self._log.warning(f"No previous state found for Strategy(id={strategy.id.value}).")
