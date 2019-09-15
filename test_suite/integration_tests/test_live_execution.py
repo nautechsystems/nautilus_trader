@@ -16,7 +16,6 @@ from nautilus_trader.model.position import Position
 from nautilus_trader.common.account import Account
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logger import TestLogger
-from nautilus_trader.trade.strategy import TradingStrategy
 from nautilus_trader.serialization.serializers import MsgPackCommandSerializer, MsgPackEventSerializer
 from nautilus_trader.live.execution import RedisExecutionDatabase
 

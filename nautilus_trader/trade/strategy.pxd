@@ -141,6 +141,7 @@ cdef class TradingStrategy:
     cpdef void saved(self, datetime timestamp)
     cpdef void load(self, dict state)
     cpdef void dispose(self)
+    cpdef void update_state_log(self, datetime timestamp, str action)
     cpdef void account_inquiry(self)
     cpdef void submit_order(self, Order order, PositionId position_id)
     cpdef void submit_atomic_order(self, AtomicOrder atomic_order, PositionId position_id)
@@ -149,7 +150,6 @@ cdef class TradingStrategy:
     cpdef void cancel_all_orders(self, str cancel_reason=*)
     cpdef void flatten_position(self, PositionId position_id)
     cpdef void flatten_all_positions(self)
-    cdef void _append_to_state_log(self, datetime timestamp, str action)
 
 #-- BACKTEST METHODS ------------------------------------------------------------------------------#
     cpdef void change_clock(self, Clock clock)
